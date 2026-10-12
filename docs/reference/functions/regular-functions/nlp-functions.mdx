@@ -185,53 +185,6 @@ SELECT detectLanguageUnknown('Ich bleibe für ein paar Tage.')
 de
 ```
 
-## detectTonality {#detectTonality}
-
-Introduced in: v22.2.0
-
-<ExperimentalBadge/>
-<CloudNotSupportedBadge/>
-
-<Warning>
-This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
-Set `allow_experimental_nlp_functions = 1` to enable it.
-</Warning>
-
-Determines the sentiment of the provided text data.
-
-The function makes use of an embedded emotional dictionary and only works for the Russian language at the moment.
-
-**Syntax**
-
-```sql
-detectTonality(s)
-```
-
-**Arguments**
-
-- `s` — The text to be analyzed. [`String`](/reference/data-types/string)
-
-**Returned value**
-
-Returns the average sentiment value of the words in text [`Float32`](/reference/data-types/float)
-
-**Examples**
-
-**Russian sentiment analysis**
-
-```sql title=Query
-SET allow_experimental_nlp_functions = 1;
-
-SELECT
-    detectTonality('Шарик - хороший пёс'),
-    detectTonality('Шарик - пёс'),
-    detectTonality('Шарик - плохой пёс')
-```
-
-```response title=Response
-0.44445	0	-0.3
-```
-
 ## lemmatize {#lemmatize}
 
 Introduced in: v21.9.0

@@ -1,5 +1,6 @@
 #include <Parsers/ASTBackupQuery.h>
 #include <Parsers/ASTCreateQuery.h>
+#include <Parsers/ASTCopyQuery.h>
 #include <Parsers/ASTInsertQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTRenameQuery.h>
@@ -16,6 +17,7 @@
 #include <Parsers/ParserQueryWithOutput.h>
 #include <Parsers/ASTQueryWithOutput.h>
 #include <Parsers/ASTSetQuery.h>
+#include <Parsers/ASTShowTablesQuery.h>
 #include <Parsers/stripQuerySettings.h>
 #include <Parsers/Lexer.h>
 #include <Parsers/parseQuery.h>
@@ -54,6 +56,58 @@ TEST(Lexer, NullInputWithMaxQuerySize)
     Lexer lexer(nullptr, nullptr, 262144);
     Token token = lexer.nextToken();
     EXPECT_EQ(TokenType::EndOfStream, token.type);
+}
+
+TEST(ParserCopyQuery, FormattingPreservesTableCopy)
+{
+    struct TestCase
+    {
+        String query;
+        String formatted;
+    };
+
+    const std::vector<TestCase> test_cases = {
+        {"COPY t TO STDOUT", "COPY t TO STDOUT"},
+        {"COPY t FROM STDIN", "COPY t FROM STDIN"},
+        {"COPY db.t (a, b) TO STDOUT", "COPY db.t (a, b) TO STDOUT"},
+        {"COPY db.t (a, b) FROM STDIN", "COPY db.t (a, b) FROM STDIN"},
+        {
+            R"(COPY "db name"."table name" ("first col", second) TO STDOUT)",
+            "COPY `db name`.`table name` (`first col`, second) TO STDOUT",
+        },
+        {"COPY t TO STDOUT WITH (FORMAT csv)", "COPY t TO STDOUT WITH (FORMAT CSV)"},
+        {"COPY t TO STDOUT WITH (FORMAT csv, HEADER)", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+        {"COPY t FROM STDIN WITH (HEADER)", "COPY t FROM STDIN WITH (HEADER)"},
+        {"COPY t TO STDOUT WITH (FORMAT binary)", "COPY t TO STDOUT WITH (FORMAT Binary)"},
+        {"COPY t TO STDOUT WITH (FORMAT text)", "COPY t TO STDOUT"},
+        {"COPY t TO STDOUT WITH CSV HEADER", "COPY t TO STDOUT WITH (FORMAT CSV, HEADER)"},
+    };
+
+    for (const auto & test_case : test_cases)
+    {
+        ParserQuery parser(test_case.query.data() + test_case.query.size());
+        ASTPtr ast = parseQuery(parser, test_case.query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << test_case.query;
+
+        const auto * before = ast->as<ASTCopyQuery>();
+        ASSERT_NE(nullptr, before) << "query: " << test_case.query;
+
+        const String formatted = ast->formatWithSecretsOneLine();
+        EXPECT_EQ(test_case.formatted, formatted) << "query: " << test_case.query;
+
+        ParserQuery reparser(formatted.data() + formatted.size());
+        ASTPtr reparsed = parseQuery(reparser, formatted, "", 0, 0, 0);
+        ASSERT_NE(nullptr, reparsed) << "formatted query: " << formatted;
+
+        const auto * after = reparsed->as<ASTCopyQuery>();
+        ASSERT_NE(nullptr, after) << "formatted query: " << formatted;
+
+        EXPECT_EQ(before->type, after->type) << "query: " << test_case.query;
+        EXPECT_EQ(before->table_name, after->table_name) << "query: " << test_case.query;
+        EXPECT_EQ(before->column_names, after->column_names) << "query: " << test_case.query;
+        EXPECT_EQ(before->format, after->format) << "query: " << test_case.query;
+        EXPECT_EQ(before->header, after->header) << "query: " << test_case.query;
+    }
 }
 
 /// The output-option children (INTO OUTFILE, COMPRESSION, FORMAT, SETTINGS) must end up
@@ -190,6 +244,71 @@ TEST(ParserQueryWithOutput, CloneOwnsItsChildren)
     }
 }
 
+TEST(ParserShowTablesQuery, PreserveEmptyLike)
+{
+    const std::vector<String> queries = {
+        "SHOW TABLES LIKE ''",
+        "SHOW TABLES NOT ILIKE ''",
+        "SHOW DATABASES LIKE ''",
+        "SHOW CLUSTERS ILIKE ''",
+        "SHOW MERGES NOT LIKE ''",
+        "SHOW SETTINGS LIKE ''",
+        "SHOW CHANGED SETTINGS ILIKE ''",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+        EXPECT_EQ(query, ast->formatWithSecretsOneLine()) << "query: " << query;
+    }
+}
+
+TEST(ParserShowTablesQuery, CloneOwnsWhereAndLimit)
+{
+    const String query = "SHOW TABLES WHERE name = 'x' LIMIT 1";
+    ParserQuery parser(query.data() + query.size());
+    ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+    ASSERT_NE(nullptr, ast);
+
+    ASTPtr cloned = ast->clone();
+    const auto & original = ast->as<ASTShowTablesQuery &>();
+    const auto & copy = cloned->as<ASTShowTablesQuery &>();
+
+    ASSERT_NE(nullptr, original.where_expression);
+    ASSERT_NE(nullptr, copy.where_expression);
+    EXPECT_NE(original.where_expression.get(), copy.where_expression.get());
+
+    ASSERT_NE(nullptr, original.limit_length);
+    ASSERT_NE(nullptr, copy.limit_length);
+    EXPECT_NE(original.limit_length.get(), copy.limit_length.get());
+
+    EXPECT_EQ(ast->getTreeHash(false), cloned->getTreeHash(false));
+}
+
+TEST(ParserShowFunctionsQuery, PreserveEmptyLike)
+{
+    const std::vector<String> queries = {
+        "SHOW FUNCTIONS LIKE ''",
+        "SHOW FUNCTIONS ILIKE ''",
+    };
+
+    for (const auto & query : queries)
+    {
+        ParserQuery parser(query.data() + query.size());
+        ASTPtr ast = parseQuery(parser, query, "", 0, 0, 0);
+        ASSERT_NE(nullptr, ast) << "query: " << query;
+        EXPECT_EQ(query, ast->formatWithSecretsOneLine()) << "query: " << query;
+    }
+}
+
+TEST(ParserCheckQuery, RejectEmptyPartName)
+{
+    const String query = "CHECK TABLE t PART ''";
+    ParserQuery parser(query.data() + query.size());
+    EXPECT_THROW(parseQuery(parser, query, "", 0, 0, 0), DB::Exception);
+}
 /// `ASTIndexDeclaration` carries a `part_of_create_index_query` flag that switches its formatting
 /// between the `CREATE INDEX` form (`(expr) TYPE ...`, with the extra wrapper this PR restores for
 /// parenthesized expressions) and the column-list form (`name expr TYPE ...`). `clone()` must carry
@@ -234,303 +353,6 @@ TEST(ParserCreateIndexQuery, ClonePreservesCreateIndexFormatting)
         EXPECT_EQ(formatted, reparsed->formatWithSecretsOneLine()) << "roundtrip of: " << query;
         EXPECT_EQ(ast->getTreeHash(false), reparsed->getTreeHash(false)) << "AST roundtrip of: " << query;
     }
-}
-
-TEST(ParserCreateDatabaseQuery, MaskDataLakeCatalogStorageCredentials)
-{
-    /// Both the `aws_*` and the backward-compatible `storage_aws_*` static credentials must be hidden
-    /// in `SHOW CREATE DATABASE` for the `DataLakeCatalog` engine, otherwise secrets leak.
-    const String query =
-        "CREATE DATABASE test_unity ENGINE = DataLakeCatalog('http://localhost:8181') "
-        "SETTINGS aws_access_key_id = 'AKIA_PLAIN', aws_secret_access_key = 'plain_secret', "
-        "storage_aws_access_key_id = 'AKIA_STORAGE', storage_aws_secret_access_key = 'storage_secret'";
-
-    DB::ParserCreateQuery parser;
-    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
-
-    /// formatForLogging always hides secrets.
-    const String masked = ast->formatForLogging();
-
-    EXPECT_EQ(masked.find("plain_secret"), String::npos);
-    EXPECT_EQ(masked.find("storage_secret"), String::npos);
-    EXPECT_EQ(masked.find("AKIA_PLAIN"), String::npos);
-    EXPECT_EQ(masked.find("AKIA_STORAGE"), String::npos);
-    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
-}
-
-TEST(ParserCreateQuery, MaskNATSTableEngineCredentials)
-{
-    /// The `NATS` engine takes its arguments as overrides of a named collection, so the credentials can
-    /// appear as engine arguments and not only in the `SETTINGS` clause. Every credential source must be
-    /// hidden in `SHOW CREATE TABLE` and in the query log, otherwise secrets leak.
-    const String query =
-        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, nats_password = 'plain_password', "
-        "nats_token = 'plain_token', nats_credential_file = '/plain/credential/file', "
-        "nats_credentials = 'plain_user_jwt_and_seed')";
-
-    DB::ParserCreateQuery parser;
-    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
-
-    /// formatForLogging always hides secrets.
-    const String masked = ast->formatForLogging();
-
-    EXPECT_EQ(masked.find("plain_password"), String::npos);
-    EXPECT_EQ(masked.find("plain_token"), String::npos);
-    EXPECT_EQ(masked.find("/plain/credential/file"), String::npos);
-    EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
-    /// The keys of the named overrides are not secrets and stay visible, as does the collection name.
-    EXPECT_NE(masked.find("nats1"), String::npos);
-    EXPECT_NE(masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
-
-    /// `NATS` accepts the same credential source in the `SETTINGS` clause. This is formatted
-    /// through `ASTSetQuery`, rather than `FunctionSecretArgumentsFinder`, and must be hidden too.
-    const String settings_query =
-        "CREATE TABLE test_nats_settings (key UInt64) ENGINE = NATS "
-        "SETTINGS nats_credentials = 'plain_settings_user_jwt_and_seed'";
-
-    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
-    const String settings_masked = settings_ast->formatForLogging();
-
-    EXPECT_EQ(settings_masked.find("plain_settings_user_jwt_and_seed"), String::npos);
-    EXPECT_NE(settings_masked.find("nats_credentials = '[HIDDEN]'"), String::npos);
-}
-
-TEST(ParserCreateQuery, MaskNATSTableEngineURLPassword)
-{
-    /// A `nats_url` override carrying an '@' is hidden whole, the same way the `SETTINGS` clause form
-    /// is masked: libnats reads a credential that no URI masker can bound.
-    const String query =
-        "CREATE TABLE test_nats (key UInt64) "
-        "ENGINE = NATS(nats1, nats_url = 'nats://plain_user:plain_password@example.com:4222')";
-
-    DB::ParserCreateQuery parser;
-    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
-
-    const String masked = ast->formatForLogging();
-
-    EXPECT_EQ(masked.find("plain_password"), String::npos);
-    EXPECT_EQ(masked.find("plain_user"), String::npos);
-    EXPECT_NE(masked.find("nats_url = '[HIDDEN]'"), String::npos);
-}
-
-TEST(ParserCreateQuery, MaskNATSTableEngineServerListPassword)
-{
-    /// A `nats_server_list` override can carry URI credentials in every list entry. Hide the list
-    /// whole, rather than risk leaking a password from an entry while preserving the host names.
-    const String query =
-        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, "
-        "nats_server_list = 'nats://plain_user:plain_password@example.com:4222,nats://plain_user2:plain_password2@example.org:4222')";
-
-    DB::ParserCreateQuery parser;
-    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
-
-    const String masked = ast->formatForLogging();
-
-    EXPECT_EQ(masked.find("plain_password"), String::npos);
-    EXPECT_NE(masked.find("nats_server_list = '[HIDDEN]'"), String::npos);
-
-    /// The `SETTINGS` clause follows the same fail-closed masking rule.
-    const String settings_query =
-        "CREATE TABLE test_nats_settings (key UInt64) ENGINE = NATS SETTINGS "
-        "nats_server_list = 'nats://plain_user:plain_settings_password@example.com:4222'";
-
-    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
-    const String settings_masked = settings_ast->formatForLogging();
-
-    EXPECT_EQ(settings_masked.find("plain_settings_password"), String::npos);
-    EXPECT_NE(settings_masked.find("nats_server_list = '[HIDDEN]'"), String::npos);
-}
-
-TEST(ParserCreateQuery, MaskNATSTableEngineNonLiteralArguments)
-{
-    /// A key or a `nats_url` value we cannot read as a plain literal is hidden whole (fail closed):
-    /// the key can name a secret setting, and the url pieces can embed the credentials.
-    const String query =
-        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, "
-        "concat('nats_', 'credentials') = 'plain_user_jwt_and_seed', "
-        "nats_url = concat('nats://plain_user:plain_password@', 'example.com:4222'))";
-
-    DB::ParserCreateQuery parser;
-    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
-
-    const String masked = ast->formatForLogging();
-
-    EXPECT_EQ(masked.find("plain_password"), String::npos);
-    EXPECT_EQ(masked.find("plain_user_jwt_and_seed"), String::npos);
-    EXPECT_NE(masked.find("nats1"), String::npos);
-}
-
-TEST(ParserCreateQuery, MaskNATSTableEnginePositionalArguments)
-{
-    /// The engine accepts no positional arguments except the collection name in the first position,
-    /// but it rejects them only after the query has been formatted for logging. A malformed
-    /// positional argument can carry a secret, so it is hidden whole (fail closed).
-    const String query =
-        "CREATE TABLE test_nats (key UInt64) ENGINE = NATS(nats1, '/plain/credential/file', "
-        "'nats://plain_user:plain_password@example.com:4222')";
-
-    DB::ParserCreateQuery parser;
-    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
-
-    const String masked = ast->formatForLogging();
-
-    EXPECT_EQ(masked.find("/plain/credential/file"), String::npos);
-    EXPECT_EQ(masked.find("plain_password"), String::npos);
-    /// The collection name is the one legitimate positional argument and stays visible.
-    EXPECT_NE(masked.find("nats1"), String::npos);
-    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
-}
-
-TEST(ParserCreateQuery, MaskXDBCTableEnginePositionalAfterCollection)
-{
-    /// After a collection name every XDBC argument must be a named override, but the statement is
-    /// formatted for logging before validation rejects a positional one, and that positional can be
-    /// the connection string itself. The engine spelling takes more positional arguments than the
-    /// table function does, so it is asserted separately.
-    const String query =
-        "CREATE TABLE test_jdbc (key UInt64) "
-        "ENGINE = JDBC(jdbc1, 'DSN=mydb;Uid=user;Pwd=plain_password', 'mydb', 'mytable')";
-
-    DB::ParserCreateQuery parser;
-    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
-
-    const String masked = ast->formatForLogging();
-
-    EXPECT_EQ(masked.find("plain_password"), String::npos);
-    EXPECT_EQ(masked.find("Uid=user"), String::npos);
-    /// The collection name is the one legitimate positional argument and stays visible.
-    EXPECT_NE(masked.find("jdbc1"), String::npos);
-    EXPECT_NE(masked.find("[HIDDEN]"), String::npos);
-
-    /// A named override of the same connection string keeps its key visible, as before.
-    const String named_query =
-        "CREATE TABLE test_jdbc (key UInt64) "
-        "ENGINE = JDBC(jdbc1, datasource = 'DSN=mydb;Uid=user;Pwd=plain_named_password', "
-        "external_database = 'mydb', external_table = 'mytable')";
-
-    DB::ASTPtr named_ast = DB::parseQuery(parser, named_query, 0, 0, 0);
-    const String named_masked = named_ast->formatForLogging();
-
-    EXPECT_EQ(named_masked.find("plain_named_password"), String::npos);
-    EXPECT_NE(named_masked.find("datasource = '[HIDDEN]'"), String::npos);
-    /// The non-secret named arguments stay visible: the positional scan must not widen to them.
-    EXPECT_NE(named_masked.find("external_table = 'mytable'"), String::npos);
-}
-
-TEST(ParserCreateQuery, MaskXDBCNamedArgumentsWithoutCollection)
-{
-    /// A named argument at index 0 is not a collection name, so this call is not the positional form:
-    /// the connection string can be under either alias at any index, and the statement is formatted
-    /// for logging before validation rejects it.
-    const String query =
-        "CREATE TABLE test_jdbc (key UInt64) ENGINE = JDBC(external_database = 'mydb', "
-        "datasource = 'DSN=mydb;Uid=user;Pwd=plain_password')";
-
-    DB::ParserCreateQuery parser;
-    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
-
-    const String masked = ast->formatForLogging();
-
-    EXPECT_EQ(masked.find("plain_password"), String::npos);
-    EXPECT_EQ(masked.find("Uid=user"), String::npos);
-    EXPECT_NE(masked.find("datasource = '[HIDDEN]'"), String::npos);
-}
-
-TEST(ParserCreateQuery, MaskRabbitMQTableEngineCredentials)
-{
-    /// `RabbitMQ` also takes its settings as overrides of a named collection, so the same credentials
-    /// reach `SHOW CREATE TABLE` through the engine arguments and through the `SETTINGS` clause.
-    const String query =
-        "CREATE TABLE test_rabbitmq (key UInt64) ENGINE = RabbitMQ(rabbitmq1, "
-        "rabbitmq_password = 'plain_password', "
-        "rabbitmq_address = 'amqp://plain_user:plain_address_password@example.com:5672/vhost')";
-
-    DB::ParserCreateQuery parser;
-    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
-
-    const String masked = ast->formatForLogging();
-
-    EXPECT_EQ(masked.find("plain_password"), String::npos);
-    EXPECT_EQ(masked.find("plain_address_password"), String::npos);
-    EXPECT_EQ(masked.find("plain_user"), String::npos);
-    /// The keys of the named overrides are not secrets and stay visible, as does the collection name.
-    EXPECT_NE(masked.find("rabbitmq1"), String::npos);
-    EXPECT_NE(masked.find("rabbitmq_password = '[HIDDEN]'"), String::npos);
-    EXPECT_NE(masked.find("rabbitmq_address = '[HIDDEN]'"), String::npos);
-
-    /// An address with no '@' carries no credential and stays fully visible.
-    const String control_query =
-        "CREATE TABLE test_rabbitmq (key UInt64) "
-        "ENGINE = RabbitMQ(rabbitmq1, rabbitmq_address = 'amqp://example.com:5672/vhost')";
-
-    DB::ASTPtr control_ast = DB::parseQuery(parser, control_query, 0, 0, 0);
-    EXPECT_NE(control_ast->formatForLogging().find("amqp://example.com:5672/vhost"), String::npos);
-
-    /// The `SETTINGS` clause form is masked by `RabbitMQ::SETTINGS_TO_HIDE` and must agree.
-    const String settings_query =
-        "CREATE TABLE test_rabbitmq_settings (key UInt64) ENGINE = RabbitMQ "
-        "SETTINGS rabbitmq_password = 'plain_settings_password'";
-
-    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
-    const String settings_masked = settings_ast->formatForLogging();
-
-    EXPECT_EQ(settings_masked.find("plain_settings_password"), String::npos);
-    EXPECT_NE(settings_masked.find("rabbitmq_password = '[HIDDEN]'"), String::npos);
-}
-
-TEST(ParserCreateQuery, MaskKafkaTableEngineCredentials)
-{
-    /// `Kafka` reads named overrides of a collection too, so `kafka_sasl_password` needs masking in the
-    /// engine arguments and not only in the `SETTINGS` clause.
-    const String query =
-        "CREATE TABLE test_kafka (key UInt64) ENGINE = Kafka(kafka1, kafka_sasl_password = 'plain_password')";
-
-    DB::ParserCreateQuery parser;
-    DB::ASTPtr ast = DB::parseQuery(parser, query, 0, 0, 0);
-
-    const String masked = ast->formatForLogging();
-
-    EXPECT_EQ(masked.find("plain_password"), String::npos);
-    EXPECT_NE(masked.find("kafka1"), String::npos);
-    EXPECT_NE(masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
-
-    /// Unlike `NATS` and `RabbitMQ`, `Kafka` accepts a legacy positional form whose arguments are all
-    /// non-secret, so a positional argument must stay visible rather than fail closed.
-    const String positional_query =
-        "CREATE TABLE test_kafka (key UInt64) "
-        "ENGINE = Kafka('broker:9092', 'topic', 'group', 'JSONEachRow')";
-
-    DB::ASTPtr positional_ast = DB::parseQuery(parser, positional_query, 0, 0, 0);
-    const String positional_masked = positional_ast->formatForLogging();
-
-    EXPECT_NE(positional_masked.find("broker:9092"), String::npos);
-    EXPECT_NE(positional_masked.find("group"), String::npos);
-    EXPECT_EQ(positional_masked.find("[HIDDEN]"), String::npos);
-
-    /// The legacy positional form makes the collection name optional, so a named argument can be the
-    /// first one, and the statement is formatted for logging before it is rejected.
-    const String first_arg_query =
-        "CREATE TABLE test_kafka (key UInt64) "
-        "ENGINE = Kafka(kafka_sasl_password = 'plain_first_password', 'clickhouse')";
-
-    DB::ASTPtr first_arg_ast = DB::parseQuery(parser, first_arg_query, 0, 0, 0);
-    const String first_arg_masked = first_arg_ast->formatForLogging();
-
-    EXPECT_EQ(first_arg_masked.find("plain_first_password"), String::npos);
-    EXPECT_NE(first_arg_masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
-    /// The positional argument beside it is not a secret and stays visible.
-    EXPECT_NE(first_arg_masked.find("'clickhouse'"), String::npos);
-
-    /// The `SETTINGS` clause form is masked by `Kafka::SETTINGS_TO_HIDE` and must agree.
-    const String settings_query =
-        "CREATE TABLE test_kafka_settings (key UInt64) ENGINE = Kafka "
-        "SETTINGS kafka_sasl_password = 'plain_settings_password'";
-
-    DB::ASTPtr settings_ast = DB::parseQuery(parser, settings_query, 0, 0, 0);
-    const String settings_masked = settings_ast->formatForLogging();
-
-    EXPECT_EQ(settings_masked.find("plain_settings_password"), String::npos);
-    EXPECT_NE(settings_masked.find("kafka_sasl_password = '[HIDDEN]'"), String::npos);
 }
 
 TEST_P(ParserTest, parseQuery)

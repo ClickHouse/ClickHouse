@@ -19,10 +19,9 @@ struct ExtractBasename
         res_data = data;
         res_size = size;
 
-        Pos pos = data;
-        Pos end = pos + size;
+        Pos end = data + size;
 
-        if ((pos = find_last_symbols_or_null<'/', '\\'>(pos, end)))
+        if (Pos pos = find_last_symbols_or_null<'/', '\\'>(data, end))
         {
             ++pos;
             res_data = pos;

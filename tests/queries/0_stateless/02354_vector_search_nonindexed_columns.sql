@@ -7,7 +7,7 @@ SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1;
-SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
+SET optimize_move_to_prewhere = 1;
 
 -- The reference vector is built with a lambda over a constant range. Its body has to be deterministic
 -- in the scope of the query: a lambda whose body is not (e.g. `randCanonical`) is not constant folded,
