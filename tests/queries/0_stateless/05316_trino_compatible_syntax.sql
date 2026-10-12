@@ -46,7 +46,8 @@ SELECT slice(ARRAY[1, 2, 3, 4], 2, 2), zip(ARRAY[1, 2], ARRAY['a']);
 SELECT map_keys(map('a', 1, 'b', 2)), map_values(map('a', 1, 'b', 2));
 SELECT url_extract_host('https://clickhouse.com:8443/docs/x?a=1&b=2#frag'), url_extract_path('https://clickhouse.com/docs/x?a=1'),
     url_extract_protocol('https://clickhouse.com/'), url_extract_query('https://clickhouse.com/?a=1&b=2'),
-    url_extract_fragment('https://clickhouse.com/#frag'), url_extract_parameter('https://clickhouse.com/?a=1&b=2', 'b');
+    url_extract_fragment('https://clickhouse.com/#frag');
+SELECT url_extract_host('http://user:password@example.com:8080/path?query=value#fragment');
 SELECT url_encode('a b&c'), url_decode('a+b%26c');
 SELECT bitwise_and(12, 10), bitwise_or(12, 10), bitwise_xor(12, 10);
 SELECT to_hex('abc'), from_hex('616263'), to_base32('abc'), from_base32('MFRGG===');

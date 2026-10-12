@@ -42,7 +42,6 @@ SELECT domain('svn+ssh://some.svn-hosting.com:80/repo/trunk');
     FunctionDocumentation documentation_domain = {description_domain, syntax_domain, arguments_domain, {}, returned_value_domain, examples_domain, introduced_in_domain, category_domain};
 
     factory.registerFunction<FunctionDomain>(documentation_domain);
-    factory.registerAlias("url_extract_host", "domain", FunctionFactory::Case::Insensitive);
 
     /// domainRFC documentation
     FunctionDocumentation::Description description_domainRFC = R"(
@@ -74,6 +73,7 @@ SELECT
     FunctionDocumentation documentation_domainRFC = {description_domainRFC, syntax_domainRFC, arguments_domainRFC, {}, returned_value_domainRFC, examples_domainRFC, introduced_in_domainRFC, category_domainRFC};
 
     factory.registerFunction<FunctionDomainRFC>(documentation_domainRFC);
+    factory.registerAlias("url_extract_host", "domainRFC", FunctionFactory::Case::Insensitive);
 }
 
 }

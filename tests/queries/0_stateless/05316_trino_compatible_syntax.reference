@@ -37,7 +37,8 @@ CREATE TABLE default.t_trino_types\n(\n    `a` Array(Int32),\n    `m` Map(String
 3	1	2
 [2,3]	[(1,'a'),(2,NULL)]
 ['a','b']	[1,2]
-clickhouse.com	/docs/x	https	a=1&b=2	frag	2
+clickhouse.com	/docs/x	https	a=1&b=2	frag
+example.com
 a+b%26c	a b&c
 8	14	6
 616263	abc	MFRGG===	abc

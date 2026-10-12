@@ -114,7 +114,6 @@ SELECT extractURLParameter('http://example.com/?param1=value1&param2=value2', 'p
     FunctionDocumentation documentation_extractURLParameter = {description_extractURLParameter, syntax_extractURLParameter, arguments_extractURLParameter, {}, returned_value_extractURLParameter, examples_extractURLParameter, introduced_in_extractURLParameter, category_extractURLParameter};
 
     factory.registerFunction<FunctionExtractURLParameter>(documentation_extractURLParameter);
-    factory.registerAlias("url_extract_parameter", "extractURLParameter", FunctionFactory::Case::Insensitive);
 }
 
 }
