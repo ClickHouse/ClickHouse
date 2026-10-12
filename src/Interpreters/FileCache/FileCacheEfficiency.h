@@ -50,6 +50,19 @@ public:
     /// Moves the active and passive bytes of a file segment that became large (or not large).
     void moveToClass(Window window, Int64 active, Int64 passive, bool large);
 
+    /// `reserved_bytes` become passive if the read starts a new window for the file segment.
+    struct SegmentRead
+    {
+        Window segment_window = NEVER_READ;
+        Int64 reserved_bytes = 0;
+        Int64 active_bytes_in_segment_window = 0;
+        Int64 active_bytes_in_new_window = 0;
+        bool large = false;
+    };
+
+    /// Rotates if needed, counts `read` in the current window and returns it, under one lock.
+    Window countRead(const SegmentRead & read);
+
     /// The last full window.
     Snapshot getSnapshot();
 

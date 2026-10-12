@@ -302,8 +302,9 @@ private:
     void startEfficiencyWindowUnlocked(FileCacheEfficiency::Window window) TSA_REQUIRES(efficiency_mutex);
     /// Granules `[first, last]` of this segment that `[offset, offset + size)` overlaps; `nullopt` if none.
     std::optional<std::pair<size_t, size_t>> getGranuleRangeUnlocked(size_t offset, size_t size) const TSA_REQUIRES(efficiency_mutex);
-    /// Sets granules `[first, last]`; returns the bytes of the ones that were not set before.
-    size_t setGranulesUnlocked(size_t first, size_t last) TSA_REQUIRES(efficiency_mutex);
+    /// The bytes of the granules `[first, last]` that are not set yet, or of all of them if `new_window`.
+    size_t getNewActiveBytesUnlocked(std::pair<size_t, size_t> granules, bool new_window) const TSA_REQUIRES(efficiency_mutex);
+    void setGranulesUnlocked(std::pair<size_t, size_t> granules) TSA_REQUIRES(efficiency_mutex);
     size_t getActiveBytesUnlocked() const TSA_REQUIRES(efficiency_mutex);
 
     /// In release builds returns a single shared logger; in debug builds a per-segment one.

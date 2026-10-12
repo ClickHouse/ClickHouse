@@ -111,6 +111,24 @@ void FileCacheEfficiency::moveToClass(Window window, Int64 active, Int64 passive
     live_large.passive += sign * passive;
 }
 
+FileCacheEfficiency::Window FileCacheEfficiency::countRead(const SegmentRead & read)
+{
+    const Window now_window = windowNow();
+    std::lock_guard lock(mutex);
+    rotateIfNeeded(now_window);
+    const bool new_window = read.segment_window != live_window;
+    const Int64 passive = new_window ? read.reserved_bytes : 0;
+    const Int64 active = new_window ? read.active_bytes_in_new_window : read.active_bytes_in_segment_window;
+    live.active += active;
+    live.passive += passive - active;
+    if (read.large)
+    {
+        live_large.active += active;
+        live_large.passive += passive - active;
+    }
+    return live_window;
+}
+
 FileCacheEfficiency::Snapshot FileCacheEfficiency::getSnapshot()
 {
     if (!window_sec)

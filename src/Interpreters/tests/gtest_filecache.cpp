@@ -4618,34 +4618,37 @@ TEST_F(FileCacheTest, EfficiencyLastGranuleCut)
     EXPECT_EQ(FileSegment::getInfo(odd).efficiency.active_bytes, 2 * G + 1001);
 }
 
-TEST_F(FileCacheTest, EfficiencyStaleWindowDoesNotMoveBack)
+TEST_F(FileCacheTest, EfficiencyStaleClockCountsInCurrentWindow)
 {
     DB::ThreadStatus thread_status;
-    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_stale_window_test"));
-    auto cache = DB::FileCache("efficiency_stale_window", efficiencyCacheSettings(W));
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_stale_clock_test"));
+    auto cache = DB::FileCache("efficiency_stale_clock", efficiencyCacheSettings(W));
     cache.initialize();
 
     const auto & user = FileCache::getCommonOrigin();
-    auto key = FileCacheKey::fromPath("efficiency_stale_window_key");
+    auto key = FileCacheKey::fromPath("efficiency_stale_clock_key");
     auto holder = cache.getOrSet(key, 0, S, S, {}, 0, user);
     auto segment = get(holder, 0);
     download(segment);
 
+    /// Another reader rotates to window 1.
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
-    segment->markRead(0, G);
+    cache.getEfficiency().getSnapshot();
 
-    /// A stale reader in window 0 must not move the segment back.
+    /// Readers that read the clock before the rotation count in the current window: the first read
+    /// starts window 1 for the file segment, the second one adds to it.
     cache.getEfficiency().shiftTimeForTesting(-std::chrono::seconds(W / 2));
+    segment->markRead(0, G);
     segment->markRead(G, G);
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W / 2));
     segment->markRead(2 * G, G);
-    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, 2 * G);
+    EXPECT_EQ(FileSegment::getInfo(segment).efficiency.active_bytes, 3 * G);
 
     cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
     const auto snapshot = cache.getEfficiency().getSnapshot();
-    EXPECT_EQ(snapshot.active_bytes, 2 * G);
-    EXPECT_EQ(snapshot.passive_bytes, 6 * G);
+    EXPECT_EQ(snapshot.active_bytes, 3 * G);
+    EXPECT_EQ(snapshot.passive_bytes, 5 * G);
 }
 
 TEST_F(FileCacheTest, EfficiencyEvictedNoHitBytes)

@@ -66,6 +66,43 @@ TEST(FileCacheEfficiency, StaleWindowUpdatesAreIgnored)
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 100);
 }
 
+TEST(FileCacheEfficiency, CountReadInCurrentWindow)
+{
+    TestEfficiency t(W);
+    t.used_size = 300;
+    t.large_used_size = 200;
+
+    /// The first read of a file segment in a window makes its bytes passive.
+    FileCacheEfficiency::SegmentRead read{
+        .segment_window = FileCacheEfficiency::NEVER_READ,
+        .reserved_bytes = 200,
+        .active_bytes_in_segment_window = 10,
+        .active_bytes_in_new_window = 30,
+        .large = true,
+    };
+    EXPECT_EQ(t.efficiency.countRead(read), 0);
+
+    /// The next read in the same window adds only its newly active bytes.
+    read.segment_window = 0;
+    EXPECT_EQ(t.efficiency.countRead(read), 0);
+
+    t.advance(W);
+    auto snapshot = t.efficiency.getSnapshot();
+    expectSnapshot(snapshot, 40, 160, 100);
+    EXPECT_EQ(snapshot.large_active_bytes, 40);
+    EXPECT_EQ(snapshot.large_passive_bytes, 160);
+
+    /// A reader that read the clock before this rotation counts in the current window 1.
+    t.efficiency.shiftTimeForTesting(-std::chrono::seconds(W / 2));
+    EXPECT_EQ(t.efficiency.countRead(read), 1);
+
+    t.efficiency.shiftTimeForTesting(std::chrono::seconds(W / 2 + W));
+    snapshot = t.efficiency.getSnapshot();
+    expectSnapshot(snapshot, 30, 170, 100);
+    EXPECT_EQ(snapshot.large_active_bytes, 30);
+    EXPECT_EQ(snapshot.large_passive_bytes, 170);
+}
+
 TEST(FileCacheEfficiency, WindowsWithoutRotation)
 {
     TestEfficiency t(W);
