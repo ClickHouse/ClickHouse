@@ -231,6 +231,14 @@ SELECT 'quoted 64bit type',
 SELECT 'quoted 64bit raw', JSONExtractRaw('{"n": 18446744073709551615, "f": 1.5}'::JSON), JSONExtractRaw('{"n": 18446744073709551615, "f": 1.5}');
 SELECT 'quoted 64bit index', JSONExtractRaw('{"n": 18446744073709551615}'::JSON, 1), JSONExtractRaw('{"n": 18446744073709551615}', 1);
 SELECT 'quoted 64bit typed path', JSONType('{"d": 1.5}'::JSON(d Decimal(10, 2)), 'd'), JSONExtractRaw('{"d": 1.5}'::JSON(d Decimal(10, 2)));
+-- The keyed subcolumn fast path of `JSONExtractRaw` must not quote numbers either.
+SELECT 'quoted 64bit keyed raw',
+    JSONExtractRaw('{"n": 18446744073709551615}'::JSON, 'n'), JSONExtractRaw('{"n": 18446744073709551615}', 'n'),
+    JSONExtractRawCaseInsensitive('{"n": 18446744073709551615}'::JSON, 'N'), JSONExtractRawCaseInsensitive('{"n": 18446744073709551615}', 'N'),
+    JSONExtractRaw('{"f": 1.5}'::JSON(f Float64), 'f'), JSONExtractRaw('{"f": 1.5}', 'f'),
+    JSONExtractRaw('{"d": 1.5}'::JSON(d Decimal(10, 2)), 'd'), JSONExtractRaw('{"d": 1.5}', 'd');
+SELECT 'quoted 64bit keyed raw ci multi', JSONExtractRawCaseInsensitive(j, 'N'), JSONExtractRawCaseInsensitive(s, 'N')
+FROM (SELECT s::JSON AS j, s FROM values('s String', '{"n": 18446744073709551615}', '{"N": -9223372036854775808}')) ORDER BY s;
 SET output_format_json_quote_64bit_integers = 0, output_format_json_quote_64bit_floats = 0, output_format_json_quote_decimals = 0;
 
 -- With `json_type_escape_dots_in_keys` a literal dot in a key is stored escaped, so the subcolumn

@@ -340,6 +340,19 @@ public:
             return result;
         }
 
+        /// The settings `output_format_json_quote_64bit_integers`, `output_format_json_quote_64bit_floats` and
+        /// `output_format_json_quote_decimals` only change how a number is presented in JSON output. When a value
+        /// of a `JSON` column is written as JSON text for `JSONExtract*` functions, they must not apply, so that
+        /// the result is the same as for the equivalent JSON string, where a number is always written unquoted.
+        static FormatSettings withoutJSONQuotingOfNumbers(const FormatSettings & format_settings)
+        {
+            FormatSettings result = format_settings;
+            result.json.quote_64bit_integers = false;
+            result.json.quote_64bit_floats = false;
+            result.json.quote_decimals = false;
+            return result;
+        }
+
         /// Serialize a `JSON`/`Object` column back to its JSON text representation.
         /// An internal `castColumn` to `String` cannot be used here: internal casts are created without a
         /// context and therefore serialize with default `FormatSettings`, which would drop the caller's
@@ -360,10 +373,7 @@ public:
             const IColumn & object_column = col_const ? col_const->getDataColumn() : *column.column;
             const size_t num_rows = col_const ? 1 : input_rows_count;
 
-            FormatSettings round_trip_settings = format_settings;
-            round_trip_settings.json.quote_64bit_integers = false;
-            round_trip_settings.json.quote_64bit_floats = false;
-            round_trip_settings.json.quote_decimals = false;
+            FormatSettings round_trip_settings = withoutJSONQuotingOfNumbers(format_settings);
             /// A bare `inf` or `nan` is not valid JSON and would make the whole document unparseable.
             round_trip_settings.json.quote_denormals = true;
             round_trip_settings.json.write_named_tuples_as_objects = true;
@@ -586,10 +596,12 @@ public:
                 return std::make_pair(std::move(merged), std::move(merged_type));
             };
 
+            /// `JSONExtractRaw` returns JSON text, which for a string input never has a quoted number.
+            const FormatSettings raw_format_settings = withoutJSONQuotingOfNumbers(format_settings);
             auto serialize_raw = [&](const IColumn & merged, const ISerialization & serialization, size_t row, ColumnString & out)
             {
                 WriteBufferFromOwnString buf;
-                serialization.serializeTextJSON(merged, row, buf, format_settings);
+                serialization.serializeTextJSON(merged, row, buf, raw_format_settings);
                 out.insert(buf.str());
             };
 

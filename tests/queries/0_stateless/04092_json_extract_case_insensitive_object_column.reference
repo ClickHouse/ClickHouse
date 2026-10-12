@@ -94,6 +94,9 @@ quoted 64bit type	UInt64	UInt64	Double	Double	Int64	Int64
 quoted 64bit raw	{"f":1.5,"n":18446744073709551615}	{"n":18446744073709551615,"f":1.5}
 quoted 64bit index	18446744073709551615	18446744073709551615
 quoted 64bit typed path	Double	{"d":1.5}
+quoted 64bit keyed raw	18446744073709551615	18446744073709551615	18446744073709551615	18446744073709551615	1.5	1.5	1.5	1.5
+quoted 64bit keyed raw ci multi	-9223372036854775808	-9223372036854775808
+quoted 64bit keyed raw ci multi	18446744073709551615	18446744073709551615
 escaped dots literal key	x	x	y	y
 escaped dots literal key has	1	1	0	0
 escaped dots literal key raw	{"c":1}	{"c":1}	2	2
