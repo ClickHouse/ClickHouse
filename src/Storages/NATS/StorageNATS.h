@@ -135,7 +135,7 @@ private:
 
     void scheduleStreamingTasksImpl() override;
 
-    INATSConsumerPtr createConsumer(const NATSConnectionPtr & connection);
+    INATSConsumerPtr createConsumer(const NATSConnectionPtr & connection) TSA_REQUIRES(consumers_setup_mutex);
     INATSProducerPtr createProducer(String subject);
 
     bool isSubjectInSubscriptions(const std::string & subject);
@@ -147,7 +147,7 @@ private:
     NATSConnectionPtr getConsumersConnection() const;
     void createConsumersConnection();
     void createConsumers();
-    void dropConsumers();
+    void dropConsumers() TSA_REQUIRES(consumers_setup_mutex);
 
     bool subscribeConsumers();
     /// Replaces the subscription of every consumer that stopped consuming and has an empty queue.
