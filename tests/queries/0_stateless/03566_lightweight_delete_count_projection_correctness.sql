@@ -15,10 +15,12 @@ SELECT 'wide parts';
 CREATE TABLE lwd_count_wide (p UInt8, id UInt64, value UInt64)
 ENGINE = MergeTree PARTITION BY p ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    index_granularity = 32, index_granularity_bytes = 0,
     ratio_of_defaults_for_sparse_serialization = 0,
     exclude_deleted_rows_for_part_size_in_merge = 1, load_existing_rows_count_for_old_parts = 1;
-INSERT INTO lwd_count_wide SELECT 0, number, number FROM numbers(20000);
-DELETE FROM lwd_count_wide WHERE id IN (0, 10000, 19999);
+-- Three granules suffice to check exact-range counting without expensive per-granule reads on reload.
+INSERT INTO lwd_count_wide SELECT 0, number, number FROM numbers(80);
+DELETE FROM lwd_count_wide WHERE id IN (0, 40, 79);
 
 -- An exact live count enables the projection, but extrema must still exclude deleted rows.
 SELECT count() FROM lwd_count_wide SETTINGS force_optimize_projection_name = '_minmax_count_projection';
@@ -28,8 +30,8 @@ SELECT min(id), max(id), count() FROM lwd_count_wide;
 SELECT count() FROM lwd_count_wide SETTINGS apply_deleted_mask = 0, force_optimize_projection_name = '_minmax_count_projection';
 
 -- Primary-key filters must not use physical granule counts.
-SELECT count() FROM lwd_count_wide WHERE id < 8192;
-SELECT count() FROM lwd_count_wide WHERE id >= 8192 AND id < 16384;
+SELECT count() FROM lwd_count_wide WHERE id < 32;
+SELECT count() FROM lwd_count_wide WHERE id >= 32 AND id < 64;
 SELECT p, count() FROM lwd_count_wide GROUP BY p ORDER BY p;
 
 -- A partial-column mutation preserves an unchanged mask and its exact count.
@@ -54,8 +56,8 @@ CREATE TABLE lwd_count_compact (id UInt64, value UInt64)
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 1073741824, min_rows_for_wide_part = 0,
     exclude_deleted_rows_for_part_size_in_merge = 1, load_existing_rows_count_for_old_parts = 1;
-INSERT INTO lwd_count_compact SELECT number, number FROM numbers(20000);
-DELETE FROM lwd_count_compact WHERE id IN (0, 10000, 19999);
+INSERT INTO lwd_count_compact SELECT number, number FROM numbers(100);
+DELETE FROM lwd_count_compact WHERE id IN (0, 50, 99);
 SELECT count() FROM lwd_count_compact SETTINGS force_optimize_projection_name = '_minmax_count_projection';
 SELECT min(id), max(id) FROM lwd_count_compact;
 SELECT count() FROM lwd_count_compact SETTINGS apply_deleted_mask = 0, force_optimize_projection_name = '_minmax_count_projection';
