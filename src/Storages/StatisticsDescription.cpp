@@ -3,10 +3,12 @@
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
-#include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTStatisticsDeclaration.h>
 #include <Parsers/ParserCreateQuery.h>
 #include <Storages/ColumnsDescription.h>
+#include <Storages/Statistics/StatisticsHistogram.h>
+
+#include <config.h>
 
 
 namespace DB
@@ -108,20 +110,12 @@ bool SingleStatisticsDescription::operator==(const SingleStatisticsDescription &
     if (type != StatisticsType::Histogram)
         return true;
 
-    auto get_histogram_parameter = [](const ASTPtr & description_ast) -> std::optional<UInt64>
-    {
-        if (!description_ast)
-            return std::nullopt;
-        const auto * function = description_ast->as<ASTFunction>();
-        if (!function || !function->arguments || function->arguments->children.size() != 1)
-            return std::nullopt;
-        const auto * literal = function->arguments->children.front()->as<ASTLiteral>();
-        if (!literal || literal->value.getType() != Field::Types::UInt64)
-            return std::nullopt;
-        return literal->value.safeGet<UInt64>();
-    };
-
-    return get_histogram_parameter(ast) == get_histogram_parameter(other.ast);
+#if USE_DATASKETCHES
+    /// Both parameters of histogram(N, M) matter. Invalid descriptions compare equal only to each other.
+    return StatisticsHistogram::tryGetParametersFromDescription(*this) == StatisticsHistogram::tryGetParametersFromDescription(other);
+#else
+    return getTypeName() == other.getTypeName();
+#endif
 }
 
 bool ColumnStatisticsDescription::operator==(const ColumnStatisticsDescription & other) const

@@ -1,6 +1,10 @@
 #include <gtest/gtest.h>
 
 #include <barrier>
+#include <cstring>
+#include <functional>
+#include <map>
+#include <set>
 #include <thread>
 
 #include <config.h>
@@ -10,6 +14,7 @@
 
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsNumber.h>
 #include <Columns/IColumn.h>
 #include <Common/Exception.h>
 #include <Core/Block.h>
@@ -40,6 +45,7 @@
 #include <Storages/Statistics/StatisticsTDigest.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <Parsers/ASTFunction.h>
+#include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/parseQuery.h>
 #include <Parsers/ExpressionListParsers.h>
@@ -796,20 +802,29 @@ TEST(Statistics, BasicDefaultCountArray)
 
 #if USE_DATASKETCHES
 
+namespace DB::ErrorCodes
+{
+extern const int ILLEGAL_STATISTICS;
+}
+
 namespace
 {
 
-ASTPtr makeHistogramAST(UInt64 buckets)
+ASTPtr makeHistogramAST(UInt64 buckets, UInt64 mcv_values)
 {
-    return makeASTFunction("histogram", make_intrusive<ASTLiteral>(buckets));
+    return makeASTFunction("histogram", make_intrusive<ASTLiteral>(buckets), make_intrusive<ASTLiteral>(mcv_values));
 }
 
-ColumnStatisticsPtr createHistogramStats(const DataTypePtr & data_type, UInt64 buckets, UInt64 random_seed = 0)
+SingleStatisticsDescription makeHistogramDescription(UInt64 buckets, UInt64 mcv_values)
+{
+    return SingleStatisticsDescription(StatisticsType::Histogram, makeHistogramAST(buckets, mcv_values), false);
+}
+
+ColumnStatisticsPtr createHistogramStats(const DataTypePtr & data_type, UInt64 buckets, UInt64 mcv_values = 64, UInt64 random_seed = 0)
 {
     ColumnStatisticsDescription desc;
     desc.data_type = data_type;
-    desc.types_to_desc.emplace(
-        StatisticsType::Histogram, SingleStatisticsDescription(StatisticsType::Histogram, makeHistogramAST(buckets), false));
+    desc.types_to_desc.emplace(StatisticsType::Histogram, makeHistogramDescription(buckets, mcv_values));
     return MergeTreeStatisticsFactory::instance().get(desc, random_seed);
 }
 
@@ -820,9 +835,296 @@ String serializeStatistics(const ColumnStatisticsPtr & stats)
     return buf.str();
 }
 
+ColumnStatisticsPtr roundTrip(const ColumnStatisticsPtr & stats, const DataTypePtr & data_type)
+{
+    const String serialized = serializeStatistics(stats);
+    ReadBufferFromString rb(serialized);
+    auto restored = ColumnStatistics::deserialize(rb, data_type);
+    if (!restored)
+        throw std::logic_error("statistics were not restored");
+    return restored;
+}
+
 const StatisticsHistogram & getHistogram(const ColumnStatisticsPtr & stats)
 {
     return assert_cast<const StatisticsHistogram &>(*stats->getStats().at(StatisticsType::Histogram));
+}
+
+ColumnPtr makeFloat64Column(const std::vector<Float64> & values, size_t begin = 0, size_t end = std::numeric_limits<size_t>::max())
+{
+    end = std::min(end, values.size());
+    auto column = ColumnFloat64::create();
+    for (size_t i = begin; i < end; ++i)
+        column->insertValue(values[i]);
+    return column;
+}
+
+/// Deterministic, platform-independent pseudo-random numbers (splitmix64).
+class TestRandom
+{
+public:
+    explicit TestRandom(UInt64 seed) : state(seed) {}
+
+    UInt64 next()
+    {
+        state += 0x9e3779b97f4a7c15ULL;
+        UInt64 value = state;
+        value = (value ^ (value >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        value = (value ^ (value >> 27)) * 0x94d049bb133111ebULL;
+        return value ^ (value >> 31);
+    }
+
+    /// Uniform in [0, bound).
+    UInt64 below(UInt64 bound) { return next() % bound; }
+    /// Uniform in [0, 1).
+    Float64 unit() { return static_cast<Float64>(next() >> 11) * 0x1.0p-53; }
+
+private:
+    UInt64 state;
+};
+
+/// Zipf-distributed ranks in [0, ranks) with exponent `s`, mapped to values spread over the domain.
+std::vector<Float64> generateZipf(size_t rows, UInt64 ranks, Float64 s, UInt64 seed)
+{
+    std::vector<Float64> cumulative(ranks);
+    Float64 total = 0;
+    for (UInt64 rank = 0; rank < ranks; ++rank)
+    {
+        total += 1.0 / std::pow(static_cast<Float64>(rank + 1), s);
+        cumulative[rank] = total;
+    }
+
+    TestRandom random(seed);
+    std::vector<Float64> result;
+    result.reserve(rows);
+    for (size_t i = 0; i < rows; ++i)
+    {
+        const Float64 target = random.unit() * total;
+        const auto rank = static_cast<UInt64>(std::upper_bound(cumulative.begin(), cumulative.end(), target) - cumulative.begin());
+        /// Frequent values are spread over the domain instead of being the smallest ones.
+        result.push_back(static_cast<Float64>((std::min(rank, ranks - 1) * 7919) % 100003));
+    }
+    return result;
+}
+
+enum class StreamKind
+{
+    Uniform,
+    Zipf,
+    Mixed,
+};
+
+std::vector<Float64> generateStream(StreamKind kind, size_t rows, UInt64 seed)
+{
+    TestRandom random(seed);
+    switch (kind)
+    {
+        case StreamKind::Uniform: {
+            std::vector<Float64> result;
+            for (size_t i = 0; i < rows; ++i)
+                result.push_back(static_cast<Float64>(random.below(3000)));
+            return result;
+        }
+        case StreamKind::Zipf:
+            return generateZipf(rows, 5000, 1.1, seed);
+        case StreamKind::Mixed: {
+            auto result = generateZipf(rows, 300, 1.3, seed);
+            for (auto & value : result)
+            {
+                const UInt64 kind_of_row = random.below(100);
+                if (kind_of_row < 40)
+                    value = random.unit() * 1000.0 - 500.0;
+                else if (kind_of_row == 40)
+                    value = std::numeric_limits<Float64>::quiet_NaN();
+                else if (kind_of_row == 41)
+                    value = std::numeric_limits<Float64>::infinity();
+                else if (kind_of_row == 42)
+                    value = -std::numeric_limits<Float64>::infinity();
+                else if (kind_of_row == 43)
+                    value = -0.0;
+            }
+            return result;
+        }
+    }
+    return {};
+}
+
+/// Builds statistics over `values` in blocks of random sizes.
+ColumnStatisticsPtr buildInRandomBlocks(
+    const std::vector<Float64> & values, UInt64 buckets, UInt64 mcv_values, UInt64 random_seed, TestRandom & block_random)
+{
+    const auto data_type = std::make_shared<DataTypeFloat64>();
+    auto stats = createHistogramStats(data_type, buckets, mcv_values, random_seed);
+    size_t begin = 0;
+    while (begin < values.size())
+    {
+        const size_t size = 1 + block_random.below(block_random.below(2) ? 7 : 5000);
+        stats->build(makeFloat64Column(values, begin, begin + size));
+        begin += size;
+    }
+    return stats;
+}
+
+/// Exact counts of a stream with canonical zero, the ground truth for estimates.
+struct BruteForce
+{
+    std::map<Float64, UInt64> finite;
+    UInt64 nan = 0;
+    UInt64 negative_inf = 0;
+    UInt64 positive_inf = 0;
+
+    explicit BruteForce(const std::vector<Float64> & values)
+    {
+        for (Float64 value : values)
+        {
+            if (std::isnan(value))
+                ++nan;
+            else if (value == -std::numeric_limits<Float64>::infinity())
+                ++negative_inf;
+            else if (value == std::numeric_limits<Float64>::infinity())
+                ++positive_inf;
+            else
+                ++finite[value == 0 ? 0.0 : value];
+        }
+    }
+
+    UInt64 count(Float64 value) const
+    {
+        auto it = finite.find(value == 0 ? 0.0 : value);
+        return it == finite.end() ? 0 : it->second;
+    }
+
+    UInt64 less(Float64 value, bool inclusive) const
+    {
+        UInt64 result = negative_inf;
+        for (const auto & [v, c] : finite)
+            if (v < value || (inclusive && v == value))
+                result += c;
+        return result;
+    }
+
+    UInt64 finiteRows() const
+    {
+        UInt64 result = 0;
+        for (const auto & [_, c] : finite)
+            result += c;
+        return result;
+    }
+};
+
+std::vector<Float64> makeProbes(const BruteForce & truth)
+{
+    std::vector<Float64> probes;
+    Float64 previous = -1e9;
+    size_t index = 0;
+    for (const auto & [value, _] : truth.finite)
+    {
+        /// Every distinct value is probed for small streams, a sample for larger ones.
+        if (truth.finite.size() <= 400 || index++ % 17 == 0)
+        {
+            probes.push_back(value);
+            probes.push_back((previous + value) / 2);
+        }
+        previous = value;
+    }
+    probes.push_back(previous + 1);
+    probes.push_back(-1e9 - 1);
+    std::sort(probes.begin(), probes.end());
+    return probes;
+}
+
+/// Which kinds of checks `checkHistogram` could apply.
+struct CheckCoverage
+{
+    size_t checks = 0;
+    /// The summary evicted rows, and the residual sketch was exact, so equality estimates were compared exactly.
+    size_t exact_equality_with_evictions = 0;
+    /// The residual sketch was in estimation mode.
+    size_t estimation_mode = 0;
+    /// Nothing was evicted, so all estimates were compared exactly.
+    size_t exact_ranges = 0;
+};
+
+/// Checks the partition invariants of the MCV / residual split and compares estimates with exact counts.
+void checkHistogram(const ColumnStatisticsPtr & stats, const std::vector<Float64> & values, CheckCoverage * coverage = nullptr)
+{
+    const auto & histogram = getHistogram(stats);
+    const BruteForce truth(values);
+
+    const UInt64 finite_rows = histogram.getFiniteCount();
+    ASSERT_EQ(finite_rows, truth.finiteRows());
+    ASSERT_EQ(histogram.getNonNullCount(), values.size());
+
+    const auto frequent_values = histogram.getFrequentValues();
+    const UInt64 delta = histogram.getMaximumError();
+    const UInt64 residual_rows = histogram.getResidualCount();
+    UInt64 retained = 0;
+    for (const auto & item : frequent_values)
+        retained += item.count;
+
+    /// F = sum c(m) + kll.n, kll.n >= delta, delta = 0 <=> kll.n = 0.
+    ASSERT_EQ(finite_rows, retained + residual_rows);
+    ASSERT_GE(residual_rows, delta);
+    ASSERT_EQ(delta == 0, residual_rows == 0);
+    ASSERT_LE(frequent_values.size(), HistogramFrequentValues(histogram.getMcvValues()).getCapacity());
+
+    /// Misra-Gries guarantees: c(m) <= true count <= c(m) + delta, untracked values occur at most delta times.
+    std::set<Float64> tracked;
+    for (const auto & item : frequent_values)
+    {
+        tracked.insert(item.value);
+        const UInt64 true_count = truth.count(item.value);
+        ASSERT_LE(item.count, true_count);
+        ASSERT_LE(true_count, item.count + delta);
+        const auto estimate = histogram.estimateEqual(Field(item.value));
+        ASSERT_TRUE(estimate.has_value());
+        ASSERT_GE(*estimate, static_cast<Float64>(item.count));
+        ASSERT_LE(*estimate, static_cast<Float64>(item.count + delta));
+    }
+    for (const auto & [value, count] : truth.finite)
+        if (!tracked.contains(value))
+            ASSERT_LE(count, delta);
+
+    const Float64 comparable = static_cast<Float64>(values.size() - truth.nan);
+    const bool exact_ranges = residual_rows == 0;
+    const bool exact_equality = histogram.isResidualExact();
+    if (coverage)
+    {
+        ++coverage->checks;
+        coverage->exact_equality_with_evictions += exact_equality && delta > 0;
+        coverage->estimation_mode += !exact_equality;
+        coverage->exact_ranges += exact_ranges;
+    }
+    Float64 previous_less = 0;
+    for (Float64 probe : makeProbes(truth))
+    {
+        SCOPED_TRACE(fmt::format("probe {}", probe));
+        const auto equal = histogram.estimateEqual(Field(probe));
+        const auto less = histogram.estimateLess(Field(probe));
+        const auto less_or_equal = histogram.estimateLessOrEqual(Field(probe));
+        const auto greater = histogram.estimateGreater(Field(probe));
+        const auto greater_or_equal = histogram.estimateGreaterOrEqual(Field(probe));
+        ASSERT_TRUE(less && less_or_equal && greater && greater_or_equal);
+
+        ASSERT_GE(*less, previous_less - 1e-6);
+        ASSERT_LE(*less, *less_or_equal + 1e-6);
+        ASSERT_NEAR(*less + *greater_or_equal, comparable, 1e-6 * comparable + 1e-6);
+        ASSERT_NEAR(*less_or_equal + *greater, comparable, 1e-6 * comparable + 1e-6);
+        previous_less = *less;
+
+        if (exact_equality || exact_ranges)
+        {
+            ASSERT_TRUE(equal.has_value());
+            ASSERT_DOUBLE_EQ(*equal, static_cast<Float64>(truth.count(probe)));
+        }
+        if (equal && !tracked.contains(probe))
+            ASSERT_LE(*equal, static_cast<Float64>(delta));
+        if (exact_ranges)
+        {
+            ASSERT_DOUBLE_EQ(*less, static_cast<Float64>(truth.less(probe, false)));
+            ASSERT_DOUBLE_EQ(*less_or_equal, static_cast<Float64>(truth.less(probe, true)));
+        }
+    }
 }
 
 }
@@ -840,32 +1142,60 @@ TEST(Statistics, HistogramParametersAndTypes)
             StatisticsType::Histogram, SingleStatisticsDescription(StatisticsType::Histogram, std::move(ast), false));
         return desc;
     };
+    auto literal = [](auto value) { return make_intrusive<ASTLiteral>(value); };
 
-    EXPECT_NO_THROW(factory.validate(make_description(makeHistogramAST(2), int_type), int_type));
-    EXPECT_NO_THROW(factory.validate(make_description(makeHistogramAST(1024), int_type), int_type));
+    EXPECT_NO_THROW(factory.validate(make_description(makeHistogramAST(2, 1), int_type), int_type));
+    EXPECT_NO_THROW(factory.validate(make_description(makeHistogramAST(1024, 768), int_type), int_type));
+    EXPECT_NO_THROW(factory.validate(make_description(makeHistogramAST(8, 64), int_type), int_type));
 
+    /// Exactly two parameters are required.
     EXPECT_THROW(factory.validate(make_description(makeASTFunction("histogram"), int_type), int_type), Exception);
-    EXPECT_THROW(factory.validate(make_description(makeHistogramAST(1), int_type), int_type), Exception);
-    EXPECT_THROW(factory.validate(make_description(makeHistogramAST(1025), int_type), int_type), Exception);
-    EXPECT_THROW(
-        factory.validate(make_description(makeASTFunction("histogram", make_intrusive<ASTLiteral>(Float64(8.0))), int_type), int_type),
-        Exception);
+    EXPECT_THROW(factory.validate(make_description(makeASTFunction("histogram", literal(UInt64(8))), int_type), int_type), Exception);
     EXPECT_THROW(
         factory.validate(
-            make_description(
-                makeASTFunction("histogram", make_intrusive<ASTLiteral>(UInt64(8)), make_intrusive<ASTLiteral>(UInt64(16))), int_type),
+            make_description(makeASTFunction("histogram", literal(UInt64(8)), literal(UInt64(16)), literal(UInt64(4))), int_type),
             int_type),
         Exception);
 
-    const auto string_type = std::make_shared<DataTypeString>();
-    EXPECT_THROW(factory.validate(make_description(makeHistogramAST(8), string_type), string_type), Exception);
+    /// Bucket count range.
+    EXPECT_THROW(factory.validate(make_description(makeHistogramAST(1, 64), int_type), int_type), Exception);
+    EXPECT_THROW(factory.validate(make_description(makeHistogramAST(1025, 64), int_type), int_type), Exception);
+    /// Number of most common values range.
+    EXPECT_THROW(factory.validate(make_description(makeHistogramAST(8, 0), int_type), int_type), Exception);
+    EXPECT_THROW(factory.validate(make_description(makeHistogramAST(8, 769), int_type), int_type), Exception);
 
-    SingleStatisticsDescription eight(StatisticsType::Histogram, makeHistogramAST(8), false);
-    SingleStatisticsDescription another_eight(StatisticsType::Histogram, makeHistogramAST(8), false);
-    SingleStatisticsDescription sixteen(StatisticsType::Histogram, makeHistogramAST(16), false);
-    EXPECT_EQ(eight, another_eight);
-    EXPECT_FALSE(eight == sixteen);
-    EXPECT_EQ(eight.getTypeName(), "histogram(8)");
+    /// Only unsigned integer literals.
+    EXPECT_THROW(
+        factory.validate(make_description(makeASTFunction("histogram", literal(Float64(8.0)), literal(UInt64(16))), int_type), int_type),
+        Exception);
+    EXPECT_THROW(
+        factory.validate(make_description(makeASTFunction("histogram", literal(UInt64(8)), literal(Int64(-16))), int_type), int_type),
+        Exception);
+    EXPECT_THROW(
+        factory.validate(make_description(makeASTFunction("histogram", literal(UInt64(8)), literal(String("16"))), int_type), int_type),
+        Exception);
+
+    const auto string_type = std::make_shared<DataTypeString>();
+    EXPECT_FALSE(histogramStatisticsValidator(makeHistogramDescription(8, 64), string_type));
+    EXPECT_THROW(factory.validate(make_description(makeHistogramAST(8, 64), string_type), string_type), Exception);
+
+    /// Internal placeholders yield the defaults, which the payload then overwrites.
+    const SingleStatisticsDescription placeholder(StatisticsType::Histogram, make_intrusive<ASTIdentifier>("histogram"), false);
+    const auto defaults = StatisticsHistogram::getParametersFromDescription(placeholder, false);
+    EXPECT_EQ(defaults.bucket_count, StatisticsHistogram::DEFAULT_BUCKETS_FOR_DESERIALIZATION);
+    EXPECT_EQ(defaults.mcv_values, StatisticsHistogram::DEFAULT_MCV_VALUES_FOR_DESERIALIZATION);
+    EXPECT_THROW(StatisticsHistogram::getParametersFromDescription(placeholder, true), Exception);
+    const SingleStatisticsDescription null_placeholder(StatisticsType::Histogram, nullptr, false);
+    EXPECT_EQ(StatisticsHistogram::getParametersFromDescription(null_placeholder, false), defaults);
+
+    const auto eight = makeHistogramDescription(8, 64);
+    EXPECT_EQ(eight, makeHistogramDescription(8, 64));
+    EXPECT_FALSE(eight == makeHistogramDescription(16, 64));
+    EXPECT_FALSE(eight == makeHistogramDescription(8, 16));
+    EXPECT_EQ(eight.getTypeName(), "histogram(8, 64)");
+    const auto parameters = StatisticsHistogram::getParametersFromDescription(makeHistogramDescription(8, 16), true);
+    EXPECT_EQ(parameters.bucket_count, 8u);
+    EXPECT_EQ(parameters.mcv_values, 16u);
 
     const auto ipv4_type = std::make_shared<DataTypeIPv4>();
     MutableColumnPtr ipv4_column = ipv4_type->createColumn();
@@ -877,27 +1207,49 @@ TEST(Statistics, HistogramParametersAndTypes)
     auto ipv4_less = ipv4_stats->estimateLess(Field(IPv4(3)));
     ASSERT_TRUE(ipv4_less.has_value());
     EXPECT_DOUBLE_EQ(*ipv4_less, 2.0);
+    auto ipv4_equal = ipv4_stats->estimateEqual(Field(IPv4(2)));
+    ASSERT_TRUE(ipv4_equal.has_value());
+    EXPECT_DOUBLE_EQ(*ipv4_equal, 1.0);
+}
+
+TEST(Statistics, HistogramMCVCapacityRounding)
+{
+    const std::vector<std::pair<UInt64, UInt64>> expected
+        = {{1, 6}, {6, 6}, {7, 12}, {12, 12}, {13, 24}, {25, 48}, {49, 96}, {97, 192}, {193, 384}, {384, 384}, {385, 768}, {768, 768}};
+    for (const auto & [requested, capacity] : expected)
+        EXPECT_EQ(HistogramFrequentValues(requested).getCapacity(), capacity) << requested;
 }
 
 TEST(Statistics, HistogramRejectsCorruptPayload)
 {
     const auto data_type = std::make_shared<DataTypeInt32>();
-    StatisticsHistogram histogram(SingleStatisticsDescription(StatisticsType::Histogram, makeHistogramAST(8), false), data_type);
+    StatisticsHistogram histogram(makeHistogramDescription(8, 64), data_type);
+
+    /// k = 100 is below the resolution of any histogram, k is at least 200.
+    datasketches::kll_sketch<Float64> kll(100);
+    kll.update(0.0);
 
     String payload;
     {
         WriteBufferFromString buf(payload);
-        writeBinary(UInt8(1), buf); /// payload version
+        writeBinary(UInt8(3), buf); /// payload version
         writeVarUInt(UInt64(8), buf); /// buckets
-        writeVarUInt(UInt64(1), buf); /// non-null rows
+        writeVarUInt(UInt64(64), buf); /// most common values
+        writeVarUInt(UInt64(2), buf); /// non-null rows
         writeVarUInt(UInt64(0), buf); /// NaN rows
         writeVarUInt(UInt64(0), buf); /// -Inf rows
         writeVarUInt(UInt64(0), buf); /// +Inf rows
         writeBinary(UInt8(1), buf); /// has finite bounds
         writeBinary(Float64(0), buf); /// finite min
-        writeBinary(Float64(0), buf); /// finite max
-        writeVarUInt(UInt64(1024), buf); /// impossible k for histogram(8)
-        writeVarUInt(UInt64(0), buf); /// retained items
+        writeBinary(Float64(1), buf); /// finite max
+        writeBinary(UInt64(0), buf); /// random state
+        writeVarUInt(UInt64(1), buf); /// maximum error
+        writeVarUInt(UInt64(1), buf); /// frequent values
+        writeBinary(Float64(1), buf);
+        writeVarUInt(UInt64(1), buf);
+        const auto bytes = kll.serialize();
+        writeVarUInt(bytes.size(), buf);
+        buf.write(reinterpret_cast<const char *>(bytes.data()), bytes.size());
         buf.finalize();
     }
 
@@ -905,58 +1257,15 @@ TEST(Statistics, HistogramRejectsCorruptPayload)
     EXPECT_THROW(histogram.deserialize(rb, StatisticsFileVersion::V4), Exception);
 }
 
-TEST(Statistics, HistogramReadsLegacyPayloadDeterministically)
+TEST(Statistics, HistogramRejectsOversizedRowCount)
 {
     const auto data_type = std::make_shared<DataTypeInt32>();
-    const auto description = SingleStatisticsDescription(StatisticsType::Histogram, makeHistogramAST(8), false);
+    StatisticsHistogram histogram(makeHistogramDescription(8, 64), data_type);
 
     String payload;
     {
         WriteBufferFromString buf(payload);
-        writeBinary(UInt8(1), buf); /// payload version
-        writeVarUInt(UInt64(8), buf); /// buckets
-        writeVarUInt(UInt64(3), buf); /// non-null rows
-        writeVarUInt(UInt64(0), buf); /// NaN rows
-        writeVarUInt(UInt64(0), buf); /// -Inf rows
-        writeVarUInt(UInt64(0), buf); /// +Inf rows
-        writeBinary(UInt8(1), buf); /// has finite bounds
-        writeBinary(Float64(1), buf); /// finite min
-        writeBinary(Float64(3), buf); /// finite max
-        writeVarUInt(UInt64(200), buf); /// KLL k
-        writeVarUInt(UInt64(3), buf); /// retained items
-        for (UInt64 value = 1; value <= 3; ++value)
-        {
-            writeBinary(static_cast<Float64>(value), buf);
-            writeVarUInt(UInt64(1), buf);
-        }
-        buf.finalize();
-    }
-
-    StatisticsHistogram first(description, data_type, 123);
-    StatisticsHistogram second(description, data_type, 123);
-    ReadBufferFromString first_input(payload);
-    ReadBufferFromString second_input(payload);
-    first.deserialize(first_input, StatisticsFileVersion::V4);
-    second.deserialize(second_input, StatisticsFileVersion::V4);
-    EXPECT_DOUBLE_EQ(*first.estimateLess(Field(Int64(3))), 2.0);
-
-    WriteBufferFromOwnString first_output;
-    WriteBufferFromOwnString second_output;
-    first.serialize(first_output);
-    second.serialize(second_output);
-    EXPECT_EQ(first_output.str(), second_output.str());
-    EXPECT_EQ(static_cast<UInt8>(first_output.str().front()), UInt8(2));
-}
-
-TEST(Statistics, HistogramRejectsOversizedLegacyRowCount)
-{
-    const auto data_type = std::make_shared<DataTypeInt32>();
-    StatisticsHistogram histogram(SingleStatisticsDescription(StatisticsType::Histogram, makeHistogramAST(8), false), data_type);
-
-    String payload;
-    {
-        WriteBufferFromString buf(payload);
-        writeBinary(UInt8(1), buf); /// payload version
+        writeBinary(UInt8(3), buf); /// payload version
         writeVarUInt(std::numeric_limits<UInt64>::max(), buf); /// buckets: rejected before KLL sizing
         buf.finalize();
     }
@@ -967,8 +1276,21 @@ TEST(Statistics, HistogramRejectsOversizedLegacyRowCount)
     payload.clear();
     {
         WriteBufferFromString buf(payload);
-        writeBinary(UInt8(1), buf); /// payload version
+        writeBinary(UInt8(3), buf); /// payload version
         writeVarUInt(UInt64(8), buf); /// buckets
+        writeVarUInt(std::numeric_limits<UInt64>::max(), buf); /// most common values: rejected before sizing the summary
+        buf.finalize();
+    }
+
+    ReadBufferFromString invalid_mcv_values(payload);
+    EXPECT_THROW(histogram.deserialize(invalid_mcv_values, StatisticsFileVersion::V4), Exception);
+
+    payload.clear();
+    {
+        WriteBufferFromString buf(payload);
+        writeBinary(UInt8(3), buf); /// payload version
+        writeVarUInt(UInt64(8), buf); /// buckets
+        writeVarUInt(UInt64(64), buf); /// most common values
         writeVarUInt(std::numeric_limits<UInt64>::max(), buf); /// non-null rows
         writeVarUInt(UInt64(0), buf); /// NaN rows
         writeVarUInt(UInt64(0), buf); /// -Inf rows
@@ -983,12 +1305,55 @@ TEST(Statistics, HistogramRejectsOversizedLegacyRowCount)
     EXPECT_THROW(histogram.deserialize(oversized_count, StatisticsFileVersion::V4), Exception);
 }
 
+TEST(Statistics, HistogramSkipsUnsupportedPayloadVersions)
+{
+    const auto data_type = std::make_shared<DataTypeFloat64>();
+
+    /// A single statistic reports that it was not loaded after reading only its version byte.
+    for (UInt8 version : {UInt8(0), UInt8(1), UInt8(2), UInt8(4), UInt8(255)})
+    {
+        StatisticsHistogram histogram(makeHistogramDescription(8, 64), data_type);
+        String payload(1, static_cast<char>(version));
+        payload += "rest of an unknown payload";
+        ReadBufferFromString rb(payload);
+        histogram.deserialize(rb, StatisticsFileVersion::V4);
+        EXPECT_FALSE(histogram.isLoaded());
+        EXPECT_EQ(rb.count(), 1u);
+    }
+
+    /// `ColumnStatistics::deserialize` drops it and keeps the other statistics of the column.
+    ColumnStatisticsDescription desc;
+    desc.data_type = data_type;
+    desc.types_to_desc.emplace(StatisticsType::Basic, SingleStatisticsDescription(StatisticsType::Basic, nullptr, false));
+    desc.types_to_desc.emplace(StatisticsType::Histogram, makeHistogramDescription(8, 64));
+    auto stats = MergeTreeStatisticsFactory::instance().get(desc);
+    stats->build(makeFloat64Column({1, 2, 3, 3}));
+    String serialized = serializeStatistics(stats);
+
+    /// V4 layout: version, type mask, type name, rows, then (size, payload) per statistic in type order.
+    size_t offset = sizeof(UInt16) + sizeof(UInt64) + 1 + data_type->getName().size() + sizeof(UInt64);
+    UInt64 basic_size = 0;
+    std::memcpy(&basic_size, serialized.data() + offset, sizeof(basic_size));
+    offset += sizeof(UInt64) + basic_size + sizeof(UInt64);
+    ASSERT_EQ(static_cast<UInt8>(serialized[offset]), UInt8(3));
+    serialized[offset] = 2;
+
+    ReadBufferFromString rb(serialized);
+    auto restored = ColumnStatistics::deserialize(rb, data_type);
+    ASSERT_TRUE(restored != nullptr);
+    EXPECT_TRUE(rb.eof());
+    EXPECT_EQ(restored->getNumRows(), 4u);
+    EXPECT_TRUE(restored->getStats().contains(StatisticsType::Basic));
+    EXPECT_FALSE(restored->getStats().contains(StatisticsType::Histogram));
+    EXPECT_FALSE(restored->structureEquals(*stats));
+}
+
 TEST(Statistics, HistogramDeterministicRandomness)
 {
     const auto data_type = std::make_shared<DataTypeFloat64>();
     auto build_range = [&](UInt64 seed, UInt64 begin, UInt64 end)
     {
-        auto stats = createHistogramStats(data_type, 128, seed);
+        auto stats = createHistogramStats(data_type, 128, 64, seed);
         MutableColumnPtr column = data_type->createColumn();
         for (UInt64 value = begin; value < end; ++value)
             column->insert(Field(static_cast<Float64>(value)));
@@ -1004,8 +1369,8 @@ TEST(Statistics, HistogramDeterministicRandomness)
 
     auto left = build_range(21, 0, 10'000);
     auto right = build_range(22, 10'000, 20'000);
-    auto first_merge = createHistogramStats(data_type, 128, 31);
-    auto second_merge = createHistogramStats(data_type, 128, 31);
+    auto first_merge = createHistogramStats(data_type, 128, 64, 31);
+    auto second_merge = createHistogramStats(data_type, 128, 64, 31);
     first_merge->merge(left);
     first_merge->merge(right);
     second_merge->merge(left);
@@ -1016,7 +1381,7 @@ TEST(Statistics, HistogramDeterministicRandomness)
 TEST(Statistics, HistogramConcurrentFirstAccess)
 {
     const auto data_type = std::make_shared<DataTypeFloat64>();
-    auto stats = createHistogramStats(data_type, 128, 42);
+    auto stats = createHistogramStats(data_type, 128, 64, 42);
     MutableColumnPtr column = data_type->createColumn();
     for (UInt64 value = 0; value < 20'000; ++value)
         column->insert(Field(static_cast<Float64>(value)));
@@ -1071,8 +1436,10 @@ TEST(Statistics, HistogramIsEquiDepth)
         column->insert(Field(value * value));
     }
 
-    auto stats = createHistogramStats(data_type, 4);
+    /// All values are distinct, so every purge evicts all counters and only the last few rows stay tracked.
+    auto stats = createHistogramStats(data_type, 4, 1);
     stats->build(std::move(column));
+    ASSERT_LE(getHistogram(stats).getFrequentValues().size(), 6u);
 
     const auto & bounds = getHistogram(stats).getBucketBounds();
     ASSERT_EQ(bounds.size(), 5u);
@@ -1105,8 +1472,10 @@ TEST(Statistics, HistogramExtremeInterpolationIsMonotonic)
     MutableColumnPtr column = data_type->createColumn();
     column->insert(Field(-std::numeric_limits<Float64>::max()));
     column->insert(Field(std::numeric_limits<Float64>::max()));
+    for (Int64 i = 0; i < 1000; ++i)
+        column->insert(Field(static_cast<Float64>(i) * 1e305 - 5e307));
 
-    auto stats = createHistogramStats(data_type, 2);
+    auto stats = createHistogramStats(data_type, 2, 1);
     stats->build(std::move(column));
 
     const auto at_zero = stats->estimateLess(Field(Float64(0.0)));
@@ -1157,8 +1526,8 @@ TEST(Statistics, HistogramMergeAndRoundTrip)
     const auto data_type = std::make_shared<DataTypeInt32>();
     /// Merge in the order that keeps the larger configured k in the accumulator;
     /// serialization must still persist the smaller effective resolution.
-    auto left = createHistogramStats(data_type, 512);
-    auto right = createHistogramStats(data_type, 256);
+    auto left = createHistogramStats(data_type, 512, 32);
+    auto right = createHistogramStats(data_type, 256, 128);
 
     MutableColumnPtr left_column = data_type->createColumn();
     MutableColumnPtr right_column = data_type->createColumn();
@@ -1169,12 +1538,17 @@ TEST(Statistics, HistogramMergeAndRoundTrip)
     left->build(std::move(left_column));
     right->build(std::move(right_column));
 
+    /// Different parameters are compatible. The merged statistic keeps the minimum bucket count
+    /// and the size of its own most-common-values summary.
     EXPECT_TRUE(left->structureEquals(*right));
     left->merge(right);
     EXPECT_EQ(getHistogram(left).getBucketCount(), 256u);
+    EXPECT_EQ(getHistogram(left).getMcvValues(), 32u);
     auto midpoint = left->estimateLess(Field(Int64(5000)));
     ASSERT_TRUE(midpoint.has_value());
     EXPECT_NEAR(*midpoint, 5000.0, 500.0);
+    EXPECT_DOUBLE_EQ(*left->estimateLess(Field(Int64(0))), 0.0);
+    EXPECT_DOUBLE_EQ(*left->estimateLessOrEqual(Field(Int64(9999))), 10000.0);
 
     WriteBufferFromOwnString wb;
     left->serialize(wb);
@@ -1183,17 +1557,22 @@ TEST(Statistics, HistogramMergeAndRoundTrip)
     ASSERT_TRUE(restored != nullptr);
     EXPECT_EQ(restored->getNumRows(), 10000u);
     EXPECT_EQ(getHistogram(restored).getBucketCount(), 256u);
-    const auto & restored_bounds = getHistogram(restored).getBucketBounds();
+    EXPECT_EQ(getHistogram(restored).getMcvValues(), 32u);
+    EXPECT_EQ(restored->getStats().at(StatisticsType::Histogram)->getNameForLogs(), "Histogram(256, 32)");
+
+    /// The bounds describe the residual values only, so the top values can be MCVs instead.
+    const std::vector<Float64> restored_bounds = getHistogram(restored).getBucketBounds();
     ASSERT_FALSE(restored_bounds.empty());
     EXPECT_DOUBLE_EQ(restored_bounds.front(), 0.0);
-    EXPECT_DOUBLE_EQ(restored_bounds.back(), 9999.0);
+    EXPECT_LE(restored_bounds.back(), 9999.0);
+    EXPECT_GT(restored_bounds.back(), 9000.0);
 
     auto restored_midpoint = restored->estimateLess(Field(Int64(5000)));
     ASSERT_TRUE(restored_midpoint.has_value());
     EXPECT_NEAR(*restored_midpoint, *midpoint, 200.0);
 
-    /// V2 stores native KLL state and the random-generator state, so querying and
-    /// repeated load/store cycles must preserve the payload byte-for-byte.
+    /// V3 stores the native KLL state, the frequent values and the random-generator state, so
+    /// querying and repeated load/store cycles must preserve the payload byte-for-byte.
     String previous_serialized = serializeStatistics(restored);
     for (size_t round = 0; round < 3; ++round)
     {
@@ -1202,17 +1581,19 @@ TEST(Statistics, HistogramMergeAndRoundTrip)
         ASSERT_TRUE(restored != nullptr);
         const auto & repeated_bounds = getHistogram(restored).getBucketBounds();
         ASSERT_FALSE(repeated_bounds.empty());
-        EXPECT_DOUBLE_EQ(repeated_bounds.front(), 0.0);
-        EXPECT_DOUBLE_EQ(repeated_bounds.back(), 9999.0);
+        EXPECT_EQ(repeated_bounds, restored_bounds);
         auto repeated_midpoint = restored->estimateLess(Field(Int64(5000)));
         ASSERT_TRUE(repeated_midpoint.has_value());
         EXPECT_DOUBLE_EQ(*repeated_midpoint, *restored_midpoint);
         EXPECT_EQ(serializeStatistics(restored), previous_serialized);
     }
 
+    /// The description is re-created from the payload.
     auto empty_clone = restored->cloneEmpty();
     EXPECT_EQ(getHistogram(empty_clone).getBucketCount(), 256u);
+    EXPECT_EQ(getHistogram(empty_clone).getMcvValues(), 32u);
     EXPECT_EQ(empty_clone->getNumRows(), 0u);
+    EXPECT_EQ(empty_clone->getStats().at(StatisticsType::Histogram)->getNameForLogs(), "Histogram(256, 32)");
 }
 
 TEST(Statistics, HistogramNullableAndSpecialFloats)
@@ -1250,6 +1631,8 @@ TEST(Statistics, HistogramNullableAndSpecialFloats)
     EXPECT_DOUBLE_EQ(*stats->estimateGreater(Field(-std::numeric_limits<Float64>::infinity())), 4.0);
     EXPECT_DOUBLE_EQ(*stats->estimateGreaterOrEqual(Field(-std::numeric_limits<Float64>::infinity())), 5.0);
     EXPECT_DOUBLE_EQ(*stats->estimateLess(Field(std::numeric_limits<Float64>::quiet_NaN())), 0.0);
+    EXPECT_DOUBLE_EQ(*stats->estimateEqual(Field(std::numeric_limits<Float64>::infinity())), 1.0);
+    EXPECT_DOUBLE_EQ(*stats->estimateEqual(Field(Float64(0.0))), 1.0);
 }
 
 TEST(Statistics, HistogramLowCardinality)
@@ -1263,7 +1646,619 @@ TEST(Statistics, HistogramLowCardinality)
     stats->build(std::move(column));
     auto estimate = stats->estimateLess(Field(Int64(5)));
     ASSERT_TRUE(estimate.has_value());
-    EXPECT_NEAR(*estimate, 50.0, 10.0);
+    EXPECT_DOUBLE_EQ(*estimate, 50.0);
+}
+
+TEST(Statistics, HistogramMCVExactLowCardinality)
+{
+    /// At most capacity(M) = 24 distinct values across all parts: nothing is ever evicted.
+    const auto data_type = std::make_shared<DataTypeFloat64>();
+    std::vector<std::vector<Float64>> parts(3);
+    std::vector<Float64> all;
+    TestRandom random(5);
+    for (auto & part : parts)
+    {
+        for (size_t i = 0; i < 5000; ++i)
+        {
+            /// Skewed: value v has weight ~ 1 / (v + 1).
+            const UInt64 rank = random.below(random.below(24) + 1);
+            part.push_back(static_cast<Float64>(rank) * 2.5 - 10.0);
+        }
+        all.insert(all.end(), part.begin(), part.end());
+    }
+
+    auto merged = createHistogramStats(data_type, 8, 24);
+    for (const auto & part_values : parts)
+    {
+        TestRandom block_random(part_values.size());
+        auto part_stats = buildInRandomBlocks(part_values, 8, 24, 1, block_random);
+        checkHistogram(part_stats, part_values);
+        merged->merge(roundTrip(part_stats, data_type));
+    }
+
+    const auto & histogram = getHistogram(merged);
+    EXPECT_EQ(histogram.getMaximumError(), 0u);
+    EXPECT_EQ(histogram.getResidualCount(), 0u);
+    EXPECT_TRUE(histogram.getBucketBounds().empty());
+    EXPECT_EQ(histogram.getFrequentValues().size(), 24u);
+    checkHistogram(merged, all);
+
+    /// Untracked values are known to be absent.
+    EXPECT_DOUBLE_EQ(*histogram.estimateEqual(Field(Float64(-8.75))), 0.0);
+    EXPECT_DOUBLE_EQ(*histogram.estimateEqual(Field(Float64(1000))), 0.0);
+    auto restored = roundTrip(merged, data_type);
+    checkHistogram(restored, all);
+}
+
+TEST(Statistics, HistogramMCVPartitionInvariant)
+{
+    const auto data_type = std::make_shared<DataTypeFloat64>();
+    CheckCoverage coverage;
+    for (auto kind : {StreamKind::Uniform, StreamKind::Zipf, StreamKind::Mixed})
+    {
+        for (UInt64 seed = 1; seed <= 3; ++seed)
+        {
+            SCOPED_TRACE(fmt::format("kind {}, seed {}", static_cast<int>(kind), seed));
+            TestRandom random(seed * 1000 + static_cast<UInt64>(kind));
+            const UInt64 mcv_values = seed == 1 ? 1 : (seed == 2 ? 16 : 100);
+            const UInt64 buckets = seed == 3 ? 4 : 64;
+            /// Small streams keep the residual exact, larger ones put it into estimation mode.
+            const size_t rows = kind == StreamKind::Uniform && seed == 1 ? 300 : 20000 + 5000 * seed;
+            const auto values = generateStream(kind, rows, seed);
+
+            /// Random parts, each built in random blocks.
+            struct Node
+            {
+                ColumnStatisticsPtr stats;
+                std::vector<Float64> values;
+            };
+            std::vector<Node> nodes;
+            size_t begin = 0;
+            while (begin < values.size())
+            {
+                const size_t size = std::min(values.size() - begin, 1 + random.below(values.size() / 3));
+                std::vector<Float64> part(values.begin() + begin, values.begin() + begin + size);
+                auto stats = buildInRandomBlocks(part, buckets, mcv_values, random.next(), random);
+                checkHistogram(stats, part, &coverage);
+                nodes.push_back({std::move(stats), std::move(part)});
+                begin += size;
+            }
+
+            /// Random merge tree with random serialization round trips in between.
+            while (nodes.size() > 1)
+            {
+                const size_t first = random.below(nodes.size());
+                Node left = std::move(nodes[first]);
+                nodes.erase(nodes.begin() + first);
+                const size_t second = random.below(nodes.size());
+                Node right = std::move(nodes[second]);
+                nodes.erase(nodes.begin() + second);
+
+                if (random.below(2))
+                    left.stats = roundTrip(left.stats, data_type);
+                if (random.below(2))
+                    right.stats = roundTrip(right.stats, data_type);
+
+                ColumnStatisticsPtr merged;
+                if (random.below(2))
+                {
+                    merged = left.stats;
+                    merged->merge(right.stats);
+                }
+                else
+                {
+                    /// Like `MergeTask`: an empty accumulator built from the metadata.
+                    merged = createHistogramStats(data_type, buckets, mcv_values, random.next());
+                    merged->merge(left.stats);
+                    merged->merge(right.stats);
+                }
+
+                std::vector<Float64> merged_values = std::move(left.values);
+                merged_values.insert(merged_values.end(), right.values.begin(), right.values.end());
+                checkHistogram(merged, merged_values, &coverage);
+                nodes.push_back({std::move(merged), std::move(merged_values)});
+            }
+            checkHistogram(roundTrip(nodes.front().stats, data_type), nodes.front().values, &coverage);
+        }
+    }
+
+    /// Both the exact and the estimating regime of the residual sketch are exercised.
+    EXPECT_GT(coverage.exact_equality_with_evictions, 0u);
+    EXPECT_GT(coverage.estimation_mode, 0u);
+    EXPECT_GT(coverage.checks, 50u);
+}
+
+TEST(Statistics, HistogramMCVBlockBoundaryIndependence)
+{
+    const auto values = generateStream(StreamKind::Mixed, 30000, 77);
+    for (UInt64 mcv_values : {UInt64(1), UInt64(16), UInt64(768)})
+    {
+        SCOPED_TRACE(mcv_values);
+        const auto data_type = std::make_shared<DataTypeFloat64>();
+        auto single_block = createHistogramStats(data_type, 32, mcv_values, 9);
+        single_block->build(makeFloat64Column(values));
+        const String expected = serializeStatistics(single_block);
+
+        for (UInt64 split_seed = 1; split_seed <= 3; ++split_seed)
+        {
+            TestRandom block_random(split_seed);
+            auto split = buildInRandomBlocks(values, 32, mcv_values, 9, block_random);
+            EXPECT_EQ(serializeStatistics(split), expected);
+        }
+    }
+}
+
+TEST(Statistics, HistogramMCVDeterminism)
+{
+    const auto data_type = std::make_shared<DataTypeFloat64>();
+    auto build_pipeline = [&]
+    {
+        std::vector<ColumnStatisticsPtr> parts;
+        for (UInt64 part = 0; part < 4; ++part)
+        {
+            const auto values = generateStream(part % 2 ? StreamKind::Zipf : StreamKind::Mixed, 15000, part + 1);
+            auto stats = createHistogramStats(data_type, 64, 48, 100 + part);
+            stats->build(makeFloat64Column(values));
+            parts.push_back(stats);
+        }
+
+        /// Same as the merge of persisted parts: every input is deserialized from canonical bytes.
+        auto merged = createHistogramStats(data_type, 64, 48, 7);
+        for (const auto & part : parts)
+            merged->merge(roundTrip(part, data_type));
+        String merged_bytes = serializeStatistics(merged);
+
+        /// A query-time merge into the first part.
+        auto estimator_accumulator = roundTrip(parts.front(), data_type);
+        for (size_t i = 1; i < parts.size(); ++i)
+            estimator_accumulator->merge(roundTrip(parts[i], data_type));
+
+        std::vector<String> result;
+        for (const auto & part : parts)
+            result.push_back(serializeStatistics(part));
+        result.push_back(merged_bytes);
+        result.push_back(serializeStatistics(estimator_accumulator));
+        return result;
+    };
+
+    const auto first = build_pipeline();
+    const auto second = build_pipeline();
+    EXPECT_EQ(first, second);
+
+    /// Queries do not change the persisted state.
+    const auto values = generateStream(StreamKind::Zipf, 15000, 2);
+    auto stats = createHistogramStats(data_type, 64, 48, 101);
+    stats->build(makeFloat64Column(values));
+    ASSERT_TRUE(stats->estimateLess(Field(Float64(5000))).has_value());
+    ASSERT_FALSE(getHistogram(stats).getBucketBounds().empty());
+    EXPECT_EQ(serializeStatistics(stats), first[1]);
+}
+
+TEST(Statistics, HistogramMCVRoundTripCanonical)
+{
+    auto check_type = [](const DataTypePtr & data_type)
+    {
+        SCOPED_TRACE(data_type->getName());
+        auto values = generateStream(StreamKind::Mixed, 20000, 3);
+        for (size_t i = 0; i < 300; ++i)
+            values.push_back(i % 2 ? -0.0 : 0.0);
+
+        MutableColumnPtr column = data_type->createColumn();
+        size_t nulls = 0;
+        for (size_t i = 0; i < values.size(); ++i)
+        {
+            if (data_type->isNullable() && i % 50 == 0)
+            {
+                column->insertDefault();
+                ++nulls;
+            }
+            column->insert(Field(values[i]));
+        }
+
+        auto stats = createHistogramStats(data_type, 16, 32, 5);
+        stats->build(std::move(column));
+        EXPECT_EQ(getHistogram(stats).getNonNullCount(), values.size());
+        EXPECT_EQ(stats->getNullCount(), nulls);
+
+        /// -0.0 and +0.0 are one value.
+        const BruteForce truth(values);
+        const auto negative_zero = stats->estimateEqual(Field(-0.0));
+        const auto positive_zero = stats->estimateEqual(Field(0.0));
+        ASSERT_TRUE(negative_zero && positive_zero);
+        EXPECT_DOUBLE_EQ(*negative_zero, *positive_zero);
+        EXPECT_GE(*positive_zero, static_cast<Float64>(truth.count(0.0)) - static_cast<Float64>(getHistogram(stats).getMaximumError()));
+        EXPECT_DOUBLE_EQ(*stats->estimateEqual(Field(std::numeric_limits<Float64>::infinity())), static_cast<Float64>(truth.positive_inf));
+        EXPECT_DOUBLE_EQ(*stats->estimateEqual(Field(-std::numeric_limits<Float64>::infinity())), static_cast<Float64>(truth.negative_inf));
+        for (const auto & item : getHistogram(stats).getFrequentValues())
+            EXPECT_FALSE(std::signbit(item.value) && item.value == 0);
+
+        String previous = serializeStatistics(stats);
+        for (size_t cycle = 0; cycle < 3; ++cycle)
+        {
+            ReadBufferFromString rb(previous);
+            auto restored = ColumnStatistics::deserialize(rb, data_type);
+            ASSERT_TRUE(restored != nullptr);
+            EXPECT_TRUE(rb.eof());
+            EXPECT_EQ(getHistogram(restored).getFrequentValues().size(), getHistogram(stats).getFrequentValues().size());
+            for (Float64 probe : {-400.0, -0.0, 0.0, 7919.0, 15838.0, 50000.0})
+            {
+                EXPECT_EQ(restored->estimateEqual(Field(probe)), stats->estimateEqual(Field(probe)));
+                EXPECT_EQ(restored->estimateLess(Field(probe)), stats->estimateLess(Field(probe)));
+            }
+            const String current = serializeStatistics(restored);
+            EXPECT_EQ(current, previous);
+            previous = current;
+        }
+    };
+
+    check_type(std::make_shared<DataTypeFloat64>());
+    check_type(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>()));
+    check_type(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeFloat64>()));
+    check_type(std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeFloat64>())));
+}
+
+namespace
+{
+
+/// A valid V3 payload whose fields can be corrupted one at a time.
+struct HistogramPayload
+{
+    UInt8 version = 3;
+    UInt64 buckets = 8;
+    UInt64 mcv_values = 4; /// capacity 6
+    UInt64 non_null = 14;
+    UInt64 nan = 1;
+    UInt64 negative_inf = 1;
+    UInt64 positive_inf = 1;
+    UInt8 has_finite_values = 1;
+    Float64 finite_min = 0;
+    Float64 finite_max = 4;
+    UInt64 random_state = 123;
+    UInt64 maximum_error = 1;
+    std::vector<std::pair<Float64, UInt64>> items = {{1.0, 5}, {2.0, 3}};
+    /// The residual KLL sketch.
+    UInt16 kll_k = 200;
+    std::vector<Float64> residual = {0.0, 3.0, 4.0};
+    std::optional<String> kll_bytes_override;
+    std::optional<UInt64> kll_size_override;
+
+    String serialize() const
+    {
+        String result;
+        WriteBufferFromString buf(result);
+        writeBinary(version, buf);
+        writeVarUInt(buckets, buf);
+        writeVarUInt(mcv_values, buf);
+        writeVarUInt(non_null, buf);
+        writeVarUInt(nan, buf);
+        writeVarUInt(negative_inf, buf);
+        writeVarUInt(positive_inf, buf);
+        writeBinary(has_finite_values, buf);
+        if (has_finite_values)
+        {
+            writeBinary(finite_min, buf);
+            writeBinary(finite_max, buf);
+        }
+        writeBinary(random_state, buf);
+        writeVarUInt(maximum_error, buf);
+        writeVarUInt(items.size(), buf);
+        for (const auto & [value, count] : items)
+        {
+            writeBinary(value, buf);
+            writeVarUInt(count, buf);
+        }
+
+        String kll_bytes;
+        if (kll_bytes_override)
+            kll_bytes = *kll_bytes_override;
+        else
+        {
+            datasketches::kll_sketch<Float64> kll(kll_k);
+            for (Float64 value : residual)
+                kll.update(value);
+            [[maybe_unused]] const auto view = kll.get_sorted_view();
+            const auto bytes = kll.serialize();
+            kll_bytes.assign(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+        }
+        writeVarUInt(kll_size_override.value_or(kll_bytes.size()), buf);
+        buf.write(kll_bytes.data(), kll_bytes.size());
+        buf.finalize();
+        return result;
+    }
+};
+
+}
+
+TEST(Statistics, HistogramMCVRejectsCorruptPayload)
+{
+    const auto data_type = std::make_shared<DataTypeFloat64>();
+    auto deserialize = [&](const HistogramPayload & payload)
+    {
+        StatisticsHistogram histogram(makeHistogramDescription(16, 64), data_type);
+        const String bytes = payload.serialize();
+        ReadBufferFromString rb(bytes);
+        histogram.deserialize(rb, StatisticsFileVersion::V4);
+        if (!rb.eof())
+            throw std::logic_error("payload was not consumed completely");
+        return histogram.getBucketCount();
+    };
+
+    /// The base payload is valid, and it is canonical.
+    {
+        HistogramPayload payload;
+        EXPECT_EQ(deserialize(payload), 8u);
+        StatisticsHistogram histogram(makeHistogramDescription(16, 64), data_type);
+        const String bytes = payload.serialize();
+        ReadBufferFromString rb(bytes);
+        histogram.deserialize(rb, StatisticsFileVersion::V4);
+        EXPECT_EQ(histogram.getMcvValues(), 4u);
+        EXPECT_DOUBLE_EQ(*histogram.estimateEqual(Field(1.0)), 5.0);
+        WriteBufferFromOwnString out;
+        histogram.serialize(out);
+        EXPECT_EQ(out.str(), bytes);
+    }
+
+    String kll_with_large_min;
+    {
+        datasketches::kll_sketch<Float64> kll(200);
+        kll.update(-1.0);
+        kll.update(3.0);
+        kll.update(4.0);
+        const auto bytes = kll.serialize();
+        kll_with_large_min.assign(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+    }
+
+    const std::vector<std::pair<String, std::function<void(HistogramPayload &)>>> cases = {
+        /// Parameters.
+        {"too few buckets", [](auto & p) { p.buckets = 1; }},
+        {"too many buckets", [](auto & p) { p.buckets = 1025; }},
+        {"no most common values", [](auto & p) { p.mcv_values = 0; }},
+        {"too many most common values", [](auto & p) { p.mcv_values = 769; }},
+        /// Counters.
+        {"NaN count above non-null count", [](auto & p) { p.nan = 15; }},
+        {"-Inf count above remaining rows", [](auto & p) { p.negative_inf = 14; }},
+        {"+Inf count above remaining rows", [](auto & p) { p.positive_inf = 13; }},
+        {"finite rows above KLL limit", [](auto & p) { p.non_null = std::numeric_limits<UInt64>::max(); p.nan = 0; }},
+        /// Finite flag and bounds.
+        {"invalid finite flag", [](auto & p) { p.has_finite_values = 2; }},
+        {"finite flag without finite rows", [](auto & p) { p.non_null = 3; p.items.clear(); p.residual.clear(); p.maximum_error = 0; }},
+        {"finite rows without finite flag", [](auto & p) { p.has_finite_values = 0; }},
+        {"non-finite min", [](auto & p) { p.finite_min = -std::numeric_limits<Float64>::infinity(); }},
+        {"NaN max", [](auto & p) { p.finite_max = std::numeric_limits<Float64>::quiet_NaN(); }},
+        {"min above max", [](auto & p) { p.finite_min = 5; }},
+        {"non-canonical zero bound", [](auto & p) { p.finite_min = -0.0; }},
+        /// Frequent values.
+        {"more items than capacity",
+         [](auto & p)
+         {
+             p.items = {{0.5, 1}, {1.0, 1}, {1.5, 1}, {2.0, 1}, {2.5, 1}, {3.0, 1}, {3.5, 2}};
+             p.residual = {0.0, 4.0};
+             p.non_null = 13;
+         }},
+        {"non-finite value", [](auto & p) { p.items[0].first = std::numeric_limits<Float64>::infinity(); }},
+        {"NaN value", [](auto & p) { p.items[0].first = std::numeric_limits<Float64>::quiet_NaN(); }},
+        {"non-canonical zero value", [](auto & p) { p.items = {{-0.0, 5}, {2.0, 3}}; p.residual = {1.0, 3.0, 4.0}; p.finite_min = -1; }},
+        {"duplicate values", [](auto & p) { p.items[1].first = 1.0; }},
+        {"decreasing values", [](auto & p) { p.items = {{2.0, 3}, {1.0, 5}}; }},
+        {"value below min", [](auto & p) { p.items[0].first = -1.0; }},
+        {"value above max", [](auto & p) { p.items[1].first = 5.0; }},
+        {"zero count", [](auto & p) { p.items[0].second = 0; }},
+        {"counts above finite rows", [](auto & p) { p.items[0].second = 12; }},
+        {"overflowing counts", [](auto & p) { p.items = {{1.0, std::numeric_limits<UInt64>::max()}, {2.0, 3}}; }},
+        /// Residual KLL.
+        {"KLL too large", [](auto & p) { p.kll_size_override = (1ULL << 20) + 1; }},
+        {"KLL garbage", [](auto & p) { p.kll_bytes_override = String(16, '\x5a'); }},
+        {"KLL k below histogram resolution", [](auto & p) { p.kll_k = 100; }},
+        {"KLL k above maximum resolution", [](auto & p) { p.kll_k = 2000; }},
+        {"KLL k below bucket count", [](auto & p) { p.buckets = 512; p.kll_k = 300; }},
+        {"KLL row count below residual rows", [](auto & p) { p.residual = {0.0, 3.0}; }},
+        {"KLL row count above residual rows", [](auto & p) { p.residual = {0.0, 3.0, 4.0, 4.0}; }},
+        {"KLL item outside finite bounds", [&](auto & p) { p.kll_bytes_override = kll_with_large_min; }},
+        /// Maximum error.
+        {"maximum error above residual rows", [](auto & p) { p.maximum_error = 4; }},
+        {"zero maximum error with residual rows", [](auto & p) { p.maximum_error = 0; }},
+        {"maximum error without residual rows",
+         [](auto & p)
+         {
+             p.items = {{0.0, 1}, {1.0, 5}, {2.0, 3}, {3.0, 1}, {4.0, 1}};
+             p.residual.clear();
+         }},
+    };
+
+    for (const auto & [name, corrupt] : cases)
+    {
+        SCOPED_TRACE(name);
+        HistogramPayload payload;
+        corrupt(payload);
+        try
+        {
+            deserialize(payload);
+            ADD_FAILURE() << "corrupt payload was accepted";
+        }
+        catch (const Exception & e)
+        {
+            EXPECT_EQ(e.code(), ErrorCodes::ILLEGAL_STATISTICS) << e.message();
+        }
+    }
+
+    /// Truncated payloads are rejected at every length.
+    const String bytes = HistogramPayload{}.serialize();
+    for (size_t size = 1; size < bytes.size(); ++size)
+    {
+        StatisticsHistogram histogram(makeHistogramDescription(16, 64), data_type);
+        ReadBufferFromString rb(std::string_view(bytes.data(), size));
+        EXPECT_THROW(histogram.deserialize(rb, StatisticsFileVersion::V4), Exception) << size;
+    }
+}
+
+TEST(Statistics, HistogramMCVSkewedAccuracy)
+{
+    const auto data_type = std::make_shared<DataTypeFloat64>();
+    const auto values = generateZipf(200000, 20000, 1.1, 42);
+    const BruteForce truth(values);
+
+    auto build = [&](UInt64 mcv_values)
+    {
+        auto stats = createHistogramStats(data_type, 64, mcv_values, 3);
+        /// Several parts merged like `MergeTask` does.
+        auto merged = createHistogramStats(data_type, 64, mcv_values, 4);
+        for (size_t part = 0; part < 4; ++part)
+        {
+            auto part_stats = createHistogramStats(data_type, 64, mcv_values, 10 + part);
+            part_stats->build(makeFloat64Column(values, part * 50000, (part + 1) * 50000));
+            merged->merge(roundTrip(part_stats, data_type));
+        }
+        return merged;
+    };
+
+    auto large = build(256);
+    auto tiny = build(1);
+    checkHistogram(large, values);
+    checkHistogram(tiny, values);
+
+    /// The most frequent values are tracked, with bounded counts.
+    std::vector<std::pair<UInt64, Float64>> by_frequency;
+    for (const auto & [value, count] : truth.finite)
+        by_frequency.emplace_back(count, value);
+    std::sort(by_frequency.rbegin(), by_frequency.rend());
+    const auto & histogram = getHistogram(large);
+    const UInt64 delta = histogram.getMaximumError();
+    EXPECT_LE(static_cast<Float64>(delta), 3.5 / 512 * static_cast<Float64>(values.size()));
+
+    Float64 large_equal_error = 0;
+    Float64 tiny_equal_error = 0;
+    for (size_t i = 0; i < 50; ++i)
+    {
+        const auto [count, value] = by_frequency[i];
+        const auto large_estimate = large->estimateEqual(Field(value));
+        ASSERT_TRUE(large_estimate.has_value());
+        EXPECT_LE(std::abs(*large_estimate - static_cast<Float64>(count)), static_cast<Float64>(delta));
+        large_equal_error += std::abs(*large_estimate - static_cast<Float64>(count));
+        const auto tiny_estimate = tiny->estimateEqual(Field(value));
+        tiny_equal_error += tiny_estimate ? std::abs(*tiny_estimate - static_cast<Float64>(count)) : static_cast<Float64>(count);
+    }
+    /// Each error is bounded by delta, and most of the evicted share is recovered from the residual sketch.
+    EXPECT_LT(large_equal_error, 0.1 * tiny_equal_error);
+    EXPECT_LT(large_equal_error, 0.02 * static_cast<Float64>(values.size()));
+
+    Float64 large_range_error = 0;
+    Float64 tiny_range_error = 0;
+    for (UInt64 step = 0; step <= 100; ++step)
+    {
+        const Float64 probe = static_cast<Float64>(step * 997);
+        const Float64 expected = static_cast<Float64>(truth.less(probe, true));
+        large_range_error += std::abs(*large->estimateLessOrEqual(Field(probe)) - expected);
+        tiny_range_error += std::abs(*tiny->estimateLessOrEqual(Field(probe)) - expected);
+    }
+    EXPECT_LT(large_range_error, tiny_range_error);
+}
+
+TEST(Statistics, HistogramMCVConcurrentFirstAccess)
+{
+    const auto data_type = std::make_shared<DataTypeFloat64>();
+    const auto values = generateZipf(50000, 5000, 1.2, 8);
+    auto stats = createHistogramStats(data_type, 64, 128, 1);
+    stats->build(makeFloat64Column(values));
+    stats = roundTrip(stats, data_type);
+
+    constexpr size_t thread_count = 16;
+    std::barrier<> start(static_cast<std::ptrdiff_t>(thread_count));
+    std::vector<std::thread> threads;
+    std::vector<std::vector<std::optional<Float64>>> results(thread_count);
+    std::vector<std::exception_ptr> errors(thread_count);
+    for (size_t thread = 0; thread < thread_count; ++thread)
+    {
+        threads.emplace_back(
+            [&, thread]
+            {
+                start.arrive_and_wait();
+                try
+                {
+                    for (size_t iteration = 0; iteration < 20; ++iteration)
+                    {
+                        results[thread].clear();
+                        for (Float64 probe : {0.0, 7919.0, 15838.0, 12345.0, 50000.0})
+                        {
+                            results[thread].push_back(stats->estimateEqual(Field(probe)));
+                            results[thread].push_back(stats->estimateLess(Field(probe)));
+                            results[thread].push_back(stats->estimateGreaterOrEqual(Field(probe)));
+                        }
+                        if (getHistogram(stats).getBucketBounds().empty() || getHistogram(stats).getFrequentValues().empty())
+                            throw std::logic_error("histogram is empty");
+                        const auto summary = getHistogram(stats).getNonFrequentSummary();
+                        if (summary.frequent_values == 0)
+                            throw std::logic_error("no certainly frequent values");
+                    }
+                }
+                catch (...)
+                {
+                    errors[thread] = std::current_exception();
+                }
+            });
+    }
+    for (auto & thread : threads)
+        thread.join();
+
+    for (size_t thread = 0; thread < thread_count; ++thread)
+    {
+        EXPECT_FALSE(errors[thread]);
+        EXPECT_EQ(results[thread], results[0]);
+    }
+}
+
+TEST(Statistics, HistogramMCVEqualityFallback)
+{
+    tryRegisterAggregateFunctions();
+    const auto data_type = std::make_shared<DataTypeFloat64>();
+
+    /// Half of the rows are one heavy hitter, the rest are distinct.
+    std::vector<Float64> values;
+    for (size_t i = 0; i < 100000; ++i)
+        values.push_back(i % 2 ? 0.0 : static_cast<Float64>(i));
+
+    auto make_stats = [&](std::vector<StatisticsType> other_types)
+    {
+        ColumnStatisticsDescription desc;
+        desc.data_type = data_type;
+        desc.types_to_desc.emplace(StatisticsType::Histogram, makeHistogramDescription(32, 16));
+        for (auto type : other_types)
+            desc.types_to_desc.emplace(type, SingleStatisticsDescription(type, nullptr, false));
+        auto stats = MergeTreeStatisticsFactory::instance().get(desc);
+        stats->build(makeFloat64Column(values));
+        return stats;
+    };
+
+    /// An untracked value inside the bounds whose residual mass is below the KLL rank error.
+    const Field untracked(Float64(31338));
+    auto histogram_only = make_stats({});
+    const auto & histogram = getHistogram(histogram_only);
+    ASSERT_FALSE(histogram.estimateEqual(untracked).has_value());
+    EXPECT_FALSE(histogram_only->estimateEqual(untracked).has_value());
+    const auto summary = histogram.getNonFrequentSummary();
+    EXPECT_GT(summary.maximum_error, 0u);
+    EXPECT_EQ(summary.frequent_values, 1u);
+    EXPECT_NEAR(summary.frequent_rows, 50000.0, static_cast<Float64>(summary.maximum_error));
+
+    /// The heavy hitter itself is answered by the histogram.
+    const auto heavy = histogram_only->estimateEqual(Field(0.0));
+    ASSERT_TRUE(heavy.has_value());
+    EXPECT_NEAR(*heavy, 50000.0, static_cast<Float64>(summary.maximum_error));
+
+    /// With uniq, the non-MCV formula spreads the remaining rows over the remaining distinct values.
+    for (auto uniq_type : {StatisticsType::Uniq, StatisticsType::UniqV2})
+    {
+        auto with_uniq = make_stats({uniq_type});
+        const auto estimate = with_uniq->estimateEqual(untracked);
+        ASSERT_TRUE(estimate.has_value());
+        EXPECT_NEAR(*estimate, 1.0, 0.1);
+        EXPECT_LE(*estimate, static_cast<Float64>(getHistogram(with_uniq).getMaximumError()));
+    }
+
+    /// Without uniq, the existing chain is used, capped at the maximum error.
+    auto with_count_min = make_stats({StatisticsType::CountMinSketch});
+    const auto count_min_estimate = with_count_min->estimateEqual(untracked);
+    ASSERT_TRUE(count_min_estimate.has_value());
+    EXPECT_LE(*count_min_estimate, static_cast<Float64>(getHistogram(with_count_min).getMaximumError()));
 }
 
 #endif

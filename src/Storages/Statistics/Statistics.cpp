@@ -388,38 +388,64 @@ std::optional<Float64> ColumnStatistics::estimateEqual(const Field & val) const
         if (auto estimate = it->second->estimateEqual(val))
             return estimate;
 
+    const IStatistics * uniq_stats = findUniqStats(stats);
+    std::optional<Float64> upper_bound;
+
 #if USE_DATASKETCHES
+    /// The histogram answers for its most common values (MCVs) and whenever the residual mass is reliable.
+    /// Otherwise the value is not tracked as an MCV and occurs at most `maximum_error` times.
     if (auto it = stats.find(StatisticsType::Histogram); it != stats.end())
+    {
         if (auto estimate = it->second->estimateEqual(val))
             return estimate;
-#endif
 
-    const IStatistics * uniq_stats = findUniqStats(stats);
-    if (stats_desc.data_type->isValueRepresentedByNumber() && uniq_stats != nullptr && stats.contains(StatisticsType::TDigest))
-    {
-        /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
-        if (uniq_stats->estimateCardinality() < 2048)
+        const auto summary = assert_cast<const StatisticsHistogram &>(*it->second).getNonFrequentSummary();
+        upper_bound = static_cast<Float64>(summary.maximum_error);
+        if (uniq_stats != nullptr)
         {
-            return stats.at(StatisticsType::TDigest)->estimateEqual(val);
+            /// PostgreSQL's estimate for values outside of the MCV list: the rows that are not certainly frequent values,
+            /// spread uniformly over the remaining distinct values.
+            const UInt64 cardinality = uniq_stats->estimateCardinality();
+            const UInt64 remaining_values = cardinality > summary.frequent_values ? cardinality - summary.frequent_values : 0;
+            const Float64 remaining_rows = std::max(0.0, summary.finite_rows - summary.frequent_rows);
+            return std::min(remaining_rows / static_cast<Float64>(std::max<UInt64>(1, remaining_values)), *upper_bound);
         }
     }
-#if USE_DATASKETCHES
-    if (stats.contains(StatisticsType::CountMinSketch))
-    {
-        return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
-    }
 #endif
-    if (uniq_stats != nullptr)
-    {
-        UInt64 cardinality = uniq_stats->estimateCardinality();
-        if (cardinality == 0 || rows == 0)
-            return 0;
-        /// Uniq ignores NULLs, so divide non-NULL row count by distinct values.
-        /// `getNonNullRowCount` returns `rows` when null-count tracking is absent.
-        return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(cardinality);
-    }
 
-    return std::nullopt;
+    auto estimate_without_histogram = [&]() -> std::optional<Float64>
+    {
+        if (stats_desc.data_type->isValueRepresentedByNumber() && uniq_stats != nullptr && stats.contains(StatisticsType::TDigest))
+        {
+            /// 2048 is the default number of buckets in TDigest. In this case, TDigest stores exactly one value (with many rows) for every bucket.
+            if (uniq_stats->estimateCardinality() < 2048)
+            {
+                return stats.at(StatisticsType::TDigest)->estimateEqual(val);
+            }
+        }
+#if USE_DATASKETCHES
+        if (stats.contains(StatisticsType::CountMinSketch))
+        {
+            return stats.at(StatisticsType::CountMinSketch)->estimateEqual(val);
+        }
+#endif
+        if (uniq_stats != nullptr)
+        {
+            UInt64 cardinality = uniq_stats->estimateCardinality();
+            if (cardinality == 0 || rows == 0)
+                return 0;
+            /// Uniq ignores NULLs, so divide non-NULL row count by distinct values.
+            /// `getNonNullRowCount` returns `rows` when null-count tracking is absent.
+            return static_cast<Float64>(getNonNullRowCount()) / static_cast<Float64>(cardinality);
+        }
+
+        return std::nullopt;
+    };
+
+    auto estimate = estimate_without_histogram();
+    if (estimate && upper_bound)
+        return std::min(*estimate, *upper_bound);
+    return estimate;
 }
 
 std::optional<Float64> ColumnStatistics::estimateRange(const Range & range) const
@@ -701,12 +727,27 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
                         consumed,
                         stat_size);
 
+                if (!stat_ptr->isLoaded())
+                {
+                    /// The payload version is not supported (e.g. written by a development or a newer build).
+                    /// Drop the statistic; it is rebuilt from the data on the next merge or materialization.
+                    LOG_TRACE(
+                        getLogger("ColumnStatistics"),
+                        "Skipping statistics of type {} with an unsupported payload version",
+                        statisticsTypeToString(type));
+                    continue;
+                }
+
                 ASTPtr ast;
 #if USE_DATASKETCHES
                 if (type == StatisticsType::Histogram)
                 {
+                    /// The payload stores the effective parameters, e.g. the bucket count after merges.
                     const auto & histogram = assert_cast<const StatisticsHistogram &>(*stat_ptr);
-                    ast = makeASTFunction("histogram", make_intrusive<ASTLiteral>(histogram.getBucketCount()));
+                    ast = makeASTFunction(
+                        "histogram",
+                        make_intrusive<ASTLiteral>(histogram.getBucketCount()),
+                        make_intrusive<ASTLiteral>(histogram.getMcvValues()));
                     ast->as<ASTFunction &>().setKind(ASTFunction::Kind::STATISTICS);
                 }
                 else
@@ -739,8 +780,17 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf
     auto result = factory.get(stats_desc, random_seed);
     readIntBinary(result->rows, buf);
 
-    for (const auto & [_, desc] : result->stats)
+    for (const auto & [type, desc] : result->stats)
+    {
         desc->deserialize(buf, version);
+        /// Without per-statistic sizes the rest of an unsupported payload cannot be skipped.
+        if (!desc->isLoaded())
+            throw Exception(
+                ErrorCodes::ILLEGAL_STATISTICS,
+                "Statistics of type {} have an unsupported payload version. "
+                "Please run `ALTER TABLE [db.]table MATERIALIZE STATISTICS ALL` to regenerate the statistics.",
+                statisticsTypeToString(type));
+    }
 
     return result;
 }

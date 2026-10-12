@@ -1334,20 +1334,45 @@ EXPLAIN indexes = 1 SELECT count() FROM test_stats WHERE value > 5000;
 
     [CountMin](https://en.wikipedia.org/wiki/Count%E2%80%93min_sketch) sketches which provide an approximate count of the frequency of each value in a column.
 
-- `histogram(N)`
+- `histogram(N, M)`
 
-    An approximate equi-depth (equi-height) histogram for numeric columns. Its boundaries target
-    the quantiles `0/N, 1/N, ..., N/N`, so each non-degenerate bucket represents approximately
-    the same number of rows. ClickHouse persists a mergeable KLL quantile sketch in each part,
-    merges the sketches for the selected parts, and derives the histogram boundaries from the
-    merged state. Repeated boundaries are collapsed because equal values cannot be split between
-    ordered buckets.
+    An approximate equi-depth (equi-height) histogram with `N` buckets for numeric columns, combined
+    with a list of at least `M` most common values. Both parameters are required: `N` must be between
+    `2` and `1024`, and `M` between `1` and `768`.
 
-    `N` is required and must be between `2` and `1024`. The statistic improves estimates for
-    `<`, `<=`, `>`, `>=`, and bounded range predicates. Estimates are approximate and use a
-    `Float64` projection in the current implementation, so adjacent integers above `2^53` and
-    similarly large decimal values can lose precision. This statistic is available in builds
-    compiled with `ENABLE_DATASKETCHES`.
+    Every row is counted by a [Misra-Gries](https://en.wikipedia.org/wiki/Misra%E2%80%93Gries_summary)
+    summary of the most common values first. When the summary runs out of space, it subtracts a common
+    amount from all its counters, and the evicted rows are added to a mergeable KLL quantile sketch.
+    The counters and the sketch therefore account for every row exactly once: the histogram buckets are
+    derived from the sketch and describe only the remaining (residual) values, so bucket boundaries and
+    sketch accuracy are not spent on the most common values. The bucket boundaries target the quantiles
+    `0/N, 1/N, ..., N/N` of the residual values, so each non-degenerate bucket represents approximately
+    the same number of rows. Repeated boundaries are collapsed because equal values cannot be split
+    between ordered buckets. ClickHouse persists both structures in each part, merges them for the
+    selected parts, and derives the estimates from the merged state.
+
+    `M` is rounded up to the capacity of the summary's internal hash map: `1` to `6` track 6 values,
+    `7` to `12` track 12, and so on up to `385` to `768`, which track 768 values. The counter of a tracked
+    value underestimates its row count by at most the maximum error of the summary, which is about
+    `3.5 * rows / (4 / 3 * capacity)`, and most of the evicted rows are recovered from the sketch. Columns
+    with at most that many distinct values (also across all merged parts) are represented exactly: the
+    sketch stays empty, and both equality and range estimates are exact.
+
+    The statistic improves estimates for `=`, `<`, `<=`, `>`, `>=`, and bounded range predicates. Equality
+    is estimated for the tracked values, and for other values when the sketch holds enough evidence;
+    otherwise the maximum error bounds the estimate of the other available statistics, and with `uniq`
+    or `uniq_v2` the rows that are not certainly most common values are spread over the remaining
+    distinct values. Range estimates add the counts of the most common values to the interpolated residual
+    buckets.
+
+    The statistic is deterministic: the same rows produce byte-identical statistics regardless of how
+    they are split into blocks, and merging the same parts produces identical results on all replicas.
+    Parts with different parameters can be merged: the result uses the smaller `N`, and keeps the `M`
+    of the table definition (when parts are merged) or of the first part (when a query is estimated).
+    Estimates are approximate and use a `Float64` projection in the current implementation, both for
+    the buckets and for the most common values, so adjacent integers above `2^53` and similarly large
+    decimal values can lose precision. This statistic is available in builds compiled with
+    `ENABLE_DATASKETCHES`.
 
 ### Supported data types {#supported-data-types}
 
@@ -1373,7 +1398,7 @@ All of the above also accept `Nullable` and `LowCardinality(Nullable)` wrappers 
 | tdigest  | ✗                        | ✔ (numeric columns only)       |
 | uniq     | ✔                        | ✗                              |
 | uniq_v2  | ✔                        | ✗                              |
-| histogram | ✔ (frequent values only) | ✔                              |
+| histogram | ✔ (most common values; exact for low-cardinality columns) | ✔ |
 
 `basic` answers an equality filter exactly only when the compared value matches the column's
 internal storage default (raw integer `0` for numeric types, `''` / N zero bytes for `String` /

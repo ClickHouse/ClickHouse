@@ -1,5 +1,5 @@
 -- Tags: no-fasttest
--- no-fasttest: histogram statistics use the DataSketches KLL library
+-- no-fasttest: histogram statistics use the DataSketches KLL and frequent items libraries
 
 SET allow_statistics = 1;
 SET use_statistics = 1;
@@ -15,8 +15,8 @@ DROP TABLE IF EXISTS histogram_stats;
 CREATE TABLE histogram_stats
 (
     id UInt64,
-    x Float64 STATISTICS(histogram(8)),
-    n Nullable(Int32) STATISTICS(histogram(4))
+    x Float64 STATISTICS(histogram(8, 16)),
+    n Nullable(Int32) STATISTICS(histogram(4, 8))
 )
 ENGINE = MergeTree
 ORDER BY id
@@ -62,7 +62,7 @@ SELECT count() FROM histogram_stats WHERE x > 1000000;
 SELECT count() FROM histogram_stats WHERE n >= 10 AND n <= 15;
 
 ALTER TABLE histogram_stats DROP STATISTICS x;
-ALTER TABLE histogram_stats ADD STATISTICS x TYPE histogram(16);
+ALTER TABLE histogram_stats ADD STATISTICS x TYPE histogram(16, 32);
 ALTER TABLE histogram_stats MATERIALIZE STATISTICS x;
 
 SELECT 'Definition after rematerialization';

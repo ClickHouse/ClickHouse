@@ -76,6 +76,11 @@ public:
     virtual void serialize(WriteBuffer & buf) = 0;
     virtual void deserialize(ReadBuffer & buf, StatisticsFileVersion version) = 0;
 
+    /// False if `deserialize` found a payload version it does not support and skipped the payload
+    /// (for example one written by a newer or development build). `ColumnStatistics::deserialize`
+    /// drops such statistics, so a part with them stays readable and they are rebuilt on merge.
+    virtual bool isLoaded() const { return true; }
+
     /// Estimate the cardinality of the column.
     /// Throws if the statistics object is not able to do a meaningful estimation.
     virtual UInt64 estimateCardinality() const;

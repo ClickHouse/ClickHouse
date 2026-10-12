@@ -1,0 +1,37 @@
+Definition
+CREATE TABLE default.histogram_mcv\n(\n    `id` UInt64,\n    `a` UInt32 STATISTICS(histogram(16, 8)),\n    `b` UInt32 STATISTICS(histogram(16, 8))\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS auto_statistics_types = \'\', min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000, index_granularity = 8192
+a	[['Histogram']]	4
+b	[['Histogram']]	4
+id	[[]]	4
+Query-scope estimates
+          Prewhere filter column: and(less(b, 100_UInt8), equals(a, 42_UInt8)) (removed)
+          Prewhere filter column: and(equals(a, 4242_UInt16), less(b, 300_UInt16)) (removed)
+          Prewhere filter column: and(less(a, 42_UInt8), less(b, 100_UInt8)) (removed)
+          Prewhere filter column: and(less(b, 100_UInt8), lessOrEquals(a, 42_UInt8)) (removed)
+Results
+5000
+3000
+30
+5030
+After OPTIMIZE FINAL
+a	[['Histogram']]	1
+b	[['Histogram']]	1
+id	[[]]	1
+          Prewhere filter column: and(less(b, 100_UInt8), equals(a, 42_UInt8)) (removed)
+          Prewhere filter column: and(equals(a, 4242_UInt16), less(b, 300_UInt16)) (removed)
+          Prewhere filter column: and(less(a, 42_UInt8), less(b, 100_UInt8)) (removed)
+          Prewhere filter column: and(less(b, 100_UInt8), lessOrEquals(a, 42_UInt8)) (removed)
+ALTER
+CREATE TABLE default.histogram_mcv\n(\n    `id` UInt64,\n    `a` UInt32 STATISTICS(histogram(32, 100)),\n    `b` UInt32 STATISTICS(histogram(8, 4))\n)\nENGINE = MergeTree\nORDER BY id\nSETTINGS auto_statistics_types = \'\', min_bytes_for_wide_part = 1000000000000, min_rows_for_wide_part = 1000000000000, index_granularity = 8192
+a	[['Histogram']]	1
+b	[['Histogram']]	1
+id	[[]]	1
+          Prewhere filter column: and(less(b, 100_UInt8), equals(a, 42_UInt8)) (removed)
+          Prewhere filter column: and(equals(a, 4242_UInt16), less(b, 300_UInt16)) (removed)
+auto_statistics_types
+id	['Histogram']
+s	[]
+v	['Histogram']
+1001
+Invalid parameters
+CREATE TABLE default.histogram_mcv_bad\n(\n    `x` UInt32 STATISTICS(histogram(1024, 768))\n)\nENGINE = MergeTree\nORDER BY tuple()\nSETTINGS index_granularity = 8192
