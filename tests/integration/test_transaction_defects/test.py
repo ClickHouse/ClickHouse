@@ -1171,7 +1171,6 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
     # transactional `TRUNCATE` hands it to `removePartsFromWorkingSet` with `clear_without_timeout`,
     # which sets `remove_time = 0`, and `grabOldParts` then ignores `old_parts_lifetime`.
     q(f"SYSTEM STOP CLEANUP {table}")
-    cleanup_stopped = True
     try:
         wait_for_no_cleanup(table)
 
@@ -1189,18 +1188,41 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
         seen = tx(3, f"SELECT count() FROM {table}").strip()
         require(seen == "1", f"the lowered snapshot does not see the row: {seen}")
 
-        baseline = last_removal_attempt()
         q(f"ALTER TABLE {table} MODIFY SETTING old_parts_lifetime = 1")
-        q(f"SYSTEM START CLEANUP {table}")
-        cleanup_stopped = False
+        attempted = last_removal_attempt()
+
+        def cleanup_had_its_chance(remaining):
+            """Lets cleanup run one round, then reads what that finished round decided.
+
+            The attempt time is written at the top of `grabOldParts` and the reason only after the
+            test that stopped it, and `system.parts` reads the two columns separately: a read taken
+            while a round is in flight can pair this round's attempt time with the reason of the
+            round before it. So the read happens with cleanup stopped and its round drained, which
+            is also why the chance is given one round at a time.
+
+            A round that found the part removable and skipped it under `NON_UNIQUE_OWNERSHIP` -- the
+            reference these reads hold -- is not the chance the defect needs, so the next round has
+            to beat the attempt time of this one.
+            """
+            nonlocal attempted
+            q(f"SYSTEM START CLEANUP {table}")
+            try:
+                poll(
+                    lambda left: parts_on_disk(left) == 0 or last_removal_attempt(left) > attempted,
+                    min(10, remaining),
+                )
+            finally:
+                q(f"SYSTEM STOP CLEANUP {table}")
+                wait_for_no_cleanup(table)
+            if parts_on_disk() == 0:
+                return True
+            kept = kept_as_visible(attempted)
+            attempted = last_removal_attempt()
+            return kept
 
         # Stop early once the part is gone: that is the defect the assertions below report.
         require(
-            poll(
-                lambda remaining: parts_on_disk(remaining) == 0
-                or kept_as_visible(baseline, remaining),
-                60,
-            ),
+            poll(cleanup_had_its_chance, 60, step=0),
             "no cleanup round since the snapshot was lowered got as far as deciding that the part "
             "is still visible to a transaction, so this run says nothing about what it skips",
         )
@@ -1208,8 +1230,7 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
         assert tx(3, f"SELECT count() FROM {table}").strip() == "1"
         assert parts_on_disk() == 1, "the cleanup removed a part the transaction still sees"
     finally:
-        if cleanup_stopped:
-            q(f"SYSTEM START CLEANUP {table}")
+        q(f"SYSTEM START CLEANUP {table}")
         # The setup can fail before this session has a transaction; teardown reports a rollback
         # that is genuinely stuck.
         with contextlib.suppress(Exception):
