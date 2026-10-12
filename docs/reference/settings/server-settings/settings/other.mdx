@@ -1530,6 +1530,8 @@ At startup the server installs a [`seccomp`](https://man7.org/linux/man-pages/ma
 
 Creating a namespace is refused in every form it takes: `unshare` and `setns` are not allowed at all, a `clone` that asks for a namespace among its flags is refused, and `clone3` - whose arguments live in a structure that a filter cannot read, so that a namespace cannot be told from a thread - is refused as a whole, with `ENOSYS`. That is how a libc discovers that it has to use `clone` instead, so making threads and processes keeps working; `docker` and `systemd` refuse `clone3` the same way in their own policies.
 
+The extended-attribute system calls are refused with `ENOSYS` as well. ClickHouse does not use them, but the NSS modules of the host run inside the server process, and `nss-resolve` of `systemd` probes whether it may tag its socket with an attribute before doing so; `ENOSYS` is the answer it takes for "no" and goes on without the tag, whereas `SIGSYS` in the `trap` mode would terminate the server at the first host name lookup.
+
 Possible values:
 
 - `trap` - the kernel sends `SIGSYS` to the offending thread. ClickHouse treats it as any other fatal signal: the system call number and a stack trace go to the log, and the server terminates.
