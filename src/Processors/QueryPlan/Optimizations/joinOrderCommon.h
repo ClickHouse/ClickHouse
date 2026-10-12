@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <base/arithmeticOverflow.h>
 
 #include <algorithm>
 #include <limits>
@@ -218,6 +219,45 @@ inline std::optional<UInt64> estimateJoinCardinality(
     JoinKind join_kind = JoinKind::Inner)
 {
     return estimateJoinCardinality(left->estimated_rows, right->estimated_rows, selectivity, join_kind);
+}
+
+/// A join emits at most the cartesian product of its inputs, floored by a preserved side's rows; a
+/// LEFT or RIGHT semi, anti or ANY join emits each row of its preserved side at most once, and an
+/// INNER ANY join each row of one input, which one depending on the algorithm and the orientation.
+/// Saturating integer arithmetic: `double` rounds products above 2^53 in either direction, and a
+/// bound rounded down is below the true row count.
+inline std::optional<UInt64> boundJoinRows(
+    std::optional<UInt64> left_rows,
+    std::optional<UInt64> right_rows,
+    JoinKind join_kind,
+    JoinStrictness strictness)
+{
+    const bool one_row_per_preserved_row
+        = strictness == JoinStrictness::Semi || strictness == JoinStrictness::Anti || strictness == JoinStrictness::Any;
+    if (one_row_per_preserved_row && (isLeft(join_kind) || isRight(join_kind)))
+        return isLeft(join_kind) ? left_rows : right_rows;
+
+    if (!left_rows || !right_rows)
+        return {};
+
+    if (strictness == JoinStrictness::Any && isInner(join_kind))
+        return std::max(*left_rows, *right_rows);
+
+    constexpr UInt64 saturated = std::numeric_limits<UInt64>::max();
+
+    UInt64 product = 0;
+    if (common::mulOverflow(*left_rows, *right_rows, product))
+        return saturated;
+
+    UInt64 preserved = 0;
+    if (join_kind == JoinKind::Left)
+        preserved = *left_rows;
+    else if (join_kind == JoinKind::Right)
+        preserved = *right_rows;
+    else if (join_kind == JoinKind::Full && common::addOverflow(*left_rows, *right_rows, preserved))
+        return saturated;
+
+    return std::max(product, preserved);
 }
 
 inline double computeJoinCost(const DPJoinEntryPtr & left, const DPJoinEntryPtr & right, const SelectivityEstimate & selectivity)
