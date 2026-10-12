@@ -6,6 +6,7 @@
 #include <Analyzer/ConstantNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/Utils.h>
+#include <Common/NaNUtils.h>
 #include <Core/Settings.h>
 #include <Functions/FunctionFactory.h>
 
@@ -67,6 +68,16 @@ public:
         const auto literal_type = literal->getResultType();
         if (!literal_type || !WhichDataType(literal_type).isNumber())
             return;
+
+        /// `N * count(x)` must be exactly +0 over an empty state: `inf * 0` and `nan * 0` are `nan`, and
+        /// a negatively signed `N` gives `-0.0`, which `1 / x` tells apart from zero.
+        const auto & literal_value = literal->getValue();
+        if (literal_value.getType() == Field::Types::Float64)
+        {
+            const auto literal_float = literal_value.safeGet<Float64>();
+            if (!isFinite(literal_float) || std::signbit(literal_float))
+                return;
+        }
 
         const auto * column_node = func_plus_minus_nodes[column_id]->as<ColumnNode>();
         if (!column_node)
