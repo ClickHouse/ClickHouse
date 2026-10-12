@@ -2636,6 +2636,13 @@ void Planner::buildPlanForUnionNode()
 /// `QueryResultCacheWriter` or the cached chunks themselves - which has no serialized
 /// representation. The cache is populated and read by the plan the initiator executes itself.
 ///
+/// Plan-based parallel replicas (`parallel_replicas_plan_based`) are another such case: the plan is
+/// built locally, and `QueryPlanOptimizations::applyParallelReplicas` later serializes a fragment of
+/// it - including the plans of `IN` subquery sets - for the replicas. A fragment holding a cache step
+/// is kept local instead, so the cache would silently disable parallel replicas, and on a warm cache
+/// the remote/local decision would depend on cache contents. The setting is checked on both the local
+/// and the query-level context, so a subquery cannot escape the ban with its own SETTINGS clause.
+///
 /// `make_distributed_plan` is not such a kind: whether the plan is really split into fragments is
 /// decided only later, by `QueryPlan::convertToDistributed`, which falls back to one local stage for
 /// a plan that has no exchange. The write path therefore stays enabled here - the fragment split
@@ -2656,6 +2663,14 @@ static bool shouldUseQueryCacheForSubquery(
         return false;
 
     if (select_query_options.build_logical_plan)
+        return false;
+
+    const auto uses_plan_based_parallel_replicas = [](const ContextPtr & context)
+    {
+        return context->getSettingsRef()[Setting::parallel_replicas_plan_based] && context->canUseParallelReplicasOnInitiator();
+    };
+    if (uses_plan_based_parallel_replicas(query_context)
+        || (query_context->hasQueryContext() && uses_plan_based_parallel_replicas(query_context->getQueryContext())))
         return false;
 
     const bool is_subquery = select_query_options.is_subquery;
