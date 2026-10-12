@@ -28,6 +28,7 @@ struct TableStateSnapshot
     std::optional<Int64> delta_record_count;
     std::optional<Int64> changelog_record_count;
     std::optional<Int64> watermark;
+    std::optional<String> index_manifest;
 
     TableStateSnapshot() = default;
 
@@ -41,7 +42,8 @@ struct TableStateSnapshot
         std::optional<Int64> total_record_count_ = std::nullopt,
         std::optional<Int64> delta_record_count_ = std::nullopt,
         std::optional<Int64> changelog_record_count_ = std::nullopt,
-        std::optional<Int64> watermark_ = std::nullopt)
+        std::optional<Int64> watermark_ = std::nullopt,
+        std::optional<String> index_manifest_ = std::nullopt)
         : snapshot_id(snapshot_id_)
         , schema_id(schema_id_)
         , base_manifest_list_path(std::move(base_manifest_list_path_))
@@ -52,6 +54,7 @@ struct TableStateSnapshot
         , delta_record_count(delta_record_count_)
         , changelog_record_count(changelog_record_count_)
         , watermark(watermark_)
+        , index_manifest(std::move(index_manifest_))
     {
     }
 
