@@ -2006,6 +2006,25 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
                 }
             }
 
+            /// The output format may write in a background thread (squashing in `Pretty` formats). If that
+            /// write has failed (for example, the output pipe is broken), stop now: the query may have
+            /// produced all of its output already, and the next write would happen only at its end.
+            /// Handle it like any other local format error: cancel the query on the server and keep
+            /// receiving packets until the end, otherwise the query keeps running on the server.
+            if (output_format && !local_format_error)
+            {
+                try
+                {
+                    output_format->checkBackgroundError();
+                }
+                catch (...)
+                {
+                    local_format_error = std::make_exception_ptr(
+                        LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode()));
+                    sendCancel(local_format_error);
+                }
+            }
+
             /// Poll for changes after a cancellation check, otherwise it never reached
             /// because of progress updates from server.
 
@@ -2403,9 +2422,20 @@ bool ClientBase::receiveSampleBlock(Block & out, ColumnsDescription & columns_de
                 onTimezoneUpdate(packet.server_timezone);
                 break;
 
+            /// A subquery executed while the server is still analysing the query reports progress and
+            /// profile events, so these can arrive before the header block. They are informational here.
+            case Protocol::Server::Progress:
+                onProgress(packet.progress);
+                break;
+
+            case Protocol::Server::ProfileEvents:
+                onProfileEvents(packet.block);
+                break;
+
             default:
                 throw NetException(ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                    "Unexpected packet from server (expected Data, Exception, Log or TimezoneUpdate, got {})",
+                    "Unexpected packet from server (expected Data, Exception, Log, TableColumns, TimezoneUpdate, "
+                    "Progress or ProfileEvents, got {})",
                     Protocol::Server::toString(packet.type));
         }
     }
@@ -3019,7 +3049,7 @@ void ClientBase::processParsedSingleQuery(
                 }
             }
             client_context->setSettings(old_settings);
-            connection->setFormatSettings(getFormatSettings(client_context));
+            connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         });
         /// Capture whether this query was parsed via the `clickhouse_json` dialect or a SQL `SET` escape *before* applying any
         /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
@@ -3048,7 +3078,6 @@ void ClientBase::processParsedSingleQuery(
         current_query_parse_json_ast_gate = changed_by_query("enable_json_ast_dialect", parse_json_ast_gate);
         current_query_parse_trino_gate = changed_by_query("enable_trino_dialect", parse_trino_gate);
         current_query_parse_logsql_gate = changed_by_query("enable_logsql_dialect", parse_logsql_gate);
-        connection->setFormatSettings(getFormatSettings(client_context));
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs
         /// the stronger check is a session that continues after a failed query - the protocol can be
@@ -3059,6 +3088,7 @@ void ClientBase::processParsedSingleQuery(
         else if (!connection->checkConnectedWithoutRoundTrip())
             connect();
 
+        connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time

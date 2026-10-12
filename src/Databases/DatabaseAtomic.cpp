@@ -755,6 +755,11 @@ void DatabaseAtomic::renameDatabase(ContextPtr query_context, const String & new
     for (const auto & detached_table : snapshot_detached_tables)
         checkTableNameLengthUnlocked(new_name, detached_table.first, getContext());
 
+    /// The `renameInMemory` loop below only notifies the storages, it does not ask them whether the new
+    /// database name is acceptable. Detached tables are not asked: no storage object exists for them here.
+    for (const auto & table : tables)
+        table.second->checkTableCanBeRenamedByDatabaseRename(new_name);
+
     bool check_ref_deps = query_context->getSettingsRef()[Setting::check_referential_table_dependencies];
     bool check_loading_deps = !check_ref_deps && query_context->getSettingsRef()[Setting::check_table_dependencies];
     if (check_ref_deps || check_loading_deps)
@@ -922,7 +927,7 @@ void registerDatabaseAtomic(DatabaseFactory & factory)
         return make_shared<DatabaseAtomic>(
             args.database_name, args.metadata_path, args.uuid, args.context, database_metadata_disk_settings);
     };
-    factory.registerDatabase("Atomic", create_fn, /*features=*/{.supports_settings = true, .has_builtin_setting_fn = DatabaseMetadataDiskSettings::hasBuiltin}, Documentation{
+    factory.registerDatabase("Atomic", create_fn, SecretArgumentsSpec{}, /*features=*/{.supports_settings = true, .has_builtin_setting_fn = DatabaseMetadataDiskSettings::hasBuiltin}, Documentation{
         .description = R"DOCS_MD(
 The `Atomic` engine supports non-blocking [`DROP TABLE`](#drop-detach-table) and [`RENAME TABLE`](#rename-table) queries, and atomic [`EXCHANGE TABLES`](#exchange-tables) queries. The `Atomic` database engine is used by default in open-source ClickHouse.
 

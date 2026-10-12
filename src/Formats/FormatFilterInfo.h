@@ -30,6 +30,17 @@ struct FormatTopKFilterInfo
     /// Name of the first ORDER BY column in the format's output block.
     String column_name;
     TopKThresholdTrackerPtr threshold_tracker;
+    /// Hash of the planning-time parameters of the TopK (sort column and its type, number of sort
+    /// columns, `LIMIT`, direction, NULLS FIRST/LAST, collation). Which row groups the filter lets
+    /// through depends on these, so a query condition cache entry written by a TopK read is keyed
+    /// by it (see `StorageFileSource`).
+    UInt64 plan_hash = 0;
+    /// Remember, for each row group, the best value of the sort column among the rows the format
+    /// returned (see `IInputFormat::getTopKBestValuesOfBuckets`), which tells a row group whose every
+    /// row is beyond the final threshold - even if the rows were returned before the threshold got
+    /// tight enough to drop them. Set by a reading step that writes such verdicts to the query
+    /// condition cache.
+    bool track_row_group_best_values = false;
 };
 
 /// Some formats needs to custom mapping between columns in file and clickhouse columns.
@@ -127,6 +138,7 @@ struct FormatFilterInfo
     /// to a `field_id` requires this mapper, not the per-file one.
     ColumnMapperPtr current_schema_column_mapper;
 
+    /// The query condition cache key of `filter_actions_dag` (see `computeConditionHash`).
     std::optional<size_t> condition_hash;
 
     /// Lazy materialization: if set, read only the rows with these row numbers and skip everything
@@ -140,17 +152,28 @@ struct FormatFilterInfo
     /// it just ignore it - the filter only ever removes rows the sort + limit above would discard,
     /// so applying it partially or not at all is always correct.
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
+
+    /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
+    bool min_max_from_statistics = false;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
     std::exception_ptr init_exception;
 
 public:
+    /// True if the format may skip rows of the file.
     bool hasFilter() const;
 
     /// Creates `key_condition` and `additional_columns` with std::call_once semantics.
     /// If a previous init attempt threw an exception, rethrows it instead of retrying.
     void initKeyConditionOnce(const Block & keys);
+
+    /// The query condition cache key of the rows `filter_actions_dag` and `prewhere_info` keep, if
+    /// the condition is deterministic and covers `prewhere_info`.
+    static std::optional<size_t> computeConditionHash(
+        const ActionsDAG & filter_actions_dag,
+        const PrewhereInfoPtr & prewhere_info,
+        const ContextPtr & context);
 
     /// Returns `base` extended with columns required by PREWHERE / row-level filter.
     /// Hint: pass `base` with `std::move` to avoid copying
