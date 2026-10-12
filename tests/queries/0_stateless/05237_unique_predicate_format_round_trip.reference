@@ -1,0 +1,10 @@
+SELECT UNIQUE(\n        SELECT 1\n    )
+SELECT UNIQUE(SELECT number FROM numbers(3) UNION ALL SELECT 1), 42
+SELECT UNIQUE(SELECT 1 UNION ALL SELECT 1) AS u
+SELECT UNIQUE(SELECT 1)
+SELECT if(UNIQUE(SELECT 1), 1, 2), NOT UNIQUE(SELECT 1)
+SELECT UNIQUE(\n        SELECT number\n        FROM numbers(3)\n    )\nFROM system.one
+CREATE VIEW default.test_unique_format_view\n(\n    `u` UInt8,\n    `d` UInt8\n)\nAS SELECT\n    UNIQUE(\n        SELECT number\n        FROM numbers(3)\n    ) AS u,\n    UNIQUE(\n        SELECT 1\n        UNION ALL\n        SELECT 1\n    ) AS d
+1	0
+CREATE VIEW default.test_unique_format_view\n(\n    `u` UInt8,\n    `d` UInt8\n)\nAS SELECT\n    UNIQUE(\n        SELECT number\n        FROM numbers(3)\n    ) AS u,\n    UNIQUE(\n        SELECT 1\n        UNION ALL\n        SELECT 1\n    ) AS d
+1	0
