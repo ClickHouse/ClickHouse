@@ -900,11 +900,17 @@ void MemoryWorker::updateResidentMemoryThread()
             /// these pages count against too, so they are part of the pressure a purge relieves - even
             /// though what it returns are only jemalloc's dirty pages.
             const Int64 unmeasured = CurrentMetrics::get(CurrentMetrics::MemoryTrackingUnmeasured);
+            /// The growth speculation below extrapolates from what the resident size did during the
+            /// last tick, and this is what it did: the unmeasured part is not resident memory
+            /// coming and going but a charge changing hands - a pooled worker's region handed to
+            /// the server when the query that used it is over, or dropped with its pool - and
+            /// read as growth it would reserve a region's worth of headroom for nothing.
+            const Int64 measured_resident = memory_usage.resident;
             memory_usage.resident += unmeasured;
             memory_usage.allocated += unmeasured;
 
             /// Speculatively reserve growth headroom on top of the observed RSS.
-            /// `resident - prev_resident` is how much RSS actually grew during the last tick;
+            /// `measured_resident - prev_resident` is how much RSS actually grew during the last tick;
             /// on the assumption that the next interval may grow by the same amount, with the
             /// default `ratio = 1.0` we reserve one full growth delta of headroom, so
             /// `MemoryTracker::allocImpl` will throw `MEMORY_LIMIT_EXCEEDED` (via the global
@@ -946,7 +952,7 @@ void MemoryWorker::updateResidentMemoryThread()
                 /// real resident, triggering false `MEMORY_LIMIT_EXCEEDED` decisions in
                 /// `MemoryTracker::allocImpl`. Clamp `tracked` to `0` first.
                 Int64 tracked = std::max<Int64>(0, total_memory_tracker.get());
-                Int64 delta = std::min(memory_usage.resident - prev_resident, memory_usage.resident - tracked);
+                Int64 delta = std::min(measured_resident - prev_resident, memory_usage.resident - tracked);
                 /// Speculate only while real `resident` is still below the hard limit.
                 /// Once `resident >= current_hard_limit`, any positive allocation already
                 /// trips the `will_be_rss > current_hard_limit` branch in
@@ -967,7 +973,7 @@ void MemoryWorker::updateResidentMemoryThread()
                     speculative_rss += reserve;
                 }
             }
-            prev_resident = memory_usage.resident;
+            prev_resident = measured_resident;
             MemoryTracker::updateRSS(speculative_rss);
 
             if (page_cache)

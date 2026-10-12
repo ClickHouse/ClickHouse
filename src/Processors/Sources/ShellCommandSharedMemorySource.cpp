@@ -84,7 +84,9 @@ namespace ErrorCodes
     extern const int CANNOT_READ_FROM_FILE_DESCRIPTOR;
     extern const int CANNOT_WRITE_AFTER_END_OF_BUFFER;
     extern const int LOGICAL_ERROR;
+    extern const int MEMORY_LIMIT_EXCEEDED;
     extern const int QUERY_WAS_CANCELLED;
+    extern const int TIMEOUT_EXCEEDED;
     extern const int UDF_EXECUTION_FAILED;
     extern const int UNSUPPORTED_METHOD;
 }
@@ -496,11 +498,22 @@ namespace
                 /// never reached the child: no request was sent, so a pooled worker is still at a
                 /// clean protocol boundary and it, together with its region, can be reused by the
                 /// next borrow. Any other failure either leaves the child's state unknown (a
-                /// partially written request, an unread response) or proves that it misbehaves, so
-                /// the worker has to be discarded.
+                /// partially written request, an unread response) or proves that it misbehaves - an
+                /// answer that does not parse out of the region counts as the latter, even though
+                /// the worker is at a protocol boundary by then (`answer_in_region`): what it
+                /// answered is wrong, like too few or too many rows - so the worker has to be
+                /// discarded.
+                ///
+                /// With one exception: the query running out of memory while it parses a complete
+                /// answer. That says nothing about the command - the answer is still there, in the
+                /// region, for a query with a larger limit - and the worker is at the boundary
+                /// `answer_in_region` records, so it is kept. Over the pipes the same failure has to
+                /// discard the worker, because the rest of the answer is still in flight.
+                const bool query_out_of_memory_while_parsing_the_answer
+                    = borrow.answer_in_region && getCurrentExceptionCode() == ErrorCodes::MEMORY_LIMIT_EXCEEDED;
                 if (borrow.preparing_input)
                     borrow.command_can_be_reused = true;
-                else if (!borrow.command_can_be_reused)
+                else if (!borrow.command_can_be_reused && !query_out_of_memory_while_parsing_the_answer)
                     borrow.command_is_invalid = true;
                 throw;
             }
@@ -574,11 +587,14 @@ namespace
                     /// `~ShellCommand` would otherwise spend before signalling it (the two waits
                     /// share one deadline), so nothing is stalled that was not stalled before.
                     ///
-                    /// A worker whose answer was abandoned mid-protocol (a downstream `LIMIT`) is
-                    /// waited for within `command_termination_timeout`: a command written for this
-                    /// transport exits on stdin EOF, and its stdout carries only control frames,
-                    /// so closing it after some amount of output - what ends an abandoned producer
-                    /// on the pipe path - would never come.
+                    /// A worker whose answer was abandoned mid-protocol - the source torn down
+                    /// before the response frame arrived, or after an answer that did not parse -
+                    /// is waited for within `command_termination_timeout`: a command written for
+                    /// this transport exits on stdin EOF, and its stdout carries only control
+                    /// frames, so closing it after some amount of output - what ends an abandoned
+                    /// producer on the pipe path - would never come. (A pooled worker abandoned
+                    /// after its frame was read in full is kept, not waited for: see
+                    /// `answer_in_region`.)
                     const bool output_abandoned = !finished
                         && (!configuration.read_fixed_number_of_rows || current_read_rows < configuration.number_of_rows_to_read);
                     waitForCommandExit(*command, *timeout_command_out, /*close_inputs_first=*/ false,
@@ -640,8 +656,10 @@ namespace
                 /// exactly `shared_memory_size`. `takeOverReusedRegion` reads the file again
                 /// before anything is sized by it, and settles the charge with that.
                 size_t existing_size = command_holder->lastSeenSharedMemorySize();
-                if (existing_size > shared_memory_max_footprint)
-                    failBorrowOnRegionOverTheCap(existing_size);
+                /// Within the cap, or the worker would be gone: the footprint this is, re-read by
+                /// `discardPooledWorkerOverTheCap` a moment ago, is at most what the region costs
+                /// mapped whole, which that check held against the same figure.
+                chassert(existing_size <= shared_memory_max_footprint);
                 command_holder->releaseChargeToBorrower();
                 /// Whole pages: what a fresh region of `shared_memory_size` bytes holds.
                 query_memory_charge.charge(existing_size ? existing_size : SharedMemoryRegion::roundUpToPages(shared_memory_size));
@@ -806,6 +824,7 @@ namespace
         void sendRequest(size_t input_size, UInt64 request_id)
         {
             borrow.request_sent = true;
+            borrow.answer_in_region = false;
             writeVarUInt(SHARED_MEMORY_PROTOCOL_VERSION, *timeout_command_in);
             writeVarUInt(request_id, *timeout_command_in);
             /// The same path on every request: formatted once, not on the path of every call.
@@ -850,12 +869,27 @@ namespace
 
                     /// Each round is answered within `command_read_timeout`, but nothing bounds how
                     /// many rounds a command asks for - one page more each time, up to
-                    /// `shared_memory_max_size` - so a query that is killed or cancelled must not
-                    /// have to sit them all out. The worker is mid-protocol, so it is discarded.
+                    /// `shared_memory_max_size` - and nothing else in this loop looks at the clock,
+                    /// so a query that is killed, cancelled or past its `max_execution_time` must
+                    /// not have to sit them all out: both are checked here, once per round. The
+                    /// worker has answered this round in full and is waiting for the next request -
+                    /// the same clean boundary a growth refused by the cap leaves it at
+                    /// (`growRegionAsRequested`) - so a query that stops here keeps it, region and
+                    /// all. Only here: the request sent below leaves the worker mid-protocol again
+                    /// until its answer has been read.
+                    borrow.command_can_be_reused = true;
                     if (const auto query_status = context->getProcessListElement())
-                        query_status->throwIfKilled();
+                    {
+                        /// Throws for a killed query and, under `timeout_overflow_mode = throw`, for
+                        /// one past its time limit; under `break` it only says so, and breaking out
+                        /// of a function call with no rows is not an option, so that is thrown too.
+                        if (!query_status->checkTimeLimit())
+                            throw Exception(ErrorCodes::TIMEOUT_EXCEEDED,
+                                "Timeout exceeded while the executable UDF was asking for a larger shared-memory region");
+                    }
                     if (isCancelled())
                         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled while the executable UDF was asking for a larger shared-memory region");
+                    borrow.command_can_be_reused = false;
                     continue;
                 }
 
@@ -966,6 +1000,12 @@ namespace
                 throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                     "Executable UDF returned an out-of-bounds region: offset {}, size {}, region size {}",
                     output_offset, output_size, region.size());
+
+            /// The frame was read in full and the output it names lies within the region: the
+            /// worker is waiting for the next request, whatever this query does with the answer
+            /// from here on (see `answer_in_region`) - including failing to build the parser for
+            /// it below, at its memory limit.
+            borrow.answer_in_region = true;
 
             ProfileEvents::increment(ProfileEvents::ExecutableUDFSharedMemoryOutputBytes, output_size);
             if (configuration.sampler)
@@ -1235,6 +1275,15 @@ namespace
                 memory_limit_check_pending = true;
             }
 
+            /// A growth that committed its pages and then failed to map left the file longer than
+            /// the mapping (`SharedMemoryRegion::grow`). Those pages are charged already, and to the
+            /// command - which maps the whole file, as the protocol tells it to - they are part of
+            /// the region, so it may well answer from them; an answer there has to lie within the
+            /// mapping, or `setUpOutputPipeline` rejects it. So the mapping catches up with what the
+            /// server itself committed (`reservedSize` - not a tail the command added, which is not
+            /// mapped before it is needed). Nothing new is committed or charged by that: the pages
+            /// are there.
+            new_size = std::max(new_size, region.reservedSize());
 
             return new_size;
         }
@@ -1594,6 +1643,14 @@ namespace
             if (!timeout_command_out)
                 return false;
 
+            /// Latched as well (see `BorrowState::channel_found_clean`): `prepare` asks, and
+            /// `cleanup` asks again moments later with nothing sent to the worker in between, and
+            /// the probe below is not free - two `poll`s, and a drain of stderr with a budget - on
+            /// the hot path of every pooled call. The checks above are not latched: the command can
+            /// be reaped, or its stdout closed, between the two.
+            if (borrow.channel_found_clean)
+                return true;
+
             /// Pending stderr disqualifies the worker only under `stderr_reaction` `throw` (see
             /// the pipe-mode probe for the reasoning): under every other reaction the bytes are
             /// taken off the pipe here and put through the reaction - logged against this query,
@@ -1620,7 +1677,10 @@ namespace
 
             const auto state = timeout_command_out->channelState();
             if (state.isClean())
+            {
+                borrow.channel_found_clean = true;
                 return true;
+            }
 
             /// Remember what was wrong, so that the discard can be reported for what it is. It is
             /// otherwise completely invisible: the query it happens in succeeds, and the next one
@@ -1665,9 +1725,11 @@ namespace
         /// Whether the pooled worker process survives this borrow and goes back to the pool together
         /// with its holder and its region. Only a process left at a known protocol boundary does:
         /// one that never saw a request from this borrow, or one that answered every request in
-        /// full. A protocol failure, a dead child and an invocation cut short (query cancellation,
-        /// an exception downstream) all leave its state unknown, so it is discarded instead - which
-        /// also means its stdin must be closed and its shared-memory region released.
+        /// full - whether or not the query read the whole answer out of the region. A protocol
+        /// failure, a dead child and an invocation cut short before the answer arrived (query
+        /// cancellation, an exception downstream) all leave its state unknown, so it is discarded
+        /// instead - which also means its stdin must be closed and its shared-memory region
+        /// released.
         ///
         /// Only meaningful once the source is being torn down: while it is still running, a pooled
         /// worker that has not produced all its rows yet is not being discarded. Asked by `prepare`
@@ -1683,9 +1745,10 @@ namespace
                 && !borrow.command_is_invalid
                 && !borrow.stdin_closed
                 /// A worker no request was sent to is at the boundary it was borrowed at - a query
-                /// cancelled between the constructor and its first `generate`, say.
-                && (!borrow.request_sent || borrow.command_can_be_reused
-                    || (configuration.read_fixed_number_of_rows && current_read_rows >= configuration.number_of_rows_to_read))
+                /// cancelled between the constructor and its first `generate`, say. One whose last
+                /// request was answered in full is at the next one, however much of the answer the
+                /// query took out of the region before it stopped.
+                && (!borrow.request_sent || borrow.command_can_be_reused || borrow.answer_in_region)
                 /// The region's size is not asked about here: `cleanup` checks it against the cap
                 /// as late as it can, and discards the worker itself if it is over.
                 && controlChannelIsClean();
@@ -1831,10 +1894,11 @@ namespace
             if (!keep_command && !worker_untouched)
             {
                 /// The worker process is being discarded (protocol failure, child death,
-                /// overproduction, cancellation, etc.), and its region goes with it, even when an
-                /// earlier borrow created it (see `shared_memory_region`). The charge for the region
-                /// is this borrow's and is released by `cleanup`, and a holder left without a
-                /// region takes none back (`acquireChargeFromBorrower`).
+                /// overproduction, a query cancelled before the answer arrived, etc.), and its
+                /// region goes with it, even when an earlier borrow created it (see
+                /// `shared_memory_region`). The charge for the region is this borrow's and is
+                /// released by `cleanup`, and a holder left without a region takes none back
+                /// (`acquireChargeFromBorrower`).
                 discardTakenWorker();
             }
             /// Otherwise the region stays with the worker (kept, or never taken out), at
@@ -1907,6 +1971,14 @@ namespace
             /// (see `command_holder`). Its stdin was closed by `cleanup`, so the child is already on
             /// its way out.
             command = nullptr;
+
+            /// This borrow's reference to the region goes before the holder does, and after the
+            /// worker: once the holder is back in the pool, the next borrow may discard its worker
+            /// and drop the region's charge, and a reference kept here would keep the pages
+            /// committed, and charged to nobody, until this source's members are destroyed. A
+            /// region the holder still owns lives on in the holder; one it dropped with a discarded
+            /// worker was dropped here already (`dropRegionAndWorker`), after its process.
+            shared_memory_region.reset();
 
             command_holder.returnToPool();
         }
@@ -2078,6 +2150,16 @@ namespace
             /// the child answered in full and the query fails anyway. Unlike an incomplete or
             /// cancelled invocation, this leaves the child at a known protocol boundary.
             bool command_can_be_reused = false;
+            /// The worker answered the last request with an `OK` frame that was read in full and
+            /// names output within the region (`exchange`), so it is waiting for the next request.
+            /// Unlike over the pipes, where the answer a query stops reading stays in the pipe and
+            /// the worker that wrote it cannot be used again, nothing of it is in flight here: a
+            /// query torn down before it parsed the whole answer out of the region - an exception
+            /// downstream of the source, a cancellation - leaves the worker at a clean boundary,
+            /// and it goes back to the pool together with its region, which the next borrow scrubs.
+            /// Cleared by the next request. An answer that fails to parse is another matter, a
+            /// query that runs out of memory parsing it is not (see the catch-all in `generate`).
+            bool answer_in_region = false;
             /// The child is out of step with the protocol or its state is unknown: it is discarded.
             bool command_is_invalid = false;
             /// Whether the command's stdin has been closed (`closeStdinIfNeeded`).
@@ -2090,6 +2172,11 @@ namespace
             /// probe would then find two clean pipes and hand back a worker whose stdin is already
             /// closed, and the next query to borrow it would fail writing its first request.
             bool channel_was_dirty = false;
+            /// The converse, latched by the same probe: once the pipes have been found clean, they
+            /// are not probed again by a later call. Nothing is sent to the worker once the source
+            /// is finished, so what the probe would find is what it found - and a line the command
+            /// writes to stderr after that is reported by the next borrow, which reads it first.
+            bool channel_found_clean = false;
             /// Latched by `decideWorkerReuse`: a "no" is final. `prepare` acts on it - closes the
             /// worker's stdin, waits for it - and a later "yes" from a probe that happens to pass
             /// would hand that worker back to the pool. A "yes" can still turn into a "no":

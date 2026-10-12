@@ -295,8 +295,15 @@ private:
     /// reaps it once it goes on the signal.
     void signalAndHandOverChild();
 
-    /// Hands a child this object will not reap to `ShellCommandsHolder`, which reaps it once it exits.
-    void handOverChildToReaper() noexcept;
+    /// Hands a child this object will not reap to `ShellCommandsHolder`, which reaps it once it
+    /// exits. False if the holder would not take it (it could not be registered): the child is then
+    /// still this object's, as if nothing had been called.
+    bool handOverChildToReaper() noexcept;
+
+    /// For a child that has `SIGKILL` and was not reaped within its bound: handed to the reaper, or,
+    /// if the reaper would not take it, forgotten - it is dead or as good as, so its registry entry
+    /// goes, and the zombie is logged.
+    void handOverOrForgetKilledChild() noexcept;
 
     /// `tryWait`, logging what it throws: for the destructor's path.
     void tryWaitNoThrow() noexcept;
@@ -434,11 +441,17 @@ private:
     /// In the parent, after `vfork`: reads the report of a child that failed before `exec` off the
     /// read end of its error pipe, `report_fd`, and throws `CANNOT_CREATE_CHILD_PROCESS` for it.
     /// Returns if the child has started.
-    static void checkChildSetupReport(pid_t child_pid, int report_fd);
+    /// `own_process_group`: the child leads a group of its own, which is ended with it if it is
+    /// killed here.
+    static void checkChildSetupReport(pid_t child_pid, int report_fd, bool own_process_group);
+    /// Kills and reaps a child that has no `ShellCommand` to own it (its start could not be
+    /// established, or the constructor threw): the group it leads too, with `whole_group`. A child
+    /// not reaped within a bound is handed to the reaper (`ShellCommandsHolder::addSignalledChild`).
+    static void killAndReapOrphan(pid_t child_pid, bool whole_group) noexcept;
 
     /// The read of the child's error pipe failed with `read_error`: whether the child started is
     /// established from the child itself. Throws unless it is running.
-    static void handleUnreadableChildReport(pid_t child_pid, int read_error);
+    static void handleUnreadableChildReport(pid_t child_pid, int read_error, bool own_process_group);
 };
 
 

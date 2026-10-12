@@ -1,19 +1,40 @@
 #include <Common/logger_useful.h>
+#include <Common/ErrnoException.h>
 #include <Common/Exception.h>
 #include <Common/ShellCommandsHolder.h>
 #include <Common/UDFProcessRegistry.h>
 #include <Common/setThreadName.h>
 
 #include <Common/waitForPid.h>
-#include <base/errnoToString.h>
 #include <base/scope_guard.h>
+#include <base/sleep.h>
 
 #include <poll.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <utility>
+
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int CANNOT_POLL;
+}
+
+namespace
+{
+
+void closePidFd(int pidfd)
+{
+    if (pidfd < 0)
+        return;
+    [[maybe_unused]] int err = ::close(pidfd);
+    chassert(!err || errno == EINTR);
+}
+
+}
 
 ShellCommandsHolder & ShellCommandsHolder::instance()
 {
@@ -30,19 +51,36 @@ ShellCommandsHolder::ShellCommandsHolder()
     UDFProcessRegistry::instance();
 }
 
+/// A command taken out of `shell_commands` - or one that was never put there - is destroyed only
+/// once `mutex` is released, by both functions below: `~ShellCommand` may hand a signalled child
+/// over to the reaper (`addSignalledChild`), which takes that very mutex.
+
 void ShellCommandsHolder::removeCommand(pid_t pid)
 {
-    std::lock_guard lock(mutex);
-    bool is_erased = shell_commands.erase(pid);
-    LOG_TRACE(log, "Try to erase command with the pid {}, is_erased: {}", pid, is_erased);
+    std::unique_ptr<ShellCommand> removed;
+    {
+        std::lock_guard lock(mutex);
+        auto it = shell_commands.find(pid);
+        if (it != shell_commands.end())
+        {
+            removed = std::move(it->second);
+            shell_commands.erase(it);
+        }
+    }
+    LOG_TRACE(log, "Try to erase command with the pid {}, is_erased: {}", pid, removed != nullptr);
 }
+
 void ShellCommandsHolder::addCommand(std::unique_ptr<ShellCommand> command)
 {
+    /// What is left to destroy outside the lock: the command itself if it is not inserted, or
+    /// the one it replaces.
+    std::unique_ptr<ShellCommand> discarded;
     std::lock_guard lock(mutex);
     pid_t command_pid = command->getPid();
     if (command->waitIfProccesTerminated())
     {
         LOG_TRACE(log, "Pid {} already finished. Do not insert it.", command_pid);
+        discarded = std::move(command);
         return;
     }
 
@@ -55,7 +93,7 @@ void ShellCommandsHolder::addCommand(std::unique_ptr<ShellCommand> command)
 
     if (iterator->second->isWaitCalled())
     {
-        iterator->second = std::move(command);
+        discarded = std::exchange(iterator->second, std::move(command));
         LOG_TRACE(log, "Replaced the command with pid {}", command_pid);
         return;
     }
@@ -66,15 +104,38 @@ void ShellCommandsHolder::addCommand(std::unique_ptr<ShellCommand> command)
     LOG_WARNING(log, "The PID already presented in active shell commands, will try to replace with a new one.");
 
     iterator->second->setDoNotTerminate();
-    iterator->second = std::move(command);
+    discarded = std::exchange(iterator->second, std::move(command));
 }
 
 void ShellCommandsHolder::addSignalledChild(pid_t pid, std::optional<UInt64> udf_registry_generation)
 {
+    /// Opened once for the child's whole stay here, so that a round of the reaper costs no
+    /// syscall per child; outside the lock. Without one to be had (an older kernel, a seccomp
+    /// profile that refuses it) the reaper looks at the child in steps instead.
+    int pidfd = -1;
+#if defined(OS_LINUX)
+    pidfd = openPidFdForWaiting(pid);
+#endif
+    /// Closed here unless the entry takes it - after the lock is released.
+    SCOPE_EXIT({ closePidFd(pidfd); });
+
     std::lock_guard lock(mutex);
     /// A pid that is here already was reaped by somebody other than the reaper, and reused: the
-    /// child it stands for now is this one.
-    auto [it, inserted] = signalled_children.insert_or_assign(pid, udf_registry_generation);
+    /// child it stands for now is this one. Its `pidfd` stands for the old one, which has exited,
+    /// and may be in the reaper's `poll` right now: it is closed by the reaper, after that `poll`.
+    /// Allocations, which can fail, and fail before anything is taken - as does a reaper thread
+    /// that cannot be started, below.
+    auto it = signalled_children.find(pid);
+    if (it != signalled_children.end())
+    {
+        released_pidfds.push_back(it->second.pidfd);
+        it->second = {.udf_registry_generation = udf_registry_generation, .pidfd = std::exchange(pidfd, -1)};
+    }
+    else
+    {
+        it = signalled_children.emplace(pid, SignalledChild{.udf_registry_generation = udf_registry_generation}).first;
+        it->second.pidfd = std::exchange(pidfd, -1);
+    }
 
     /// One that is gone already needs no thread to wait for it - nor does any child once the
     /// holder is being destroyed: the process is exiting, and the reaper has been stopped. Only
@@ -87,17 +148,37 @@ void ShellCommandsHolder::addSignalledChild(pid_t pid, std::optional<UInt64> udf
 
     if (!reaper)
     {
-        /// Opened once, and kept if starting the thread fails, so that the next call can try again.
-        if (reaper_wakeup.fds_rw[0] < 0)
+        try
         {
-            reaper_wakeup.open();
-            reaper_wakeup.setNonBlockingReadWrite();
+            /// Opened once, and kept if starting the thread fails, so that the next call can try again.
+            if (reaper_wakeup.fds_rw[0] < 0)
+            {
+                reaper_wakeup.open();
+                reaper_wakeup.setNonBlockingReadWrite();
+            }
+            reaper.emplace([this] { runReaper(); });
         }
-        reaper.emplace([this] { runReaper(); });
+        catch (...)
+        {
+            /// Without the thread nobody would reap this child before the next hand-over, which
+            /// may never come: an entry taken here would keep it a zombie, and its entry in
+            /// `UDFProcessRegistry` live, for as long as the server runs, while the caller
+            /// believes it handed the child over. So the hand-over fails instead: the entry goes,
+            /// the exception reaches the caller, and the child stays the caller's to wait for or
+            /// to warn about (`ShellCommand::handOverChildToReaper`). The entry this one replaced,
+            /// if any, stood for a child that somebody else had reaped, so nothing is lost with it.
+            /// By pid, not by `it`: `reapSignalledChild` moved that past the entry. Its `pidfd` was
+            /// never in a `poll` - there is no reaper - so it is closed at once.
+            auto node = signalled_children.extract(pid);
+            closePidFd(node.mapped().pidfd);
+            throw;
+        }
+        /// The thread starts with this child in front of it.
         return;
     }
 
-    /// The reaper is asleep on the children it knew of: woken to wait for this one too.
+    /// The child is this holder's now. The reaper is asleep on the children it knew of, so it is
+    /// woken to wait for this one too.
     wakeReaper();
 }
 
@@ -119,6 +200,13 @@ ShellCommandsHolder::~ShellCommandsHolder()
     }
     if (thread)
         thread->join();
+
+    /// Nothing polls them any more. The children themselves are left as they are: the process is
+    /// exiting.
+    std::lock_guard lock(mutex);
+    closeReleasedPidFds();
+    for (auto & [_, child] : signalled_children)
+        closePidFd(std::exchange(child.pidfd, -1));
 }
 
 bool ShellCommandsHolder::reapSignalledChild(SignalledChildren::iterator & it)
@@ -136,8 +224,11 @@ bool ShellCommandsHolder::reapSignalledChild(SignalledChildren::iterator & it)
     }
 
     LOG_TRACE(log, "Reaped the signalled command with the pid {}", it->first);
-    if (it->second)
-        UDFProcessRegistry::instance().removeIfGenerationMatches(it->first, *it->second);
+    if (it->second.udf_registry_generation)
+        UDFProcessRegistry::instance().removeIfGenerationMatches(it->first, *it->second.udf_registry_generation);
+    /// Never in a `poll` that is still going on: this runs either on the reaper, between its polls,
+    /// or for an entry that `addSignalledChild` has just made.
+    closePidFd(it->second.pidfd);
     it = signalled_children.erase(it);
     return true;
 }
@@ -148,86 +239,58 @@ void ShellCommandsHolder::reapSignalledChildren()
         reapSignalledChild(it);
 }
 
-namespace
+void ShellCommandsHolder::closeReleasedPidFds()
 {
-
-/// What the reaper waits on in one round: its wake-up pipe and the `pidfd` of every child it can
-/// get one for, which it owns and closes. Room for every descriptor is reserved before the first is
-/// opened, so that putting one into the set never allocates - an allocation that threw would leave
-/// it open with nothing to close it.
-class ReaperPollSet
-{
-public:
-    ReaperPollSet(int wakeup_fd, size_t max_children)
-    {
-        fds.reserve(max_children + 1);
-        fds.push_back({.fd = wakeup_fd, .events = POLLIN, .revents = 0});
-    }
-
-    ~ReaperPollSet()
-    {
-        for (size_t i = 1; i < fds.size(); ++i)
-        {
-            [[maybe_unused]] int err = ::close(fds[i].fd);
-            chassert(!err || errno == EINTR);
-        }
-    }
-
-    ReaperPollSet(const ReaperPollSet &) = delete;
-    ReaperPollSet & operator=(const ReaperPollSet &) = delete;
-
-    /// Adds the `pidfd` of `pid`; false if there is none to be had (an older kernel, a seccomp
-    /// profile that refuses it), and the child has to be looked at in steps instead.
-    bool addChild([[maybe_unused]] pid_t pid)
-    {
-        int pidfd = -1;
-#if defined(OS_LINUX)
-        pidfd = openPidFdForWaiting(pid);
-#endif
-        if (pidfd < 0)
-            return false;
-        fds.push_back({.fd = pidfd, .events = POLLIN, .revents = 0});
-        return true;
-    }
-
-    /// Until a child exits, the reaper is woken, or `timeout_ms` passes (-1: no timeout).
-    int wait(int timeout_ms) { return ::poll(fds.data(), static_cast<nfds_t>(fds.size()), timeout_ms); }
-
-private:
-    std::vector<pollfd> fds;
-};
-
+    for (int pidfd : released_pidfds)
+        closePidFd(pidfd);
+    released_pidfds.clear();
 }
 
 void ShellCommandsHolder::runReaper()
 {
     setThreadName(ThreadName::SHELL_CMD_REAPER);
 
-    /// Without a `pidfd` for some child (an older kernel, a seccomp profile that refuses it) there is
-    /// nothing to sleep on until it exits: it is looked at again in steps of this.
+    /// On a kernel without `pidfd_open` there is nothing to sleep on until a child exits: such a
+    /// child is looked at again in steps of this. The same step paces the rounds after one that
+    /// failed.
     static constexpr int step_without_pidfd_ms = 100;
+
+    /// What a round polls: the wake-up pipe, then the `pidfd` of every child that has one. Kept
+    /// from one round to the next, so that its memory is not allocated anew each time.
+    std::vector<pollfd> fds;
 
     while (true)
     {
         try
         {
-            std::optional<ReaperPollSet> poll_set;
             int timeout_ms = -1;
             {
                 std::lock_guard lock(mutex);
                 if (reaper_shutdown)
                     return;
 
+                /// The last `poll` is over: the descriptors released during it are not in use any more.
+                closeReleasedPidFds();
+
+                /// Every child, whatever the last `poll` reported - or whether it succeeded at all:
+                /// a round that follows a failed one reaps all the same.
                 reapSignalledChildren();
 
-                poll_set.emplace(reaper_wakeup.fds_rw[0], signalled_children.size());
-                for (const auto & [pid, _] : signalled_children)
-                    if (!poll_set->addChild(pid))
+                /// Reserved first, so that no `push_back` below allocates.
+                fds.reserve(signalled_children.size() + 1);
+                fds.clear();
+                fds.push_back({.fd = reaper_wakeup.fds_rw[0], .events = POLLIN, .revents = 0});
+                for (const auto & [_, child] : signalled_children)
+                {
+                    if (child.pidfd < 0)
                         timeout_ms = step_without_pidfd_ms;
+                    else
+                        fds.push_back({.fd = child.pidfd, .events = POLLIN, .revents = 0});
+                }
             }
 
-            if (poll_set->wait(timeout_ms) < 0 && errno != EINTR)
-                LOG_WARNING(log, "Cannot wait for signalled commands to exit: {}", errnoToString());
+            if (::poll(fds.data(), static_cast<nfds_t>(fds.size()), timeout_ms) < 0 && errno != EINTR)
+                throw ErrnoException(ErrorCodes::CANNOT_POLL, "Cannot wait for signalled commands to exit");
 
             char buffer[64];
             while (::read(reaper_wakeup.fds_rw[0], buffer, sizeof(buffer)) > 0)
@@ -236,8 +299,12 @@ void ShellCommandsHolder::runReaper()
         }
         catch (...)
         {
-            /// The thread must not end on an exception; whatever it was, the next round tries again.
+            /// The thread must not end on an exception; whatever it was, the next round tries again
+            /// - a step later: what threw (a failed `poll`, or the set to wait on not fitting under
+            /// a memory limit) throws again as long as its cause lasts, and a round that started
+            /// over at once would spin and log for as long as that is.
             tryLogCurrentException(log);
+            sleepForMilliseconds(step_without_pidfd_ms);
         }
     }
 }

@@ -374,8 +374,11 @@ WaitForPidResult waitForPidMilliseconds(pid_t pid, size_t timeout_in_millisecond
     SCOPE_EXIT({
         if (pid_fd >= 0)
         {
+            /// The caller reads `errno` of a wait that failed; the close must not overwrite it.
+            const int saved_errno = errno;
             [[maybe_unused]] int err = close(pid_fd);
             chassert(!err || errno == EINTR);
+            errno = saved_errno;
         }
     });
 

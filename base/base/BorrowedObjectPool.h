@@ -9,6 +9,7 @@
 #include <condition_variable>
 
 #include <base/defines.h>
+#include <base/scope_guard.h>
 #include <base/MoveOrCopyIfThrow.h>
 
 /** Pool for limited size objects that cannot be used from different threads simultaneously.
@@ -55,8 +56,8 @@ public:
             }
 
             ++waiting_borrowers_size;
+            SCOPE_EXIT({ --waiting_borrowers_size; });
             condition_variable.wait(lock, [this] { return canBorrowOrAllocate(); });
-            --waiting_borrowers_size;
         }
     }
 
@@ -95,10 +96,8 @@ public:
             }
 
             ++waiting_borrowers_size;
-            const bool woken = condition_variable.wait_until(lock, deadline, [this] { return canBorrowOrAllocate(); });
-            --waiting_borrowers_size;
-
-            if (!woken)
+            SCOPE_EXIT({ --waiting_borrowers_size; });
+            if (!condition_variable.wait_until(lock, deadline, [this] { return canBorrowOrAllocate(); }))
                 return false;
         }
     }

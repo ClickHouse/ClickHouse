@@ -165,9 +165,10 @@ For `type` `executable_pool`, a region never shrinks. It keeps the size of the l
 
 #### The size cap {#shared-memory-size-cap}
 
-The server never charges, commits, or maps a region beyond `shared_memory_max_size`:
+The server checks the footprint against `shared_memory_max_size` before and after every growth, and at every hand-over:
 
 - A growth that would take the footprint past the cap is refused before it commits anything, and the process is discarded.
+- After a growth, the footprint is read again. A command can free pages inside the region (punch holes in the file) and commit as many pages past its end, which the check before the growth cannot tell apart from a region that holds them all. The growth then commits the freed pages again, and the footprint can exceed the cap by up to that many pages. Those pages are already charged to the query's memory tracker. The query fails with an exception, and the process is discarded together with its region.
 - A region whose footprint has passed the cap at a hand-over is not returned to the pool: the process is discarded together with its region.
 
 The cap is enforced at those points, not continuously: between hand-overs, a command can commit pages into the region without the server's memory tracker seeing them, just as it can allocate memory of its own. For a trusted command, the cap bounds what a pooled process may keep; against a command that means harm it is advisory, like any limit on a process running as the server's user.
@@ -176,7 +177,7 @@ Footprints and the cap are compared in whole pages of the unit in which the kern
 
 Pages the file holds beyond the length the server committed itself are counted as lying past the end of the file. A command that extends the file and writes into the extension is therefore charged for those pages twice, and reaches the cap sooner.
 
-A process is discarded when the cap is exceeded, on a protocol failure, when the command dies, or when the query is cancelled. A shared-memory command runs in its own process group. To discard it, the server closes its `stdin` and gives it the rest of `command_termination_timeout` to exit, then sends `SIGKILL` to the whole group (even if the command already exited, so processes it left running in the group end with it) and reaps it. Only then does the server free every page of the region and drop its charge, so nothing in the group can write into the region afterwards.
+A process is discarded when the cap is exceeded, on a protocol failure, when the command dies, when its answer does not parse, or when the query stops before the response frame has arrived. A query that stops after the frame arrived but before it has read the whole answer out of the region leaves the process at a protocol boundary, so the process is kept with its region (the next query scrubs it). A shared-memory command runs in its own process group. To discard it, the server closes its `stdin` and gives it the rest of `command_termination_timeout` to exit, then sends `SIGKILL` to the whole group (even if the command already exited, so processes it left running in the group end with it) and reaps it. Only then does the server free every page of the region and drop its charge, so nothing in the group can write into the region afterwards.
 
 Out of reach is a descendant that left the group (`setsid`, `setpgid`) while holding the inherited descriptor. The region's pages are freed under it anyway; whatever it writes there allocates new pages that are not tracked, like any other memory allocated by a process running as the server's user. Since the command's group is not the server's, signals sent to the server's process group (Ctrl-C in a terminal running `clickhouse-local`, `kill(0, ...)`) do not reach the command; the server ends it on its own shutdown.
 

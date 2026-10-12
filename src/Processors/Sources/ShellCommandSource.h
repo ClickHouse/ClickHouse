@@ -71,12 +71,6 @@ struct ShellCommandSourceConfiguration
     /// Optional accumulator for executable_pool UDF resource accounting.
     /// Only set by the executable_pool UDF factory; other consumers leave it null.
     std::shared_ptr<UDFProcessSubtreeSampler> sampler;
-    /// Whether the source serves an executable UDF, whose protocol is one row per input row: only
-    /// there is a command that answers with more rows than it was sent wrong. The `executable_pool`
-    /// dictionary source and the `ExecutablePool` table engine have always taken a block with more
-    /// rows than they asked for as it is. Not for callers to set: `ShellCommandSourceCoordinator::createPipe`
-    /// overwrites it from the coordinator's own configuration, which is where the fact lives.
-    bool is_user_defined_function = false;
 };
 
 class ShellCommandSourceCoordinator

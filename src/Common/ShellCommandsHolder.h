@@ -9,6 +9,7 @@
 #include <optional>
 #include <thread>
 #include <unordered_map>
+#include <vector>
 
 
 namespace DB
@@ -36,7 +37,14 @@ public:
     ~ShellCommandsHolder();
 
 private:
-    using SignalledChildren = std::unordered_map<pid_t, std::optional<UInt64>>;
+    struct SignalledChild
+    {
+        std::optional<UInt64> udf_registry_generation;
+        /// Opened once, when the child is taken over, and closed once it is reaped; -1 when there is
+        /// none to be had (an older kernel, a seccomp profile that refuses `pidfd_open`).
+        int pidfd = -1;
+    };
+    using SignalledChildren = std::unordered_map<pid_t, SignalledChild>;
 
     /// Reaps the signalled child at `it` if it has exited: true, and `it` is moved past the erased
     /// entry; false, and `it` is advanced, otherwise.
@@ -44,6 +52,9 @@ private:
 
     /// Reaps every signalled child that has exited.
     void reapSignalledChildren() TSA_REQUIRES(mutex);
+
+    /// Closes the `pidfd`s in `released_pidfds`.
+    void closeReleasedPidFds() TSA_REQUIRES(mutex);
 
     /// The reaper thread: sleeps until a signalled child exits (on its `pidfd`) or another one is
     /// added (`reaper_wakeup`), and reaps.
@@ -59,6 +70,9 @@ private:
     ShellCommands shell_commands TSA_GUARDED_BY(mutex);
     /// The children `addSignalledChild` took over, with their `UDFProcessRegistry` generations.
     SignalledChildren signalled_children TSA_GUARDED_BY(mutex);
+    /// The `pidfd`s of entries replaced while the reaper may be polling them: closed by the reaper
+    /// once its `poll` is over, so that their numbers are not reused under it.
+    std::vector<int> released_pidfds TSA_GUARDED_BY(mutex);
     std::optional<std::thread> reaper TSA_GUARDED_BY(mutex);
     /// Opened under `mutex` before the reaper starts and never changed after, so the reaper reads it
     /// without the lock.

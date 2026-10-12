@@ -88,6 +88,7 @@ namespace
                   configuration_.sampler.get())
             , is_pooled(static_cast<bool>(command_holder_))
             , check_exit_code(coordinator_configuration.check_exit_code)
+            , is_user_defined_function(coordinator_configuration.is_user_defined_function)
             , worker_is_reused(worker_is_reused_)
             , command_holder(std::move(command_holder_))
             , command(std::move(command_))
@@ -229,6 +230,12 @@ namespace
                 }
                 else if (command)
                 {
+                    /// The send task closes stdin only when it has sent everything; on this path
+                    /// (cancellation, a failure downstream) it may not have, and the wait inside
+                    /// would then sit out `command_termination_timeout` in front of a child that is
+                    /// blocked reading its input. Closed first, so that the child sees EOF and exits;
+                    /// the send threads were joined at the top of this function. Idempotent.
+                    closeCommandInputsNoThrow();
                     recordNonPooledUsage(*configuration.sampler, *command, "ShellCommandSource");
                 }
             }
@@ -334,7 +341,7 @@ namespace
                 /// leaves the source, so that the exception marks the command invalid and a
                 /// pooled worker is discarded instead of being returned as if it had answered
                 /// correctly - which is what counting the rows further up the pipeline would do.
-                if (configuration.is_user_defined_function && configuration.read_fixed_number_of_rows
+                if (is_user_defined_function && configuration.read_fixed_number_of_rows
                     && current_read_rows + chunk.getNumRows() > configuration.number_of_rows_to_read)
                     throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                         "Executable UDF wrong result, expected {} row(s), but the command produced more (at least {})",
@@ -762,6 +769,11 @@ namespace
         const bool is_pooled;
 
         bool check_exit_code = false;
+        /// Whether the source serves an executable UDF, whose protocol is one row per input row: only
+        /// there is a command that answers with more rows than it was sent wrong. The `executable_pool`
+        /// dictionary source and the `ExecutablePool` table engine have always taken a block with more
+        /// rows than they asked for as it is.
+        const bool is_user_defined_function;
 
         QueryPipeline pipeline;
         std::unique_ptr<PullingPipelineExecutor> executor;
@@ -1087,12 +1099,8 @@ Pipe ShellCommandSourceCoordinator::createPipe(
     std::vector<Pipe> && input_pipes,
     Block sample_block,
     ContextPtr context,
-    const ShellCommandSourceConfiguration & source_configuration_)
+    const ShellCommandSourceConfiguration & source_configuration)
 {
-    /// Whether the source serves a UDF is the coordinator's to say - it already knows, and a caller
-    /// that forgot to say so would lose the UDF-only checks without a sound.
-    ShellCommandSourceConfiguration source_configuration = source_configuration_;
-    source_configuration.is_user_defined_function = configuration.is_user_defined_function;
     UDFProcessSubtreeSampler * sampler = source_configuration.sampler.get();
 
     if (configuration.use_shared_memory && input_pipes.size() != 1)

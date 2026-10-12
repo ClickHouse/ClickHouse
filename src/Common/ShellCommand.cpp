@@ -29,6 +29,7 @@
 #include <base/errnoToString.h>
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
+#include <Common/LockMemoryExceptionInThread.h>
 #include <Common/ShellCommand.h>
 #include <Common/ShellCommandsHolder.h>
 #include <Common/UDFProcessRegistry.h>
@@ -224,26 +225,50 @@ void ShellCommand::signalAndHandOverChild()
     /// the signal is left running, as it always was. So is one the signal could not be sent to (it
     /// has dropped privileges the server lacks, say): still a child of the server, and still in the
     /// registry, until it exits and is reaped. Other commands are left as they always were.
-    if (config.register_in_udf_process_registry)
-        handOverChildToReaper();
+    ///
+    /// One the reaper would not take is left as every signalled command was before the reaper
+    /// existed: signalled, and reaped by nobody. That is what the warning is for; nothing more is
+    /// done to it here, since this is the destructor and a signal it was not meant to get is not
+    /// the answer to a failed bookkeeping step.
+    if (config.register_in_udf_process_registry && !handOverChildToReaper())
+        LOG_WARNING(getLogger(), "Shell command pid {} was signalled but will not be reaped", pid);
 }
 
-void ShellCommand::handOverChildToReaper() noexcept
+bool ShellCommand::handOverChildToReaper() noexcept
 {
-    /// Not this object's to wait for any more, but not forgotten either (`forgetChild`): its entry
-    /// in `UDFProcessRegistry` goes with it, and is removed once it is reaped - a child that
-    /// ignores the signal is still a process of the server for as long as it lives.
-    child_reaped = true;
-    wait_called = true;
     try
     {
+        /// A cleanup path: an allocation at the query's memory limit must not be what leaves the
+        /// child to nobody.
+        LockMemoryExceptionInThread lock(VariableContext::Global);
         ShellCommandsHolder::instance().addSignalledChild(
             pid, config.register_in_udf_process_registry ? std::optional<UInt64>(udf_registry_generation) : std::nullopt);
     }
     catch (...)
     {
-        tryLogCurrentException(getLogger());
+        /// Still this object's: whoever called decides what to do with a child that nobody reaps.
+        tryLogCurrentException(getLogger(), fmt::format("Cannot hand shell command pid {} over to the reaper", pid));
+        return false;
     }
+
+    /// Not this object's to wait for any more, but not forgotten either (`forgetChild`): its entry
+    /// in `UDFProcessRegistry` goes with it, and is removed once it is reaped - a child that
+    /// ignores the signal is still a process of the server for as long as it lives.
+    child_reaped = true;
+    wait_called = true;
+    return true;
+}
+
+void ShellCommand::handOverOrForgetKilledChild() noexcept
+{
+    if (handOverChildToReaper())
+        return;
+
+    /// It has `SIGKILL`, which it cannot ignore: it runs no more code, and is a zombie if it is
+    /// anything, which keeps its pid to itself - so it is taken out of `UDFProcessRegistry` now,
+    /// and the zombie, which nobody reaps, is what the warning is about.
+    LOG_WARNING(getLogger(), "Shell command pid {} was killed but will not be reaped", pid);
+    forgetChild();
 }
 
 void ShellCommand::tryWaitNoThrow() noexcept
@@ -286,8 +311,11 @@ bool ShellCommand::tryWaitProcessWithTimeout(size_t timeout_in_milliseconds)
             forgetChild();
             return true;
         case WaitForPidResult::TIMEOUT:
+            /// Still ours: signalled by the caller.
+            return false;
         case WaitForPidResult::ERROR:
             /// Still ours, as far as anyone can tell: signalled by the caller.
+            LOG_WARNING(getLogger(), "Cannot wait for shell command pid {}: {}", pid, errnoToString());
             return false;
     }
 }
@@ -354,12 +382,12 @@ void ShellCommand::killAndReapNoThrow(bool whole_group) noexcept
             {
                 const int saved_errno = errno;
                 LOG_WARNING(getLogger(), "Cannot reap shell command pid {} after SIGKILL: {}", pid, errnoToString(saved_errno));
-                handOverChildToReaper();
+                handOverOrForgetKilledChild();
                 break;
             }
             case WaitForPidResult::TIMEOUT:
                 LOG_WARNING(getLogger(), "Shell command pid {} was not reaped within {} ms after SIGKILL", pid, reap_after_kill_timeout_ms);
-                handOverChildToReaper();
+                handOverOrForgetKilledChild();
                 break;
         }
     }
@@ -701,14 +729,30 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
         LOG_WARNING(getLogger(), "Cannot close the child error pipe: {}", errnoToString());
     pipe_child_error.fds_rw[1] = -1;
 
-    checkChildSetupReport(pid, pipe_child_error.fds_rw[0]);
+    checkChildSetupReport(pid, pipe_child_error.fds_rw[0], config.own_process_group);
 
-    std::unique_ptr<ShellCommand> res(new ShellCommand(
-        pid,
-        pipes.pipe_stdin.fds_rw[1],
-        pipes.pipe_stdout.fds_rw[0],
-        pipes.pipe_stderr.fds_rw[0],
-        config));
+    /// The child has started, and until `res` owns it nobody does: the constructor allocates (a
+    /// buffer for each of the three pipes), and an allocation refused by the query's memory limit
+    /// would leave a process that has `exec`ed running with nobody to signal, reap or count it -
+    /// and, for a shared-memory UDF, holding the descriptor of a region the server is about to
+    /// free and stop charging for. So it is killed and reaped before the failure goes out, like a
+    /// child whose start could not be established (`checkChildSetupReport`): the alternative is
+    /// leaking the process. From `res` on, its destructor is in charge.
+    std::unique_ptr<ShellCommand> res;
+    try
+    {
+        res.reset(new ShellCommand(
+            pid,
+            pipes.pipe_stdin.fds_rw[1],
+            pipes.pipe_stdout.fds_rw[0],
+            pipes.pipe_stderr.fds_rw[0],
+            config));
+    }
+    catch (...)
+    {
+        killAndReapOrphan(pid, config.own_process_group);
+        throw;
+    }
 
     if (config.register_in_udf_process_registry)
         res->udf_registry_generation = UDFProcessRegistry::instance().add(pid);
@@ -738,7 +782,46 @@ std::unique_ptr<ShellCommand> ShellCommand::executeImpl(
     return res;
 }
 
-void ShellCommand::checkChildSetupReport(pid_t child_pid, int report_fd)
+void ShellCommand::killAndReapOrphan(pid_t child_pid, bool whole_group) noexcept
+{
+    /// Runs under the very memory limit that got us here: nothing in it may be refused.
+    LockMemoryExceptionInThread lock(VariableContext::Global);
+
+    /// The child is ours and unreaped, so its pid, and the number of the group it leads, are its
+    /// own, and `SIGKILL` reaches it and nothing else. The group first, for what it may have
+    /// started already; `ESRCH` is a child that is gone on its own.
+    if (whole_group && 0 != ::kill(-child_pid, SIGKILL) && errno != ESRCH)
+        LOG_WARNING(getLogger(), "Cannot kill the process group of child process pid {}: {}", child_pid, errnoToString());
+    if (0 != ::kill(child_pid, SIGKILL) && errno != ESRCH)
+        LOG_WARNING(getLogger(), "Cannot kill child process pid {}: {}", child_pid, errnoToString());
+
+    /// Nothing to wait out after `SIGKILL`: the child cannot run user code again, and the bound
+    /// only covers the time the kernel takes to tear it down - which is not always short: a child
+    /// in uninterruptible I/O (a stuck NFS or FUSE mount) is not reaped before that I/O ends. The
+    /// query this fails must not be held for that, so a child not reaped within the bound is
+    /// handed to the reaper, as `killAndReapNoThrow` does for one that has a `ShellCommand`. It
+    /// has no entry in `UDFProcessRegistry` yet, so there is none to remove when it goes.
+    static constexpr size_t reap_after_kill_timeout_ms = 5000;
+    const auto result = waitForPidMilliseconds(child_pid, reap_after_kill_timeout_ms);
+    if (result == WaitForPidResult::EXITED || result == WaitForPidResult::NOT_OUR_CHILD)
+        return;
+
+    if (result == WaitForPidResult::ERROR)
+        LOG_WARNING(getLogger(), "Cannot reap child process pid {} after SIGKILL: {}", child_pid, errnoToString());
+    else
+        LOG_WARNING(getLogger(), "Child process pid {} was not reaped within {} ms after SIGKILL", child_pid, reap_after_kill_timeout_ms);
+
+    try
+    {
+        ShellCommandsHolder::instance().addSignalledChild(child_pid, std::nullopt);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger(), fmt::format("Child process pid {} was killed but will not be reaped", child_pid));
+    }
+}
+
+void ShellCommand::checkChildSetupReport(pid_t child_pid, int report_fd, bool own_process_group)
 {
     /// The child has either `exec`ed or written its report and exited (that is what `vfork`
     /// guarantees by the time it returns in the parent). Read the report without waiting for EOF:
@@ -782,11 +865,13 @@ void ShellCommand::checkChildSetupReport(pid_t child_pid, int report_fd)
 
     bool child_reported_failure = bytes_read > 0;
     if (bytes_read < 0 && errno != EAGAIN && errno != EWOULDBLOCK)
-        handleUnreadableChildReport(child_pid, errno);
+        handleUnreadableChildReport(child_pid, errno, own_process_group);
 
     if (child_reported_failure)
     {
-        /// The child is gone; reap it so that it does not linger as a zombie, then report.
+        /// The child is gone; reap it so that it does not linger as a zombie, then report. Its group,
+        /// if it has one, goes with it: a child that reports runs nothing but `execChild`, which
+        /// starts no process, so there is nobody else in the group to end.
         int status = 0;
         while (-1 == ::waitpid(child_pid, &status, 0) && errno == EINTR)
         {
@@ -803,58 +888,52 @@ void ShellCommand::checkChildSetupReport(pid_t child_pid, int report_fd)
     }
 }
 
-void ShellCommand::handleUnreadableChildReport(pid_t child_pid, int read_error)
+void ShellCommand::handleUnreadableChildReport(pid_t child_pid, int read_error, bool own_process_group)
 {
     /// A read that failed for any other reason than an empty pipe says nothing about the child.
-    /// What does is `waitpid`: by the time `vfork` returned, the child had either `exec`ed - and is
-    /// running - or written its report and exited - and is a zombie - so a non-blocking probe
+    /// What does is the child itself: by the time `vfork` returned, it had either `exec`ed - and is
+    /// running, or has exited since - or written its report and exited. A non-blocking probe
     /// answers without the risk of blocking on a child that is alive and well, which a pool worker
-    /// would be for as long as it is not asked to exit.
-    int status = 0;
-    pid_t probed = 0;
-    do
-        probed = ::waitpid(child_pid, &status, WNOHANG);
-    while (probed == -1 && errno == EINTR);
+    /// would be for as long as it is not asked to exit. And it reaps nothing (`peekChildState`): a
+    /// child that is not reaped keeps its pid, and the number of the group it leads, to itself, so
+    /// that the group can still be ended below before its leader goes.
+    const ChildState state = peekChildState(child_pid, /*blocking=*/ false);
 
-    if (probed == 0)
-        LOG_WARNING(getLogger(), "Cannot read the child error pipe of pid {} ({}); the child is running, so it has started", child_pid, errnoToString(read_error));
-    else if (probed == child_pid)
-        throw Exception(
-            ErrorCodes::CANNOT_CREATE_CHILD_PROCESS,
-            "Cannot prepare child process: it exited before exec, and its report could not be read: {}",
-            errnoToString(read_error));
-    else
+    if (state == ChildState::RUNNING)
     {
-        /// The probe itself failed, so nothing here says what the child did - it is not a
-        /// child that exited, it is a child nothing is known about. This call fails either
-        /// way, and that is what makes the difference matter: no `ShellCommand` is
-        /// constructed, so a child that did `exec` would be left with nobody to wait for
-        /// it, nobody to signal it and no entry in the registry of UDF processes - a
-        /// command running as the server's user for as long as it pleases. So it is
-        /// signalled and reaped before the failure is reported. `ESRCH` on a child that
-        /// was gone after all costs nothing, and this is the one place where killing is
-        /// the conservative choice: the alternative is leaking the process.
-        /// Except a child that is not ours any more (`ECHILD`): somebody else reaped it, and its pid
-        /// may belong to anybody now, so it is neither signalled nor waited for.
-        const int probe_error = errno;
+        LOG_WARNING(getLogger(), "Cannot read the child error pipe of pid {} ({}); the child is running, so it has started", child_pid, errnoToString(read_error));
+        return;
+    }
 
-        if (probe_error != ECHILD)
-        {
-            if (0 != ::kill(child_pid, SIGKILL) && errno != ESRCH)
-                LOG_WARNING(getLogger(), "Cannot kill child process pid {}: {}", child_pid, errnoToString());
-
-            while (-1 == ::waitpid(child_pid, &status, 0) && errno == EINTR)
-            {
-            }
-        }
-
+    /// Not ours any more: somebody else reaped it, and its pid may belong to anybody now, so it is
+    /// neither signalled nor waited for.
+    if (state == ChildState::NOT_OUR_CHILD)
         throw Exception(
             ErrorCodes::CANNOT_CREATE_CHILD_PROCESS,
-            "Cannot prepare child process: its report could not be read ({}) and whether it started could "
-            "not be established ({}); it is signalled",
-            errnoToString(read_error),
-            errnoToString(probe_error));
-    }
+            "Cannot prepare child process: its report could not be read ({}), and it is no longer a child of this process",
+            errnoToString(read_error));
+
+    /// This call fails either way, so no `ShellCommand` is constructed, and a child left here would
+    /// have nobody to wait for it, nobody to signal it and no entry in the registry of UDF
+    /// processes. A child that exited, or one nothing is known about (the probe failed), is ended
+    /// together with its group before the failure is reported: an exited child may have `exec`ed
+    /// and started processes of its own first - for a shared-memory UDF, processes that hold the
+    /// region's descriptor, whose pages and charge the caller is about to release. Killing a
+    /// zombie costs nothing, and this is the one place where killing is the conservative choice:
+    /// the alternative is leaking the process.
+    killAndReapOrphan(child_pid, own_process_group);
+
+    if (state == ChildState::EXITED)
+        throw Exception(
+            ErrorCodes::CANNOT_CREATE_CHILD_PROCESS,
+            "Cannot prepare child process: it has exited, and its report could not be read: {}",
+            errnoToString(read_error));
+
+    throw Exception(
+        ErrorCodes::CANNOT_CREATE_CHILD_PROCESS,
+        "Cannot prepare child process: its report could not be read ({}) and whether it started could "
+        "not be established; it is signalled",
+        errnoToString(read_error));
 }
 
 
@@ -1091,20 +1170,13 @@ static void closeInput(WriteBufferFromFile & input, std::exception_ptr & first_f
 void ShellCommand::closeStreamsNoThrow() noexcept
 {
     /// Each on its own, so that one that fails does not leave the others open.
-    std::exception_ptr input_failure;
-    closeInput(in, input_failure, getLogger());
-    for (auto & [_, fd] : write_fds)
-        closeInput(fd, input_failure, getLogger());
-    if (input_failure)
+    try
     {
-        try
-        {
-            std::rethrow_exception(input_failure);
-        }
-        catch (...)
-        {
-            tryLogCurrentException(getLogger());
-        }
+        closeInputs();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger());
     }
 
     auto close_no_throw = [](auto & stream)
