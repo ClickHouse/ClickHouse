@@ -27,6 +27,11 @@
 namespace DB
 {
 
+namespace ErrorCodes
+{
+    extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+}
+
 struct NameAnd { static constexpr auto name = "and"; };
 struct NameOr { static constexpr auto name = "or"; };
 struct NameXor { static constexpr auto name = "xor"; };
@@ -213,8 +218,35 @@ public:
 
     DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override { return std::make_shared<DataTypeUInt8>(); }
 
-    /// Get result types by argument types. If the function does not apply to these arguments, throw an exception.
-    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
+    /// `and`/`or` accept 2+ NativeNumber arguments, optionally Nullable or a NULL literal
+    /// (they have `specialImplementationForNulls`); `xor` accepts only non-Nullable
+    /// NativeNumber arguments. The result is `Bool` when any input is bare-`Bool`
+    /// (not Nullable(Bool)), otherwise `UInt8`. For and/or, the result is wrapped
+    /// in `Nullable` when any input is Nullable.
+    ///
+    /// The signature is authoritative. The "at least two operands" requirement is expressed
+    /// by listing two mandatory positions before the ellipsis (`A1, A2, ...`): a suffixed
+    /// variable carries a non-zero index, so the ellipsis walk-back takes only the trailing
+    /// `A2` as the repeated unit while both `A1` and `A2` stay mandatory — i.e. two or more,
+    /// any count, independently typed. (A bare `T, T, ...` would instead force the first two
+    /// operands to share a type.) Too-few-arguments now surfaces as
+    /// `NUMBER_OF_ARGUMENTS_DOESNT_MATCH`, the code the declarative checker uses for arity.
+    String getSignatureString() const override
+    {
+        if constexpr (Impl::specialImplementationForNulls())
+        {
+            return "(A1 : MaybeNullable(NativeNumber) | Nothing, A2 : MaybeNullable(NativeNumber) | Nothing, ...) -> "
+                   "selectIf(anyNullable(A1, A2, ...), Nullable(selectIf(anyBool(A1, A2, ...), Bool, UInt8)), selectIf(anyBool(A1, A2, ...), Bool, UInt8))";
+        }
+        return "(A1 : NativeNumber, A2 : NativeNumber, ...) -> selectIf(anyBool(A1, A2, ...), Bool, UInt8)";
+    }
+
+    /// The signature accepts two or more arguments, so the only possible arity error is a call with
+    /// fewer than two - the legacy resolver reported it as `TOO_FEW_ARGUMENTS_FOR_FUNCTION`.
+    int getWrongNumberOfArgumentsErrorCode(size_t /*number_of_arguments*/) const override
+    {
+        return ErrorCodes::TOO_FEW_ARGUMENTS_FOR_FUNCTION;
+    }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & args, const DataTypePtr & result_type, size_t input_rows_count) const override;
 
@@ -285,6 +317,11 @@ public:
     }
 
     size_t getNumberOfArguments() const override { return 1; }
+
+    String getSignatureString() const override
+    {
+        return "(Bool) -> Bool OR (NativeNumber) -> UInt8";
+    }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override;
 
