@@ -1,0 +1,7 @@
+PREPARE
+47
+SELECT 0
+PREPARE
+11|10|9
+SELECT 0
+EXECUTE supplies 1 argument(s) but the prepared statement has 0 parameter(s)

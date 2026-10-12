@@ -624,9 +624,6 @@ public:
 
     size_t getAndSetRightTableKeys() const;
 
-    bool hasNonJoinedRows();
-    void updateNonJoinedRowsStatus();
-
     const std::vector<Sizes> & getKeySizes() const { return key_sizes; }
 
     std::shared_ptr<JoinStuff::JoinUsedFlags> getUsedFlags() const { return used_flags; }
@@ -651,9 +648,6 @@ private:
     std::shared_ptr<TableJoin> table_join;
     JoinKind kind;
     JoinStrictness strictness;
-
-    bool has_non_joined_rows_checked = false;
-    bool has_non_joined_rows = false;
 
     /// This join was created from StorageJoin and it is already filled.
     bool from_storage_join = false;

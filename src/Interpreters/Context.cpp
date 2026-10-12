@@ -757,6 +757,12 @@ struct ContextSharedPart : boost::noncopyable
     mutable ThrottlerPtr distributed_cache_read_throttler;  /// A server-wide throttler for distributed cache read
     mutable ThrottlerPtr distributed_cache_write_throttler; /// A server-wide throttler for distributed cache write
 
+    /// The remote throttler passed as the parent of the distributed cache throttler above.
+    /// Recorded because a Throttler exposes no way to read its parent back, and `setParent` is not
+    /// thread safe, so a published throttler concurrent queries may be using cannot be re-parented.
+    mutable ThrottlerPtr distributed_cache_read_throttler_parent;
+    mutable ThrottlerPtr distributed_cache_write_throttler_parent;
+
     MultiVersion<Macros> macros;                            /// Substitutions extracted from config.
     std::unique_ptr<DDLWorker> ddl_worker TSA_GUARDED_BY(mutex); /// Process ddl commands from zk.
     LoadTaskPtr ddl_worker_startup_task;                         /// To postpone `ddl_worker->startup()` after all tables startup
@@ -1435,12 +1441,18 @@ struct ContextSharedPart : boost::noncopyable
         // Distributed cache client throttling.
         // Note that distributed cache throttlers are inherited from remote throttlers because they are socket-level throttlers and use server bandwidth
         if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_read_bandwidth_for_server])
+        {
             distributed_cache_read_throttler = std::make_shared<Throttler>(bandwidth, remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
+            distributed_cache_read_throttler_parent = remote_read_throttler;
+        }
         else
             distributed_cache_read_throttler = remote_read_throttler;
 
         if (auto bandwidth = server_settings[ServerSetting::max_distributed_cache_write_bandwidth_for_server])
+        {
             distributed_cache_write_throttler = std::make_shared<Throttler>(bandwidth, remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
+            distributed_cache_write_throttler_parent = remote_write_throttler;
+        }
         else
             distributed_cache_write_throttler = remote_write_throttler;
     }
@@ -6222,13 +6234,33 @@ ThrottlerPtr Context::getReplicatedSendsThrottler() const
     return shared->replicated_sends_throttler;
 }
 
+ThrottlerPtr Context::getServerWideRemoteReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->remote_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideRemoteWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->remote_write_throttler;
+}
+
+ThrottlerPtr Context::getServerWideLocalReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->local_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideLocalWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->local_write_throttler;
+}
+
 ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->remote_read_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideRemoteReadThrottler();
 
     /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
     if (auto process_list_element = getProcessListElementSafe())
@@ -6253,11 +6285,7 @@ ThrottlerPtr Context::getRemoteReadThrottler(std::optional<UInt64> bandwidth) co
 
 ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->remote_write_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideRemoteWriteThrottler();
 
     /// User-level throttler (`max_network_bandwidth_for_user` / `max_network_bandwidth_for_all_users`).
     if (auto process_list_element = getProcessListElementSafe())
@@ -6282,11 +6310,7 @@ ThrottlerPtr Context::getRemoteWriteThrottler(std::optional<UInt64> bandwidth) c
 
 ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->local_read_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideLocalReadThrottler();
 
     /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
     if (!bandwidth)
@@ -6311,11 +6335,7 @@ ThrottlerPtr Context::getLocalReadThrottler(std::optional<UInt64> bandwidth) con
 
 ThrottlerPtr Context::getLocalWriteThrottler(std::optional<UInt64> bandwidth) const
 {
-    ThrottlerPtr throttler;
-    {
-        SharedLockGuard lock(shared->mutex);
-        throttler = shared->local_write_throttler;
-    }
+    ThrottlerPtr throttler = getServerWideLocalWriteThrottler();
 
     /// This mutex cannot be upgraded, so the shared lock is released before the exclusive one below.
     if (!bandwidth)
@@ -6355,6 +6375,18 @@ ThrottlerPtr Context::getMutationsThrottler() const
 ThrottlerPtr Context::getMergesThrottler() const
 {
     return shared->merges_throttler;
+}
+
+ThrottlerPtr Context::getServerWideDistributedCacheReadThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->distributed_cache_read_throttler;
+}
+
+ThrottlerPtr Context::getServerWideDistributedCacheWriteThrottler() const
+{
+    SharedLockGuard lock(shared->mutex);
+    return shared->distributed_cache_write_throttler;
 }
 
 ThrottlerPtr Context::getDistributedCacheReadThrottler() const
@@ -6440,8 +6472,16 @@ void Context::reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_
     /// (see configureServerWideThrottling), so a non-null pointer does not mean it is ours to mutate.
     if (read_bandwidth)
     {
-        if (!shared->distributed_cache_read_throttler || shared->distributed_cache_read_throttler == shared->remote_read_throttler) // Create throttler
+        /// A Throttler captures its parent at construction, so a child built over a different (or absent)
+        /// remote throttler must be rebuilt rather than updated in place, or the server-wide remote limit
+        /// silently stops applying to distributed cache traffic.
+        if (!shared->distributed_cache_read_throttler
+            || shared->distributed_cache_read_throttler == shared->remote_read_throttler
+            || shared->distributed_cache_read_throttler_parent != shared->remote_read_throttler) // Create throttler
+        {
             shared->distributed_cache_read_throttler = std::make_shared<Throttler>(read_bandwidth, shared->remote_read_throttler, ProfileEvents::DistrCacheReadThrottlerBytes, ProfileEvents::DistrCacheReadThrottlerSleepMicroseconds);
+            shared->distributed_cache_read_throttler_parent = shared->remote_read_throttler;
+        }
         else // Update throttler
             std::static_pointer_cast<Throttler>(shared->distributed_cache_read_throttler)->setMaxSpeed(read_bandwidth);
     }
@@ -6450,8 +6490,13 @@ void Context::reloadDistributedCacheThrottlerConfig(size_t read_bandwidth, size_
 
     if (write_bandwidth)
     {
-        if (!shared->distributed_cache_write_throttler || shared->distributed_cache_write_throttler == shared->remote_write_throttler) // Create throttler
+        if (!shared->distributed_cache_write_throttler
+            || shared->distributed_cache_write_throttler == shared->remote_write_throttler
+            || shared->distributed_cache_write_throttler_parent != shared->remote_write_throttler) // Create throttler
+        {
             shared->distributed_cache_write_throttler = std::make_shared<Throttler>(write_bandwidth, shared->remote_write_throttler, ProfileEvents::DistrCacheWriteThrottlerBytes, ProfileEvents::DistrCacheWriteThrottlerSleepMicroseconds);
+            shared->distributed_cache_write_throttler_parent = shared->remote_write_throttler;
+        }
         else // Update throttler
             std::static_pointer_cast<Throttler>(shared->distributed_cache_write_throttler)->setMaxSpeed(write_bandwidth);
     }

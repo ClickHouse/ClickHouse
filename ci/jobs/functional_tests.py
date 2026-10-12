@@ -245,6 +245,15 @@ OPTIONS_TO_INSTALL_ARGUMENTS = {
     "db disk": "--remote-database-disk",
 }
 
+# Runner flags that change how a test executes rather than which tests are
+# selected. The diagnostics rerun must keep them to reproduce the failure.
+DIAGNOSTICS_MODE_RUNNER_ARGUMENTS = (
+    "--replicated-database",
+    "--s3-storage",
+    "--azure-blob-storage",
+    "--encrypted-storage",
+)
+
 OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "s3 storage": "--s3-storage --no-stateful",
     "ParallelReplicas": "--no-zookeeper --no-shard --no-parallel-replicas",
@@ -545,6 +554,8 @@ def main():
             is_shared_catalog = True
         if "ParallelReplicas" in to:
             is_parallel_replicas = True
+
+    is_no_stateful = "--no-stateful" in runner_options
 
     # The xfail inversion (and therefore the "a crash on master HEAD is a
     # reproduction" reading of a server death) only applies when the PR is
@@ -1125,6 +1136,7 @@ def main():
                 if not CH.prepare_stateful_data(
                     with_s3_storage=is_s3_storage,
                     is_db_replicated=is_database_replicated,
+                    no_stateful=is_no_stateful,
                     # `args.options` (e.g. "amd_asan_ubsan, distributed plan, parallel")
                     # already carries the sanitizer name in the same format
                     # `prepare_stateful_data`'s `is_sanitizer` check expects, so the
@@ -1385,6 +1397,7 @@ def main():
                         if not CH.prepare_stateful_data(
                             with_s3_storage=is_s3_storage,
                             is_db_replicated=is_database_replicated,
+                            no_stateful=is_no_stateful,
                             build_type=bugfix_bt,
                             step_timeout=stateful_prep_step_timeout(info),
                         ):
@@ -1516,6 +1529,14 @@ def main():
             )
         elif failed_tests:
             memory_limit = stateless_memory_limit(Info().job_name)
+            # Rerun in the same mode as the main run. Without these flags a
+            # failure specific to `DBReplicated` or to the s3/azure/encrypted
+            # disk passes every rerun and is wrongly diagnosed as flaky.
+            diag_mode_args = "".join(
+                f" {flag}"
+                for flag in DIAGNOSTICS_MODE_RUNNER_ARGUMENTS
+                if flag in runner_options.split()
+            )
             diag_command = (
                 f"clickhouse-test --testname --check-zookeeper-session --hung-check"
                 f" --memory-limit {memory_limit} --trace --capture-client-stacktrace"
@@ -1523,6 +1544,7 @@ def main():
                 f" --diagnose-random-settings"
                 f" --random-settings-diagnostics-dir {diagnostics_dir}"
                 f" --no-random-settings --no-random-merge-tree-settings"
+                f"{diag_mode_args}"
                 f" -- {' '.join(failed_tests)}"
             )
             print(f"Running diagnostics for {len(failed_tests)} test(s)...")
@@ -1554,12 +1576,6 @@ def main():
                 label_key = diag.get("label", "")
                 if label_key in label_map:
                     test_case.set_label(label_map[label_key])
-                if label_key == "flaky" and is_llvm_coverage:
-                    # Coverage binaries are slow and prone to timing-related flakiness
-                    # (e.g. TIMEOUT_EXCEEDED on SystemLogQueue). Don't penalise them
-                    # for it — mark the test green so it doesn't block coverage jobs.
-                    # See: https://github.com/ClickHouse/ClickHouse/pull/95763
-                    test_case.set_status(Result.Status.OK)
             if diag_exit_code != 0:
                 diag_status = Result.Status.FAIL
                 diag_info = (
