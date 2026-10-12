@@ -2291,10 +2291,12 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     while (true)
     {
         unique_alias = "_additional_result_filter_" + std::to_string(global_context->nextUniqueId());
-        bool has_collision = false;
+        /// The alias must not be the name of a result column either, or it would shadow it as a qualifier,
+        /// e.g. `greatest(_additional_result_filter_0.*)` over a `Tuple` column `_additional_result_filter_0`.
+        bool has_collision = fake_name_set.contains(unique_alias);
         for (const auto & column : query_node.getProjectionColumns())
         {
-            if (global_context->hasColumnIdentifier(unique_alias + "." + column.name))
+            if (has_collision || global_context->hasColumnIdentifier(unique_alias + "." + column.name))
             {
                 has_collision = true;
                 break;
