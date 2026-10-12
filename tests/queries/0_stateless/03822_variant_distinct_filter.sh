@@ -31,10 +31,9 @@ for i in $(seq 1 10); do
     inserts+="INSERT INTO test_variant_distinct VALUES ([1,2,$i], NULL);"
     inserts+="INSERT INTO test_variant_distinct VALUES (NULL, $i);"
 done
-# Under `async_insert` each `INSERT` waits for its flush. The adaptive busy timeout is tracked per queue shard,
-# which is shared by all tables, so concurrent async inserts of other tests can hold it at
-# `async_insert_busy_timeout_max_ms` (5 s in the test config) and the 80 sequential inserts then take minutes.
-echo "$inserts" | $CH_CLIENT --async_insert_use_adaptive_busy_timeout 0 --async_insert_busy_timeout_max_ms 100 -n
+# Synchronous inserts: in the `AsyncInsert` lane each of the 80 sequential inserts would wait for a queue flush,
+# whose adaptive delay is shared by all tables and can stay at its 5 s maximum under concurrent load.
+echo "$inserts" | $CH_CLIENT --async_insert 0 -n
 
 # Run concurrent queries from multiple connections to trigger the race.
 # The permute optimization (ORDER BY) corrupts shared non-active variant
