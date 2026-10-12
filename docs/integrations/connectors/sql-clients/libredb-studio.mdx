@@ -36,8 +36,9 @@ built on the `system` tables.
 ## How it works {#how-it-works}
 
 1. The browser sends the statement to the LibreDB Studio server.
-2. The server sends it to ClickHouse as the body of an HTTP `POST /`, with `default_format=JSON`
-   and the selected database as URL parameters, and credentials as HTTP Basic authentication.
+2. The server sends it to ClickHouse as the body of an HTTP `POST /`, with
+   `default_format=JSONCompact` and the selected database as URL parameters, and credentials as
+   HTTP Basic authentication.
 3. The server returns the rows, the column types ClickHouse declared and the elapsed time that
    ClickHouse reported. Each statement is one stateless request; no session is pinned.
 
@@ -58,10 +59,12 @@ database uses `default`.
 3. Enter a connection name, the host, the port, the username, the password, and optionally the
    database name.
 4. For HTTPS, open **SSL / TLS**, pick an SSL mode other than `disable`, and change **Port** to
-   your server's HTTPS port (often `8443`). Every mode other than `disable` checks the server
-   certificate against the system certificate store, which is what `verify-system` describes.
+   your server's HTTPS port (often `8443`). Every mode other than `disable` verifies the server
+   certificate against the CAs the LibreDB Studio server trusts, which is what `verify-system`
+   describes.
    This works with ClickHouse Cloud and with servers whose certificate comes from a publicly
-   trusted CA. Self-signed and private-CA certificates are not supported yet.
+   trusted CA. For a self-signed or private-CA certificate, see
+   [Troubleshooting](#troubleshooting).
 5. Select **Test Connection**, then **Establish Connection**.
 
 You can also paste a URL with **Paste URL** instead of filling the fields, for example
@@ -131,9 +134,12 @@ HTTP port, not the native protocol port `9000`.
 </Accordion>
 
 <Accordion title="HTTPS fails with a self-signed or private CA certificate">
-LibreDB Studio's ClickHouse connection only accepts certificates from publicly trusted CAs and
-ignores a CA certificate pasted under **SSL / TLS**, so the connection test fails against a
-self-signed or private-CA endpoint. Use a certificate from a publicly trusted CA on the server.
+LibreDB Studio's server runs on Node.js, which checks the server certificate against its own
+bundled list of public CAs. It ignores a CA certificate pasted under **SSL / TLS**, and adding the
+CA to the operating system's certificate store isn't enough on its own. Start the LibreDB Studio
+server with the `NODE_EXTRA_CA_CERTS` environment variable set to the path of a PEM file that
+holds your CA certificate, or the server's own certificate if it's self-signed. With Docker, mount
+the file into the container and pass, for example, `-e NODE_EXTRA_CA_CERTS=/certs/ca.pem`.
 </Accordion>
 
 <Accordion title="Some dashboard panels are empty">
@@ -145,6 +151,9 @@ The ClickHouse user can't read one or more of the `system` tables listed under
 The slow-query view reads `system.query_log`, which records nothing while query logging is off.
 Enable the `log_queries` setting for the user, for example in its settings profile, and run a few
 queries. New entries appear once the log is flushed, which can take a few seconds.
+If the view stays empty, query logging may be disabled for the whole server rather than for the
+user. Check that the `query_log` section is present in the server configuration, as described in
+[system.query_log](/operations/system-tables/query_log).
 </Accordion>
 
 ## Next steps {#next-steps}
