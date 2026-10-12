@@ -86,7 +86,6 @@ public:
     void get(size_t, Field &) const override { throwMustBeDecompressed(); }
     void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwMustBeDecompressed(); }
     std::string_view getDataAt(size_t) const override { throwMustBeDecompressed(); }
-    bool supportsGetDataAt() const override { return false; }
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     bool hasOnlyTypeDefaults() const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }

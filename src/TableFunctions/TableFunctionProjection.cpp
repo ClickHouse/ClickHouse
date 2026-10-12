@@ -169,7 +169,7 @@ DESCRIBE mergeTreeProjection(currentDatabase(), test, order_by_item_id) SETTINGS
 2. │ _parent_part_offset │ UInt64 │
    └─────────────────────┴────────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
         {.allow_readonly = true}
     );
 }

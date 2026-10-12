@@ -69,17 +69,15 @@ CPUSlotsAllocation::CPUSlotsAllocation(SlotCount master_slots_, SlotCount worker
     , requests(total_slots - noncompeting_slots) // NOTE: it should not be reallocated after initialization because AcquiredCPUSlot holds raw pointer
     , current_request(requests.empty() ? nullptr : &requests.front())
 {
-    // Each request's scheduling pointers are stamped at enqueue from the leaf it targets (master and
-    // worker are distinct resources with distinct per-query state) — see getCurrentLink().
     for (CPUSlotRequest & request : requests)
         request.allocation = this;
 
     std::unique_lock lock{schedule_mutex};
     while (allocated < total_slots)
     {
-        const ResourceLink & link = getCurrentLink(lock);
-        if (link.enqueue(current_request)) // competing slot - use scheduler (stamps scheduling pointers)
+        if (ISchedulerQueue * queue = getCurrentQueue(lock)) // competing slot - use scheduler
         {
+            queue->enqueueRequest(current_request);
             scheduled_slot_increment.emplace(CurrentMetrics::ConcurrencyControlScheduled);
             wait_timer.emplace(CurrentThread::getProfileEvents().timer(ProfileEvents::ConcurrencyControlWaitMicroseconds));
             break;
@@ -199,9 +197,11 @@ void CPUSlotsAllocation::grant()
     if (allocated < total_slots)
     {
         // TODO(serxa): we should not request more slots if we already have at least 2 granted and not acquired slots to avoid holding unnecessary slots
-        const ResourceLink & link = getCurrentLink(lock);
-        if (link.enqueue(current_request)) // competing slot - use scheduler (stamps scheduling pointers)
+        if (ISchedulerQueue * queue = getCurrentQueue(lock)) // competing slot - use scheduler
+        {
+            queue->enqueueRequest(current_request);
             return;
+        }
         // NOTE: if the next slot is noncompeting - postpone granting it to avoid it being acquired too early
     }
 
@@ -210,14 +210,9 @@ void CPUSlotsAllocation::grant()
     wait_timer.reset();
 }
 
-const ResourceLink & CPUSlotsAllocation::getCurrentLink(const std::unique_lock<std::mutex> &) const
+ISchedulerQueue * CPUSlotsAllocation::getCurrentQueue(const std::unique_lock<std::mutex> &) const
 {
-    return allocated < master_slots ? master_link : worker_link;
-}
-
-ISchedulerQueue * CPUSlotsAllocation::getCurrentQueue(const std::unique_lock<std::mutex> & lock) const
-{
-    return getCurrentLink(lock).queue;
+    return allocated < master_slots ? master_link.queue : worker_link.queue;
 }
 
 bool CPUSlotsAllocation::isRequesting() const
@@ -225,8 +220,7 @@ bool CPUSlotsAllocation::isRequesting() const
     std::unique_lock lock{schedule_mutex};
     if (allocated < total_slots && getCurrentQueue(lock))
         // Caller should make sure that request will not be dequeued by the scheduler thread. Otherwise, it will be a race condition.
-        // `fifo` links `enqueued_hook`; the query-aware schedulers (`fair`/`las`/`priority`) link `scheduling_hook`.
-        return current_request->enqueued_hook.is_linked() || current_request->scheduling_hook.is_linked();
+        return current_request->enqueued_hook.is_linked();
     else
         return false;
 }
