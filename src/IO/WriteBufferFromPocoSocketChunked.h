@@ -21,6 +21,9 @@ public:
     void enableChunked();
     void finishChunk();
 
+    /// Chunk framing the buffer reserves at its start after every flush, not part of any packet.
+    size_t reservedChunkHeaderSize() const { return chunked ? sizeof(*chunk_size_ptr) : 0; }
+
 protected:
     void nextImpl() override;
     void finalizeImpl() override;
