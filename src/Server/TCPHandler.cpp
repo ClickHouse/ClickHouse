@@ -2235,18 +2235,7 @@ void TCPHandler::receiveHello()
             auto exception
                 = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver mode is disabled for connections to tcp_with_proxy_port");
             session = makeSession();
-
-            /// Unlike `getClientAddress`, do not throw on a malformed forwarded address: the rejection
-            /// must stay `AUTHENTICATION_FAILED`, so that it is recorded in `system.session_log` and
-            /// nothing is serialized back to the unauthenticated peer.
-            auto address = socket().peerAddress();
-            if (server.config().getBool("auth_use_forwarded_address", false))
-            {
-                if (auto forwarded_address = session->getClientInfo().getLastForwardedFor())
-                    address = *forwarded_address;
-            }
-
-            session->onAuthenticationFailure(/* user_name= */ std::nullopt, address, exception);
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), exception);
             throw exception; /// NOLINT
         }
 
@@ -2283,7 +2272,7 @@ void TCPHandler::receiveHello()
                 throw;
 
             session = makeSession();
-            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), e);
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), e);
             throw;
         }
 
@@ -2715,21 +2704,21 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         catch (const Exception & e)
         {
             auto exception = Exception::createRuntime(ErrorCodes::AUTHENTICATION_FAILED, e.message());
-            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), exception);
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), exception);
             throw exception; /// NOLINT
         }
 
         if (salt.empty() || cluster_secret.empty())
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed (no salt/cluster secret)");
-            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), exception);
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), exception);
             throw exception; /// NOLINT
         }
 
         if (client_tcp_protocol_version >= DBMS_MIN_REVISION_WITH_INTERSERVER_SECRET_V2 && !nonce.has_value())
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed (no nonce)");
-            session->onAuthenticationFailure(/* user_name= */ std::nullopt, socket().peerAddress(), exception);
+            session->onAuthenticationFailure(/* user_name= */ std::nullopt, getClientAddressNoThrow(), exception);
             throw exception; /// NOLINT
         }
 
@@ -2764,7 +2753,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
         if (calculated_hash != received_hash)
         {
             auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED, "Interserver authentication failed");
-            session->onAuthenticationFailure(/* user_name */ std::nullopt, socket().peerAddress(), exception);
+            session->onAuthenticationFailure(/* user_name */ std::nullopt, getClientAddressNoThrow(), exception);
             throw exception; /// NOLINT
         }
 
@@ -2801,7 +2790,7 @@ void TCPHandler::processQuery(std::shared_ptr<QueryState> & state)
 #else
         auto exception = Exception(ErrorCodes::AUTHENTICATION_FAILED,
             "Inter-server secret support is disabled, because ClickHouse was built without SSL library");
-        session->onAuthenticationFailure(/* user_name */ std::nullopt, socket().peerAddress(), exception);
+        session->onAuthenticationFailure(/* user_name */ std::nullopt, getClientAddressNoThrow(), exception);
         throw exception; /// NOLINT
 #endif
     }
@@ -3597,6 +3586,16 @@ Poco::Net::SocketAddress TCPHandler::getClientAddress(const ClientInfo & client_
             "Invalid forwarded client address: expected an IP literal with an optional numeric port");
 
     return *forwarded_address;
+}
+
+Poco::Net::SocketAddress TCPHandler::getClientAddressNoThrow()
+{
+    if (server.config().getBool("auth_use_forwarded_address", false))
+    {
+        if (auto forwarded_address = session->getClientInfo().getLastForwardedFor())
+            return *forwarded_address;
+    }
+    return socket().peerAddress();
 }
 
 }
