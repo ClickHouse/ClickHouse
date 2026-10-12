@@ -482,7 +482,7 @@ private:
                 }
                 else
                 {
-                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `QueryRunner` engine does not support this query: {}", job.query);
+                    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The `QueryRunner` engine does not support this query");
                 }
             }
             io.onFinish();
@@ -614,6 +614,8 @@ private:
 
         const auto event_time = std::chrono::system_clock::now();
 
+        const String query_for_logging = formatQueryForLogging(job.query, settings);
+
         QueryLogElement elem;
         elem.type = type;
         elem.event_time = timeInSeconds(event_time);
@@ -621,7 +623,7 @@ private:
         elem.query_start_time = timeInSeconds(query_start_time);
         elem.query_start_time_microseconds = timeInMicroseconds(query_start_time);
         elem.query_duration_ms = duration_ms;
-        elem.query = job.query;
+        elem.query = query_for_logging;
         elem.current_database = job.database;
         elem.log_comment = settings[Setting::log_comment];
         elem.client_info = job_context->getClientInfo();
