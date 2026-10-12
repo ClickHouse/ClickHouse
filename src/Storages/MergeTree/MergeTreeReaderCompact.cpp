@@ -101,9 +101,12 @@ void MergeTreeReaderCompact::fillColumnPositions()
             /// not change presence decisions for ordinary subcolumns (e.g. of sparse columns).
             const auto * custom = column_to_read.getTypeInStorage()->getCustomSerialization();
             const bool is_quantize = custom && typeid(*custom) == typeid(SerializationQuantizedVector);
-            const auto & type_for_subcolumn = is_quantize ? column_to_read.getTypeInStorage() : storage_column_from_part.type;
-            if (!part_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), column_to_read.name)
-                && !type_for_subcolumn->hasSubcolumn(subcolumn_name))
+            /// For a Quantize column the part's serialization is the re-wrapped one that lost the companion
+            /// subcolumns, so the presence is decided from the storage type and its own custom serialization.
+            const bool has_subcolumn = is_quantize
+                ? column_to_read.getTypeInStorage()->hasSubcolumn(subcolumn_name)
+                : hasSubcolumnInPart(name_in_storage, *storage_column_from_part.type, subcolumn_name);
+            if (!has_subcolumn)
                 position.reset();
         }
 
@@ -324,6 +327,7 @@ void MergeTreeReaderCompact::readData(
             else
             {
                 const auto & serialization = serializations[column_idx];
+                deserialize_settings.string_value_filter = getStringValueFilter(name_and_type);
                 auto & states = !has_substream_marks && !columns_for_offsets[column_idx]
                     ? deserialize_binary_bulk_state_map_for_subcolumns : deserialize_binary_bulk_state_map;
                 serialization->deserializeBinaryBulkWithMultipleStreams(column, rows_to_read, deserialize_settings, states[name], substreams_cache);
@@ -415,8 +419,7 @@ void MergeTreeReaderCompact::initSubcolumnsDeserializationOrder()
         auto column_from_part = part_columns.getColumn(GetColumnsOptions::All, column);
         for (size_t index : subcolumns_indexes)
         {
-            if (part_columns.tryGetColumn(GetColumnsOptions(GetColumnsOptions::All).withRegularSubcolumns(), columns_to_read[index].name)
-                || column_from_part.type->hasSubcolumn(columns_to_read[index].getSubcolumnName()))
+            if (hasSubcolumnInPart(column, *column_from_part.type, columns_to_read[index].getSubcolumnName()))
             {
                 subcolumns_data.push_back(ISerialization::SubstreamData(serializations[index])
                                           .withType(columns_to_read[index].type)
@@ -537,7 +540,7 @@ void MergeTreeReaderCompact::readPrefix(
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
         deserialize_settings.getter = buffer_getter;
-        deserialize_settings.object_and_dynamic_read_statistics = true;
+        deserialize_settings.read_statistics = true;
         deserialize_settings.use_specialized_prefixes_and_suffixes_substreams = true;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Compact;
         deserialize_settings.check_stream_exists_callback = std::move(check_stream_exists_callback);

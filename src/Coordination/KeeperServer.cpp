@@ -161,6 +161,10 @@ auto getSslContextProvider(const Poco::Util::AbstractConfiguration & config, std
     if (config.has(cipher_list_property))
         params.cipherList = config.getString(cipher_list_property);
 
+    const String cipher_suites_property = config_prefix + "cipherSuites";
+    if (config.has(cipher_suites_property))
+        params.cipherSuites = config.getString(cipher_suites_property);
+
     const String dh_params_file_property = config_prefix + "dhParamsFile";
     if (config.has(dh_params_file_property))
         params.dhParamsFile = config.getString(dh_params_file_property);
@@ -787,6 +791,8 @@ void KeeperServer::startup(const Poco::Util::AbstractConfiguration & config, boo
     /// digest checking disabled, which orphan removal requires, an entry referencing a removed path
     /// would silently resolve differently instead of failing.
     ///
+    /// A successful check also persists the repaired snapshot, so Raft can only serve the repaired
+    /// tree and a restart no longer needs orphan removal enabled.
     /// This must stay between `setLogStore` above and `launchRaftServer` below: throwing here is a
     /// clean startup failure, whereas failing later inside `KeeperStateMachine::preprocess` would
     /// `abort()` the process.
