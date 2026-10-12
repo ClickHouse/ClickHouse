@@ -68,6 +68,9 @@ an INTERVAL step that would leave the column type before an in-range TO stops at
 ['1970-01-01 00:00:00']
 ['2148-01-01']
 4	2106-01-01 00:00:00	2106-01-04 00:00:00
+['1970-01-01 00:00:00']
+['1970-01-01 00:00:00']
+['1970-01-01 02:46:40']
 a numeric step that overflows the Int64 arithmetic carrier stops at TO
 [9223372036854775806]
 [-9223372036854775807]

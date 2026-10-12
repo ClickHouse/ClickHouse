@@ -185,6 +185,11 @@ SELECT groupArray(t) FROM (SELECT toDateTime('1970-01-01 00:00:00', 'UTC') AS t 
 SELECT groupArray(t) FROM (SELECT toDateTime('1970-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL TO toDateTime('2106-01-01 00:00:00', 'UTC') STEP INTERVAL 150 YEAR);
 SELECT groupArray(d) FROM (SELECT toDate('2148-01-01') AS d ORDER BY d ASC WITH FILL FROM toDate('2148-01-01') TO 65535 STEP INTERVAL 5 YEAR);
 SELECT count(), min(t), max(t) FROM (SELECT toDateTime('2106-01-01 00:00:00', 'UTC') AS t ORDER BY t ASC WITH FILL FROM toDateTime('2106-01-01 00:00:00', 'UTC') TO toDateTime('2106-01-05 00:00:00', 'UTC') STEP INTERVAL 1 DAY);
+-- The length in seconds of a long HOUR / MINUTE / SECOND step used to wrap around Int64 (5124095576030432 hours
+-- wrap to 3584 seconds), so the fill generated small values ahead of the anchor instead of stopping.
+SELECT groupArray(t) FROM (SELECT toDateTime(0, 'UTC') AS t ORDER BY t ASC WITH FILL FROM t TO 10000 STEP INTERVAL 5124095576030432 HOUR);
+SELECT groupArray(t) FROM (SELECT toDateTime(0, 'UTC') AS t ORDER BY t ASC WITH FILL TO 10000 STEP INTERVAL 307445734561825861 MINUTE);
+SELECT groupArray(t) FROM (SELECT toDateTime(10000, 'UTC') AS t ORDER BY t DESC WITH FILL TO 0 STEP INTERVAL -5124095576030432 HOUR);
 
 SELECT 'a numeric step that overflows the Int64 arithmetic carrier stops at TO';
 

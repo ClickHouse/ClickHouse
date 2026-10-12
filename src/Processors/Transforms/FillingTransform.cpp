@@ -178,7 +178,48 @@ static FillColumnDescription::StepFunction getStepFunction(const Field & step, c
         else if (which.isDate32())
             return getStepFunction<Int32>(step_kind.value(), step.safeGet<Int64>(), DateLUT::instance());
         else if (const auto * date_time = checkAndGetDataType<DataTypeDateTime>(type.get()))
-            return getStepFunction<UInt32>(step_kind.value(), step.safeGet<Int64>(), date_time->getTimeZone());
+        {
+            /// The functions adding seconds, minutes and hours multiply the step by the length of the unit with
+            /// wraparound even in the wider `DateTime64(0)` calendar, so a long enough step (e.g. `INTERVAL
+            /// 5124095576030432 HOUR`, whose length in seconds wraps to 3584) lands on a value that is still in
+            /// the range of the column and ahead of the current one. Add the seconds of these kinds with saturation
+            /// instead, as for DateTime64: a result out of the range of the column is returned as is, so that
+            /// `FillingRow` stops the filling at its border or rejects a value the column cannot hold.
+            const Int64 step_value = step.safeGet<Int64>();
+            Int64 seconds_per_unit = 0;
+            switch (step_kind->getKind())
+            {
+                case IntervalKind::Kind::Second: seconds_per_unit = 1; break;
+                case IntervalKind::Kind::Minute: seconds_per_unit = 60; break;
+                case IntervalKind::Kind::Hour: seconds_per_unit = 3600; break;
+                default: break;
+            }
+
+            if (seconds_per_unit)
+            {
+                return [step_value, seconds_per_unit](Field & field, Int64 jumps_count)
+                {
+                    const Int64 value = static_cast<UInt32>(field.safeGet<UInt32>());
+                    Int64 units = 0;
+                    Int64 delta = 0;
+                    Int64 res = 0;
+                    if (common::mulOverflow(step_value, jumps_count, units)
+                        || common::mulOverflow(units, seconds_per_unit, delta)
+                        || common::addOverflow(value, delta, res))
+                    {
+                        const bool forward = (step_value < 0) == (jumps_count < 0);
+                        res = forward ? std::numeric_limits<Int64>::max() : std::numeric_limits<Int64>::min();
+                    }
+
+                    if (res < 0 || res > static_cast<Int64>(std::numeric_limits<UInt32>::max()))
+                        field = res;
+                    else
+                        field = static_cast<UInt32>(res);
+                };
+            }
+
+            return getStepFunction<UInt32>(step_kind.value(), step_value, date_time->getTimeZone());
+        }
         else if (const auto * date_time64 = checkAndGetDataType<DataTypeDateTime64>(type.get()))
         {
             const auto & step_dec = step.safeGet<DecimalField<Decimal64>>();
