@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/MergeTreeReadInfo.h>
 #include <Processors/Merges/Algorithms/MergingSortedAlgorithm.h>
 #include <Processors/Transforms/ColumnGathererTransform.h>
@@ -173,7 +174,7 @@ const IColumnFilter * MergingSortedAlgorithm::resolveRowFilterMask(const Chunk &
 
 void MergingSortedAlgorithm::initialize(Inputs inputs)
 {
-    std::vector<char> input_is_virtual_row(inputs.size(), 0);
+    VectorWithMemoryTracking<char> input_is_virtual_row(inputs.size(), 0);
 
     for (size_t i = 0; i < inputs.size(); ++i)
     {
