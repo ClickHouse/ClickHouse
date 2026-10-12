@@ -7,6 +7,7 @@
 #include <Columns/ColumnFixedString.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnIndex.h>
 
 #include <Common/typeid_cast.h>
 #include <Common/UTF8Helpers.h>
@@ -237,6 +238,99 @@ struct ConstSource : public Base
 /// NOLINTEND(hicpp-use-override, modernize-use-override)
 
 #pragma clang diagnostic pop
+
+
+/// ReplicatedSource<Base> makes the pair (nested array column, replication indexes) look like a flat source of logical rows.
+/// Base is an array source: NumericArraySource, GenericArraySource, or NullableArraySource
+///
+/// nested_row: the unreplicated data, a block of 3 array have 3 nested_rows (0, 1, 2)
+/// logical_row: a row_index into the column as consumers see it:
+///
+/// i.e.
+///     nested column (3 rows):     A      B  C
+///     replication_indexes:        [0, 0, 1, 2, 2, 2]
+///     logical view (6 rows):      A  A  B  C  C  C
+template <typename Base>
+struct ReplicatedSource : public Base
+{
+    using Slice = typename Base::Slice;
+    using SinkType = typename Base::SinkType;
+    using Base::row_num;
+    using Base::prev_offset;
+    using Base::offsets;
+
+    const ColumnIndex & replication_indexes;
+    size_t total_rows;
+    size_t logical_row = 0;
+
+    template <typename ColumnType>
+    ReplicatedSource(const ColumnType & col_, const ColumnIndex & replication_indexes_)
+        : Base(col_)
+        , replication_indexes(replication_indexes_)
+        , total_rows(replication_indexes_.size())
+    {
+        positionAtCurrentRow();
+    }
+
+    template <typename ColumnType>
+    ReplicatedSource(const ColumnType & col_, const NullMap & null_map_, const ColumnIndex & replication_indexes_)
+        : Base(col_, null_map_)
+        , replication_indexes(replication_indexes_)
+        , total_rows(replication_indexes_.size())
+    {
+        positionAtCurrentRow();
+    }
+
+    void accept(ArraySourceVisitor & visitor) override
+    {
+        visitor.visit(*this);
+    }
+
+    void next()
+    {
+        ++logical_row;
+        positionAtCurrentRow();
+    }
+
+    bool isEnd() const
+    {
+        return logical_row == total_rows;
+    }
+
+    size_t rowNum() const
+    {
+        return logical_row;
+    }
+
+    size_t getSizeForReserve() const override
+    {
+        /// A proportional estimate: the exact size would need an extra pass over the indexes.
+        size_t nested_rows = offsets.size();
+        return nested_rows == 0 ? 0 : Base::getSizeForReserve() / nested_rows * total_rows;
+    }
+
+    size_t getColumnSize() const override
+    {
+        return total_rows;
+    }
+
+    bool isReplicated() const override
+    {
+        return true;
+    }
+
+private:
+    /// Point the base source at the nested row of the current logical row.
+    void positionAtCurrentRow()
+    {
+        if (logical_row == total_rows)
+            return;
+        ssize_t nested_row = replication_indexes.getIndexAt(logical_row);
+        row_num = nested_row;
+        /// `offsets[-1]` is a guaranteed zero (`PaddedPODArray` left padding), same as `ColumnArray::offsetAt`.
+        prev_offset = offsets[nested_row - 1];
+    }
+};
 
 struct StringSource
 {

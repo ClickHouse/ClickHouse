@@ -388,7 +388,7 @@ void MergeTreeReaderWide::deserializePrefix(
     if (!deserialize_state_map.contains(name))
     {
         ISerialization::DeserializeBinaryBulkSettings deserialize_settings;
-        deserialize_settings.object_and_dynamic_read_statistics = true;
+        deserialize_settings.read_statistics = true;
         deserialize_settings.prefixes_prefetch_callback = prefixes_prefetch_callback;
         deserialize_settings.data_part_type = MergeTreeDataPartType::Wide;
         deserialize_settings.prefixes_deserialization_thread_pool = settings.use_prefixes_deserialization_thread_pool ? &getMergeTreePrefixesDeserializationThreadPool().get() : nullptr;

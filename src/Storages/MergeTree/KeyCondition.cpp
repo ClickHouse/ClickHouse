@@ -5,6 +5,7 @@
 #include <Core/AccurateComparison.h>
 #include <Core/PlainRanges.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -64,6 +65,7 @@ namespace Setting
     extern const SettingsBool analyze_index_with_space_filling_curves;
     extern const SettingsDateTimeOverflowBehavior date_time_overflow_behavior;
     extern const SettingsTimezone session_timezone;
+    extern const SettingsBool validate_enum_literals_in_operators;
 }
 
 namespace ErrorCodes
@@ -1473,6 +1475,7 @@ KeyCondition::KeyCondition(
     , single_point(single_point_)
     , date_time_overflow_behavior_ignore(
           context->getSettingsRef()[Setting::date_time_overflow_behavior] == FormatSettings::DateTimeOverflowBehavior::Ignore)
+    , validate_enum_literals_in_operators(context->getSettingsRef()[Setting::validate_enum_literals_in_operators])
 {
     size_t key_index = 0;
     for (const auto & name : key_column_names_)
@@ -4085,6 +4088,27 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
                                 return false;
                         }
 
+                        /// With validation off, `equals`/`notEquals` fold an unknown enum literal to a
+                        /// constant instead of throwing, so the index must do the same instead of converting.
+                        /// Nullable keys are declined, as for NaN above: `NULL <op> 'x'` is NULL, not a constant.
+                        if (!validate_enum_literals_in_operators && isUnknownEnumElement(*key_expr_type_not_null, const_value))
+                        {
+                            if (key_expr_type_is_nullable)
+                                return false;
+
+                            if (func_name == "equals")
+                            {
+                                out.function = RPNElement::ALWAYS_FALSE;
+                                return true;
+                            }
+                            if (func_name == "notEquals")
+                            {
+                                out.function = RPNElement::ALWAYS_TRUE;
+                                return true;
+                            }
+                            return false;
+                        }
+
                         const_value = convertFieldToType(const_value, *key_expr_type_not_null);
                         if (const_value.isNull())
                             return false;
@@ -5747,9 +5771,12 @@ BoolMask KeyCondition::checkInHyperrectangle(
         return SpaceFillingCurveType::Unknown;
     };
 
-    size_t element_idx = 0;
-    for (const auto & element : rpn)
+    /// The reported position is the element's index in `rpn`: the disjunction bitset is read positionally
+    /// against the template RPN. A position that is never reported keeps the bitset's all-true default.
+    for (size_t element_idx = 0; element_idx < rpn.size(); ++element_idx)
     {
+        const auto & element = rpn[element_idx];
+
         if (element.argument_num_of_space_filling_curve.has_value())
         {
             /// If a condition on argument of a space filling curve wasn't collapsed into FUNCTION_ARGS_IN_HYPERRECTANGLE,
@@ -6155,10 +6182,7 @@ BoolMask KeyCondition::checkInHyperrectangle(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected function type in KeyCondition::RPNElement");
 
         if (update_partial_disjunction_result_fn)
-        {
             update_partial_disjunction_result_fn(element_idx, rpn_stack.back().can_be_true, (element.function == RPNElement::FUNCTION_UNKNOWN));
-            ++element_idx;
-        }
     }
 
     if (rpn_stack.size() != 1)

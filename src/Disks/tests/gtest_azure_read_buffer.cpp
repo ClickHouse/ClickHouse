@@ -108,6 +108,23 @@ private:
     size_t served_size;
 };
 
+std::unique_ptr<DB::ReadBufferFromAzureBlobStorage> makeBuffer(size_t claimed_size, size_t served_size)
+{
+    Azure::Storage::Blobs::BlobClientOptions client_options;
+    client_options.Retry.MaxRetries = 0;
+    client_options.Transport.Transport = std::make_shared<RangeResponseTransport>(claimed_size, served_size);
+
+    auto container_client = std::make_shared<const DB::AzureBlobStorage::ContainerClient>(
+        Azure::Storage::Blobs::BlobContainerClient("http://azure.invalid/container", client_options), /* blob_prefix */ "");
+
+    return std::make_unique<DB::ReadBufferFromAzureBlobStorage>(
+        container_client,
+        "blob",
+        DB::ReadSettings{},
+        /* max_single_read_retries */ 1,
+        /* max_single_download_retries */ 1);
+}
+
 /// Reads a blob sequentially from an endpoint that answers every ranged request with `response_size`
 /// bytes counting up from zero, with the right bound set to `read_until_position` and a
 /// `buffer_size`-byte reading buffer.
@@ -855,8 +872,7 @@ TEST(AzureReadBigAt, RejectsReplacedBlobThroughIfMatch)
         listed_etag,
         /* file_size */ 1000);
 
-    /// In this version `readBigAt` uses the client that `tryGetFileSize` creates, so it is called first,
-    /// as the callers of `readBigAt` do. The size is known, so it issues no request of its own.
+    /// The size is already known, so this does not issue a properties request.
     ASSERT_EQ(buffer.getFileSize(), static_cast<size_t>(1000));
 
     std::array<char, 64> out{};
@@ -864,6 +880,66 @@ TEST(AzureReadBigAt, RejectsReplacedBlobThroughIfMatch)
 
     /// A replaced blob stays replaced, so the rejection is not retried.
     ASSERT_EQ(transport->getDownloadCount(), static_cast<size_t>(1));
+}
+
+TEST(AzureReadBigAt, DoesNotTrustResponseLength)
+{
+    constexpr size_t requested = 16;
+
+    /// The response advertises and serves 32 bytes while only 16 are requested.
+    auto buffer = makeBuffer(/* claimed_size */ 32, /* served_size */ 32);
+
+    /// The documented handshake: supportsReadAt is the required setup call before readBigAt.
+    ASSERT_TRUE(buffer->supportsReadAt());
+
+    struct Storage
+    {
+        std::array<char, requested> payload{};
+        std::array<char, requested> canary{};
+    } storage;
+
+    std::fill(storage.canary.begin(), storage.canary.end(), '\xCD');
+
+    const size_t bytes_read = buffer->readBigAt(storage.payload.data(), requested, /* range_begin */ 0, {});
+
+    ASSERT_EQ(bytes_read, requested);
+    for (size_t i = 0; i < requested; ++i)
+        ASSERT_EQ(static_cast<uint8_t>(storage.payload[i]), static_cast<uint8_t>(i));
+    for (char byte : storage.canary)
+        ASSERT_EQ(byte, '\xCD');
+}
+
+TEST(AzureReadBigAt, ReturnsAccumulatedCountOnTruncatedResponse)
+{
+    constexpr size_t requested = 16;
+    constexpr size_t served = 8;
+
+    /// The response advertises `requested` bytes but its body ends after `served`.
+    auto buffer = makeBuffer(/* claimed_size */ requested, /* served_size */ served);
+
+    ASSERT_TRUE(buffer->supportsReadAt());
+
+    struct Storage
+    {
+        std::array<char, requested> payload{};
+        std::array<char, requested> canary{};
+    } storage;
+
+    std::fill(storage.payload.begin(), storage.payload.end(), '\xCD');
+    std::fill(storage.canary.begin(), storage.canary.end(), '\xCD');
+
+    /// max_single_download_retries == 1, so the short read is not retried: readBigAt must return
+    /// the accumulated byte count, not the requested size.
+    const size_t bytes_read = buffer->readBigAt(storage.payload.data(), requested, /* range_begin */ 0, {});
+
+    ASSERT_EQ(bytes_read, served);
+    for (size_t i = 0; i < served; ++i)
+        ASSERT_EQ(static_cast<uint8_t>(storage.payload[i]), static_cast<uint8_t>(i));
+    /// The unread tail must be left untouched instead of silently trusted as read.
+    for (size_t i = served; i < requested; ++i)
+        ASSERT_EQ(storage.payload[i], '\xCD');
+    for (char byte : storage.canary)
+        ASSERT_EQ(byte, '\xCD');
 }
 
 #endif

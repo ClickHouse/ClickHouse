@@ -3636,17 +3636,15 @@ MutationCommands StorageMergeTree::MutationsSnapshot::getOnFlyMutationCommandsFo
     return result;
 }
 
-NameSet StorageMergeTree::MutationsSnapshot::getAllUpdatedColumns() const
+NameSet StorageMergeTree::MutationsSnapshot::getColumnsChangedOnFly() const
 {
     NameSet res = getColumnsUpdatedInPatches();
     if (!hasDataMutations() && !hasAlterMutations())
         return res;
 
     for (const auto & [version, commands] : mutations_by_version)
-    {
-        auto names = commands->getAllUpdatedColumns();
-        std::move(names.begin(), names.end(), std::inserter(res, res.end()));
-    }
+        addColumnsChangedOnFly(*commands, res);
+
     return res;
 }
 

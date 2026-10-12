@@ -769,6 +769,19 @@ constexpr bool isInnerOrCross(JoinKind kind)
     return kind == JoinKind::Inner || kind == JoinKind::Cross || kind == JoinKind::Comma;
 }
 
+/// An `ExpressionStep` above a join may be merged into the flattened join graph when the setting
+/// allows it and the expression is not sensitive to how many times it is evaluated. Merging puts the
+/// expression into the join graph, where reordering can leave it computed twice from the raw inputs -
+/// once for the join key that decides matching and once for the output column - and can also evaluate
+/// it on rows the original join order would have discarded: a non-deterministic function then draws
+/// independently in the two places, so the returned rows can violate the query's own `JOIN ON`
+/// condition, a stateful function makes extra external calls or mutates per-query state, and `sleep`
+/// spends a different amount of time and accounts different profile events.
+static bool canMergeExpressionIntoJoinGraph(const ActionsDAG & dag, bool merge_expression_into_join)
+{
+    return merge_expression_into_join && !isSensitiveToEvaluationCount(dag);
+}
+
 static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * node, QueryPlan::Nodes & nodes, const String & label, int join_steps_limit)
 {
     auto * join_node = node;
@@ -782,7 +795,8 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
             join_node = node->children[0];
             node = node->children[0];
         }
-        else if (graph.context->optimization_settings.merge_expression_into_join)
+        else if (canMergeExpressionIntoJoinGraph(
+                     expression_step->getExpression(), graph.context->optimization_settings.merge_expression_into_join))
         {
             join_node = node->children[0];
         }
@@ -893,7 +907,8 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
                 bool merge_expression_into_join = query_graph.context->optimization_settings.merge_expression_into_join;
                 auto * expr = typeid_cast<ExpressionStep *>(check->step.get());
                 if (expr && !expr->getExpression().hasArrayJoin()
-                    && (isPassthroughActions(expr->getExpression()) || merge_expression_into_join))
+                    && (isPassthroughActions(expr->getExpression())
+                        || canMergeExpressionIntoJoinGraph(expr->getExpression(), merge_expression_into_join)))
                 {
                     check = check->children[0];
                 }
@@ -1538,7 +1553,8 @@ static void collectJoinGraphRelationHeaders(
     const auto * effective = node;
     if (const auto * expression_step = typeid_cast<const ExpressionStep *>(effective->step.get());
         expression_step && effective->children.size() == 1 && !expression_step->getExpression().hasArrayJoin()
-        && (isPassthroughActions(expression_step->getExpression()) || merge_expression_into_join))
+        && (isPassthroughActions(expression_step->getExpression())
+            || canMergeExpressionIntoJoinGraph(expression_step->getExpression(), merge_expression_into_join)))
     {
         effective = effective->children[0];
     }

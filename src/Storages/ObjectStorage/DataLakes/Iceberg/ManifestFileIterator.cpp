@@ -18,6 +18,7 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/PositionDeleteTransform.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
 
+#include <Core/DecimalFunctions.h>
 #include <Core/Settings.h>
 #include <Core/TypeId.h>
 #include <DataTypes/DataTypesDecimal.h>
@@ -101,14 +102,49 @@ namespace
 
         if (compensate_rounding && scale)
         {
+            /// Every value in the file fits the precision of the type it is read as, so the largest
+            /// magnitude that precision allows is on the outer side of all of them: it stands in for a
+            /// widened bound that leaves the type, and it is the tightest bound that does. Dropping the
+            /// bound instead would cost min/max pruning for the whole column.
+            const NativeType limit
+                = DecimalUtils::scaleMultiplier<NativeType>(DecimalUtils::max_precision<DecimalType>) - NativeType(1);
+
             NativeType scaler = lower_bound ? -10 : 10;
             for (UInt32 i = 1; i < scale; ++i)
                 scaler *= 10;
 
-            /// The bound is stored as raw bytes and is never checked against the declared precision, so
-            /// widening it can leave the type. A value that has no widened form is not a usable bound.
-            if (common::addOverflow(unscaled_value, scaler, unscaled_value))
-                return std::nullopt;
+            /// Widening can leave the type: a `Decimal(38, 38)` bound of magnitude above roughly 0.7
+            /// needs almost `2 * 10^38` while `Int128` holds `1.7 * 10^38`.
+            NativeType widened_value;
+            if (common::addOverflow(unscaled_value, scaler, widened_value))
+                widened_value = lower_bound ? -limit : limit;
+
+            /// A bound is stored as raw bytes that are never checked against a precision, so the
+            /// rounding the Iceberg writers apply can put it one unit outside the type: a file whose
+            /// extreme value is `0.99` carries `1.0` (`10^38` unscaled) at scale 38. Saturating such a
+            /// bound keeps it outside every value in the file, where rejecting it loses the column's
+            /// pruning. Saturation is monotonic, so it cannot invert a pair that was not inverted.
+            ///
+            /// Only the outer side saturates: a lower bound above the largest value the type holds (or an
+            /// upper bound below the smallest) is on the inner side of every value in the file, and
+            /// clamping it would collapse the range to a single point that excludes the data. Such a
+            /// bound is not a usable range border.
+            if (lower_bound)
+            {
+                if (widened_value > limit)
+                    return std::nullopt;
+                if (widened_value < -limit)
+                    widened_value = -limit;
+            }
+            else
+            {
+                if (widened_value < -limit)
+                    return std::nullopt;
+                if (widened_value > limit)
+                    widened_value = limit;
+            }
+
+            unscaled_value = widened_value;
         }
 
         return DB::DecimalField<DecimalType>(unscaled_value, scale);
@@ -563,9 +599,9 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
                 auto right = deserializeFieldFromBinaryRepr(right_str, column_type, false);
                 if (!left || !right)
                 {
-                    /// Pruning is skipped either way, but at scale 38 a bound that only loses its widened
-                    /// form can still be a value the column holds, so this is not on its own a malformed
-                    /// manifest and stays out of the warning log.
+                    /// A bound that does not decode is wider than the storage of its type, or a decimal
+                    /// bound beyond the precision of its type on the inner side of the range. Pruning is
+                    /// skipped either way, so this stays out of the warning log.
                     LOG_DEBUG(
                         getLogger("ManifestFileIterator"),
                         "Manifest file '{}' declares a bound that cannot be read as a usable range border "

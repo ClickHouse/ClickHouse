@@ -2615,6 +2615,7 @@ void IMergeTreeDataPart::loadColumnsSubstreams()
             }
         }
 
+        loaded_columns_substreams.validateColumns(getColumns().getNames(), ErrorCodes::CORRUPTED_DATA);
         setColumnsSubstreams(loaded_columns_substreams);
     }
     /// In Compact part with marks for substreams we must have substreams file. For other cases it's not mandatory.
