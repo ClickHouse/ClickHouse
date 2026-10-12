@@ -369,6 +369,16 @@ KeyCondition * StatisticsPartPruner::getKeyConditionForEstimates(const NamesAndT
     return key_condition_ptr;
 }
 
+NameSet StatisticsPartPruner::getColumnsConsultedByEstimates() const
+{
+    NameSet res;
+    for (const auto & [column, _] : null_predicates)
+        res.insert(column);
+    for (const auto & [column, _] : stats_column_name_to_type_map)
+        res.insert(column);
+    return res;
+}
+
 BoolMask StatisticsPartPruner::checkPartCanMatch(const Estimates & estimates)
 {
     for (const auto & [column, is_null] : null_predicates)

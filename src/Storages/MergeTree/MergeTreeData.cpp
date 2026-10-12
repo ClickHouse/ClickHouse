@@ -8295,11 +8295,67 @@ MergeTreeData::getColumnDefaultnessStats(const String & column_name, ContextPtr 
     if (!column_in_metadata)
         return std::nullopt;
 
+    auto parts = getActivePartsForColumnDefaultnessStats(query_context);
+
+    /// Pending metadata mutations (`RENAME COLUMN`, `DROP COLUMN` possibly followed by re-adding a
+    /// column with the same name) are applied to reads on the fly, while `serialization.json`
+    /// stays keyed by the on-disk column names. The counter looked up by the queried name would
+    /// then describe a different column's data, or the data of a dropped column whose reads are
+    /// already filled with the new default. Only the parts where such a mutation touches the
+    /// requested column are affected.
+    MutationsSnapshotPtr mutations_snapshot;
+    if (getMutationCounters().num_metadata > 0)
+    {
+        auto parts_info = getPartsSnapshotInfo(parts);
+        IMutationsSnapshot::Params params
+        {
+            .metadata_version = metadata_snapshot->getMetadataVersion(),
+            .min_part_metadata_version = parts_info.min_metadata_version,
+            .min_part_data_versions = nullptr,
+            .max_mutation_versions = nullptr,
+            .need_data_mutations = false,
+            .need_alter_mutations = false,
+            .need_patch_parts = false,
+            .has_lightweight_delete_parts = parts_info.has_lightweight_delete_parts,
+        };
+        mutations_snapshot = getMutationsSnapshot(params);
+    }
+
+    /// Two dotted column names overlap when they are equal, or when one is an ancestor of the other
+    /// in the subcolumn hierarchy, e.g. a dropped `n` affects `n.a`.
+    auto overlaps_requested_column = [&](std::string_view name)
+    {
+        std::string_view lhs = name;
+        std::string_view rhs = column_name;
+        if (lhs.size() > rhs.size())
+            std::swap(lhs, rhs);
+        return rhs.starts_with(lhs) && (lhs.size() == rhs.size() || rhs[lhs.size()] == '.');
+    };
+
     ColumnDefaultnessStats aggregate;
-    for (const auto & part : getActivePartsForColumnDefaultnessStats(query_context))
+    for (const auto & part : parts)
     {
         if (part->isEmpty())
             continue;
+
+        if (mutations_snapshot && mutations_snapshot->hasMetadataMutations())
+        {
+            auto alter_conversions = getAlterConversionsForPart(part, mutations_snapshot, query_context
+#if CLICKHOUSE_CLOUD
+                , query_context->getAccess()->getEnabledMaskingPolicies()
+#endif
+            );
+
+            bool is_affected = std::ranges::any_of(alter_conversions->getDroppedColumns(), overlaps_requested_column);
+            for (const auto & [rename_to, rename_from] : alter_conversions->getRenameMap())
+                is_affected = is_affected || overlaps_requested_column(rename_to) || overlaps_requested_column(rename_from);
+
+            if (is_affected)
+            {
+                LOG_DEBUG(log, "No defaultness stats for column {}: part {} has a pending metadata mutation of this column", column_name, part->name);
+                return std::nullopt;
+            }
+        }
 
         /// A metadata-only `MODIFY COLUMN` (e.g. `UInt64` -> `Nullable(UInt64)`) does not rewrite the part,
         /// so its `num_defaults` counts defaults of the old type while reads return the new type.
