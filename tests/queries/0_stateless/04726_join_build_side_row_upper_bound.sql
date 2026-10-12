@@ -328,6 +328,32 @@ SELECT 'window subqueries keep orientation',
     JOIN (SELECT id, row_number() OVER () AS rn FROM fact_04726) AS wf ON wd.id = wf.id
 );
 
+-- Without OFFSET a LIMIT, sorted or not, emits at least `min(input, limit)` rows, so the lower bound
+-- of the limited `fact_04726` must survive it, while an OFFSET must drop it. The first condition of
+-- the OFFSET arm keeps it non-vacuous if the offset stops appearing.
+SELECT 'limited subquery keeps orientation', count() > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT id FROM dim_04726 WHERE nation_id = 5) AS d
+    JOIN (SELECT id, val FROM fact_04726 LIMIT 50000) AS lf ON d.id = lf.id
+) WHERE explain ILIKE '%Join: lf%';
+
+SELECT 'sorted limited subquery keeps orientation', count() > 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT id FROM dim_04726 WHERE nation_id = 5) AS d
+    JOIN (SELECT id, val FROM fact_04726 ORDER BY val LIMIT 50000) AS sf ON d.id = sf.id
+) WHERE explain ILIKE '%Join: sf%';
+
+SELECT 'OFFSET subquery keeps orientation',
+        countIf(explain ILIKE '%Offset 10%') > 0
+    AND countIf(explain ILIKE '%Join: ol%') = 0 FROM (
+    EXPLAIN actions = 1, keep_logical_steps = 1
+    SELECT avg(val)
+    FROM (SELECT id FROM dim_04726 WHERE nation_id = 5) AS d
+    JOIN (SELECT id, val FROM fact_04726 LIMIT 50000 OFFSET 10) AS ol ON d.id = ol.id
+);
+
 -- The plan arms above assert the orientation; this one asserts the effect it exists for, so a
 -- future change cannot keep the plan shape while losing the small build side at runtime.
 SELECT avg(val)

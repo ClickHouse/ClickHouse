@@ -18,6 +18,9 @@ semi sub-join keeps orientation	1
 anti sub-join keeps orientation	1
 ANY sub-join keeps orientation	1
 window subqueries keep orientation	1
+limited subquery keeps orientation	1
+sorted limited subquery keeps orientation	1
+OFFSET subquery keeps orientation	1
 build side rows	0	4
 rows	0
 rows non-empty filter	25

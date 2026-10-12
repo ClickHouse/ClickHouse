@@ -298,8 +298,8 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     {
         auto estimated = estimateReadRowsCount(*node.children.front(), filter);
         auto limit = limit_step->getLimit();
-        /// The child may emit fewer rows than the limit, so this is not a lower bound.
-        estimated.estimated_rows_is_lower_bound = false;
+        /// Without OFFSET at least `min(input, limit)` rows come out, so a lower bound stays one.
+        estimated.estimated_rows_is_lower_bound = estimated.estimated_rows_is_lower_bound && limit_step->getOffset() == 0;
         if (!estimated.estimated_rows || estimated.estimated_rows > limit)
             estimated.estimated_rows = limit;
         /// WITH TIES can emit more rows than `limit`, so only a plain LIMIT bounds the output by it.
@@ -352,9 +352,9 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
     if (const auto * sorting_step = typeid_cast<const SortingStep *>(step))
     {
         auto stats = estimateReadRowsCount(*node.children.front(), filter);
+        /// A sort with a limit emits `min(input, limit)` rows, so a lower bound stays one.
         if (sorting_step->getLimit())
         {
-            stats.estimated_rows_is_lower_bound = false;
             if (!stats.estimated_rows || stats.estimated_rows > sorting_step->getLimit())
                 stats.estimated_rows = sorting_step->getLimit();
             clearColumnValueRanges(stats.column_stats);
