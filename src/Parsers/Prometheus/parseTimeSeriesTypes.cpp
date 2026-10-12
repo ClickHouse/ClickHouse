@@ -297,7 +297,10 @@ std::optional<Decimal64> convertSecondsSettingToTimeSeriesDuration(std::string_v
     if (seconds * 1000000 >= static_cast<Float64>(std::numeric_limits<Int64>::max()))
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The setting {} is too big: {}", setting_name, seconds);
 
-    const auto microseconds = static_cast<Int64>(seconds * 1000000);
+    auto microseconds = static_cast<Int64>(seconds * 1000000);
+    /// A value like 4.1 is stored a bit below 4.1, so the product can be truncated one microsecond low.
+    if (static_cast<Float64>(microseconds + 1) / 1000000 == seconds)
+        ++microseconds;
     if (microseconds == 0)
         return {};
 

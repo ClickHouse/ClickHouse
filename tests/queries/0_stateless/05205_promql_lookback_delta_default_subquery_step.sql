@@ -41,6 +41,15 @@ SELECT count() FROM prometheusQuery(ts, 'm', fromUnixTimestamp64Milli(1000620001
 SELECT value FROM prometheusQuery(ts, 'count_over_time(m[5m:])', fromUnixTimestamp64Milli(1000620500)) SETTINGS promql_default_subquery_step = 1.001;
 SELECT value FROM prometheusQuery(ts, 'count_over_time(m[5m:])', fromUnixTimestamp64Milli(1000620500)) SETTINGS promql_default_subquery_step = 1;
 
+SELECT 'exact microseconds on a DateTime64(6) table:';
+DROP TABLE IF EXISTS ts6;
+CREATE TABLE ts6 (samples Array(Tuple(DateTime64(6, 'UTC'), Float64))) ENGINE = TimeSeries;
+INSERT INTO ts6 (metric_name, tags, samples) VALUES ('m', {'l': 'a'}, [(toDateTime64(1000620, 6, 'UTC'), 1)]);
+SELECT count() FROM prometheusQuery(ts6, 'm', fromUnixTimestamp64Micro(1000624099999)) SETTINGS promql_lookback_delta = 4.1;
+SELECT count() FROM prometheusQuery(ts6, 'm', fromUnixTimestamp64Micro(1000624099999)) SETTINGS promql_lookback_delta = 4.099999;
+SELECT samples FROM prometheusQuery(ts6, 'm[3s:]', fromUnixTimestamp64Micro(1000623500000)) SETTINGS promql_default_subquery_step = 1.001;
+DROP TABLE ts6;
+
 SELECT 'zero means the default:';
 SELECT count() FROM prometheusQuery(ts, 'm', 1000740) SETTINGS promql_lookback_delta = 0;
 SELECT count() FROM prometheusQuery(ts, 'm', 1000920) SETTINGS promql_lookback_delta = 0;

@@ -22,6 +22,10 @@ fractional values are rounded up to milliseconds:
 0
 299
 300
+exact microseconds on a DateTime64(6) table:
+1
+0
+[('1970-01-12 13:57:00.621000',1),('1970-01-12 13:57:01.622000',1),('1970-01-12 13:57:02.623000',1)]
 zero means the default:
 1
 0
