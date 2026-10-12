@@ -64,7 +64,7 @@ public:
     ~ArrayJoinResultIterator() = default;
 
     /// Returns an empty block without columns once is_cancelled is set (only the element-filter path checks it).
-    Block next(const std::atomic<bool> * is_cancelled = nullptr);
+    Block next(const std::atomic<bool> * is_cancelled);
     bool hasNext() const;
 
 private:
