@@ -14,6 +14,8 @@ INSERT INTO t2 SELECT number, if(number % 10 = 0, '{"f":true}', '{"f":false}') F
 
 SELECT if(explain ILIKE '%.t1)%', 't1', 't2') FROM (EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.k = t2.k WHERE t2.j.f = false) WHERE explain ILIKE '%ReadFromMergeTree%';
 SELECT if(explain ILIKE '%.t1)%', 't1', 't2') FROM (EXPLAIN SELECT count() FROM t1 LEFT JOIN t2 ON t1.k = t2.k WHERE t2.j.f = true) WHERE explain ILIKE '%ReadFromMergeTree%';
+SELECT extract(explain, 't2\\[(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t2 ON t1.k = t2.k WHERE t2.j.f = false) WHERE explain LIKE '%Join:%' LIMIT 1;
+SELECT extract(explain, 't2\\[(\\d+)\\]') FROM (EXPLAIN PLAN keep_logical_steps = 1 SELECT count() FROM t1 INNER JOIN t2 ON t1.k = t2.k WHERE t2.j.f != false) WHERE explain LIKE '%Join:%' LIMIT 1;
 SELECT count() FROM t1 LEFT JOIN t2 ON t1.k = t2.k WHERE t2.j.f = false;
 SELECT count() FROM t1 LEFT JOIN t2 ON t1.k = t2.k WHERE t2.j.f = true;
 
