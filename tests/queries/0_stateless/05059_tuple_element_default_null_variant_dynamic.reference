@@ -1,0 +1,3 @@
+dynamic_element	Tuple(a Dynamic)	DEFAULT	tuple(NULL)
+variant_element	Tuple(a Variant(String, UInt64))	DEFAULT	tuple(NULL)
+(NULL)	(NULL)
