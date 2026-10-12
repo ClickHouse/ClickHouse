@@ -318,9 +318,13 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
     }
 
     /// Datalake (Iceberg) metadata mapping wins over user settings — see the check above.
-    const auto & effective_field_ids = has_metadata_mapping
-        ? std::optional<std::unordered_map<String, Int64>>(format_filter_info_->column_mapper->getStorageColumnEncoding())
-        : column_field_ids;
+    /// `convertSchema` reads an empty encoding map as "every field id is missing", not "no field ids".
+    std::optional<std::unordered_map<String, Int64>> effective_field_ids = column_field_ids;
+    if (has_metadata_mapping)
+    {
+        const auto & column_encoding = format_filter_info_->column_mapper->getStorageColumnEncoding();
+        effective_field_ids = column_encoding.empty() ? std::nullopt : std::optional(column_encoding);
+    }
 
     schema = convertSchema(*header_, options, effective_field_ids, iceberg_optionality);
 }
