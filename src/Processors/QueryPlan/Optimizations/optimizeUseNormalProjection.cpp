@@ -734,9 +734,9 @@ UseProjectionsResult optimizeUseNormalProjections(
                 .num_streams = reading->getNumStreams(),
                 .find_exact_ranges = false,
                 .is_parallel_reading_from_replicas = false,
+                /// With `has_projections`, exceeding the row limits does not throw but sets `tmp_result.exceeded_row_limits`.
                 .has_projections = true,
-                /// This is only an estimate for choosing a projection; the executed read checks the row limits.
-                .check_row_limits = false,
+                .check_row_limits = true,
                 .use_primary_key = false,
                 .result = tmp_result,
             };
@@ -756,7 +756,16 @@ UseProjectionsResult optimizeUseNormalProjections(
                 total_rows_after_skip += part.getRowsCount();
             }
 
-            if (total_marks_after_skip < parent_reading_marks)
+            /// A parent read that still exceeds `max_rows_to_read` after the skip indexes is unusable,
+            /// so it cannot beat the projection: keep the primary-key-only estimate.
+            if (tmp_result.exceeded_row_limits)
+            {
+                LOG_DEBUG(logger,
+                    "Parent read still exceeds the row limits after skip index filtering; "
+                    "keeping the primary-key-only estimate of {} marks for projection candidate comparison",
+                    parent_reading_marks);
+            }
+            else if (total_marks_after_skip < parent_reading_marks)
             {
                 LOG_DEBUG(logger,
                     "Parent marks reduced from {} to {} after skip index filtering; "
