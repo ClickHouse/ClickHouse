@@ -1,0 +1,838 @@
+#!/usr/bin/env python3
+"""Run the queries of a `.sql` test, read from stdin, over a protocol other than the native one.
+
+`clickhouse-test --protocols` uses it to run every `.sql` test over a random protocol, so that the
+same randomized and fuzzed workload that the Stress test sends over the native protocol reaches the
+other protocol handlers too. The output is not expected to match the `.reference` files: every
+protocol formats results its own way. What matters is how the server behaves.
+
+Like `clickhouse-client` in a `.sql` test, it runs the queries one by one in one session and stops
+at the first error, unless the query carries a `-- { serverError ... }` or `-- { clientError ... }`
+hint. The `ssh` and `webterminal` protocols run the embedded client inside the server, which parses
+the queries and applies the hints itself.
+
+The non-standard Python modules (`grpc`, `pyarrow`) are imported only by the protocols that need them.
+"""
+
+import argparse
+import base64
+import hashlib
+import http.client
+import json
+import os
+import re
+import shutil
+import socket
+import ssl
+import struct
+import subprocess
+import sys
+import tempfile
+import urllib.parse
+import uuid
+
+PROTOCOLS = [
+    "http",
+    "https",
+    "mysql",
+    "postgresql",
+    "grpc",
+    "arrowflight",
+    "ssh",
+    "webterminal",
+]
+
+# The server-side end of a query is governed by the test timeout of `clickhouse-test`, which kills
+# this process. These timeouts only bound waiting on a peer that went silent.
+SOCKET_TIMEOUT = 600
+
+# `ssh` passes the whole test as the command of the channel, which travels in one `argv` element of
+# the `ssh` client; Linux limits one element to 128 KiB (`MAX_ARG_STRLEN`).
+SSH_MAX_QUERY_SIZE = 100 * 1024
+
+
+class QueryError(Exception):
+    pass
+
+
+def env_port(name, default):
+    return int(os.environ.get(name) or default)
+
+
+def sql_literal(value):
+    """Quote the value of a setting or a query parameter for `SET name = value`. Like
+    `clickhouse-client` does with a value from its command line, the server parses the string."""
+    return "'" + value.replace("\\", "\\\\").replace("'", "\\'") + "'"
+
+
+def parse_key_values(items):
+    result = []
+    for item in items:
+        key, sep, value = item.partition("=")
+        if not sep:
+            raise ValueError(f"Expected name=value, got {item!r}")
+        result.append((key, value))
+    return result
+
+
+# Splitting the test into queries.
+#
+# This mirrors what `ClientBase` does in a multi-query: the queries are separated by top-level
+# semicolons, while string literals, quoted identifiers, comments and heredocs may contain anything.
+# The data of `INSERT ... FORMAT <not Values>` lasts until an empty line, as in `ClientBase`.
+
+HINT_RE = re.compile(r"\{\s*(serverError|clientError)\b")
+INSERT_FORMAT_RE = re.compile(
+    r"\s*(EXPLAIN\b.*?\b)?INSERT\b.*?\bFORMAT\s+(\w+)[ \t]*", re.IGNORECASE | re.DOTALL
+)
+HEREDOC_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
+
+
+def skip_quoted(text, pos, quote):
+    """Return the position after the literal that starts at `pos` with `quote`."""
+    pos += 1
+    while pos < len(text):
+        char = text[pos]
+        if char == "\\":
+            pos += 2
+            continue
+        if char == quote:
+            if pos + 1 < len(text) and text[pos + 1] == quote:
+                pos += 2
+                continue
+            return pos + 1
+        pos += 1
+    return pos
+
+
+def skip_block_comment(text, pos):
+    depth = 0
+    while pos < len(text):
+        if text.startswith("/*", pos):
+            depth += 1
+            pos += 2
+        elif text.startswith("*/", pos):
+            depth -= 1
+            pos += 2
+            if depth == 0:
+                return pos
+        else:
+            pos += 1
+    return pos
+
+
+def is_line_comment(text, pos):
+    if text.startswith("--", pos):
+        return True
+    # `#` starts a comment only when followed by a space or `!`, as in the ClickHouse lexer.
+    return text[pos] == "#" and (pos + 1 == len(text) or text[pos + 1] in " !")
+
+
+def split_queries(text):
+    """Split the text into `(query, hint)` pairs. The hint is the comment that follows the query on
+    the line of its terminating semicolon, as in `ClientBase`."""
+    queries = []
+    begin = 0
+    pos = 0
+    has_tokens = False
+    while pos < len(text):
+        char = text[pos]
+        if char in "'\"`":
+            pos = skip_quoted(text, pos, char)
+            has_tokens = True
+        elif text.startswith("/*", pos):
+            pos = skip_block_comment(text, pos)
+        elif is_line_comment(text, pos):
+            end = text.find("\n", pos)
+            pos = len(text) if end == -1 else end
+        elif char == "$" and (heredoc := HEREDOC_RE.match(text, pos)):
+            end = text.find(heredoc.group(0), heredoc.end())
+            pos = len(text) if end == -1 else end + len(heredoc.group(0))
+            has_tokens = True
+        elif char == ";":
+            pos = finish_query(text, begin, pos, queries, has_tokens)
+            begin = pos
+            has_tokens = False
+        elif char == "\n" and has_tokens:
+            # The data of an `INSERT ... FORMAT <not Values>` starts after the format name and ends
+            # at an empty line, regardless of semicolons in it.
+            insert = INSERT_FORMAT_RE.match(text, begin, pos)
+            if insert and insert.end() == pos and insert.group(2) != "Values":
+                end = text.find("\n\n", pos)
+                end = len(text) if end == -1 else end
+                queries.append((text[begin:end].strip(), ""))
+                begin = pos = end
+                has_tokens = False
+            else:
+                pos += 1
+        else:
+            if not char.isspace():
+                has_tokens = True
+            pos += 1
+    if has_tokens:
+        queries.append((text[begin:].strip(), ""))
+    return queries
+
+
+def finish_query(text, begin, pos, queries, has_tokens):
+    """Record the query that ends with the semicolon at `pos`, return where the next one begins."""
+    query = text[begin:pos].strip()
+    end = pos + 1
+    newline = text.find("\n", end)
+    line_rest = text[end : len(text) if newline == -1 else newline]
+    hint = ""
+    if HINT_RE.search(line_rest):
+        hint = line_rest
+        end += len(line_rest)
+    if has_tokens:
+        queries.append((query, hint))
+    return end
+
+
+def strip_comments(query):
+    """Remove the comments from the query; the line structure of the remaining text is kept."""
+    result = []
+    pos = 0
+    while pos < len(query):
+        char = query[pos]
+        if char in "'\"`":
+            end = skip_quoted(query, pos, char)
+            result.append(query[pos:end])
+            pos = end
+        elif query.startswith("/*", pos):
+            pos = skip_block_comment(query, pos)
+            result.append(" ")
+        elif is_line_comment(query, pos):
+            end = query.find("\n", pos)
+            pos = len(query) if end == -1 else end
+        else:
+            result.append(char)
+            pos += 1
+    return "".join(result).strip()
+
+
+def expects_error(query, hint):
+    return bool(HINT_RE.search(hint) or HINT_RE.search(query))
+
+
+RESULT_KEYWORDS = {"SELECT", "WITH", "SHOW", "DESC", "DESCRIBE", "EXPLAIN", "EXISTS", "CHECK"}
+
+
+def returns_result(query):
+    words = re.findall(r"[A-Za-z_]+", strip_comments(query)[:100])
+    return bool(words) and words[0].upper() in RESULT_KEYWORDS
+
+
+def format_value(value):
+    if value is None:
+        return "\\N"
+    if isinstance(value, bytes):
+        value = value.decode("utf-8", errors="replace")
+    return str(value).replace("\\", "\\\\").replace("\t", "\\t").replace("\n", "\\n")
+
+
+def format_rows(rows):
+    return "".join("\t".join(format_value(value) for value in row) + "\n" for row in rows)
+
+
+class QueryClient:
+    """A protocol on which `clickhouse-test` runs the queries one by one."""
+
+    # Whether the settings and the query parameters are passed with the protocol rather than with `SET`.
+    native_settings = False
+    native_params = False
+
+    def __init__(self, args):
+        self.host = args.host
+        self.user = args.user
+        self.database = args.database
+        self.settings = args.settings
+        self.params = args.params
+
+    def setup_queries(self):
+        return setup_queries(
+            [] if self.native_settings else self.settings, [] if self.native_params else self.params
+        )
+
+    def connect(self):
+        pass
+
+    def execute(self, query):
+        """Run the query, return its result as bytes or raise `QueryError`."""
+        raise NotImplementedError
+
+    def close(self):
+        pass
+
+
+def setup_queries(settings, params):
+    # A changed `compatibility` resets the defaults of the settings that were not changed
+    # explicitly, so it goes first, not to undo the others.
+    ordered = sorted(settings, key=lambda kv: kv[0] != "compatibility")
+    queries = [f"SET {name} = {sql_literal(value)}" for name, value in ordered]
+    queries += [f"SET param_{name} = {sql_literal(value)}" for name, value in params]
+    return queries
+
+
+class HTTPClient(QueryClient):
+    native_settings = True
+    native_params = True
+
+    def __init__(self, args, secure):
+        super().__init__(args)
+        self.secure = secure
+        self.port = (
+            env_port("CLICKHOUSE_PORT_HTTPS", 8443) if secure else env_port("CLICKHOUSE_PORT_HTTP", 8123)
+        )
+        self.session_id = str(uuid.uuid4())
+        self.connection = None
+
+    def connect(self):
+        if self.secure:
+            self.connection = http.client.HTTPSConnection(
+                self.host, self.port, timeout=SOCKET_TIMEOUT, context=ssl._create_unverified_context()
+            )
+        else:
+            self.connection = http.client.HTTPConnection(self.host, self.port, timeout=SOCKET_TIMEOUT)
+
+    def execute(self, query):
+        params = [("database", self.database), ("session_id", self.session_id)]
+        params += self.settings
+        params += [(f"param_{name}", value) for name, value in self.params]
+        url = "/?" + urllib.parse.urlencode(params)
+        body = query.encode("utf-8", errors="surrogateescape")
+        try:
+            self.connection.request("POST", url, body=body, headers={"X-ClickHouse-User": self.user})
+            response = self.connection.getresponse()
+            data = response.read()
+        except (http.client.HTTPException, OSError):
+            # The server closes a keep-alive connection after some errors; the session survives it.
+            self.connection.close()
+            raise
+        if response.status != 200:
+            raise QueryError(data.decode("utf-8", errors="replace"))
+        return data
+
+
+class MySQLClient(QueryClient):
+    """A minimal client of the MySQL text protocol."""
+
+    CLIENT_LONG_PASSWORD = 0x1
+    CLIENT_CONNECT_WITH_DB = 0x8
+    CLIENT_PROTOCOL_41 = 0x200
+    CLIENT_TRANSACTIONS = 0x2000
+    CLIENT_SECURE_CONNECTION = 0x8000
+    CLIENT_PLUGIN_AUTH = 0x80000
+    MAX_PACKET = 0xFFFFFF
+
+    def connect(self):
+        self.sock = socket.create_connection(
+            (self.host, env_port("CLICKHOUSE_PORT_MYSQL", 9004)), timeout=SOCKET_TIMEOUT
+        )
+        self.sequence = 0
+        handshake = self.read_packet()
+        if handshake[0] == 0xFF:
+            raise QueryError(self.error_message(handshake))
+        version_end = handshake.index(b"\0", 1)
+        pos = version_end + 1 + 4  # connection id
+        scramble = handshake[pos : pos + 8]
+        pos += 8 + 1 + 2 + 1 + 2 + 2  # filler, capabilities, charset, status, capabilities
+        auth_data_length = handshake[pos]
+        pos += 1 + 10
+        scramble += handshake[pos : pos + max(13, auth_data_length - 8)].rstrip(b"\0")
+
+        capabilities = (
+            self.CLIENT_LONG_PASSWORD
+            | self.CLIENT_CONNECT_WITH_DB
+            | self.CLIENT_PROTOCOL_41
+            | self.CLIENT_TRANSACTIONS
+            | self.CLIENT_SECURE_CONNECTION
+            | self.CLIENT_PLUGIN_AUTH
+        )
+        auth_response = self.native_password(scramble)
+        response = struct.pack("<IIB23x", capabilities, self.MAX_PACKET, 33)
+        response += self.user.encode() + b"\0"
+        response += bytes([len(auth_response)]) + auth_response
+        response += self.database.encode() + b"\0"
+        response += b"mysql_native_password\0"
+        self.write_packet(response)
+
+        while True:
+            packet = self.read_packet()
+            if packet[0] == 0x00:
+                return
+            if packet[0] == 0xFF:
+                raise QueryError(self.error_message(packet))
+            if packet[0] == 0xFE:
+                # Auth switch request: the plugin name and its scramble.
+                plugin_end = packet.index(b"\0", 1)
+                self.write_packet(self.native_password(packet[plugin_end + 1 :].rstrip(b"\0")))
+                continue
+            raise QueryError(f"Unexpected MySQL packet during authentication: {packet[:16]!r}")
+
+    def native_password(self, scramble):
+        # The password of the test user is empty, and so is its scramble.
+        del scramble
+        return b""
+
+    def read_exact(self, size):
+        data = bytearray()
+        while len(data) < size:
+            chunk = self.sock.recv(size - len(data))
+            if not chunk:
+                raise QueryError("MySQL server closed the connection")
+            data += chunk
+        return bytes(data)
+
+    def read_packet(self):
+        payload = b""
+        while True:
+            header = self.read_exact(4)
+            length = int.from_bytes(header[:3], "little")
+            self.sequence = (header[3] + 1) % 256
+            payload += self.read_exact(length)
+            if length < self.MAX_PACKET:
+                return payload
+
+    def write_packet(self, payload):
+        while True:
+            chunk, payload = payload[: self.MAX_PACKET], payload[self.MAX_PACKET :]
+            self.sock.sendall(len(chunk).to_bytes(3, "little") + bytes([self.sequence]) + chunk)
+            self.sequence = (self.sequence + 1) % 256
+            if len(chunk) < self.MAX_PACKET:
+                return
+
+    @staticmethod
+    def read_length(packet, pos):
+        first = packet[pos]
+        if first < 0xFB:
+            return first, pos + 1
+        if first == 0xFB:
+            return None, pos + 1
+        size = {0xFC: 2, 0xFD: 3, 0xFE: 8}[first]
+        return int.from_bytes(packet[pos + 1 : pos + 1 + size], "little"), pos + 1 + size
+
+    @staticmethod
+    def error_message(packet):
+        code = int.from_bytes(packet[1:3], "little")
+        message = packet[3:]
+        if message[:1] == b"#":
+            message = message[6:]
+        return f"MySQL error {code}: {message.decode('utf-8', errors='replace')}"
+
+    @staticmethod
+    def is_eof(packet):
+        return packet[0] == 0xFE and len(packet) < 9
+
+    def execute(self, query):
+        self.sequence = 0
+        self.write_packet(b"\x03" + query.encode("utf-8", errors="surrogateescape"))
+        packet = self.read_packet()
+        if packet[0] == 0x00:
+            return b""
+        if packet[0] == 0xFF:
+            raise QueryError(self.error_message(packet))
+        column_count, _ = self.read_length(packet, 0)
+        for _ in range(column_count):
+            self.read_packet()
+        if not self.is_eof(packet := self.read_packet()):
+            raise QueryError(f"Expected EOF after the MySQL column definitions, got {packet[:16]!r}")
+        rows = []
+        while True:
+            packet = self.read_packet()
+            if packet[0] == 0xFF:
+                raise QueryError(self.error_message(packet))
+            if self.is_eof(packet):
+                return format_rows(rows).encode()
+            row = []
+            pos = 0
+            while pos < len(packet):
+                length, pos = self.read_length(packet, pos)
+                if length is None:
+                    row.append(None)
+                else:
+                    row.append(packet[pos : pos + length])
+                    pos += length
+            rows.append(row)
+
+    def close(self):
+        try:
+            self.sequence = 0
+            self.write_packet(b"\x01")  # COM_QUIT
+        except OSError:
+            pass
+        self.sock.close()
+
+
+class PostgreSQLClient(QueryClient):
+    """A minimal client of the PostgreSQL simple query protocol."""
+
+    def connect(self):
+        self.sock = socket.create_connection(
+            (self.host, env_port("CLICKHOUSE_PORT_POSTGRESQL", 9005)), timeout=SOCKET_TIMEOUT
+        )
+        parameters = b"user\0" + self.user.encode() + b"\0database\0" + self.database.encode() + b"\0\0"
+        self.sock.sendall(struct.pack("!II", 8 + len(parameters), 196608) + parameters)
+        while True:
+            kind, body = self.read_message()
+            if kind == b"R":
+                code = struct.unpack("!I", body[:4])[0]
+                if code == 3:  # Cleartext password; the password of the test user is empty.
+                    self.send_message(b"p", b"\0")
+                elif code != 0:
+                    raise QueryError(f"Unsupported PostgreSQL authentication request {code}")
+            elif kind == b"E":
+                raise QueryError(self.error_message(body))
+            elif kind == b"Z":
+                return
+
+    def read_exact(self, size):
+        data = bytearray()
+        while len(data) < size:
+            chunk = self.sock.recv(size - len(data))
+            if not chunk:
+                raise QueryError("PostgreSQL server closed the connection")
+            data += chunk
+        return bytes(data)
+
+    def read_message(self):
+        header = self.read_exact(5)
+        length = struct.unpack("!I", header[1:])[0]
+        return header[:1], self.read_exact(length - 4)
+
+    def send_message(self, kind, body):
+        self.sock.sendall(kind + struct.pack("!I", len(body) + 4) + body)
+
+    @staticmethod
+    def error_message(body):
+        fields = {}
+        for field in body.split(b"\0"):
+            if field:
+                fields[field[:1]] = field[1:].decode("utf-8", errors="replace")
+        return f"PostgreSQL error {fields.get(b'C', '')}: {fields.get(b'M', '')}"
+
+    def execute(self, query):
+        self.send_message(b"Q", query.encode("utf-8", errors="surrogateescape") + b"\0")
+        rows = []
+        error = None
+        while True:
+            kind, body = self.read_message()
+            if kind == b"D":
+                count = struct.unpack("!H", body[:2])[0]
+                pos = 2
+                row = []
+                for _ in range(count):
+                    length = struct.unpack("!i", body[pos : pos + 4])[0]
+                    pos += 4
+                    if length < 0:
+                        row.append(None)
+                    else:
+                        row.append(body[pos : pos + length])
+                        pos += length
+                rows.append(row)
+            elif kind == b"E":
+                error = self.error_message(body)
+            elif kind == b"Z":
+                if error is not None:
+                    raise QueryError(error)
+                return format_rows(rows).encode()
+
+    def close(self):
+        try:
+            self.send_message(b"X", b"")
+        except OSError:
+            pass
+        self.sock.close()
+
+
+class GRPCClient(QueryClient):
+    native_settings = True
+
+    def connect(self):
+        sys.path.append(
+            os.path.join(os.path.dirname(os.path.realpath(__file__)), "..", "utils", "grpc-client", "pb2")
+        )
+        import clickhouse_grpc_pb2  # pylint: disable=import-outside-toplevel
+        import clickhouse_grpc_pb2_grpc  # pylint: disable=import-outside-toplevel
+        import grpc  # pylint: disable=import-outside-toplevel
+
+        self.pb2 = clickhouse_grpc_pb2
+        self.channel = grpc.insecure_channel(
+            f"{self.host}:{env_port('CLICKHOUSE_PORT_GRPC', 9100)}",
+            options=[("grpc.max_receive_message_length", -1), ("grpc.max_send_message_length", -1)],
+        )
+        self.stub = clickhouse_grpc_pb2_grpc.ClickHouseStub(self.channel)
+        self.session_id = str(uuid.uuid4())
+
+    def execute(self, query):
+        settings = dict(self.settings)
+        result = self.stub.ExecuteQuery(
+            self.pb2.QueryInfo(
+                query=query,
+                settings=settings,
+                database=self.database,
+                session_id=self.session_id,
+                user_name=self.user,
+                output_format="TabSeparated",
+            ),
+            timeout=SOCKET_TIMEOUT,
+        )
+        if result.HasField("exception"):
+            raise QueryError(f"Code: {result.exception.code}. {result.exception.display_text}")
+        return result.output
+
+    def close(self):
+        self.channel.close()
+
+
+class ArrowFlightClient(QueryClient):
+    def connect(self):
+        import pyarrow  # pylint: disable=import-outside-toplevel
+        from pyarrow import flight  # pylint: disable=import-outside-toplevel
+
+        self.pyarrow = pyarrow
+        self.flight = flight
+        self.client = flight.FlightClient(
+            f"grpc://{self.host}:{env_port('CLICKHOUSE_PORT_ARROWFLIGHT', 9090)}"
+        )
+        token = self.client.authenticate_basic_token(self.user, "")
+        self.options = flight.FlightCallOptions(
+            headers=[token, (b"x-clickhouse-session-id", str(uuid.uuid4()).encode())],
+            timeout=SOCKET_TIMEOUT,
+        )
+        # The session starts in the default database.
+        self.execute(f"USE `{self.database}`")
+
+    def execute(self, query):
+        try:
+            if returns_result(query):
+                table = self.client.do_get(self.flight.Ticket(query.encode()), self.options).read_all()
+                columns = [column.to_pylist() for column in table.columns]
+                return format_rows(zip(*columns)).encode()
+            writer, _ = self.client.do_put(
+                self.flight.FlightDescriptor.for_command(query), self.pyarrow.schema([]), self.options
+            )
+            writer.close()
+            return b""
+        except self.pyarrow.ArrowException as e:
+            raise QueryError(str(e)) from e
+
+    def close(self):
+        self.client.close()
+
+
+def prepend_setup(text, setup):
+    return "".join(query + ";\n" for query in setup) + text
+
+
+def run_ssh(args, text):
+    """Pass the whole test to the embedded client as the command of an SSH channel, like
+    `ssh user@host "SELECT 1"`. The embedded client splits it into queries and applies the hints."""
+    text = prepend_setup(text, [f"USE `{args.database}`"] + setup_queries(args.settings, args.params))
+    if len(text.encode("utf-8", errors="surrogateescape")) > SSH_MAX_QUERY_SIZE:
+        raise QueryError(f"The test is larger than {SSH_MAX_QUERY_SIZE} bytes, it cannot be run over SSH")
+    # OpenSSH refuses a private key that is readable by others, and git checks it out as 644.
+    key_dir = tempfile.mkdtemp(prefix="clickhouse-test-ssh-")
+    try:
+        key = os.path.join(key_dir, "key")
+        shutil.copyfile(args.ssh_key, key)
+        os.chmod(key, 0o600)
+        command = [
+            "ssh",
+            "-o", "StrictHostKeyChecking=no",
+            "-o", "UserKnownHostsFile=/dev/null",
+            "-o", "BatchMode=yes",
+            "-o", "LogLevel=ERROR",
+            "-o", "ConnectTimeout=60",
+            "-o", "ServerAliveInterval=30",
+            "-o", "ServerAliveCountMax=20",
+            "-i", key,
+            "-p", str(env_port("CLICKHOUSE_PORT_SSH", 9022)),
+            f"{args.ssh_user}@{args.host}",
+            text,
+        ]
+        return subprocess.call(command, stdin=subprocess.DEVNULL)
+    finally:
+        shutil.rmtree(key_dir)
+
+
+class WebTerminal:
+    """Types the queries into the interactive embedded client behind `/webterminal`, one line each,
+    and waits for the prompt after every query, like a person at the browser would."""
+
+    PROMPT = b":) "
+
+    def __init__(self, args):
+        self.host = args.host
+        self.port = env_port("CLICKHOUSE_PORT_HTTP", 8123)
+        self.user = args.user
+        self.buffer = b""
+
+    def connect(self):
+        self.sock = socket.create_connection((self.host, self.port), timeout=SOCKET_TIMEOUT)
+        key = base64.b64encode(os.urandom(16)).decode()
+        host = f"{self.host}:{self.port}"
+        request = (
+            f"GET /webterminal HTTP/1.1\r\nHost: {host}\r\nUpgrade: websocket\r\nConnection: Upgrade\r\n"
+            f"Sec-WebSocket-Key: {key}\r\nSec-WebSocket-Version: 13\r\nOrigin: http://{host}\r\n\r\n"
+        )
+        self.sock.sendall(request.encode())
+        response = b""
+        while b"\r\n\r\n" not in response:
+            chunk = self.sock.recv(4096)
+            if not chunk:
+                raise QueryError("The server closed the connection during the WebSocket handshake")
+            response += chunk
+        head, self.pending = response.split(b"\r\n\r\n", 1)
+        if not head.startswith(b"HTTP/1.1 101"):
+            raise QueryError(f"WebSocket handshake failed: {head.decode(errors='replace')}")
+        expected = base64.b64encode(
+            hashlib.sha1((key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").encode()).digest()
+        )
+        if b"Sec-WebSocket-Accept: " + expected not in head:
+            raise QueryError("WebSocket handshake returned a wrong Sec-WebSocket-Accept")
+        self.send_frame(0x1, json.dumps({"type": "auth", "user": self.user, "password": ""}).encode())
+        # A wide terminal, so that the client does not wrap and redraw long queries.
+        self.send_frame(0x1, json.dumps({"type": "resize", "cols": 500, "rows": 50}).encode())
+        self.wait_for_prompt()
+
+    def send_frame(self, opcode, payload):
+        header = bytearray([0x80 | opcode])
+        if len(payload) < 126:
+            header.append(0x80 | len(payload))
+        elif len(payload) < 65536:
+            header.append(0x80 | 126)
+            header += struct.pack("!H", len(payload))
+        else:
+            header.append(0x80 | 127)
+            header += struct.pack("!Q", len(payload))
+        mask = os.urandom(4)
+        header += mask
+        self.sock.sendall(bytes(header) + bytes(b ^ mask[i % 4] for i, b in enumerate(payload)))
+
+    def recv_exact(self, size):
+        while len(self.pending) < size:
+            chunk = self.sock.recv(65536)
+            if not chunk:
+                raise EOFError
+            self.pending += chunk
+        data, self.pending = self.pending[:size], self.pending[size:]
+        return data
+
+    def read_frame(self):
+        first, second = self.recv_exact(2)
+        length = second & 0x7F
+        if length == 126:
+            length = struct.unpack("!H", self.recv_exact(2))[0]
+        elif length == 127:
+            length = struct.unpack("!Q", self.recv_exact(8))[0]
+        return first & 0x0F, self.recv_exact(length)
+
+    def read_output(self):
+        """Read the next chunk of the terminal output, return `None` when the session is over."""
+        try:
+            opcode, payload = self.read_frame()
+        except EOFError:
+            return None
+        if opcode == 0x8:
+            if len(payload) >= 2 and struct.unpack("!H", payload[:2])[0] != 1000:
+                sys.stderr.write(f"Web terminal closed: {payload[2:].decode(errors='replace')}\n")
+            return None
+        if opcode == 0x9:
+            self.send_frame(0xA, payload)
+            return b""
+        sys.stdout.buffer.write(payload)
+        return payload
+
+    def wait_for_prompt(self):
+        while self.PROMPT not in self.buffer:
+            data = self.read_output()
+            if data is None:
+                raise QueryError("The web terminal session ended before the prompt")
+            self.buffer = (self.buffer + data)[-1024:]
+        self.buffer = b""
+
+    def run(self, queries):
+        for query in queries:
+            # One line per query: a line break submits the query in the interactive client.
+            line = " ".join(strip_comments(query).split())
+            self.send_frame(0x2, line.encode("utf-8", errors="surrogateescape") + b";\r")
+            self.wait_for_prompt()
+        self.send_frame(0x2, b"exit\r")
+        while self.read_output() is not None:
+            pass
+        self.sock.close()
+
+
+def run_webterminal(args, text):
+    terminal = WebTerminal(args)
+    terminal.connect()
+    setup = [f"USE `{args.database}`"] + setup_queries(args.settings, args.params)
+    terminal.run(setup + [query for query, _ in split_queries(text)])
+    return 0
+
+
+def run_queries(client, text):
+    client.connect()
+    try:
+        for query in client.setup_queries():
+            client.execute(query)
+        for query, hint in split_queries(text):
+            expected_error = expects_error(query, hint)
+            try:
+                output = client.execute(query)
+            except QueryError as e:
+                if expected_error:
+                    continue
+                sys.stderr.write(f"Error on query {query!r}:\n{e}\n")
+                return 1
+            sys.stdout.buffer.write(output)
+            if expected_error:
+                sys.stderr.write(f"Expected an error, but the query succeeded: {query!r}\n")
+                return 1
+        return 0
+    finally:
+        client.close()
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("--protocol", required=True, choices=PROTOCOLS)
+    parser.add_argument("--host", default=os.environ.get("CLICKHOUSE_HOST", "localhost"))
+    parser.add_argument("--user", default="default")
+    parser.add_argument("--database", default="default")
+    parser.add_argument("--setting", dest="settings", action="append", default=[], help="name=value")
+    parser.add_argument("--param", dest="params", action="append", default=[], help="name=value")
+    parser.add_argument("--ssh-user", help="The user with the key authentication for the ssh protocol")
+    parser.add_argument(
+        "--ssh-key",
+        default=os.path.join(os.path.dirname(os.path.realpath(__file__)), "config", "ssh_user_ed25519_key"),
+    )
+    args = parser.parse_args()
+    args.settings = parse_key_values(args.settings)
+    args.params = parse_key_values(args.params)
+
+    text = sys.stdin.buffer.read().decode("utf-8", errors="surrogateescape")
+    try:
+        if args.protocol == "ssh":
+            if not args.ssh_user:
+                parser.error("--ssh-user is required for the ssh protocol")
+            return run_ssh(args, text)
+        if args.protocol == "webterminal":
+            return run_webterminal(args, text)
+        client = {
+            "http": lambda: HTTPClient(args, secure=False),
+            "https": lambda: HTTPClient(args, secure=True),
+            "mysql": lambda: MySQLClient(args),
+            "postgresql": lambda: PostgreSQLClient(args),
+            "grpc": lambda: GRPCClient(args),
+            "arrowflight": lambda: ArrowFlightClient(args),
+        }[args.protocol]()
+        return run_queries(client, text)
+    except QueryError as e:
+        sys.stderr.write(f"{e}\n")
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
