@@ -162,6 +162,9 @@ struct AlterCommand
     /// For RESET SETTING, MODIFY SETTING name = DEFAULT, or MODIFY COLUMN RESET SETTING
     std::set<String> settings_resets;
 
+    /// Column SETTINGS names this command does not act on: only their name is checked
+    Names settings_names_to_check;
+
     /// For MODIFY_QUERY
     ASTPtr select = nullptr;
 
