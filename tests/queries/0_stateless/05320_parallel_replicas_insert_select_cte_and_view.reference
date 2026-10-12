@@ -1,0 +1,32 @@
+-- inserted by the replicas
+[1,2,10,10,10,11,20,20,20,21,30,31,40,41,50,51,60,61]
+-- inserted once
+100	4950
+5	10
+100	4950
+100	4950
+7	21
+-- a materialized view is read through its target table, so the replicas insert it
+10	10045
+-- a view the replicas read in coordination is inserted by the replicas
+-- INSERT queries run by the replicas
+arm_cte	2
+arm_cte_columns	2
+arm_cte_join_star	2
+arm_cte_merge	2
+arm_cte_no_local_plan	3
+arm_from_cte	0
+arm_grouping	2
+arm_join_star	2
+arm_materialized_view	2
+arm_merge	2
+arm_recursive	2
+arm_view	0
+arm_view_limit	0
+arm_view_limit_over_mergetree	0
+arm_view_named_over_mergetree	0
+arm_view_over_mergetree	2
+arm_view_proxy	0
+-- rows written for the views read in coordination
+arm_view_limit_over_mergetree	0	5
+arm_view_over_mergetree	2	100
