@@ -310,7 +310,7 @@ protected:
 
                 /// Every row of this block was filtered out; move on to the next block
                 /// without reading the rest of its columns. `generateFiltered` has already
-                /// reported the block's rows as read.
+                /// reported the block's scanned rows as read.
                 if (isCancelled())
                     return {};
                 continue;
@@ -363,7 +363,10 @@ private:
     /// the returned chunk, which here holds only the rows that passed the filter - and nothing at
     /// all for a block that the filter eliminated completely. The reported number of rows is the
     /// number of rows scanned, the same as what `ReadFromMergeTree` reports for its `PREWHERE`,
-    /// so `max_rows_to_read`, read quotas and `SelectedRows` still see the whole scan.
+    /// so `max_rows_to_read`, read quotas and `SelectedRows` still see the whole scan. The granules
+    /// skipped by the query condition cache are not scanned and not reported, as with `MergeTree`,
+    /// so that the cache cannot make `max_rows_to_read` with `read_overflow_mode = 'break'` stop
+    /// the read earlier.
     ///
     /// The layout of the block after the steps depends on how the steps were split, so the result
     /// is assembled by name in the order of the output header, as in `MergeTreeSelectProcessor`.
@@ -376,6 +379,10 @@ private:
 
         Block block;
         size_t num_rows = num_src_rows;
+
+        /// The number of rows of the block that are scanned: all of them except the granules skipped
+        /// by the query condition cache.
+        size_t num_scanned_rows = num_src_rows;
 
         /// Mask over the stored block's rows combining all steps so far, for cutting the columns
         /// read after some step has filtered. Empty while no step has filtered anything.
@@ -428,10 +435,7 @@ private:
             {
                 const size_t num_matching_granules = std::ranges::count(*matching_granules, true);
                 if (num_matching_granules == 0)
-                {
-                    progress(num_src_rows, 0);
                     return std::nullopt;
-                }
 
                 /// Start with the rows of the granules that may have matches, as if a step had filtered the others out.
                 if (num_matching_granules != num_granules)
@@ -447,6 +451,7 @@ private:
                         std::fill(combined_mask.begin() + begin, combined_mask.begin() + end, 1);
                         num_rows += end - begin;
                     }
+                    num_scanned_rows = num_rows;
                 }
             }
         }
@@ -529,7 +534,7 @@ private:
             if (constant_filter.always_false)
             {
                 write_to_query_condition_cache(/*no_rows_passed=*/ true);
-                progress(num_src_rows, num_read_bytes);
+                progress(num_scanned_rows, num_read_bytes);
                 return std::nullopt;
             }
 
@@ -540,7 +545,7 @@ private:
                 if (num_passed_rows == 0)
                 {
                     write_to_query_condition_cache(/*no_rows_passed=*/ true);
-                    progress(num_src_rows, num_read_bytes);
+                    progress(num_scanned_rows, num_read_bytes);
                     return std::nullopt;
                 }
 
@@ -588,7 +593,7 @@ private:
             block.insert({std::move(global_row_index), std::make_shared<DataTypeUInt64>(), global_row_index_column_name});
         }
 
-        progress(num_src_rows, num_read_bytes);
+        progress(num_scanned_rows, num_read_bytes);
 
         const auto & header = getPort().getHeader();
         Columns result_columns;
