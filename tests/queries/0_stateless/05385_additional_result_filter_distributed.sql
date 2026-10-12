@@ -5,6 +5,8 @@ DROP TABLE IF EXISTS t_d1;
 DROP TABLE IF EXISTS t_d2;
 DROP TABLE IF EXISTS t_m1;
 DROP TABLE IF EXISTS t_mm1;
+DROP VIEW IF EXISTS t_v0;
+DROP VIEW IF EXISTS t_v1;
 
 CREATE TABLE t_local (number UInt64) ENGINE = MergeTree ORDER BY number;
 INSERT INTO t_local SELECT number FROM numbers(10);
@@ -35,6 +37,16 @@ CREATE TABLE t_m1 AS t_local ENGINE = Merge(currentDatabase(), '^t_d1$');
 CREATE TABLE t_mm1 AS t_local ENGINE = Merge(currentDatabase(), '^t_m1$');
 SELECT number FROM t_mm1 ORDER BY number SETTINGS additional_result_filter = 'rowNumberInAllBlocks() % 2 = 0', max_threads = 1;
 
+-- A view or `loop()` plans its own query: the caller's filter must not be applied inside it as well.
+CREATE VIEW t_v0 AS SELECT number FROM t_local ORDER BY number;
+CREATE VIEW t_v1 AS SELECT number FROM t_d1 ORDER BY number;
+SELECT number FROM t_v0 ORDER BY number SETTINGS additional_result_filter = 'rowNumberInAllBlocks() % 2 = 0', max_threads = 1;
+SELECT number FROM t_v1 ORDER BY number SETTINGS additional_result_filter = 'rowNumberInAllBlocks() % 2 = 0', max_threads = 1;
+SELECT number AS x FROM t_v1 ORDER BY x SETTINGS additional_result_filter = 'x < 3';
+SELECT number FROM loop(remote('127.0.0.1', numbers(10))) LIMIT 10 SETTINGS additional_result_filter = 'rowNumberInAllBlocks() % 2 = 0', max_threads = 1;
+
+DROP VIEW t_v1;
+DROP VIEW t_v0;
 DROP TABLE t_mm1;
 DROP TABLE t_m1;
 DROP TABLE t_d2;
