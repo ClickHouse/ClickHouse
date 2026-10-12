@@ -179,14 +179,15 @@ private:
         /// second time, anything else is computed a second time.
         const auto have_it_above = source ? Decision::LazyRead : Decision::Recompute;
 
-        /// A function a join can stuff is recomputed above the `LIMIT` under that join's mask, so on every
-        /// row, the stuffed ones included. That needs a mask and a function harmless to evaluate there. A
-        /// source column read lazily needs neither, as the lazy read stands the default at a row nothing
+        /// A function or a constant a join can stuff is recomputed above the `LIMIT` under that join's mask, so on
+        /// every row, the stuffed ones included. That needs a mask, and for a function one harmless to evaluate
+        /// there. A source column read lazily needs neither, as the lazy read stands the default at a row nothing
         /// matched, and nor does an alias, which is whatever its child is, stuffed rows included.
-        if (node->type == ActionsDAG::ActionType::FUNCTION)
+        if (node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::COLUMN)
         {
             if (const auto * stuffing = merged.getNearestStuffing(node))
-                if (!masked_stuffings.contains(stuffing) || !canEvaluateOnStuffedRows(node))
+                if (!masked_stuffings.contains(stuffing)
+                    || (node->type == ActionsDAG::ActionType::FUNCTION && !canEvaluateOnStuffedRows(node)))
                     return Decision::Cross;
         }
 

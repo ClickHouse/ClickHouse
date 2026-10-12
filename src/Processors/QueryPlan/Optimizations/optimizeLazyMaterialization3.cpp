@@ -67,24 +67,21 @@ const ActionsDAG::Node & addMasked(
         type->createColumnConstWithDefaultValue(0), type, fmt::format("defaultValueOfTypeName('{}')", type->getName()));
 
     auto if_function = FunctionFactory::instance().get("if", context);
-    return dag.addFunction(if_function, {&mask, &value, &default_value}, name);
+    const auto & masked = dag.addFunction(if_function, {&mask, &value, &default_value}, {});
+    if (masked.result_type->equals(*type))
+        return dag.addAlias(masked, name);
+
+    /// `if` works on full columns, so it drops `LowCardinality`, even nested, which the result above the `LIMIT` has to
+    /// keep: the value had the same type below it.
+    return dag.addCast(masked, type, name, context);
 }
 
-/// Whether masking a value keeps its type, which the result above the `LIMIT` has to.
-bool canMask(const ActionsDAG::Node & node, const ContextPtr & context)
-{
-    ActionsDAG dag;
-    const auto & mask = dag.addInput("mask", std::make_shared<DataTypeUInt8>());
-    const auto & value = dag.addInput("value", node.result_type);
-    return addMasked(dag, mask, value, "masked", context).result_type->equals(*node.result_type);
-}
-
-/// Whether a value is recomputed above the `LIMIT` under a mask: a function a join can stuff. What reads
-/// it there reads it as the join left it, so the mask applies to the value itself.
+/// Whether a value is recomputed above the `LIMIT` under a mask: a function or a constant a join can stuff. What
+/// reads it there reads it as the join left it, so the mask applies to the value itself.
 bool isMaskedRecomputation(const MergedPlanDAG & merged, const LazyFrontier & frontier, const ActionsDAG::Node * node)
 {
-    return node->type == ActionsDAG::ActionType::FUNCTION && frontier.at(node).above == Placement::Above::Recomputed
-        && merged.getNearestStuffing(node) != nullptr;
+    return (node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::COLUMN)
+        && frontier.at(node).above == Placement::Above::Recomputed && merged.getNearestStuffing(node) != nullptr;
 }
 
 /// The expression computed above the `LIMIT`: the outputs of `merged`, computed from the columns of
@@ -290,10 +287,6 @@ public:
         std::vector<const ActionsDAG::Node *> kept_by_read;
         if (!chooseLazyReads(kept_by_read))
             return false;
-
-        for (const auto & node : merged.getDAG().getNodes())
-            if (isMaskedRecomputation(merged, frontier, &node) && !canMask(node, context))
-                return false;
 
         /// The values that cross the `LIMIT`: what the frontier says, and the columns meant for a lazy read
         /// that the main read keeps anyway. A sort key crosses as a column the sorting needs.
