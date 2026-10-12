@@ -18,6 +18,16 @@ namespace DB
   *  the default password type that will be later inferred from the server parameters.
   */
 
+/// Formats the `VALID UNTIL <datetime>` / `VALID FOR <interval>` clause, leading space included.
+/// Shared by the authentication data of `CREATE USER` and by `CREATE TOKEN`.
+void formatAuthenticationValidUntil(const IAST & valid_until, bool is_interval, WriteBuffer & ostr, const IAST::FormatSettings & settings);
+
+/// Formats the `GRANTS (privilege ON object [,...])` clause, leading space included. The caller
+/// decides whether the clause is present at all (an `AccessRightsElements` which is not
+/// `structurallyEmpty()` but grants nothing is formatted as the canonical `GRANTS (USAGE ON *.*)`).
+void formatAuthenticationGrants(const AccessRightsElements & grants, WriteBuffer & ostr);
+
+
 class ASTAuthenticationData : public IAST
 {
 public:

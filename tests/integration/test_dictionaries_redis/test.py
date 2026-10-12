@@ -358,21 +358,55 @@ def test_redis_storage_type_key_constraints(started_cluster):
     assert "requires 2 keys" in error, error
     node.query("DROP DICTIONARY IF EXISTS test_redis_hash_triple")
 
+    # Unsupported: the Redis source only serializes native integers and strings as keys, so a
+    # wide integer key column is refused when the source is constructed.
+    #
+    # `Int256` used to be admitted here and then silently miss every lookup: `ExternalResultDescription`
+    # has a value type for it, so the source constructed, but the key was serialized through
+    # `FieldVisitorToString`, which wraps big integers in quote characters, and `MGET` was sent
+    # the six-character key `'123456'` instead of `123456`.
+    # https://github.com/ClickHouse/ClickHouse/issues/117705
     redis_client.set(str(2**256 - 1), "v1")
+    redis_client.set("123456", "v1")
 
-    # Unsupported: wide integer key types are not supported by `ExternalResultDescription`,
-    # so reading from the dictionary throws, although the dictionary itself can be created.
-    node.query("DROP DICTIONARY IF EXISTS test_redis_uint256_key")
+    for key_type, key_expr in [
+        ("Int256", "toInt256(123456)"),
+        ("UInt256", f"toUInt256('{2**256 - 1}')"),
+        ("Int128", "toInt128(123456)"),
+        ("UInt128", "toUInt128(123456)"),
+    ]:
+        node.query("DROP DICTIONARY IF EXISTS test_redis_wide_int_key")
+        node.query(
+            f"""
+            CREATE DICTIONARY test_redis_wide_int_key (key {key_type}, value String)
+            PRIMARY KEY key
+            SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'simple'))
+            LAYOUT(COMPLEX_KEY_DIRECT())
+            """
+        )
+        error = node.query_and_get_error(
+            f"SELECT dictGet('test_redis_wide_int_key', 'value', tuple({key_expr}))"
+        )
+        assert "supports only native integer or string key" in error, error
+        assert key_type in error, error
+        node.query("DROP DICTIONARY IF EXISTS test_redis_wide_int_key")
+
+    # 'hash_map' storage validates its key columns in a separate branch of the same screen,
+    # so it gets its own case: a composite key with a wide integer column must be refused
+    # there too, and the two branches must not drift apart.
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_wide_int_key")
     node.query(
         f"""
-        CREATE DICTIONARY test_redis_uint256_key (key UInt256, value String)
-        PRIMARY KEY key
-        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'simple'))
-        LAYOUT(COMPLEX_KEY_DIRECT())
+        CREATE DICTIONARY test_redis_hash_wide_int_key (key1 Int256, key2 String, value String)
+        PRIMARY KEY key1, key2
+        SOURCE(REDIS(HOST '{host}' PORT 6379 PASSWORD 'clickhouse' DB_INDEX {DB_INDEX} STORAGE_TYPE 'hash_map'))
+        LAYOUT(COMPLEX_KEY_HASHED())
+        LIFETIME(MIN 1 MAX 1)
         """
     )
     error = node.query_and_get_error(
-        f"SELECT dictGet('test_redis_uint256_key', 'value', tuple(toUInt256('{2**256 - 1}')))"
+        "SELECT dictGet('test_redis_hash_wide_int_key', 'value', tuple(toInt256(123456), 'field1'))"
     )
-    assert "Unsupported type UInt256" in error, error
-    node.query("DROP DICTIONARY IF EXISTS test_redis_uint256_key")
+    assert "supports only native integer or string key" in error, error
+    assert "Int256" in error, error
+    node.query("DROP DICTIONARY IF EXISTS test_redis_hash_wide_int_key")

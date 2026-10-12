@@ -18,6 +18,7 @@ from ci.defs.job_configs import JobConfigs
 # at the same time.
 workflow = Workflow.Config(
     name="WeeklyFuzzersCorpus",
+    engine=Workflow.Engine.GH_ACTIONS,
     event=Workflow.Event.SCHEDULE,
     branches=[BASE_BRANCH],
     jobs=[

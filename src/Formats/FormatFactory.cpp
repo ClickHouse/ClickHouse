@@ -16,18 +16,21 @@
 #include <Processors/Formats/Impl/ParallelFormattingOutputFormat.h>
 #include <Processors/Formats/Impl/ParallelParsingInputFormat.h>
 #include <Processors/Formats/Impl/ValuesBlockInputFormat.h>
+#include <Processors/Formats/AggregateFunctionStatesFromValuesInputFormat.h>
 #include <Disks/DiskObjectStorage/ObjectStorages/IObjectStorage.h>
 #include <Poco/URI.h>
 #include <Common/Exception.h>
 #include <Common/MemoryTracker.h>
+#include <Common/SipHash.h>
 #include <Common/KnownObjectNames.h>
 #include <Common/RemoteHostFilter.h>
 #include <Common/tryGetFileNameByFileDescriptor.h>
+#include <Core/Defines.h>
 #include <Core/FormatFactorySettings.h>
 #include <Core/Settings.h>
-#include <Core/SettingsQuirks.h>
 
 #include <boost/algorithm/string/case_conv.hpp>
+#include <set>
 
 namespace DB
 {
@@ -35,10 +38,11 @@ namespace Setting
 {
     /// There are way too many format settings to handle extern declarations manually.
 #define DECLARE_FORMAT_EXTERN(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
-    extern Settings ## TYPE NAME;
+    extern const Settings ## TYPE NAME;
 FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
 #undef DECLARE_FORMAT_EXTERN
 
+    extern const SettingsBool apply_string_filters_during_scan;
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsBool log_queries;
     extern const SettingsUInt64 max_download_buffer_size;
@@ -54,13 +58,7 @@ FORMAT_FACTORY_SETTINGS(DECLARE_FORMAT_EXTERN, INITIALIZE_SETTING_EXTERN)
     extern const SettingsUInt64 interactive_delay;
     extern const SettingsAggregateFunctionInputFormat aggregate_function_input_format;
     extern const SettingsBool allow_special_serialization_kinds_in_output_formats;
-    extern const SettingsBool allow_experimental_nullable_tuple_type;
-
-    extern SettingsGeoJSONUnsupportedGeometryHandling input_format_geojson_unsupported_geometry_handling;
-    extern SettingsBool format_geojson_validate_geometry;
-    extern SettingsBool input_format_parallel_parsing;
-    extern SettingsBool output_format_parallel_formatting;
-    extern SettingsUInt64 output_format_compression_level;
+    extern const SettingsBool enable_nullable_tuple_type;
 }
 
 namespace ErrorCodes
@@ -104,6 +102,17 @@ FormatSettings getFormatSettings(const ContextPtr & context)
     const auto & settings = context->getSettingsRef();
 
     return getFormatSettings(context, settings);
+}
+
+FormatSettings::ArrowUnsupportedTypes getArrowUnsupportedTypesMode(const Settings & settings)
+{
+    if (settings[Setting::output_format_arrow_unsupported_types].changed
+        || !settings[Setting::output_format_arrow_unsupported_types_as_binary].changed)
+        return settings[Setting::output_format_arrow_unsupported_types];
+
+    return settings[Setting::output_format_arrow_unsupported_types_as_binary]
+        ? FormatSettings::ArrowUnsupportedTypes::BINARY
+        : FormatSettings::ArrowUnsupportedTypes::THROW;
 }
 
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings)
@@ -213,6 +222,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.json.empty_as_default = settings[Setting::input_format_json_empty_as_default];
     format_settings.json.type_json_skip_invalid_typed_paths = settings[Setting::type_json_skip_invalid_typed_paths];
     format_settings.json.type_json_skip_duplicated_paths = settings[Setting::type_json_skip_duplicated_paths];
+    format_settings.json.type_json_skip_null_typed_paths = settings[Setting::type_json_skip_null_typed_paths];
     format_settings.json.max_dynamic_subcolumns_in_json_type_parsing = settings[Setting::max_dynamic_subcolumns_in_json_type_parsing].valueOrNullopt();
     format_settings.json.type_json_allow_duplicated_key_with_literal_and_nested_object = settings[Setting::type_json_allow_duplicated_key_with_literal_and_nested_object];
     format_settings.json.type_json_use_partial_match_to_skip_paths_by_regexp = settings[Setting::type_json_use_partial_match_to_skip_paths_by_regexp];
@@ -236,9 +246,11 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.filter_push_down = settings[Setting::input_format_parquet_filter_push_down];
     format_settings.parquet.bloom_filter_push_down = settings[Setting::input_format_parquet_bloom_filter_push_down];
     format_settings.parquet.dictionary_filter_push_down = settings[Setting::input_format_parquet_dictionary_filter_push_down];
+    format_settings.parquet.footer_read_size = settings[Setting::input_format_parquet_footer_read_size];
     format_settings.parquet.page_filter_push_down = settings[Setting::input_format_parquet_page_filter_push_down];
     format_settings.parquet.spatial_filter_push_down = settings[Setting::input_format_parquet_spatial_filter_push_down];
     format_settings.parquet.use_offset_index = settings[Setting::input_format_parquet_use_offset_index];
+    format_settings.parquet.apply_string_filters = settings[Setting::apply_string_filters_during_scan];
 
     format_settings.parquet.enable_json_parsing = settings[Setting::input_format_parquet_enable_json_parsing];
     format_settings.parquet.memory_low_watermark = settings[Setting::input_format_parquet_memory_low_watermark];
@@ -271,6 +283,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.parquet.verify_checksums = settings[Setting::input_format_parquet_verify_checksums];
     format_settings.parquet.local_time_as_utc = settings[Setting::input_format_parquet_local_time_as_utc];
     format_settings.parquet.allow_geoparquet_parser = settings[Setting::input_format_parquet_allow_geoparquet_parser];
+    format_settings.parquet.detect_variant_by_structure = settings[Setting::input_format_parquet_detect_variant_by_structure];
     format_settings.parquet.write_geometadata = settings[Setting::output_format_parquet_geometadata];
     if (auto memory_limit = total_memory_tracker.getHardLimit(); memory_limit > 0)
     {
@@ -300,12 +313,14 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.pretty.squash_consecutive_ms = settings[Setting::output_format_pretty_squash_consecutive_ms];
     format_settings.pretty.squash_max_wait_ms = settings[Setting::output_format_pretty_squash_max_wait_ms];
     format_settings.pretty.highlight_trailing_spaces = settings[Setting::output_format_pretty_highlight_trailing_spaces];
+    format_settings.pretty.display_control_characters = settings[Setting::output_format_pretty_display_control_characters];
     format_settings.pretty.multiline_fields = settings[Setting::output_format_pretty_multiline_fields];
     format_settings.pretty.fallback_to_vertical = settings[Setting::output_format_pretty_fallback_to_vertical];
     format_settings.pretty.fallback_to_vertical_max_rows_per_chunk = settings[Setting::output_format_pretty_fallback_to_vertical_max_rows_per_chunk];
     format_settings.pretty.fallback_to_vertical_min_table_width = settings[Setting::output_format_pretty_fallback_to_vertical_min_table_width];
     format_settings.pretty.fallback_to_vertical_min_columns = settings[Setting::output_format_pretty_fallback_to_vertical_min_columns];
     format_settings.pretty.named_tuples_as_json = settings[Setting::output_format_pretty_named_tuples_as_json];
+    format_settings.pretty.named_tuples_as_subcolumns = settings[Setting::output_format_pretty_named_tuples_as_subcolumns];
     format_settings.protobuf.input_flatten_google_wrappers = settings[Setting::input_format_protobuf_flatten_google_wrappers];
     format_settings.protobuf.output_nullables_with_google_wrappers = settings[Setting::output_format_protobuf_nullables_with_google_wrappers];
     format_settings.protobuf.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_protobuf_skip_fields_with_unsupported_types_in_schema_inference];
@@ -356,7 +371,9 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.arrow.output_fixed_string_as_fixed_byte_array = settings[Setting::output_format_arrow_fixed_string_as_fixed_byte_array];
     format_settings.arrow.output_compression_method = settings[Setting::output_format_arrow_compression_method];
     format_settings.arrow.output_date_as_uint16 = settings[Setting::output_format_arrow_date_as_uint16];
-    format_settings.arrow.output_unsupported_types_as_binary = settings[Setting::output_format_arrow_unsupported_types_as_binary];
+    format_settings.arrow.output_unsupported_types = getArrowUnsupportedTypesMode(settings);
+    format_settings.arrow.output_record_batch_rows = settings[Setting::output_format_arrow_record_batch_size];
+    format_settings.arrow.output_record_batch_bytes = settings[Setting::output_format_arrow_record_batch_size_bytes];
     format_settings.orc.allow_missing_columns = settings[Setting::input_format_orc_allow_missing_columns];
     format_settings.orc.row_batch_size = settings[Setting::input_format_orc_row_batch_size];
     format_settings.orc.skip_columns_with_unsupported_types_in_schema_inference = settings[Setting::input_format_orc_skip_columns_with_unsupported_types_in_schema_inference];
@@ -384,7 +401,7 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.schema_inference_hints = settings[Setting::schema_inference_hints];
     format_settings.schema_inference_make_columns_nullable = settings[Setting::schema_inference_make_columns_nullable].valueOr(2);
     format_settings.schema_inference_make_json_columns_nullable = settings[Setting::schema_inference_make_json_columns_nullable];
-    format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::allow_experimental_nullable_tuple_type];
+    format_settings.schema_inference_allow_nullable_tuple_type = settings[Setting::enable_nullable_tuple_type];
     format_settings.geojson.unsupported_geometry_handling = settings[Setting::input_format_geojson_unsupported_geometry_handling];
     format_settings.geojson.validate_geometry = settings[Setting::format_geojson_validate_geometry];
     format_settings.mysql_dump.table_name = settings[Setting::input_format_mysql_dump_table_name];
@@ -394,12 +411,15 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.sql_insert.table_name = settings[Setting::output_format_sql_insert_table_name];
     format_settings.sql_insert.use_replace = settings[Setting::output_format_sql_insert_use_replace];
     format_settings.sql_insert.quote_names = settings[Setting::output_format_sql_insert_quote_names];
+    format_settings.sqlite.input_table_name = settings[Setting::input_format_sqlite_table_name];
+    format_settings.sqlite.output_table_name = settings[Setting::output_format_sqlite_table_name];
     format_settings.precise_float_parsing = settings[Setting::precise_float_parsing];
     format_settings.try_infer_integers = settings[Setting::input_format_try_infer_integers];
     format_settings.try_infer_dates = settings[Setting::input_format_try_infer_dates];
     format_settings.try_infer_datetimes = settings[Setting::input_format_try_infer_datetimes];
     format_settings.try_infer_datetimes_only_datetime64 = settings[Setting::input_format_try_infer_datetimes_only_datetime64];
     format_settings.try_infer_exponent_floats = settings[Setting::input_format_try_infer_exponent_floats];
+    format_settings.freeform_max_search_steps = settings[Setting::input_format_freeform_max_search_steps];
     format_settings.markdown.escape_special_characters = settings[Setting::output_format_markdown_escape_special_characters];
     format_settings.bson.output_string_as_string = settings[Setting::output_format_bson_string_as_string];
     format_settings.bson.skip_fields_with_unsupported_types_in_schema_inference = settings[Setting::input_format_bson_skip_fields_with_unsupported_types_in_schema_inference];
@@ -450,6 +470,53 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     }
 
     return format_settings;
+}
+
+FormatSettings getNativeWireFormatSettings(const ContextPtr & context)
+{
+    auto format_settings = getFormatSettings(context);
+    if (context->getClientInfo().query_kind == ClientInfo::QueryKind::SECONDARY_QUERY)
+    {
+        format_settings.native.encode_types_in_binary_format = false;
+        format_settings.native.decode_types_in_binary_format = false;
+    }
+    return format_settings;
+}
+
+UInt64 getFormatSettingsHash(const Settings & settings)
+{
+    /// The settings `getFormatSettings` reads: every one of `FORMAT_FACTORY_SETTINGS`, so that a setting
+    /// added there is covered without anyone remembering this place, plus the core settings it reads
+    /// besides.
+    ///
+    /// A format setting is hashed only when its effective value differs from the declared default, so a
+    /// session that spells a default explicitly shares the hash of a session that left it alone, and
+    /// sessions at the defaults all share one hash. The `changed` flag is checked first, so only the
+    /// few settings a session actually set are compared. The order is the declaration order, so the
+    /// hash does not depend on the order the session set them in.
+    SipHash hash;
+#define HASH_FORMAT_SETTING_IF_NOT_DEFAULT(TYPE, NAME, DEFAULT, DESCRIPTION, FLAGS, ...) \
+    if (const auto & field = settings[Setting::NAME]; field.changed) \
+    { \
+        String value = field.toString(); \
+        if (value != SettingField##TYPE{DEFAULT}.toString()) \
+        { \
+            hash.update(std::string_view(#NAME)); \
+            hash.update(value); \
+        } \
+    }
+    /// No format setting has an alias, so the alias macro is never expanded (an alias names the same
+    /// field as its setting anyway).
+    FORMAT_FACTORY_SETTINGS(HASH_FORMAT_SETTING_IF_NOT_DEFAULT, HASH_FORMAT_SETTING_IF_NOT_DEFAULT)
+#undef HASH_FORMAT_SETTING_IF_NOT_DEFAULT
+
+    /// The core settings `getFormatSettings` reads besides; keep in step with the function above.
+    hash.update(static_cast<UInt64>(settings[Setting::aggregate_function_input_format].value));
+    hash.update(settings[Setting::allow_special_serialization_kinds_in_output_formats].value);
+    hash.update(settings[Setting::enable_nullable_tuple_type].value);
+    hash.update(settings[Setting::http_write_exception_in_output_format].value);
+    hash.update(settings[Setting::max_parser_depth].value);
+    return hash.get64();
 }
 
 FileBucketInfoPtr FormatFactory::getFileBucketInfo(const String & format)
@@ -531,6 +598,12 @@ InputFormatPtr FormatFactory::getInputImpl(
     auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, parser_shared_resources);
     auto & buf = owned_buf ? *owned_buf : _buf;
 
+    /// With `aggregate_function_input_format` = 'value' or 'array', the format parses the values the aggregate functions take
+    /// instead of their states, and a wrapper on top of it builds the states. See AggregateFunctionStatesFromValuesInputFormat.
+    std::optional<Block> header_to_parse
+        = AggregateFunctionStatesFromValuesInputFormat::getHeaderToParse(sample, format_settings.aggregate_function_input_format);
+    const Block & format_sample = header_to_parse ? *header_to_parse : sample;
+
     // Decide whether to use ParallelParsingInputFormat.
 
     size_t max_parsing_threads = parser_shared_resources->getParsingThreadsPerReader();
@@ -565,15 +638,15 @@ InputFormatPtr FormatFactory::getInputImpl(
         const auto & input_getter = creators.input_creator;
 
         /// Const reference is copied to lambda.
-        auto parser_creator = [input_getter, sample, row_input_format_params, format_settings]
+        auto parser_creator = [input_getter, format_sample, row_input_format_params, format_settings]
             (ReadBuffer & input) -> InputFormatPtr
-            { return input_getter(input, sample, row_input_format_params, format_settings); };
+            { return input_getter(input, format_sample, row_input_format_params, format_settings); };
 
         /// TODO: Try using parser_shared_resources->parsing_runner instead of creating a ThreadPool in
         ///       ParallelParsingInputFormat.
         ParallelParsingInputFormat::Params params{
             buf,
-            sample,
+            format_sample,
             parser_creator,
             creators.file_segmentation_engine_creator,
             name,
@@ -590,20 +663,20 @@ InputFormatPtr FormatFactory::getInputImpl(
         && object_with_metadata.has_value())
     {
         format = creators.random_access_input_creator_with_metadata(
-            buf, sample, format_settings, context->getReadSettings(), is_remote_fs,
+            buf, format_sample, format_settings, context->getReadSettings(), is_remote_fs,
             parser_shared_resources, format_filter_info, object_with_metadata, context);
     }
     // 3. Use the normal random access creator for formats that need to jump around in the file
     else if (creators.random_access_input_creator)
     {
         format = creators.random_access_input_creator(
-            buf, sample, format_settings, context->getReadSettings(), is_remote_fs,
+            buf, format_sample, format_settings, context->getReadSettings(), is_remote_fs,
             parser_shared_resources, format_filter_info);
     }
     // 4. Use the normal creator for sequential reading
     else
     {
-        format = creators.input_creator(buf, sample, row_input_format_params, format_settings);
+        format = creators.input_creator(buf, format_sample, row_input_format_params, format_settings);
     }
 
     if (owned_buf)
@@ -621,6 +694,10 @@ InputFormatPtr FormatFactory::getInputImpl(
     /// (Not needed in the parallel_parsing case above because VALUES format doesn't support it.)
     if (auto * values = typeid_cast<ValuesBlockInputFormat *>(format.get()))
         values->setContext(context);
+
+    if (header_to_parse)
+        format = std::make_shared<AggregateFunctionStatesFromValuesInputFormat>(
+            std::make_shared<const Block>(sample), &buf, std::move(format), format_settings.aggregate_function_input_format);
 
     return format;
 }
@@ -964,9 +1041,72 @@ void FormatFactory::setDocumentation(const String & name, Documentation document
     it->second.documentation = std::move(documentation);
 }
 
-void FormatFactory::registerFileExtension(const String & extension, const String & format_name)
+void FormatFactory::registerFileExtension(const String & extension, const String & format_name, bool used_for_format_inference)
 {
-    file_extension_formats[boost::to_lower_copy(extension)] = format_name;
+    const auto lowercased_extension = boost::to_lower_copy(extension);
+    if (used_for_format_inference)
+        file_extension_formats[lowercased_extension] = format_name;
+    format_file_extensions[boost::to_lower_copy(format_name)].insert(lowercased_extension);
+}
+
+void FormatFactory::registerFormatAlias(const String & alias, const String & format_name)
+{
+    const auto lowercased_alias = boost::to_lower_copy(alias);
+    const auto lowercased_format_name = boost::to_lower_copy(format_name);
+    format_aliases[lowercased_alias] = lowercased_format_name;
+    format_alias_groups[lowercased_format_name].insert(lowercased_alias);
+}
+
+std::vector<String> FormatFactory::getFileExtensionsForFormat(const String & format_name) const
+{
+    const auto lowercased_format_name = boost::to_lower_copy(format_name);
+
+    /// Interchangeable spellings of the same format (`JSONLines` for `JSONEachRow`, `TSV` for
+    /// `TabSeparated`) are registered as independent formats: each spelling carries its own name
+    /// as a file extension, and the shared extensions are registered only for the canonical
+    /// spelling. A hive lake written as `JSONLines` is a lake of `.jsonlines` files and has to be
+    /// readable as `JSONEachRow` and the other way round, so collect the whole group of spellings.
+    const auto spellings_of = [&](const String & name)
+    {
+        String canonical = name;
+        if (const auto it = format_aliases.find(name); it != format_aliases.end())
+            canonical = it->second;
+
+        std::vector<String> spellings{canonical};
+        if (const auto it = format_alias_groups.find(canonical); it != format_alias_groups.end())
+            spellings.insert(spellings.end(), it->second.begin(), it->second.end());
+        return spellings;
+    };
+
+    std::vector<String> format_names = spellings_of(lowercased_format_name);
+
+    /// A format registered via registerWithNamesAndTypes reads the files of its base format:
+    /// e.g. a lake of `.csv` files with a header row is read with the `CSVWithNames` format.
+    /// The `WithNames` flavours are spelled with the same aliases as the base format, and each
+    /// of them is a format of its own as well: `TSVWithNames` writes `.tsvwithnames` files.
+    for (const std::string_view suffix : {"withnamesandtypes", "withnames"})
+    {
+        if (lowercased_format_name.ends_with(suffix))
+        {
+            for (const auto & spelling : spellings_of(lowercased_format_name.substr(0, lowercased_format_name.size() - suffix.size())))
+            {
+                format_names.push_back(spelling);
+                format_names.push_back(spelling + String(suffix));
+            }
+            break;
+        }
+    }
+
+    /// The format name itself is registered as a file extension for every input and output
+    /// format, so the lowercased format name always ends up in the result.
+    std::set<String> extensions{lowercased_format_name};
+    for (const auto & name : format_names)
+    {
+        if (const auto it = format_file_extensions.find(name); it != format_file_extensions.end())
+            extensions.insert(it->second.begin(), it->second.end());
+    }
+
+    return {extensions.begin(), extensions.end()};
 }
 
 std::optional<String> FormatFactory::tryGetFormatFromFileName(String file_name)
@@ -1130,6 +1270,18 @@ bool FormatFactory::checkIfFormatSupportsSubsetOfColumns(const String & name, co
     const auto & target = getCreators(name);
     auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
     return target.subset_of_columns_support_checker && target.subset_of_columns_support_checker(format_settings);
+}
+
+bool FormatFactory::checkIfFormatIsRandomAccessInput(
+    const String & name, const ContextPtr & context, const std::optional<FormatSettings> & format_settings_) const
+{
+    const bool seekable_read
+        = format_settings_ ? format_settings_->seekable_read : context->getSettingsRef()[Setting::input_format_allow_seeks];
+    if (!seekable_read)
+        return false;
+
+    const auto & target = getCreators(name);
+    return target.random_access_input_creator || target.random_access_input_creator_with_metadata;
 }
 
 void FormatFactory::registerPrewhereSupportChecker(const String & name, PrewhereSupportChecker prewhere_support_checker)

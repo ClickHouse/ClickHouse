@@ -9,6 +9,8 @@
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/TableJoin.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/CommonSubplanStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
@@ -43,9 +45,7 @@ static InConversion buildInConversion(
     const SharedHeader & lhs_input_header,
     const NamePairs & name_pairs,
     std::unique_ptr<QueryPlan> in_source,
-    bool transform_null_in,
-    SizeLimits size_limits,
-    size_t max_size_for_index)
+    FutureSetSettings set_settings)
 {
     ActionsDAG lhs_dag(lhs_input_header->getColumnsWithTypeAndName());
     std::unordered_map<std::string_view, const ActionsDAG::Node *> lhs_outputs;
@@ -92,7 +92,7 @@ static InConversion buildInConversion(
 
     /// right parameter of IN function
     auto future_set = std::make_shared<FutureSetFromSubquery>(
-        get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, transform_null_in, size_limits, max_size_for_index);
+        get_random_hash(), nullptr, std::move(in_source), nullptr, nullptr, std::move(set_settings));
 
     ColumnConst::Ptr set_col = ColumnConst::create(ColumnSet::create(1, future_set), 0);
     const ActionsDAG::Node * in_rhs_arg =
@@ -128,6 +128,23 @@ static ActionsDAG cloneSubDAGWithHeader(const SharedHeader & stream_header, Acti
     dag.getOutputs() = outputs;
 
     return dag;
+}
+
+static bool hasCommonSubplanNodes(const QueryPlan::Node & root)
+{
+    std::vector<const QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+
+        if (typeid_cast<const CommonSubplanStep *>(node->step.get())
+            || typeid_cast<const CommonSubplanReferenceStep *>(node->step.get()))
+            return true;
+
+        stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+    return false;
 }
 
 size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
@@ -194,6 +211,13 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     if (!join->typeChangingSides().empty())
         return 0;
 
+    /// A `CommonSubplanReferenceStep` holds a raw pointer to a node that must still hold a
+    /// `CommonSubplanStep` when the second pass resolves it. The rewrite below installs new steps at
+    /// both input node addresses and splices the right input into the IN set's own plan.
+    if (hasCommonSubplanNodes(*parent_node->children.at(0))
+        || hasCommonSubplanNodes(*parent_node->children.at(1)))
+        return 0;
+
     // {
     //     WriteBufferFromOwnString buf;
     //     IQueryPlanStep::FormatSettings s{.out=buf, .write_header=true};
@@ -254,18 +278,18 @@ size_t tryConvertJoinToIn(QueryPlan::Node * parent_node, QueryPlan::Nodes & node
     makeExpressionNodeOnTopOf(*rhs_in_node, std::move(right_pre_join_actions), nodes, makeDescription("Calculate join right keys"));
     parent_node->children.pop_back();
 
+    auto set_settings = settings.set_settings;
     /// Join equality does not match Nulls.
     /// In case we support NullSafeEquals, we should set transform_null_in = true.
     /// But it would require proper support for sets with multiple keys.
-    bool transform_null_in = false;
+    set_settings.transform_null_in = false;
+    set_settings.size_limits = settings.network_transfer_limits;
 
     auto in_conversion = buildInConversion(
         lhs_in_node->step->getOutputHeader(),
         name_pairs,
         std::make_unique<QueryPlan>(QueryPlan::extractSubplan(rhs_in_node, nodes)),
-        transform_null_in,
-        settings.network_transfer_limits,
-        settings.use_index_for_in_with_subqueries_max_values);
+        std::move(set_settings));
 
     {
         auto filter_name = in_conversion.dag.getOutputs().front()->result_name;

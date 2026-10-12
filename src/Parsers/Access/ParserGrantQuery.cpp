@@ -8,8 +8,6 @@
 #include <Parsers/Access/parseAccessRightsElements.h>
 #include <Parsers/CommonParsers.h>
 #include <Parsers/parseDatabaseAndTableName.h>
-#include <Parsers/StatementFactory.h>
-#include <Parsers/registerStatements.h>
 
 
 namespace DB
@@ -61,7 +59,7 @@ namespace
         return IParserBase::wrapParseImpl(pos, [&]
         {
             ParserRolesOrUsersSet roles_p;
-            roles_p.allowRoles().useIDMode(id_mode);
+            roles_p.allowRoles().useIDMode(id_mode).allowQueryParameters();
             if (is_revoke)
                 roles_p.allowAll();
 
@@ -84,7 +82,7 @@ namespace
 
             ASTPtr ast;
             ParserRolesOrUsersSet roles_p;
-            roles_p.allowRoles().allowUsers().allowCurrentUser().allowAll(is_revoke);
+            roles_p.allowRoles().allowUsers().allowCurrentUser().allowAll(is_revoke).allowQueryParameters();
             if (!roles_p.parse(pos, ast, expected))
                 return false;
 
@@ -201,7 +199,11 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
     query->cluster = std::move(cluster);
     query->access_rights_elements = std::move(elements);
     query->roles = std::move(roles);
+    if (query->roles && query->roles->hasQueryParameters())
+        query->children.push_back(query->roles);
     query->grantees = std::move(grantees);
+    if (query->grantees && query->grantees->hasQueryParameters())
+        query->children.push_back(query->grantees);
     query->admin_option = admin_option;
     query->replace_access = replace_access;
     query->replace_granted_roles = replace_role;
@@ -209,14 +211,12 @@ bool ParserGrantQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expected)
 
     return true;
 }
-}
 
-namespace DB
+std::map<String, Documentation> ParserGrantQuery::getDocumentation() const
 {
+    std::map<String, Documentation> documentation;
 
-void registerStatementGrant(StatementFactory & factory)
-{
-    factory.registerStatement("GRANT",
+    documentation["GRANT"] =
     {
         .description = R"DOCS_MD(
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
@@ -360,6 +360,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `CREATE ROLE`
     - `CREATE ROW POLICY`
     - `CREATE SETTINGS PROFILE`
+    - `CREATE TOKEN`
     - `CREATE USER`
     - `DROP QUOTA`
     - `DROP ROLE`
@@ -502,6 +503,7 @@ The hierarchy of privileges in ClickHouse is shown below:
       - `SYSTEM DROP QUERY CACHE`
       - `SYSTEM DROP S3 CLIENT CACHE`
       - `SYSTEM DROP SCHEMA CACHE`
+      - `SYSTEM DROP TIME SERIES CACHES`
       - `SYSTEM DROP UNCOMPRESSED CACHE`
     - `SYSTEM DROP REPLICA`
     - `SYSTEM FAILPOINT`
@@ -519,6 +521,7 @@ The hierarchy of privileges in ClickHouse is shown below:
     - `SYSTEM REPLICATION QUEUES`
     - `SYSTEM REPLICA READINESS`
     - `SYSTEM RESET DDL WORKER`
+    - `SYSTEM RESET FILELOG`
     - `SYSTEM RESTART DISK`
     - `SYSTEM RESTART REPLICA`
     - `SYSTEM RESTORE REPLICA`
@@ -528,7 +531,6 @@ The hierarchy of privileges in ClickHouse is shown below:
         - `SYSTEM RELOAD DICTIONARY`
         - `SYSTEM RELOAD EMBEDDED DICTIONARIES`
         - `SYSTEM RELOAD FUNCTION`
-        - `SYSTEM RELOAD MODEL`
         - `SYSTEM RELOAD USERS`
     - `SYSTEM SENDS`
       - `SYSTEM DISTRIBUTED SENDS`
@@ -769,6 +771,7 @@ Allows a user to execute queries that manage users, roles and row policies.
   - `CREATE USER`. Level: `GLOBAL`
   - `ALTER USER`. Level: `GLOBAL`
   - `DROP USER`. Level: `GLOBAL`
+  - `CREATE TOKEN`. Level: `GLOBAL`
   - `CREATE ROLE`. Level: `GLOBAL`
   - `ALTER ROLE`. Level: `GLOBAL`
   - `DROP ROLE`. Level: `GLOBAL`
@@ -791,6 +794,8 @@ Allows a user to execute queries that manage users, roles and row policies.
   - `ALLOW SQL SECURITY NONE`. Level: `GLOBAL`. Aliases: `CREATE SQL SECURITY NONE`, `SQL SECURITY NONE`, `SECURITY NONE`
 
 The `ROLE ADMIN` privilege allows a user to assign and revoke any roles including those which are not assigned to the user with the admin option.
+
+The `CREATE TOKEN` privilege allows a user to add an authentication method to its own account, with [`CREATE TOKEN`](/reference/statements/create/token) or with the equivalent `ALTER USER <current user> ADD IDENTIFIED ...` statement, without being able to administer accounts otherwise. It is separate from `ALTER USER` because it lets a user lower the security level of its own account, for example by adding a long-lived password to an account which is otherwise reachable only with a certificate.
 
 ### SYSTEM {#system}
 
@@ -839,7 +844,7 @@ Allows using [introspection](/concepts/features/performance/troubleshoot/samplin
 
 ### SOURCES {#sources}
 
-Allows using external data sources. Applies to [table engines](/reference/engines/table-engines/index) and [table functions](/reference/functions/table-functions/index).
+Allows using external data sources. Applies to source-backed [database engines](/reference/engines/database-engines/index), [table engines](/reference/engines/table-engines/index), and [table functions](/reference/functions/table-functions/index).
 Also required for backup locations: `BACKUP`/`RESTORE` and `ENGINE = Backup` authorize their location against these grants.
 
 - `READ`. Level: `GLOBAL_WITH_PARAMETER`
@@ -1030,9 +1035,9 @@ GRANT [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.ta
 GRANT [ON CLUSTER cluster_name] role [,...] TO {user | another_role | CURRENT_USER} [,...] [WITH ADMIN OPTION] [WITH REPLACE OPTION]
 )",
         .related = {"REVOKE", "CHECK GRANT", "CREATE USER", "CREATE ROLE", "SET ROLE", "SHOW"},
-    });
+    };
 
-    factory.registerStatement("REVOKE",
+    documentation["REVOKE"] =
     {
         .description = R"DOCS_MD(
 Revokes privileges from users or roles.
@@ -1082,7 +1087,9 @@ REVOKE [ON CLUSTER cluster_name] privilege[(column_name [,...])] [,...] ON {db.t
 REVOKE [ON CLUSTER cluster_name] [ADMIN OPTION FOR] role [,...] FROM {user | role | CURRENT_USER} [,...] | ALL | ALL EXCEPT {user_name | role_name | CURRENT_USER} [,...]
 )",
         .related = {"GRANT", "CHECK GRANT", "SHOW"},
-    });
+    };
+
+    return documentation;
 }
 
 }

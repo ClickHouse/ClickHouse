@@ -1785,8 +1785,12 @@ static DataTypePtr adjustNullableRecursively(DataTypePtr type, bool make_nullabl
         DataTypes nested_types;
         for (const auto & nested_type: variant_type->getVariants())
         {
+            /// An alternative of a Variant cannot be Nullable, because the Variant holds the NULLs
+            /// itself. The recursion adjusts the nested types of a compound alternative, but for a Tuple
+            /// it also wraps the tuple itself when `schema_inference_allow_nullable_tuple_type` is set,
+            /// so that wrapper is removed here.
             if (!make_nullable || (!nested_type->lowCardinality() && nested_type->haveSubtypes()))
-                nested_types.push_back(adjustNullableRecursively(nested_type, make_nullable, settings));
+                nested_types.push_back(removeNullable(adjustNullableRecursively(nested_type, make_nullable, settings)));
             else
                 nested_types.push_back(nested_type);
         }

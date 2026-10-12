@@ -260,8 +260,8 @@ SQLQueryPiece applyAggregationOperatorCountValues(
         auto count_at_index = makeASTFunction("arrayElement", make_intrusive<ASTIdentifier>(COUNTS), make_intrusive<ASTIdentifier>("i"));
         auto nullable_count = makeASTFunction(
             "nullIf",
-            timeSeriesScalarASTCast(std::move(count_at_index), context.scalar_data_type),
-            timeSeriesScalarToAST(0, context.scalar_data_type));
+            timeSeriesScalarASTCast(std::move(count_at_index)),
+            timeSeriesScalarToAST(0));
 
         builder.select_list.push_back(
             makeASTFunction("arrayMap", makeASTLambda({"i"}, std::move(nullable_count)), std::move(grid_indices)));

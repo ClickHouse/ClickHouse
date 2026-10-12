@@ -130,10 +130,10 @@ REGISTER_FUNCTION(Synonyms)
 <ExperimentalBadge/>
 <CloudNotSupportedBadge/>
 
-:::warning
+<Warning>
 This function is experimental and may change in unpredictable backwards-incompatible ways in future releases.
 Set `allow_experimental_nlp_functions = 1` to enable it.
-:::
+</Warning>
 
 Finds synonyms of a given word.
 

@@ -86,6 +86,7 @@ public:
     void get(size_t, Field &) const override { throwMustBeDecompressed(); }
     void getValueNameImpl(WriteBufferFromOwnString &, size_t, const Options &) const override { throwMustBeDecompressed(); }
     std::string_view getDataAt(size_t) const override { throwMustBeDecompressed(); }
+    bool supportsGetDataAt() const override { return false; }
     bool isDefaultAt(size_t) const override { throwMustBeDecompressed(); }
     bool hasOnlyTypeDefaults() const override { throwMustBeDecompressed(); }
     void insert(const Field &) override { throwMustBeDecompressed(); }
@@ -101,7 +102,6 @@ public:
     std::string_view serializeValueIntoArena(size_t, Arena &, char const *&, const IColumn::SerializationSettings *) const override { throwMustBeDecompressed(); }
     char * serializeValueIntoMemory(size_t, char *, const IColumn::SerializationSettings *) const override { throwMustBeDecompressed(); }
     void deserializeAndInsertFromArena(ReadBuffer &, const IColumn::SerializationSettings *) override { throwMustBeDecompressed(); }
-    void skipSerializedInArena(ReadBuffer &) const override { throwMustBeDecompressed(); }
     void updateHashWithValue(size_t, SipHash &) const override { throwMustBeDecompressed(); }
     void computeHashInto(size_t, size_t, UInt32 *, bool) const override { throwMustBeDecompressed(); }
     void updateHashFast(SipHash &) const override { throwMustBeDecompressed(); }

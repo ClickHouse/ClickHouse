@@ -33,20 +33,26 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
     {
         case StoreMethod::EMPTY:
         {
-            /// SELECT * FROM null('group UInt64, values Array(Nullable(scalar_data_type))')
+            /// SELECT * FROM null('group UInt64, values Array(Nullable(Float64))')
             SelectQueryBuilder builder;
             builder.select_list.push_back(make_intrusive<ASTAsterisk>());
 
-            String structure = fmt::format("{} UInt64, {} Array(Nullable({}))",
-                ColumnNames::Group,
-                ColumnNames::Values,
-                context.scalar_data_type->getName());
+            String structure = fmt::format("{} UInt64, {} Array(Nullable(Float64))", ColumnNames::Group, ColumnNames::Values);
 
             builder.from_table_function = makeASTFunction("null", make_intrusive<ASTLiteral>(std::move(structure)));
 
             query_piece.select_query = builder.getSelectQuery();
             query_piece.store_method = StoreMethod::VECTOR_GRID;
             query_piece.metric_name_dropped = true;
+
+            /// An empty piece has no time grid of its own, so it takes the evaluation range of its node.
+            const auto & node_range = context.node_range_getter.get(query_piece.node);
+            if (!node_range.empty())
+            {
+                query_piece.start_time = node_range.start_time;
+                query_piece.end_time = node_range.end_time;
+                query_piece.step = node_range.step;
+            }
 
             return std::move(query_piece);
         }
@@ -65,7 +71,7 @@ SQLQueryPiece toVectorGrid(SQLQueryPiece && query_piece, ConverterContext & cont
             builder.select_list.back()->setAlias(ColumnNames::Group);
 
             ASTPtr value = (query_piece.store_method == StoreMethod::CONST_SCALAR)
-                ? timeSeriesScalarToAST(query_piece.scalar_value, context.scalar_data_type)
+                ? timeSeriesScalarToAST(query_piece.scalar_value)
                 : make_intrusive<ASTIdentifier>(ColumnNames::Value);
 
             builder.select_list.push_back(makeASTFunction(

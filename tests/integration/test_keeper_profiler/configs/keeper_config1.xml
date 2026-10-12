@@ -40,6 +40,6 @@
             </server>
         </raft_configuration>
     </keeper_server>
-    <global_profiler_real_time_period_ns>1000000000</global_profiler_real_time_period_ns>
-    <global_profiler_cpu_time_period_ns>1000000000</global_profiler_cpu_time_period_ns>
+    <global_profiler_real_time_period_ns>0</global_profiler_real_time_period_ns>
+    <global_profiler_cpu_time_period_ns>0</global_profiler_cpu_time_period_ns>
 </clickhouse>

@@ -1362,8 +1362,8 @@ SELECT moduloOrNull(toInt8(-128), toInt8(-1))
 
 Introduced in: v20.3.0
 
-Like modulo but returns zero when the divisor is zero, as opposed to an
-exception with the modulo function.
+Like modulo but returns zero instead of an exception for integer results when the operation would otherwise raise an
+exception. For floating-point results, a zero divisor produces `NaN`.
     
 
 **Syntax**
@@ -1379,11 +1379,12 @@ moduloOrZero(a, b)
 
 **Returned value**
 
-Returns the remainder of a % b, or `0` when the divisor is `0`.
+Returns the remainder of `a % b`. For integer results, returns `0` when the operation would otherwise raise an exception.
+For floating-point results, a zero divisor produces `NaN`.
 
 **Examples**
 
-**Usage example**
+**Integer zero divisor**
 
 ```sql title=Query
 SELECT moduloOrZero(5, 0)
@@ -1391,6 +1392,16 @@ SELECT moduloOrZero(5, 0)
 
 ```response title=Response
 0
+```
+
+**Floating-point zero divisor**
+
+```sql title=Query
+SELECT moduloOrZero(toFloat64(5), toFloat64(0))
+```
+
+```response title=Response
+nan
 ```
 
 ## multiply {#multiply}
