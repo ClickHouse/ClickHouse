@@ -34,7 +34,8 @@ protected:
 
 private:
     MergeTreeSelectProcessorPtr processor;
-    const std::string log_name;
+    /// Formatted once: `tryGenerate` is called for every block, and the span is usually not recorded.
+    const std::string span_name;
     /// When each read sub-pipeline serves a single part fixed at query-plan build time (in-order read).
     PartialAggregateInfoPtr partial_aggregate_identity_from_plan;
 

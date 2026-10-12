@@ -228,11 +228,22 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     sort_description_for_merging = std::move(sort_description_for_merging_);
     group_by_sort_description = std::move(group_by_sort_description_);
     explicit_sorting_required_for_aggregation_in_order = false;
+
+    /// AggregatingInOrderTransform assumes every run of the sorted key columns yields at least one group,
+    /// which the GROUP BY top-K heap breaks by skipping rows.
+    params.top_k.reset();
 }
 
 void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k)
 {
     params.top_k = std::move(top_k);
+}
+
+void AggregatingStep::setTopKThresholdTracker(TopKThresholdTrackerPtr threshold_tracker)
+{
+    if (!params.top_k)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set a top-K threshold tracker on an aggregation without the top-K optimization");
+    params.top_k->threshold_tracker = std::move(threshold_tracker);
 }
 
 std::vector<size_t> AggregatingStep::getStepGroups() const
@@ -419,18 +430,37 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
             return "a prior run measured the staged stream as repeat-dominated";
     }
 
-    /// TODO (nihalzp): Support LowCardinality and Nullable keys.
+    /// TODO (nihalzp): Support LowCardinality keys and the single-key Nullable methods.
+    bool has_nullable_key = false;
     for (const auto & key : params.keys)
     {
         const auto & type = pipeline.getHeader().getByName(key).type;
-        if (type->lowCardinality() || type->isNullable())
-            return "a key is LowCardinality or Nullable";
+        if (type->lowCardinality())
+            return "a key is LowCardinality";
+        has_nullable_key |= type->isNullable();
     }
 
     Sizes key_sizes;
     const auto method = AggregatedDataVariants::chooseMethod(pipeline.getHeader(), params.keys, key_sizes);
     if (!AggregatedDataVariants::isConvertibleToTwoLevel(method))
         return "the aggregation method has no two-level form";
+
+    /// A missed row is staged with the key its method builds. These methods pack the null map into that key; the single-key
+    /// Nullable methods keep NULL in a separate cell of the table instead, which the staging bypasses.
+    if (has_nullable_key)
+    {
+        using Type = AggregatedDataVariants::Type;
+        switch (method)
+        {
+            case Type::nullable_keys128:
+            case Type::nullable_keys256:
+            case Type::nullable_serialized:
+            case Type::nullable_prealloc_serialized:
+                break;
+            default:
+                return "a Nullable key is kept in a separate null-key cell";
+        }
+    }
 
     return nullptr;
 }
@@ -714,8 +744,11 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
                     counter++,
                     limit_hint,
                     limit_hint_prefix_columns,
-                    nullptr // `dataflow_cache_updater` will be passed to `MergingAggregatedBucketTransform` below
-                );
+                    /// With `skip_merging` the `MergingAggregatedBucketTransform` below is never created,
+                    /// so these transforms are the last producers of this step's output and have to record
+                    /// it themselves. Otherwise the merging transform records it, and recording here too
+                    /// would count the same rows twice.
+                    skip_merging ? dataflow_cache_updater : nullptr);
             });
 
             if (skip_merging)
@@ -1287,12 +1320,33 @@ void AggregatingStep::serialize(Serialization & ctx) const
 
     serializeAggregateDescriptions(params.aggregates, ctx.out);
 
-    /// Step version 1 carries the partial aggregate cache semantic key (0 when the cache is not used).
-    if (ctx.step_version >= 1)
-        writeIntBinary(params.query_semantic_hash_for_partial_cache, ctx.out);
-
     if (params.stats_collecting_params.isCollectionAndUseEnabled() && !ctx.for_cache_key)
         writeIntBinary(params.stats_collecting_params.key, ctx.out);
+
+    /// Step version 1 appends the `GROUP BY` top-K parameters. Towards a peer that reads version 0
+    /// they are omitted, not rejected: the peer aggregates without the heap and returns partial states
+    /// for all its groups, which the initiator's merge, sort and limit handle correctly - the safe direction.
+    if (ctx.step_version < 1)
+        return;
+
+    writeBinary(params.top_k.has_value(), ctx.out);
+    if (params.top_k)
+    {
+        const auto & top_k = *params.top_k;
+        writeVarUInt(top_k.k, ctx.out);
+        writeVarUInt(top_k.key_columns, ctx.out);
+        writeVarUInt(top_k.observation_rows, ctx.out);
+        writeVarUInt(top_k.directions.size(), ctx.out);
+        for (size_t i = 0; i < top_k.directions.size(); ++i)
+        {
+            writeIntBinary(static_cast<Int8>(top_k.directions[i]), ctx.out);
+            writeIntBinary(static_cast<Int8>(top_k.nulls_directions[i]), ctx.out);
+        }
+    }
+
+    /// Step version 2 appends the partial aggregate cache semantic key (0 when the cache is not used).
+    if (ctx.step_version >= 2)
+        writeIntBinary(params.query_semantic_hash_for_partial_cache, ctx.out);
 }
 
 QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
@@ -1368,13 +1422,57 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
     AggregateDescriptions aggregates;
     deserializeAggregateDescriptions(aggregates, ctx.in, ctx.max_type_complexity);
 
-    UInt64 query_semantic_hash_for_partial_cache = 0;
-    if (ctx.step_version >= 1)
-        readIntBinary(query_semantic_hash_for_partial_cache, ctx.in);
-
     UInt64 stats_key = 0;
     if (has_stats_key)
         readIntBinary(stats_key, ctx.in);
+
+    bool has_top_k = false;
+    if (ctx.step_version >= 1)
+        readBinary(has_top_k, ctx.in);
+
+    std::optional<Aggregator::Params::TopKParams> top_k;
+    if (has_top_k)
+    {
+        auto & value = top_k.emplace();
+        readVarUInt(value.k, ctx.in);
+        readVarUInt(value.key_columns, ctx.in);
+        readVarUInt(value.observation_rows, ctx.in);
+
+        UInt64 num_directions = 0;
+        readVarUInt(num_directions, ctx.in);
+
+        if (value.k == 0 || value.k > Aggregator::Params::TopKParams::max_k
+            || value.key_columns == 0 || value.key_columns > num_keys
+            || num_directions != value.key_columns)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Invalid top-K parameters in a serialized query plan: k = {}, key_columns = {}, "
+                "directions = {}, keys = {}",
+                value.k, value.key_columns, num_directions, num_keys);
+
+        value.directions.resize(num_directions);
+        value.nulls_directions.resize(num_directions);
+        for (size_t i = 0; i < num_directions; ++i)
+        {
+            Int8 direction = 0;
+            Int8 nulls_direction = 0;
+            readIntBinary(direction, ctx.in);
+            readIntBinary(nulls_direction, ctx.in);
+            if ((direction != 1 && direction != -1) || (nulls_direction != 1 && nulls_direction != -1))
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Invalid top-K sort direction in a serialized query plan: {} (nulls: {})",
+                    direction, nulls_direction);
+            value.directions[i] = direction;
+            value.nulls_directions[i] = nulls_direction;
+        }
+    }
+
+    UInt64 query_semantic_hash_for_partial_cache = 0;
+    if (ctx.step_version >= 2)
+        readIntBinary(query_semantic_hash_for_partial_cache, ctx.in);
+
+    /// AggregatingInOrderTransform cannot run the top-K heap.
+    if (top_k && has_in_order)
+        throw Exception(ErrorCodes::INCORRECT_DATA, "Top-K parameters on an in-order aggregation in a serialized query plan");
 
     StatsCollectingParams stats_collecting_params(
         stats_key,
@@ -1411,6 +1509,8 @@ QueryPlanStepPtr AggregatingStep::deserialize(Deserialization & ctx)
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold],
         ctx.settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes],
         query_semantic_hash_for_partial_cache};
+
+    params.top_k = std::move(top_k);
 
     auto aggregating_step = std::make_unique<AggregatingStep>(
         ctx.input_headers.front(),
@@ -1478,9 +1578,14 @@ void AggregatingStep::rebaseOntoInput(const SharedHeader & new_input_header, Nam
 void registerAggregatingStep(QueryPlanStepRegistry & registry);
 void registerAggregatingStep(QueryPlanStepRegistry & registry)
 {
-    /// Version 1 adds the partial aggregate cache semantic key after the aggregate descriptions.
-    const QueryPlanStepRegistry::StepVersions versions{{0, 0}, {1, DBMS_QUERY_PLAN_SERIALIZATION_VERSION}};
-    registry.registerStep("Aggregating", AggregatingStep::deserialize, versions);
+    /// Version 1 carries the `GROUP BY` top-K parameters.
+    /// Version 2 adds the partial aggregate cache semantic key after them.
+    registry.registerStep(
+        "Aggregating",
+        AggregatingStep::deserialize,
+        {{0, 0},
+         {1, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_GROUP_BY_TOP_K},
+         {2, DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_PARTIAL_AGGREGATE_CACHE_KEY}});
 }
 
 

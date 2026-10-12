@@ -143,7 +143,7 @@ MergeTreeSource::MergeTreeSource(
     PartialAggregateInfoPtr partial_aggregate_identity_from_plan_)
     : ISource(std::make_shared<const Block>(processor_->getHeader()))
     , processor(std::move(processor_))
-    , log_name(log_name_)
+    , span_name(fmt::format("MergeTreeSource({})::tryGenerate", log_name_))
     , partial_aggregate_identity_from_plan(std::move(partial_aggregate_identity_from_plan_))
 {
 #if defined(OS_LINUX)
@@ -233,7 +233,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
             try
             {
                 Coordination::ComponentGuard component_guard = Coordination::setCurrentComponent("MergeTreeSource::tryGenerate");
-                OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
+                OpenTelemetry::SpanHolder span{span_name};
                 holder->setResult(processor->read());
             }
             catch (...)
@@ -249,7 +249,7 @@ std::optional<Chunk> MergeTreeSource::tryGenerate()
 #endif
 
     Coordination::ComponentGuard component_guard = Coordination::setCurrentComponent("MergeTreeSource::tryGenerate");
-    OpenTelemetry::SpanHolder span{fmt::format("MergeTreeSource({})::tryGenerate", log_name)};
+    OpenTelemetry::SpanHolder span{span_name};
     return processReadResult(processor->read());
 }
 
