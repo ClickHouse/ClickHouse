@@ -860,13 +860,13 @@ TEST(RestCatalog, FilteredListingSkipsVanishedNamespace)
     /// shown to reach it. `>` rather than an exact count, because a retry may reissue the request.
     const ICatalog & base = *catalog;
 
-    const auto before_equals = counters.doomed_table_listing.load();
-    EXPECT_TRUE(base.getTables(TableNameFilter{TableNameFilter::Kind::Equals, "doomed.t"}).empty());
-    const auto after_equals = counters.doomed_table_listing.load();
-    EXPECT_GT(after_equals, before_equals);
+    const auto before_in = counters.doomed_table_listing.load();
+    EXPECT_TRUE(base.getTables(TableNameFilter{TableNameFilter::Kind::In, "", {"doomed.t"}}).empty());
+    const auto after_in = counters.doomed_table_listing.load();
+    EXPECT_GT(after_in, before_in);
 
-    EXPECT_TRUE(base.getTables(TableNameFilter{TableNameFilter::Kind::Like, "do%"}).empty());
-    EXPECT_GT(counters.doomed_table_listing.load(), after_equals);
+    EXPECT_TRUE(base.getTables(TableNameFilter{TableNameFilter::Kind::Like, "do%", {}}).empty());
+    EXPECT_GT(counters.doomed_table_listing.load(), after_in);
 }
 
 TEST(RestCatalog, ChildListingUnauthorizedStillThrows)
