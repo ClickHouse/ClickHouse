@@ -1,0 +1,10 @@
+refs before: audit_tag,main
+OPTIMIZE: refused
+refs after: audit_tag,main
+rows: 1,3,4
+main min-snapshots-to-keep before: 5
+OPTIMIZE: refused
+main min-snapshots-to-keep after: 5
+table min-snapshots-to-keep before: 5
+OPTIMIZE: refused
+table min-snapshots-to-keep after: 5
