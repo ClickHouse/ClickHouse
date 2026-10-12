@@ -3,6 +3,7 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Common/Exception.h>
+#include <Common/Scheduler/CurrentCPULease.h>
 #include <algorithm>
 
 #include <IO/WriteBufferFromString.h>
@@ -140,7 +141,19 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
 
         epoll_event event{};
         event.data.ptr = nullptr;
-        size_t num_events = epoll.getManyReady(1, &event, timeout);
+        size_t num_events = 0;
+        if (timeout == 0)
+        {
+            /// Non-blocking probe (tryGetReadyTask): it never sleeps and runs on the hot
+            /// task-dispatch path even when regular work is ready, so it must not park the CPU lease.
+            num_events = epoll.getManyReady(1, &event, timeout);
+        }
+        else
+        {
+            /// Non-CPU wait (tasks mutex released): park the CPU lease to free the slot while we block.
+            CPULeaseParkGuard cpu_park;
+            num_events = epoll.getManyReady(1, &event, timeout);
+        }
 
         lock.lock();
 
