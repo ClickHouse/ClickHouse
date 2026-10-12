@@ -1179,7 +1179,8 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 }
 
 /// Whether a conjunct might fix a column to a single value, and so let a read go in order:
-/// `tenant = 42` can, `tenant > 42` or a join runtime filter cannot. A superset of what
+/// `tenant = 42` can, `tenant > 42` or a join runtime filter cannot. Any column counts, in the sorting
+/// key or not: the read is inside the fragment and its key is not looked up here. A superset of what
 /// `appendFixedColumnsFromFilterExpression`, the analysis read-in-order uses, can find: an `equals` or an
 /// `isNotDistinctFrom` anywhere inside, or an input reached the way it looks for one - through aliases and
 /// `and`. Such an input is a column of the fragment, which may compute it as an equality.
@@ -1510,9 +1511,9 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// holds and they do not must not decide how the read is ordered - an equality fixes a sort key
         /// column, the read goes in order, and the initiator announces `WithOrder` to the shared
         /// coordinator against the replicas' `Default`. Nor may they hold what it does not, for the same
-        /// reason the other way round. So a conjunct they miss stays above unless it cannot fix a column;
-        /// one that cannot - a join runtime filter, which the splice never carries, or a range - still
-        /// prunes here.
+        /// reason the other way round. So a conjunct they miss stays above unless it cannot fix any column,
+        /// even one outside the sorting key; one that cannot - a join runtime filter, which the splice
+        /// never carries, or a range - still prunes here.
         const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
         if (!condition)
             return 0;
