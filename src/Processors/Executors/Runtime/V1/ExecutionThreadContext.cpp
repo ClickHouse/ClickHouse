@@ -96,8 +96,7 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
             if (reservation)
             {
                 const auto spillable_bytes = reservation->updateReclaimable(spillable);
-                if (auto spill_request = reservation->takeSpillRequest(
-                        spillable, spillable_bytes, spill_target ? &processor : nullptr))
+                if (auto spill_request = reservation->takeSpillRequest(spillable, spillable_bytes, spill_target ? &processor : nullptr))
                 {
                     SCOPE_EXIT({ if (spill_request) reservation->cancelSpill(spillable, spill_request); });
                     auto * memory_tracker = process_list_element->getMemoryTracker();
@@ -110,8 +109,8 @@ static void executeJob(IProcessor & processor, ReadProgressCallback * read_progr
 
                     Stopwatch watch;
                     const size_t spilled = spillable->spill(spill_request);
-                    const auto new_spillable_memory_bytes = reservation->updateReclaimable(spillable, /*report=*/ false);
-                    reservation->finishSpill(spillable, std::exchange(spill_request, 0), memory_tracker);
+                    reservation->syncWithMemoryTracker(memory_tracker);
+                    const auto new_spillable_memory_bytes = reservation->finishSpill(spillable, std::exchange(spill_request, 0));
 
                     LOG_TRACE(logger, "Spilled {}, remaining {}, tracked {} (took {} ms)",
                         formatReadableSizeWithBinarySuffix(spilled),

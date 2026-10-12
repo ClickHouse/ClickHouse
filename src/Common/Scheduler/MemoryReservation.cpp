@@ -294,6 +294,9 @@ ResourceCost MemoryReservation::updateReclaimable(const ISpillable * spillable, 
         std::lock_guard lock(mutex);
         auto & entry = spillable->spill_accounting;
         chassert(entry.reservation == this && entry.owners > 0);
+        if (entry.in_progress)
+            return entry.reclaimable;
+
         if (entry.reclaimable == total_bytes)
             return total_bytes;
         ProfileEvents::increment(ProfileEvents::MemoryReservationReclaimableBytes, std::max<ResourceCost>(total_bytes - entry.reclaimable, 0));
@@ -370,20 +373,45 @@ void MemoryReservation::cancelSpill(const ISpillable * spillable, ResourceCost b
     enqueued_spill += bytes;
 }
 
-void MemoryReservation::finishSpill(const ISpillable * spillable, ResourceCost settled_bytes, const MemoryTracker * memory_tracker)
+ResourceCost MemoryReservation::finishSpill(const ISpillable * spillable, ResourceCost settled_bytes)
 {
+    ResourceCost total_bytes = 0;
     {
+        std::lock_guard report_lock(spillable->report_mutex);
+
+        try
+        {
+            total_bytes = spillable->getMemoryStats().spillable_memory_bytes;
+        }
+        catch (...)
+        {
+            cancelSpill(spillable, settled_bytes);
+            throw;
+        }
+
+        if (total_bytes < min_bytes_to_spill)
+            total_bytes = 0;
+
         std::lock_guard lock(mutex);
         chassert(spills_in_flight > 0);
         --spills_in_flight;
 
         auto & entry = spillable->spill_accounting;
+        chassert(entry.reservation == this && entry.owners > 0);
         chassert(entry.in_progress);
         entry.in_progress = false;
+
+        if (entry.reclaimable != total_bytes)
+        {
+            ProfileEvents::increment(ProfileEvents::MemoryReservationReclaimableBytes, std::max<ResourceCost>(total_bytes - entry.reclaimable, 0));
+            reclaimable_total = reclaimable_total - entry.reclaimable + total_bytes;
+            entry.reclaimable = total_bytes;
+        }
     }
 
-    syncWithMemoryTracker(memory_tracker);
     reportReclaimable(/*force=*/ true, settled_bytes);
+
+    return total_bytes;
 }
 
 void MemoryReservation::throwIfNeeded()
