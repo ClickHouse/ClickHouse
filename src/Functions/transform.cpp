@@ -283,7 +283,7 @@ namespace
         void executeContiguous(const IColumn * in, IColumn & column_result, const ColumnPtr default_non_const, const IColumn & in_cast, size_t input_rows_count) const
         {
             /// The lookup is by the raw bytes of a value, which are canonicalized in `from_column`.
-            ColumnPtr canonical_in = canonicalizeNegativeZero(*in);
+            ColumnPtr canonical_in = canonicalizeNegativeZeroThroughLowCardinality(*in);
             if (canonical_in)
                 in = canonical_in.get();
 
@@ -796,9 +796,9 @@ namespace
 
         /// The keys of the tables below are compared by their binary representation, and negative zero
         /// is equal to positive zero, but has a different one, so it is canonicalized on both sides -
-        /// see `canonicalizeNegativeZero`. The values are only used as keys here; the result comes
+        /// see `canonicalizeNegativeZeroThroughLowCardinality`. The values are only used as keys here; the result comes
         /// from `to_column` and from the input column.
-        if (ColumnPtr canonical_from_column = canonicalizeNegativeZero(*cache->from_column))
+        if (ColumnPtr canonical_from_column = canonicalizeNegativeZeroThroughLowCardinality(*cache->from_column))
             cache->from_column = canonical_from_column;
 
         WhichDataType which(from_type);

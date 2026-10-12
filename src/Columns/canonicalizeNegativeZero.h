@@ -23,6 +23,13 @@ namespace DB
   */
 ColumnPtr canonicalizeNegativeZero(const IColumn & column);
 
+/** The same, but also for a top-level `LowCardinality` column, which is rebuilt with a new dictionary:
+  * the dictionary can hold both zeros as different values, so it cannot be canonicalized in place.
+  * It is for the callers that compare the values of a `LowCardinality` column by their raw bytes or by the hash
+  * of its dictionary values, but have to keep the `LowCardinality` type of the column.
+  */
+ColumnPtr canonicalizeNegativeZeroThroughLowCardinality(const IColumn & column);
+
 /// The same, in place, for a list of key columns.
 /// The canonicalized columns are appended to `holder`, which has to outlive the usage of `key_columns`.
 void canonicalizeNegativeZeroInKeyColumns(ColumnRawPtrs & key_columns, Columns & holder);

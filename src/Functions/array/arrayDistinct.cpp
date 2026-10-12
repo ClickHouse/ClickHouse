@@ -113,7 +113,9 @@ ColumnPtr FunctionArrayDistinct::executeImpl(const ColumnsWithTypeAndName & argu
     /// so negative zeros have to be canonicalized in advance, recursively for composite elements -
     /// see `canonicalizeNegativeZero`. This also makes the result agree with `GROUP BY` and
     /// `DISTINCT`, which report positive zero for a group that contains a negative zero.
-    ColumnPtr canonicalized = canonicalizeNegativeZero(*src_data_ptr);
+    /// The elements can be `LowCardinality`, which is hashed by the values of its dictionary,
+    /// and the dictionary can hold both zeros.
+    ColumnPtr canonicalized = canonicalizeNegativeZeroThroughLowCardinality(*src_data_ptr);
     if (canonicalized)
         src_data_ptr = canonicalized.get();
 

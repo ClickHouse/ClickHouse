@@ -301,6 +301,24 @@ ColumnPtr canonicalizeNegativeZero(const IColumn & column)
     return nullptr;
 }
 
+ColumnPtr canonicalizeNegativeZeroThroughLowCardinality(const IColumn & column)
+{
+    const auto * column_low_cardinality = typeid_cast<const ColumnLowCardinality *>(&column);
+    if (!column_low_cardinality)
+        return canonicalizeNegativeZero(column);
+
+    /// Look at the dictionary first: it is usually much smaller than the column.
+    if (!canonicalizeNegativeZero(*column_low_cardinality->getDictionary().getNestedColumn()))
+        return nullptr;
+
+    ColumnPtr canonical_full = canonicalizeNegativeZero(*column_low_cardinality->convertToFullColumn());
+    chassert(canonical_full);
+
+    auto res = column_low_cardinality->cloneEmpty();
+    assert_cast<ColumnLowCardinality &>(*res).insertRangeFromFullColumn(*canonical_full, 0, canonical_full->size());
+    return res;
+}
+
 size_t rawFloatValueWidth(const IColumn & column)
 {
     /// This is called for every row on the paths that key on the raw bytes of a value,
