@@ -75,7 +75,8 @@ StorageURLCluster::StorageURLCluster(
     {
         if (format_name == "auto")
             format_name = StorageURL::getTableStructureAndFormatFromData(
-                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context).second;
+                uri, chooseCompressionMethod(Poco::URI(uri).getPath(), compression_method), headers, std::nullopt, context,
+                /*structure_is_required=*/false).second;
 
         storage_metadata.setColumns(columns_);
     }
