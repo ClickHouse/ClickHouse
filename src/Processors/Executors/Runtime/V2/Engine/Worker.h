@@ -31,6 +31,7 @@ class Worker
 
     /// Population.
     void pushManyLifo(std::span<ExecutingProcessor * const> many);
+    bool worthWaking(std::span<ExecutingProcessor * const> found) const;
     void wakeFor(Int64 extra_work);
     void execute(ExecutingProcessor & executing);
     void finishRun();

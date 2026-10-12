@@ -25,6 +25,7 @@ constexpr size_t steal_rounds = 4;
 constexpr size_t max_take_from_global = LocalQueue::capacity / 2;
 constexpr double shuffle_probability = 0.125;
 constexpr double early_offload_probability = 0.125;
+constexpr UInt64 cheap_work_ns = 5'000;
 
 void injectShuffle(std::span<ExecutingProcessor *> batch)
 {
@@ -137,7 +138,10 @@ ExecutingProcessor * Worker::tryPick()
     if (const size_t count = pool.global_tasks.popManyFifo(std::span(tmp_buffer).first(max_take_from_global), pool.coordinator.registeredWorkers()))
     {
         metrics.global_picks += 1;
-        return pickFromBatch(std::span(tmp_buffer).first(count));
+        auto * picked = pickFromBatch(std::span(tmp_buffer).first(count));
+        const Int64 left_in_queue = pool.global_tasks.size() > 0 ? 1 : 0;
+        wakeFor(count - 1 + left_in_queue);
+        return picked;
     }
 
     if (pool.poller.pending() > 0 && !pool.coordinator.hasPoller() && pool.coordinator.startPolling())
@@ -228,6 +232,17 @@ void Worker::pushManyLifo(std::span<ExecutingProcessor * const> many)
     local_tasks.pushManyLifo(many.last(kept));
 }
 
+bool Worker::worthWaking(std::span<ExecutingProcessor * const> found) const
+{
+    for (const auto * record : found)
+    {
+        const bool cheap = record->status.load() == ExecutingProcessor::Status::Work && record->work_ns > 0 && record->work_ns < cheap_work_ns;
+        if (!cheap)
+            return true;
+    }
+    return false;
+}
+
 void Worker::wakeFor(Int64 extra_work)
 {
     if (extra_work <= 0)
@@ -264,8 +279,9 @@ void Worker::execute(ExecutingProcessor & executing)
     const auto & finished_processors = runner.getFinishedProcessors();
     pool.pipeline.recordAsFinished(finished_processors);
 
-    const Int64 work_found = runnable.size() + poll_requests.size();
-    wakeFor(work_found - 1);
+    const Int64 work_found = Int64(runnable.size()) + Int64(poll_requests.size());
+    if (!poll_requests.empty() || worthWaking(runnable))
+        wakeFor(work_found - 1);
 }
 
 void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
