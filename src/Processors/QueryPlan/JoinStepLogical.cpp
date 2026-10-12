@@ -900,19 +900,19 @@ static void preferNullableRightKey(
     }
 }
 
-/// A null-safe key `a` as two plain keys, `isNull(a)` and `if(isNull(a), d, assumeNotNull(a))`, with `d` the default value
-/// of the nested type. NULL matches NULL through the first key, and the second one is not nullable, so the join skips
-/// no row for it. Fixed-width keys stay fixed-width this way, where wrapping the key into a tuple sends it down the
-/// generic serialized-key path.
-/// The split pays off for the keys that pack into a fixed-width or a string hash key. A compound nested type, which
-/// only a function like `if` produces under `Nullable`, keeps the tuple: `if` over a tuple runs per element and leaves
-/// the bytes under an outer NULL as they were, so equal NULLs would hash differently. `Nothing` has no value either.
+/// The split pays off only for keys that pack into a fixed-width hash key: a `String` value next to the `isNull` key
+/// still goes down the serialized-key path, and `if` copies it. A compound nested type, which only a function like `if`
+/// produces under `Nullable`, keeps the tuple: `if` over a tuple leaves the bytes under an outer NULL as they were, so
+/// equal NULLs would hash differently. `Nothing` has no value either.
 static bool canSplitNullSafeKey(const DataTypePtr & type)
 {
     const auto value_type = removeLowCardinalityAndNullable(type);
-    return value_type->isValueRepresentedByNumber() || isStringOrFixedString(value_type);
+    return value_type->isValueRepresentedByNumber() || isFixedString(value_type);
 }
 
+/// A null-safe key `a` as two plain keys, `isNull(a)` and `if(isNull(a), d, assumeNotNull(a))`, with `d` the default value
+/// of the nested type. NULL matches NULL through the first key, and the second one is not nullable, so the join skips
+/// no row for it, and a fixed-width key stays fixed-width instead of being serialized in a tuple.
 static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinActionRef & key)
 {
     const auto value_type = removeLowCardinalityAndNullable(key.getType());
@@ -959,8 +959,8 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
             preferNullableRightKey(rhs, planning_context, shared_runtime_filter_descriptors);
         if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
         {
-            /// A null-safe key is what makes `TableJoin` reject a `StorageJoin`, whose prebuilt table cannot be probed
-            /// with a derived key.
+            /// Keep the tuple for `StorageJoin` and key-value storages: `TableJoin` rejects their null-safe keys,
+            /// and a split key would probe the prebuilt table with a derived key.
             if (canSplitNullSafeKey(lhs.getType()) && !planning_context.is_storage_join)
             {
                 auto [lhs_null, lhs_value] = splitNullSafeKey(lhs);
