@@ -54,3 +54,12 @@ echo "--- the table keeps the stored value when attached in a session without it
 ${DDL_CLIENT} --query "DETACH TABLE t_session PERMANENTLY"
 ${DDL_CLIENT} --send_logs_level trace --query "ATTACH TABLE t_session" 2>&1 \
     | grep -o -m1 'PostgreSQL connection pool size: [0-9]*'
+
+echo "--- a RESTORE keeps the definition from the backup"
+# `RESTORE` rejects a restored table whose definition differs from the one in the backup, so nothing is added to it.
+${DDL_CLIENT} --query "CREATE TABLE t_backup (x Int32) ENGINE = ${ENGINE}"
+${DDL_CLIENT} --query "
+    BACKUP TABLE t_backup TO Memory('${CLICKHOUSE_TEST_UNIQUE_NAME}') FORMAT Null;
+    SET postgresql_connection_pool_size = 3;
+    RESTORE TABLE t_backup AS t_restored FROM Memory('${CLICKHOUSE_TEST_UNIQUE_NAME}') FORMAT Null;"
+settings_of t_restored

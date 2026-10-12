@@ -11,3 +11,5 @@ SETTINGS postgresql_connection_pool_size = DEFAULT
 SETTINGS postgresql_connection_pool_size = 3
 --- the table keeps the stored value when attached in a session without it
 PostgreSQL connection pool size: 3
+--- a RESTORE keeps the definition from the backup
+
