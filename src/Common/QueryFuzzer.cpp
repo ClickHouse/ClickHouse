@@ -3554,8 +3554,9 @@ void QueryFuzzer::fuzzProxyDatabaseEngine(ASTStorage & storage)
             arguments->children.push_back(makeASTFunction("currentDatabase"));
         else
             arguments->children.push_back(make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, proxied_databases))));
-        /// Optional user and password, which only Remote accepts
-        if (engine_name != "Cluster" || fuzz_rand() % 20 == 0)
+        /// Optional user and password, which only Remote/RemoteSecure accept: Cluster's signature is
+        /// exactly Cluster(cluster_name, database), so appending them would make the statement invalid.
+        if (engine_name != "Cluster")
         {
             const size_t credentials = fuzz_rand() % 3;
             if (credentials > 0)
@@ -5075,6 +5076,14 @@ static const std::unordered_set<String> higher_order_array_funcs = {
     "arrayAll",         "arrayFirst",       "arrayFirstOrNull",  "arrayLast",
     "arrayLastOrNull",  "arrayFirstIndex",  "arrayLastIndex",    "arrayFill",
     "arrayReverseFill", "arraySplit",       "arrayReverseSplit", "arrayFold",
+    /// (lambda, array...) bit-packing variants (PR #123478)
+    "arrayPackBitsToUInt64", "arrayPackBitsToString",
+};
+
+/// arrayPackBits/Groups variants with a positional integer (FixedString length / group bit-width)
+/// between the lambda and the arrays: shape (lambda, int, array...) (PR #123478).
+static const std::unordered_set<String> array_pack_bits_width_funcs = {
+    "arrayPackBitsToFixedString", "arrayPackBitGroupsToUInt64", "arrayPackBitGroupsToString",
 };
 
 /// Higher-order map functions (same idea, for Map-typed arguments).
@@ -5097,7 +5106,10 @@ static const std::unordered_set<String> lambda_accepting_funcs = []
 {
     std::unordered_set<String> res = higher_order_array_funcs;
     res.insert(higher_order_map_funcs.begin(), higher_order_map_funcs.end());
+    res.insert(array_pack_bits_width_funcs.begin(), array_pack_bits_width_funcs.end());
     res.insert({
+        /// (lambda, int, int, array...): unique shape, lambda-eligible but no swap group (PR #123478)
+        "arrayPackBitGroupsToFixedString",
         "arraySum",
         "arrayAvg",
         "arrayMin",
@@ -5427,6 +5439,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "arrayEnumerateDense",
          "arrayExcept",
          "arrayRemove",
+         "arrayRemoveAt",
          "arrayResize",
          "emptyArrayToSingle",
          "arrayDistinct",
@@ -5783,6 +5796,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"if", "multiIf", "caseWithExpression"},
         /// Array higher-order functions ([lambda,] array → array or scalar)
         higher_order_array_funcs,
+        /// arrayPackBits/Groups with a positional width arg (lambda, int, array...) — PR #123478
+        array_pack_bits_width_funcs,
         /// Window ranking functions (no arguments, window clause required)
         {"rank", "dense_rank", "row_number", "percent_rank", "cume_dist"},
         /// Window lag/lead functions (expr[, offset[, default]])

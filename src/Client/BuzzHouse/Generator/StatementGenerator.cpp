@@ -3323,13 +3323,7 @@ void StatementGenerator::generateNextRestore(RandomGenerator & rg, BackupRestore
              {restore_database,
               [&] { cluster = backupOrRestoreDatabase(bre->mutable_bobject(), rg.pickValueRandomlyFromMap(backup.databases)); }}});
     }
-    if (bre->has_bobject() && bre->bobject().sobject() == SQLObject::TABLE && rg.nextMediumNumber() < 3)
-    {
-        /// EXCEPT DATA FROM TABLE[S] is BACKUP only, RESTORE rejects it
-        bre->add_except_data_tables()->CopyFrom(bre->bobject().object().est());
-        bre->set_except_data_plural(rg.nextBool());
-    }
-
+    /// No EXCEPT DATA FROM TABLE[S] here: it is BACKUP only, RESTORE rejects it with BAD_ARGUMENTS
     setClusterClause(rg, cluster, br->mutable_cluster());
     br->mutable_out()->CopyFrom(backup.bout);
     if (backup.out_format.has_value())
