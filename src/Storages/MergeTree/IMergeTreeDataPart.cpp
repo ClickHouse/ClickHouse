@@ -16,6 +16,7 @@
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <DataTypes/DataTypeObject.h>
 #include <DataTypes/NestedUtils.h>
 #include <IO/HashingWriteBuffer.h>
 #include <IO/PackedFilesReader.h>
@@ -220,6 +221,11 @@ void IMergeTreeDataPart::MinMaxIndex::load(const IMergeTreeDataPart & part)
 
         normalizeBoolFields(min_val);
         normalizeBoolFields(max_val);
+        if (containsObjectType(*column_type))
+        {
+            normalizeBoolFieldsInTypedPaths(min_val, column_type);
+            normalizeBoolFieldsInTypedPaths(max_val, column_type);
+        }
 
         // NULL_LAST
         if (min_val.isNull())

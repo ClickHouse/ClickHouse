@@ -8,6 +8,8 @@
 
 #include <Columns/ColumnNullable.h>
 
+#include <DataTypes/DataTypeObject.h>
+
 #include <IO/ReadHelpers.h>
 
 namespace DB
@@ -63,6 +65,9 @@ void MergeTreeIndexGranuleMinMax::serializeBinary(WriteBuffer & ostr) const
 void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTreeIndexVersion version)
 {
     const size_t num_columns = index_sample_block.columns();
+    if (contains_object.empty())
+        for (const auto & type : datatypes)
+            contains_object.push_back(containsObjectType(*type));
 
     /// On subsequent calls (when granule is reused), deserialize directly into the existing
     /// Range objects instead of clearing the vector and constructing new Ranges each time.
@@ -131,6 +136,11 @@ void MergeTreeIndexGranuleMinMax::deserializeBinary(ReadBuffer & istr, MergeTree
 
         normalizeBoolFields(min_ref);
         normalizeBoolFields(max_ref);
+        if (contains_object[i])
+        {
+            normalizeBoolFieldsInTypedPaths(min_ref, datatypes[i]);
+            normalizeBoolFieldsInTypedPaths(max_ref, datatypes[i]);
+        }
 
         if (update_in_place)
         {

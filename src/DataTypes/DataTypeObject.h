@@ -128,5 +128,10 @@ private:
     size_t max_dynamic_types;
 };
 
+bool containsObjectType(const IDataType & type);
+
+/// Finishes `normalizeBoolFields`, which does not enter an `Object`, for a `field` of `type` read by `deserializeBinary(Field &)`:
+/// rewrites every `Bool` as `UInt64`, the form a column gives, except under a dynamic path or `Dynamic`, whose column keeps `Bool`.
+void normalizeBoolFieldsInTypedPaths(Field & field, const DataTypePtr & type);
 
 }
