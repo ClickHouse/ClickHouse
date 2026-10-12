@@ -23,7 +23,6 @@ from ci.defs.defs import S3_REPORT_BUCKET_HTTP_ENDPOINT
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.jobs.scripts.dataset_download import (
-    ICEBERG_DATASETS,
     download_and_extract_datasets,
     iceberg_database_ddl_commands,
 )
@@ -2320,9 +2319,6 @@ def rebuild_table(port, source, destination):
 
 POPULATE_DONE_MARKER = "test._populate_done"
 
-# Derived, not hand-maintained: adding a dataset to ICEBERG_DATASETS is enough to protect it from the between-tests user_files wipe.
-PERSISTENT_USER_FILES = {directory for directory, _ in ICEBERG_DATASETS.values()}
-
 
 def populate_data(port):
     # Rebuild the hits datasets on one server, sequentially. The three inserts
@@ -2863,8 +2859,8 @@ def main():
                 if not user_files.is_dir():
                     continue
                 for entry in user_files.iterdir():
-                    # Dataset directories must outlive the tests; they are real directories, so the is_symlink() check below does not cover them.
-                    if entry.name in PERSISTENT_USER_FILES:
+                    # Dataset files are hardlinked from db_path and must outlive the tests.
+                    if (Path(db_path) / "user_files" / entry.name).exists():
                         continue
                     if entry.is_symlink():
                         continue
