@@ -133,6 +133,9 @@ public:
 
     bool supportParallelWrite() const override { return true; }
 
+    bool tryRefreshCredentialsViaCallback() override;
+    bool hasCredentialsRefreshCallback() const override { return static_cast<bool>(credentials_refresh_callback); }
+
     AzureBlobStorage::ConnectionParams getConnectionParameters() const
     {
         return *connection_params.get();

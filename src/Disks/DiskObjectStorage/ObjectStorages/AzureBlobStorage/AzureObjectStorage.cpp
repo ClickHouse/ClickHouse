@@ -228,6 +228,21 @@ AzureObjectStorage::tryRefreshDataLakeFileClient(const Azure::Core::RequestFaile
     return makeAdlsGen2FileClient(params->endpoint, params->auth_method, params->client_options, blob_path);
 }
 
+bool AzureObjectStorage::tryRefreshCredentialsViaCallback()
+{
+    if (!credentials_refresh_callback)
+        return false;
+
+    auto params = credentials_refresh_callback();
+    if (!params)
+        return false;
+
+    client.set(params->createForContainer());
+    /// The ADLS paths and the Delta kernel helper take their credentials from `connection_params`, so publish them with the client.
+    connection_params.set(std::make_unique<AzureBlobStorage::ConnectionParams>(std::move(*params)));
+    return true;
+}
+
 ObjectStorageKeyGeneratorPtr AzureObjectStorage::createKeyGenerator() const
 {
     return createObjectStorageKeyGeneratorByTemplate("[a-z]{32}");
