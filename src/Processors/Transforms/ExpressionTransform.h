@@ -69,6 +69,8 @@ public:
     std::span<ISpillable * const> getSpillables() override { return set_spillables.get(); }
 
 protected:
+    void onCancel() noexcept override;
+
     void onConsume(Chunk chunk) override;
     GenerateResult onGenerate() override
     {

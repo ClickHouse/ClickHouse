@@ -41,7 +41,7 @@ private:
 
     /// EXPLAIN ANALYZE statistics.
     StepProfiler * step_profiler = nullptr;
-    std::vector<WorkInterval> work_intervals;
+    WorkIntervals work_intervals;
 
 public:
 #ifndef NDEBUG
