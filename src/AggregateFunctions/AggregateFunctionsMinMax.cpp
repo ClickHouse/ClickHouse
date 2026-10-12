@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/SingleValueData.h>
+#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 
@@ -46,8 +47,7 @@ public:
                     getName(),
                     getNumericVariantSupertypeHint(type.getPtr()));
         };
-        check_not_dynamic_or_variant(*this->result_type);
-        this->result_type->forEachChild(check_not_dynamic_or_variant);
+        forEachInTypeTree(*this->result_type, check_not_dynamic_or_variant);
     }
 
     String getName() const override

@@ -16,6 +16,12 @@
 
 #include <AggregateFunctions/registerAggregateFunctions.h>
 
+#include <Parsers/SecretArguments.h>
+
+/// No engine is registered, so the secrets of their arguments are shown.
+[[maybe_unused]] static const bool secret_arguments_finder_installed
+    = (DB::setSecretArgumentsFinder(&DB::NoSecretArgumentsFinder::instance()), true);
+
 using namespace DB;
 
 ContextMutablePtr context;
@@ -122,7 +128,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t * data, size_t size)
         settings.native_format = use_native_format;
         settings.format_settings = &format_settings;
         settings.use_specialized_prefixes_and_suffixes_substreams = use_specialized_prefixes;
-        settings.object_and_dynamic_read_statistics = read_statistics;
+        settings.read_statistics = read_statistics;
 
         ISerialization::DeserializeBinaryBulkStatePtr state;
         serialization->deserializeBinaryBulkStatePrefix(settings, state, nullptr);
