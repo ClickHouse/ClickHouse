@@ -211,7 +211,8 @@ String InterpreterShowTablesQuery::getRewrittenQuery()
     /// projection is a subquery so LIKE and WHERE both see the relative name
     const bool scoped = !table_namespace.empty() && !query.dictionaries && !query.temporary;
 
-    if (query.full)
+    /// `system.dictionaries` has no `engine` column.
+    if (query.full && !query.dictionaries)
     {
         rewritten_query << "SELECT name, engine FROM ";
     }

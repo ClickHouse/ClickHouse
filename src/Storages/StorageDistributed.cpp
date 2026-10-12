@@ -31,6 +31,7 @@
 #include <Storages/MergeTree/MergeTreeData.h>
 
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSet.h>
 
 #include <Common/CurrentMetrics.h>
 #include <Common/Macros.h>
@@ -95,6 +96,7 @@
 #include <Interpreters/getClusterName.h>
 #include <Interpreters/RequiredSourceColumnsVisitor.h>
 #include <Interpreters/getHeaderForProcessingStage.h>
+#include <Interpreters/PreparedSets.h>
 
 #include <TableFunctions/TableFunctionView.h>
 #include <TableFunctions/TableFunctionFactory.h>
@@ -443,6 +445,20 @@ bool isExpressionActionsDeterministic(const ExpressionActionsPtr & actions)
     return true;
 }
 
+template <typename Predicate>
+bool expressionActionsContainSet(const ExpressionActionsPtr & actions, Predicate && predicate)
+{
+    for (const auto & node : actions->getActionsDAG().getNodes())
+    {
+        if (!node.column || !WhichDataType(node.result_type).isSet())
+            continue;
+        const auto * column_set = typeid_cast<const ColumnSet *>(node.column->getDataColumnPtr().get());
+        if (column_set && column_set->getData() && predicate(*column_set->getData()))
+            return true;
+    }
+    return false;
+}
+
 /// Weaker than `isExpressionActionsDeterministic`: it also accepts a function whose result can change
 /// between queries as long as it is fixed within one, `dictGet` being the motivating case. Such a sharding
 /// key still describes where a row belongs — `allow_nondeterministic_optimize_skip_unused_shards` exists
@@ -607,6 +623,10 @@ StorageDistributed::StorageDistributed(
         /// Check that sharding_key exists in the table and has numeric type.
         checkShardingKeyExistsAndIsNumeric(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical());
         sharding_key_expr = buildShardingKeyExpression(sharding_key_, getContext(), storage_metadata.getColumns().getAllPhysical(), false);
+        sharding_key_has_unbuilt_set = expressionActionsContainSet(
+            sharding_key_expr, [](const FutureSet & future_set) { return typeid_cast<const FutureSetFromSubquery *>(&future_set) != nullptr; });
+        if (is_fresh_definition)
+            checkShardingKeySetsAreBuilt();
         sharding_key_column_name = sharding_key_->getColumnName();
         /// Building the expression analyzes (and may rewrite) the sharding key: e.g. the analyzer const-folds
         /// `if(2, toInt32(id), t0)` down to `toInt32(id)`, so the raw AST name is absent from the expression
@@ -614,7 +634,9 @@ StorageDistributed::StorageDistributed(
         /// expression's result (shard skipping, sharding key IN rewrite, DistributedSink selector) finds it.
         if (const ActionsDAG::Node * node = tryFindShardingKeyOutput(sharding_key_expr->getActionsDAG(), sharding_key_column_name))
             sharding_key_column_name = node->result_name;
-        sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr);
+        /// A `Set` table can change after rows are placed by it, as a `Join` table read by `joinGet` can.
+        sharding_key_is_deterministic = isExpressionActionsDeterministic(sharding_key_expr)
+            && !expressionActionsContainSet(sharding_key_expr, [](const FutureSet & future_set) { return future_set.isMutableDuringQuery(); });
         sharding_key_is_deterministic_in_scope_of_query = isExpressionActionsDeterministicInScopeOfQuery(sharding_key_expr);
     }
 
@@ -2132,7 +2154,8 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     ClusterPtr cluster = getCluster();
     const Settings & settings = local_context->getSettingsRef();
 
-    bool sharding_key_is_usable = settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic;
+    bool sharding_key_is_usable = !sharding_key_has_unbuilt_set
+        && (settings[Setting::allow_nondeterministic_optimize_skip_unused_shards] || sharding_key_is_deterministic);
 
     if (hasShardingKeyForReads() && sharding_key_is_usable)
     {
@@ -2146,12 +2169,20 @@ ClusterPtr StorageDistributed::getOptimizedCluster(
     {
         if (!hasShardingKeyForReads())
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "No sharding key");
+        checkShardingKeySetsAreBuilt();
         if (!sharding_key_is_usable)
             throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key is not deterministic");
         throw Exception(ErrorCodes::UNABLE_TO_SKIP_UNUSED_SHARDS, "Sharding key {} is not used", sharding_key_column_name);
     }
 
     return {};
+}
+
+void StorageDistributed::checkShardingKeySetsAreBuilt() const
+{
+    if (sharding_key_has_unbuilt_set)
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Sharding expression cannot contain IN with a subquery or a non-Set table, because its set is never built");
 }
 
 IColumn::Selector StorageDistributed::createSelector(const ClusterPtr cluster, const ColumnWithTypeAndName & result)
@@ -2715,7 +2746,7 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 |--------------------------------------------|---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|---------------|
 | `fsync_after_insert`                       | Do the `fsync` for the file data after background insert to Distributed. Guarantees that the OS flushed the whole inserted data to a file **on the initiator node** disk.                                                             | `false`       |
 | `fsync_directories`                        | Do the `fsync` for directories. Guarantees that the OS refreshed directory metadata after operations related to background inserts on Distributed table (after insert, after sending the data to shard, etc.).                        | `false`       |
-| `skip_unavailable_shards`                  | If true, ClickHouse silently skips unavailable shards. The behavior of this setting is controlled by the `skip_unavailable_shards_mode` parameter.                                                                                   | `false`       |
+| `skip_unavailable_shards`                  | If true, ClickHouse silently skips unavailable shards, unless a read skipped every shard before any of them returned data, in which case the query throws `ALL_CONNECTION_TRIES_FAILED`. Which errors count as unavailable is controlled by the `skip_unavailable_shards_mode` parameter.                                                                                   | `false`       |
 | `skip_unavailable_shards_mode`             | Controls which exceptions from a remote shard are ignored when `skip_unavailable_shards` is enabled: `unavailable` ignores only connection errors; `unavailable_or_table_missing` also ignores a missing table or database; `unavailable_or_exception_before_processing` also ignores any exception received before the shard returned data. | `unavailable_or_table_missing` |
 | `bytes_to_throw_insert`                    | If more than this number of compressed bytes will be pending for background `INSERT`, an exception will be thrown. `0` - do not throw.                                                                                                | `0`           |
 | `bytes_to_delay_insert`                    | If more than this number of compressed bytes will be pending for background INSERT, the query will be delayed. 0 - do not delay.                                                                                                      | `0`           |
