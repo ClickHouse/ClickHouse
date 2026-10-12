@@ -1,0 +1,6 @@
+cold engine	TableProxy
+upd denied
+count	10
+cold engine	TableProxy
+del allowed
+count	9

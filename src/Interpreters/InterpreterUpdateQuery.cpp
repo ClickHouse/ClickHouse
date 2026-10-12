@@ -19,6 +19,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeVirtualColumns.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Core/Settings.h>
@@ -120,7 +121,10 @@ BlockIO InterpreterUpdateQuery::execute()
         /// from it: otherwise they are expanded to the configured default database of each host, so the
         /// rights that are checked and the table that is updated can name different databases.
         update_query.setDatabase(resolved_table_id.database_name);
-        table_for_access = DatabaseCatalog::instance().tryGetTable(resolved_table_id, getContext());
+        /// Resolve a lazily loaded table: the proxy that stands in for it until it is loaded reports
+        /// columns-only metadata without the `_row_exists` virtual column, which would classify
+        /// `SET _row_exists = 0` as an update instead of a delete.
+        table_for_access = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(resolved_table_id, getContext()));
     }
     const auto row_exists_column_kind = InterpreterAlterQuery::getRowExistsColumnKind(table_for_access, getContext());
 
