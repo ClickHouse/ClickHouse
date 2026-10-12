@@ -158,32 +158,47 @@ protected:
             params = std::make_unique<HTMLForm>(default_settings, request);
         parent().send_stacktrace = config().is_stacktrace_enabled && params->getParsed<bool>("stacktrace", false);
 
-        if (!authenticateUserAndMakeContext(request, response))
-            return; /// The user is not authenticated yet, and the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
-                    /// and `request_credentials` must be preserved until the next request or until any exception.
+        session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
 
-        /// Apply `http_response_buffer_size` for the output buffer (0 means use the default).
-        auto buffer_size = context->getSettingsRef()[Setting::http_response_buffer_size].value;
-        if (buffer_size == 0)
-            buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
-        parent().http_response_buffer_size = buffer_size;
+        /// Parse the OpenTelemetry traceparent header.
+        auto & client_trace_context = session->getClientTraceContext();
+        if (request.has("traceparent"))
+        {
+            String traceparent = request.get("traceparent");
+            String error;
+            if (!client_trace_context.parseTraceparentHeader(traceparent, error))
+                LOG_DEBUG(log(), "Failed to parse OpenTelemetry traceparent header '{}': {}", traceparent, error);
+            client_trace_context.tracestate = request.get("tracestate", "");
+        }
 
-        /// Initialize query scope.
         QueryScope query_scope;
-        if (context)
-            query_scope = QueryScope::create(context);
 
-        /// Set up the OpenTelemetry tracing context for this request on the current thread.
+        /// Start the root span before authentication, so that requests failing there are traced too.
+        auto trace_settings_context = session->sessionOrGlobalContext();
         OpenTelemetry::TracingContextHolder thread_trace_context("PrometheusRequestHandler",
-            context->getClientInfo().client_trace_context,
-            context->getSettingsRef(),
-            context->getOpenTelemetrySpanLog());
+            client_trace_context,
+            trace_settings_context->getSettingsRef(),
+            trace_settings_context->getOpenTelemetrySpanLog());
         thread_trace_context.root_span.kind = OpenTelemetry::SpanKind::SERVER;
         thread_trace_context.root_span.addAttribute("http.method", request.getMethod());
 
         try
         {
-            handlingRequestWithContext(request, response);
+            /// If the user is not authenticated yet, the HTTP_UNAUTHORIZED response is sent with the "WWW-Authenticate" header,
+            /// and `request_credentials` must be preserved until the next request or until any exception.
+            if (authenticateUser(request, response))
+            {
+                makeContext(request);
+
+                /// Apply `http_response_buffer_size` for the output buffer (0 means use the default).
+                auto buffer_size = context->getSettingsRef()[Setting::http_response_buffer_size].value;
+                if (buffer_size == 0)
+                    buffer_size = DBMS_DEFAULT_BUFFER_SIZE;
+                parent().http_response_buffer_size = buffer_size;
+
+                query_scope = QueryScope::create(context);
+                handlingRequestWithContext(request, response);
+            }
         }
         catch (...)
         {
@@ -194,17 +209,6 @@ protected:
             throw;
         }
         thread_trace_context.root_span.addAttribute("clickhouse.http_status", response.getStatus());
-    }
-
-    bool authenticateUserAndMakeContext(HTTPServerRequest & request, HTTPServerResponse & response)
-    {
-        session = std::make_unique<Session>(server().context(), ClientInfo::Interface::PROMETHEUS, request.isSecure());
-
-        if (!authenticateUser(request, response))
-            return false;
-
-        makeContext(request);
-        return true;
     }
 
     bool authenticateUser(HTTPServerRequest & request, HTTPServerResponse & response)
@@ -228,16 +232,7 @@ protected:
     {
         context = session->makeQueryContext();
 
-        /// Parse the OpenTelemetry traceparent header.
-        if (request.has("traceparent"))
-        {
-            auto & client_trace_context = context->getClientTraceContext();
-            String traceparent = request.get("traceparent");
-            String error;
-            if (!client_trace_context.parseTraceparentHeader(traceparent, error))
-                LOG_DEBUG(log(), "Failed to parse OpenTelemetry traceparent header '{}': {}", traceparent, error);
-            client_trace_context.tracestate = request.get("tracestate", "");
-        }
+        context->getClientTraceContext() = session->getClientTraceContext();
 
         /// Anything else beside HTTP POST should be readonly queries.
         setReadOnlyIfHTTPMethodIdempotent(context, request.getMethod());

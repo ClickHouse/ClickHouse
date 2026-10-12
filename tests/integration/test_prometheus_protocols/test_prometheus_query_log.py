@@ -193,6 +193,26 @@ def test_remote_write_failure_records_http_status_in_span_log():
     )
 
 
+def test_query_api_setup_failure_records_http_status_in_span_log():
+    """
+    A request that fails before the query runs, here on an unknown setting, should still
+    record a PrometheusRequestHandler span with the HTTP status that the client got.
+    """
+    trace_id = str(uuid.uuid4())
+    traceparent = f"00-{trace_id.replace('-', '')}-{123:016x}-01"
+    url = f"http://{node.ip_address}:9093/api/v1/query?query=up&no_such_setting_for_span_test=1"
+    response = get_response_to_http_api(url, headers={"traceparent": traceparent})
+    assert response.status_code >= 400
+
+    node.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT attribute['clickhouse.http_status'] FROM system.opentelemetry_span_log "
+        f"WHERE trace_id = '{trace_id}' AND operation_name = 'PrometheusRequestHandler'",
+        f"{response.status_code}\n",
+    )
+
+
 def test_remote_write_appears_in_query_log_with_written_rows():
     """
     A remote write to /write should produce one parent TimeSeries row in
