@@ -10,7 +10,7 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 SCHEMA='{"type":"record","name":"r","fields":[{"name":"id","type":"long"},{"name":"m","type":{"type":"map","values":"string"}}]}'
 
-PORT_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.port"
+PORT_FILE=$(mktemp "${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.XXXXXX.port")
 
 # A schema registry that serves the schema above for any id. It binds to port 0 and reports the port
 # it got, so parallel runs cannot collide.
