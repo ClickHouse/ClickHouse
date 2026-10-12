@@ -1,0 +1,10 @@
+<clickhouse>
+    <profiles>
+        <default>
+            <!-- StorageSystemZooKeeper uses insert settings. insert_keeper_max_retries is really high by default. Reduce it to speed up test. -->
+            <insert_keeper_max_retries>1</insert_keeper_max_retries>
+            <insert_keeper_retry_initial_backoff_ms>0</insert_keeper_retry_initial_backoff_ms>
+            <insert_keeper_retry_max_backoff_ms>0</insert_keeper_retry_max_backoff_ms>
+        </default>
+    </profiles>
+</clickhouse>
