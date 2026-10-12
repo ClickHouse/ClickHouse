@@ -3296,9 +3296,11 @@ void JoinStepLogical::serialize(Serialization & ctx) const
     serializeNodeList(ctx.out, actions_dag->getNodeToIdMap(), actions_after_join);
 
     /// A step that crosses the wire tells the receiver which decisions were already taken on it, so
-    /// that the receiver does not take them again. Both bits stand for a decision that reads a row
-    /// estimate, and estimates are deliberately not part of the plan format, so a receiver that
-    /// decided for itself would decide from an empty estimate and could decide differently. The byte
+    /// that the receiver does not take them again. The first two bits stand for a decision that reads a
+    /// row estimate, and estimates are deliberately not part of the plan format, so a receiver that
+    /// decided for itself would decide from an empty estimate and could decide differently. The third
+    /// one marks a join the runtime filter pass skipped for an eligible sorted-merge algorithm, which the
+    /// receiver has to reconsider where it skips that pass otherwise. The byte
     /// is left out of a plan cache key because it differs between the single-node and the
     /// parallel-replicas plan build, and those two builds have to hash alike.
     if (ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_JOIN_DECISIONS && !ctx.for_cache_key)
@@ -3308,6 +3310,10 @@ void JoinStepLogical::serialize(Serialization & ctx) const
             optimizer_flags |= 1;
         if (runtime_filter_declined_small_probe)
             optimizer_flags |= 2;
+        /// A peer below this version does not know the sorted-merge algorithms (they are removed from the
+        /// list towards it), so the bit means nothing there; a reader that ignores it decides on its own.
+        if (runtime_filter_suppressed_for_sorted_merge && ctx.version >= DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_SORTED_MERGE_JOIN)
+            optimizer_flags |= 4;
         writeIntBinary(optimizer_flags, ctx.out);
     }
 }
@@ -3382,6 +3388,7 @@ QueryPlanStepPtr JoinStepLogical::deserialize(Deserialization & ctx)
 
         step->optimized = bool(optimizer_flags & 1);
         step->runtime_filter_declined_small_probe = bool(optimizer_flags & 2);
+        step->runtime_filter_suppressed_for_sorted_merge = bool(optimizer_flags & 4);
     }
     return step;
 }
@@ -3426,6 +3433,10 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     /// "Trying to extract chunk from ChunkBuffer before all inputs are finished".
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
+    /// Load-bearing for the fragment of plan-based parallel replicas: its local plan is optimized without
+    /// the runtime filter pass (the filters are already in it), except for the joins with this flag, which
+    /// had none planted. See `isRuntimeFilterSuppressedForSortedMerge`.
+    result_step->runtime_filter_suppressed_for_sorted_merge = runtime_filter_suppressed_for_sorted_merge;
     result_step->result_rows_estimation = result_rows_estimation;
     result_step->estimated_cost = estimated_cost;
     result_step->estimated_selectivity = estimated_selectivity;

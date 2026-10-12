@@ -378,7 +378,8 @@ void optimizeTreeSecondPass(
     setAggregationHashTableCacheKeys(optimization_settings, root);
 
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
-    const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext();
+    const bool has_query_context = CurrentThread::tryGetQueryContext() != nullptr;
+    const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && has_query_context;
     bool join_runtime_filters_were_added = false;
     traverseQueryPlan(stack, root,
         [&](auto & frame_node)
@@ -389,7 +390,15 @@ void optimizeTreeSecondPass(
         },
         [&](auto & frame_node)
         {
-            if (add_join_runtime_filters)
+            /// The local plan of a plan-based parallel replicas fragment is optimized without this pass,
+            /// because the filters were planted on the outer plan before the fragment was cloned. A join
+            /// the pass skipped there for an eligible sorted-merge algorithm has no filter, though, and
+            /// may have lost the eligibility in the fragment (its coordinated input is no longer read in
+            /// order): the selection then falls through to a hash-family algorithm, which must get its
+            /// filter back. The flag is set only by the pass itself, so the filters were enabled.
+            const auto * join_logical = typeid_cast<const JoinStepLogical *>(frame_node.step.get());
+            if (add_join_runtime_filters
+                || (has_query_context && join_logical && join_logical->isRuntimeFilterSuppressedForSortedMerge()))
                 join_runtime_filters_were_added |= tryAddJoinRuntimeFilter(frame_node, nodes, optimization_settings);
             /// Keep joins logical for `applyParallelReplicas` below: it needs the final (reordered,
             /// runtime-filtered) join shape and clones a fragment, which only `JoinStepLogical` supports.
