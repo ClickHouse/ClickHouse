@@ -9,9 +9,12 @@
 --
 -- Every table pins `enable_vertical_merge_algorithm`: CI randomizes it off, and the activation
 -- thresholds below only pick between the algorithms once it is on.
+--
+-- max_bytes_to_merge_at_max_space_in_pool = 0 makes background merges impossible for these
+-- tables: it is only read when selecting a background merge, so OPTIMIZE FINAL still merges.
 
 SET alter_sync = 2;
-SET optimize_throw_if_noop = 0;
+SET optimize_throw_if_noop = 1;
 SET optimize_on_insert = 0;
 
 -- Test 1: collapsing keeps up to two rows of a key - the first negative and the last positive - and
@@ -34,6 +37,7 @@ TTL d + INTERVAL 1 DAY
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
     enable_vertical_merge_algorithm = 1,
@@ -91,14 +95,12 @@ SELECT 'test1_control_same_rows', arraySort(groupArray((id, sign, d, c1, c2, c3)
 FROM t_ttl_vert_coll;
 
 SYSTEM FLUSH LOGS part_log;
-SELECT 'test1_algo', merge_algorithm FROM system.part_log
+SELECT 'test1_algo', merge_algorithm, merge_reason FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_ttl_vert_coll' AND event_type = 'MergeParts'
-    AND merge_reason != 'TTLDropMerge'
-    ORDER BY event_time_microseconds LIMIT 1;
-SELECT 'test1_control_algo', merge_algorithm FROM system.part_log
+    ORDER BY event_time_microseconds;
+SELECT 'test1_control_algo', merge_algorithm, merge_reason FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_ttl_vert_coll_off' AND event_type = 'MergeParts'
-    AND merge_reason != 'TTLDropMerge'
-    ORDER BY event_time_microseconds LIMIT 1;
+    ORDER BY event_time_microseconds;
 
 DROP TABLE t_ttl_vert_coll;
 DROP TABLE t_ttl_vert_coll_off;
@@ -124,6 +126,7 @@ TTL d + INTERVAL 1 DAY
 SETTINGS
     min_bytes_for_wide_part = 0,
     min_bytes_for_full_part_storage = 0,
+    max_bytes_to_merge_at_max_space_in_pool = 0,
     enable_block_number_column = 0,
     enable_block_offset_column = 0,
     enable_vertical_merge_algorithm = 1,
@@ -162,14 +165,12 @@ SELECT 'test2_control_same_rows', arraySort(groupArray((id, sign, version, d, c1
 FROM t_ttl_vert_vcoll;
 
 SYSTEM FLUSH LOGS part_log;
-SELECT 'test2_algo', merge_algorithm FROM system.part_log
+SELECT 'test2_algo', merge_algorithm, merge_reason FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_ttl_vert_vcoll' AND event_type = 'MergeParts'
-    AND merge_reason != 'TTLDropMerge'
-    ORDER BY event_time_microseconds LIMIT 1;
-SELECT 'test2_control_algo', merge_algorithm FROM system.part_log
+    ORDER BY event_time_microseconds;
+SELECT 'test2_control_algo', merge_algorithm, merge_reason FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_ttl_vert_vcoll_off' AND event_type = 'MergeParts'
-    AND merge_reason != 'TTLDropMerge'
-    ORDER BY event_time_microseconds LIMIT 1;
+    ORDER BY event_time_microseconds;
 
 DROP TABLE t_ttl_vert_vcoll;
 DROP TABLE t_ttl_vert_vcoll_off;

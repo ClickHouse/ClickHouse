@@ -1,5 +1,7 @@
 import dataclasses
+import re
 import traceback
+from pathlib import Path
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
 from ci.praktika.info import Info
@@ -10,10 +12,9 @@ class TC:
     prefix: str
     is_sequential: bool  # sequential in every integration job
     comment: str
-    # Sequential only under the flaky/targeted `--dist=each` schedule; parallel
-    # under the normal `--dist=loadfile` schedule. Set for modules that start one
-    # cluster per xdist worker under `--dist=each` and then contend on a shared
-    # resource (host memory, a fixed host port, or a global Docker-network lock).
+    # Sequential only under the flaky check's `--dist=each` schedule; parallel elsewhere.
+    # Set for modules that start one cluster per xdist worker under `--dist=each` and then
+    # contend on host memory or a fixed host port.
     dist_each_sequential: bool = False
 
 
@@ -34,6 +35,9 @@ LLVM_COVERAGE_SKIP_PREFIXES = [
     # writeback load pushed a 967/967-green test over the margin (9.6 s
     # observed vs 8.5 s allowed).
     "test_distributed_respect_user_timeouts/",
+    # 30 GROUP BY queries (15 concurrent) fill a 4 GB container: ~50 s on
+    # a release build, 500-900 s under coverage, vs. a 900 s test timeout.
+    "test_memory_limit/",
 ]
 
 # Additionally skipped on the per-test coverage build (`WITH_COVERAGE_DEPTH`).
@@ -45,13 +49,6 @@ PER_TEST_COVERAGE_SKIP_PREFIXES = [
 ]
 
 TEST_CONFIGS = [
-    TC(
-        "test_dns_cache/",
-        False,
-        "fixed IPv6 addresses; concurrent --dist=each clusters serialize on the "
-        "global /tmp/docker_net.lock and blow the 10-min acquire budget",
-        dist_each_sequential=True,
-    ),
     TC("test_global_overcommit_tracker/", False, "memory overcommit test; isolated to its own ClickHouse instance"),
     TC(
         "test_profile_max_sessions_for_user/",
@@ -113,25 +110,45 @@ TEST_CONFIGS = [
 ]
 
 
-def force_heavy_modules_sequential(
+# A fixed address is on the one subnet of `docker_compose_net.yml`, so the cluster holds the
+# host-wide `/tmp/docker_net.lock` from `start` to `shutdown`.
+_FIXED_ADDRESS = re.compile(r"(?<![.\w])ipv[46]_address\s*=(?!=)(?!\s*None\b)")
+
+
+def _module_files(test: str) -> list[Path]:
+    selector = Path("./tests/integration") / test.split("::")[0]
+    return list(selector.glob("test*.py")) if selector.is_dir() else [selector.with_suffix(".py")]
+
+
+def holds_docker_net_lock(test: str) -> bool:
+    return any(f.is_file() and _FIXED_ADDRESS.search(f.read_text()) for f in _module_files(test))
+
+
+def force_exclusive_modules_sequential(
     parallel_test_modules: list[str],
     sequential_test_modules: list[str],
+    dist_each: bool,
 ) -> tuple[list[str], list[str]]:
-    """Move TEST_CONFIGS `dist_each_sequential` modules from the parallel to the
-    sequential bucket, preserving order.
+    """Move the modules that must not run concurrently from the parallel to the sequential
+    bucket (`-n 1`), preserving order. Called on the flaky and targeted paths.
 
-    Called only on the flaky/targeted path, whose parallel bucket runs with
-    `--dist=each` (every worker runs every parallel module at once). These
-    modules start one cluster per worker there and exhaust memory; the
-    sequential bucket runs `-n 1` (one cluster at a time, looped >=3x), which
-    keeps the flakiness signal without the concurrent OOM. Normal runs use
-    `--dist=loadfile` (one file -> one worker -> one cluster) and never call this.
+    Modules holding `/tmp/docker_net.lock` serialize on it and a waiter gives up after 10
+    minutes, so only the longest of them stays parallel. Under `--dist=each` every worker runs
+    every module, so none of them stays, and `dist_each_sequential` modules move too.
     """
-    prefixes = [tc.prefix for tc in TEST_CONFIGS if tc.dist_each_sequential]
+    holders = list(
+        dict.fromkeys(
+            m.split("::")[0] for m in parallel_test_modules if holds_docker_net_lock(m)
+        )
+    )
+    if holders and not dist_each:
+        holders.remove(max(holders, key=lambda f: TEST_DURATIONS.get(f, 0)))
+    prefixes = [f"tests/integration/{tc.prefix}" for tc in TEST_CONFIGS if dist_each and tc.dist_each_sequential]
     forced = [
         m
         for m in parallel_test_modules
-        if any(m.startswith(p) for p in prefixes)
+        if m.split("::")[0] in holders
+        or any(f.as_posix().startswith(p) for f in _module_files(m) for p in prefixes)
     ]
     if not forced:
         return parallel_test_modules, sequential_test_modules
@@ -1541,7 +1558,8 @@ def get_optimal_test_batch(
 
     # Parallel groups and Sequential groups separated to allow distinct packing
     parallel_groups = group_by_prefix(parallel_test_modules)
-    sequential_groups = group_by_prefix(sequential_test_modules)
+    # Sequential modules run one at a time, so each is its own unit and no directory has to fit one batch
+    sequential_groups = {m: [m] for m in sorted(sequential_test_modules)}
 
     durations = TEST_DURATIONS
 
@@ -1585,9 +1603,10 @@ def get_optimal_test_batch(
         sequential_batches[idx].extend(sequential_groups[prefix])
         sequential_weights[idx] += dur
 
-    # Round-robin assign unknown-duration sequential groups
+    # Round-robin assign unknown-duration sequential groups, least loaded batch first
+    by_load = sorted(range(total_batches), key=lambda i: (sequential_weights[i], i))
     for i, prefix in enumerate(s_unknown):
-        idx = i % total_batches
+        idx = by_load[i % total_batches]
         sequential_batches[idx].extend(sequential_groups[prefix])
 
     # Prepare batch containers and weights

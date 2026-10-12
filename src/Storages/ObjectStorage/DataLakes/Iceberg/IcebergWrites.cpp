@@ -464,6 +464,8 @@ void setVersionedField(avro::GenericRecord & rec, const std::optional<T> & value
         setVersionedFieldNull(rec, field_name);
 }
 
+}
+
 Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadata)
 {
     Int32 current_schema_id = metadata->getValue<Int32>(Iceberg::f_current_schema_id);
@@ -478,7 +480,6 @@ Poco::JSON::Object::Ptr getCurrentSchema(const Poco::JSON::Object::Ptr & metadat
         ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
         "Not found schema with current-schema-id {} in the schemas list",
         current_schema_id);
-}
 }
 
 void generateManifestFile(

@@ -1872,7 +1872,7 @@ y: 993
 
 ### `DROP PARTITION` {#iceberg-writes-drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is currently supported for local and object-storage Iceberg tables, but not for catalog-backed tables.
+`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is supported for local and object-storage Iceberg tables, and for tables in a `DataLakeCatalog` database with the `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables`, or `unity` (with `use_unity_catalog_v2 = 1`) catalog type.
 
 Enable `allow_insert_into_iceberg` to use this operation.
 
