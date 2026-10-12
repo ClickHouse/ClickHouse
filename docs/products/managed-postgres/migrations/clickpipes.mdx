@@ -166,66 +166,70 @@ Click the migration to open the detail view. The **Tables** tab shows the initia
 
 <Image img="/images/managed-postgres/pgpg/initialload.webp" alt="Migration detail view showing initial load stats per table" size="lg" border />
 
-## Post-migration tasks {#post-migration}
+## Cut over traffic {#cutover}
 
-Once the initial load is complete and, if using CDC, replication lag is near zero:
+Once the initial load is complete and, if using CDC, replication lag is near zero, you can cut over traffic from your source Postgres database to your Managed Postgres service. Open the migration detail view and select the **Post-migration steps** tab. This guided wizard walks you through the six steps required to finish the migration safely. Each step must be completed in order before you can advance to the next.
 
-**Validate row counts.** Spot-check critical tables on both source and target before switching traffic:
+### Step 1: Set source Postgres database in read-only mode {#cutover-read-only}
 
-```sql
-SELECT COUNT(*) FROM public.orders;
-```
-
-**Stop writes on the source.** Pause application writes. To enforce read-only mode during cutover:
+Stop application writes on the source so nothing diverges during cutover. The wizard shows an `ALTER DATABASE` command pre-filled with your source database name — run it on your source database:
 
 ```sql
-ALTER DATABASE <source_db> SET default_transaction_read_only = on;
+ALTER DATABASE "<source_db>" SET default_transaction_read_only = on;
 ```
 
-**Confirm replication is caught up.** Compare the latest row on source and target:
+Then terminate any existing connections so they pick up the read-only setting and no in-flight writes remain:
 
 ```sql
--- Run on both source and target
-SELECT MAX(id), MAX(updated_at) FROM public.orders;
+SELECT pg_terminate_backend(pid)
+FROM pg_stat_activity
+WHERE datname = '<source_db>'
+  AND pid <> pg_backend_pid();
 ```
 
-**Reset sequences.** Align sequences with the current maximum values in each table:
+<Note>
+Depending on your Postgres provider, this step may look different. Managed services may restrict `ALTER DATABASE` or terminating backends, and instead expose read-only mode through their own console, parameter groups, or by revoking write privileges. Consult your provider's documentation for the equivalent way to make the source read-only.
+</Note>
 
-```sql
-DO $$
-DECLARE r RECORD;
-BEGIN
-    FOR r IN
-        SELECT
-            n.nspname AS schema_name,
-            c.relname AS table_name,
-            a.attname AS column_name,
-            pg_get_serial_sequence(format('%I.%I', n.nspname, c.relname), a.attname) AS seq_name
-        FROM pg_class c
-        JOIN pg_namespace n ON n.oid = c.relnamespace
-        JOIN pg_attribute a ON a.attrelid = c.oid
-        WHERE c.relkind = 'r'
-            AND a.attnum > 0
-            AND NOT a.attisdropped
-            AND n.nspname NOT IN ('pg_catalog', 'information_schema')
-    LOOP
-        IF r.seq_name IS NOT NULL THEN
-            EXECUTE format(
-                'SELECT setval(%L, COALESCE((SELECT MAX(%I) FROM %I.%I), 0) + 1, false)',
-                r.seq_name, r.column_name, r.schema_name, r.table_name
-            );
-        END IF;
-    END LOOP;
-END $$;
-```
+Click **Mark as completed** to continue.
 
-**Cut over application traffic.** Point reads and writes to your Managed Postgres service and monitor for errors, constraint violations, and replication health.
+<Image img="/images/managed-postgres/pgpg/post-migration/readonly.webp" alt="Post-migration step 1: set the source database in read-only mode" size="lg" border />
 
-**Clean up.**  Once you've cut over and confirmed the new service is healthy, delete the migration from **Data sources**. If you used CDC, drop the replication slot from the source to free resources:
+### Step 2: Validate row counts {#cutover-validate}
+
+Select which replicated tables you want to validate. ClickPipes counts the rows on every selected table in both source and target and compares them. Large tables may return approximate counts. Use **Select all tables** to validate every table, or search for and toggle specific tables, then click **Count rows**.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp" alt="Post-migration step 2: select tables and validate row counts between source and target" size="lg" border />
+
+### Step 3: Pause the pipe {#cutover-pause}
+
+Pause the ClickPipe so replication stops before you reset sequences and cut over traffic. Click **Pause ClickPipe** and wait for the pipe to pause before continuing.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/pause-pipe.webp" alt="Post-migration step 3: pause the ClickPipe to stop replication" size="lg" border />
+
+### Step 4: Reset sequences {#cutover-reset-sequences}
+
+Reset sequences on the destination so new inserts continue from the correct values. Click **Reset sequences** to align each sequence with the current maximum value in its table.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/reset-sequences.webp" alt="Post-migration step 4: reset sequences on the destination" size="lg" border />
+
+### Step 5: Cut over traffic {#cutover-traffic}
+
+Point reads and writes to your Managed Postgres service by updating your application's database URL to the Managed Postgres connection string. The wizard provides the connection details in several formats — **url**, **psql**, **env**, **yaml**, and **jdbc** — so you can copy the one that matches your stack. After updating your application, click **Mark as completed**.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp" alt="Post-migration step 5: cut over traffic using the Managed Postgres connection string" size="lg" border />
+
+### Step 6: Clean up {#cutover-cleanup}
+
+Once you've cut over and confirmed the new service is healthy, delete the migration and free source resources. The wizard shows a `pg_drop_replication_slot` command pre-filled with the slot name — run it on the source to drop the replication slot:
 
 ```sql
 SELECT pg_drop_replication_slot('<slot_name>');
 ```
+
+Then click **Delete ClickPipe migration** to remove the migration from **Data sources**.
+
+<Image img="/images/managed-postgres/pgpg/post-migration/cleanup.webp" alt="Post-migration step 6: clean up by dropping the replication slot and deleting the migration" size="lg" border />
 
 ## Next steps {#next-steps}
 

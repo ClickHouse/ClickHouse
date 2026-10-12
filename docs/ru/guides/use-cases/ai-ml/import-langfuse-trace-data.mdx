@@ -1,0 +1,202 @@
+---
+slug: /use-cases/AI/import-langfuse-trace-data
+sidebarTitle: 'Импорт данных трассировки из Langfuse Cloud'
+title: 'Импорт данных трассировки из Langfuse Cloud'
+description: 'Как загрузить данные трассировки LLM, экспортированные из Langfuse Cloud, в ClickHouse Cloud с помощью ClickPipes.'
+keywords: ['langfuse', 'observability', 'llm', 'clickpipes', 'object storage', 'blob storage', 'import']
+doc_type: 'guide'
+---
+
+В этом руководстве пошагово описано, как загрузить данные трассировки LLM из [Langfuse Cloud](https://cloud.langfuse.com/) в ClickHouse Cloud для Real-time аналитики.
+
+## Экспорт из Langfuse Cloud {#export-from-langfuse-cloud}
+
+Чтобы настроить в Langfuse Cloud интеграцию с Blob Storage для экспорта по расписанию, следуйте [этому руководству](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage). Экспорт данных трассировки в объектное хранилище можно запускать не чаще чем раз в `20 minutes` либо по расписанию `hourly`, `daily` или `weekly`. По умолчанию каждый экспорт включает `observations` (дополненные атрибутами трассировок) и `scores`.
+
+### Структура экспортируемых файлов {#exported-file-layout}
+
+Интеграция Blob Storage в Langfuse Cloud записывает данные в целевой бакет или контейнер хранилища со следующей структурой каталогов:
+
+```text
+{prefix}{project-id}/
+├── observations_v2/   # observations enriched with trace attributes
+├── scores/            # scores
+└── manifests/         # one JSON file per completed run with export metadata
+```
+
+## Импорт в ClickHouse Cloud {#import-into-clickhouse-cloud}
+
+После настройки интеграции Blob Storage в Langfuse Cloud данные трассировки будут по расписанию экспортироваться в целевой бакет или контейнер хранилища. Чтобы импортировать эти данные в ClickHouse Cloud, воспользуйтесь [ClickPipes](/ru/integrations/clickpipes) и его управляемыми коннекторами к объектным хранилищам:
+
+| Источник данных                                                                                                                                                                                                                                                                                                 | Подробности                                                                                               |
+| --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------- |
+| <span style={{display: 'inline-flex', alignItems: 'flex-start'}}><img src="/images/integrations/logos/amazon_s3_logo.svg" alt="Логотип Amazon S3" className="integration-table-logo" width="24" height="24" /><span><strong>Amazon S3</strong><br /><em>и S3-совместимые объектные хранилища</em></span></span> | Интеграция через [S3 ClickPipes](/ru/integrations/clickpipes/object-storage/amazon-s3/overview).             |
+| <img src="/images/integrations/logos/gcs.svg" alt="Логотип Google Cloud Storage" className="integration-table-logo" width="24" height="24" /> **Google Cloud Storage**                                                                                                                                          | Интеграция через [GCS ClickPipes](/ru/integrations/clickpipes/object-storage/google-cloud-storage/overview). |
+| <img src="/images/integrations/logos/azureblobstorage.svg" alt="Логотип Azure Blob Storage" className="integration-table-logo" width="24" height="24" /> **Azure Blob Storage**                                                                                                                                 | Интеграция через [ABS ClickPipes](/ru/integrations/clickpipes/object-storage/azure-blob-storage/overview).   |
+
+### Создание ClickPipe {#create-a-clickpipe}
+
+В этом примере S3 ClickPipe используется для импорта данных из S3 бакета, в который по расписанию выгружаются данные из Langfuse Cloud. Этот пример можно взять за основу и для других объектных хранилищ, в которые выполняется экспорт. Рекомендации для конкретных источников данных см. в [документации ClickPipes](/ru/integrations/clickpipes).
+
+<Steps>
+  <Step title="Выберите источник данных" id="1-select-the-data-source">
+    **1.** В ClickHouse Cloud выберите **Data sources** в главном меню навигации и нажмите **Create ClickPipe**.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Создание ClickPipe" />
+    </Frame>
+
+    **2.** Нажмите на плитку **Amazon S3**. Через эту плитку можно также подключиться к другим S3-совместимым сервисам, которых нет в интерфейсе ClickPipes.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_step1.webp" alt="Выбор источника данных Amazon S3" />
+    </Frame>
+  </Step>
+
+  <Step title="Настройте соединение" id="2-set-up-the-connection">
+    **1.** Укажите данные, которые нужны ClickPipes для подключения и аутентификации в бакете, куда экспортируются данные из Langfuse Cloud.
+
+    * **Authentication method**: S3 ClickPipe поддерживает [учётные данные IAM](/ru/integrations/clickpipes/object-storage/amazon-s3/overview#iam-credentials) (`Credentials`) и [аутентификацию на основе роли IAM](/ru/integrations/clickpipes/object-storage/amazon-s3/overview#iam-role) (`IAM role`). ClickPipes требуется только доступ к бакету на чтение. Рекомендации по аутентификации и разрешениям приведены в [справочной документации](/ru/integrations/clickpipes/object-storage/amazon-s3/overview#access-control).
+
+    * **S3 file path**: укажите для ClickPipe подкаталог и используйте подстановочный символ `*`, чтобы охватить все экспортированные файлы. Для каждого подкаталога **необходимо** создать отдельный ClickPipe, поскольку экспортированные файлы в разных подкаталогах имеют разные схемы.
+
+      | Подкаталог         | Путь к файлам                                                                                 |
+      | ------------------ | --------------------------------------------------------------------------------------------- |
+      | `observations_v2/` | `https://{bucket-name}.s3.{region-code}.amazonaws.com/{prefix}{project-id}/observations_v2/*` |
+      | `scores/`          | `https://{bucket-name}.s3.{region-code}.amazonaws.com/{prefix}{project-id}/scores/*`          |
+
+      Рекомендации по поддерживаемым шаблонам, в том числе по сопоставлению файлов во вложенных префиксах, приведены в [справочной документации](/ru/integrations/clickpipes/object-storage/amazon-s3/overview#file-pattern-matching).
+
+    **2.** Выберите **Continuous ingestion**, чтобы новые файлы загружались автоматически по мере того, как Langfuse записывает их в целевой бакет.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_continuous_ingestion.webp" alt="Сведения о подключении для экспорта Langfuse с включённой непрерывной ингестией." />
+    </Frame>
+
+    **3.** Нажмите **Incoming data**. ClickPipes получит метаданные из вашего бакета и на следующем шаге автоматически определит схему целевой таблицы.
+  </Step>
+
+  <Step title="Проверьте корректность поступающих данных" id="3-validate-incoming-data">
+    **1.** ClickPipes подключится к вашему бакету, получит список файлов по указанному пути и автоматически определит их формат. В этом примере используется формат экспорта Langfuse Cloud по умолчанию (Parquet).
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_incoming_data.webp" alt="Файлы, соответствующие пути экспорта Langfuse, с типом файла Parquet" />
+    </Frame>
+
+    **2.** Нажмите **Parse information**. ClickPipes определит схему экспортированных данных по файлу-образцу и автоматически сопоставит поля источника с полями целевой таблицы ClickHouse.
+  </Step>
+
+  <Step title="Настройте целевую систему" id="4-configure-target">
+    **1.** На этом шаге можно просмотреть автоматически определённую схему и настроить параметры целевой таблицы: скорректировать сопоставление типов данных, задать [ключ сортировки](/ru/best-practices/choosing-a-primary-key) и выбрать [движок таблицы](/ru/reference/engines/table-engines).
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_table_settings.webp" alt="Экспорт scores с записью в отдельную базу данных langfuse; ключ сортировки задан как environment, name, timestamp, trace_id, observation_id и id" />
+    </Frame>
+
+    В разделе **Upload data to** оставьте выбранным вариант **New table** и укажите:
+
+    * **Database** и **Name**: отдельную базу данных для данных Langfuse (например, `langfuse`) и понятное имя целевой таблицы (например, `scores`). По умолчанию ClickPipes использует `default.s3-<uuid>`, чтобы избежать конфликтов имён.
+
+    * **Sorting key**: [ключ упорядочивания](/ru/best-practices/choosing-a-primary-key) целевой таблицы, который определяет, как ClickHouse хранит данные на диске. Для оптимальной производительности ключ сортировки должен соответствовать тому, как ваши запросы обращаются к данным, — тогда они смогут пропускать чтение как можно большего объёма данных.
+
+      | Подкаталог         | Целевая таблица   | Рекомендуемый ключ сортировки                                |
+      | ------------------ | ----------------- | ------------------------------------------------------------ |
+      | `observations_v2/` | `observations_v2` | `environment, start_time, trace_id, id`                      |
+      | `scores/`          | `scores`          | `environment, name, timestamp, trace_id, observation_id, id` |
+
+      Этот ключ также используется для дедупликации в таблицах `ReplacingMergeTree`, поэтому набор столбцов должен однозначно идентифицировать запись. Если вы загружаете **несколько проектов Langfuse** в одну таблицу, добавьте `project_id` в начало ключа сортировки. Рекомендации по выбору ключа сортировки см. в [справочной документации](/ru/best-practices/choosing-a-primary-key).
+
+    * **Partition by**: оставьте поле пустым, если не планируете удалять устаревшие трассировки. [Партиционирование](/ru/best-practices/choosing-a-partitioning-key) в ClickHouse предназначено для управления данными, а не для оптимизации запросов; рекомендуемый ключ сортировки и так отсекает лишние данные в запросах по временному диапазону. Если же нужно ограничить срок хранения, партиционируйте таблицу по столбцу времени (`toYYYYMM(start_time)` или `toYYYYMM(timestamp)` для `scores`) — тогда удаление трассировок за месяц сведётся к одной операции `DROP PARTITION`.
+
+    **2.** Затем разверните **Advanced settings**, выберите для **Engine** значение [`ReplacingMergeTree`](/ru/engines/table-engines/mergetree-family/replacingmergetree), чтобы обеспечить дедупликацию, и укажите `updated_at` в качестве столбца **Version**.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_advanced_settings.webp" alt="Расширенные настройки с движком ReplacingMergeTree и updated_at в качестве столбца версии" />
+    </Frame>
+
+    Окна экспорта в интеграции Langfuse Cloud Blob Storage включают обе границы, поэтому одна и та же запись может попасть в несколько экспортированных файлов. Если ваши аналитические запросы не идемпотентны (идемпотентны, например, `uniq()`, `max()`, `min()`), вы **обязаны** обрабатывать дедупликацию на уровне последующей модели данных, используя `ReplacingMergeTree` в качестве целевого движка.
+
+    <Note>
+      **Дедупликация с помощью ReplacingMergeTree**
+
+      Этот движок таблицы схлопывает дубликаты во время фоновых слияний. Для полной дедупликации при чтении (т. е. семантики merge-on-read) **необходимо** использовать в запросах модификатор `FINAL` (или агрегации в стиле `argMax()`).
+    </Note>
+  </Step>
+
+  <Step title="Настройте разрешения" id="5-configure-permissions">
+    ClickPipes создаёт отдельного пользователя для записи данных в целевую таблицу. Выберите для этого внутреннего пользователя пользовательскую роль или одну из предопределённых ролей:
+
+    * `Full access`: полный доступ к кластеру. Требуется, если с целевой таблицей используется materialized view или словарь.
+    * `Only destination table`: разрешения `INSERT` только на целевую таблицу.
+
+    <Frame>
+      <img src="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Разрешения" />
+    </Frame>
+
+    Нажмите **Complete setup**, чтобы создать ClickPipe.
+  </Step>
+
+  <Step title="Завершите настройку" id="6-complete-setup">
+    Готово! Сначала ClickPipes выполнит дозагрузку исторических данных из всех файлов по указанному пути, а затем начнёт принимать новые файлы по мере их поступления в бакет.
+
+    <Frame>
+      <img src="/images/use-cases/AI_ML/Langfuse/cp_clickpipes_running.webp" alt="Работающие ClickPipes для observations и scores в разделе Data sources" />
+    </Frame>
+
+    Повторите шаги из этого руководства для каждого подкаталога, который нужно импортировать в ClickHouse Cloud.
+  </Step>
+</Steps>
+
+### Запросы к данным трассировки {#query-trace-data}
+
+Когда ClickPipes будут запущены, вы сможете выполнять запросы к данным трассировки Langfuse Cloud непосредственно в ClickHouse Cloud. Ниже приведены примеры нескольких распространённых шаблонов запросов: агрегирование затрат и задержек, восстановление отдельной трассировки, а также сопоставление оценок с моделями и промптами.
+
+#### Агрегация метрик по временным интервалам {#time-bucketed-metric-rollups}
+
+<Tip>
+  Некоторые поля, например `usage_details` и `cost_details`, экспортируются как столбцы типа `Map`. Чтобы получить отдельное значение, обратитесь к нему по ключу (например, `sum(cost_details['total'])`).
+</Tip>
+
+```sql
+SELECT
+    toStartOfHour(start_time) AS t,
+    provided_model_name,
+    count()                        AS spans,
+    quantile(0.95)(latency)        AS p95_latency,
+    sum(total_cost)                AS cost,
+    sum(usage_details['total'])    AS tokens
+FROM observations_v2 FINAL
+WHERE start_time >= now() - INTERVAL 7 DAY
+-- AND environment = '<environment>'
+GROUP BY t, provided_model_name
+ORDER BY t;
+```
+
+#### Восстановление трассировки {#trace-reconstruction}
+
+```sql
+SELECT *
+FROM observations_v2 FINAL
+WHERE trace_id = '<trace_id>'
+ORDER BY start_time;
+```
+
+#### Анализ качества {#quality-analysis}
+
+```sql
+SELECT
+    o.provided_model_name,
+    s.name,
+    avg(s.value) AS avg_score
+FROM "s3-26237f63-84dc-4a7d-a0e1-7361cf55ee0b" AS s FINAL
+JOIN "s3-80899034-ce1e-4dc9-a4e6-b059ddec4175" AS o FINAL ON s.trace_id = o.trace_id
+--WHERE s.environment = '<environment>'
+GROUP BY o.provided_model_name, s.name
+ORDER BY avg_score DESC;
+```
+
+## См. также {#see-also}
+
+* [Langfuse и ClickHouse](/ru/products/cloud/features/ai-ml/langfuse)
+* [Экспорт данных Langfuse Cloud в Blob Storage](https://langfuse.com/docs/api-and-data-platform/features/export-to-blob-storage)
+* [ClickPipes для объектного хранилища](/ru/integrations/clickpipes/object-storage/amazon-s3/overview)

@@ -17,12 +17,13 @@
         },
         "ru/resources/changelogs/cloud/release-status",
         {
-          "group": "Журнал изменений релизов базы данных в Cloud",
+          "group": "Журнал изменений версий облачной базы данных",
           "pages": [
             "ru/resources/changelogs/cloud/release-notes-index",
             {
               "group": "2026",
               "pages": [
+                "ru/resources/changelogs/cloud/release-notes/26_6",
                 "ru/resources/changelogs/cloud/release-notes/26_4",
                 "ru/resources/changelogs/cloud/release-notes/26_02"
               ]
@@ -77,5 +78,5 @@
     }
   ],
   "icon": "/images/icons/icon-changelogs.svg",
-  "item": "История изменений"
+  "item": "Журналы изменений"
 }

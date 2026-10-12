@@ -57,6 +57,12 @@ namespace Setting
     extern const SettingsBool use_skip_indexes_on_data_read;
     extern const SettingsBool compile_expressions;
     extern const SettingsBool query_plan_direct_read_from_text_index;
+    extern const SettingsBool use_concurrency_control;
+    extern const SettingsNonZeroUInt64 format_avro_schema_registry_connection_timeout;
+    extern const SettingsNonZeroUInt64 format_avro_schema_registry_receive_timeout;
+    extern const SettingsNonZeroUInt64 format_avro_schema_registry_retry_initial_backoff_ms;
+    extern const SettingsNonZeroUInt64 format_avro_schema_registry_send_timeout;
+    extern const SettingsUInt64 format_avro_schema_registry_max_retries;
     extern const SettingsNonZeroUInt64 input_format_parquet_max_block_size;
     extern const SettingsString local_filesystem_read_method;
     extern const SettingsNonZeroUInt64 max_block_size;
@@ -71,6 +77,7 @@ namespace Setting
     extern const SettingsUInt64 max_joined_block_size_rows;
     extern const SettingsUInt64 max_streams_for_merge_tree_reading;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsNonZeroUInt64 temporary_files_buffer_size;
     extern const SettingsBool use_hedged_requests;
 }
 
@@ -182,6 +189,14 @@ void adjustSettingsForMakeDistributedPlan(Settings & settings)
         settings[Setting::query_plan_direct_read_from_text_index] = false;
         adjusted.emplace_back("query_plan_direct_read_from_text_index = 0");
     }
+    /// The concurrency control currently can cause starvation for cases when multiple tasks from one
+    /// query are executed on the same node and periodically wait on reads and writes to exchange sockets
+    /// while holding CPU slots.
+    if (settings[Setting::use_concurrency_control])
+    {
+        settings[Setting::use_concurrency_control] = false;
+        adjusted.emplace_back("use_concurrency_control = 0");
+    }
 
     if (!adjusted.empty())
         LOG_DEBUG(
@@ -254,6 +269,25 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
 
 #undef CHECK_READ_BUFFER_SIZE
 
+    /// These used to be rejected where they are read, on a path taken by every query, so an
+    /// out-of-range value failed even the `SET` putting it back, bricking the session. Reading
+    /// them clamps as well, for the application types this function does not run for.
+#define CHECK_SETTING_MAX_VALUE(SETTING_VALUE, MAX_VALUE) \
+    if (UInt64 setting_value = current_settings[Setting::SETTING_VALUE]; setting_value > (MAX_VALUE)) \
+    { \
+        if (log) \
+            LOG_WARNING(log, "Sanity check: '{}' value is too high ({}). Reduced to {}", #SETTING_VALUE, setting_value, MAX_VALUE); \
+        current_settings[Setting::SETTING_VALUE] = (MAX_VALUE); \
+    }
+
+    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_connection_timeout, MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS)
+    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_send_timeout, MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS)
+    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_receive_timeout, MAX_SCHEMA_REGISTRY_TIMEOUT_SECONDS)
+    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_max_retries, MAX_SCHEMA_REGISTRY_RETRIES)
+    CHECK_SETTING_MAX_VALUE(format_avro_schema_registry_retry_initial_backoff_ms, MAX_SCHEMA_REGISTRY_INITIAL_BACKOFF_MS)
+    CHECK_SETTING_MAX_VALUE(temporary_files_buffer_size, MAX_TEMPORARY_FILES_BUFFER_SIZE)
+
+#undef CHECK_SETTING_MAX_VALUE
 
     if (auto max_block_size = current_settings[Setting::max_block_size]; max_block_size == 0)
     {
@@ -261,6 +295,19 @@ void doSettingsSanityCheckClamp(Settings & current_settings, LoggerPtr log)
             LOG_WARNING(log, "Sanity check: 'max_block_size' cannot be 0. Set to default value {}", DEFAULT_BLOCK_SIZE);
         current_settings[Setting::max_block_size] = DEFAULT_BLOCK_SIZE;
     }
+}
+
+UInt64 clampTemporaryFilesBufferSize(UInt64 buffer_size)
+{
+    if (buffer_size <= MAX_TEMPORARY_FILES_BUFFER_SIZE)
+        return buffer_size;
+
+    LOG_WARNING(
+        getLogger("SettingsSanity"),
+        "Sanity check: 'temporary_files_buffer_size' value is too high ({}). Reduced to {}",
+        buffer_size,
+        MAX_TEMPORARY_FILES_BUFFER_SIZE);
+    return MAX_TEMPORARY_FILES_BUFFER_SIZE;
 }
 
 }

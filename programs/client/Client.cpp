@@ -35,6 +35,7 @@
 #include <IO/WriteBufferFromOStream.h>
 #include <IO/WriteHelpers.h>
 #include <Interpreters/Context.h>
+#include <Parsers/SecretArguments.h>
 
 #include <Client/JWTProvider.h>
 #include <Client/ClientBaseHelpers.h>
@@ -69,7 +70,6 @@ namespace DB
 {
 namespace Setting
 {
-extern const SettingsDialect dialect;
 extern const SettingsBool use_client_time_zone;
 }
 
@@ -168,12 +168,33 @@ std::vector<String> Client::loadWarningMessages()
         return {};
 
     std::vector<String> messages;
+
+    /// Unlike `\h`, autocomplete and the AI metadata query, this probe is not settings-agnostic: it
+    /// reads `system.warnings`, and part of that table is derived from the settings the server sees for
+    /// this query - a changed obsolete setting produces a warning of its own. So send what an ordinary
+    /// query sends (which also keeps a compatibility-derived value from being serialized as an explicit
+    /// change, and thus from tripping a profile that pins it read-only), rather than only the
+    /// compression knobs of `networkCompressionSettings`.
+    ///
+    /// The one setting that has to be overridden is `dialect`: the probe below is ClickHouse SQL, so a
+    /// session that switched to another dialect could not parse it. `showWarnings` swallows any
+    /// exception from here, so that failure would not be an error the user sees, but server warnings
+    /// silently never being displayed.
+    ///
+    /// The override is unconditional: only changed settings are serialized, so leaving `dialect` alone
+    /// when the local value is already `clickhouse` would let the server take the parser from the
+    /// effective `dialect` of the authenticated user, which a profile may default to Kusto or PRQL.
+    /// Sending the value a user already has is a no-op for setting constraints, so this does not trip a
+    /// profile that pins `dialect` as read-only to `clickhouse`.
+    Settings probe_settings = settingsWithoutCompatibilityDerived().value_or(client_context->getSettingsRef());
+    probe_settings.set("dialect", String("clickhouse"));
+
     connection->sendQuery(connection_parameters.timeouts,
                           "SELECT * FROM viewIfPermitted(SELECT message FROM system.warnings ELSE null('message String'))",
                           {} /* query_parameters */,
                           "" /* query_id */,
                           QueryProcessingStage::Complete,
-                          &client_context->getSettingsRef(),
+                          &probe_settings,
                           &client_context->getClientInfo(), false, {}, {});
     while (true)
     {
@@ -390,6 +411,8 @@ try
     registerFormats();
     registerFunctions();
     registerAggregateFunctions();
+    /// The engines are not registered, so the secrets of their arguments are shown.
+    setSecretArgumentsFinder(&NoSecretArgumentsFinder::instance());
 
     processConfig();
     adjustSettings(client_context);
@@ -474,20 +497,34 @@ try
 
         runNonInteractive();
 
-        // If exception code isn't zero, we should return non-zero return
-        // code anyway.
-        const auto * exception = server_exception ? server_exception.get() : client_exception.get();
-
-        if (exception)
+        /// `--ignore-error` has already reported every failed statement and elected to carry on,
+        /// so the run is not a failure. Reporting one here would mean reporting whichever error
+        /// the final statement happened to hit, which says nothing about the rest of the batch;
+        /// `clickhouse-local --ignore-error` returns success in the same situation.
+        ///
+        /// Only a user asking for `--ignore-error` gets that, though, and `ignore_error` alone
+        /// does not say who asked: the fuzzing modes turn it on themselves, in `processOptions`,
+        /// to tolerate unparseable input. They keep the error code. BuzzHouse stops the run on an
+        /// error, and the AST fuzzer reports an early stop - losing the server, say - only
+        /// through this exit code, so granting it success would end a truncated fuzzer run with
+        /// `Fuzzer exited with success`.
+        if (buzz_house || query_fuzzer_runs || create_query_fuzzer_runs || !ignore_error)
         {
-            return static_cast<UInt8>(exception->code()) ? exception->code() : -1;
-        }
+            // If exception code isn't zero, we should return non-zero return
+            // code anyway.
+            const auto * exception = server_exception ? server_exception.get() : client_exception.get();
 
-        if (have_error)
-        {
-            // Shouldn't be set without an exception, but check it just in
-            // case so that at least we don't lose an error.
-            return -1;
+            if (exception)
+            {
+                return static_cast<UInt8>(exception->code()) ? exception->code() : -1;
+            }
+
+            if (have_error)
+            {
+                // Shouldn't be set without an exception, but check it just in
+                // case so that at least we don't lose an error.
+                return -1;
+            }
         }
 
         if (delayed_interactive)
@@ -518,20 +555,17 @@ void Client::login()
     std::string host = hosts_and_ports.empty()
         ? getClientConfiguration().getString("host", "localhost")
         : hosts_and_ports.front().host;
-    std::string auth_url = getClientConfiguration().getString("oauth-url", "");
-    std::string client_id = getClientConfiguration().getString("oauth-client-id", "");
-    std::string audience = getClientConfiguration().getString("oauth-audience", "");
+    JWTProviderOptions options;
+    options.auth_url = getClientConfiguration().getString("oauth-url", "");
+    options.client_id = getClientConfiguration().getString("oauth-client-id", "");
+    options.client_secret = getClientConfiguration().getString("oauth-client-secret", "");
+    options.audience = getClientConfiguration().getString("oauth-audience", "");
+    options.scope = getClientConfiguration().getString("oauth-scope", "");
+    options.device_authorization_endpoint = getClientConfiguration().getString("oauth-device-uri", "");
+    options.token_endpoint = getClientConfiguration().getString("oauth-token-uri", "");
+    options.client_auth_method = getClientConfiguration().getString("oauth-client-auth", "");
 
-    if ((auth_url.empty() || client_id.empty()) && !isCloudEndpoint(host))
-    {
-        throw Exception(
-            ErrorCodes::BAD_ARGUMENTS,
-            "Could not retrieve authentication endpoints for host '{}'. Please specify --oauth-url and --oauth-client-id if you are "
-            "not using ClickHouse Cloud.",
-            host);
-    }
-
-    jwt_provider = createJwtProvider(auth_url, client_id, audience, host, output_stream, error_stream);
+    jwt_provider = createJwtProvider(std::move(options), host, output_stream, error_stream);
     if (jwt_provider)
     {
         std::string jwt = jwt_provider->getJWT();
@@ -1037,18 +1071,17 @@ void Client::connect()
         prompt = prompt_escaped;
     }
 
-    /// Substitute placeholders in the form of {name}:
+    /// Substitute placeholders in the form of {name}.
+    /// The {display_name} placeholder is kept: it is substituted in getPrompt on every
+    /// call, because the current dialect is rendered next to the display name.
     const std::map<String, String> prompt_substitutions{
         {"host", connection_parameters.host},
         {"port", toString(connection_parameters.port)},
         {"user", connection_parameters.user},
-        {"display_name", server_display_name},
     };
 
     for (const auto & [key, value] : prompt_substitutions)
         boost::replace_all(prompt, "{" + key + "}", value);
-
-    prompt = appendSmileyIfNeeded(prompt);
 }
 
 // Prints changed settings to stderr. Useful for debugging fuzzing failures.
@@ -1144,16 +1177,24 @@ void Client::addExtraOptions(OptionsDescription & options_description)
         ("user,u", po::value<std::string>()->default_value("default"), "user")
         ("password", po::value<std::string>(), "password")
         ("ask-password", "ask-password")
-        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key for authenticate with the server.")
+        ("ssh-key-file", po::value<std::string>(), "File containing the SSH private key to authenticate with the server. "
+            "If the file name is omitted, the key is looked up using SSH configuration: "
+            "the identity files configured for this host in `~/.ssh/config`, the default identity files, such as `~/.ssh/id_ed25519`, "
+            "and the keys held by the ssh-agent.")
         ("ssh-key-passphrase", po::value<std::string>(), "Passphrase for the SSH private key specified by --ssh-key-file.")
         ("quota_key", po::value<std::string>(), "A string to differentiate quotas when the user have keyed quotas configured on server")
         ("jwt", po::value<std::string>(), "Use JWT for authentication")
         ("one-time-password", po::value<std::string>(), "Time-based one-time password (TOTP) for two-factor authentication")
 #if USE_JWT_CPP && USE_SSL
-        ("login", po::bool_switch(), "Use OAuth 2.0 to login")
-        ("oauth-url", po::value<std::string>(), "The base URL for the OAuth 2.0 authorization server")
+        ("login", po::bool_switch(), "Use OAuth 2.0 device authorization grant to login")
+        ("oauth-url", po::value<std::string>(), "OAuth / OIDC issuer base URL (used for endpoint discovery)")
         ("oauth-client-id", po::value<std::string>(), "The client ID for the OAuth 2.0 application")
-        ("oauth-audience", po::value<std::string>(), "The audience for the OAuth 2.0 token")
+        ("oauth-client-secret", po::value<std::string>(), "Optional client secret for confidential OAuth clients")
+        ("oauth-client-auth", po::value<std::string>(), "Confidential client auth method: basic (default) or post")
+        ("oauth-audience", po::value<std::string>(), "Optional audience parameter for the device authorization request (Auth0-style)")
+        ("oauth-scope", po::value<std::string>(), "OAuth scope for the device authorization request")
+        ("oauth-device-uri", po::value<std::string>(), "Explicit device authorization endpoint (skips discovery when set with --oauth-token-uri)")
+        ("oauth-token-uri", po::value<std::string>(), "Explicit token endpoint (skips discovery when set with --oauth-device-uri)")
 #endif
         ("max_client_network_bandwidth",
             po::value<int>(),
@@ -1204,9 +1245,9 @@ void Client::addExtraOptions(OptionsDescription & options_description)
     options_description.hosts_and_ports_description.emplace(createOptionsDescription("Hosts and ports options", terminal_width));
     options_description.hosts_and_ports_description->add_options()
         ("host,h", po::value<String>()->default_value("localhost"),
-            "Server hostname. Multiple hosts can be passed via multiple arguments"
-            "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'"
-            "Each '--port port' will be attached to the last seen host that doesn't have a port yet,"
+            "Server hostname. Multiple hosts can be passed via multiple arguments. "
+            "Example of usage: '--host host1 --host host2 --port port2 --host host3 ...'. "
+            "Each '--port port' will be attached to the last seen host that doesn't have a port yet, "
             "if there is no such host, the port will be attached to the next first host or to default host.")
         ("port", po::value<UInt16>(), "server ports");
 }
@@ -1337,8 +1378,18 @@ void Client::processOptions(
         config().setString("oauth-url", options["oauth-url"].as<std::string>());
     if (options.contains("oauth-client-id"))
         config().setString("oauth-client-id", options["oauth-client-id"].as<std::string>());
+    if (options.contains("oauth-client-secret"))
+        config().setString("oauth-client-secret", options["oauth-client-secret"].as<std::string>());
+    if (options.contains("oauth-client-auth"))
+        config().setString("oauth-client-auth", options["oauth-client-auth"].as<std::string>());
     if (options.contains("oauth-audience"))
         config().setString("oauth-audience", options["oauth-audience"].as<std::string>());
+    if (options.contains("oauth-scope"))
+        config().setString("oauth-scope", options["oauth-scope"].as<std::string>());
+    if (options.contains("oauth-device-uri"))
+        config().setString("oauth-device-uri", options["oauth-device-uri"].as<std::string>());
+    if (options.contains("oauth-token-uri"))
+        config().setString("oauth-token-uri", options["oauth-token-uri"].as<std::string>());
 #endif
     if (options.contains("accept-invalid-certificate"))
     {
@@ -1374,7 +1425,8 @@ void Client::processOptions(
         }
     }
 
-    if ((create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>()))
+    create_query_fuzzer_runs = options["create-query-fuzzer-runs"].as<int>();
+    if (create_query_fuzzer_runs)
     {
         // Ignore errors in parsing queries.
         config().setBool("ignore-error", true);
@@ -1424,12 +1476,19 @@ void Client::processConfig()
     }
     else
     {
-        ignore_error = config().getBool("ignore-error", false);
-
         query_id = config().getString("query_id", "");
         if (!query_id.empty())
             client_context->setCurrentQueryId(query_id);
     }
+
+    /// A delayed-interactive run executes the given queries through `runNonInteractive` before it
+    /// enters the prompt, so that prelude is a batch and follows the batch contract of
+    /// `--ignore-error`, the same as in `clickhouse-local` and in the embedded client. Taken from
+    /// the branch above, the option would be dropped for a delayed-interactive run on a terminal:
+    /// the prelude would stop at its first failing statement and the exit code of that statement
+    /// would end the run before the prompt.
+    if (!is_interactive || delayed_interactive)
+        ignore_error = config().getBool("ignore-error", false);
 
     setupEchoAndHighlightSettings();
 
@@ -1723,6 +1782,12 @@ void Client::readArguments(
                 /// if the value of --password is omitted, the password will be asked before
                 /// connection start
                 common_arguments.emplace_back(ConnectionParameters::ASK_PASSWORD);
+            }
+            else if (arg == "--ssh-key-file" && ((arg_num + 1) >= argc || std::string_view(argv[arg_num + 1]).starts_with('-')))
+            {
+                common_arguments.emplace_back(arg);
+                /// If the file name is omitted, the key is looked up in `~/.ssh` and in the ssh-agent.
+                common_arguments.emplace_back();
             }
             else
                 common_arguments.emplace_back(arg); /// anything else, eg --hilite

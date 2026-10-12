@@ -45,7 +45,6 @@ SET collect_hash_table_stats_during_aggregation = 0;
 SET enable_lazy_columns_replication = 1;
 SET max_threads = 4;
 SET max_block_size = 4096;
-SET max_rows_to_group_by = 0;
 SET query_plan_join_swap_table = 0;
 SET log_queries = 1;
 SET log_profile_events = 1;

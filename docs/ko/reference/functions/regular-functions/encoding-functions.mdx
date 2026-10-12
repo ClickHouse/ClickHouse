@@ -47,21 +47,25 @@ bech32Decode(address[, 'raw'])
 **주소 디코딩**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4') AS tup)
 ```
 
 ```response title=Response
-bc   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ bc  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 **테스트넷 주소**
 
 ```sql title=Query
-SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1w508d6qejxtdg4y5r3zarvary0c5xw7kzp034v') AS tup)
+SELECT tup.1 AS hrp, hex(tup.2) AS data FROM (SELECT bech32Decode('tb1qw508d6qejxtdg4y5r3zarvary0c5xw7kxpjzsx') AS tup)
 ```
 
 ```response title=Response
-tb   751E76E8199196D454941C45D1B3A323F1433BD6
+┌─hrp─┬─data─────────────────────────────────────┐
+│ tb  │ 751E76E8199196D454941C45D1B3A323F1433BD6 │
+└─────┴──────────────────────────────────────────┘
 ```
 
 <div id="bech32Encode">
@@ -86,13 +90,13 @@ bech32Encode(hrp, data[, witver | 'bech32' | 'bech32m'])
 
 **인수**
 
-* `hrp` — 코드의 &quot;human-readable part&quot;를 지정하는 `1 - 83`자의 소문자 `String`입니다. 일반적으로 &#39;bc&#39; 또는 &#39;tb&#39;입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring)
+* `hrp` — 코드의 &quot;사람이 읽을 수 있는 부분&quot;를 지정하는 `1 - 83`자의 소문자 `String`입니다. 일반적으로 &#39;bc&#39; 또는 &#39;tb&#39;입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring)
 * `data` — 인코딩할 바이너리 데이터 `String`입니다. [`String`](/ko/reference/data-types/string) 또는 [`FixedString`](/ko/reference/data-types/fixedstring)
 * `witver_or_variant` — 선택 사항입니다. UInt* witness version(기본값 = 1, Bech32는 `0`, Bech32m은 `1`+) 또는 `String` 인코딩 variant(`'bech32'` (BIP173) 또는 `'bech32m'` (BIP350)) 중 하나입니다. 문자열 variant를 사용하면 witness version 바이트를 앞에 붙이지 않습니다. 이는 Cosmos SDK와 같은 비-SegWit 주소에 필요합니다. [`UInt*`](/ko/reference/data-types/int-uint) 또는 [`String`](/ko/reference/data-types/string)
 
 **반환 값**
 
-human-readable part, 항상 &#39;1&#39;인 구분 문자, 그리고 data part로 구성된 Bech32 주소 문자열을 반환합니다. 문자열 길이는 90자를 초과하지 않습니다. 알고리즘이 입력으로 유효한 주소를 생성할 수 없으면 빈 문자열을 반환합니다. [`String`](/ko/reference/data-types/string)
+사람이 읽을 수 있는 부분, 항상 &#39;1&#39;인 구분 문자, 그리고 data part로 구성된 Bech32 주소 문자열을 반환합니다. 문자열 길이는 90자를 초과하지 않습니다. 알고리즘이 입력으로 유효한 주소를 생성할 수 없으면 빈 문자열을 반환합니다. [`String`](/ko/reference/data-types/string)
 
 **예시**
 
@@ -104,7 +108,7 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'))
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7k8zcwmq
+bc1pw508d6qejxtdg4y5r3zarvary0c5xw7kj9wkru
 ```
 
 **Bech32 알고리즘**
@@ -115,10 +119,10 @@ SELECT bech32Encode('bc', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 0)
 ```
 
 ```response title=Response
-bc1w508d6qejxtdg4y5r3zarvary0c5xw7kj7gz7z
+bc1qw508d6qejxtdg4y5r3zarvary0c5xw7kv8f3t4
 ```
 
-**사용자 지정 HRP**
+**사용자 정의 HRP**
 
 ```sql title=Query
 -- While 'bc' (Mainnet) and 'tb' (Testnet) are the only allowed hrp values for the
@@ -127,7 +131,7 @@ SELECT bech32Encode('abcdefg', unhex('751e76e8199196d454941c45d1b3a323f1433bd6')
 ```
 
 ```response title=Response
-abcdefg1w508d6qejxtdg4y5r3zarvary0c5xw7k9rp8r4
+abcdefg12w508d6qejxtdg4y5r3zarvary0c5xw7kh526px
 ```
 
 **Cosmos SDK 주소 (BIP173, witness version 없음)**
@@ -139,7 +143,7 @@ SELECT bech32Encode('inj', unhex('751e76e8199196d454941c45d1b3a323f1433bd6'), 'b
 ```
 
 ```response title=Response
-inj1w508d6qejxtdg4y5r3zarvary0c5xw7kgj5aqs
+inj1w508d6qejxtdg4y5r3zarvary0c5xw7ks5q7aq
 ```
 
 <div id="bin">
@@ -268,9 +272,9 @@ SELECT bitPositionsToArray(toInt8(-1)) AS bit_positions
 ```
 
 ```response title=Response
-┌─bit_positions─────────────┐
-│ [0, 1, 2, 3, 4, 5, 6, 7]  │
-└───────────────────────────┘
+┌─bit_positions─────┐
+│ [0,1,2,3,4,5,6,7] │
+└───────────────────┘
 ```
 
 <div id="bitmaskToArray">
@@ -305,9 +309,9 @@ SELECT bitmaskToArray(50) AS powers_of_two
 ```
 
 ```response title=Response
-┌─powers_of_two───┐
-│ [2, 16, 32]     │
-└─────────────────┘
+┌─powers_of_two─┐
+│ [2,16,32]     │
+└───────────────┘
 ```
 
 **단일 2의 거듭제곱**
@@ -353,9 +357,9 @@ SELECT bitmaskToList(50) AS powers_list
 ```
 
 ```response title=Response
-┌─powers_list───┐
-│ 2, 16, 32     │
-└───────────────┘
+┌─powers_list─┐
+│ 2,16,32     │
+└─────────────┘
 ```
 
 <div id="char">
@@ -502,10 +506,10 @@ Hilbert 곡선 인덱스를 다시 부호 없는 정수의 튜플로 디코딩�
 
 `hilbertEncode` 함수와 마찬가지로, 이 함수는 두 가지 모드로 동작합니다:
 
-* **간단**
+* **단순**
 * **확장**
 
-**간단 모드**
+**단순 모드**
 
 최대 2개의 부호 없는 정수를 인수로 받아 `UInt64` 코드를 생성합니다.
 
@@ -544,35 +548,35 @@ SELECT hilbertDecode(2, 31)
 ```
 
 ```response title=Response
-["3", "4"]
+(3,4)
 ```
 
 **단일 인수**
 
 ```sql title=Query
--- 인수가 하나인 경우 Hilbert 코드는 항상 인수 자체입니다(튜플 형태).
+-- Hilbert code for one argument is always the argument itself (as a tuple).
 SELECT hilbertDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **확장 모드**
 
 ```sql title=Query
--- 비트 시프트를 지정하는 튜플과 함께 단일 인수를 사용하면 그에 따라 오른쪽으로 시프트됩니다.
+-- A single argument with a tuple specifying bit shifts will be right-shifted accordingly.
 SELECT hilbertDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(8192)
 ```
 
 **컬럼 사용법**
 
 ```sql title=Query
--- 먼저 테이블을 생성하고 데이터를 삽입합니다
+-- First create the table and insert some data
 CREATE TABLE hilbert_numbers(
     n1 UInt32,
     n2 UInt32
@@ -581,12 +585,12 @@ ENGINE=MergeTree()
 ORDER BY n1 SETTINGS index_granularity_bytes = '10Mi';
 insert into hilbert_numbers (*) values(1,2);
 
--- 함수 인수로 상수 대신 컬럼 이름을 사용합니다
+-- Use column names instead of constants as function arguments
 SELECT untuple(hilbertDecode(2, hilbertEncode(n1, n2))) FROM hilbert_numbers;
 ```
 
 ```response title=Response
-1    2
+1	2
 ```
 
 <div id="hilbertEncode">
@@ -712,8 +716,8 @@ Morton 인코딩(ZCurve)을 해당하는 부호 없는 정수 튜플로 디코�
 
 `mortonEncode` 함수와 마찬가지로, 이 함수는 두 가지 모드로 동작합니다:
 
-* **Simple**
-* **Expanded**
+* **단순**
+* **확장**
 
 **단순 모드**
 
@@ -738,10 +742,10 @@ Morton 인코딩(ZCurve)을 해당하는 부호 없는 정수 튜플로 디코�
 **구문**
 
 ```sql
--- 단순 모드
+-- Simple mode
 mortonDecode(tuple_size, code)
 
--- 확장 모드
+-- Expanded mode
 mortonDecode(range_mask, code)
 ```
 
@@ -764,7 +768,7 @@ SELECT mortonDecode(3, 53)
 ```
 
 ```response title=Response
-["1", "2", "3"]
+(1,2,3)
 ```
 
 **단일 인수**
@@ -774,7 +778,7 @@ SELECT mortonDecode(1, 1)
 ```
 
 ```response title=Response
-["1"]
+(1)
 ```
 
 **확장 모드, 하나의 인수를 축소**
@@ -784,13 +788,13 @@ SELECT mortonDecode(tuple(2), 32768)
 ```
 
 ```response title=Response
-["128"]
+(128)
 ```
 
 **컬럼 사용법**
 
 ```sql title=Query
--- 먼저 테이블을 생성하고 데이터를 삽입합니다
+-- First create the table and insert some data
 CREATE TABLE morton_numbers(
     n1 UInt32,
     n2 UInt32,
@@ -805,12 +809,12 @@ ENGINE=MergeTree()
 ORDER BY n1;
 INSERT INTO morton_numbers (*) values(1, 2, 3, 4, 5, 6, 7, 8);
 
--- 함수 인수로 상수 대신 컬럼 이름을 사용합니다
+-- Use column names instead of constants as function arguments
 SELECT untuple(mortonDecode(8, mortonEncode(n1, n2, n3, n4, n5, n6, n7, n8))) FROM morton_numbers;
 ```
 
 ```response title=Response
-1 2 3 4 5 6 7 8
+1	2	3	4	5	6	7	8
 ```
 
 <div id="mortonEncode">
@@ -966,9 +970,9 @@ SELECT sqidDecode('gXHfJ1C6dN');
 ```
 
 ```response title=Response
-┌─sqidDecode('gXHfJ1C6dN')─────┐
-│ [1, 2, 3, 4, 5]              │
-└──────────────────────────────┘
+┌─sqidDecode('gXHfJ1C6dN')─┐
+│ [1,2,3,4,5]              │
+└──────────────────────────┘
 ```
 
 <div id="sqidEncode">
@@ -1049,7 +1053,7 @@ SELECT UNBIN('001100000011000100110010'), UNBIN('0100110101111001010100110101000
 ```
 
 ```response title=Response
-┌─unbin('001100000011000100110010')─┬─unbin('0100110101111001010100110101000101001100')─┐
+┌─UNBIN('001100000011000100110010')─┬─UNBIN('0100110101111001010100110101000101001100')─┐
 │ 012                               │ MySQL                                             │
 └───────────────────────────────────┴───────────────────────────────────────────────────┘
 ```
@@ -1110,7 +1114,7 @@ SELECT unhex('303132'), UNHEX('4D7953514C')
 ```
 
 ```response title=Response
-┌─unhex('303132')─┬─unhex('4D7953514C')─┐
+┌─unhex('303132')─┬─UNHEX('4D7953514C')─┐
 │ 012             │ MySQL               │
 └─────────────────┴─────────────────────┘
 ```

@@ -111,11 +111,6 @@ void KafkaConsumer::createConsumer(cppkafka::Configuration consumer_config)
         // with topics/partitions we were working with before rebalance
         LOG_TRACE(log, "Rebalance initiated. Revoking partitions: {}", topic_partitions);
 
-        if (!topic_partitions.empty())
-        {
-            CurrentMetrics::sub(CurrentMetrics::KafkaConsumersWithAssignment, 1);
-        }
-
         // we can not flush data to target from that point (it is pulled, not pushed)
         // so the best we can now it to
         // 1) repeat last commit in sync mode (async could be still in queue, we need to be sure is is properly committed before rebalance)
@@ -364,6 +359,10 @@ void KafkaConsumer::cleanUnprocessed()
     offsets_stored = 0;
 }
 
+/// Sole owner of the decrements for `KafkaAssignedPartitions` and `KafkaConsumersWithAssignment`.
+/// Every path that drops an assignment reaches it - the revocation callback, `moveConsumer` and
+/// `KafkaConsumer`'s destructor - so a caller that also decrements on its own makes the gauge drift
+/// by one per rebalance until it passes zero.
 void KafkaConsumer::cleanAssignment()
 {
     if (assignment.has_value())

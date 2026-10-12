@@ -1,9 +1,5 @@
 #!/usr/bin/env bash
-# Tags: distributed, no-darwin
-# no-darwin: hedged requests depend on epoll and are compiled only on Linux
-# (HedgedConnections, ConnectionEstablisherAsync and PacketReceiver are guarded by
-# OS_LINUX); on other systems use_hedged_requests silently falls back to
-# MultiplexedConnections and the asserted spans can never appear.
+# Tags: distributed
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

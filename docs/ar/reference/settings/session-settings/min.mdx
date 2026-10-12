@@ -126,6 +126,16 @@ import { VersionHistory } from "/snippets/ar/components/VersionHistory/VersionHi
 
 لتعطيل تقسيم عُقد `Resize`، اضبط هذا الإعداد على 0. سيؤدي ذلك إلى منع تقسيم عُقد `Resize` أثناء إنشاء خط المعالجة، مما يسمح لها بالاحتفاظ ببنيتها الأصلية من دون تجزئتها إلى عُقد أصغر.
 
+<div id="min_rows_ratio_for_hash_join_row_store">
+  ## min_rows_ratio_for_hash_join_row_store
+</div>
+
+<SettingsInfoBlock type="Double" default_value="5" />
+
+<VersionHistory rows={[{"id": "row-1","items": [{"label": "26.9"},{"label": "5"},{"label": "إعداد جديد للتحكم في الحد الأدنى المقدّر لنسبة صفوف مخرجات الربط بالتجزئة إلى صفوف جانب البناء، للسماح بتحويل payload الربط بالتجزئة إلى تنسيق قائم على الصفوف. تعني القيمة 0 أن التحويل مسموح به دائمًا."}]}]} />
+
+الحد الأدنى المقدّر لنسبة صفوف مخرجات الربط بالتجزئة إلى صفوف جانب البناء، للسماح بتحويل payload الربط بالتجزئة إلى تنسيق قائم على الصفوف. تعني القيمة 0 أن التحويل مسموح به دائمًا.
+
 <div id="min_table_rows_to_use_projection_index">
   ## min_table_rows_to_use_projection_index
 </div>

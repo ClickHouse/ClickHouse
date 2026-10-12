@@ -19,6 +19,17 @@ from typing import List, Optional
 # Failpoint that delays every background mutation by a bounded random amount.
 MUTATION_DELAY_FAILPOINT = "mutate_task_random_sleep_in_prepare"
 
+# Databases the hung check keeps attached. The log export sends the system logs
+# of the run from the `Distributed` tables of `ci_logs_export` (the default of
+# `LOG_EXPORT_DATABASE` in `ci/jobs/scripts/functional_tests/setup_log_cluster.sh`),
+# and they are created with `flush_on_detach=0`, so detaching that database
+# drops whatever is still queued and exports nothing for the rest of the run.
+KEEP_DATABASES = ("system", "ci_logs_export")
+
+# GNU `tar` exit statuses: 0 - success, 1 - some files differ (a file changed
+# or shrank while it was being read), 2 and above - a fatal error.
+TAR_EXIT_DIFFERS = 1
+
 
 class ServerDied(Exception):
     pass
@@ -39,6 +50,33 @@ def escape_tsv_info(text: str) -> str:
         .replace("\r", "\\r")
         .replace("\n", "\\n")
     )
+
+
+HUNG_CHECK_INFO_BUDGET = 32 * 1024
+
+
+def build_hung_check_info(hung_check_log: Path) -> str:
+    """Build the `info` cell of the `Hung check failed` row from `hung_check.log`.
+
+    Bounded, and read from the head: `clickhouse-test --hung-check` prints the
+    verdict and the longest-running queries first, so the head is the diagnostic
+    region. The whole log is uploaded as a CI artifact.
+    """
+    with open(hung_check_log, "rb") as f:
+        # The extra byte separates "exactly the budget" from "there was more".
+        chunk = f.read(HUNG_CHECK_INFO_BUDGET + 1)
+    log_text = chunk[:HUNG_CHECK_INFO_BUDGET].decode("utf-8", errors="replace")
+    if len(chunk) > HUNG_CHECK_INFO_BUDGET:
+        # Keep the trailing fragment: one hung query is one unescaped line of
+        # arbitrary length, so dropping a partial last line can erase the whole
+        # processlist.
+        log_text = (
+            "(truncated; see the hung_check.log artifact for the full output;"
+            " showing the first 32 KiB, whose last line may be cut)\n"
+            + log_text
+            + "\n..."
+        )
+    return log_text
 
 
 class RandomDisruptor:
@@ -77,6 +115,10 @@ class RandomDisruptor:
         ("STOP MOVES", "START MOVES"),
         ("STOP VIEWS", "START VIEWS"),
         ("PAUSE VIEWS", "START VIEWS"),
+        ("STOP FETCHES", "START FETCHES"),
+        ("STOP DISTRIBUTED SENDS", "START DISTRIBUTED SENDS"),
+        ("STOP REPLICATED SENDS", "START REPLICATED SENDS"),
+        ("STOP REPLICATION QUEUES", "START REPLICATION QUEUES"),
     )
     # Longest an iteration can run, plus margin, so stop() outlasts one of them. The pause
     # branch is the stop, the wait and the start back to back; on shutdown the wait collapses,
@@ -341,13 +383,6 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         options.append("--no-random-settings")
         options.append("--no-random-merge-tree-settings")
 
-    # The stress test profile constrains enable_analyzer to >= 1 (stress_tests.lib) so neither the
-    # AST fuzzer nor a test spends the run on the old interpreter. Send the setting explicitly so the
-    # randomized compatibility below cannot revert it: compatibility only rewrites settings that are
-    # not `changed`, and a constraint cannot catch that revert because there is no explicit change to
-    # check. The profile pins the same value server-side for the queries this does not cover.
-    client_options.append("enable_analyzer=1")
-
     if i > 0:
         options.append("--order=random")
 
@@ -429,15 +464,54 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
             client_options.append("distinct_overflow_mode='throw'")
 
     if i % 5 == 1:
-        client_options.append("memory_tracker_fault_probability=0.001")
+        client_options.append("memory_tracker_fault_probability=0.05")
+        # Write sampled allocations to system.trace_log as MemorySample. users.d/memory_profiler.xml
+        # sets memory_profiler_step and max_untracked_memory but leaves this at 0, so allocation
+        # sampling is off in every stress run today.
+        client_options.append("memory_profiler_sample_probability=0.05")
 
     if i % 5 == 1:
         client_options.append(
             "merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability=0.05"
         )
 
+    if i % 5 == 3:
+        # Keeper fault injection: every replicated INSERT commit and every BACKUP/RESTORE
+        # coordination step can draw a fault, exercising the retry and dedup logic.
+        # users.d/insert_keeper_retries.xml already sets 0.01 server-wide, so only a higher
+        # value adds anything here; it also raises insert_keeper_max_retries to 100.
+        client_options.append("insert_keeper_fault_injection_probability=0.05")
+        # Not set anywhere by default, so any non-zero value is new coverage.
+        client_options.append("backup_restore_keeper_fault_injection_probability=0.05")
+        # Fault after the ReplicatedMergeTree metadata is written to Keeper but before the
+        # table is created, exercising dropIfEmpty() cleanup and re-creation over the leftover
+        # znodes. This one throws instead of retrying, and a CREATE is far rarer than an INSERT
+        # commit, so it gets a higher probability than the two above but stays low.
+        client_options.append(
+            "create_replicated_merge_tree_fault_injection_probability=0.1"
+        )
+
     if i % 2 == 1 and not upgrade_check:
         client_options.append("group_by_use_nulls=1")
+
+    # Widen NULL coverage the way join_use_nulls/group_by_use_nulls do: each of these rewrites
+    # a broad query class (IN evaluation, every CAST, every aggregate over an empty set).
+    # Independent draws so the three can combine, up to all three on one worker. Not keyed on
+    # `i`: --num-parallel is min(8, cpu_count()), so the earlier `i % 7 == 4` / `i % 7 == 6`
+    # arms never fired at all on a runner with fewer than 5 and 7 cores.
+    # https://github.com/ClickHouse/ClickHouse/issues/112032 needs to be fixed to enable transform_null_in
+    #if random.random() < 1 / 3:
+    #    client_options.append("transform_null_in=1")
+    # The upgrade check runs this load against the previous release's server. Before #119385
+    # (26.9) a sorting key such as `CAST(json.b, 'String')` is matched to the same expression
+    # in `ORDER BY` by name and arity only, although under `cast_keep_nullable = 1` the query
+    # types it `Nullable(String)` while the key is `String`; read-in-order with
+    # `read_in_order_use_virtual_row = 1` then aborts the shipped server with
+    # `Logical error: Virtual row has different type` (`03277_json_subcolumns_in_primary_key`).
+    if random.random() < 1 / 3 and not upgrade_check:
+        client_options.append("cast_keep_nullable=1")
+    if random.random() < 1 / 3:
+        client_options.append("aggregate_functions_null_for_empty=1")
 
     # TODO: Enable implicit_transaction back after the issue with `assertHasValidVersionMetadata` will be fixed:
     # https://play.clickhouse.com/play?user=play&run=1#U0VMRUNUIGNoZWNrX3N0YXJ0X3RpbWUsIGNoZWNrX25hbWUsIHRlc3RfbmFtZSwgcmVwb3J0X3VybApGUk9NIGNoZWNrcwpXSEVSRSAxCiAgICBBTkQgY2hlY2tfc3RhcnRfdGltZSA+PSBub3coKSAtIElOVEVSVkFMIDEwIERBWQogICAgQU5EIChoZWFkX3JlZiA9ICdtYXN0ZXInIEFORCBzdGFydHNXaXRoKGhlYWRfcmVwbywgJ0NsaWNrSG91c2UvJykpCiAgICBBTkQgdGVzdF9zdGF0dXMgIT0gJ1NLSVBQRUQnCiAgICBBTkQgKHRlc3Rfc3RhdHVzIExJS0UgJ0YlJyBPUiB0ZXN0X3N0YXR1cyBMSUtFICdFJScpCiAgICBBTkQgY2hlY2tfc3RhdHVzICE9ICdzdWNjZXNzJwogICAgQU5EIGNoZWNrX25hbWUgTk9UIExJS0UgJ2xpYkZ1enplciUnCiAgICBBTkQgY2hlY2tfbmFtZSAhPSAnQ2xpY2tIb3VzZSBLZWVwZXIgSmVwc2VuJwogICAgQU5EIHRlc3RfbmFtZSBMSUtFICclYXNzZXJ0SGFzVmFsaWRWZXJzaW9uTWV0YWRhdGElJwpPUkRFUiBCWSBjaGVja19zdGFydF90aW1lIERFU0M=
@@ -458,6 +532,11 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
         client_options.append("max_parallel_replicas=3")
         client_options.append("cluster_for_parallel_replicas='parallel_replicas'")
         client_options.append("parallel_replicas_for_non_replicated_merge_tree=1")
+        # Ship serialized query plans to the replicas instead of query text. The upgrade
+        # check's only test load runs against the previous release, so a failure on this
+        # path there cannot be fixed by any change to master.
+        if random.random() < 1 / 2 and not upgrade_check:
+            client_options.append("serialize_query_plan=1")
 
     if random.random() < 0.2:
         client_options.append(
@@ -477,9 +556,65 @@ def get_options(i: int, upgrade_check: bool, encrypted_storage: bool) -> str:
 
     if random.random() < 0.2:
         client_options.append("async_insert=1")
+        # Fire-and-forget: the INSERT returns before the flush lands. Disabled because any
+        # test that inserts then selects reads an empty table, which fails the smoke check.
+        # if random.random() < 1 / 2:
+        #     client_options.append("wait_for_async_insert=0")
 
     if random.random() < 0.05:
         client_options.append("enable_join_runtime_filters=1")
+
+    # A 26.8 setting: the pre-upgrade load of the upgrade check runs against the previous
+    # release server, which may reject it as unknown.
+    if random.random() < 0.2 and not upgrade_check:
+        client_options.append("enable_cascades_optimizer=1")
+
+    if random.random() < 0.2:
+        client_options.append("apply_mutations_on_fly=1")
+
+    if random.random() < 0.2:
+        # Collect per-query metrics every 100ms instead of the default 1000ms.
+        client_options.append("query_metric_log_interval=100")
+
+    if random.random() < 0.2:
+        # users.d/opentelemetry.xml already traces 10% of queries; this gives those traces one
+        # span per processor instead of one per query, multiplying the span volume.
+        client_options.append("opentelemetry_trace_processors=1")
+
+    if random.random() < 0.2:
+        client_options.append("network_compression_method='zstd'")
+
+    if random.random() < 0.2:
+        # Route DELETE FROM and ALTER UPDATE through lightweight updates (patch parts) instead
+        # of heavy mutations. The `*_force` variants fail where patch parts are unsupported, so
+        # they stay the rare arm.
+        delete_mode = (
+            "lightweight_update_force"
+            if random.random() < 0.25
+            else "lightweight_update"
+        )
+        update_mode = (
+            "lightweight_force" if random.random() < 0.25 else "lightweight"
+        )
+        client_options.append(f"lightweight_delete_mode='{delete_mode}'")
+        client_options.append(f"alter_update_mode='{update_mode}'")
+        client_options.append(
+            f"update_parallel_mode='{random.choice(['sync', 'auto'])}'"
+        )
+
+    if random.random() < 0.2:
+        # Dependent materialized views are written in parallel instead of sequentially.
+        client_options.append("parallel_view_processing=1")
+
+    if random.random() < 0.2:
+        # Rewrite IN/JOIN to GLOBAL IN/GLOBAL JOIN; pays off in the replicated-database and
+        # parallel-replicas workers.
+        client_options.append("prefer_global_in_and_join=1")
+
+    # Compute extremes for every SELECT. Disabled because it appends an extremes block
+    # (blank line, then the min and max rows) to every result, so no reference matches.
+    # if random.random() < 0.2:
+    #     client_options.append("extremes=1")
 
     # dpsize' - implements DPsize algorithm currently only for Inner joins. So it may not work in some tests.
     # That is why we use it with fallback to 'greedy'.
@@ -715,11 +850,41 @@ def run_func_test(
 
 
 def compress_stress_logs(output_path: Path, files_prefix: str) -> None:
-    cmd = (
-        f"cd {output_path} && tar --zstd --create --file=stress_run_logs.tar.zst "
-        f"{files_prefix}* && rm {files_prefix}*"
+    """Archive the per-process `clickhouse-test` logs into a single file.
+
+    A log can still be growing while it is archived: when the global time
+    limit is reached, `clickhouse-test` force-kills its workers and exits,
+    but a worker - or a `clickhouse client` the worker spawned - can outlive
+    it and keep appending through the inherited stdout descriptor. `tar`
+    notices the size change and exits with `TAR_EXIT_DIFFERS`, which used to
+    fail the whole stress test job right before the hung check, even though
+    the archive itself is written and only the tail of one log is missing.
+    Only a fatal `tar` status is treated as a failure here.
+    """
+    archive = "stress_run_logs.tar.zst"
+    result = subprocess.run(
+        f"cd {output_path} && tar --zstd --create --file={archive} {files_prefix}*",
+        shell=True,
+        capture_output=True,
+        text=True,
+        check=False,
     )
-    check_output(cmd, shell=True)
+    if result.returncode == TAR_EXIT_DIFFERS:
+        logging.warning(
+            "Some logs changed while %s was being created: %s",
+            archive,
+            result.stderr.strip(),
+        )
+    elif result.returncode != 0:
+        raise RuntimeError(
+            f"Failed to create {archive}, tar exit code {result.returncode}:\n"
+            f"{result.stdout}\n{result.stderr}"
+        )
+
+    # Not chained after `tar` with `&&`: the logs have to be removed on the
+    # `TAR_EXIT_DIFFERS` path as well, otherwise they are uploaded twice.
+    for path in output_path.glob(f"{files_prefix}*"):
+        path.unlink()
 
 
 def call_with_retry(
@@ -860,7 +1025,7 @@ def prepare_for_hung_check(drop_databases: bool) -> bool:
                     .split()
                 )
                 for db in databases:
-                    if db == "system":
+                    if db in KEEP_DATABASES:
                         continue
                     command = make_query_command(f"DETACH DATABASE {db}")
                     # we don't wait for drop
@@ -1082,44 +1247,14 @@ def run_stress_test(args: argparse.Namespace) -> None:
             if res != 0 and have_long_running_queries:
                 logging.info("Hung check failed with exit code %d", res)
 
-                # Embed a tail of the captured hung-check output in
-                # test_results.tsv so the processlist and thread stacktraces
-                # are visible in CIDB. The full log is also kept as a CI
-                # artifact (see process_results in stress_job.py), giving
-                # investigators access to the complete diagnostic output.
-                #
-                # Read only the last 32 KiB rather than the whole file: on
-                # deadlock failures `hung_check.log` can be very large (a
-                # full processlist plus a `gdb` backtrace for every server
-                # process), and the stress-test machine is already under
-                # memory pressure. The diagnostic content we need
-                # (`Found hung queries`, the processlist with stacktraces,
-                # the `gdb` backtraces) is printed at the end of the log,
-                # so the tail is exactly the relevant region.
+                # Embed part of the hung-check output in test_results.tsv so the
+                # verdict and the processlist are visible in CIDB. The whole log
+                # is also a CI artifact (process_results in stress_job.py).
                 info_field = ""
                 try:
-                    tail_bytes_size = 32 * 1024
-                    with open(hung_check_log, "rb") as f:
-                        f.seek(0, os.SEEK_END)
-                        size = f.tell()
-                        offset = max(0, size - tail_bytes_size)
-                        f.seek(offset)
-                        tail_bytes = f.read()
-                    log_text = tail_bytes.decode("utf-8", errors="replace")
-                    if offset > 0:
-                        # Drop the (likely partial) first line so the tail
-                        # always starts on a line boundary.
-                        nl = log_text.find("\n")
-                        if nl >= 0:
-                            log_text = log_text[nl + 1 :]
-                        log_text = (
-                            "(truncated; see hung_check.log artifact for"
-                            " the full output; showing last 32 KiB)\n...\n"
-                            + log_text
-                        )
                     # Escape so NUL, tab, and newline survive the TSV encoding,
                     # matching the decoder in read_test_results().
-                    info_field = escape_tsv_info(log_text)
+                    info_field = escape_tsv_info(build_hung_check_info(hung_check_log))
                 except OSError as ex:
                     logging.warning(
                         "Failed to read hung_check.log to embed in"

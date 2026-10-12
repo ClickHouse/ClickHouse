@@ -1,7 +1,10 @@
 #pragma once
 
-#include <Common/ColumnsHashing/HashMethod.h>
+#include <utility>
+
+#include <Common/ColumnsHashing.h>
 #include <Common/assert_cast.h>
+#include <Interpreters/AggregationCommon.h>
 #include <Common/Arena.h>
 #include <Common/HashTable/HashSet.h>
 #include <Common/HashTable/HashMap.h>
@@ -46,6 +49,12 @@ struct SetMethodOneNumber
 
     using State = ColumnsHashing::HashMethodOneNumber<typename Data::value_type,
         SetMethodMapped<Data>, FieldType, set_method_use_cache<Data, use_cache>>;
+
+    /// Appends the numeric key to its destination column.
+    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    {
+        key_columns[0]->insertData(reinterpret_cast<const char *>(&key), sizeof(key));
+    }
 };
 
 /// For the case where there is one string key.
@@ -65,6 +74,19 @@ struct SetMethodString
     Data data;
 
     using State = ColumnsHashing::HashMethodString<typename Data::value_type, SetMethodMapped<Data>, true, false>;
+
+    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &)
+    {
+        key_columns[0]->insertData(key.data(), key.size());
+    }
+
+    /// Returns the key that the `hashed` method computes for a row with this key.
+    static UInt128 getHashedKey(std::string_view key)
+    {
+        SipHash hash;
+        ColumnString::updateHashWithStringValue(key, hash);
+        return hash.get128();
+    }
 };
 
 /// For the case when there is one fixed-length string key.
@@ -78,6 +100,19 @@ struct SetMethodFixedString
     Data data;
 
     using State = ColumnsHashing::HashMethodFixedString<typename Data::value_type, SetMethodMapped<Data>, true, false>;
+
+    static void insertKeyIntoColumns(std::string_view key, std::vector<IColumn *> & key_columns, const Sizes &)
+    {
+        key_columns[0]->insertData(key.data(), key.size());
+    }
+
+    /// Returns the key that the `hashed` method computes for a row with this key.
+    static UInt128 getHashedKey(std::string_view key)
+    {
+        SipHash hash;
+        ColumnFixedString::updateHashWithStringValue(key, hash);
+        return hash.get128();
+    }
 };
 
 namespace set_impl
@@ -185,6 +220,14 @@ struct SetMethodKeysFixed
 
     using State = ColumnsHashing::HashMethodKeysFixed<typename Data::value_type, Key, SetMethodMapped<Data>,
         has_nullable_keys, false, set_method_use_cache<Data, true>>;
+
+    /// `unpack_order` is the order in which the columns were packed into the key, if it differs from the
+    /// original one (see `HashMethodKeysFixed::packedKeysOrder`).
+    static void insertKeyIntoColumns(
+        const Key & key, std::vector<IColumn *> & key_columns, const Sizes & key_sizes, const std::vector<size_t> * unpack_order)
+    {
+        unpackFixedKeyIntoColumns<has_nullable_keys>(key, unpack_order, key_columns, key_sizes);
+    }
 };
 
 /// For other cases. 128 bit hash from the key.
@@ -197,8 +240,13 @@ struct SetMethodHashed
     Data data;
 
     using State = ColumnsHashing::HashMethodHashed<typename Data::value_type, SetMethodMapped<Data>, set_method_use_cache<Data, true>>;
-};
 
+    /// Appends the retained fingerprint to a `UInt128` comparison column.
+    static void insertKeyIntoColumns(const Key & key, std::vector<IColumn *> & key_columns, const Sizes &)
+    {
+        key_columns[0]->insertData(reinterpret_cast<const char *>(&key), sizeof(key));
+    }
+};
 
 /** Different implementations of the set.
   */
@@ -323,6 +371,35 @@ struct SetVariantsTemplate: public Variant
     static Type chooseMethod(const ColumnRawPtrs & key_columns, Sizes & key_sizes);
 
     void init(Type type_);
+
+    /// Calls `func` with the method of the set, which must be initialized, and returns what `func` returns.
+    /// The method is const for a const set.
+    template <typename Self, typename Func>
+    decltype(auto) callOnMethod(this Self & self, Func && func)
+    {
+        switch (self.type)
+        {
+            case Type::EMPTY:
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "The method of an uninitialized set is called");
+
+        #define M(NAME) case Type::NAME: return std::forward<Func>(func)(std::forward_like<Self &>(*self.NAME));
+            APPLY_FOR_SET_VARIANTS(M)
+        #undef M
+        }
+        UNREACHABLE();
+    }
+
+    /// Estimates peak additional key-storage memory assuming every input row is new. Includes hash-table
+    /// buffers and arena allocations for the range beginning at `start_row`. Requires an initialized
+    /// set and materialized key columns matching the selected method. Saturates at the maximum of
+    /// `size_t` when the bound is not representable.
+    size_t estimateGrowthMemory(const ColumnRawPtrs & key_columns, size_t start_row, size_t num_rows) const
+        requires std::is_same_v<Variant, NonClearableSet>;
+
+    /// Estimates the per-row packed-key buffer of the selected hash method, independently of table
+    /// growth. Other methods pack or hash each row on demand and need no such buffer.
+    /// Requires an initialized set and key sizes matching the selected method.
+    size_t estimatePreparedKeysMemory(size_t num_rows, const Sizes & key_sizes) const;
 
     size_t getTotalRowCount() const;
     /// Counts the size in bytes of the Set buffer and the size of the `string_pool`

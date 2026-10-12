@@ -126,15 +126,15 @@ Bonne pratique : utilisez LZ4, sauf si votre bande passante est limitée ou si 
   #### La compression réduit l’utilisation des ressources
 </div>
 
-La compression réduit non seulement le trafic réseau, mais améliore aussi l’efficacité du CPU et de la mémoire sur le serveur. Avec des données compressées, ClickHouse reçoit moins d’octets et passe moins de temps à analyser de gros volumes de données en entrée. Cet avantage est particulièrement important lors de l’ingestion depuis plusieurs clients concurrents, comme dans des scénarios d’observability.
+La compression réduit non seulement le trafic réseau, mais améliore aussi l’efficacité du CPU et de la mémoire sur le serveur. Avec des données compressées, ClickHouse reçoit moins d’octets et passe moins de temps à parsing de gros volumes de données en entrée. Cet avantage est particulièrement important lors de l’ingestion depuis plusieurs clients concurrents, comme dans des scénarios d’observabilité.
 
 L’impact de la compression sur le CPU et la mémoire est modeste avec LZ4, et modéré avec ZSTD. Même sous charge, l’efficacité côté serveur s’améliore grâce à la réduction du volume de données.
 
 **La combinaison de la compression, du traitement par lots et d’un format d’entrée efficace (comme Native) offre les meilleures performances d’ingestion.**
 
-Lors de l’utilisation de l’interface native (par ex. [clickhouse-client](/fr/concepts/features/interfaces/cli)), la compression LZ4 est activée par défaut. Vous pouvez également passer à ZSTD via les paramètres.
+Lors de l’utilisation de l’interface native (par ex. [clickhouse-client](/fr/concepts/features/interfaces/client)), la compression LZ4 est activée par défaut. Vous pouvez également passer à ZSTD via les paramètres.
 
-Avec l’[interface HTTP](/fr/concepts/features/interfaces/http), utilisez l’en-tête Content-Encoding pour appliquer la compression (par ex. Content-Encoding : lz4). L’intégralité de la charge utile doit être compressée avant l’envoi.
+Avec l’[interface HTTP](/fr/concepts/features/interfaces/http), utilisez l’en-tête Content-Encoding pour appliquer la compression (par ex. Content-Encoding : lz4). L’intégralité du payload doit être compressée avant l’envoi.
 
 <div id="pre-sort-if-low-cost">
   ### Pré-trier si le coût est faible
@@ -162,7 +162,7 @@ Lorsque les données arrivent déjà pré-triées, ClickHouse peut éviter ou si
   ### Native
 </div>
 
-ClickHouse propose deux interfaces principales pour l’ingestion de données : l’**interface native** et l’**interface HTTP** — chacune offrant un compromis entre performances et flexibilité. L’interface native, utilisée par [clickhouse-client](/fr/concepts/features/interfaces/cli) et certains clients pour différents langages comme Go et C++, est conçue avant tout pour les performances. Elle transmet toujours les données dans le format Native très efficace de ClickHouse, prend en charge la compression par blocs avec LZ4 ou ZSTD, et réduit au minimum le traitement côté serveur en déléguant au client des tâches comme l’analyse syntaxique et la conversion de format.
+ClickHouse propose deux interfaces principales pour l’ingestion de données : l’**interface native** et l’**interface HTTP** — chacune offrant un compromis entre performances et flexibilité. L’interface native, utilisée par [clickhouse-client](/fr/concepts/features/interfaces/client) et certains clients pour différents langages comme Go et C++, est conçue avant tout pour les performances. Elle transmet toujours les données dans le format Native très efficace de ClickHouse, prend en charge la compression par blocs avec LZ4 ou ZSTD, et réduit au minimum le traitement côté serveur en déléguant au client des tâches comme l’analyse syntaxique et la conversion de format.
 
 Elle permet même de calculer côté client les valeurs de colonne MATERIALIZED et DEFAULT, ce qui permet au serveur d’ignorer entièrement ces étapes. L’interface native est donc idéale pour les scénarios d’ingestion à haut débit où l’efficacité est essentielle.
 

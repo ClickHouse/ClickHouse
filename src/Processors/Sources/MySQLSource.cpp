@@ -44,6 +44,7 @@ namespace ErrorCodes
     extern const int NUMBER_OF_COLUMNS_DOESNT_MATCH;
     extern const int NOT_IMPLEMENTED;
     extern const int BAD_ARGUMENTS;
+    extern const int INCORRECT_DATA;
 }
 
 MySQLStreamSettings::MySQLStreamSettings(const Settings & settings, bool auto_close_, bool fetch_by_name_, size_t max_retry_)
@@ -219,6 +220,27 @@ void MySQLWithFailoverSource::onCancel() noexcept
         tryLogCurrentException(log, "Unexpected error in MySQLWithFailoverSource::onCancel");
     }
 }
+
+UInt64 parseMySQLBitValue(std::string_view value)
+{
+    /// The length comes from the MySQL wire protocol, while a `BIT` value holds at most 64 bits.
+    const size_t n = value.size();
+    if (n > sizeof(UInt64))
+        throw Exception(ErrorCodes::INCORRECT_DATA,
+            "MySQL sent {} bytes for a value of a `BIT` column, but at most {} bytes are expected",
+            n, sizeof(UInt64));
+
+    /// The value is transferred in the big-endian order, most significant byte first. Assembling it
+    /// by shifting keeps the result independent of the endianness of the host: writing the bytes
+    /// into the object representation instead would left-align a value shorter than 8 bytes on a
+    /// big-endian host.
+    UInt64 val = 0;
+    for (char c : value)
+        val = (val << 8) | static_cast<UInt8>(c);
+
+    return val;
+}
+
 namespace
 {
     using ValueType = ExternalResultDescription::ValueType;
@@ -324,18 +346,8 @@ namespace
             {
                 if (mysql_type == enum_field_types::MYSQL_TYPE_BIT)
                 {
-                    size_t n = value.size();
-                    UInt64 val = 0UL;
-                    char * to = reinterpret_cast<char *>(&val);
-                    memcpy(to, const_cast<char *>(value.data()), n);
-
-                    if constexpr (std::endian::native == std::endian::little)
-                    {
-                        char * start = to;
-                        char * end = to + n;
-                        std::reverse(start, end);
-                    }
-                    assert_cast<ColumnUInt64 &>(column).insertValue(val);
+                    const size_t n = value.size();
+                    assert_cast<ColumnUInt64 &>(column).insertValue(parseMySQLBitValue({value.data(), n}));
                     read_bytes_size += n;
                 }
                 else
