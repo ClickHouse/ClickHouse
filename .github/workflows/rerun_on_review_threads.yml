@@ -51,6 +51,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GH_REPO: ${{ github.repository }}
           PR_NUMBER: ${{ github.event.pull_request.number || '' }}
+          # The head commit a label event was raised for. The concurrency group
+          # is keyed on it, so the event must not act on a newer head.
+          LABEL_HEAD_SHA: ${{ github.event.pull_request.head.sha || '' }}
           WR_PULL_REQUESTS: ${{ toJSON(github.event.workflow_run.pull_requests) }}
           WR_HEAD_SHA: ${{ github.event.workflow_run.head_sha || '' }}
           WR_HEAD_BRANCH: ${{ github.event.workflow_run.head_branch || '' }}
@@ -149,8 +152,13 @@ jobs:
             echo "PR #$pr is $state - nothing to do."
             exit 0
           fi
-          if [ -n "$WR_HEAD_SHA" ] && [ "$WR_HEAD_SHA" != "$head_sha" ]; then
-            echo "Event is for $WR_HEAD_SHA but the PR head is $head_sha - a newer push supersedes it."
+          # Both event kinds are serialized by the head commit they were raised
+          # for (see `concurrency` above). Acting on a newer head from here would
+          # escape that serialization and race with the reconciliation for it;
+          # the `PR` run of the newer push re-triggers this workflow anyway.
+          event_head_sha="${WR_HEAD_SHA:-$LABEL_HEAD_SHA}"
+          if [ -n "$event_head_sha" ] && [ "$event_head_sha" != "$head_sha" ]; then
+            echo "Event is for $event_head_sha but the PR head is $head_sha - a newer push supersedes it."
             exit 0
           fi
 

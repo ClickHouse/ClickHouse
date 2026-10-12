@@ -1441,3 +1441,53 @@ def test_retry_resolves_the_pr_of_the_run_by_head_branch_and_repository():
     assert _retry_pr_candidates(
         commit_filter, pulls, ref="fix", repo="someone/ClickHouse"
     ) == [3]
+
+
+def _run_stale_head_guard(event_name, event_head_sha, live_head_sha):
+    """Run the "Current PR state" block of `rerun_on_review_threads.yml`, sliced
+    out of the workflow, with the GitHub API stubbed, and return whether the
+    event goes on to reconcile the live head."""
+    workflow = (
+        Path(__file__).resolve().parents[2]
+        / ".github/workflows/rerun_on_review_threads.yml"
+    ).read_text()
+    start = workflow.index("          # --- Current PR state ---")
+    end = workflow.index("          # --- Live unresolved review thread count ---")
+    snippet = "\n".join(line[10:] for line in workflow[start:end].splitlines())
+    pr_data = {
+        "state": "open",
+        "head": {
+            "sha": live_head_sha,
+            "ref": "feature",
+            "repo": {"full_name": "ClickHouse/ClickHouse", "owner": {"login": "ClickHouse"}},
+        },
+        "labels": [],
+    }
+    wr_head_sha = event_head_sha if event_name == "workflow_run" else ""
+    label_head_sha = event_head_sha if event_name == "pull_request_target" else ""
+    script = f"""
+set -euo pipefail
+GH_REPO=ClickHouse/ClickHouse
+OVERRIDE_LABEL=ignore-unresolved-threads
+pr=100
+WR_HEAD_SHA={shlex.quote(wr_head_sha)}
+LABEL_HEAD_SHA={shlex.quote(label_head_sha)}
+api_with_retries() {{ echo {shlex.quote(json.dumps(pr_data))}; }}
+{snippet}
+echo "proceed"
+"""
+    result = subprocess.run(
+        ["bash", "-c", script], capture_output=True, text=True, check=True
+    )
+    return result.stdout.strip().splitlines()[-1] == "proceed"
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def test_events_for_a_superseded_head_do_nothing():
+    """Regression: a label event queued in the concurrency group of head `A`
+    must not act on head `B` pushed in the meantime, or it would race with the
+    reconciliation serialized in the group of `B`."""
+    old_sha, new_sha = "a" * 40, "b" * 40
+    for event_name in ("workflow_run", "pull_request_target"):
+        assert _run_stale_head_guard(event_name, new_sha, new_sha)
+        assert not _run_stale_head_guard(event_name, old_sha, new_sha)
