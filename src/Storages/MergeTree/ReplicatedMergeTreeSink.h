@@ -95,8 +95,8 @@ protected:
     struct CommitPartResult
     {
         std::vector<DeduplicationHash> conflicts;
-        /// Newest cache snapshot version known to miss a conflict of this part, 0 if none.
-        UInt64 deduplication_cache_wait_newer_than = 0;
+        /// The next attempt waits for a cache snapshot of at least this version, 0 means no wait.
+        UInt64 deduplication_cache_min_version = 0;
     };
 
     /// Rename temporary part and commit to ZooKeeper.
@@ -105,7 +105,7 @@ protected:
         MergeTreeData::MutableDataPartPtr & part,
         const std::vector<DeduplicationHash> & deduplication_hashes,
         const std::vector<String> & deduplication_block_ids,
-        UInt64 deduplication_cache_wait_newer_than = 0);
+        UInt64 deduplication_cache_min_version = 0);
 
     StorageReplicatedMergeTree & storage;
     StorageMetadataPtr metadata_snapshot;

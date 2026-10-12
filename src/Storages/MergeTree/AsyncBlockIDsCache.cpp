@@ -122,17 +122,17 @@ void AsyncBlockIDsCache<TStorage>::truncate()
 
 template <typename TStorage>
 typename AsyncBlockIDsCache<TStorage>::Conflicts
-AsyncBlockIDsCache<TStorage>::detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 wait_newer_than)
+AsyncBlockIDsCache<TStorage>::detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 min_version)
 {
     Conflicts conflicts;
     CachePtr cur_cache;
     {
         std::unique_lock lk(mu);
-        if (wait_newer_than)
+        if (min_version)
         {
-            cv.wait_for(lk, update_wait, [&]{ return version > wait_newer_than; });
+            cv.wait_for(lk, update_wait, [&]{ return version >= min_version; });
 
-            if (version <= wait_newer_than)
+            if (version < min_version)
                 LOG_INFO(log, "Read cache with a old version {}", version);
         }
 

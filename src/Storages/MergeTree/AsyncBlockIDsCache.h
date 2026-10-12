@@ -31,8 +31,8 @@ public:
         UInt64 version = 0;
     };
 
-    /// Waits up to `update_wait` for a snapshot newer than `wait_newer_than`, 0 means no wait.
-    Conflicts detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 wait_newer_than);
+    /// Waits up to `update_wait` for a snapshot with at least `min_version`, 0 means no wait.
+    Conflicts detectConflicts(const std::vector<DeduplicationHash> & deduplication_hashes, UInt64 min_version);
 
     void triggerCacheUpdate();
 
