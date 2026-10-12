@@ -366,6 +366,7 @@ private:
 
     void fuzzTableFunctionName(ASTPtr & table_function);
     void fuzzClusterFunctionArguments(ASTFunction & fn);
+    void fuzzProxyDatabaseEngine(ASTStorage & storage);
     void fuzzMergeFunctionArguments(ASTFunction & fn);
     String makeFuzzedLikePattern();
     String makeBraceExpansion();

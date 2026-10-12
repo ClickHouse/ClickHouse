@@ -1728,6 +1728,14 @@ void QueryOracle::generateOracleSelectQuery(RandomGenerator & rg, const PeerQuer
     SettingValues * svs = sel->mutable_setting_values();
 
     finishSettings(svs);
+    if (peer_query == PeerQuery::None)
+    {
+        /// `maybeUpdateOracleSelectQuery` may replace a table with a remote or table function call,
+        /// whose virtual columns (`_table`, `_path` etc.) differ, so keep them out of `SELECT *`.
+        SetValue * sv = svs->has_set_value() ? svs->add_other_values() : svs->mutable_set_value();
+        sv->set_property("asterisk_include_virtual_columns");
+        sv->set_value("0");
+    }
     if (measure_performance)
     {
         /// Add tag to find query later on

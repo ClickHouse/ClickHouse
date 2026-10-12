@@ -720,7 +720,10 @@ Field QueryFuzzer::fuzzField(Field field)
                 break;
             case 9: {
                 /// SQL/regex metacharacters — stresses match(), extract(), LIKE, escaping
-                static const Strings vals = {"'", "\\'", "\\", "\"", ";--", "%", "_", "/**/", ".*", "[a-z]", "^$", "(?i)"};
+                static const Strings vals
+                    = {"'", "\\'", "\\", "\"", ";--", "%", "_", "/**/", ".*", "[a-z]", "^$", "(?i)",
+                       /// `SIMILAR TO` patterns
+                       "(a|b)*", "%[^0-9]+_", "_{2,3}", "[[:alpha:]]%", "%(|x)?", "a{,", "[]%"};
                 str = vals[fuzz_rand() % vals.size()];
                 break;
             }
@@ -1861,12 +1864,17 @@ void QueryFuzzer::fuzzCreateQuery(ASTCreateQuery & create)
         /// Avoid touching Replicated (needs ZooKeeper), Lazy (needs arg), or external
         /// engines (MySQL/PostgreSQL need connection params).
         static const std::unordered_set<String> safe_database_engines = {"Atomic", "Memory", "Dictionary"};
+        static const std::unordered_set<String> proxy_database_engines = {"Cluster", "Remote", "RemoteSecure", "Overlay"};
         auto & engine_name = create.storage->engine->name;
         if (safe_database_engines.contains(engine_name) && fuzz_rand() % 10 == 0)
         {
             engine_name = pickRandomly(fuzz_rand, safe_database_engines);
             if (auto & arguments = create.storage->engine->arguments)
                 arguments->children.clear();
+        }
+        else if (fuzz_rand() % (proxy_database_engines.contains(engine_name) ? 5 : 30) == 0)
+        {
+            fuzzProxyDatabaseEngine(*create.storage);
         }
     }
     else if (create.storage)
@@ -3512,6 +3520,63 @@ void QueryFuzzer::fuzzClusterFunctionArguments(ASTFunction & fn)
         args.front() = make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names)));
 }
 
+/// Turn a database into a proxy of another one, or re-pick the arguments of an existing proxy:
+/// `Cluster('cluster_name', 'database')` or `Remote[Secure]('addresses_expr', 'database'[, 'user'[, 'password']])`.
+void QueryFuzzer::fuzzProxyDatabaseEngine(ASTStorage & storage)
+{
+    static const std::vector<String> proxy_engines = {"Cluster", "Remote", "RemoteSecure", "Overlay"};
+    static const std::vector<String> proxied_databases = {"default", "system", "information_schema", "nonexistent"};
+
+    const String engine_name = pickRandomly(fuzz_rand, proxy_engines);
+    auto arguments = make_intrusive<ASTExpressionList>();
+    if (engine_name == "Overlay")
+    {
+        /// Overlay(db1[, db2, ...]), each source a name, an identifier or `currentDatabase()`. `Overlay()` does not parse
+        const size_t nsources = (fuzz_rand() % 3) + 1;
+        for (size_t i = 0; i < nsources; i++)
+        {
+            const size_t nopt = fuzz_rand() % 3;
+            if (nopt == 0)
+                arguments->children.push_back(makeASTFunction("currentDatabase"));
+            else if (nopt == 1)
+                arguments->children.push_back(make_intrusive<ASTIdentifier>(pickRandomly(fuzz_rand, proxied_databases)));
+            else
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, proxied_databases))));
+        }
+    }
+    else
+    {
+        if (engine_name == "Cluster")
+            arguments->children.push_back(make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, distributed_cluster_names))));
+        else
+            arguments->children.push_back(make_intrusive<ASTLiteral>(makeRemoteHostDescriptor(engine_name == "RemoteSecure")));
+        if (fuzz_rand() % 2 == 0)
+            arguments->children.push_back(makeASTFunction("currentDatabase"));
+        else
+            arguments->children.push_back(make_intrusive<ASTLiteral>(String(pickRandomly(fuzz_rand, proxied_databases))));
+        /// Optional user and password, which only Remote/RemoteSecure accept: Cluster's signature is
+        /// exactly Cluster(cluster_name, database), so appending them would make the statement invalid.
+        if (engine_name != "Cluster")
+        {
+            const size_t credentials = fuzz_rand() % 3;
+            if (credentials > 0)
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String("default")));
+            if (credentials > 1)
+                arguments->children.push_back(make_intrusive<ASTLiteral>(String("")));
+        }
+    }
+
+    auto * engine = storage.engine;
+    engine->name = engine_name;
+    if (engine->arguments)
+        engine->replace(engine->arguments, std::move(arguments));
+    else
+        engine->set(engine->arguments, std::move(arguments));
+    /// The engines take no settings
+    if (storage.settings && fuzz_rand() % 10 != 0)
+        storage.reset(storage.settings);
+}
+
 /// Interesting regexps for merge() argument fuzzing. merge() matches them with
 /// `OptimizedRegularExpression`, so they cover all four of its `match` paths.
 static const std::vector<String> merge_databases = {"default", "system", "information_schema"};
@@ -4742,6 +4807,11 @@ void QueryFuzzer::addOrReplacePredicate(ASTSelectQuery * sel, const ASTSelectQue
 
 void QueryFuzzer::fuzzJoinType(ASTTableJoin * table_join)
 {
+    /// Toggle `LATERAL` with any join type. The element drops it afterwards if it would not parse.
+    if (fuzz_rand() % 30 == 0)
+    {
+        table_join->lateral = !table_join->lateral;
+    }
     /// Toggle NATURAL JOIN: derives the join condition from common column names automatically.
     /// When switching to natural, clear any explicit ON / USING clause — they are incompatible.
     if (fuzz_rand() % 50 == 0)
@@ -5006,6 +5076,14 @@ static const std::unordered_set<String> higher_order_array_funcs = {
     "arrayAll",         "arrayFirst",       "arrayFirstOrNull",  "arrayLast",
     "arrayLastOrNull",  "arrayFirstIndex",  "arrayLastIndex",    "arrayFill",
     "arrayReverseFill", "arraySplit",       "arrayReverseSplit", "arrayFold",
+    /// (lambda, array...) bit-packing variants (PR #123478)
+    "arrayPackBitsToUInt64", "arrayPackBitsToString",
+};
+
+/// arrayPackBits/Groups variants with a positional integer (FixedString length / group bit-width)
+/// between the lambda and the arrays: shape (lambda, int, array...) (PR #123478).
+static const std::unordered_set<String> array_pack_bits_width_funcs = {
+    "arrayPackBitsToFixedString", "arrayPackBitGroupsToUInt64", "arrayPackBitGroupsToString",
 };
 
 /// Higher-order map functions (same idea, for Map-typed arguments).
@@ -5028,7 +5106,10 @@ static const std::unordered_set<String> lambda_accepting_funcs = []
 {
     std::unordered_set<String> res = higher_order_array_funcs;
     res.insert(higher_order_map_funcs.begin(), higher_order_map_funcs.end());
+    res.insert(array_pack_bits_width_funcs.begin(), array_pack_bits_width_funcs.end());
     res.insert({
+        /// (lambda, int, int, array...): unique shape, lambda-eligible but no swap group (PR #123478)
+        "arrayPackBitGroupsToFixedString",
         "arraySum",
         "arrayAvg",
         "arrayMin",
@@ -5046,9 +5127,13 @@ static const std::unordered_set<String> lambda_accepting_funcs = []
     return res;
 }();
 
+/// String pattern matching operators. All but `match` take an optional `ESCAPE 'c'` 3rd argument
+static const std::unordered_set<String> pattern_match_functions
+    = {"ilike", "like", "similarTo", "match", "notILike", "notLike", "notSimilarTo"};
+
 static const std::vector<std::unordered_set<String>> & swapFuncs
     = { /// String pattern matching operators
-        {"ilike", "like", "similarTo", "match", "notILike", "notLike", "notSimilarTo"},
+        pattern_match_functions,
         /// Set membership operators (renames an existing node, so only the infix-safe spellings)
         std::unordered_set<String>(in_infix_variants.begin(), in_infix_variants.end()),
         /// Their IgnoreSet variants; only the lambda injection below reaches these, never the rename
@@ -5304,7 +5389,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "hasAllToken",
          "hasAllTokens"},
         /// Map containment checks
-        {"mapContains", "mapContainsKey", "mapContainsKeyLike", "mapContainsValue", "mapContainsValueLike"},
+        {"mapContains", "mapContainsKey", "mapContainsKeyLike", "mapContainsValue", "mapContainsValueLike", "mapContainsKeyValue"},
         /// Prefix/suffix predicates (string, string → UInt8)
         {"startsWith",
          "startsWithUTF8",
@@ -5337,7 +5422,16 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Array construction from a length and a value (n, value -> Array)
         {"arrayWithConstant", "range"},
         /// Array scalar reductions (array → scalar)
-        {"arrayMin", "arrayMax", "arraySum", "arrayProduct", "arrayAvg", "arrayUniq", "arrayFlattenedLength", "arrayAutocorrelation"},
+        {"arrayMin",
+         "arrayMinIndex",
+         "arrayMax",
+         "arrayMaxIndex",
+         "arraySum",
+         "arrayProduct",
+         "arrayAvg",
+         "arrayUniq",
+         "arrayFlattenedLength",
+         "arrayAutocorrelation"},
         /// Array transform functions (array → array, no lambda)
         {"arrayReverse",
          "arrayShuffle",
@@ -5345,6 +5439,7 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "arrayEnumerateDense",
          "arrayExcept",
          "arrayRemove",
+         "arrayRemoveAt",
          "arrayResize",
          "emptyArrayToSingle",
          "arrayDistinct",
@@ -5459,12 +5554,12 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         /// Float classification (arity mismatch intentional: ifNotFinite takes (x, alternative))
         {"isNaN", "isInfinite", "isFinite", "ifNotFinite"},
         /// Map accessors (map → array)
-        {"mapKeys", "mapValues"},
+        {"mapKeys", "mapValues", "mapEntries"},
         /// Numeric map arithmetic (map, map → map, element-wise). `mapUpdate` and `mapConcat` take
         /// the same two-map shape but merge instead of adding.
         {"mapAdd", "mapSubtract", "mapUpdate", "mapConcat"},
-        /// Map filtering by pattern (map, pattern → map)
-        {"mapExtractKeyLike", "mapExtractValueLike"},
+        /// Map filtering by pattern or key (map, pattern/key → map)
+        {"mapExtractKeyLike", "mapExtractValueLike", "mapRemove"},
         /// Two-array map builders (key array, value array[, extra] → map)
         {"mapFromArrays", "mapPopulateSeries"},
         /// Key-value text parsers (String → Map)
@@ -5701,6 +5796,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
         {"if", "multiIf", "caseWithExpression"},
         /// Array higher-order functions ([lambda,] array → array or scalar)
         higher_order_array_funcs,
+        /// arrayPackBits/Groups with a positional width arg (lambda, int, array...) — PR #123478
+        array_pack_bits_width_funcs,
         /// Window ranking functions (no arguments, window clause required)
         {"rank", "dense_rank", "row_number", "percent_rank", "cume_dist"},
         /// Window lag/lead functions (expr[, offset[, default]])
@@ -5979,6 +6076,8 @@ static const std::vector<std::unordered_set<String>> & swapFuncs
          "normalizeQueryKeepNames",
          "obfuscateQuery",
          "parseQueryToJSON"},
+        /// Literal-insensitive hashes of a query string (query → UInt64)
+        {"normalizedQueryHash", "normalizedQueryHashKeepNames", "normalizedQueryHashUnordered"},
         /// Iceberg partition transforms over a date/time (date → integer)
         {"icebergDay", "icebergHour", "icebergMonth", "icebergYear"},
         /// Iceberg partition transforms taking a width (value, n → bucket/truncated value)
@@ -6640,6 +6739,24 @@ void QueryFuzzer::fuzz(ASTPtr & ast)
             }
             else if (text_search_functions.contains(fn->name) && fn->arguments->children.size() > 2)
                 fn->arguments->children.resize(2);
+        }
+
+        /// Add, replace or drop the `ESCAPE 'c'` argument of the `LIKE` / `SIMILAR TO` family
+        if (fn->arguments && fn->name != "match" && pattern_match_functions.contains(fn->name) && fuzz_rand() % 20 == 0)
+        {
+            /// "!" goes last: the style check rejects an exclamation mark followed by `",`.
+            static const Strings escapes = {"#", "\\", "%", "_", "|", "[", "'", "$", "a", "", "ab", "!"};
+            auto & args = fn->arguments->children;
+
+            if (args.size() == 3 && fuzz_rand() % 3 == 0)
+            {
+                args.resize(2);
+            }
+            else if (args.size() == 2 || args.size() == 3)
+            {
+                args.resize(2);
+                args.push_back(make_intrusive<ASTLiteral>(escapes[fuzz_rand() % escapes.size()]));
+            }
         }
 
         /// ClickHouse HOFs accept a bare function name instead of a lambda, e.g. arrayMap(toUInt64, arr).
