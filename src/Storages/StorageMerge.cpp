@@ -2598,8 +2598,7 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
 {
     filterTablesAndCreateChildrenPlans();
 
-    /// Ask every reading step before the loop below switches the children,
-    /// so that no child is left reading in order when the request is rejected.
+    /// Ask every reading step first: the loop below switches the children one by one.
     if (!canReadInOrder(order_info_->direction))
         return false;
 
