@@ -25,6 +25,7 @@ IProcessor::Status BufferChunksTransform::prepare()
     if (output.isFinished())
     {
         chunks = {};
+        num_buffered_virtual_rows = 0;
         input.close();
         return Status::Finished;
     }
@@ -52,25 +53,13 @@ IProcessor::Status BufferChunksTransform::prepare()
 
     if (output.canPush())
     {
-        input.setNeeded();
+        if (num_buffered_virtual_rows == 0)
+            input.setNeeded();
 
         if (!chunks.empty())
         {
-            auto chunk = std::move(chunks.front());
-            chunks.pop();
-
-            if (isVirtualRow(chunk))
-            {
-                output.push(std::move(chunk));
-                wait_for_demand_after_virtual_row = true;
-                input.setNotNeeded();
+            if (pushBufferedChunk())
                 return Status::PortFull;
-            }
-
-            num_buffered_rows -= chunk.getNumRows();
-            num_buffered_bytes -= chunk.bytes();
-
-            output.push(std::move(chunk));
         }
         else if (input.hasData())
         {
@@ -86,14 +75,46 @@ IProcessor::Status BufferChunksTransform::prepare()
         }
     }
 
+    /// A virtual row is still buffered behind earlier real chunks. Downstream has not observed
+    /// the marker yet, so keep upstream stopped: otherwise it could push a real chunk past the
+    /// boundary before the marker is forwarded. Either a chunk was pushed above, or the output
+    /// is full, so the executor will wake us up when downstream consumes the output.
+    if (num_buffered_virtual_rows > 0)
+    {
+        input.setNotNeeded();
+        return Status::PortFull;
+    }
+
     if (input.hasData() && (num_buffered_rows < max_rows_to_buffer || num_buffered_bytes < max_bytes_to_buffer))
     {
         bool virtual_row = false;
         auto chunk = pullChunk(virtual_row);
         if (virtual_row)
         {
+            /// A virtual row announces the boundary of everything that follows it in this
+            /// stream, so it must keep its place: it may never overtake chunks already
+            /// buffered ahead of it, or the merge sees a boundary that the stream's own next
+            /// rows violate (`Virtual row boundary violated in MergingSortedAlgorithm`).
+            /// `output.canPush()` is not a safe proxy for "nothing is buffered": the
+            /// downstream runs concurrently with this `prepare()` and can drain the output
+            /// port right after the push above, while `chunks` still holds earlier data.
+            /// So always queue the marker, and let the drain below emit it in order.
+            num_buffered_rows += chunk.getNumRows();
+            num_buffered_bytes += chunk.bytes();
+            ++num_buffered_virtual_rows;
             chunks.push(std::move(chunk));
+
+            /// Downstream has not observed the marker yet, so upstream must not push real
+            /// chunks past the boundary before it is forwarded.
             input.setNotNeeded();
+
+            /// Emit the head of the queue right away when the output has room. This keeps the
+            /// marker as prompt as a direct push whenever it is the only buffered chunk, and
+            /// it also guarantees progress: returning `PortFull` without having pushed
+            /// anything would leave the executor with no port state change to wake us on.
+            if (output.canPush())
+                pushBufferedChunk();
+
             return Status::PortFull;
         }
         compactReplicatedColumns(chunk);
@@ -110,6 +131,31 @@ IProcessor::Status BufferChunksTransform::prepare()
 
     input.setNeeded();
     return Status::NeedData;
+}
+
+bool BufferChunksTransform::pushBufferedChunk()
+{
+    auto chunk = std::move(chunks.front());
+    chunks.pop();
+
+    num_buffered_rows -= chunk.getNumRows();
+    num_buffered_bytes -= chunk.bytes();
+
+    const bool virtual_row = isVirtualRow(chunk);
+    output.push(std::move(chunk));
+
+    if (virtual_row)
+    {
+        --num_buffered_virtual_rows;
+
+        /// Stop reading until downstream has consumed the virtual-row marker, otherwise we
+        /// would pull real chunks past the part boundary and defeat the LIMIT/read-in-order
+        /// optimizations.
+        wait_for_demand_after_virtual_row = true;
+        input.setNotNeeded();
+    }
+
+    return virtual_row;
 }
 
 Chunk BufferChunksTransform::pullChunk(bool & virtual_row)

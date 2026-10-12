@@ -1,0 +1,9 @@
+parts
+3
+subquery_enables_pushdown
+1	1	1
+subquery_disables_pushdown
+1	1	1
+correctness
+300	14850	44850
+300	14850	44850

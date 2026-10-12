@@ -1,0 +1,31 @@
+<test>
+    <settings>
+        <optimize_read_in_order>1</optimize_read_in_order>
+        <max_threads>8</max_threads>
+        <!-- Bypass the page cache so the reading is bound by request latency rather than by
+             decompression. What this test discriminates is how many of a part's streams have a
+             read outstanding at the same time: with the page cache warm, every shape looks the
+             same. `read_hits_with_aio.xml` uses the same lever. -->
+        <min_bytes_to_use_direct_io>1</min_bytes_to_use_direct_io>
+    </settings>
+
+    <!-- Latency-bound companion of `read_in_order_wide_columns.xml`. Two parts and
+         `max_threads = 8` give four streams per part, concatenated per part by
+         `PrefetchingConcatProcessor`; if that processor lets only a fixed number of its inputs
+         run, the number of reads in flight collapses to roughly one per part and the query
+         becomes latency-bound on a queue it is not allowed to fill. The table is deliberately
+         small: what is measured is concurrency, not throughput. -->
+    <create_query>
+        CREATE TABLE read_in_order_direct_io (key String, payload UInt64)
+        ENGINE = MergeTree PARTITION BY intDiv(payload, 5000000) ORDER BY key
+        SETTINGS index_granularity = 8192
+        AS SELECT concat('k/', toString(number % 100000), '/v'), number FROM numbers_mt(10000000)
+    </create_query>
+
+    <fill_query>OPTIMIZE TABLE read_in_order_direct_io FINAL</fill_query>
+
+    <query>SELECT * FROM read_in_order_direct_io ORDER BY key FORMAT Null</query>
+    <query>SELECT * FROM read_in_order_direct_io ORDER BY key DESC FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS read_in_order_direct_io</drop_query>
+</test>

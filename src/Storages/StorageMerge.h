@@ -200,10 +200,18 @@ public:
 
     /// Returns `false` if requested reading cannot be performed.
     bool requestReadingInOrder(InputOrderInfoPtr order_info_, size_t query_limit = 0);
-    /// Whether `requestReadingInOrder` accepts a reverse direction: every reading step of every child plan
-    /// has to accept it (see `ReadFromMergeTree::canReadInReverseOrder`). Creates the child plans.
-    bool canReadInReverseOrder();
+
+    /// Returns whether `requestReadingInOrder` can read the requested sorting key prefix in the
+    /// requested direction, without changing the child readers. Used as a preflight so that the
+    /// request is all-or-nothing.
+    bool canReadInOrder(size_t prefix_size, int direction);
+
     const InputOrderInfoPtr & getInputOrder() const { return order_info; }
+
+    /// Propagate `setPreferMultipleStreams` to child `ReadFromMergeTree` steps, so a
+    /// downstream aggregation/distinct-in-order over a `Merge` table keeps multiple
+    /// parallel input streams instead of collapsing them with per-part `PrefetchingConcat`.
+    void setPreferMultipleStreams();
 
     /// Whether the child plans have been created (`filterTablesAndCreateChildrenPlans`).
     bool hasChildPlans() const { return child_plans.has_value(); }
