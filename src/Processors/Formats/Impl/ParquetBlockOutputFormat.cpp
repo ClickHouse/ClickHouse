@@ -163,7 +163,10 @@ ParquetBlockOutputFormat::ParquetBlockOutputFormat(WriteBuffer & out_, SharedHea
 
     if (format_filter_info_ && format_filter_info_->column_mapper)
     {
-        column_field_ids = format_filter_info_->column_mapper->getStorageColumnEncoding();
+        /// `convertSchema` reads an empty encoding map as "every field id is missing", not "no field ids".
+        const auto & column_encoding = format_filter_info_->column_mapper->getStorageColumnEncoding();
+        if (!column_encoding.empty())
+            column_field_ids = column_encoding;
         /// The mapper outlives this format (and the encoder threads) via format_filter_info.
         /// It has to be consulted identically here and on the data paths below: the reader takes its
         /// max definition level from the schema, while the writer takes the level bit width from the

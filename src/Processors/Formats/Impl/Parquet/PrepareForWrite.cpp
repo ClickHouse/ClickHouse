@@ -384,7 +384,7 @@ parq::CompressionCodec::type compressionMethodToParquet(CompressionMethod c)
 
 /// Depth-first traversal of the schema tree for this column.
 /// `column_path` is the dotted Iceberg field path of this node (t.x / arr.element / m.value), built
-/// with the same convention as ColumnMapper's producer; only the Iceberg optionality lookup uses it.
+/// with the same convention as ColumnMapper's producer; only the ColumnMapper lookups use it.
 void prepareColumnRecursive(
     ColumnPtr column, DataTypePtr type, const std::string & name, const WriteOptions & options, const FormatSettings & format_settings,
     ColumnChunkWriteStates & states, SchemaElements & schemas, const std::optional<std::unordered_map<String, Int64>> & column_field_ids,
@@ -403,8 +403,10 @@ void analyzeVariantColumnTypesRecursive(
 
 void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::string & name,
     const WriteOptions & options, ColumnChunkWriteStates & states, SchemaElements & schemas, std::optional<Int64> field_id,
-    bool variant_binary_payload = false)
+    const String & column_path, const IcebergOptionality & iceberg_optionality, bool variant_binary_payload = false)
 {
+    const bool adjusted_to_utc = !iceberg_optionality.isLocalTimestamp(column_path);
+
     /// Add physical column info.
     auto & state = states.emplace_back();
     state.primitive_column = column;
@@ -550,7 +552,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
                 parq::TimeUnit unit;
                 unit.__set_MILLIS({});
                 parq::TimestampType tt;
-                tt.__set_isAdjustedToUTC(true);
+                tt.__set_isAdjustedToUTC(adjusted_to_utc);
                 tt.__set_unit(unit);
                 parq::LogicalType t;
                 t.__set_TIMESTAMP(tt);
@@ -591,7 +593,7 @@ void preparePrimitiveColumn(ColumnPtr column, DataTypePtr type, const std::strin
             parq::TimestampType tt;
             /// (Shouldn't we check the DateTime64's timezone parameter here? No, the actual number
             /// in DateTime64 column is always in UTC, regardless of the timezone parameter.)
-            tt.__set_isAdjustedToUTC(true);
+            tt.__set_isAdjustedToUTC(adjusted_to_utc);
             tt.__set_unit(unit);
             parq::LogicalType t;
             t.__set_TIMESTAMP(tt);
@@ -1280,7 +1282,7 @@ void prepareColumnRecursive(
             }
             else
             {
-                preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_binary_payload);
+                preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path, iceberg_optionality, variant_binary_payload);
             }
             break;
         }
@@ -1293,7 +1295,7 @@ void prepareColumnRecursive(
             /// (`prepareGeoColumn`) or the previous unsupported-type error; only a plain
             /// `Variant(...)` is written as a `Parquet` `VARIANT`.
             if (type->getCustomName())
-                preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_binary_payload);
+                preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path, iceberg_optionality, variant_binary_payload);
             else
                 prepareColumnVariant(column, type, name, options, format_settings, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths);
             break;
@@ -1306,11 +1308,15 @@ void prepareColumnRecursive(
                     column->convertToFullColumnIfLowCardinality(), nested_type, name, options, format_settings, states, schemas, column_field_ids, variant_type_hints, out_variant_type_hints, path, schema_path, out_variant_wrapper_paths, column_path, iceberg_optionality, inside_variant, variant_binary_payload);
             else
                 /// Use nested data type, but keep ColumnLowCardinality. The encoder can deal with it.
-                preparePrimitiveColumn(column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_binary_payload);
+                preparePrimitiveColumn(
+                    column, nested_type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path,
+                    iceberg_optionality, variant_binary_payload);
             break;
         }
         default:
-            preparePrimitiveColumn(column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), variant_binary_payload);
+            preparePrimitiveColumn(
+                column, type, name, options, states, schemas, lookupLeafFieldId(column_field_ids, name), column_path,
+                iceberg_optionality, variant_binary_payload);
             break;
     }
 }
@@ -1458,6 +1464,11 @@ bool variantWriteRequiresFileLevelAnalysis(const DataTypePtr & type, bool output
     }
 
     return false;
+}
+
+bool IcebergOptionality::isLocalTimestamp(const String & path) const
+{
+    return mapper && mapper->isLocalTimestampPath(path);
 }
 
 bool IcebergOptionality::isOptional(const String & path) const
