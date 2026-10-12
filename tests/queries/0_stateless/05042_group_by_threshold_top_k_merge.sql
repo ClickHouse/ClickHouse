@@ -14,6 +14,8 @@ SET group_by_two_level_threshold = 1;
 SET group_by_two_level_threshold_bytes = 1;
 SET max_block_size = 4096;
 SET max_rows_to_group_by = 0;
+SET query_plan_enable_optimizations = 1;
+SET query_plan_push_down_limit = 1;
 
 DROP TABLE IF EXISTS threshold_top_k;
 CREATE TABLE threshold_top_k (k UInt64, k2 UInt8, v UInt64, s String, u UInt64, u_null Nullable(UInt64), r UInt64)

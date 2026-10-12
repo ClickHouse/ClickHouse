@@ -30,6 +30,8 @@ SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
 SET max_rows_to_group_by = 0;
 SET query_plan_optimize_join_order_randomize = 0;
+SET query_plan_enable_optimizations = 1;
+SET query_plan_push_down_limit = 1;
 SET query_plan_aggregation_bucket_top_k = 1;
 -- the pre-cascades join-order pass attaches the row estimates the cost model needs (both
 -- settings are randomized by the test harness)

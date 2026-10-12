@@ -12,6 +12,7 @@ SET optimize_aggregation_in_order = 1;
 SET optimize_read_in_order = 1;
 SET prefer_localhost_replica = 1;
 SET query_plan_enable_optimizations = 1;
+SET query_plan_push_down_limit = 1;
 SET query_plan_aggregation_bucket_top_k = 1;
 SET enable_parallel_replicas = 0;
 -- Otherwise the memory-efficient merging drops `bucket_top_k` before the memory-bound merging is applied.

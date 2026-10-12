@@ -11,6 +11,8 @@ SET enable_adaptive_aggregator = 0;
 SET max_rows_to_group_by = 0;
 SET enable_parallel_replicas = 0;
 SET automatic_parallel_replicas_mode = 0;
+SET query_plan_enable_optimizations = 1;
+SET query_plan_push_down_limit = 1;
 SET query_plan_aggregation_bucket_top_k = 1;
 SET log_queries = 1;
 
