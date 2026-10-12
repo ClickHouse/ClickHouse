@@ -43,6 +43,29 @@ inline std::string_view ALWAYS_INLINE toStringView(const StringKey24 & n)
         return {reinterpret_cast<const char *>(&n), 24ul - (std::countl_zero(n.c) >> 3)};
 }
 
+namespace StringHashTableDetail
+{
+
+inline constexpr size_t min_page_size = 4096; /// The smallest page size
+
+/// Keeps the first `sz` bytes of an 8-byte word, for `sz` in 1..8, computed in place instead of loaded from a table.
+/// With BMI2, LLVM turns the load and `-1ULL >> (64 - 8 * sz)` into a single `bzhi`. Without it (AArch64, x86_64 below
+/// `x86-64-v3`), LLVM turns that form into two dependent shifts of the loaded word, so `~(-2ULL << (8 * sz - 1))` is used
+/// instead: the mask is computed in parallel with the load, which is followed by a single `bic` or `and`.
+inline UInt64 ALWAYS_INLINE key8Mask(size_t sz)
+{
+#if defined(__BMI2__)
+    return -1ULL >> (64 - 8 * sz);
+#else
+    if constexpr (std::endian::native == std::endian::little)
+        return ~(-2ULL << (8 * sz - 1));
+    else
+        return -1ULL << (64 - 8 * sz);
+#endif
+}
+
+}
+
 struct StringHashTableHash
 {
 #if defined(__SSE4_2__)
@@ -356,7 +379,7 @@ public:
 
     // Dispatch is written in a way that maximizes the performance:
     // 1. Always memcpy 8 times bytes
-    // 2. Use switch case extension to generate fast dispatching table
+    // 2. Test the size classes from the shortest one, because short keys are the most common
     // 3. Funcs are named callables that can be force_inlined
     //
     /// Note: the key bytes must be readable in 8-byte chunks (a `std::string` cannot be passed
@@ -382,8 +405,6 @@ public:
         }
 
         const char * p = x.data();
-        // pending bits that needs to be shifted out
-        const char s = (-sz & 7) * 8;
         union // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
         {
             StringKey8 k8;
@@ -391,64 +412,66 @@ public:
             StringKey24 k24;
             UInt64 n[3];
         };
-        switch ((sz - 1) >> 3)
+        // The last word of a key is read by an 8-byte load ending at the last byte of the key, and the
+        // bytes it reads from before that word are shifted out. For example, an 11-byte key:
+        //
+        //     key     a b c d e f g h i j k
+        //     n[0]    a b c d e f g h
+        //     load          d e f g h i j k
+        //     n[1]                    i j k 0 0 0 0 0
+        //
+        // The exception is a key of 1..8 bytes whose 8 bytes from its start fit in its page: it is read
+        // from its start, and the bytes after its end are masked off. Otherwise the key starts at least
+        // 8 bytes into its page, so the load stays in it.
+        if (sz <= 8)
         {
-            case 0: // 1..8 bytes
-            {
-                // first half page
-                if ((reinterpret_cast<uintptr_t>(p) & 2048) == 0)
-                {
-                    memcpy(&n[0], p, 8);
-                    if constexpr (std::endian::native == std::endian::little)
-                        n[0] &= -1ULL >> s;
-                    else
-                        n[0] &= -1ULL << s;
-                }
-                else
-                {
-                    const char * lp = x.data() + x.size() - 8;
-                    memcpy(&n[0], lp, 8);
-                    if constexpr (std::endian::native == std::endian::little)
-                        n[0] >>= s;
-                    else
-                        n[0] <<= s;
-                }
-                const size_t res = hash_of(k8);
-                keyHolderDiscardKey(key_holder);
-                return func(resolver(std::integral_constant<size_t, 1>{}, res), k8, res);
-            }
-            case 1: // 9..16 bytes
+            if ((reinterpret_cast<uintptr_t>(p) & (StringHashTableDetail::min_page_size - 1)) <= StringHashTableDetail::min_page_size - 8)
             {
                 memcpy(&n[0], p, 8);
-                const char * lp = x.data() + x.size() - 8;
-                memcpy(&n[1], lp, 8);
-                if constexpr (std::endian::native == std::endian::little)
-                    n[1] >>= s;
-                else
-                    n[1] <<= s;
-                const size_t res = hash_of(k16);
-                keyHolderDiscardKey(key_holder);
-                return func(resolver(std::integral_constant<size_t, 2>{}, res), k16, res);
+                n[0] &= StringHashTableDetail::key8Mask(sz);
             }
-            case 2: // 17..24 bytes
+            else
             {
-                memcpy(&n[0], p, 16);
                 const char * lp = x.data() + x.size() - 8;
-                memcpy(&n[2], lp, 8);
+                memcpy(&n[0], lp, 8);
                 if constexpr (std::endian::native == std::endian::little)
-                    n[2] >>= s;
+                    n[0] >>= 64 - 8 * sz;
                 else
-                    n[2] <<= s;
-                const size_t res = hash_of(k24);
-                keyHolderDiscardKey(key_holder);
-                return func(resolver(std::integral_constant<size_t, 3>{}, res), k24, res);
+                    n[0] <<= 64 - 8 * sz;
             }
-            default: // >= 25 bytes
-            {
-                const size_t res = hash_of(x);
-                return func(resolver(std::integral_constant<size_t, 4>{}, res), std::forward<KeyHolder>(key_holder), res);
-            }
+            const size_t res = hash_of(k8);
+            keyHolderDiscardKey(key_holder);
+            return func(resolver(std::integral_constant<size_t, 1>{}, res), k8, res);
         }
+        if (sz <= 16)
+        {
+            memcpy(&n[0], p, 8);
+            const char * lp = x.data() + x.size() - 8;
+            memcpy(&n[1], lp, 8);
+            if constexpr (std::endian::native == std::endian::little)
+                n[1] >>= 128 - 8 * sz;
+            else
+                n[1] <<= 128 - 8 * sz;
+            const size_t res = hash_of(k16);
+            keyHolderDiscardKey(key_holder);
+            return func(resolver(std::integral_constant<size_t, 2>{}, res), k16, res);
+        }
+        if (sz <= 24)
+        {
+            memcpy(&n[0], p, 16);
+            const char * lp = x.data() + x.size() - 8;
+            memcpy(&n[2], lp, 8);
+            if constexpr (std::endian::native == std::endian::little)
+                n[2] >>= 192 - 8 * sz;
+            else
+                n[2] <<= 192 - 8 * sz;
+            const size_t res = hash_of(k24);
+            keyHolderDiscardKey(key_holder);
+            return func(resolver(std::integral_constant<size_t, 3>{}, res), k24, res);
+        }
+        // >= 25 bytes
+        const size_t res = hash_of(x);
+        return func(resolver(std::integral_constant<size_t, 4>{}, res), std::forward<KeyHolder>(key_holder), res);
     }
 
     template <typename Self, typename KeyHolder, typename Func>
