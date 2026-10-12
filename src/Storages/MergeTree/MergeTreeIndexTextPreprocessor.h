@@ -26,6 +26,9 @@ public:
     bool hasActions() const { return !original_actions.getActions().empty(); }
     const ActionsDAG & getOriginalActionsDAG() const { return original_actions.getActionsDAG(); }
 
+    /// The preprocessor expression over an input column `col_name` of type `col_type`, to merge into a larger DAG.
+    ActionsDAG getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const;
+
     bool isLowerOrUpper() const { return is_lower_or_upper; }
 
 private:
@@ -43,6 +46,8 @@ private:
     ExpressionActions actions_for_index_column;
     /// The expression actions that executes the preprocessor expression on top the constant string with needles.
     ExpressionActions actions_for_constant;
+    /// The preprocessor expression over the placeholder column, for `getActionsDAGForColumn`.
+    ASTPtr expression_ast_for_index_column;
 };
 
 }
