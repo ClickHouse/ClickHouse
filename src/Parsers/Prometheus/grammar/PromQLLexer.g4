@@ -124,6 +124,7 @@ AGGREGATION_OPERATOR:
     | 'topk'
     | 'quantile'
     | 'limitk'
+    | 'limit_ratio'
 ;
 
 FUNCTION options {
@@ -150,6 +151,7 @@ FUNCTION options {
     | 'histogram_fraction'
     | 'histogram_quantile'
     | 'holt_winters'
+    | 'double_exponential_smoothing'
     | 'hour'
     | 'idelta'
     | 'increase'
@@ -162,14 +164,18 @@ FUNCTION options {
     | 'minute'
     | 'month'
     | 'predict_linear'
+    | 'range'
     | 'rate'
     | 'resets'
     | 'round'
     | 'scalar'
     | 'sgn'
     | 'sort'
+    | 'sort_by_label'
+    | 'sort_by_label_desc'
     | 'sort_desc'
     | 'sqrt'
+    | 'step'
     | 'time'
     | 'timestamp'
     | 'vector'
@@ -228,7 +234,10 @@ METRIC_NAME : [a-z_:] [a-z0-9_:]*;
 LABEL_NAME  : [a-z_] [a-z0-9_]*;
 
 WS         : [\r\t\n ]+   -> channel(WHITESPACE);
-SL_COMMENT : '#' .*? '\n' -> channel(COMMENTS);
+// Newline-terminated comments keep the grammar's existing behavior.
+// EOF comments are lexed here and then narrowed by PromQLLexerBailingOutOnError to the shared SQL
+// lexer's `# ` / `#!` prefix contract. A bare trailing `#` remains a lexical error.
+SL_COMMENT : '#' ( ~[\r\n]* [\r\n] | ~[\r\n]+ ) -> channel(COMMENTS);
 
 // Whitespace as a fragment (so it can be used as a part of another token).
 fragment WS_FRAGMENT: [\r\t\n ]+;

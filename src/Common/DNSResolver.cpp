@@ -64,8 +64,11 @@ namespace
 {
 
 /// Slightly altered implementation from https://github.com/pocoproject/poco/blob/poco-1.6.1/Net/src/SocketAddress.cpp#L86
-void splitHostAndPort(const std::string & host_and_port, std::string & out_host, UInt16 & out_port)
+void splitHostAndPortImpl(const std::string & host_and_port, std::string & out_host, UInt16 & out_port)
 {
+    if (host_and_port.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "Empty host and port");
+
     String port_str;
     out_host.clear();
 
@@ -182,6 +185,12 @@ std::unordered_set<String> reverseResolveImpl(const Poco::Net::IPAddress & addre
     {
         if (address.family() == Poco::Net::IPAddress::Family::IPv4)
             ptr_records = ptr_resolver->resolve(address.toString());
+        else if (address.isIPv4Mapped())
+        {
+            /// An IPv4-mapped address is an IPv4 peer of a dual-stack socket, so its PTR record is the IPv4 one.
+            Poco::Net::IPAddress ipv4(reinterpret_cast<const char *>(address.addr()) + 12, 4);
+            ptr_records = ptr_resolver->resolve(ipv4.toString());
+        }
         else
             ptr_records = ptr_resolver->resolve_v6(address.toString());
     }
@@ -355,11 +364,17 @@ DNSResolver::IPAddresses DNSResolver::resolveHostAll(const std::string & host)
     return addresses;
 }
 
-Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_and_port)
+std::pair<std::string, UInt16> DNSResolver::splitHostAndPort(const std::string & host_and_port)
 {
     String host;
     UInt16 port = 0;
-    splitHostAndPort(host_and_port, host, port);
+    splitHostAndPortImpl(host_and_port, host, port);
+    return {std::move(host), port};
+}
+
+Poco::Net::SocketAddress DNSResolver::resolveAddress(const std::string & host_and_port)
+{
+    auto [host, port] = splitHostAndPort(host_and_port);
 
     if (impl->disable_cache)
         return Poco::Net::SocketAddress(pickAddress(getResolvedIPAddressesWithFiltering(host)), port);

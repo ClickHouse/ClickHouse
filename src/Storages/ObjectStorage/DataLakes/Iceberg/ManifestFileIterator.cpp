@@ -102,14 +102,6 @@ namespace
         return DB::Range(*left, true, *right, true);
     }
 
-    bool isColumnPresenceKnown(const ParsedManifestFileEntry & parsed_entry)
-    {
-        for (const auto & [field_id, column_info] : parsed_entry.columns_infos)
-            if (column_info.bytes_size.has_value())
-                return true;
-        return false;
-    }
-
     void addRowLineageHyperrectangles(
         std::unordered_map<Int32, DB::Range> & hyperrectangles,
         const ProcessedManifestFileEntry & entry,
@@ -126,7 +118,6 @@ namespace
         if (common::addOverflow<UInt64>(
                 *entry.first_row_id, static_cast<UInt64>(parsed_entry.record_count) - 1, last_inherited_row_id))
             return;
-        const bool column_presence_is_known = isColumnPresenceKnown(parsed_entry);
         const bool row_ids_are_readable = Poco::toUpper(parsed_entry.file_format) != "ORC";
 
         for (const auto field_id : {row_id_field_id, last_updated_sequence_number_field_id})
@@ -134,23 +125,16 @@ namespace
             const bool is_row_id = field_id == row_id_field_id;
             if (is_row_id && !row_ids_are_readable)
                 continue;
-            const UInt64 inherited_lower_bound = is_row_id ? *entry.first_row_id : inherited_sequence_number;
             const UInt64 inherited_upper_bound = is_row_id ? last_inherited_row_id : inherited_sequence_number;
 
-            if (!parsed_entry.columns_infos.contains(field_id))
-            {
-                if (column_presence_is_known)
-                {
-                    hyperrectangles.emplace(field_id, DB::Range(inherited_lower_bound, true, inherited_upper_bound, true));
-                    continue;
-                }
-            }
-            else if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id, path_to_manifest_file))
+            if (auto range = getMaterializedRowLineageRange(parsed_entry, field_id, path_to_manifest_file))
             {
                 hyperrectangles.emplace(field_id, *range);
                 continue;
             }
 
+            /// A missing statistic says nothing about the column, and a materialized value always predates this file, so only the
+            /// upper end of the inherited block bounds every value the file can hold.
             hyperrectangles.emplace(field_id, DB::Range(UInt64(0), true, inherited_upper_bound, true));
         }
     }
@@ -318,14 +302,38 @@ std::shared_ptr<ManifestFileIterator> ManifestFileIterator::create(
             path_to_manifest_file_,
             f_schema);
 
-    Poco::Dynamic::Var json = parser.parse(*schema_json_string);
-    const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
-    Int32 manifest_schema_id = schema_object->getValue<int>(f_schema_id);
+    const bool tolerate_conflicting_manifest_schemas = context_->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas];
 
-    schema_processor.addIcebergTableSchema(
-        schema_object,
-        IcebergSchemaProcessor::SchemaSource::ManifestFile,
-        context_->getSettingsRef()[Setting::iceberg_tolerate_conflicting_manifest_schemas]);
+    std::optional<Int32> header_schema_id;
+    if (auto schema_id_string = manifest_file_deserializer_->tryGetAvroMetadataValue(f_schema_id))
+        header_schema_id = parse<Int32>(*schema_id_string);
+
+    Int32 manifest_schema_id = 0;
+    if (header_schema_id.has_value() && tolerate_conflicting_manifest_schemas
+        && schema_processor.isSchemaRegisteredFromMetadata(*header_schema_id))
+    {
+        manifest_schema_id = *header_schema_id;
+    }
+    else
+    {
+        Poco::Dynamic::Var json = parser.parse(*schema_json_string);
+        const Poco::JSON::Object::Ptr & schema_object = json.extract<Poco::JSON::Object::Ptr>();
+        Int32 embedded_schema_id = schema_object->getValue<int>(f_schema_id);
+        if (header_schema_id.has_value() && *header_schema_id != embedded_schema_id)
+            throw Exception(
+                ErrorCodes::ICEBERG_SPECIFICATION_VIOLATION,
+                "Manifest file '{}' has header key '{}' = {} that differs from the '{}' = {} of its '{}' header",
+                path_to_manifest_file_,
+                f_schema_id,
+                *header_schema_id,
+                f_schema_id,
+                embedded_schema_id,
+                f_schema);
+        manifest_schema_id = embedded_schema_id;
+
+        schema_processor.addIcebergTableSchema(
+            schema_object, IcebergSchemaProcessor::SchemaSource::ManifestFile, tolerate_conflicting_manifest_schemas);
+    }
 
     /// Every entry of this manifest carries one partition value per spec field, including the
     /// fields skipped in buildPartitionKeyFromSpec, so this count is the arity its partition tuples must have.
@@ -406,7 +414,9 @@ ManifestFileIterator::ManifestFileIterator(
             return;
 
         const auto parsed_entry = manifest_file_deserializer->getParsedManifestFileEntry(row_index);
-        if (parsed_entry->content_type != FileContentType::DATA || parsed_entry->status != ManifestEntryStatus::ADDED
+        /// Every live data file with a null first_row_id inherits one, EXISTING ones included. A DELETED entry
+        /// takes no ids: writers reserve only the added and existing rows of a manifest.
+        if (parsed_entry->content_type != FileContentType::DATA || parsed_entry->status == ManifestEntryStatus::DELETED
             || parsed_entry->parsed_first_row_id.has_value())
             continue;
 
@@ -510,6 +520,12 @@ ProcessedManifestFileEntryPtr ManifestFileIterator::processRow(size_t row_index)
 
     auto entry = std::make_shared<ProcessedManifestFileEntry>(
         parsed_entry, common_partition_specification, resolved_sequence_number, resolved_schema_id);
+
+    /// Decode the partition values once, against the schema of the manifest that wrote them, so that
+    /// pruning, identity-column projection, delete matching, compaction and `system.iceberg_files` all
+    /// see the same value regardless of how this particular manifest encoded it.
+    entry->normalized_partition_key_value = normalizePartitionKeyValue(
+        parsed_entry->partition_key_value, *common_partition_specification, *schema_processor_ptr, manifest_schema_id);
 
     if (parsed_entry->parsed_first_row_id.has_value())
         entry->first_row_id = parsed_entry->parsed_first_row_id;
