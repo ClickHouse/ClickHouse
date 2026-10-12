@@ -37,7 +37,7 @@ for prewhere in 0 1; do
     ${CLICKHOUSE_CLIENT} -q "
     SET allow_suspicious_variant_types = 1, allow_suspicious_low_cardinality_types = 1,
         use_variant_as_common_type = 1,
-        optimize_move_to_prewhere = ${prewhere}, query_plan_optimize_prewhere = ${prewhere};
+        optimize_move_to_prewhere = ${prewhere};
 
     SELECT DISTINCT toString(c) AS s FROM (
         SELECT multiIf(${COND}, 'yesyes', toLowCardinality(isNull('nononono'))) AS c
