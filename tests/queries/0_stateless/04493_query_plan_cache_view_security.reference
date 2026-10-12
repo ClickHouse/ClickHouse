@@ -1,0 +1,21 @@
+-- 1. SQL SECURITY NONE view: correct result, never cached
+1	10
+2	20
+-- hits: 0
+1	10
+2	20
+-- hits (still a miss, not cached): 0
+-- 2. INVOKER view: miss then hit
+1	10
+2	20
+-- hits: 0
+1	10
+2	20
+-- hits: 1
+-- 2b. MODIFY SQL SECURITY NONE invalidates the entry; query is no longer cached
+1	10
+2	20
+-- hits: 0
+1	10
+2	20
+-- hits (still not cached): 0

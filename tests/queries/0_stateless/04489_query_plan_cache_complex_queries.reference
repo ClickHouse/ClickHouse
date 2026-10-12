@@ -1,0 +1,32 @@
+-- first run (cold, miss)
+a	10	30
+b	20	30
+c	30	30
+-- hits: 0
+-- second run (hit)
+a	10	30
+b	20	30
+c	30	30
+-- hits: 1
+-- data freshness: cache hit must see newly inserted rows
+a	10	30
+b	20	30
+c	30	30
+d	40	30
+-- hits: 1
+-- schema change invalidates: ALTER ADD COLUMN forces re-planning
+a	10	40
+b	20	40
+c	30	40
+d	40	40
+-- hits: 0
+-- view redefinition invalidates: changed body must be picked up
+a	20	40
+b	40	40
+c	60	40
+d	80	40
+-- hits: 0
+-- scalar subqueries are not cached without the opt-in setting
+-- hits: 0
+-- non-deterministic functions inside a view body are never cached
+-- hits: 0
