@@ -1,11 +1,13 @@
 -- Regression test for a LOGICAL_ERROR ("Left and right columns have same names")
--- in the join order optimizer (chooseJoinOrder -> JoinExpressionActions). A comma join
--- over a multi-table view is flattened by the optimizer, and with
--- query_plan_merge_expression_into_join = 1 the non-passthrough expression step above the
--- view's inner join is merged into it, exposing one more relation than the pre-reorder
--- overlap guard used to account for. That extra relation duplicates a qualified column name
--- (__table3.c1), so reconstructing the reordered join hit a LOGICAL_ERROR. The guard must
--- flatten the same way the optimizer does and skip reordering when names overlap.
+-- in the join order optimizer (`chooseJoinOrder` -> `JoinExpressionActions`). The optimizer
+-- used to flatten a comma join over a multi-table view into the enclosing join graph, and with
+-- `query_plan_merge_expression_into_join = 1` the non-passthrough expression step above the
+-- view's inner join was merged into it, exposing one more relation than the pre-reorder
+-- overlap guard accounted for. That extra relation duplicated a qualified column name
+-- (`__table3.c1`), so reconstructing the reordered join hit a LOGICAL_ERROR. A view is now kept
+-- whole, so that shape cannot arise from a view at all. The overlap guard still mirrors the
+-- builder's flattening and skips reordering when names overlap, which is what covers the
+-- non-view relations that can also collide.
 -- https://s3.amazonaws.com/clickhouse-test-reports/json.html?REF=master&sha=3d31d8f59df88ee56b9b739f2eedb1b7a6acc6a4&name_0=NightlySQLancer&name_1=SQLancerPP
 
 DROP TABLE IF EXISTS t0_04516;
@@ -32,17 +34,20 @@ SET query_plan_merge_expression_into_join = 1;
 SELECT t4_04516.c1, t0_04516.c1, v0_04516.d0, t0_04516.c0
 FROM t0_04516, v0_04516, t4_04516;
 
--- The view's own inner relations join directly against the outer table only when the expression
--- above the view's inner join was merged, which is the state this test covers. The outer relation
--- is labelled by its alias and a flattened inner one by its database, so only the merged shape puts
--- the two in one join label. The label also carries a cost annotation whose text depends on the
--- randomized cost model, hence the pin.
-SELECT count() > 0 FROM (
+-- A view's relations are not flattened into the enclosing join graph: a view restarts the `__tableN`
+-- namespace, and two relations of one graph may not share a column name. The outer relation is
+-- labelled by its alias and a flattened inner one by its database, so the two never end up in one
+-- join label. The label also carries a cost annotation whose text depends on the randomized cost
+-- model, hence the pin.
+SELECT count() FROM (
     EXPLAIN SELECT t4_04516.c1, t0_04516.c1, v0_04516.d0, t0_04516.c0
     FROM t0_04516, v0_04516, t4_04516
     SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_algorithm = 'greedy',
              query_plan_merge_expression_into_join = 1, query_plan_optimize_join_order_randomize = 0
 ) WHERE explain LIKE '%t0_04516 × ' || currentDatabase() || '.t4_04516%';
+
+-- The enclosing join is still reordered around the opaque view; `05039_join_reorder_view_barrier`
+-- asserts that on a populated fixture, where the optimizer annotates the costed relations.
 
 INSERT INTO t0_04516 VALUES (true, 1), (false, 2);
 INSERT INTO t4_04516 VALUES (1, true), (0, false);
