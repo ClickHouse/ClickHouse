@@ -8066,16 +8066,19 @@ void QueryAnalyzer::resolveUnion(const QueryTreeNodePtr & union_node, Identifier
                         scope.scope_node->formatASTForErrorMessage());
 
                 /// A materialized CTE referenced from a recursive member is materialized once, before the recursion
-                /// starts, while the working table of this recursive CTE is still empty, so it cannot read the
-                /// working table: fail instead of snapshotting an empty table. Checked after every widening pass,
-                /// because a later pass would otherwise report a schema mismatch of the materialized CTE instead.
+                /// starts, while the working table (and the `<cte_name>_settled` table of `USING KEY`) of this
+                /// recursive CTE is still empty, so it cannot read either of them: fail instead of snapshotting an
+                /// empty table. Checked after every widening pass, because a later pass would otherwise report a
+                /// schema mismatch of the materialized CTE instead.
                 traverseQueryTree(query_node, Everything{}, [&](const QueryTreeNodePtr & node)
                 {
                     auto * table_node = node->as<TableNode>();
                     if (!table_node || !table_node->isMaterializedCTE())
                         return;
 
-                    if (isStorageUsedInTree(temporary_table_storage, table_node->getMaterializedCTESubquery().get()))
+                    const auto * materialized_subquery = table_node->getMaterializedCTESubquery().get();
+                    if (isStorageUsedInTree(temporary_table_storage, materialized_subquery)
+                        || (settled_table_storage && isStorageUsedInTree(settled_table_storage, materialized_subquery)))
                         throw Exception(ErrorCodes::UNSUPPORTED_METHOD,
                             "Materialized CTE '{}' cannot read recursive CTE '{}' from its recursive member. In scope {}",
                             table_node->getMaterializedCTE()->cte_name,
