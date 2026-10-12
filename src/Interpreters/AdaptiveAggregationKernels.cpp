@@ -560,7 +560,7 @@ namespace
             }
             else
             {
-                UInt32 index;
+                UInt32 index = 0;
                 if (heap.size() < limit)
                 {
                     index = static_cast<UInt32>(groups.size());
