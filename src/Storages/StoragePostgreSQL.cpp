@@ -1054,7 +1054,7 @@ ENGINE = PostgreSQL('localhost:5432', 'database', 'table', 'user', 'password',
 
 ## Settings {#settings}
 
-The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting. A new table adds the values it takes this way that differ from the defaults of the engine to its `SETTINGS`, so that it keeps them after a server restart. In the `SETTINGS` clause of a table, a setting reset with `name = DEFAULT` is not taken from the query-level setting.
+The connection pool used by the `PostgreSQL` table engine (and the [`postgresql`](/reference/functions/table-functions/postgresql) table function) can be configured per table with a `SETTINGS` clause. When a setting is not specified, it defaults to the value of the corresponding query-level `postgresql_*` setting. A new table, except one restored from a backup, adds the values it takes this way that differ from the defaults of the engine to its `SETTINGS`, so that it keeps them after a server restart. In the `SETTINGS` clause of a table, a setting reset with `name = DEFAULT` is not taken from the query-level setting.
 
 ### `postgresql_connection_pool_size` {#postgresql-connection-pool-size}
 
