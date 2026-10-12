@@ -6,12 +6,14 @@
 #include <Storages/MergeTree/InsertBlockInfo.h>
 #include <Common/ProfileEvents.h>
 #include <Interpreters/InsertDeduplication.h>
+#include <Interpreters/MergeTreeTransactionHolder.h>
 
 
 namespace DB
 {
 
 class StorageMergeTree;
+struct UniqueKeyInsertOutcome;
 struct BlockWithPartition;
 
 struct StorageSnapshot;
@@ -34,6 +36,9 @@ struct MergeTreeDelayedChunk
         TemporaryPartPtr temp_part;
         UInt64 elapsed_ns;
         ProfileEvents::Counters part_counters;
+        /// Commits this partition's part; its csn versions the part and every bitmap the commit
+        /// writes. Empty when the table has no unique key.
+        MergeTreeTransactionHolder uk_txn;
     };
 
     std::vector<Partition> partitions;
@@ -73,7 +78,11 @@ protected:
 
     std::vector<std::string> commitPart(MutableDataPartPtr & part, const std::vector<DeduplicationHash> & deduplication_hashes);
     virtual void finishDelayedChunk();
-    virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block);
+    virtual TemporaryPartPtr writeNewTempPart(BlockWithPartition & block, const MergeTreeTransactionPtr & txn);
+
+private:
+    UniqueKeyInsertOutcome commitUniqueKeyPart(
+        MergeTreeDelayedChunk::Partition & partition, const std::vector<DeduplicationHash> & deduplication_hashes);
 };
 
 }

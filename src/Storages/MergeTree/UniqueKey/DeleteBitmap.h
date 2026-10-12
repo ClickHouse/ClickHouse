@@ -139,11 +139,6 @@ public:
     /// True if `file_name` matches the canonical `delete_bitmap_{csn}_for_{target}.rbm` form.
     static bool isCarriedBitmapFile(std::string_view file_name);
 
-    static bool isAnyDeleteBitmapFile(std::string_view file_name)
-    {
-        return isStagedBitmapFile(file_name) || isCarriedBitmapFile(file_name);
-    }
-
     /// Extract the target part name from `delete_bitmap_for_{target}.rbm`. Caller must have
     /// screened the name via `isStagedBitmapFile`; throws if `file_name` does not match.
     static std::string parseStagedTargetFromFileName(std::string_view file_name);
