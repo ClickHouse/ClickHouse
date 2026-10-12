@@ -4,7 +4,10 @@
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
+#include <Parsers/ASTSelectQuery.h>
+#include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSubquery.h>
+#include <Parsers/ASTTablesInSelectQuery.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
@@ -26,6 +29,262 @@ namespace DB::PrometheusQueryToSQL
 
 namespace
 {
+    /// Collects all ASTSelectQuery instances by unwrapping ASTSelectWithUnionQuery layers.
+    void collectSelectQueries(const ASTPtr & ast, std::vector<ASTSelectQuery *> & result)
+    {
+        if (!ast)
+            return;
+        if (auto * select = ast->as<ASTSelectQuery>())
+        {
+            result.push_back(select);
+        }
+        else if (auto * select_with_union = ast->as<ASTSelectWithUnionQuery>())
+        {
+            if (select_with_union->list_of_selects)
+            {
+                for (const auto & child : select_with_union->list_of_selects->children)
+                    collectSelectQueries(child, result);
+            }
+        }
+    }
+
+    /// Returns the table function timeSeriesSelector() if a SELECT reads from it.
+    ASTPtr tryGetTimeSeriesSelector(const ASTSelectQuery & select_query)
+    {
+        auto tables = select_query.tables();
+        if (!tables || tables->children.empty())
+            return nullptr;
+        const auto * elem = tables->children[0]->as<ASTTablesInSelectQueryElement>();
+        const auto * table_expr = (elem && elem->table_expression) ? elem->table_expression->as<ASTTableExpression>() : nullptr;
+        if (!table_expr || !table_expr->table_function)
+            return nullptr;
+        const auto * function = table_expr->table_function->as<ASTFunction>();
+        return (function && (function->name == "timeSeriesSelector")) ? table_expr->table_function : nullptr;
+    }
+
+    /// Checks if a node preserves the time-series group without dropping or modifying labels.
+    bool isGroupPreservingNode(const PrometheusQueryTree::Node * node)
+    {
+        if (!node)
+            return false;
+
+        using NodeType = PrometheusQueryTree::NodeType;
+        if (node->node_type == NodeType::InstantSelector || node->node_type == NodeType::RangeSelector)
+            return true;
+
+        if (node->node_type == NodeType::Offset)
+            return !node->children.empty() && isGroupPreservingNode(node->children[0]);
+
+        if (node->node_type == NodeType::Subquery)
+        {
+            const auto * subq = static_cast<const PrometheusQueryTree::Subquery *>(node);
+            return isGroupPreservingNode(subq->getExpression());
+        }
+
+        if (node->node_type == NodeType::Function)
+        {
+            const auto * func = static_cast<const PrometheusQueryTree::Function *>(node);
+            if (func->function_name == "last_over_time")
+                return !func->children.empty() && isGroupPreservingNode(func->children[0]);
+        }
+
+        return false;
+    }
+
+    /// arrayExists(x -> isNotNull(x), values)
+    /// A row without any value is not a sample, e.g. a row of `requests > 1000` where every value is filtered out.
+    ASTPtr makeHasValueCondition()
+    {
+        return makeASTFunction(
+            "arrayExists",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x")),
+                makeASTFunction("isNotNull", make_intrusive<ASTIdentifier>("x"))),
+            make_intrusive<ASTIdentifier>(ColumnNames::Values));
+    }
+
+    /// (SELECT countForEach(values) FROM left) is the number of samples at each step, or [] if there are no rows.
+    /// It's the same subquery everywhere, so it's evaluated once.
+    ASTPtr makeSamplesPerStep(const String & table)
+    {
+        SelectQueryBuilder builder;
+        builder.select_list.push_back(makeASTFunction("countForEach", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+        builder.from_table = table;
+        return make_intrusive<ASTSubquery>(builder.getSelectQuery());
+    }
+
+    /// Keeps the right values only at steps where the left side has a sample, so duplicates are checked only there.
+    /// Prometheus skips a step with an empty left side before it checks the right side for duplicates.
+    String keepRightStepsWithLeftSamples(const String & right, const String & left, ConverterContext & context)
+    {
+        /// arrayResize((SELECT countForEach(values) FROM left), length(values))
+        ASTPtr left_counts = makeASTFunction(
+            "arrayResize", makeSamplesPerStep(left), makeASTFunction("length", make_intrusive<ASTIdentifier>(ColumnNames::Values)));
+
+        SelectQueryBuilder builder;
+        builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
+        builder.select_list.push_back(makeASTFunction(
+            "arrayMap",
+            makeASTFunction(
+                "lambda",
+                makeASTFunction("tuple", make_intrusive<ASTIdentifier>("x"), make_intrusive<ASTIdentifier>("c")),
+                makeASTFunction(
+                    "if",
+                    makeASTFunction("greater", make_intrusive<ASTIdentifier>("c"), make_intrusive<ASTLiteral>(0u)),
+                    make_intrusive<ASTIdentifier>("x"),
+                    make_intrusive<ASTLiteral>(Field{}))),
+            make_intrusive<ASTIdentifier>(ColumnNames::Values),
+            std::move(left_counts)));
+        builder.select_list.back()->setAlias(ColumnNames::Values);
+        builder.from_table = right;
+
+        context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), builder.getSelectQuery(), SQLSubqueryType::TABLE});
+        return context.subqueries.back().name;
+    }
+
+    /// Dynamic filter pushdown for group_left: adds `right_join_group IN (SELECT join_group FROM left)` to the selector
+    /// and range-aggregation stages of the right side (`right_grid`), so the right side reads only the series which can match.
+    void pushDownLeftJoinGroups(
+        const String & right_grid, const ASTPtr & right_join_group, const String & left, bool check_duplicates, ConverterContext & context)
+    {
+        /// SELECT join_group FROM left WHERE arrayExists(x -> isNotNull(x), values)
+        SelectQueryBuilder filter_builder;
+        filter_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+        filter_builder.from_table = left;
+        filter_builder.where = makeHasValueCondition();
+        auto filter_subquery = make_intrusive<ASTSubquery>(filter_builder.getSelectQuery());
+        ASTPtr filter_condition = makeASTFunction("in", right_join_group->clone(), std::move(filter_subquery));
+
+        std::unordered_set<String> visited_subqueries{right_grid};
+        std::vector<ASTSelectQuery *> group_queries;
+
+        auto push_down_to_ast = [&](auto & self, const ASTPtr & query_ast) -> void
+        {
+            std::vector<ASTSelectQuery *> select_queries;
+            collectSelectQueries(query_ast, select_queries);
+            for (auto * select_query : select_queries)
+            {
+                bool has_group = false;
+                if (auto select_list = select_query->select())
+                {
+                    for (const auto & col : select_list->children)
+                    {
+                        if (col->tryGetAlias() == ColumnNames::Group)
+                        {
+                            has_group = true;
+                            break;
+                        }
+                        if (auto * id = col->as<ASTIdentifier>())
+                        {
+                            if (id->shortName() == ColumnNames::Group)
+                            {
+                                has_group = true;
+                                break;
+                            }
+                        }
+                    }
+                }
+
+                if (!has_group)
+                    continue;
+
+                group_queries.push_back(select_query);
+
+                if (auto tables = select_query->tables())
+                {
+                    for (const auto & table_child : tables->children)
+                    {
+                        if (auto * elem = table_child->as<ASTTablesInSelectQueryElement>())
+                        {
+                            if (auto * table_expr = elem->table_expression ? elem->table_expression->as<ASTTableExpression>() : nullptr)
+                            {
+                                if (auto * table_id = table_expr->database_and_table_name ? table_expr->database_and_table_name->as<ASTTableIdentifier>() : nullptr)
+                                {
+                                    String from_table_name = table_id->shortName();
+                                    if (visited_subqueries.insert(from_table_name).second)
+                                    {
+                                        for (auto & subq : context.subqueries)
+                                        {
+                                            if (subq.name == from_table_name && subq.ast)
+                                            {
+                                                self(self, subq.ast);
+                                                break;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        };
+
+        for (auto & subq : context.subqueries)
+        {
+            if (subq.name == right_grid)
+            {
+                push_down_to_ast(push_down_to_ast, subq.ast);
+                break;
+            }
+        }
+
+        /// Prometheus checks the whole right side for duplicates, so join groups having more than one series
+        /// on the right side are kept too. They're found by an extra read of the selector.
+        if (check_duplicates)
+        {
+            ASTs selectors;
+            for (auto * select_query : group_queries)
+            {
+                if (auto selector = tryGetTimeSeriesSelector(*select_query))
+                    selectors.push_back(selector);
+            }
+
+            if (selectors.size() != 1)
+                return;
+
+            /// Step 1:
+            /// SELECT timeSeriesIdToGroup(id) AS group FROM <selector> WHERE arraySum(<left samples per step>) > 0 GROUP BY id
+            SelectQueryBuilder groups_builder;
+            groups_builder.select_list.push_back(makeASTFunction("timeSeriesIdToGroup", make_intrusive<ASTIdentifier>(ColumnNames::ID)));
+            groups_builder.select_list.back()->setAlias(ColumnNames::Group);
+            groups_builder.from_table_function = selectors[0]->clone();
+            groups_builder.where
+                = makeASTFunction("greater", makeASTFunction("arraySum", makeSamplesPerStep(left)), make_intrusive<ASTLiteral>(0u));
+            groups_builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::ID));
+            context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), groups_builder.getSelectQuery(), SQLSubqueryType::TABLE});
+
+            /// Step 2:
+            /// SELECT <join_group> AS join_group FROM step1 GROUP BY join_group HAVING count() > 1
+            SelectQueryBuilder candidates_builder;
+            candidates_builder.select_list.push_back(right_join_group->clone());
+            candidates_builder.select_list.back()->setAlias(ColumnNames::JoinGroup);
+            candidates_builder.from_table = context.subqueries.back().name;
+            candidates_builder.group_by.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+            candidates_builder.having = makeASTFunction("greater", makeASTFunction("count"), make_intrusive<ASTLiteral>(1u));
+            context.subqueries.emplace_back(
+                SQLSubquery{context.subqueries.size(), candidates_builder.getSelectQuery(), SQLSubqueryType::MATERIALIZED_TABLE});
+
+            SelectQueryBuilder candidates_filter_builder;
+            candidates_filter_builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
+            candidates_filter_builder.from_table = context.subqueries.back().name;
+            filter_condition = makeASTFunction(
+                "or",
+                std::move(filter_condition),
+                makeASTFunction("in", right_join_group->clone(), make_intrusive<ASTSubquery>(candidates_filter_builder.getSelectQuery())));
+        }
+
+        for (auto * select_query : group_queries)
+        {
+            ASTPtr existing_where = select_query->where();
+            if (existing_where)
+                select_query->setExpression(ASTSelectQuery::Expression::WHERE, makeASTFunction("and", existing_where, filter_condition->clone()));
+            else
+                select_query->setExpression(ASTSelectQuery::Expression::WHERE, filter_condition->clone());
+        }
+    }
+
     void checkVectorMatching(
         const PrometheusQueryTree::BinaryOperator * operator_node,
         const SQLQueryPiece & left_argument,
@@ -87,6 +346,10 @@ namespace
         sides[0] = context.subqueries.back().name;
         String & left = sides[0];
 
+        /// Only a right side which keeps the series of its selector can be filtered by the left join groups.
+        bool right_is_group_preserving
+            = (right_argument.store_method == StoreMethod::VECTOR_GRID) && isGroupPreservingNode(right_argument.node);
+
         right_argument = toVectorGrid(std::move(right_argument), context);
         context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(right_argument.select_query), SQLSubqueryType::TABLE});
         sides[1] = context.subqueries.back().name;
@@ -140,6 +403,13 @@ namespace
                    || (!group_right && !drop_metric_name && !left_argument.metric_name_dropped && metric_name_dropped_from_join_group),
                group_right || (group_left && !extra_labels.empty())};
 
+        /// For group_left the right side is checked for duplicates only at steps where the left side isn't empty, as in Prometheus.
+        bool check_right_if_left_not_empty = group_left && !is_join_group_unique_on_side[1];
+
+        /// For group_left the left join groups are pushed down into the right side.
+        /// `on()` is skipped: its join group is always the zero group, so nothing could be filtered out.
+        bool push_down_left_join_groups = group_left && right_is_group_preserving && !(operator_node->on && operator_node->labels.empty());
+
         /// Steps 1-2:
         /// new_left / new_right:
         /// SELECT [group AS original_group | timeSeriesRemoveAllTagsExcept(group, extra_labels) AS original_group,]
@@ -156,6 +426,12 @@ namespace
             String & side = sides[side_index];
             bool is_left_side = (side_index == 0);
             SelectQueryBuilder builder;
+
+            if (!is_left_side && push_down_left_join_groups)
+                pushDownLeftJoinGroups(side, join_group_on_side[1], sides[0], check_right_if_left_not_empty, context);
+
+            if (!is_left_side && check_right_if_left_not_empty)
+                side = keepRightStepsWithLeftSamples(side, sides[0], context);
 
             /// If neither group_left nor group_right is specified then it's one-to-one match, and both sides are "one".
             /// If there is group_left then it's many-to-one match, and the left side is "many".
@@ -249,6 +525,10 @@ namespace
                 /// The result of this step is read twice at steps 3-4, so it must be evaluated once.
                 subquery_type = SQLSubqueryType::MATERIALIZED_TABLE;
             }
+
+            /// The left side is read again by the right side, so it must be evaluated once.
+            if (is_left_side && (check_right_if_left_not_empty || push_down_left_join_groups))
+                subquery_type = SQLSubqueryType::MATERIALIZED_TABLE;
 
             ASTPtr ast = builder.getSelectQuery();
             context.subqueries.emplace_back(SQLSubquery{context.subqueries.size(), std::move(ast), subquery_type});

@@ -1,0 +1,4 @@
+-- a duplicate on a join group the left side does not have is reported too, as in Prometheus
+-- with an empty left side the duplicate is not reported, as in Prometheus
+-- a left side whose series have no value left after a filter is empty too
+-- a duplicate on a matched join group is still reported
