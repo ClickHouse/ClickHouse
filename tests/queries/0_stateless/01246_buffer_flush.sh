@@ -50,7 +50,6 @@ query "
 "
 min_query_id=$(random_str 10)
 query --query_id "$min_query_id" "insert into buffer_01256 select * from system.numbers limit 5"
-query "select count() from data_01256"
 wait_until '[[ $(query "select count() from data_01256") -eq 5 ]]'
 sec=$(get_buffer_delay "$min_query_id")
 [[ $sec -ge 2 ]] || echo "Buffer flushed too early, min_time=2, flushed after $sec sec"
@@ -68,10 +67,10 @@ query "
 "
 max_query_id=$(random_str 10)
 query --query_id "$max_query_id" "insert into buffer_01256 select * from system.numbers limit 5"
-query "select count() from data_01256"
 wait_until '[[ $(query "select count() from data_01256") -eq 10 ]]'
 sec=$(get_buffer_delay "$max_query_id")
 [[ $sec -ge 2 ]] || echo "Buffer flushed too early, max_time=2, flushed after $sec sec"
+[[ $sec -lt 100 ]] || echo "Buffer flushed too late, max_time=2, flushed after $sec sec"
 query "select count() from data_01256"
 query "drop table buffer_01256"
 
