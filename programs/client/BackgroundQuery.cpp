@@ -68,7 +68,10 @@ public:
     ~FileDescriptor()
     {
         if (fd >= 0)
-            ::close(fd);
+        {
+            [[maybe_unused]] const int err = ::close(fd);
+            chassert(!err || errno == EINTR);
+        }
     }
 
     FileDescriptor(const FileDescriptor &) = delete;
@@ -114,7 +117,7 @@ protected:
     int sync() override { return flushBuffer(); }
 
 private:
-    std::streamsize writeAll(const char * data, std::streamsize size)
+    std::streamsize writeAll(const char * data, std::streamsize size) const
     {
         std::streamsize written = 0;
         while (written < size)
@@ -143,7 +146,7 @@ private:
     }
 
     int fd;
-    std::array<char, 4096> buffer;
+    std::array<char, 4096> buffer{};
 };
 
 /// Routes ostream diagnostics to the terminal until detachment, then to the spool.
@@ -216,7 +219,8 @@ public:
             {
                 output_stream.reset();
                 stream_buffer.reset();
-                ::close(fd);
+                [[maybe_unused]] const int err = ::close(fd);
+                chassert(!err || errno == EINTR);
                 ::unlink(file_path.c_str());
             }
         });
@@ -245,7 +249,10 @@ public:
         output_stream.reset();
         stream_buffer.reset();
         if (fd >= 0)
-            ::close(fd);
+        {
+            [[maybe_unused]] const int err = ::close(fd);
+            chassert(!err || errno == EINTR);
+        }
         if (!file_path.empty())
             ::unlink(file_path.c_str());
     }
@@ -402,7 +409,7 @@ public:
         bool progress_table_toggle_enabled_ = true,
         bool progress_table_toggle_on_ = false)
         : ClientBase(input_fd, output_fd, error_fd, input_stream_, output_stream_, error_stream_)
-        , configuration_snapshot(std::move(configuration_))
+        , configuration_snapshot(configuration_)
         , configuration(new Poco::Util::LayeredConfiguration)
         , cancellation_requested(cancellation_requested_)
         , metrics(metrics_)
@@ -1033,8 +1040,9 @@ struct BackgroundQueryManager::Impl
                     {
                         client->flushResultOutput();
                     }
-                    catch (...)
+                    catch (...) // NOLINT(bugprone-empty-catch)
                     {
+                        /// Ok: the original error below is the one to report.
                     }
                     harvestClient(job, *client);
                 }
@@ -1066,7 +1074,7 @@ struct BackgroundQueryManager::Impl
             }
             catch (...)
             {
-                /// Never let an exception escape a std::thread entry point.
+                /// Ok: never let an exception escape a std::thread entry point.
                 job->finished_at = std::chrono::steady_clock::now();
                 job->state.store(
                     job->cancellation_was_observed ? State::Cancelled : State::Failed,

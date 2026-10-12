@@ -523,8 +523,9 @@ bool Client::tryProcessInteractiveClientCommand(std::string_view input)
             {
                 finish_background_pager(false);
             }
-            catch (...)
+            catch (...) // NOLINT(bugprone-empty-catch)
             {
+                /// Ok: the original exception is rethrown below.
             }
             std::rethrow_exception(exception);
         }

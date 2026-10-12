@@ -197,7 +197,7 @@ Code: 36. DB::Exception: Unknown command `/hepl`. Maybe you meant: ['/help']. Ty
 
 In an interactive `clickhouse-client` session, you can continue using the prompt while a query executes. Start a query in the background with `\bg`, or press `Ctrl+B` to detach an eligible foreground query that is already running. The client assigns the query a numeric job ID and spools output produced while it is detached so that it does not get mixed with output at the prompt.
 
-These client-managed jobs are different from [server-side background queries](/operations/background-queries). The server-side `run_query_in_background` setting detaches a query from the connection that submitted it and discards any `SELECT` result:
+These client-managed jobs are different from [server-side background queries](/concepts/features/operations/background-queries). The server-side `run_query_in_background` setting detaches a query from the connection that submitted it and discards any `SELECT` result:
 
 |                                | Client-managed background job                              | Server setting `run_query_in_background`                        |
 |--------------------------------|-----------------------------------------------------------|-----------------------------------------------------------------|
