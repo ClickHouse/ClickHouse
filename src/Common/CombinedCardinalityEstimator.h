@@ -205,8 +205,7 @@ public:
         /// (or walking all buckets of `HyperLogLogCounter` one at a time). This is common, as merging into an empty state
         /// happens in `-Merge`, `AggregatingSortedTransform` and squashing of aggregate function columns.
         /// The set of values is the same, and `HyperLogLogCounter` does not depend on the order of insertion.
-        /// Only the moment when a full medium set is converted to `HyperLogLogCounter` depends on the order,
-        /// as it already does for the order of merges.
+        /// Whether a medium set is converted to `HyperLogLogCounter` does, so the medium set is copied only when that cannot happen.
         if (rhs_container_type == details::ContainerType::LARGE && container_type != details::ContainerType::LARGE)
         {
             toLarge(std::make_unique<Large>(rhs.getContainer<Large>()));
