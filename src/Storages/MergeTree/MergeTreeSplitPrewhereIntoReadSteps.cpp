@@ -45,8 +45,14 @@ DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawCo
 /// Resolves a column name to its storage (physical) name.
 /// For subcolumns like `map.key_k0`, returns `map`.
 /// For regular columns, returns the name unchanged.
-String resolveStorageColumnName(const String & column_name, const ColumnsDescription * columns)
+String resolveStorageColumnName(const String & column_name, const ColumnsDescription * columns, const NameToNameMap * storage_column_names)
 {
+    if (storage_column_names)
+    {
+        if (auto it = storage_column_names->find(column_name); it != storage_column_names->end())
+            return it->second;
+    }
+
     if (columns)
     {
         if (auto col = columns->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name))
@@ -59,7 +65,8 @@ String resolveStorageColumnName(const String & column_name, const ColumnsDescrip
 void fillRequiredColumns(
     const ActionsDAG::Node * node,
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info,
-    const ColumnsDescription * columns)
+    const ColumnsDescription * columns,
+    const NameToNameMap * storage_column_names)
 {
     if (nodes_info.contains(node))
         return;
@@ -69,13 +76,13 @@ void fillRequiredColumns(
     if (node->type == ActionsDAG::ActionType::INPUT)
     {
         node_info.required_columns.insert(node->result_name);
-        node_info.required_storage_columns.insert(resolveStorageColumnName(node->result_name, columns));
+        node_info.required_storage_columns.insert(resolveStorageColumnName(node->result_name, columns, storage_column_names));
         return;
     }
 
     for (const auto & child : node->children)
     {
-        fillRequiredColumns(child, nodes_info, columns);
+        fillRequiredColumns(child, nodes_info, columns, storage_column_names);
         const auto & child_info = nodes_info[child];
         node_info.required_columns.insert(child_info.required_columns.begin(), child_info.required_columns.end());
         node_info.required_storage_columns.insert(child_info.required_storage_columns.begin(), child_info.required_storage_columns.end());
@@ -256,7 +263,8 @@ bool tryBuildPrewhereSteps(
     PrewhereExprInfo & prewhere,
     bool force_short_circuit_execution,
     const ColumnsDescription * columns,
-    bool read_ahead_columns)
+    bool read_ahead_columns,
+    const NameToNameMap * storage_column_names)
 {
     if (!prewhere_info)
         return true;
@@ -282,7 +290,7 @@ bool tryBuildPrewhereSteps(
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
     for (const auto & node : condition_nodes)
     {
-        fillRequiredColumns(node, nodes_info, columns);
+        fillRequiredColumns(node, nodes_info, columns, storage_column_names);
     }
 
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns

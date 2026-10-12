@@ -19,6 +19,8 @@ bool tryBuildPrewhereSteps(
     PrewhereExprInfo & prewhere,
     bool force_short_circuit_execution,
     const ColumnsDescription * columns = nullptr,
-    bool read_ahead_columns = false);
+    bool read_ahead_columns = false,
+    /// Overrides the storage names of columns: conditions on columns with one storage name may share a step.
+    const NameToNameMap * storage_column_names = nullptr);
 
 }
