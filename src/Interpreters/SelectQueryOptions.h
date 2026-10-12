@@ -55,6 +55,18 @@ struct SelectQueryOptions
     /// This is needed for CREATE MATERIALIZED VIEW validation to ensure user has access to all referenced tables.
     bool check_subquery_table_access = false;
 
+    /// Skip the column-level SELECT check on the table this query reads directly. Set only where the
+    /// column list is a read list rather than the columns the user asked for.
+    bool ignore_table_access_check = false;
+
+    /// Do not resolve `additional_table_filters` for the table this query reads directly, whose entry is
+    /// already applied above this read. Tables reached from within the query keep resolving their own.
+    bool skip_additional_table_filters = false;
+
+    /// Do not apply `max_columns_to_read` to the table this query reads directly. Set only where the
+    /// column list is a read list and the limit was applied to the user's selection where it was planned.
+    bool ignore_max_columns_to_read = false;
+
     /// These two fields are used to evaluate shardNum() and shardCount() function when
     /// prefer_localhost_replica == 1 and local instance is selected. They are needed because local
     /// instance might have multiple shards and scalars can only hold one value.
@@ -94,6 +106,12 @@ struct SelectQueryOptions
         out.to_stage = QueryProcessingStage::Complete;
         out.is_local_shard_plan = false;
         out.is_local_plan_for_distributed_query = false;
+        /// A subquery's reads are the user's own, so none of the read-list exemptions apply to them.
+        out.ignore_table_access_check = false;
+        out.skip_additional_table_filters = false;
+        out.ignore_max_columns_to_read = false;
+        /// A subquery's output is consumed through column identifiers, never by source column name.
+        out.ignore_rename_columns = false;
         ++out.subquery_depth;
         out.is_subquery = true;
         return out;
