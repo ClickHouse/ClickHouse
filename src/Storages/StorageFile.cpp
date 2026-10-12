@@ -462,35 +462,6 @@ void checkCreationIsAllowedResolvingDotDot(
     checkCreationIsAllowed(context_global, db_dir_path, checked_path, can_be_directory);
 }
 
-/// Splits the archive syntax (e.g. "archive.zip::file*.parquet") into
-/// the first ("archive.zip") and second ("file*.parquet") parts.
-/// If the source string doesn't follow the archive syntax, the function just returns it in the second part.
-std::pair<String, String> splitToArchivePathAndPathInArchive(const String & source)
-{
-    size_t pos = source.find("::");
-    if (pos == String::npos)
-        return {{}, source};
-
-    std::string_view path_to_archive_view = std::string_view{source}.substr(0, pos);
-    while (path_to_archive_view.ends_with(' '))
-        path_to_archive_view.remove_suffix(1);
-
-    std::string_view filename_view = std::string_view{source}.substr(pos + 2);
-    while (filename_view.starts_with(' '))
-        filename_view.remove_prefix(1);
-
-    if (filename_view.empty() || path_to_archive_view.empty())
-        return {{}, source};
-
-    /// possible situations when the first part can be archive is only if one of the following is true:
-    /// - it contains supported archive extension
-    /// - it contains characters that could mean glob expression
-    if (!hasSupportedArchiveExtension(path_to_archive_view) && path_to_archive_view.find_first_of("*?{") == std::string_view::npos)
-        return {{}, source};
-
-    return {String{path_to_archive_view}, String{filename_view}};
-}
-
 /// Finds files matching a specified pattern with globs.
 Strings getPathsList(const String & path_with_globs, const String & user_files_path, const ContextPtr & context, size_t & total_bytes_to_read)
 {
@@ -1620,7 +1591,7 @@ StorageFileSource::FilesIterator::FilesIterator(
     {
         if (VirtualColumnUtils::buildSetsForDAG(*filter_dag, context_))
         {
-            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            auto actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(context_));
             Strings filter_paths = filter_sources;
             if (!archive_member_path.empty())
             {
@@ -1636,7 +1607,7 @@ StorageFileSource::FilesIterator::FilesIterator(
                 archive_member_path.empty() ? nullptr : &archive_member_names);
         }
         else
-            deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+            deferred_filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(context_));
     }
 }
 
@@ -2394,7 +2365,7 @@ Chunk StorageFileSource::generate()
             finished_generate = true;
 
         if (input_format && storage->format_name != "Distributed" && getContext()->getSettingsRef()[Setting::use_cache_for_count_from_files]
-            && (!format_filter_info || !format_filter_info->hasFilter()))
+            && (!format_filter_info || !format_filter_info->hasFilter()) && !input_format->isMinMaxFromStatisticsApplied())
             addNumRowsToCache(current_path, total_rows_in_file);
 
         total_rows_in_file = 0;
@@ -2583,6 +2554,25 @@ bool ReadFromFile::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_
     return !info.columns_description.hasDefault(sort_column.name);
 }
 
+bool ReadFromFile::supportsMinMaxFromStatistics() const
+{
+    if (!boost::iequals(storage->format_name, "Parquet") || storage->archive_info || need_only_count)
+        return false;
+
+    if (info.formatReadsHivePartitionColumns() || filter_actions_dag || query_info.prewhere_info || query_info.row_level_filter)
+        return false;
+
+    /// Every output column must come from the format unchanged: virtual columns are appended after the read, and a
+    /// `DEFAULT` column is recomputed for the values the format reports as missing.
+    for (const auto & column : *getOutputHeader())
+    {
+        const auto * format_column = info.format_header.findByName(column.name);
+        if (!format_column || !format_column->type->equals(*column.type) || info.columns_description.hasDefault(column.name))
+            return false;
+    }
+    return true;
+}
+
 void ReadFromFile::applyFilters(ActionDAGNodes added_filter_nodes)
 {
     SourceStepWithFilter::applyFilters(std::move(added_filter_nodes));
@@ -2767,7 +2757,7 @@ void ReadFromFile::createIterator(const ActionsDAG::Node * predicate)
         storage->archive_info && storage->archive_info->isSingleFileRead() ? storage->archive_info->path_in_archive : String{});
 }
 
-StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const
+StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryConditionCacheKey() const
 {
     const auto & settings = getContext()->getSettingsRef();
     if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
@@ -2780,19 +2770,24 @@ StorageFileSource::TopKQueryConditionCacheKeyPtr ReadFromFile::makeTopKQueryCond
         return {};
 
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
-    /// key covers. `condition_hash` covers the pushed-down filter and a PREWHERE collected with it.
-    /// Without any of them the reader drops nothing else. A row policy is covered by neither.
+    /// key covers, and so must the rows the filter drops after the format, which do not make the threshold.
+    /// So the key covers the whole filter of the step and a PREWHERE collected with it, not only the part
+    /// pushed into the format (without the conjuncts on virtual and hive partition columns).
+    /// Without any of them nothing else drops rows. A row policy is covered by neither.
     if (query_info.row_level_filter)
         return {};
 
     auto key = std::make_shared<StorageFileSource::TopKQueryConditionCacheKey>();
     size_t condition_hash = 0;
-    if (format_filter_info.condition_hash)
+    if (filter_actions_dag)
     {
-        condition_hash = *format_filter_info.condition_hash;
-        key->condition = format_filter_info.filter_actions_dag->dumpNames() + ", ";
+        auto filter_condition_hash = FormatFilterInfo::computeConditionHash(*filter_actions_dag, query_info.prewhere_info, getContext());
+        if (!filter_condition_hash)
+            return {};
+        condition_hash = *filter_condition_hash;
+        key->condition = filter_actions_dag->dumpNames() + ", ";
     }
-    else if (!filter_actions_dag && !query_info.prewhere_info)
+    else if (!query_info.prewhere_info)
         condition_hash = queryConditionCacheHash(0, queryConditionCacheSettingsSalt(settings));
     else
         return {};
@@ -2853,9 +2848,11 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
 
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(ctx->getSettingsRef(), num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
-        info.formatReadsHivePartitionColumns() ? nullptr : filter_actions_dag, ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+        info.getFormatFilter(filter_actions_dag), ctx, nullptr, query_info.row_level_filter, query_info.prewhere_info);
     format_filter_info->top_k_filter = top_k_filter;
-    auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey(*format_filter_info);
+    format_filter_info->min_max_from_statistics = read_min_max_from_statistics && !filter_actions_dag
+        && !query_info.prewhere_info && !query_info.row_level_filter;
+    auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
         /// The verdicts written under the key also cover row groups whose rows were all returned
@@ -3645,6 +3642,7 @@ void registerStorageFile(StorageFactory & factory)
             /// User's file
             return std::make_shared<StorageFile>(*file_source, storage_args);
         },
+        SecretArgumentsSpec{},
         storage_features,
         Documentation{
             .description = R"DOCS_MD(

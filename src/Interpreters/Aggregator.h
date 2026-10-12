@@ -213,6 +213,12 @@ public:
             size_t key_columns = 0;                 /// leading GROUP BY columns the heap ranks on
             UInt64 observation_rows = 65536;        /// rows before the pure-overhead freeze check; 0 disables it (see the group_by_top_k_optimization_* settings)
             bool shared_boundary = true;            /// let the per-thread sets skip against the tightest boundary published by any thread
+
+            /// Set by the plan optimization when the first ranked key is a column read straight from a `MergeTree`
+            /// table: the heaps publish their boundary into it and the reading step filters rows and skips granules
+            /// by the published value (see `enable_group_by_top_k_dynamic_filtering`). Never serialized: it is a
+            /// link between two steps of the same local plan.
+            TopKThresholdTrackerPtr threshold_tracker;
         };
         std::optional<TopKParams> top_k;
 
@@ -763,6 +769,9 @@ private:
       */
     void destroyAllAggregateStates(AggregatedDataVariants & result) const;
 
+    /// `for_sub_range`: the rows are one run of a block aggregated run by run (`executeOnBlockSmall`), so the
+    /// hashing state is a `ColumnsHashing::SubRangeState` built over those rows only.
+    template <bool for_sub_range = false>
     void executeImpl(
         AggregatedDataVariants & result,
         size_t row_begin,
@@ -774,7 +783,7 @@ private:
         AggregateDataPtr overflow_row = nullptr) const;
 
     /// Process one data block, aggregate the data into a hash table.
-    template <typename Method>
+    template <bool for_sub_range, typename Method>
     void executeImpl(
         Method & method,
         Arena * aggregates_pool,
@@ -1360,7 +1369,8 @@ private:
         std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys = nullptr) const;
 
-    template <typename Method, typename Table>
+    /// `for_sub_range` as in `executeImpl`, for `mergeOnBlockSmall`.
+    template <bool for_sub_range, typename Method, typename Table>
     void mergeStreamsImpl(
         Arena * aggregates_pool,
         Method & method,
