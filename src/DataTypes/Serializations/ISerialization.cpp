@@ -578,7 +578,8 @@ bool ISerialization::isSpecialCompressionAllowed(const SubstreamPath & path)
             || elem.type == Substream::ArraySizes
             || elem.type == Substream::StringSizes
             || elem.type == Substream::DictionaryIndexes
-            || elem.type == Substream::SparseOffsets)
+            || elem.type == Substream::SparseOffsets
+            || elem.type == Substream::MapBucketsInfo)
             return false;
     }
     return true;

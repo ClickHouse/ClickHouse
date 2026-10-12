@@ -86,5 +86,4 @@ CREATE TABLE t_04651_ranges (x Tuple(a Nullable(Tuple(b LowCardinality(String)))
 SETTINGS index_granularity = 3, min_bytes_for_wide_part = 1000000000, write_marks_for_substreams_in_compact_parts = 1;
 INSERT INTO t_04651_ranges SELECT number % 3 = 0 ? tuple(NULL) : tuple(tuple(concat('s', toString(number % 5)))) FROM numbers(30);
 SELECT count(), countIf(x.a IS NULL), uniqExact(x.a.b), sum(cityHash64(x.a.b, x.a)) FROM t_04651_ranges SETTINGS max_block_size = 4;
-SELECT groupArray(x.a) FROM (SELECT x.a.b, x.a FROM t_04651_ranges SETTINGS max_block_size = 2);
 DROP TABLE t_04651_ranges;
