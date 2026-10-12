@@ -217,7 +217,11 @@ void StorageSystemErrors::fillData(MutableColumns & res_columns, ContextPtr cont
             block.getByPosition(i).column = std::move(columns[i]);
         block.insert({std::move(idx_column), std::make_shared<DataTypeUInt64>(), "_idx"});
 
-        VirtualColumnUtils::filterBlockWithPredicate(predicate, block, context);
+        /// An unbuilt subquery set cannot be evaluated here, so all rows are kept for the filter above.
+        auto filter_dag = VirtualColumnUtils::splitFilterDagForAllowedInputs(predicate, &block, context);
+        if (filter_dag && VirtualColumnUtils::buildSetsForDAG(*filter_dag, context))
+            VirtualColumnUtils::filterBlockWithExpression(
+                VirtualColumnUtils::buildFilterExpression(std::move(*filter_dag), context), block);
 
         const auto & kept = assert_cast<const ColumnUInt64 &>(*block.getByName("_idx").column).getData();
         std::vector<ErrorRow> kept_rows;

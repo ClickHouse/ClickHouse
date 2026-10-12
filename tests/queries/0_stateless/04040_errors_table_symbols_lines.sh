@@ -64,7 +64,7 @@ $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS query_log"
 $CLICKHOUSE_CLIENT -q "
 SELECT read_rows FROM system.query_log
 WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND query_id = '$query_id_filtered'"
-# One row of the table plus the rows the set's own subquery reads.
+# One row of the table plus the one row the set's own subquery reads.
 $CLICKHOUSE_CLIENT -q "
-SELECT read_rows < 10 FROM system.query_log
+SELECT read_rows <= 2 FROM system.query_log
 WHERE current_database = currentDatabase() AND event_date >= yesterday() AND type = 'QueryFinish' AND query_id = '$query_id_in'"
