@@ -119,7 +119,6 @@ SELECT count() FROM m_over_phys_dist WHERE _database = 'remote_db' AND s != '';
 SELECT count() FROM m_over_phys_dist WHERE _table = 't_phys_dist' AND s != '';
 SELECT _database = currentDatabase(), _table, s, sum(c) FROM (SELECT _database, _table, s, count() AS c FROM m_over_phys_dist GROUP BY _database, _table, s) GROUP BY ALL;
 SELECT DISTINCT concat(_database, '/', _table, '/', s) = concat(currentDatabase(), '/t_phys_dist/a') FROM m_over_phys_dist;
-SELECT _database = currentDatabase(), _table, s FROM m_over_phys_dist SETTINGS enable_analyzer = 0;
 
 DROP TABLE m_over_phys_dist;
 DROP TABLE t_phys_dist;

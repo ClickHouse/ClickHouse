@@ -49,7 +49,6 @@
 #include <Interpreters/addMissingDefaults.h>
 #include <Interpreters/createSubcolumnsExtractionActions.h>
 #include <Parsers/ASTCreateQuery.h>
-#include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Parsers/ASTLiteral.h>
@@ -143,42 +142,6 @@ extern const int INCOMPATIBLE_COLUMNS;
 
 namespace
 {
-
-/// Adds to the select query section `WITH identity(value) AS column_name`, e.g.
-/// `WITH identity('mytable') AS _table`. The alias is preferred to a column of the same name, so
-/// the injected value wins over anything the child could produce. This is the pre-analyzer
-/// counterpart of the `_database`/`_table` constants that `ReadFromMerge::getModifiedQueryInfo`
-/// injects into the child query tree.
-///
-/// The value is wrapped in `identity` rather than written as a bare literal because
-/// `TreeOptimizer` drops literals from `GROUP BY`, and drops the whole `GROUP BY` when nothing
-/// else is left, replacing it with the placeholder `'__unused_group_by_column'` key. A child
-/// grouped by the virtual column alone would then produce a mergeable block whose key column is
-/// that placeholder instead of the child's name. `identity` is neither injective nor suitable for
-/// constant folding, so the key survives while the value stays the same.
-void rewriteEntityInAst(ASTPtr ast, const String & column_name, const Field & value)
-{
-    auto & select = ast->as<ASTSelectQuery &>();
-    if (select.with())
-    {
-        /// A nested `Merge` has already injected the value that identifies the
-        /// outer child's name. Keep that value: adding a second, inner-table
-        /// alias makes the old interpreter reject the query with
-        /// `MULTIPLE_EXPRESSIONS_FOR_ALIAS`.
-        for (const auto & expression : select.with()->children)
-            if (expression->tryGetAlias() == column_name)
-                return;
-    }
-    else
-    {
-        select.setExpression(ASTSelectQuery::Expression::WITH, make_intrusive<ASTExpressionList>());
-    }
-
-    auto function = makeASTFunction("identity", make_intrusive<ASTLiteral>(value));
-    function->alias = column_name;
-    function->setPreferAliasToColumnName(true);
-    select.with()->children.push_back(std::move(function));
-}
 
 bool queryHasOrderBy(const SelectQueryInfo & query_info)
 {
@@ -1059,14 +1022,16 @@ void ReadFromMerge::initializePipeline(QueryPipelineBuilder & pipeline, const Bu
     pipeline.addResources(resources);
 }
 
-/// Whether the query tree references the given column anywhere - in the projection, in a filter,
-/// inside an alias expression, or in any subquery. `ReadFromMerge::getModifiedQueryInfo` replaces
-/// every such reference with a constant carrying the child's own name, so a query that references
-/// the column must never reuse another child's cached rewritten query tree, even when the column
-/// is not among the columns the plan reads.
-static bool queryTreeReferencesColumn(const QueryTreeNodePtr & node, const String & column_name)
+/// Whether the query tree references the given column of the given table expression anywhere - in
+/// the projection, in a filter, inside an alias expression, or in any subquery.
+/// `ReadFromMerge::getModifiedQueryInfo` replaces every such reference with a constant carrying the
+/// child's own name, so a query that references the column must never reuse another child's cached
+/// rewritten query tree, even when the column is not among the columns the plan reads. A column of
+/// the same name that comes from another table expression (e.g. another `Merge` table in a
+/// subquery or a `JOIN`) is not rewritten, so it does not count.
+static bool queryTreeReferencesColumn(const QueryTreeNodePtr & node, const QueryTreeNodePtr & table_expression, const String & column_name)
 {
-    if (!node)
+    if (!node || !table_expression)
         return false;
 
     bool found = false;
@@ -1074,7 +1039,8 @@ static bool queryTreeReferencesColumn(const QueryTreeNodePtr & node, const Strin
         [&](const QueryTreeNodePtr & current_node)
         {
             if (const auto * column_node = current_node->as<ColumnNode>())
-                found |= column_node->getColumnName() == column_name;
+                found |= column_node->getColumnName() == column_name
+                    && column_node->getColumnSourceOrNull() == table_expression;
         });
 
     return found;
@@ -1111,7 +1077,7 @@ void ReadFromMerge::filterTablesAndCreateChildrenPlans()
     /// `has_table_virtual_column`.
     query_references_table_virtual_column = has_table_virtual_column
         || (merge_storage_snapshot->metadata->isVirtualColumn("_table")
-            && queryTreeReferencesColumn(query_info.query_tree, "_table"));
+            && queryTreeReferencesColumn(query_info.query_tree, query_info.table_expression, "_table"));
 
     selected_tables = getSelectedTables(context);
     child_plans = createChildrenPlans(query_info);
@@ -2059,12 +2025,6 @@ SelectQueryInfo ReadFromMerge::getModifiedQueryInfo(const ContextMutablePtr & mo
             modified_select.setExpression(ASTSelectQuery::Expression::LIMIT_OFFSET, {});
         }
         modified_query_info.syntax_analyzer_result = std::make_shared<TreeRewriterResult>(std::move(new_analyzer_res));
-
-        /// See the constants injected on the analyzer branch above.
-        if (merge_storage_snapshot->metadata->isVirtualColumn("_database"))
-            rewriteEntityInAst(modified_query_info.query, "_database", database_name);
-        if (merge_storage_snapshot->metadata->isVirtualColumn("_table"))
-            rewriteEntityInAst(modified_query_info.query, "_table", table_name);
     }
 
     return modified_query_info;
