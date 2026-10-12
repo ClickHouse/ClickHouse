@@ -9,6 +9,8 @@
 #include <Parsers/CommonParsers.h>
 #include <Parsers/ExpressionElementParsers.h>
 #include <Parsers/parseIdentifierOrStringLiteral.h>
+#include <Parsers/StatementFactory.h>
+#include <Parsers/registerStatements.h>
 #include <base/insertAtEnd.h>
 
 
@@ -188,12 +190,14 @@ bool ParserCreateSettingsProfileQuery::parseImpl(Pos & pos, ASTPtr & node, Expec
 
     return true;
 }
+}
 
-std::map<String, Documentation> ParserCreateSettingsProfileQuery::getDocumentation() const
+namespace DB
 {
-    std::map<String, Documentation> documentation;
 
-    documentation["CREATE SETTINGS PROFILE"] =
+void registerStatementSettingsProfile(StatementFactory & factory)
+{
+    factory.registerStatement("CREATE SETTINGS PROFILE",
     {
         .description = R"DOCS_MD(
 Creates [settings profiles](/concepts/features/security/access-rights#settings-profiles-management) that can be assigned to a user or a role.
@@ -236,9 +240,9 @@ CREATE SETTINGS PROFILE [IF NOT EXISTS | OR REPLACE] name1 [, name2 [,...]]
 )",
         .parent = "CREATE",
         .related = {"ALTER SETTINGS PROFILE", "CREATE USER", "CREATE ROLE", "SET", "DROP", "SHOW"},
-    };
+    });
 
-    documentation["ALTER SETTINGS PROFILE"] =
+    factory.registerStatement("ALTER SETTINGS PROFILE",
     {
         .description = R"DOCS_MD(
 Changes settings profiles.
@@ -430,9 +434,7 @@ ALTER SETTINGS PROFILE [IF EXISTS] name1 [RENAME TO new_name |, name2 [,...]]
 )",
         .parent = "ALTER",
         .related = {"CREATE SETTINGS PROFILE", "ALTER", "SET", "SHOW"},
-    };
-
-    return documentation;
+    });
 }
 
 }

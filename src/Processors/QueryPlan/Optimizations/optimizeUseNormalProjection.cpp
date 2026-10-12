@@ -37,7 +37,6 @@ namespace Setting
 {
     extern const SettingsString preferred_optimize_projection_name;
     extern const SettingsBool force_optimize_projection;
-    extern const SettingsBool prefer_optimize_projection;
     extern const SettingsBool optimize_use_projection_filtering;
 }
 
@@ -445,9 +444,9 @@ UseProjectionsResult optimizeUseNormalProjections(
             query.dag->removeUnusedActions();
     }
 
-    const bool relax_projection_checks = context->getSettingsRef()[Setting::force_optimize_projection] || context->getSettingsRef()[Setting::prefer_optimize_projection];
+    const bool force_optimize_projection = context->getSettingsRef()[Setting::force_optimize_projection];
 
-    if (!relax_projection_checks)
+    if (!force_optimize_projection)
     {
         /// A normal projection can help in two ways:
         ///     1. Pruning rows via a filter
@@ -489,7 +488,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         parent_reading_select_result->selected_ranges = parts.size();
     }
 
-    if (!relax_projection_checks)
+    if (!force_optimize_projection)
     {
         /// /// Nothing to read. Ignore projections.
         if (parent_reading_select_result->parts_with_ranges.empty())
@@ -519,11 +518,10 @@ UseProjectionsResult optimizeUseNormalProjections(
         if (!optimization_settings.read_in_order)
             return false;
 
-        return getInputOrderIfReadInOrderIsUseful(
-                   *outer_sorting_step,
-                   projection->metadata->getSortingKey(),
-                   *iter->node->children[iter->next_child - 1])
-            != nullptr;
+        return wouldReadInOrderBeUseful(
+            *outer_sorting_step,
+            projection->metadata->getSortingKey(),
+            *iter->node->children[iter->next_child - 1]);
     };
 
     bool optimize_use_projection_filtering = context->getSettingsRef()[Setting::optimize_use_projection_filtering];
@@ -536,36 +534,6 @@ UseProjectionsResult optimizeUseNormalProjections(
     projection_query_info.row_level_filter = nullptr;
     if (query.dag && query.filter_node)
         projection_query_info.filter_actions_dag = std::make_unique<ActionsDAG>(query.dag->clone());
-
-    /// Derive the projection `PREWHERE` before candidate analysis, not only for the winning candidate
-    /// below. `analyzeProjectionCandidate` and `filterPartsAndCollectProjectionCandidates` consult the
-    /// query condition cache (through `estimateNumMarksToRead`), and the entries a projection read
-    /// writes are keyed by the condition of its `PREWHERE` - so without a `PREWHERE` here the analysis
-    /// probes the plain `WHERE` key only, and a warm query (in particular a repeated
-    /// `ORDER BY ... LIMIT n` whose granules the TopK read already excluded) cannot reuse them and
-    /// picks its plan from cold mark counts.
-    ///
-    /// The split depends only on `query.dag` and `query.filter_node`, which are the same for every
-    /// candidate, so the condition hash computed here is exactly the one the winning read is built
-    /// with below. It is derived from a *clone* because `splitAndFillPrewhereInfo` consumes the DAG,
-    /// while `query.dag` and `query.filter_node` must stay intact for the candidate loop (and for the
-    /// real split below, whose result is what the read actually executes).
-    if (query.dag && query.filter_node)
-    {
-        ActionsDAG::NodeMapping old_to_new_nodes;
-        auto filter_dag_clone = query.dag->clone(old_to_new_nodes);
-        const auto * filter_node_clone = old_to_new_nodes.at(query.filter_node);
-        auto analysis_prewhere_info = std::make_shared<PrewhereInfo>();
-        QueryPlanOptimizations::splitAndFillPrewhereInfo(
-            analysis_prewhere_info,
-            true, /// Always remove since this filter node is generated for projection reading
-            std::move(filter_dag_clone),
-            filter_node_clone->result_name,
-            {filter_node_clone},
-            {filter_node_clone});
-        projection_query_info.prewhere_info = std::move(analysis_prewhere_info);
-    }
-
     auto empty_mutations_snapshot = reading->getMutationsSnapshot()->cloneEmpty();
     for (const auto * projection : normal_projections)
     {
@@ -611,15 +579,12 @@ UseProjectionsResult optimizeUseNormalProjections(
         bool analyzed = analyzeProjectionCandidate(
             candidate,
             reader,
-            reading->getMutationsSnapshot(),
             empty_mutations_snapshot,
             required_columns,
             metadata,
             *parent_reading_select_result,
             projection_query_info,
             reading->getTopKFilterInfo(),
-            reading->isQueryConditionCacheAllowed(),
-            reading->isTopKPrewhereQueryConditionCacheAllowed(),
             context);
 
         if (!analyzed)
@@ -649,10 +614,10 @@ UseProjectionsResult optimizeUseNormalProjections(
         bool sort_order_helps = projection_sort_order_useful(projection);
 
         /// Consider projections with equal read cost only if:
-        /// - `force_optimize_projection` or `prefer_optimize_projection` is enabled, or
+        /// - `force_optimize_projection` is enabled, or
         /// - the parent reading's `selected_marks` becomes zero, or
         /// - the projection's sort order matches the query's ORDER BY,
-        if (!relax_projection_checks && candidate.sum_marks > parent_reading_marks)
+        if (candidate.sum_marks > parent_reading_marks)
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks, which is not better than the original table with {} marks",
@@ -664,7 +629,7 @@ UseProjectionsResult optimizeUseNormalProjections(
             LOG_DEBUG(logger, "{}", stat.description);
             continue;
         }
-        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !relax_projection_checks && !sort_order_helps)
+        else if (candidate.sum_marks == parent_reading_marks && parent_reading_marks > 0 && !force_optimize_projection && !sort_order_helps)
         {
             stat.description = fmt::format(
                 "Projection {} is usable but requires reading {} marks and does not help with sorting, which is not better than the original table",
@@ -722,8 +687,6 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// Enables PREWHERE on projections to improve read efficiency and leverage query condition cache.
     if (query.dag && query.filter_node)
     {
-        /// Replace the analysis-only `PREWHERE` built above (same shape, but derived from a clone of
-        /// the filter DAG) with the one the read executes, which owns the nodes of `query.dag`.
         projection_query_info.prewhere_info = std::make_shared<PrewhereInfo>();
         query.dag = QueryPlanOptimizations::splitAndFillPrewhereInfo(
             projection_query_info.prewhere_info,
@@ -758,27 +721,15 @@ UseProjectionsResult optimizeUseNormalProjections(
     /// parts, and the projection parts are in one-to-one correspondence with them, so the copied value
     /// discriminates projection entries equally well. (The analysis-side consult is gated separately,
     /// by passing the stamp into `analyzeProjectionCandidate` above.)
-    ///
-    /// Likewise, `registerLeftSideIndexAnalysisSecondPass` has already attached the join runtime filter
-    /// descriptors for the second-pass granule pruning to the replaced read. Carry them over as well,
-    /// otherwise a JOIN whose left side is served from a normal projection would silently lose the
-    /// pruning that `enable_join_runtime_filters_index_analysis` asks for. Each descriptor is re-checked
-    /// against the projection's own primary key and skip indexes and dropped if it cannot prune there.
     if (projection_reading)
-    {
         if (auto * projection_reading_step = typeid_cast<ReadFromMergeTree *>(projection_reading.get()))
-        {
             projection_reading_step->copyTopKFilterInfoAndQueryConditionCacheGate(*reading);
-            projection_reading_step->copyJoinRuntimeFilterIndexAnalysisDescriptors(*reading);
-        }
-    }
 
-    /// The parent read keeps all its parts until the projection read is wired in below, so that a rejection reads them all.
-    const auto & parent_parts_with_ranges = parent_reading_select_result->parts_with_ranges;
-    bool has_parent_parts = std::any_of(parent_parts_with_ranges.begin(), parent_parts_with_ranges.end(),
-        [&](const auto & part) { return best_candidate->parent_parts.contains(part.data_part.get()); });
+    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
+    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
 
     /// Only the initiator should read the projection to avoid potential data duplication.
+    bool has_parent_parts = !parent_reading_select_result->parts_with_ranges.empty();
     bool should_skip_projection_reading_on_remote_replicas = reading->isParallelReadingEnabled() && !optimization_settings.is_parallel_replicas_initiator_with_projection_support
         && has_parent_parts;
     /// True when the projection read is replaced by a prepared source that does not announce the
@@ -812,6 +763,15 @@ UseProjectionsResult optimizeUseNormalProjections(
     if (projection_replaced_with_prepared_source && !has_parent_parts && reading->isParallelReadingEnabled())
         reading->announceEmptyReadRangesToCoordinatorIfInitiator();
 
+    if (!query_info.is_internal && context->hasQueryContext())
+    {
+        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
+        {
+            .storage_id = reading->getMergeTreeData().getStorageID(),
+            .projection_name = best_candidate->projection->name,
+        });
+    }
+
     projection_reading->setStepDescription(best_candidate->projection->name, optimization_settings.max_step_description_length);
 
     auto & projection_reading_node = nodes.emplace_back(QueryPlan::Node{.step = std::move(projection_reading)});
@@ -825,7 +785,7 @@ UseProjectionsResult optimizeUseNormalProjections(
         next_node = &expr_or_filter_node;
     }
 
-    if (!has_parent_parts)
+    if (parent_reading_select_result->parts_with_ranges.empty())
     {
         /// All parts are taken from projection
         iter->node->children[iter->next_child - 1] = next_node;
@@ -859,18 +819,6 @@ UseProjectionsResult optimizeUseNormalProjections(
         union_node.step = std::make_unique<UnionStep>(std::move(input_headers));
         union_node.children = {iter->node->children[iter->next_child - 1], next_node};
         iter->node->children[iter->next_child - 1] = &union_node;
-    }
-
-    /// Filter out parts in parent_ranges that overlap with those already read by the best candidate projection
-    filterPartsByProjection(*parent_reading_select_result, best_candidate->parent_parts);
-
-    if (!query_info.is_internal && context->hasQueryContext())
-    {
-        context->getQueryContext()->addQueryAccessInfo(Context::QualifiedProjectionName
-        {
-            .storage_id = reading->getMergeTreeData().getStorageID(),
-            .projection_name = best_candidate->projection->name,
-        });
     }
 
     /// Here we remove last steps from stack to be able to optimize again.

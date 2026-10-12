@@ -88,7 +88,10 @@ def test_docker_library(test_results, check_images=None) -> None:
     """
     arch = "amd64" if Utils.is_amd() else "arm64"
     if check_images is None:
-        check_images = [tr.name for tr in test_results if tr.name.endswith(f"-{arch}")]
+        # An image whose build failed does not exist, so testing it only reports that.
+        check_images = [
+            tr.name for tr in test_results if tr.name.endswith(f"-{arch}") and tr.is_ok()
+        ]
     if not check_images:
         return
     test_name = "docker library image test"
