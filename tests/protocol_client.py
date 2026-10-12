@@ -82,9 +82,8 @@ def parse_key_values(items):
 # The data of `INSERT ... FORMAT <not Values>` lasts until an empty line, as in `ClientBase`.
 
 HINT_RE = re.compile(r"\{\s*(serverError|clientError)\b")
-INSERT_FORMAT_RE = re.compile(
-    r"\s*(EXPLAIN\b.*?\b)?INSERT\b.*?\bFORMAT\s+(\w+)[ \t]*", re.IGNORECASE | re.DOTALL
-)
+INSERT_RE = re.compile(r"\s*(EXPLAIN|INSERT)\b", re.IGNORECASE)
+FORMAT_AT_LINE_END_RE = re.compile(r"\bFORMAT\s+(\w+)[ \t]*$", re.IGNORECASE)
 HEREDOC_RE = re.compile(r"\$([A-Za-z_][A-Za-z0-9_]*)?\$")
 
 
@@ -134,6 +133,7 @@ def split_queries(text):
     queries = []
     begin = 0
     pos = 0
+    line_begin = 0
     has_tokens = False
     while pos < len(text):
         char = text[pos]
@@ -153,11 +153,15 @@ def split_queries(text):
             pos = finish_query(text, begin, pos, queries, has_tokens)
             begin = pos
             has_tokens = False
-        elif char == "\n" and has_tokens:
+        elif char == "\n":
             # The data of an `INSERT ... FORMAT <not Values>` starts after the format name and ends
             # at an empty line, regardless of semicolons in it.
-            insert = INSERT_FORMAT_RE.match(text, begin, pos)
-            if insert and insert.end() == pos and insert.group(2) != "Values":
+            insert_format = has_tokens and FORMAT_AT_LINE_END_RE.search(text, line_begin, pos)
+            if (
+                insert_format
+                and insert_format.group(1) != "Values"
+                and INSERT_RE.match(strip_comments(text[begin:pos]))
+            ):
                 end = text.find("\n\n", pos)
                 end = len(text) if end == -1 else end
                 queries.append((text[begin:end].strip(), ""))
@@ -165,6 +169,7 @@ def split_queries(text):
                 has_tokens = False
             else:
                 pos += 1
+            line_begin = pos
         else:
             if not char.isspace():
                 has_tokens = True
@@ -306,7 +311,7 @@ class HTTPClient(QueryClient):
             response = self.connection.getresponse()
             data = response.read()
         except (http.client.HTTPException, OSError):
-            # The server closes a keep-alive connection after some errors; the session survives it.
+            # Do not leave a connection broken in the middle of a request for the next query.
             self.connection.close()
             raise
         if response.status != 200:
@@ -333,13 +338,6 @@ class MySQLClient(QueryClient):
         handshake = self.read_packet()
         if handshake[0] == 0xFF:
             raise QueryError(self.error_message(handshake))
-        version_end = handshake.index(b"\0", 1)
-        pos = version_end + 1 + 4  # connection id
-        scramble = handshake[pos : pos + 8]
-        pos += 8 + 1 + 2 + 1 + 2 + 2  # filler, capabilities, charset, status, capabilities
-        auth_data_length = handshake[pos]
-        pos += 1 + 10
-        scramble += handshake[pos : pos + max(13, auth_data_length - 8)].rstrip(b"\0")
 
         capabilities = (
             self.CLIENT_LONG_PASSWORD
@@ -349,7 +347,9 @@ class MySQLClient(QueryClient):
             | self.CLIENT_SECURE_CONNECTION
             | self.CLIENT_PLUGIN_AUTH
         )
-        auth_response = self.native_password(scramble)
+        # The scramble of the handshake is not needed: `mysql_native_password` of the empty password
+        # of the test user is empty.
+        auth_response = b""
         response = struct.pack("<IIB23x", capabilities, self.MAX_PACKET, 33)
         response += self.user.encode() + b"\0"
         response += bytes([len(auth_response)]) + auth_response
@@ -364,16 +364,10 @@ class MySQLClient(QueryClient):
             if packet[0] == 0xFF:
                 raise QueryError(self.error_message(packet))
             if packet[0] == 0xFE:
-                # Auth switch request: the plugin name and its scramble.
-                plugin_end = packet.index(b"\0", 1)
-                self.write_packet(self.native_password(packet[plugin_end + 1 :].rstrip(b"\0")))
+                # Auth switch request: the response for the empty password is empty again.
+                self.write_packet(auth_response)
                 continue
             raise QueryError(f"Unexpected MySQL packet during authentication: {packet[:16]!r}")
-
-    def native_password(self, scramble):
-        # The password of the test user is empty, and so is its scramble.
-        del scramble
-        return b""
 
     def read_exact(self, size):
         data = bytearray()
