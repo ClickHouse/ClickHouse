@@ -332,6 +332,27 @@ void ColumnNullable::insertManyFromNotNullable(const IColumn & src, size_t posit
         insertFromNotNullable(src, position);
 }
 
+void ColumnNullable::insertManyDefaults(size_t length)
+{
+    if (length == 0)
+        return;
+
+    /// Reserved first, so that filling the null map cannot throw.
+    auto & null_map_data = getNullMapData();
+    null_map_data.reserve(null_map_data.size() + length);
+    try
+    {
+        getNestedColumn().insertManyDefaults(length);
+    }
+    catch (...)
+    {
+        /// Keep the rows the nested column appended before throwing, as the per-row `insertDefault` loop does.
+        null_map_data.resize_fill(getNestedColumn().size(), 1);
+        throw;
+    }
+    null_map_data.resize_fill(null_map_data.size() + length, 1);
+}
+
 void ColumnNullable::popBack(size_t n)
 {
     getNestedColumn().popBack(n);

@@ -5,6 +5,7 @@
 #include <Columns/ColumnReplicated.h>
 #include <Columns/ColumnSparse.h>
 #include <Columns/ColumnNullable.h>
+#include <Columns/ColumnsCommon.h>
 #include <Columns/FilterDescription.h>
 
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -818,6 +819,54 @@ bool hasNonJoinedBlocks(const TableJoin & table_join)
     return hasNonJoinedBlocks(table_join.kind(), table_join.strictness());
 }
 
+namespace
+{
+
+/// A chunk of 64 rows that is entirely kept or entirely blank is inserted with one call.
+template <bool inverse_filter>
+void insertWithBlanks(IColumn & result, const IColumn & column, const IColumn::Filter & filter)
+{
+    static constexpr size_t chunk_size = 64;
+
+    const UInt8 * filter_data = filter.data();
+    const size_t rows = filter.size();
+
+    auto insert_row = [&](size_t row)
+    {
+        if (static_cast<bool>(filter_data[row]) != inverse_filter)
+            result.insertFrom(column, row);
+        else
+            result.insertDefault();
+    };
+
+    size_t row = 0;
+    for (; row + chunk_size <= rows; row += chunk_size)
+    {
+        UInt64 keep_mask = bytes64MaskToBits64Mask(filter_data + row);
+        if constexpr (inverse_filter)
+            keep_mask = ~keep_mask;
+
+        if (keep_mask == std::numeric_limits<UInt64>::max())
+        {
+            result.insertRangeFrom(column, row, chunk_size);
+        }
+        else if (keep_mask == 0)
+        {
+            result.insertManyDefaults(chunk_size);
+        }
+        else
+        {
+            for (size_t i = row; i < row + chunk_size; ++i)
+                insert_row(i);
+        }
+    }
+
+    for (; row < rows; ++row)
+        insert_row(row);
+}
+
+}
+
 ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter, bool inverse_filter)
 {
     ColumnPtr column = src_column->convertToFullColumnIfConst();
@@ -825,25 +874,9 @@ ColumnPtr filterWithBlanks(ColumnPtr src_column, const IColumn::Filter & filter,
     mut_column->reserve(column->size());
 
     if (inverse_filter)
-    {
-        for (size_t row = 0; row < filter.size(); ++row)
-        {
-            if (filter[row])
-                mut_column->insertDefault();
-            else
-                mut_column->insertFrom(*column, row);
-        }
-    }
+        insertWithBlanks<true>(*mut_column, *column, filter);
     else
-    {
-        for (size_t row = 0; row < filter.size(); ++row)
-        {
-            if (filter[row])
-                mut_column->insertFrom(*column, row);
-            else
-                mut_column->insertDefault();
-        }
-    }
+        insertWithBlanks<false>(*mut_column, *column, filter);
 
     return mut_column;
 }
