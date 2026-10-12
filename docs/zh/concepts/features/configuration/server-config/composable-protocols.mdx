@@ -7,13 +7,13 @@ doc_type: 'reference'
 ---
 
 <div id="overview">
-  ## 概述
+  ## 概述 {#overview}
 </div>
 
 组合式协议让 ClickHouse server 的 TCP 访问配置更加灵活。此配置既可与传统配置并存，也可替代传统配置。
 
 <div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
-  ## 配置 组合式协议
+  ## 配置 组合式协议 {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
 </div>
 
 组合式协议 可以在 XML 配置文件中进行配置。协议
@@ -26,7 +26,7 @@ doc_type: 'reference'
 ```
 
 <div id="basic-modules-define-protocol-layers">
-  ### 配置协议 layer
+  ### 配置协议 layer {#basic-modules-define-protocol-layers}
 </div>
 
 你可以使用基础模块来定义协议 layer。例如，要定义
@@ -62,7 +62,7 @@ HTTP layer，可以在 `protocols` 部分添加一个新的基础模块：
 </Note>
 
 <div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
-  ### 配置端点
+  ### 配置端点 {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
 </div>
 
 端点 (监听端口) 用 `<port>` 和可选的 `<host>` 标签表示。
@@ -87,7 +87,7 @@ HTTP layer，可以在 `protocols` 部分添加一个新的基础模块：
 如果省略 `<host>` 标签，则使用根配置中的 `<listen_host>`。
 
 <div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
-  ### 配置 layer 序列
+  ### 配置 layer 序列 {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
 </div>
 
 layer 序列通过 `<impl>` 标签定义，并引用另一个
@@ -114,7 +114,7 @@ layer 序列通过 `<impl>` 标签定义，并引用另一个
 ```
 
 <div id="endpoint-can-be-attached-to-any-layer">
-  ### 将端点绑定到 layer
+  ### 将端点绑定到 layer {#endpoint-can-be-attached-to-any-layer}
 </div>
 
 端点可以绑定到任何 layer。例如，我们可以为
@@ -140,7 +140,7 @@ HTTP (端口 8123) 和 HTTPS (端口 8443) 定义端点：
 ```
 
 <div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
-  ### 定义其他端点
+  ### 定义其他端点 {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
 </div>
 
 通过引用任意模块并省略
@@ -173,7 +173,7 @@ HTTP (端口 8123) 和 HTTPS (端口 8443) 定义端点：
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### 每个端点的自定义 HTTP 处理程序
+  ### 每个端点的自定义 HTTP 处理程序 {#custom-http-handlers-per-endpoint}
 </div>
 
 默认情况下，所有 `type=http` 协议条目共享同一个 `<http_handlers>`
@@ -227,9 +227,7 @@ HTTP (端口 8123) 和 HTTPS (端口 8443) 定义端点：
 相同。重新加载 config 时，会检测到自定义 handlers 部分的更改，并自动重启
 相应的端点。
 
-<div id="default-session-user-per-endpoint">
-  ### 每个端点的默认会话用户
-</div>
+### 每个端点的默认会话用户 {#default-session-user-per-endpoint}
 
 如果客户端连接时未指定用户名 (例如，HTTP 请求
 未包含 `user` 参数，或原生协议 `Hello` 数据包中的用户名
@@ -271,9 +269,7 @@ HTTP (端口 8123) 和 HTTPS (端口 8443) 定义端点：
 `interserver` 协议一起使用：服务器间连接通过集群
 secret 和初始用户进行身份验证，绝不会使用默认会话用户。
 
-<div id="some-modules-can-contain-specific-for-its-layer-parameters">
-  ### 指定额外的 layer 参数
-</div>
+### 指定额外的 layer 参数 {#some-modules-can-contain-specific-for-its-layer-parameters}
 
 某些模块可以包含额外的 layer 参数。例如，TLS layer
 支持按如下方式指定私钥 (`privateKeyFile`) 和证书文件 (`certificateFile`) ：
@@ -298,3 +294,7 @@ secret 和初始用户进行身份验证，绝不会使用默认会话用户。
 
 </protocols>
 ```
+
+TLS layer 还可以设置 `cipherList` 和 `cipherSuites`，但只有当该 layer
+拥有自己的 `privateKeyFile` (如果证书位于单独的文件中，还需要 `certificateFile`) 时，这些设置才会生效。如果某个
+layer 未配置上述文件却设置了非空的 `cipherSuites`，则会导致启动错误。

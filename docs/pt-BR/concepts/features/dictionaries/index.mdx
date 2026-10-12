@@ -17,9 +17,7 @@ Os dicionários são úteis para:
 
 <Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Casos de uso do Dicionário no ClickHouse" />
 
-<div id="speeding-up-joins-using-a-dictionary">
-  ## Acelerando junções usando um Dicionário
-</div>
+## Acelerando junções usando um Dicionário {#speeding-up-joins-using-a-dictionary}
 
 Dicionários podem ser usados para acelerar um tipo específico de `JOIN`: o tipo [`LEFT ANY`](/pt-BR/reference/statements/select/join#supported-types-of-join), em que a chave da junção precisa corresponder ao atributo-chave do armazenamento subjacente de chave-valor.
 
@@ -30,7 +28,7 @@ Se esse for o caso, o ClickHouse pode aproveitar o dicionário para executar um 
 O algoritmo de junção direta exige que a tabela da direita seja baseada em um dicionário, de modo que os dados dessa tabela a serem unidos já estejam presentes na memória na forma de uma estrutura de dados de chave-valor de baixa latência.
 
 <div id="example">
-  ### Exemplo
+  ### Exemplo {#example}
 </div>
 
 Usando o [conjunto de dados do Stack Overflow](/pt-BR/get-started/sample-datasets/stackoverflow), vamos responder à pergunta:
@@ -88,7 +86,7 @@ Peak memory usage: 3.18 GiB.
 Embora esta consulta seja rápida, ela exige que escrevamos o `JOIN` com cuidado para obter um bom desempenho. O ideal seria simplesmente filtrar os posts para aqueles que contêm &quot;SQL&quot; antes de analisar as contagens de `UpVote` e `DownVote` para o subconjunto de blogs e calcular nossa métrica.
 
 <div id="applying-a-dictionary">
-  #### Aplicando um dicionário
+  #### Aplicando um dicionário {#applying-a-dictionary}
 </div>
 
 Para demonstrar esses conceitos, usamos um dicionário para nossos dados de votos. Como os dicionários geralmente ficam na memória ([ssd&#95;cache](/pt-BR/reference/statements/create/dictionary/layouts/ssd-cache) é a exceção), você deve levar em conta o tamanho dos dados. Confirmando o tamanho da nossa tabela `votes`:
@@ -197,7 +195,7 @@ Peak memory usage: 552.26 MiB.
 Esta consulta não é apenas muito mais simples, mas também mais de duas vezes mais rápida! Isso poderia ser otimizado ainda mais carregando no dicionário apenas posts com mais de 10 votos positivos e negativos e armazenando apenas um valor de controvérsia pré-calculado.
 
 <div id="query-time-enrichment">
-  ## Enriquecimento em tempo de consulta
+  ## Enriquecimento em tempo de consulta {#query-time-enrichment}
 </div>
 
 Dicionários podem ser usados para consultar valores em tempo de consulta. Esses valores podem ser retornados nos resultados ou usados em agregações. Suponha que criemos um dicionário para mapear IDs de usuário para sua localização:
@@ -266,11 +264,13 @@ LIMIT 5
 Peak memory usage: 248.84 MiB.
 ```
 
-<div id="index-time-enrichment">
-  ## Enriquecimento no momento da indexação
-</div>
+## Enriquecimento no momento da indexação {#index-time-enrichment}
 
-No exemplo acima, usamos um dicionário em tempo de consulta para eliminar um join. Os dicionários também podem ser usados para enriquecer linhas no momento da inserção. Isso normalmente é apropriado se o valor do enriquecimento não muda e está em uma fonte externa que pode ser usada para preencher o dicionário. Nesse caso, enriquecer a linha no momento da inserção evita a busca no dicionário em tempo de consulta.
+No exemplo acima, usamos um dicionário em tempo de consulta para eliminar uma junção. Os dicionários também podem ser usados para enriquecer linhas no momento da inserção. Isso normalmente é apropriado se o valor do enriquecimento não muda e está em uma fonte externa que pode ser usada para preencher o dicionário. Nesse caso, enriquecer a linha no momento da inserção evita a consulta no dicionário em tempo de consulta.
+
+<Note>
+  Evite layouts de dicionário baseados em cache para o enriquecimento no momento da inserção quando latência previsível e disponibilidade da fonte forem importantes. Cada servidor mantém seu próprio cache local, e uma reinicialização ou substituição o deixa vazio, fazendo com que os inserts dependam de consultas com cache frio na fonte do dicionário. O autoscaling e a substituição gerenciada de nós no ClickHouse Cloud tornam essa situação mais provável. Escolha um layout que carregue o dicionário completo em cada servidor. Consulte [Dicionários de cache em caminhos de ingestão](/pt-BR/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
+</Note>
 
 Vamos supor que a `Location` de um usuário no Stack Overflow nunca mude (na prática, muda) — especificamente, a coluna `Location` da tabela `users`. Suponha que queremos fazer uma consulta analítica na tabela de posts por localização. Ela contém um `UserId`.
 
@@ -342,13 +342,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## Tópicos avançados sobre dicionários
+  ## Tópicos avançados sobre dicionários {#advanced-dictionary-topics}
 </div>
 
 Para orientações sobre como escolher layouts de dicionários, quando usar dicionários em vez de junções e como monitorar o uso de dicionários, consulte [Boas práticas de dicionários](/pt-BR/concepts/features/dictionaries/best-practices).
 
 <div id="refreshing-dictionaries">
-  ### Atualizando dicionários
+  ### Atualizando dicionários {#refreshing-dictionaries}
 </div>
 
 Especificamos um `LIFETIME` para o dicionário de `MIN 600 MAX 900`. LIFETIME é o intervalo de atualização do dicionário, e esses valores fazem com que ele seja recarregado periodicamente em um intervalo aleatório entre 600 e 900s. Esse intervalo aleatório é necessário para distribuir a carga na origem do dicionário ao atualizar em um grande número de servidores. Durante as atualizações, a versão antiga de um dicionário ainda pode ser consultada; apenas a carga inicial bloqueia consultas. Observe que definir `(LIFETIME(0))` impede a atualização dos dicionários.
@@ -357,14 +357,12 @@ Os dicionários podem ser recarregados à força usando o comando `SYSTEM RELOAD
 Para origens de banco de dados, como ClickHouse e Postgres, você pode configurar uma consulta que atualizará os dicionários apenas se eles realmente tiverem mudado (a resposta da consulta determina isso), em vez de em um intervalo periódico. Mais detalhes podem ser encontrados [aqui](/pt-BR/reference/statements/create/dictionary/lifetime).
 
 <div id="other-dictionary-types">
-  ### Outros tipos de dicionários
+  ### Outros tipos de dicionários {#other-dictionary-types}
 </div>
 
 O ClickHouse também oferece suporte a dicionários [Hierárquicos](/pt-BR/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/pt-BR/reference/statements/create/dictionary/layouts/polygon) e de [Expressão Regular](/pt-BR/reference/statements/create/dictionary/layouts/regexp-tree).
 
-<div id="more-reading">
-  ### Leitura adicional
-</div>
+### Leitura adicional {#more-reading}
 
 * [Boas práticas de dicionário](/pt-BR/concepts/features/dictionaries/best-practices) — seleção de layout, dicionários vs junções, monitoramento
 * [Usando Dicionários para Acelerar Consultas](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

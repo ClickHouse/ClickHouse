@@ -9,9 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/zh/components/Image.jsx";
 
-<div id="background">
-  ## 背景
-</div>
+## 背景 {#background}
 
 增量materialized view (Materialized Views) 可将计算成本从查询时转移到写入时，从而加快 `SELECT` 查询。
 
@@ -24,7 +22,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 <Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Materialized view diagram" />
 
 <div id="example">
-  ## 示例
+  ## 示例 {#example}
 </div>
 
 在本示例中，我们将使用 [《Schema 设计》](/zh/guides/clickhouse/data-modelling/schema-design) 中介绍的 Stack Overflow 数据集。
@@ -195,7 +193,7 @@ LIMIT 10
 </Warning>
 
 <div id="a-more-complex-example">
-  ### 更复杂的示例
+  ### 更复杂的示例 {#a-more-complex-example}
 </div>
 
 上面的示例使用 Materialized Views 来计算并维护每天的两个总和。总和是最简单的聚合形式，最适合用于维护部分状态——因为新值到达时，我们只需将其加到现有值上即可。不过，ClickHouse Materialized Views 可用于任何类型的聚合。
@@ -300,13 +298,13 @@ LIMIT 10
 请注意，这里使用的是 `GROUP BY`，而不是 `FINAL`。
 
 <div id="other-applications">
-  ## 其他应用
+  ## 其他应用 {#other-applications}
 </div>
 
 上文主要介绍如何使用 Materialized Views 以增量方式更新数据的部分聚合结果，从而将计算从查询时转移到写入时。除了这一常见用例外，Materialized Views 还有许多其他用途。
 
 <div id="filtering-and-transformation">
-  ### 过滤与转换
+  ### 过滤与转换 {#filtering-and-transformation}
 </div>
 
 在某些情况下，我们可能只希望在插入时写入部分行和列。在这种情况下，可以先将数据插入 `posts_null` 表，再通过 `SELECT` 查询在写入 `posts` 表之前对行进行过滤。比如，假设我们想转换 `posts` 表中的 `Tags` 列。该列包含一个由竖线分隔的标签名称列表。将其转换为数组后，我们就能更方便地按单个标签值进行聚合。
@@ -321,7 +319,7 @@ CREATE MATERIALIZED VIEW posts_mv TO posts AS
 ```
 
 <div id="lookup-table">
-  ### 查找表
+  ### 查找表 {#lookup-table}
 </div>
 
 在选择 ClickHouse 排序键时，应考虑其访问模式。应优先使用那些经常出现在过滤和聚合子句中的列。对于用户访问模式更加多样、无法用单一一组列来概括的场景，这可能会带来限制。例如，考虑以下 `comments` 表：
@@ -408,14 +406,14 @@ WHERE PostId IN (
 ```
 
 <div id="chaining">
-  ### 链式 / 级联 materialized view
+  ### 链式 / 级联 materialized view {#chaining}
 </div>
 
 materialized view 可以串联 (或级联) 使用，从而构建复杂的工作流。
 更多信息，请参阅指南 [&quot;级联 materialized view&quot;](/zh/concepts/features/materialized-views/cascading-materialized-views)。
 
 <div id="materialized-views-and-joins">
-  ## materialized views 与 JOIN
+  ## materialized views 与 JOIN {#materialized-views-and-joins}
 </div>
 
 <Info>
@@ -433,7 +431,7 @@ ClickHouse 中的增量materialized view 完全支持 `JOIN` 操作，但有一�
 这非常适合使用参考表或维度表来富化数据。不过，右侧表 (例如用户元数据) 的任何更新，都不会回溯更新 materialized view。若要看到更新后的数据，source 表中必须有新的 insert 发生。
 
 <div id="materialized-views-and-joins-example">
-  ### 示例
+  ### 示例 {#materialized-views-and-joins-example}
 </div>
 
 下面通过一个具体示例来说明，使用的是 [Stack Overflow 数据集](/zh/guides/clickhouse/data-modelling/schema-design)。我们将使用 materialized view 计算**每位用户每日获得的徽章数**，其中还包含来自 `users` 表的用户显示名称。
@@ -622,33 +620,33 @@ WHERE DisplayName = 'brand_new_user'
 不过，请注意，这个结果并不正确。
 
 <div id="join-best-practices">
-  ### materialized view 中 JOIN 的最佳实践
+  ### materialized view 中连接的最佳实践 {#join-best-practices}
 </div>
 
 * **将最左侧的表作为触发器。** 只有 `SELECT` 语句左侧的表会触发 materialized view。右侧表中的变更不会触发更新。
 
-* **预先写入 JOIN 所需的数据。** 确保在向源表插入行之前，关联表中的数据已存在。JOIN 会在写入时求值，因此如果数据缺失，就会出现未匹配的行或 NULL 值。
+* **预先写入连接所需的数据。** 确保在向源表插入行之前，关联表中的数据已存在。连接会在写入时求值，因此如果数据缺失，就会出现未匹配的行或 NULL 值。
 
-* **限制从 JOIN 中取回的列。** 只选择关联表中必需的列，以尽量减少内存占用并降低写入时延迟 (见下文) 。
+* **限制从连接中取回的列。** 只选择关联表中必需的列，以尽量减少内存占用并降低写入时延迟 (见下文) 。
 
-* **评估写入时性能。** JOIN 会增加插入成本，尤其是在右侧表较大时。请使用具有代表性的生产数据对插入速率进行基准测试。
+* **评估写入时性能。** 连接会增加插入成本，尤其是在右侧表较大时。请使用具有代表性的生产数据对插入速率进行基准测试。
 
-* **简单查找优先使用字典**。对于键值查找 (例如将用户 ID 映射为名称) ，请使用 [字典](/zh/concepts/features/dictionaries/index)，以避免开销较高的 JOIN 操作。
+* **简单查找优先使用字典**。对于键值查找 (例如将用户 ID 映射为名称) ，请使用 [字典](/zh/concepts/features/dictionaries/index)，以避免开销较高的连接操作。如需在写入时进行可靠的查找，请使用完全加载的字典布局；[基于缓存的布局](/zh/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) 可能导致摄取依赖于本地已预热的缓存。
 
 * **对齐 `GROUP BY` 和 `ORDER BY` 以提高合并效率。** 使用 `SummingMergeTree` 或 `AggregatingMergeTree` 时，请确保 `GROUP BY` 与目标表中的 `ORDER BY` 子句一致，以便高效合并行。
 
 * **使用明确的列别名。** 当多个表中存在同名列时，请使用别名以避免歧义，并确保目标表中的结果正确。
 
-* **考虑写入量和频率。** JOIN 在中等写入负载下通常表现良好。对于高吞吐量摄取，请考虑使用暂存表、预 JOIN，或字典以及 [Refreshable Materialized Views](/zh/concepts/features/materialized-views/refreshable-materialized-view) 等其他方式。
+* **考虑写入量和频率。** 连接在中等写入负载下通常表现良好。对于高吞吐量摄取，请考虑使用暂存表、预连接，或字典以及 [Refreshable Materialized Views](/zh/concepts/features/materialized-views/refreshable-materialized-view) 等其他方式。
 
 <div id="using-source-table-in-filters-and-joins-in-materialized-views">
-  ### 在过滤器和 JOIN 中使用源表
+  ### 在过滤器和 JOIN 中使用源表 {#using-source-table-in-filters-and-joins-in-materialized-views}
 </div>
 
 在 ClickHouse 中使用 materialized view 时，理解执行 materialized view 查询时源表会如何被处理非常重要。具体来说，materialized view 查询中的源表会被替换为插入的数据块。如果不清楚这一行为，可能会得到一些出乎意料的结果。
 
 <div id="example-scenario">
-  #### 示例场景
+  #### 示例场景 {#example-scenario}
 </div>
 
 假设采用以下设置：
@@ -696,7 +694,7 @@ SELECT * FROM mvw2;
 ```
 
 <div id="explanation">
-  #### 说明
+  #### 说明 {#explanation}
 </div>
 
 在上面的示例中，我们有两个 materialized view：`mvw1` 和 `mvw2`。它们执行的操作相似，但在引用源表 `t0` 的方式上略有不同。
@@ -708,7 +706,7 @@ SELECT * FROM mvw2;
 关键区别在于 ClickHouse 在 materialized view 查询中处理源表的方式。当 materialized view 由插入操作触发时，源表 (这里是 `t0`) 会被替换为插入的数据块。这种行为可用于优化查询，但也需要谨慎处理，以避免出现意外结果。
 
 <div id="use-cases-and-caveats">
-  ### 使用场景与注意事项
+  ### 使用场景与注意事项 {#use-cases-and-caveats}
 </div>
 
 在实际使用中，你可以利用这一行为来优化那些只需处理源表部分数据的 materialized view。例如，可以先通过子查询过滤源表，再将其与其他表连接。这有助于减少 materialized view 需要处理的数据量，从而提升性能。
@@ -730,7 +728,7 @@ ON t0.id = t1.id;
 在此示例中，由子查询 `IN (SELECT id FROM t0)` 构建出的 Set 仅包含新插入的行，这有助于用它来过滤 `t1`。
 
 <div id="example-with-stack-overflow">
-  #### 以 Stack Overflow 为例
+  #### 以 Stack Overflow 为例 {#example-with-stack-overflow}
 </div>
 
 请参考我们[前面的 materialized view 示例](/zh/concepts/features/materialized-views/incremental-materialized-view#example)，计算**每个用户每天获得的徽章数**，并包含 `users` 表中的用户显示名称。
@@ -813,7 +811,7 @@ INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
 在上述操作中，只会从 users 表中检索出 user id `2936484` 对应的一行。借助表的排序键 `Id`，这次查找也得到了优化。
 
 <div id="materialized-views-and-unions">
-  ## materialized view 与 UNION
+  ## materialized view 与 UNION {#materialized-views-and-unions}
 </div>
 
 `UNION ALL` 查询通常用于将多个源表中的数据合并为一个结果集。
@@ -1047,9 +1045,7 @@ GROUP BY UserId
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-<div id="materialized-views-parallel-vs-sequential">
-  ## 并行处理与串行处理
-</div>
+## 并行处理与串行处理 {#materialized-views-parallel-vs-sequential}
 
 如前一个示例所示，一个表可以作为多个 Materialized Views 的源表。这些视图的执行顺序取决于设置 [`parallel_view_processing`](/zh/reference/settings/session-settings/parallel#parallel_view_processing)。
 
@@ -1189,7 +1185,7 @@ ORDER BY now ASC
 尽管我们从每个视图接收到的行到达顺序相同，但这并不一定有保证——从每一行相近的写入时就可以看出这一点。另请注意，写入性能也有所提升。
 
 <div id="materialized-views-when-to-use-parallel">
-  ### 何时使用并行处理
+  ### 何时使用并行处理 {#materialized-views-when-to-use-parallel}
 </div>
 
 启用 `parallel_view_processing=1` 可以显著提升插入吞吐量，如上所示，尤其是在单个表上关联了多个 Materialized Views 时。不过，理解其中的权衡也很重要：
@@ -1216,7 +1212,7 @@ ORDER BY now ASC
 * 你正在调试或审计插入行为，并希望进行确定性的重放
 
 <div id="materialized-views-common-table-expressions-ctes">
-  ## materialized views 与公共表表达式 (CTE)
+  ## materialized views 与公共表表达式 (CTE) {#materialized-views-common-table-expressions-ctes}
 </div>
 
 materialized view 支持**非递归**公共表表达式 (CTE) 。

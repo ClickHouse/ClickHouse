@@ -9,9 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-<div id="background">
-  ## Contexte
-</div>
+## Contexte {#background}
 
 Les vues matérialisées incrémentales (vue matérialisée) permettent de transférer le coût du calcul du temps de requête vers le temps d&#39;insertion, ce qui accélère les requêtes `SELECT`.
 
@@ -24,7 +22,7 @@ Dans ClickHouse, les vues matérialisées sont mises à jour en temps réel à m
 <Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Schéma d’une vue matérialisée" />
 
 <div id="example">
-  ## Exemple
+  ## Exemple {#example}
 </div>
 
 À titre d&#39;exemple, nous utiliserons le jeu de données Stack Overflow documenté dans [&quot;Schema Design&quot;](/fr/guides/clickhouse/data-modelling/schema-design).
@@ -195,7 +193,7 @@ Cela a accéléré notre requête de 0.133s à 0.004s, soit une amélioration de
 </Warning>
 
 <div id="a-more-complex-example">
-  ### Un exemple plus complexe
+  ### Un exemple plus complexe {#a-more-complex-example}
 </div>
 
 L’exemple ci-dessus utilise des vues matérialisées pour calculer et maintenir deux sommes par jour. Les sommes constituent la forme d’agrégation la plus simple pour conserver des états partiels : il suffit d’ajouter les nouvelles valeurs aux valeurs existantes à mesure qu’elles arrivent. Toutefois, les vues matérialisées de ClickHouse peuvent être utilisées pour n’importe quel type d’agrégation.
@@ -300,13 +298,13 @@ LIMIT 10
 Notez que nous utilisons ici un `GROUP BY` au lieu d&#39;utiliser `FINAL`.
 
 <div id="other-applications">
-  ## Autres applications
+  ## Autres applications {#other-applications}
 </div>
 
 Ce qui précède porte principalement sur l’utilisation des vues matérialisées pour mettre à jour progressivement des agrégats partiels de données, déplaçant ainsi le calcul du temps de requête vers le temps d’insertion. Au-delà de ce cas d’usage courant, les vues matérialisées ont de nombreuses autres applications.
 
 <div id="filtering-and-transformation">
-  ### Filtrage et transformation
+  ### Filtrage et transformation {#filtering-and-transformation}
 </div>
 
 Dans certaines situations, nous pouvons vouloir n&#39;insérer qu&#39;un sous-ensemble des lignes et des colonnes au moment de l&#39;insertion. Dans ce cas, notre table `posts_null` pourrait recevoir les insertions, avec une requête `SELECT` filtrant les lignes avant leur insertion dans la table `posts`. Par exemple, supposons que nous souhaitions transformer une colonne `Tags` de notre table `posts`. Celle-ci contient une liste de noms de tags délimités par des barres verticales. En les convertissant en tableau, nous pouvons plus facilement effectuer des agrégations par valeur de tag.
@@ -321,7 +319,7 @@ CREATE MATERIALIZED VIEW posts_mv TO posts AS
 ```
 
 <div id="lookup-table">
-  ### Table de recherche
+  ### Table de recherche {#lookup-table}
 </div>
 
 Vous devez tenir compte des schémas d’accès lors du choix d’une clé de tri ClickHouse. Il convient d’utiliser les colonnes fréquemment employées dans les clauses de filtrage et d’agrégation. Cela peut toutefois être contraignant lorsque les utilisateurs ont des schémas d’accès plus variés, qui ne peuvent pas être ramenés à un seul ensemble de colonnes. Par exemple, prenons la table `comments` suivante :
@@ -408,14 +406,14 @@ WHERE PostId IN (
 ```
 
 <div id="chaining">
-  ### Chaînage / cascade de vues matérialisées
+  ### Chaînage / cascade de vues matérialisées {#chaining}
 </div>
 
 Les vues matérialisées peuvent être chaînées (ou mises en cascade), ce qui permet de mettre en place des flux de travail complexes.
 Pour plus d&#39;informations, consultez le guide [&quot;Vues matérialisées en cascade&quot;](/fr/concepts/features/materialized-views/cascading-materialized-views).
 
 <div id="materialized-views-and-joins">
-  ## Vues matérialisées et JOINs
+  ## Vues matérialisées et JOINs {#materialized-views-and-joins}
 </div>
 
 <Info>
@@ -433,7 +431,7 @@ Ce comportement fait que les JOINs dans les vues matérialisées s&#39;apparente
 Cela fonctionne bien pour enrichir les données avec des tables de référence ou de dimension. En revanche, les mises à jour des tables situées à droite (par ex., les métadonnées utilisateur) ne mettront pas rétroactivement à jour la vue matérialisée. Pour voir les données mises à jour, de nouvelles insertions doivent arriver dans la table source.
 
 <div id="materialized-views-and-joins-example">
-  ### Exemple
+  ### Exemple {#materialized-views-and-joins-example}
 </div>
 
 Prenons un exemple concret avec le [jeu de données Stack Overflow](/fr/guides/clickhouse/data-modelling/schema-design). Nous utiliserons une vue matérialisée pour calculer **le nombre quotidien de badges par utilisateur**, y compris le nom d’affichage de l’utilisateur provenant de la table `users`.
@@ -622,33 +620,33 @@ WHERE DisplayName = 'brand_new_user'
 Notez toutefois que ce résultat est incorrect.
 
 <div id="join-best-practices">
-  ### Bonnes pratiques pour les JOIN dans les vues matérialisées
+  ### Bonnes pratiques pour les jointures dans les vues matérialisées {#join-best-practices}
 </div>
 
 * **Utilisez la table la plus à gauche comme déclencheur.** Seule la table située à gauche de l’instruction `SELECT` déclenche la vue matérialisée. Les modifications apportées aux tables de droite ne déclencheront pas de mise à jour.
 
-* **Insérez au préalable les données jointes.** Assurez-vous que les données des tables jointes existent avant d’insérer des lignes dans la table source. Le JOIN est évalué au moment de l’insert ; des données manquantes entraîneront donc des lignes sans correspondance ou des valeurs nulles.
+* **Insérez au préalable les données jointes.** Assurez-vous que les données des tables jointes existent avant d’insérer des lignes dans la table source. La jointure est évaluée au moment de l’insertion ; des données manquantes entraîneront donc des lignes sans correspondance ou des valeurs nulles.
 
-* **Limitez les colonnes récupérées via les jointures.** Sélectionnez uniquement les colonnes nécessaires dans les tables jointes afin de limiter l’utilisation de la mémoire et de réduire la latence au moment de l’insert (voir ci-dessous).
+* **Limitez les colonnes récupérées via les jointures.** Sélectionnez uniquement les colonnes nécessaires dans les tables jointes afin de limiter l’utilisation de la mémoire et de réduire la latence au moment de l’insertion (voir ci-dessous).
 
-* **Évaluez les performances au moment de l’insert.** Les JOIN augmentent le coût des inserts, en particulier avec de grandes tables du côté droit. Mesurez les taux d’insert à l’aide de données de production représentatives.
+* **Évaluez les performances au moment de l’insertion.** Les jointures augmentent le coût des insertions, en particulier avec de grandes tables du côté droit. Mesurez les taux d’insertion à l’aide de données de production représentatives.
 
-* **Préférez les dictionnaires pour les recherches simples**. Utilisez les [Dictionaries](/fr/concepts/features/dictionaries/index) pour les recherches clé-valeur (par exemple, associer un ID utilisateur à un nom) afin d’éviter des opérations JOIN coûteuses.
+* **Préférez les dictionnaires pour les recherches simples**. Utilisez les [dictionnaires](/fr/concepts/features/dictionaries/index) pour les recherches clé-valeur (par exemple, associer un ID utilisateur à un nom) afin d’éviter des opérations de jointure coûteuses. Utilisez une disposition de dictionnaire entièrement chargée pour garantir des recherches fiables au moment de l’insertion ; les [dispositions basées sur un cache](/fr/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) peuvent rendre l’ingestion dépendante d’un cache local préchauffé.
 
 * **Alignez `GROUP BY` et `ORDER BY` pour optimiser les fusions.** Lorsque vous utilisez `SummingMergeTree` ou `AggregatingMergeTree`, assurez-vous que `GROUP BY` correspond à la clause `ORDER BY` dans la table cible afin de permettre une fusion efficace des lignes.
 
 * **Utilisez des alias de colonnes explicites.** Lorsque plusieurs tables ont des noms de colonnes identiques, utilisez des alias pour éviter toute ambiguïté et garantir des résultats corrects dans la table cible.
 
-* **Tenez compte du volume et de la fréquence des inserts.** Les JOIN fonctionnent bien avec des charges d’insertion modérées. Pour une ingestion à haut débit, envisagez d’utiliser des tables de staging, des pré-jointures ou d’autres approches telles que Dictionaries et les [Refreshable Materialized Views](/fr/concepts/features/materialized-views/refreshable-materialized-view).
+* **Tenez compte du volume et de la fréquence des insertions.** Les jointures fonctionnent bien avec des charges d’insertion modérées. Pour une ingestion à haut débit, envisagez d’utiliser des tables de staging, des pré-jointures ou d’autres approches telles que les dictionnaires et les [Refreshable Materialized Views](/fr/concepts/features/materialized-views/refreshable-materialized-view).
 
 <div id="using-source-table-in-filters-and-joins-in-materialized-views">
-  ### Utilisation de la table source dans les filtres et les jointures
+  ### Utilisation de la table source dans les filtres et les jointures {#using-source-table-in-filters-and-joins-in-materialized-views}
 </div>
 
 Lorsque vous utilisez des vues matérialisées dans ClickHouse, il est important de comprendre comment la table source est traitée lors de l’exécution de la requête de la vue matérialisée. Plus précisément, dans la requête de la vue matérialisée, la table source est remplacée par le bloc de données inséré. Si ce mécanisme n’est pas bien compris, il peut entraîner des résultats inattendus.
 
 <div id="example-scenario">
-  #### Exemple de scénario
+  #### Exemple de scénario {#example-scenario}
 </div>
 
 Prenons la configuration suivante :
@@ -696,7 +694,7 @@ SELECT * FROM mvw2;
 ```
 
 <div id="explanation">
-  #### Explication
+  #### Explication {#explanation}
 </div>
 
 Dans l&#39;exemple ci-dessus, nous avons deux vues matérialisées, `mvw1` et `mvw2`, qui effectuent des opérations similaires, avec une légère différence dans la façon dont elles font référence à la table source `t0`.
@@ -708,7 +706,7 @@ Dans le second cas, avec la jointure sur `vt0`, la vue lit toutes les données d
 La principale différence réside dans la façon dont ClickHouse gère la table source dans la requête de la vue matérialisée. Lorsqu&#39;une vue matérialisée est déclenchée par une insertion, la table source (`t0` dans ce cas) est remplacée par le bloc de données inséré. Ce comportement peut être mis à profit pour optimiser les requêtes, mais il nécessite également une attention particulière afin d&#39;éviter des résultats inattendus.
 
 <div id="use-cases-and-caveats">
-  ### Cas d’usage et points à noter
+  ### Cas d’usage et points à noter {#use-cases-and-caveats}
 </div>
 
 En pratique, vous pouvez exploiter ce comportement pour optimiser les vues matérialisées qui n’ont besoin de traiter qu’un sous-ensemble des données de la table source. Par exemple, vous pouvez utiliser une sous-requête pour filtrer la table source avant de la joindre à d’autres tables. Cela peut réduire la quantité de données traitées par la vue matérialisée et améliorer les performances.
@@ -730,7 +728,7 @@ ON t0.id = t1.id;
 Dans cet exemple, l’ensemble construit à partir de la sous-requête `IN (SELECT id FROM t0)` ne contient que les lignes nouvellement insérées, ce qui peut aider à filtrer `t1` en fonction de cet ensemble.
 
 <div id="example-with-stack-overflow">
-  #### Exemple avec Stack Overflow
+  #### Exemple avec Stack Overflow {#example-with-stack-overflow}
 </div>
 
 Consultez notre [exemple précédent de vue matérialisée](/fr/concepts/features/materialized-views/incremental-materialized-view#example) pour calculer le **nombre quotidien de badges par utilisateur**, en incluant le nom d’affichage de l’utilisateur provenant de la table `users`.
@@ -813,7 +811,7 @@ INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
 Dans l’opération ci-dessus, une seule ligne est récupérée dans la table users pour l’ID utilisateur `2936484`. Cette recherche est également optimisée grâce à une clé de tri de table sur `Id`.
 
 <div id="materialized-views-and-unions">
-  ## Vues matérialisées et unions
+  ## Vues matérialisées et unions {#materialized-views-and-unions}
 </div>
 
 Les requêtes `UNION ALL` sont couramment utilisées pour combiner des données issues de plusieurs tables sources dans un seul jeu de résultats.
@@ -1047,9 +1045,7 @@ GROUP BY UserId
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-<div id="materialized-views-parallel-vs-sequential">
-  ## Traitement parallèle ou séquentiel
-</div>
+## Traitement parallèle ou séquentiel {#materialized-views-parallel-vs-sequential}
 
 Comme indiqué dans l’exemple précédent, une table peut servir de source à plusieurs vues matérialisées. L’ordre dans lequel elles sont exécutées dépend du paramètre [`parallel_view_processing`](/fr/reference/settings/session-settings/parallel#parallel_view_processing).
 
@@ -1189,7 +1185,7 @@ ORDER BY now ASC
 Bien que l’ordre d’arrivée des lignes de chaque vue soit ici le même, ce n’est pas garanti, comme le montre la proximité du moment d’insertion de chaque ligne. Notez également l’amélioration des performances d’insertion.
 
 <div id="materialized-views-when-to-use-parallel">
-  ### Quand utiliser le traitement parallèle
+  ### Quand utiliser le traitement parallèle {#materialized-views-when-to-use-parallel}
 </div>
 
 Activer `parallel_view_processing=1` peut considérablement améliorer le débit d’insertion, comme indiqué ci-dessus, en particulier lorsque plusieurs vues matérialisées sont attachées à une même table. Cependant, il est important d’en comprendre les contreparties :
@@ -1216,7 +1212,7 @@ Laissez-le désactivé lorsque :
 * Vous effectuez du débogage ou un audit du comportement des insertions et souhaitez un rejeu déterministe
 
 <div id="materialized-views-common-table-expressions-ctes">
-  ## Vues matérialisées et expressions de table communes (CTE)
+  ## Vues matérialisées et expressions de table communes (CTE) {#materialized-views-common-table-expressions-ctes}
 </div>
 
 Les expressions de table communes (CTE) **non récursives** sont prises en charge dans les vues matérialisées.

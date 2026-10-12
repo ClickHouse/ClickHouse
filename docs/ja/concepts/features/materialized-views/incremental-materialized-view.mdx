@@ -9,9 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-<div id="background">
-  ## 背景
-</div>
+## 背景 {#background}
 
 インクリメンタルmaterialized view (Materialized Views) を使用すると、計算コストをクエリ時から挿入時に移せるため、`SELECT` クエリを高速化できます。
 
@@ -24,7 +22,7 @@ ClickHouse の materialized view は、基になるテーブルにデータが�
 <Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized view の図" />
 
 <div id="example">
-  ## 例
+  ## 例 {#example}
 </div>
 
 例として、[「スキーマ設計」](/ja/guides/clickhouse/data-modelling/schema-design)に記載されているStack Overflowデータセットを使用します。
@@ -195,7 +193,7 @@ Peak memory usage: 567.61 KiB.
 </Warning>
 
 <div id="a-more-complex-example">
-  ### より複雑な例
+  ### より複雑な例 {#a-more-complex-example}
 </div>
 
 上記の例では、Materialized Views を使って、日ごとに 2 つの合計値を計算し、それを維持しています。合計値は、部分状態を維持する集計の中で最も単純な形式です。新しい値が到着したら、既存の値に加えるだけでよいためです。ただし、ClickHouse の Materialized Views は、あらゆる種類の集計に使用できます。
@@ -300,13 +298,13 @@ LIMIT 10
 ここでは、`FINAL` の代わりに `GROUP BY` を使用している点に注意してください。
 
 <div id="other-applications">
-  ## その他の用途
+  ## その他の用途 {#other-applications}
 </div>
 
 ここまでは主に、materialized view を使ってデータの部分集約を増分更新し、計算をクエリ時から挿入時へ移す方法に焦点を当ててきました。この一般的なユースケース以外にも、materialized view にはさまざまな用途があります。
 
 <div id="filtering-and-transformation">
-  ### フィルタリングと変換
+  ### フィルタリングと変換 {#filtering-and-transformation}
 </div>
 
 状況によっては、INSERT 時に行やカラムの一部だけを挿入したいことがあります。この場合、`posts_null` テーブルで INSERT を受け取り、`SELECT` クエリで行をフィルタリングしてから `posts` テーブルに挿入できます。たとえば、`posts` テーブルの `Tags` カラムを変換したいとします。このカラムには、タグ名がパイプ区切りのリストとして格納されています。これを配列に変換することで、個々のタグの値ごとに集計しやすくなります。
@@ -321,7 +319,7 @@ CREATE MATERIALIZED VIEW posts_mv TO posts AS
 ```
 
 <div id="lookup-table">
-  ### ルックアップテーブル
+  ### ルックアップテーブル {#lookup-table}
 </div>
 
 ClickHouse のソートキーを選ぶ際には、アクセスパターンを考慮する必要があります。よくフィルタ句や集約句で使用されるカラムを選ぶべきです。ただし、単一のカラムの組み合わせでは表しきれない、より多様なアクセスパターンをユーザーが持つケースでは、これが制約になることがあります。たとえば、次の `comments` テーブルを考えてみましょう。
@@ -408,14 +406,14 @@ WHERE PostId IN (
 ```
 
 <div id="chaining">
-  ### materialized view の連鎖 / カスケード
+  ### materialized view の連鎖 / カスケード {#chaining}
 </div>
 
 materialized view は連鎖 (またはカスケード) できるため、複雑なワークフローを構築できます。
 詳細については、ガイド「[materialized view のカスケード](/ja/concepts/features/materialized-views/cascading-materialized-views)」を参照してください。
 
 <div id="materialized-views-and-joins">
-  ## materialized view と JOIN
+  ## materialized view と JOIN {#materialized-views-and-joins}
 </div>
 
 <Info>
@@ -433,7 +431,7 @@ ClickHouse のインクリメンタルmaterialized view は `JOIN` 操作を完�
 これは、参照テーブルやディメンションテーブルでデータを enrich する用途ではうまく機能します。ただし、右側のテーブル (たとえばユーザーメタデータ) に対する更新は、materialized view にはさかのぼって反映されません。更新後のデータを反映させるには、ソーステーブルに新たな insert が必要です。
 
 <div id="materialized-views-and-joins-example">
-  ### 例
+  ### 例 {#materialized-views-and-joins-example}
 </div>
 
 [Stack Overflow データセット](/ja/guides/clickhouse/data-modelling/schema-design)を使って、具体的な例を見ていきましょう。materialized view を使用して、`users` テーブルのユーザー表示名を含む**ユーザーごとの日次バッジ数**を計算します。
@@ -622,7 +620,7 @@ WHERE DisplayName = 'brand_new_user'
 ただし、この結果は誤りです。
 
 <div id="join-best-practices">
-  ### materialized view における JOIN のベストプラクティス
+  ### materialized view における JOIN のベストプラクティス {#join-best-practices}
 </div>
 
 * **一番左のテーブルをトリガーとして使用します。** materialized view をトリガーするのは、`SELECT` ステートメントの左側にあるテーブルだけです。右側のテーブルへの変更では更新はトリガーされません。
@@ -633,7 +631,7 @@ WHERE DisplayName = 'brand_new_user'
 
 * **挿入時のパフォーマンスを評価します。** JOIN は挿入のコストを増加させます。特に右側のテーブルが大きい場合に顕著です。本番相当の代表的なデータを使用して挿入レートをベンチマークしてください。
 
-* **単純なルックアップには Dictionaries を優先します**。高コストな JOIN 演算を避けるため、キー・バリューのルックアップ (例: ユーザー ID から名前) には [Dictionaries](/ja/concepts/features/dictionaries/index) を使用してください。
+* **単純なルックアップには Dictionaries を優先します**。高コストな JOIN 演算を避けるため、キー・バリューのルックアップ (例: ユーザー ID から名前) には [Dictionaries](/ja/concepts/features/dictionaries/index) を使用してください。挿入時のルックアップを確実に行うには、データを完全にロードするタイプの Dictionary レイアウトを使用してください。[キャッシュベースのレイアウト](/ja/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) を使用すると、インジェストがローカルのウォームアップ済みキャッシュに依存してしまう可能性があります。
 
 * **マージ効率のために `GROUP BY` と `ORDER BY` を揃えます。** `SummingMergeTree` または `AggregatingMergeTree` を使用する場合は、効率的に行をマージできるよう、`GROUP BY` がターゲットテーブルの `ORDER BY` 句と一致していることを確認してください。
 
@@ -642,13 +640,13 @@ WHERE DisplayName = 'brand_new_user'
 * **挿入量と頻度を考慮します。** JOIN は中程度の挿入ワークロードでは有効に機能します。高スループットのインジェストでは、ステージングテーブル、事前 JOIN、または Dictionaries や [リフレッシュ可能なマテリアライズドビュー](/ja/concepts/features/materialized-views/refreshable-materialized-view) などの他の方法の使用を検討してください。
 
 <div id="using-source-table-in-filters-and-joins-in-materialized-views">
-  ### フィルターと join でソーステーブルを使用する
+  ### フィルターと join でソーステーブルを使用する {#using-source-table-in-filters-and-joins-in-materialized-views}
 </div>
 
 ClickHouse で materialized view を扱う際は、materialized view のクエリ実行時にソーステーブルがどのように扱われるかを理解しておくことが重要です。具体的には、materialized view のクエリ内のソーステーブルは、挿入されたデータの block に置き換えられます。この挙動を正しく理解していないと、予期しない結果になることがあります。
 
 <div id="example-scenario">
-  #### 例となるシナリオ
+  #### 例となるシナリオ {#example-scenario}
 </div>
 
 次の構成を考えてみましょう。
@@ -696,7 +694,7 @@ SELECT * FROM mvw2;
 ```
 
 <div id="explanation">
-  #### 説明
+  #### 説明 {#explanation}
 </div>
 
 上記の例では、2 つの materialized view `mvw1` と `mvw2` があり、どちらも似た処理を行いますが、ソーステーブル `t0` の参照方法にわずかな違いがあります。
@@ -708,7 +706,7 @@ SELECT * FROM mvw2;
 重要な違いは、ClickHouse が materialized view のクエリ内でソーステーブルをどのように扱うかにあります。materialized view が insert によってトリガーされると、ソーステーブル (この場合は `t0`) は挿入されたデータの block に置き換えられます。この挙動はクエリの最適化に活用できますが、意図しない結果を避けるため、注意して扱う必要があります。
 
 <div id="use-cases-and-caveats">
-  ### ユースケースと注意点
+  ### ユースケースと注意点 {#use-cases-and-caveats}
 </div>
 
 実際には、この挙動を利用して、ソーステーブル内のデータの一部だけを処理すればよい materialized view を最適化できます。たとえば、サブクエリを使ってソーステーブルを他のテーブルと結合する前に絞り込むことができます。これにより、materialized view で処理するデータ量を減らし、パフォーマンスを向上させることができます。
@@ -730,7 +728,7 @@ ON t0.id = t1.id;
 この例では、`IN (SELECT id FROM t0)` サブクエリから作成される集合には新たに挿入された行だけが含まれるため、それを使って `t1` を絞り込むことができます。
 
 <div id="example-with-stack-overflow">
-  #### Stack Overflow を使った例
+  #### Stack Overflow を使った例 {#example-with-stack-overflow}
 </div>
 
 `users` table のユーザー表示名も含めて、**ユーザーごとの 1 日あたりの badges 数**を計算する[先ほどの materialized view の例](/ja/concepts/features/materialized-views/incremental-materialized-view#example)を見てみましょう。
@@ -813,7 +811,7 @@ INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
 上記の操作では、ユーザー ID `2936484` について、users テーブルからは 1 行だけが取得されます。このルックアップも、テーブルのソートキー `Id` によって最適化されます。
 
 <div id="materialized-views-and-unions">
-  ## materialized view とユニオン
+  ## materialized view とユニオン {#materialized-views-and-unions}
 </div>
 
 `UNION ALL` クエリは、複数のソーステーブルのデータを 1 つの結果セットにまとめるためによく使われます。
@@ -1047,9 +1045,7 @@ GROUP BY UserId
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-<div id="materialized-views-parallel-vs-sequential">
-  ## 並列処理と順次処理
-</div>
+## 並列処理と順次処理 {#materialized-views-parallel-vs-sequential}
 
 前の例で示したように、1 つのテーブルを複数の Materialized View のソースとして使用できます。これらの実行順序は、設定 [`parallel_view_processing`](/ja/reference/settings/session-settings/parallel#parallel_view_processing) によって決まります。
 
@@ -1189,7 +1185,7 @@ ORDER BY now ASC
 各ビューから到着する行の順序はここでは同じですが、これは保証されるものではありません。各行のinsert timeが近いことからも、そのことがわかります。あわせて、insert性能が向上している点にも注目してください。
 
 <div id="materialized-views-when-to-use-parallel">
-  ### 並列処理を使用するタイミング
+  ### 並列処理を使用するタイミング {#materialized-views-when-to-use-parallel}
 </div>
 
 `parallel_view_processing=1` を有効にすると、上で示したように insert スループットを大幅に向上できる場合があります。特に、1 つのテーブルに複数の Materialized Views が関連付けられている場合に効果的です。ただし、そのトレードオフを理解しておくことが重要です。
@@ -1216,7 +1212,7 @@ ORDER BY now ASC
 * insert の挙動を debugging または監査しており、決定論的なリプレイが必要
 
 <div id="materialized-views-common-table-expressions-ctes">
-  ## materialized view と共通テーブル式 (CTE)
+  ## materialized view と共通テーブル式 (CTE) {#materialized-views-common-table-expressions-ctes}
 </div>
 
 **非再帰**の共通テーブル式 (CTE) は、materialized view でサポートされています。

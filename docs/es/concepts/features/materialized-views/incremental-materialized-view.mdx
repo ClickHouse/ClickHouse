@@ -9,9 +9,7 @@ doc_type: 'guide'
 
 import { Image } from "/snippets/es/components/Image.jsx";
 
-<div id="background">
-  ## Contexto
-</div>
+## Contexto {#background}
 
 Las vistas materializadas incrementales (vistas materializadas) permiten trasladar el coste del cálculo del tiempo de consulta al tiempo de inserción, lo que se traduce en consultas `SELECT` más rápidas.
 
@@ -24,7 +22,7 @@ Las vistas materializadas en ClickHouse se actualizan en tiempo real a medida qu
 <Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Diagrama de vista materializada" />
 
 <div id="example">
-  ## Ejemplo
+  ## Ejemplo {#example}
 </div>
 
 A modo de ejemplo, utilizaremos el conjunto de datos de Stack Overflow documentado en [&quot;Schema Design&quot;](/es/guides/clickhouse/data-modelling/schema-design).
@@ -195,7 +193,7 @@ Esto ha acelerado nuestra consulta de 0.133s a 0.004s: ¡más de 25 veces más r
 </Warning>
 
 <div id="a-more-complex-example">
-  ### Un ejemplo más complejo
+  ### Un ejemplo más complejo {#a-more-complex-example}
 </div>
 
 El ejemplo anterior usa vistas materializadas para calcular y mantener dos sumas por día. Las sumas representan la forma más simple de agregación para mantener estados parciales, ya que basta con añadir los nuevos valores a los existentes a medida que llegan. Sin embargo, las vistas materializadas de ClickHouse pueden usarse con cualquier tipo de agregación.
@@ -300,13 +298,13 @@ LIMIT 10
 Ten en cuenta que aquí usamos `GROUP BY` en lugar de `FINAL`.
 
 <div id="other-applications">
-  ## Otras aplicaciones
+  ## Otras aplicaciones {#other-applications}
 </div>
 
 Lo anterior se centra principalmente en el uso de vistas materializadas para actualizar de forma incremental agregaciones parciales de datos, trasladando así el cálculo del tiempo de consulta al tiempo de inserción. Más allá de este caso de uso habitual, las vistas materializadas tienen muchas otras aplicaciones.
 
 <div id="filtering-and-transformation">
-  ### Filtrado y transformación
+  ### Filtrado y transformación {#filtering-and-transformation}
 </div>
 
 En algunas situaciones, puede que queramos insertar solo un subconjunto de las filas y columnas al realizar la inserción. En este caso, nuestra tabla `posts_null` podría recibir inserciones, con una consulta `SELECT` que filtre las filas antes de insertarlas en la tabla `posts`. Por ejemplo, supongamos que quisiéramos transformar una columna `Tags` de nuestra tabla `posts`. Esta contiene una lista de nombres de etiquetas delimitada por barras verticales. Al convertirla en un array, podemos agregar con más facilidad por valores individuales de etiqueta.
@@ -321,7 +319,7 @@ CREATE MATERIALIZED VIEW posts_mv TO posts AS
 ```
 
 <div id="lookup-table">
-  ### Tabla de consulta
+  ### Tabla de consulta {#lookup-table}
 </div>
 
 Debe tener en cuenta los patrones de acceso al elegir una clave de ordenación de ClickHouse. Deben utilizarse las columnas que se usan con frecuencia en las cláusulas de filtrado y agregación. Esto puede resultar restrictivo en escenarios en los que los usuarios tienen patrones de acceso más diversos que no pueden encapsularse en un único conjunto de columnas. Por ejemplo, considere la siguiente tabla `comments`:
@@ -408,14 +406,14 @@ WHERE PostId IN (
 ```
 
 <div id="chaining">
-  ### Encadenamiento / cascada de vistas materializadas
+  ### Encadenamiento / cascada de vistas materializadas {#chaining}
 </div>
 
 Las vistas materializadas pueden encadenarse (o disponerse en cascada), lo que permite establecer flujos de trabajo complejos.
 Para obtener más información, consulte la guía [&quot;Vistas materializadas en cascada&quot;](/es/concepts/features/materialized-views/cascading-materialized-views).
 
 <div id="materialized-views-and-joins">
-  ## Vistas materializadas y JOINs
+  ## Vistas materializadas y JOINs {#materialized-views-and-joins}
 </div>
 
 <Info>
@@ -433,7 +431,7 @@ Este comportamiento hace que los JOINs en las vistas materializadas se parezcan 
 Esto funciona bien para enriquecer datos con tablas de referencia o de dimensión. Sin embargo, las actualizaciones en las tablas del lado derecho (p. ej., metadatos de usuario) no actualizarán retroactivamente la vista materializada. Para ver los datos actualizados, deben llegar nuevas inserciones a la tabla de origen.
 
 <div id="materialized-views-and-joins-example">
-  ### Ejemplo
+  ### Ejemplo {#materialized-views-and-joins-example}
 </div>
 
 Veamos un ejemplo concreto con el [conjunto de datos de Stack Overflow](/es/guides/clickhouse/data-modelling/schema-design). Usaremos una vista materializada para calcular **las insignias diarias por usuario**, incluido el nombre para mostrar del usuario de la tabla `users`.
@@ -622,10 +620,10 @@ WHERE DisplayName = 'brand_new_user'
 Tenga en cuenta, sin embargo, que este resultado es incorrecto.
 
 <div id="join-best-practices">
-  ### Buenas prácticas para JOINs en vistas materializadas
+  ### Buenas prácticas para JOINs en vistas materializadas {#join-best-practices}
 </div>
 
-* **Use la tabla más a la izquierda como desencadenante.** Solo la tabla del lado izquierdo de la sentencia `SELECT` activa la vista materializada. Los cambios en las tablas del lado derecho no desencadenarán actualizaciones.
+* **Use la tabla más a la izquierda como disparador.** Solo la tabla del lado izquierdo de la sentencia `SELECT` dispara la vista materializada. Los cambios en las tablas del lado derecho no dispararán actualizaciones.
 
 * **Inserte antes los datos de las tablas unidas.** Asegúrese de que los datos de las tablas unidas existan antes de insertar filas en la tabla de origen. El JOIN se evalúa en el momento de la inserción, por lo que la falta de datos dará lugar a filas sin coincidencia o valores nulos.
 
@@ -633,22 +631,22 @@ Tenga en cuenta, sin embargo, que este resultado es incorrecto.
 
 * **Evalúe el rendimiento en la inserción.** Los JOINs aumentan el coste de las inserciones, especialmente con tablas grandes en el lado derecho. Haga benchmark de las tasas de inserción con datos de producción representativos.
 
-* **Prefiera Dictionaries para lookups simples**. Use [Dictionaries](/es/concepts/features/dictionaries/index) para lookups de clave-valor (por ejemplo, de ID de usuario a nombre) y así evitar operaciones JOIN costosas.
+* **Prefiera Dictionaries para lookups simples**. Use [Dictionaries](/es/concepts/features/dictionaries/index) para lookups de clave-valor (por ejemplo, de ID de usuario a nombre) y así evitar operaciones JOIN costosas. Use una disposición de diccionario que se cargue por completo para que los lookups en el momento de la inserción sean fiables; las [disposiciones basadas en caché](/es/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path) pueden hacer que la ingestión dependa de que haya una caché local ya precargada.
 
 * **Alinee `GROUP BY` y `ORDER BY` para mejorar la eficiencia de la fusión.** Al usar `SummingMergeTree` o `AggregatingMergeTree`, asegúrese de que `GROUP BY` coincida con la cláusula `ORDER BY` de la tabla de destino para permitir una fusión eficiente de filas.
 
 * **Use alias de columna explícitos.** Cuando las tablas tengan nombres de columna coincidentes, use alias para evitar ambigüedades y garantizar resultados correctos en la tabla de destino.
 
-* **Tenga en cuenta el volumen y la frecuencia de inserción.** Los JOINs funcionan bien con cargas de inserción moderadas. Para una ingestión de alto throughput, considere usar tablas de staging, pre-joins u otros enfoques, como Dictionaries y [Refreshable Materialized Views](/es/concepts/features/materialized-views/refreshable-materialized-view).
+* **Tenga en cuenta el volumen y la frecuencia de inserción.** Los JOINs funcionan bien con cargas de inserción moderadas. Para una ingestión de alto caudal, considere usar tablas de staging, pre-joins u otros enfoques, como Dictionaries y [Refreshable Materialized Views](/es/concepts/features/materialized-views/refreshable-materialized-view).
 
 <div id="using-source-table-in-filters-and-joins-in-materialized-views">
-  ### Uso de la tabla de origen en filtros y JOIN
+  ### Uso de la tabla de origen en filtros y JOIN {#using-source-table-in-filters-and-joins-in-materialized-views}
 </div>
 
 Al trabajar con vistas materializadas en ClickHouse, es importante entender cómo se trata la tabla de origen durante la ejecución de la consulta de la vista materializada. En concreto, la tabla de origen de la consulta de la vista materializada se sustituye por el bloque de datos insertado. Este comportamiento puede dar lugar a resultados inesperados si no se entiende correctamente.
 
 <div id="example-scenario">
-  #### Escenario de ejemplo
+  #### Escenario de ejemplo {#example-scenario}
 </div>
 
 Considere la siguiente configuración:
@@ -696,7 +694,7 @@ SELECT * FROM mvw2;
 ```
 
 <div id="explanation">
-  #### Explicación
+  #### Explicación {#explanation}
 </div>
 
 En el ejemplo anterior, tenemos dos vistas materializadas, `mvw1` y `mvw2`, que realizan operaciones similares, pero con una ligera diferencia en la forma en que hacen referencia a la tabla de origen `t0`.
@@ -708,7 +706,7 @@ En el segundo caso, al hacer JOIN con `vt0`, la vista lee todos los datos de `t0
 La diferencia clave radica en cómo ClickHouse maneja la tabla de origen en la consulta de la vista materializada. Cuando una vista materializada se desencadena por una inserción, la tabla de origen (`t0` en este caso) se sustituye por el bloque de datos insertado. Este comportamiento puede aprovecharse para optimizar las consultas, pero también debe tenerse en cuenta cuidadosamente para evitar resultados inesperados.
 
 <div id="use-cases-and-caveats">
-  ### Casos de uso y advertencias
+  ### Casos de uso y advertencias {#use-cases-and-caveats}
 </div>
 
 En la práctica, puede usar este comportamiento para optimizar las vistas materializadas que solo necesitan procesar un subconjunto de los datos de la tabla de origen. Por ejemplo, puede usar una subconsulta para filtrar la tabla de origen antes de unirla a otras tablas. Esto puede ayudar a reducir la cantidad de datos que procesa la vista materializada y mejorar el rendimiento.
@@ -730,7 +728,7 @@ ON t0.id = t1.id;
 En este ejemplo, el conjunto creado a partir de la subconsulta `IN (SELECT id FROM t0)` solo contiene las filas recién insertadas, lo que puede ayudar a filtrar `t1` con respecto a ese conjunto.
 
 <div id="example-with-stack-overflow">
-  #### Ejemplo con Stack Overflow
+  #### Ejemplo con Stack Overflow {#example-with-stack-overflow}
 </div>
 
 Considere nuestro [ejemplo anterior de vista materializada](/es/concepts/features/materialized-views/incremental-materialized-view#example) para calcular **insignias diarias por usuario**, incluido el nombre para mostrar del usuario de la tabla `users`.
@@ -813,7 +811,7 @@ INSERT INTO badges VALUES (53505058, 2936484, 'gingerwizard', now(), 'Gold', 0);
 En la operación anterior, solo se recupera una fila de la tabla `users` correspondiente al id de usuario `2936484`. Esta consulta también está optimizada mediante la clave de ordenación `Id` de la tabla.
 
 <div id="materialized-views-and-unions">
-  ## Vistas materializadas y uniones
+  ## Vistas materializadas y uniones {#materialized-views-and-unions}
 </div>
 
 Las consultas `UNION ALL` se usan habitualmente para combinar datos de varias tablas de origen en un único conjunto de resultados.
@@ -1047,9 +1045,7 @@ GROUP BY UserId
 1 row in set. Elapsed: 0.006 sec.
 ```
 
-<div id="materialized-views-parallel-vs-sequential">
-  ## Procesamiento paralelo frente a secuencial
-</div>
+## Procesamiento paralelo frente a secuencial {#materialized-views-parallel-vs-sequential}
 
 Como se mostró en el ejemplo anterior, una tabla puede actuar como fuente para varias vistas materializadas. El orden en que se ejecutan depende de la configuración [`parallel_view_processing`](/es/reference/settings/session-settings/parallel#parallel_view_processing).
 
@@ -1189,7 +1185,7 @@ ORDER BY now ASC
 Aunque el orden de llegada de las filas de cada vista sea el mismo, esto no está garantizado, como demuestra la similitud en el momento de inserción de cada fila. Tenga en cuenta también la mejora en el rendimiento de inserción.
 
 <div id="materialized-views-when-to-use-parallel">
-  ### Cuándo usar el procesamiento en paralelo
+  ### Cuándo usar el procesamiento en paralelo {#materialized-views-when-to-use-parallel}
 </div>
 
 Habilitar `parallel_view_processing=1` puede mejorar significativamente el rendimiento de inserción, como se muestra arriba, especialmente cuando varias vistas materializadas están asociadas a una sola tabla. Sin embargo, es importante entender las contrapartidas:
@@ -1216,7 +1212,7 @@ Déjalo deshabilitado cuando:
 * Estás depurando o auditando el comportamiento de inserción y quieres una reproducción determinista
 
 <div id="materialized-views-common-table-expressions-ctes">
-  ## Vistas materializadas y expresiones de tabla comunes (CTE)
+  ## Vistas materializadas y expresiones de tabla comunes (CTE) {#materialized-views-common-table-expressions-ctes}
 </div>
 
 Las expresiones de tabla comunes (CTE) **no recursivas** son compatibles con las vistas materializadas.

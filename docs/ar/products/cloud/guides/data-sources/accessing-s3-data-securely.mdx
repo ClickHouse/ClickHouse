@@ -19,9 +19,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يتيح هذا النهج للعملاء إدارة جميع عمليات الوصول إلى حاويات S3 الخاصة بهم من مكان واحد (سياسة IAM للدور الذي تم افتراضه) من دون الحاجة إلى مراجعة جميع سياسات الحاويات لإضافة أذونات الوصول أو إزالتها.
 في القسم أدناه، ستتعلّم كيفية إعداد ذلك.
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ## احصل على ARN لدور IAM الخاص بخدمة ClickHouse
-</div>
+## احصل على ARN لدور IAM الخاص بخدمة ClickHouse {#obtaining-the-clickhouse-service-iam-role-arn}
 
 1. سجّل الدخول إلى حسابك في ClickHouse Cloud.
 
@@ -36,7 +34,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="الحصول على ARN لدور IAM الخاص بخدمة ClickHouse" border />
 
 <div id="setting-up-iam-assume-role">
-  ## إعداد IAM Assume Role
+  ## إعداد IAM Assume Role {#setting-up-iam-assume-role}
 </div>
 
 يمكن إعداد IAM Assume Role بإحدى الطريقتين التاليتين:
@@ -45,7 +43,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * [إنشاء دور IAM يدويًا](#option-2-manually-create-iam-role)
 
 <div id="option-1-deploying-with-cloudformation-stack">
-  ### النشر باستخدام CloudFormation stack
+  ### النشر باستخدام CloudFormation stack {#option-1-deploying-with-cloudformation-stack}
 </div>
 
 1. سجّل الدخول إلى AWS account الخاص بك من خلال متصفح الويب باستخدام IAM user لديه permission لإنشاء دور IAM وإدارته.
@@ -84,7 +82,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="مخرجات CloudFormation stack التي تعرض IAM Role ARN" border />
 
 <div id="option-2-manually-create-iam-role">
-  ### أنشئ دور IAM يدويًا
+  ### أنشئ دور IAM يدويًا {#option-2-manually-create-iam-role}
 </div>
 
 1. سجّل الدخول إلى حساب AWS الخاص بك عبر متصفح الويب باستخدام IAM user لديه permission لإنشاء دور IAM وإدارته.
@@ -140,9 +138,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 4. انسخ **IAM Role Arn** الجديد بعد إنشائه، فهو ما ستحتاج إليه للوصول إلى حاوية S3 الخاصة بك.
 
-<div id="access-your-s3-bucket-with-the-clickhouseaccess-role">
-  ## الوصول إلى حاوية S3 الخاصة بك باستخدام الدور ClickHouseAccess
-</div>
+## الوصول إلى حاوية S3 الخاصة بك باستخدام الدور ClickHouseAccess {#access-your-s3-bucket-with-the-clickhouseaccess-role}
 
 يتيح لك ClickHouse Cloud تحديد `extra_credentials` كجزء من دالة الجدول S3.
 فيما يلي مثال على كيفية تشغيل استعلام باستخدام الدور الذي أُنشئ حديثًا والمنسوخ أعلاه.
@@ -151,21 +147,20 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001'))
 ```
 
-فيما يلي مثال على استعلام يستخدم `role_session_name` كسرّ مشترك للاستعلام عن البيانات من حاوية.
+فيما يلي مثال على استعلام يستخدم `role_session_name` كـsecret مشترك للاستعلام عن البيانات من حاوية.
 إذا لم تكن قيمة `role_session_name` صحيحة، فستفشل هذه العملية.
+ولأن هذه القيمة قد تؤدي دور الـsecret المشترك، يُخفي ClickHouse قيمة `role_session_name` فتظهر بالشكل `[HIDDEN]` في `system.query_log` و`SHOW CREATE TABLE` وفي أي موضع آخر يُعرض فيه نص الاستعلام، تمامًا كما هو الحال مع `external_id`.
 
 ```sql
 DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', role_session_name = 'secret-role-name'))
 ```
 
 <Note>
-  نوصي بأن تكون خدمة S3 المصدر لديك في المنطقة نفسها التي توجد فيها ClickHouse Cloud Service، لتقليل تكاليف نقل البيانات.
+  نوصي بأن تكون خدمة S3 المصدر لديك في المنطقة نفسها التي توجد فيها خدمة ClickHouse Cloud، لتقليل تكاليف نقل البيانات.
   لمزيد من المعلومات، راجع [تسعير S3](https://aws.amazon.com/s3/pricing/)
 </Note>
 
-<div id="advanced-action-control">
-  ## التحكم المتقدم في الإجراءات
-</div>
+## التحكم المتقدم في الإجراءات {#advanced-action-control}
 
 لفرض تحكم أكثر صرامة في الوصول، يمكن تقييد سياسة الحاوية بحيث لا تقبل إلا الطلبات الصادرة من نقاط نهاية VPC الخاصة بـ ClickHouse Cloud باستخدام الشرط [`aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). للحصول على نقاط نهاية VPC الخاصة بمنطقة ClickHouse Cloud، افتح الطرفية وشغّل:
 

@@ -17,9 +17,7 @@ ClickHouse 中的字典提供了一种以内存中的[键值](https://en.wikiped
 
 <Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="ClickHouse 中字典的使用场景" />
 
-<div id="speeding-up-joins-using-a-dictionary">
-  ## 使用字典加速 JOIN
-</div>
+## 使用字典加速 JOIN {#speeding-up-joins-using-a-dictionary}
 
 字典可用于加速一种特定类型的 `JOIN`：[`LEFT ANY` 类型](/zh/reference/statements/select/join#supported-types-of-join)。在这种情况下，连接键需要与底层键值存储的键属性相匹配。
 
@@ -30,7 +28,7 @@ ClickHouse 中的字典提供了一种以内存中的[键值](https://en.wikiped
 直接 JOIN 算法要求右侧表以字典为底层支撑，这样，待连接的数据就已经以内存中的低延迟键值数据结构形式存在。
 
 <div id="example">
-  ### 示例
+  ### 示例 {#example}
 </div>
 
 使用 [Stack Overflow 数据集](/zh/get-started/sample-datasets/stackoverflow)，我们来回答这样一个问题：
@@ -88,7 +86,7 @@ Peak memory usage: 3.18 GiB.
 虽然这个查询速度很快，但要获得良好性能，仍然依赖于我们谨慎地编写 `JOIN`。理想情况下，我们只需先将 posts 过滤为包含 &quot;SQL&quot; 的记录，然后再查看这部分博客子集的 `UpVote` 和 `DownVote` 计数，以计算相应指标。
 
 <div id="applying-a-dictionary">
-  #### 使用字典
+  #### 使用字典 {#applying-a-dictionary}
 </div>
 
 为说明这些概念，我们将为投票数据使用一个字典。由于字典通常存储在内存中 ([ssd&#95;cache](/zh/reference/statements/create/dictionary/layouts/ssd-cache) 是个例外) ，你应当注意数据的大小。先确认一下 `votes` 表的大小：
@@ -197,7 +195,7 @@ Peak memory usage: 552.26 MiB.
 这条查询不仅简单得多，而且速度也提升到了两倍以上！如果只将赞成票和反对票总数超过 10 的帖子加载到字典中，并且仅存储预先计算好的争议值，还可以进一步优化。
 
 <div id="query-time-enrichment">
-  ## 查询时富集
+  ## 查询时富集 {#query-time-enrichment}
 </div>
 
 字典可用于在查询时查找值。这些值既可以在结果中返回，也可以用于聚合。假设我们创建一个字典，将用户 ID 映射到其位置：
@@ -266,11 +264,13 @@ LIMIT 5
 Peak memory usage: 248.84 MiB.
 ```
 
-<div id="index-time-enrichment">
-  ## 索引时富集
-</div>
+## 索引时富集 {#index-time-enrichment}
 
-在上面的示例中，我们在查询时使用了字典来避免一次 join。字典也可以用于在写入时对行进行富集。如果富集值不会发生变化，并且存在于可用于填充字典的外部数据源中，那么这种方式通常很合适。在这种情况下，在写入时对行进行富集，可以避免查询时对字典进行查找。
+在上面的示例中，我们在查询时使用了字典来避免一次连接。字典也可以用于在写入时对行补充信息。如果富集值不会发生变化，并且存在于可用于填充字典的外部数据源中，那么这种方式通常很合适。在这种情况下，在写入时对行进行富化，可以避免查询时对字典进行查找。
+
+<Note>
+  如果对延迟的可预测性和数据源的可用性有要求，请避免在写入时富集中使用基于缓存的字典布局。每个服务器都各自维护独立的本地缓存，一旦重启或被替换，缓存就会清空，导致插入操作只能依赖对字典源的冷缓存查找。ClickHouse Cloud 的自动扩缩容和托管节点替换会使这种情况更容易发生。请选择会在每个服务器上加载完整字典的布局。参见[摄取路径中的缓存字典](/zh/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path)。
+</Note>
 
 假设 Stack Overflow 中用户的 `Location` 永远不会变化 (实际上会变化) ——具体来说，是 `users` 表中的 `Location` 列。假设我们希望按位置对 `posts` 表执行分析查询。该表中包含一个 `UserId`。
 
@@ -342,13 +342,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## 字典高级主题
+  ## 字典高级主题 {#advanced-dictionary-topics}
 </div>
 
 有关字典布局的选择、何时使用字典而非 JOIN，以及如何监控字典使用情况，请参阅 [字典最佳实践](/zh/concepts/features/dictionaries/best-practices)。
 
 <div id="refreshing-dictionaries">
-  ### 刷新字典
+  ### 刷新字典 {#refreshing-dictionaries}
 </div>
 
 我们已为该字典指定 `LIFETIME` 为 `MIN 600 MAX 900`。`LIFETIME` 是字典的更新间隔，此处的取值会使字典每隔 600 到 900 秒以随机间隔定期重新加载。之所以需要这种随机间隔，是为了在大量服务器更新时分散字典源上的负载。在更新期间，仍然可以查询字典的旧版本，只有初始加载会阻塞查询。请注意，设置 `(LIFETIME(0))` 会阻止字典更新。
@@ -357,14 +357,12 @@ Peak memory usage: 666.82 MiB.
 对于 ClickHouse 和 Postgres 等数据库源，你可以设置一个查询，使字典仅在确实发生变化时才更新 (由该查询的响应决定) ，而不是按固定周期更新。更多详细信息请参见[此处](/zh/reference/statements/create/dictionary/lifetime)。
 
 <div id="other-dictionary-types">
-  ### 其他字典类型
+  ### 其他字典类型 {#other-dictionary-types}
 </div>
 
 ClickHouse 还支持 [分层](/zh/reference/statements/create/dictionary/layouts/hierarchical)、[Polygon](/zh/reference/statements/create/dictionary/layouts/polygon) 和[正则表达式](/zh/reference/statements/create/dictionary/layouts/regexp-tree) 字典。
 
-<div id="more-reading">
-  ### 延伸阅读
-</div>
+### 延伸阅读 {#more-reading}
 
 * [字典最佳实践](/zh/concepts/features/dictionaries/best-practices) — 布局选择、字典与 JOIN 的比较、监控
 * [使用字典加速查询](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

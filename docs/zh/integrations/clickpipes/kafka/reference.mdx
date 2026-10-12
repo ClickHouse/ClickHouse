@@ -13,9 +13,7 @@ integration:
 import { Image } from "/snippets/zh/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<div id="supported-data-sources">
-  ## 支持的数据源
-</div>
+## 支持的数据源 {#supported-data-sources}
 
 | 名称               | 徽标                                                                                                 | 类型 | 状态   | 描述                                                            |
 | ---------------- | -------------------------------------------------------------------------------------------------- | -- | ---- | ------------------------------------------------------------- |
@@ -26,14 +24,12 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 | Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs 徽标" width="32" /> | 流式 | 稳定版本 | 配置 ClickPipes，开始将 Azure Event Hubs 的流式数据摄取到 ClickHouse Cloud。 |
 | WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream 徽标" width="32" />             | 流式 | 稳定版本 | 配置 ClickPipes，开始将 WarpStream 的流式数据摄取到 ClickHouse Cloud。       |
 
-<div id="isolation-level">
-  ## 隔离级别
-</div>
+## 隔离级别 {#isolation-level}
 
 Kafka 消费者隔离级别决定 ClickPipe 是否只读取和插入由 Kafka 事务提交的消息。启用 `kafka_read_committed` 设置可使用 `read_committed`，并跳过已中止的 Kafka 事务中的消息。禁用该设置则使用 `read_uncommitted`，读取所有消息。您可以在**高级设置**中配置此设置。
 
 <div id="supported-data-formats">
-  ## 支持的数据格式
+  ## 支持的数据格式 {#supported-data-formats}
 </div>
 
 支持的格式如下：
@@ -43,11 +39,11 @@ Kafka 消费者隔离级别决定 ClickPipe 是否只读取和插入由 Kafka �
 * [Protobuf](/zh/reference/formats/Protobuf/Protobuf)
 
 <div id="supported-data-types">
-  ## 支持的数据类型
+  ## 支持的数据类型 {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### 标准类型
+  ### 标准类型 {#standard-types-support}
 </div>
 
 ClickPipes 当前支持以下标准 ClickHouse 数据类型：
@@ -71,9 +67,7 @@ ClickPipes 当前支持以下标准 ClickHouse 数据类型：
 * Tuple 和 Array，其元素可使用上述任意类型 (包括 Nullable，仅支持一层深度)
 * SimpleAggregateFunction 类型 (适用于 AggregatingMergeTree 或 SummingMergeTree 目标端)
 
-<div id="variant-type-support">
-  ### Variant 类型支持
-</div>
+### Variant 类型支持 {#variant-type-support}
 
 ClickPipes 在以下情况下支持 Variant 类型：
 
@@ -81,7 +75,7 @@ ClickPipes 在以下情况下支持 Variant 类型：
 * JSON 字段。你可以为源数据流中的任何 JSON 字段手动指定 Variant 类型 (例如 `Variant(String, Int64, DateTime)`) 。不支持复杂子类型 (Array/Map/Tuple) 。此外，由于 ClickPipes 判定应使用哪种 Variant 子类型的方式所限，在 Variant 定义中只能使用一种整数类型或 datetime 类型——例如，不支持 `Variant(Int64, UInt32)`。
 
 <div id="json-type-support">
-  ### JSON 类型支持
+  ### JSON 类型支持 {#json-type-support}
 </div>
 
 ClickPipes 在以下情况下支持 JSON 类型：
@@ -94,18 +88,14 @@ ClickPipes 在以下情况下支持 JSON 类型：
 请注意，你需要手动将目标端列更改为所需的 JSON 类型，包括任何固定或跳过的路径。
 
 <div id="avro">
-  ### Avro
+  ### Avro {#avro}
 </div>
 
-<div id="supported-avro-data-types">
-  #### 支持的 Avro 数据类型
-</div>
+#### 支持的 Avro 数据类型 {#supported-avro-data-types}
 
 ClickPipes 支持所有 Avro 基本类型和复杂类型，以及除 `local-timestamp-millis` 和 `local_timestamp-micros` 之外的所有 Avro 逻辑类型。Avro `record` 类型会转换为 Tuple，`array` 类型会转换为 Array，`map` 类型会转换为 Map (仅支持字符串键) 。通常可使用[此处](/zh/concepts/features/interfaces/schema-inference#avro)列出的转换方式。我们建议对 Avro 数值类型使用精确的类型匹配，因为 ClickPipes 在类型转换时不会检查是否发生溢出或精度损失。或者，所有 Avro 类型也都可以插入到 `String` 列中，此时会表示为有效的 JSON 字符串。
 
-<div id="nullable-types-and-avro-unions">
-  #### Nullable 类型和 Avro union
-</div>
+#### Nullable 类型和 Avro union {#nullable-types-and-avro-unions}
 
 Avro 中的 Nullable 类型通过 `(T, null)` 或 `(null, T)` 形式的 union schema 定义，其中 T 是基础 Avro 类型。在 schema inference 期间，这类 union 会被映射为 ClickHouse 的 `Nullable` 列。请注意，ClickHouse 不支持 `Nullable(Array)`、`Nullable(Map)` 或 `Nullable(Tuple)` 类型。这些类型的 Avro null union 会被映射为对应的非 Nullable 版本 (Avro Record 类型会映射为 ClickHouse 的命名 Tuple) 。对于这些类型，Avro 中的 “null” 会被 insert 为：
 
@@ -114,12 +104,10 @@ Avro 中的 Nullable 类型通过 `(T, null)` 或 `(null, T)` 形式的 union sc
 * 对于 null Avro Record，insert 为所有字段均使用默认值/零值的命名 Tuple
 
 <div id="protobuf">
-  ### Protobuf
+  ### Protobuf {#protobuf}
 </div>
 
-<div id="supported-protobuf-data-types">
-  #### 支持的 Protobuf 数据类型
-</div>
+#### 支持的 Protobuf 数据类型 {#supported-protobuf-data-types}
 
 ClickPipes 支持所有 Protobuf 2 和 3 类型，唯一的例外是早已弃用的 proto 2 `group` 类型。基础类型转换使用以下映射：
 
@@ -160,42 +148,40 @@ ClickPipes 支持所有 Protobuf 2 和 3 类型，唯一的例外是早已弃用
 | `google.protobuf.DoubleValue`                                                                | `Nullable(Float64)`      |
 | `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
 
-<div id="protobuf-one-ofs">
-  #### Protobuf `oneof`
-</div>
+#### Protobuf `oneof` {#protobuf-one-ofs}
 
 在 schema inference 过程中，Protobuf `oneof` 字段默认会映射为具名 `Tuple`，其中最多只有一个字段会包含非默认值。这些字段也可以自动映射为 `Variant` 列，此时生效的值将采用已设置的组成字段的类型。或者，也可以将每个组成字段手动映射到各自独立的 ClickHouse 列；由于 `oneof` 字段彼此互斥，因此每条记录中始终只会有一列被赋值。
 
 <div id="protobuf-message-lists">
-  #### 消息列表
+  #### 消息列表 {#protobuf-message-lists}
 </div>
 
 如果为 ClickPipe 定义的顶层 Protobuf schema 只包含一个 repeated 字段，且该字段本身是一个 protobuf Message，则 schema inference 和列映射将基于该“被包含”的 Message 字段。Kafka 消息会按此类消息列表进行处理，而单条 Kafka 消息会展开为多行 ClickHouse 数据。
 
-<div id="kafka-virtual-columns">
-  ## Kafka 虚拟列
-</div>
+## Kafka 虚拟列 {#kafka-virtual-columns}
 
 以下虚拟列适用于兼容 Kafka 的流式数据源。创建新的目标端时，可以使用 `Add Column` 按钮将虚拟列添加到目标表中。
 
-| 名称               | 描述                | 推荐数据类型          |
-| ---------------- | ----------------- | --------------- |
-| `_key`           | Kafka 消息键         | `String`        |
-| `_timestamp`     | Kafka 时间戳 (毫秒精度)  | `DateTime64(3)` |
-| `_partition`     | Kafka 分区          | `Int32`         |
-| `_offset`        | Kafka 偏移量         | `Int64`         |
-| `_topic`         | Kafka topic       | `String`        |
-| `_header_keys`   | 记录请求头中各个键组成的并行数组  | `Array(String)` |
-| `_header_values` | 记录请求头中各个值组成的并行数组  | `Array(String)` |
-| `_raw_message`   | 完整的 Kafka 消息      | `String`        |
+| 名称               | 描述               | 推荐数据类型          |
+| ---------------- | ---------------- | --------------- |
+| `_key`           | Kafka 消息键        | `String`        |
+| `_timestamp`     | Kafka 时间戳 (毫秒精度) | `DateTime64(3)` |
+| `_partition`     | Kafka 分区         | `Int32`         |
+| `_offset`        | Kafka 偏移量        | `Int64`         |
+| `_topic`         | Kafka topic      | `String`        |
+| `_header_keys`   | 记录请求头中各个键组成的并行数组 | `Array(String)` |
+| `_header_values` | 记录请求头中各个值组成的并行数组 | `Array(String)` |
+| `_raw_message`   | 完整的 Kafka 消息     | `String`        |
+| `_is_deleted`    | 记录是否为软删除墓碑标记     | `Bool`          |
 
 请注意，`_raw_message` 列仅建议用于 JSON 数据。
 对于只需要 JSON 字符串的使用场景 (例如使用 ClickHouse [`JsonExtract*`](/zh/reference/functions/regular-functions/json-functions#jsonextract-functions) 函数来
 填充下游 materialized view) ，删除所有“非虚拟”列可能会提升 ClickPipes 性能。
 
-<div id="structured-message-keys">
-  ### 结构化消息键
-</div>
+当墓碑标记处理方式设为软删除时，`_is_deleted` 列可用。
+对于 Kafka 墓碑标记，其值为 `true`；对于普通消息，其值为 `false`。
+
+### 结构化消息键 {#structured-message-keys}
 
 将 `_key` 映射到 `String` 列会存储原始 Kafka 消息键。此映射会跳过键解码和 schema 查找。要从结构化键中提取字段，请映射以 `_key.` 开头的源字段。例如，对于 JSON 键 `{"customer":{"id":42}}`，可将 `_key.customer.id` 映射到 `customer_id` 等目标端列。
 

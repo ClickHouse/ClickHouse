@@ -15,7 +15,7 @@ import SelfManaged from '/snippets/fr/_self_managed_only_automated.mdx';
 ClickHouse Keeper fournit le système de coordination pour la [réplication](/fr/reference/engines/table-engines/mergetree-family/replication) des données et l’exécution des requêtes [distributed DDL](/fr/reference/statements/distributed-ddl). ClickHouse Keeper est compatible avec ZooKeeper.
 
 <div id="implementation-details">
-  ### Détails d’implémentation
+  ### Détails d’implémentation {#implementation-details}
 </div>
 
 ZooKeeper est l’un des premiers systèmes de coordination open source largement connus. Il est implémenté en Java et s’appuie sur un modèle de données simple et puissant. L’algorithme de coordination de ZooKeeper, ZooKeeper Atomic Broadcast (ZAB), n’offre pas de garanties de linéarisabilité pour les lectures, car chaque nœud ZooKeeper traite les lectures localement. Contrairement à ZooKeeper, ClickHouse Keeper est écrit en C++ et utilise l’[algorithme RAFT](https://raft.github.io/) et son [implémentation](https://github.com/eBay/NuRaft). Cet algorithme permet la linéarisabilité des lectures et des écritures, et possède plusieurs implémentations open source dans différents langages.
@@ -29,34 +29,35 @@ ClickHouse Keeper prend en charge les listes de contrôle d’accès (ACL) de la
 </Note>
 
 <div id="configuration">
-  ### Configuration
+  ### Configuration {#configuration}
 </div>
 
 ClickHouse Keeper peut être utilisé comme alternative autonome à ZooKeeper ou comme composant interne de serveur ClickHouse. Dans les deux cas, le fichier de configuration `.xml` est quasiment le même.
 
 <div id="keeper-configuration-settings">
-  #### Paramètres de configuration de Keeper
+  #### Paramètres de configuration de Keeper {#keeper-configuration-settings}
 </div>
 
 La balise principale de configuration de ClickHouse Keeper est `<keeper_server>` et comporte les paramètres suivants :
 
-| Parameter                           | Description                                                                                                                                                                                                                                                                           | Default                                                                                                                                                                                                             |
-| ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tcp_port`                          | Port auquel un client peut se connecter.                                                                                                                                                                                                                                              | `2181`                                                                                                                                                                                                              |
-| `tcp_port_secure`                   | Port sécurisé pour une connexion SSL entre le client et le serveur Keeper.                                                                                                                                                                                                            | -                                                                                                                                                                                                                   |
-| `server_id`                         | ID de serveur unique : chaque participant du cluster ClickHouse Keeper doit avoir un numéro unique (1, 2, 3...).                                                                                                                                                                      | -                                                                                                                                                                                                                   |
-| `log_storage_path`                  | Chemin d’accès aux logs de coordination. Comme avec ZooKeeper, il est préférable de stocker les logs sur des nœuds peu chargés.                                                                                                                                                       | -                                                                                                                                                                                                                   |
-| `snapshot_storage_path`             | Chemin d’accès aux snapshots de coordination.                                                                                                                                                                                                                                         | -                                                                                                                                                                                                                   |
-| `enable_reconfiguration`            | Active la reconfiguration dynamique du cluster via [`reconfig`](#reconfiguration).                                                                                                                                                                                                    | `False`                                                                                                                                                                                                             |
-| `max_memory_usage_soft_limit`       | Limite souple, en octets, de l’utilisation maximale de la mémoire par Keeper.                                                                                                                                                                                                         | `max_memory_usage_soft_limit_ratio` * `physical_memory_amount`                                                                                                                                                      |
-| `max_memory_usage_soft_limit_ratio` | Si `max_memory_usage_soft_limit` n’est pas défini ou est défini sur zéro, cette valeur est utilisée pour définir la limite souple par défaut.                                                                                                                                         | `0.9`                                                                                                                                                                                                               |
-| `cgroups_memory_observer_wait_time` | Si `max_memory_usage_soft_limit` n’est pas défini ou est défini à `0`, cet intervalle est utilisé pour observer la quantité de mémoire physique. Lorsque cette quantité change, la limite souple de mémoire de Keeper est recalculée à l’aide de `max_memory_usage_soft_limit_ratio`. | `15`                                                                                                                                                                                                                |
-| `http_control`                      | Configuration de l’interface [Contrôle HTTP](#http-control).                                                                                                                                                                                                                           | -                                                                                                                                                                                                                   |
-| `digest_enabled`                    | Active la vérification de cohérence des données en temps réel                                                                                                                                                                                                                         | `True`                                                                                                                                                                                                              |
-| `create_snapshot_on_exit`           | Crée un snapshot lors de l’arrêt                                                                                                                                                                                                                                                      | -                                                                                                                                                                                                                   |
-| `hostname_checks_enabled`           | Active les vérifications de cohérence des noms d’hôte pour la configuration du cluster (par exemple, si localhost est utilisé avec des points de terminaison distants)                                                                                                                            | `True`                                                                                                                                                                                                              |
-| `four_letter_word_white_list`       | Liste blanche des commandes 4lw.                                                                                                                                                                                                                                                      | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, rclc, clrs, ftfl, ydld, bpon, bpof, pfev, lgrq`, plus `jmst, jmfp, jmep, jmdp` dans les builds avec jemalloc |
-| `enable_ipv6`                       | Active IPv6                                                                                                                                                                                                                                                                           | `True`                                                                                                                                                                                                              |
+| Parameter                           | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | Default                                                                                                                                                                                                             |
+| ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tcp_port`                          | Port auquel un client peut se connecter.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                        | `2181`                                                                                                                                                                                                              |
+| `tcp_port_secure`                   | Port sécurisé pour une connexion SSL entre le client et le serveur Keeper.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      | -                                                                                                                                                                                                                   |
+| `server_id`                         | ID de serveur unique : chaque participant du cluster ClickHouse Keeper doit avoir un numéro unique (1, 2, 3...).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | -                                                                                                                                                                                                                   |
+| `log_storage_path`                  | Chemin d’accès aux journaux de coordination. Comme avec ZooKeeper, il est préférable de stocker les journaux sur des nœuds peu chargés.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 | -                                                                                                                                                                                                                   |
+| `snapshot_storage_path`             | Chemin d’accès aux snapshots de coordination.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | -                                                                                                                                                                                                                   |
+| `enable_reconfiguration`            | Active la reconfiguration dynamique du cluster via [`reconfig`](#reconfiguration).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              | `False`                                                                                                                                                                                                             |
+| `max_memory_usage_soft_limit`       | Limite souple, en octets, de l’utilisation maximale de la mémoire par Keeper.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `max_memory_usage_soft_limit_ratio` * `physical_memory_amount`                                                                                                                                                      |
+| `max_memory_usage_soft_limit_ratio` | Si `max_memory_usage_soft_limit` n’est pas défini ou est défini sur zéro, cette valeur est utilisée pour définir la limite souple par défaut.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `0.9`                                                                                                                                                                                                               |
+| `cgroups_memory_observer_wait_time` | Si `max_memory_usage_soft_limit` n’est pas défini ou est défini à `0`, cet intervalle est utilisé pour observer la quantité de mémoire physique. Lorsque cette quantité change, la limite souple de mémoire de Keeper est recalculée à l’aide de `max_memory_usage_soft_limit_ratio`.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           | `15`                                                                                                                                                                                                                |
+| `http_control`                      | Configuration de l’interface [Contrôle HTTP](#http-control).                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                    | -                                                                                                                                                                                                                   |
+| `digest_enabled`                    | Active la vérification de cohérence des données en temps réel                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   | `True`                                                                                                                                                                                                              |
+| `create_snapshot_on_exit`           | Crée un snapshot lors de l’arrêt                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | -                                                                                                                                                                                                                   |
+| `remove_orphaned_nodes_on_startup`  | Récupération au démarrage en cas de snapshot corrompu : supprime les nœuds dont le parent est absent du snapshot au lieu de refuser de démarrer. Nécessite que `digest_enabled` soit défini sur `False`. S’applique uniquement au snapshot local lu au démarrage, jamais à un snapshot reçu d’un autre nœud. Seul l’état local est réparé : un nœud réparé de cette manière diverge donc de ses pairs qui conservent encore les nœuds supprimés. Réservez cette option à la récupération d’un seul nœud, ou réparez tous les nœuds. Non pris en charge avec `use_lsmt_storage` : Keeper refuse de démarrer si les deux sont activés. Keeper refuse également de démarrer si une entrée de journal locale postérieure au snapshot touche la zone endommagée : un nœud supprimé, tout élément situé en dessous, ou le parent direct d’un sous-arbre supprimé ; les ancêtres de niveau supérieur n’entrent en conflit qu’avec les entrées qui parcourent l’intégralité de leur sous-arbre, comme une suppression récursive ou un listage. Voir [Récupération après un snapshot Keeper corrompu](/fr/resources/support-center/knowledge-base/troubleshooting/recovering-from-corrupt-keeper-snapshot). | `False`                                                                                                                                                                                                             |
+| `hostname_checks_enabled`           | Active les vérifications de cohérence des noms d’hôte pour la configuration du cluster (par exemple, si localhost est utilisé avec des points de terminaison distants)                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          | `True`                                                                                                                                                                                                              |
+| `four_letter_word_white_list`       | Liste blanche des commandes 4lw.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                | `conf, cons, crst, envi, ruok, srst, srvr, stat, wchs, dirs, mntr, isro, rcvr, apiv, csnp, lgif, rqld, rclc, clrs, ftfl, ydld, bpon, bpof, pfev, lgrq`, plus `jmst, jmfp, jmep, jmdp` dans les builds avec jemalloc |
+| `enable_ipv6`                       | Active IPv6                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     | `True`                                                                                                                                                                                                              |
 
 Les autres paramètres courants sont hérités de la config du serveur ClickHouse (`listen_host`, `logger`, etc.).
 
@@ -166,7 +167,7 @@ Des exemples de configuration pour un quorum à trois nœuds sont disponibles da
 ```
 
 <div id="how-to-run">
-  ### Comment l’exécuter
+  ### Comment l’exécuter {#how-to-run}
 </div>
 
 ClickHouse Keeper est inclus dans le paquet du serveur ClickHouse ; il vous suffit d’ajouter la configuration de `<keeper_server>` à votre fichier `/etc/your_path_to_config/clickhouse-server/config.xml` et de démarrer le serveur ClickHouse comme d’habitude. Si vous souhaitez exécuter ClickHouse Keeper en mode standalone, vous pouvez le démarrer de manière similaire avec :
@@ -468,7 +469,7 @@ AIOWriteBytes   0       Number of bytes written with Linux or FreeBSD AIO interf
 ```
 
 <div id="http-control">
-  ### Contrôle HTTP
+  ### Contrôle HTTP {#http-control}
 </div>
 
 ClickHouse Keeper fournit une interface HTTP permettant de vérifier si une réplique est prête à recevoir du trafic. Elle peut être utilisée dans des environnements cloud, comme [Kubernetes](https://kubernetes.io/docs/tasks/configure-pod-container/configure-liveness-readiness-startup-probes/#define-readiness-probes).
@@ -489,7 +490,7 @@ Exemple de configuration activant le point de terminaison `/ready` :
 ```
 
 <div id="feature-flags">
-  ### Feature flags
+  ### Feature flags {#feature-flags}
 </div>
 
 Keeper est entièrement compatible avec ZooKeeper et ses clients, mais il introduit également certaines fonctionnalités et certains types de requêtes spécifiques qui peuvent être utilisés par le client ClickHouse.
@@ -526,13 +527,13 @@ Les fonctionnalités suivantes sont disponibles :
 </Note>
 
 <div id="migration-from-zookeeper">
-  ### Migration depuis ZooKeeper
+  ### Migration depuis ZooKeeper {#migration-from-zookeeper}
 </div>
 
 Une migration fluide de ZooKeeper vers ClickHouse Keeper n&#39;est pas possible. Vous devez arrêter votre cluster ZooKeeper, convertir les données, puis démarrer ClickHouse Keeper. L&#39;outil `clickhouse-keeper-converter` convertit les logs et snapshots ZooKeeper en un snapshot ClickHouse Keeper. Il nécessite ZooKeeper 3.4 ou une version ultérieure.
 
 <div id="pre-migration-preparation">
-  #### Préparation avant la migration
+  #### Préparation avant la migration {#pre-migration-preparation}
 </div>
 
 La migration nécessite d’interrompre l’ingestion des données. Prévoyez une fenêtre de maintenance avant de commencer.
@@ -575,7 +576,7 @@ clickhouse-keeper-converter \
 10. Reprenez les tâches en arrière-plan et redémarrez l’ingestion des données.
 
 <div id="consolidating-multiple-zookeeper-clusters">
-  #### Consolidation de plusieurs clusters ZooKeeper
+  #### Consolidation de plusieurs clusters ZooKeeper {#consolidating-multiple-zookeeper-clusters}
 </div>
 
 Si vous exécutez plusieurs clusters ZooKeeper — par exemple, un par groupe de shards — vous pouvez les consolider en un seul cluster ClickHouse Keeper. L’outil officiel `clickhouse-keeper-converter` ne prend en charge que les conversions un à un (un cluster ZooKeeper vers un snapshot Keeper) ; la consolidation exige donc de modifier le code source du convertisseur pour fusionner plusieurs snapshots :
@@ -585,7 +586,7 @@ Si vous exécutez plusieurs clusters ZooKeeper — par exemple, un par groupe de
 3. Écrivez la sortie fusionnée dans le répertoire cible des snapshots ClickHouse Keeper.
 
 <div id="handling-encryption-and-acls">
-  #### Gestion du chiffrement et des ACL
+  #### Gestion du chiffrement et des ACL {#handling-encryption-and-acls}
 </div>
 
 ClickHouse Keeper prend en charge les mêmes schémas d’ACL que ZooKeeper (`world`, `auth`, `digest`). La façon de gérer les ACL pendant la conversion dépend de votre configuration ZooKeeper :
@@ -594,7 +595,7 @@ ClickHouse Keeper prend en charge les mêmes schémas d’ACL que ZooKeeper (`wo
 * **Partiellement chiffré** : avant la conversion, accordez des privilèges de super-administrateur à un compte, puis supprimez les ACL avec `setAcl -R` sur les chemins concernés. Convertissez, puis réactivez le chiffrement dans ClickHouse Keeper si nécessaire.
 
 <div id="verifying-the-migration">
-  #### Vérification de la migration
+  #### Vérification de la migration {#verifying-the-migration}
 </div>
 
 Après avoir démarré ClickHouse Keeper et redémarré ClickHouse, comparez vos métriques clés au niveau de référence d’avant la migration pour confirmer que celle-ci a réussi.
@@ -607,7 +608,7 @@ Lors de la consolidation de plusieurs clusters ZooKeeper, faites la distinction 
 Évitez de parcourir directement de grands arbres ZooKeeper pour les comparer. À la place, écrivez tous les chemins convertis dans un fichier pendant la conversion.
 
 <div id="post-migration-tuning">
-  #### Ajustements après migration
+  #### Ajustements après migration {#post-migration-tuning}
 </div>
 
 Après la migration, pensez à ajuster ces paramètres pour les clusters de plus grande taille ou un débit plus élevé :
@@ -623,7 +624,7 @@ Après la migration, pensez à ajuster ces paramètres pour les clusters de plus
 Ces paramètres se configurent sous `coordination_settings` dans votre [configuration de Keeper](#internal-coordination-settings).
 
 <div id="recovering-after-losing-quorum">
-  ### Récupération après la perte du quorum
+  ### Récupération après la perte du quorum {#recovering-after-losing-quorum}
 </div>
 
 Comme ClickHouse Keeper utilise Raft, il peut tolérer un certain nombre de pannes de nœuds en fonction de la taille du cluster.
@@ -652,7 +653,7 @@ Une fois ces points vérifiés, vous devez procéder comme suit :
 7. Une fois le quorum atteint, le nœud leader reviendra à un fonctionnement normal et acceptera toutes les requêtes via Raft ; vérifiez-le avec `mntr`, qui doit renvoyer `leader` pour `zk_server_state`.
 
 <div id="using-disks-with-keeper">
-  ## Utiliser des disques avec Keeper
+  ## Utiliser des disques avec Keeper {#using-disks-with-keeper}
 </div>
 
 Keeper prend en charge un sous-ensemble des [disques externes](/fr/concepts/features/configuration/server-config/storing-data) pour stocker les snapshot, les fichier de log et le fichier d&#39;état.
@@ -733,7 +734,7 @@ Cette instance stockera tous les logs, sauf les plus récents, sur le disque `lo
 La même logique s&#39;applique aux snapshot : tous les snapshot, sauf les plus récents, seront stockés sur le disque `snapshot_s3_plain`, tandis que le snapshot le plus récent sera stocké sur le disque `snapshot_local`.
 
 <div id="changing-disk-setup">
-  ### Modifier la configuration des disques
+  ### Modifier la configuration des disques {#changing-disk-setup}
 </div>
 
 <Warning>
@@ -800,7 +801,7 @@ côté pair.
 </Note>
 
 <div id="prometheus">
-  ## Prometheus
+  ## Prometheus {#prometheus}
 </div>
 
 Keeper peut exposer des métriques pour leur collecte par [Prometheus](https://prometheus.io).
@@ -839,7 +840,7 @@ curl 127.0.0.1:9363/metrics
 Voir aussi l’[intégration Prometheus de ClickHouse Cloud](/fr/products/cloud/features/monitoring/prometheus).
 
 <div id="clickhouse-keeper-user-guide">
-  ## Guide d’utilisation de ClickHouse Keeper
+  ## Guide d’utilisation de ClickHouse Keeper {#clickhouse-keeper-user-guide}
 </div>
 
 Ce guide présente une configuration simple et minimale de ClickHouse Keeper, ainsi qu’un exemple montrant comment tester des opérations distribuées. Cet exemple s’appuie sur 3 nœuds sous Linux.
@@ -1106,19 +1107,19 @@ Ce guide présente une configuration simple et minimale de ClickHouse Keeper, ai
 </Steps>
 
 <div id="summary">
-  ### Résumé
+  ### Résumé {#summary}
 </div>
 
 Ce guide a montré comment configurer un cluster à l’aide de ClickHouse Keeper. Avec ClickHouse Keeper, vous pouvez configurer des clusters et définir des tables distribuées qui peuvent être répliquées sur plusieurs shards.
 
 <div id="configuring-clickhouse-keeper-with-unique-paths">
-  ## Configuration de ClickHouse Keeper avec des chemins uniques
+  ## Configuration de ClickHouse Keeper avec des chemins uniques {#configuring-clickhouse-keeper-with-unique-paths}
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### Description
+  ### Description {#description}
 </div>
 
 Cet article explique comment utiliser la macro intégrée `{uuid}`
@@ -1129,7 +1130,7 @@ supprime les entrées de chemin, puisque chaque fois qu&#39;un chemin est créé
 dans ce chemin ; les chemins ne sont jamais réutilisés.
 
 <div id="example-environment">
-  ### Environnement d’exemple
+  ### Environnement d’exemple {#example-environment}
 </div>
 
 Un cluster à trois nœuds, configuré avec ClickHouse Keeper
@@ -1169,7 +1170,7 @@ Exemple de configuration du cluster :
 ```
 
 <div id="procedures-to-set-up-tables-to-use-uuid">
-  ### Procédures pour configurer les tables afin d’utiliser `{uuid}`
+  ### Procédures pour configurer les tables afin d’utiliser `{uuid}` {#procedures-to-set-up-tables-to-use-uuid}
 </div>
 
 1. Configurez les macros sur chaque serveur
@@ -1263,7 +1264,7 @@ Query id: 3bc7f339-ab74-4c7d-a752-1ffe54219c0e
 ```
 
 <div id="testing">
-  ### Test
+  ### Test {#testing}
 </div>
 
 1. Insérez des données dans le premier nœud (par exemple `chnode1`)
@@ -1327,7 +1328,7 @@ Query id: 6cbab449-9e7f-40fe-b8c2-62d46ba9f5c8
 ```
 
 <div id="alternatives">
-  ### Alternatives
+  ### Alternatives {#alternatives}
 </div>
 
 Le chemin de réplication par défaut peut être défini à l’avance à l’aide de macros, en utilisant également `{uuid}`
@@ -1395,7 +1396,7 @@ ORDER BY id
 ```
 
 <div id="troubleshooting">
-  ### Dépannage
+  ### Dépannage {#troubleshooting}
 </div>
 
 Exemple de commande pour obtenir des informations sur la table et son UUID :
@@ -1442,13 +1443,13 @@ Query id: b047d459-a1d2-4016-bcf9-3e97e30e49c2
 ```
 
 <div id="reconfiguration">
-  ## Reconfiguration dynamique de ClickHouse Keeper
+  ## Reconfiguration dynamique de ClickHouse Keeper {#reconfiguration}
 </div>
 
 <SelfManaged />
 
 <div id="description">
-  ### Description
+  ### Description {#description-1}
 </div>
 
 ClickHouse Keeper prend en charge partiellement la commande ZooKeeper [`reconfig`](https://zookeeper.apache.org/doc/r3.5.3-beta/zookeeperReconfig.html#sc_reconfig_modifying)
@@ -1539,7 +1540,7 @@ Il existe quelques points à connaître concernant l&#39;implémentation de la r
   a été appliquée.
 
 <div id="converting-a-single-node-keeper-into-a-cluster">
-  ## Conversion d’un Keeper mono-nœud en cluster
+  ## Conversion d’un Keeper mono-nœud en cluster {#converting-a-single-node-keeper-into-a-cluster}
 </div>
 
 Il est parfois nécessaire d’étendre un nœud Keeper expérimental pour en faire un cluster. Voici la procédure à suivre, étape par étape, pour un cluster de 3 nœuds :
@@ -1555,7 +1556,7 @@ Il est parfois nécessaire d’étendre un nœud Keeper expérimental pour en fa
 Pour vous familiariser avec le processus, consultez ce [dépôt sandbox](https://github.com/ClickHouse/keeper-extend-cluster).
 
 <div id="unsupported-features">
-  ## Fonctionnalités non prises en charge
+  ## Fonctionnalités non prises en charge {#unsupported-features}
 </div>
 
 Bien que ClickHouse Keeper vise une compatibilité totale avec ZooKeeper, certaines fonctionnalités ne sont pas encore implémentées (même si leur développement est en cours) :

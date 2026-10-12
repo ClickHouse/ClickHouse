@@ -13,9 +13,7 @@ integration:
 import { Image } from "/snippets/ja/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
-<div id="supported-data-sources">
-  ## サポートされているデータソース
-</div>
+## サポートされているデータソース {#supported-data-sources}
 
 | 名前               | ロゴ                                                                                                 | Type    | ステータス | 説明                                                                            |
 | ---------------- | -------------------------------------------------------------------------------------------------- | ------- | ----- | ----------------------------------------------------------------------------- |
@@ -26,14 +24,12 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 | Azure Event Hubs | <img src="/images/integrations/logos/azure_event_hubs.svg" alt="Azure Event Hubs ロゴ" width="32" /> | ストリーミング | 安定版   | ClickPipes を設定し、Azure Event Hubs から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。 |
 | WarpStream       | <img src="/images/integrations/logos/warpstream.svg" alt="WarpStream ロゴ" width="32" />             | ストリーミング | 安定版   | ClickPipes を設定し、WarpStream から ClickHouse Cloud へのストリーミングデータの取り込みを開始します。       |
 
-<div id="isolation-level">
-  ## 分離レベル
-</div>
+## 分離レベル {#isolation-level}
 
 Kafkaコンシューマーの分離レベルは、ClickPipeがKafkaトランザクションでコミットされたメッセージのみを読み取り、挿入するかどうかを決定します。`kafka_read_committed` 設定を有効にすると、`read_committed` が使用され、中断されたKafkaトランザクションのメッセージはスキップされます。無効にすると、`read_uncommitted` が使用され、すべてのメッセージが読み取られます。この設定は、**詳細設定** で構成できます。
 
 <div id="supported-data-formats">
-  ## 対応データフォーマット
+  ## 対応データフォーマット {#supported-data-formats}
 </div>
 
 対応しているフォーマットは次のとおりです。
@@ -43,11 +39,11 @@ Kafkaコンシューマーの分離レベルは、ClickPipeがKafkaトランザ�
 * [Protobuf](/ja/reference/formats/Protobuf/Protobuf)
 
 <div id="supported-data-types">
-  ## サポートされているデータ型
+  ## サポートされているデータ型 {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### 標準
+  ### 標準 {#standard-types-support}
 </div>
 
 現在、ClickPipes では以下の標準的な ClickHouse データ型がサポートされています。
@@ -71,9 +67,7 @@ Kafkaコンシューマーの分離レベルは、ClickPipeがKafkaトランザ�
 * 要素に上記のいずれかの型を使用する Tuple と Array (Nullable を含む、深さは 1 レベルのみ)
 * SimpleAggregateFunction 型 (AggregatingMergeTree または SummingMergeTree の宛先向け)
 
-<div id="variant-type-support">
-  ### Variant 型のサポート
-</div>
+### Variant 型のサポート {#variant-type-support}
 
 ClickPipes は、次の条件で Variant 型をサポートします。
 
@@ -81,7 +75,7 @@ ClickPipes は、次の条件で Variant 型をサポートします。
 * JSON フィールド。ソースデータストリーム内の任意の JSON フィールドに対して、Variant 型 (`Variant(String, Int64, DateTime)` など) を手動で指定できます。複雑なサブタイプ (Array/Map/Tuple) はサポートされません。また、ClickPipes では使用すべき Variant のサブタイプを判定する仕組み上、Variant の定義で使用できる整数型または datetime 型は 1 つのみです。たとえば、`Variant(Int64, UInt32)` はサポートされません。
 
 <div id="json-type-support">
-  ### JSON 型のサポート
+  ### JSON 型のサポート {#json-type-support}
 </div>
 
 ClickPipes は、次の状況で JSON 型をサポートします。
@@ -94,17 +88,15 @@ ClickPipes は、次の状況で JSON 型をサポートします。
 fixed パスや skipped パスを含め、宛先カラムは目的の JSON 型に手動で変更する必要があることに注意してください。
 
 <div id="avro">
-  ### Avro
+  ### Avro {#avro}
 </div>
 
-<div id="supported-avro-data-types">
-  #### サポートされる Avro データ型
-</div>
+#### サポートされる Avro データ型 {#supported-avro-data-types}
 
 ClickPipes は、`local-timestamp-millis` と `local_timestamp-micros` を除くすべての Avro Primitive 型、Complex 型、および Logical 型をサポートしています。Avro の `record` 型は Tuple に、`array` 型は Array に、`map` は Map に変換されます (キーは文字列のみ) 。一般的には、[こちら](/ja/concepts/features/interfaces/schema-inference#avro) に記載されている変換が利用可能です。ClickPipes は型変換時のオーバーフローや精度の損失をチェックしないため、Avro の数値型では厳密に対応する型を使用することを推奨します。また、すべての Avro 型は `String` カラムに挿入することもでき、その場合は有効な JSON 文字列として表されます。
 
 <div id="nullable-types-and-avro-unions">
-  #### Nullable 型と Avro ユニオン
+  #### Nullable 型と Avro ユニオン {#nullable-types-and-avro-unions}
 </div>
 
 Avro の Nullable 型は、T を基本の Avro 型として、`(T, null)` または `(null, T)` のユニオン スキーマを使って定義されます。スキーマ推論時には、このようなユニオンは ClickHouse の `Nullable` カラムにマッピングされます。なお、ClickHouse は
@@ -115,12 +107,10 @@ Avro の Nullable 型は、T を基本の Avro 型として、`(T, null)` また
 * null の Avro Record の場合は、すべてのフィールドがデフォルト値またはゼロ値の named Tuple
 
 <div id="protobuf">
-  ### Protobuf
+  ### Protobuf {#protobuf}
 </div>
 
-<div id="supported-protobuf-data-types">
-  #### サポートされている Protobuf データ型
-</div>
+#### サポートされている Protobuf データ型 {#supported-protobuf-data-types}
 
 ClickPipes は、長らく非推奨となっている proto 2 の `group` 型を除き、Protobuf 2 および 3 のすべての型をサポートしています。基本的な型変換には、以下のマッピングが使用されます。
 
@@ -161,42 +151,40 @@ ClickPipes は、長らく非推奨となっている proto 2 の `group` 型を
 | `google.protobuf.DoubleValue`                                                                | `Nullable(Float64)`      |
 | `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
 
-<div id="protobuf-one-ofs">
-  #### Protobuf `oneof`
-</div>
+#### Protobuf `oneof` {#protobuf-one-ofs}
 
 スキーマ推論では、Protobuf の `oneof` フィールドはデフォルトで名前付き `Tuple` にマッピングされ、非デフォルト値を持つフィールドは最大でも 1 つだけです。これらのフィールドは、設定されている構成フィールドの型をアクティブな値が取る `Variant` カラムに自動的にマッピングすることもできます。あるいは、各構成フィールドをそれぞれ個別の ClickHouse カラムに手動でマッピングすることもできます。`oneof` フィールドは相互排他的であるため、各レコードで値が入るカラムは 1 つだけです。
 
 <div id="protobuf-message-lists">
-  #### メッセージのリスト
+  #### メッセージのリスト {#protobuf-message-lists}
 </div>
 
 ClickPipe 用に定義された最上位の Protobuf スキーマに、それ自体が protobuf の Message である単一の `repeated` フィールドが含まれている場合、スキーマ推論とカラムマッピングは、その「内包された」Message フィールドに基づいて行われます。Kafka メッセージはそのようなメッセージのリストとして処理され、1 つの Kafka メッセージが複数の ClickHouse の行に展開されます。
 
-<div id="kafka-virtual-columns">
-  ## Kafka 仮想カラム
-</div>
+## Kafka 仮想カラム {#kafka-virtual-columns}
 
 以下の仮想カラムは、Kafka 互換のストリーミングデータソースでサポートされています。新しい宛先を作成する際は、`Add Column` ボタンを使用して仮想カラムをターゲットテーブルに追加できます。
 
-| 名前               | 説明                     | 推奨データ型          |
-| ---------------- | ---------------------- | --------------- |
-| `_key`           | Kafka メッセージキー          | `String`        |
-| `_timestamp`     | Kafka タイムスタンプ (ミリ秒精度)  | `DateTime64(3)` |
-| `_partition`     | Kafka パーティション          | `Int32`         |
-| `_offset`        | Kafka オフセット            | `Int64`         |
-| `_topic`         | Kafka トピック             | `String`        |
-| `_header_keys`   | レコードヘッダー内のキーの並列配列      | `Array(String)` |
-| `_header_values` | レコードヘッダー内の値の並列配列       | `Array(String)` |
-| `_raw_message`   | Kafka メッセージ全体          | `String`        |
+| 名前               | 説明                        | 推奨データ型          |
+| ---------------- | ------------------------- | --------------- |
+| `_key`           | Kafka メッセージキー             | `String`        |
+| `_timestamp`     | Kafka タイムスタンプ (ミリ秒精度)     | `DateTime64(3)` |
+| `_partition`     | Kafka パーティション             | `Int32`         |
+| `_offset`        | Kafka オフセット               | `Int64`         |
+| `_topic`         | Kafka トピック                | `String`        |
+| `_header_keys`   | レコードヘッダー内のキーの並列配列         | `Array(String)` |
+| `_header_values` | レコードヘッダー内の値の並列配列          | `Array(String)` |
+| `_raw_message`   | Kafka メッセージ全体             | `String`        |
+| `_is_deleted`    | レコードがソフトデリートのトゥームストーンかどうか | `Bool`          |
 
 `_raw_message` カラムは、JSON データに対してのみ推奨される点に注意してください。
 JSON 文字列だけが必要なユースケースでは (たとえば、ClickHouse の [`JsonExtract*`](/ja/reference/functions/regular-functions/json-functions#jsonextract-functions) 関数を使用して
 下流の materialized view にデータを投入する場合) 、「仮想ではない」カラムをすべて削除することで ClickPipes のパフォーマンスが向上することがあります。
 
-<div id="structured-message-keys">
-  ### 構造化メッセージキー
-</div>
+`_is_deleted` カラムは、トゥームストーンの処理をソフトデリートに設定した場合に使用できます。
+Kafka のトゥームストーンでは `true`、通常のメッセージでは `false` になります。
+
+### 構造化メッセージキー {#structured-message-keys}
 
 `_key` を `String` カラムにマッピングすると、元の Kafka メッセージキーが保存されます。このマッピングでは、キーのデコードやスキーマのルックアップは行われません。構造化キーからフィールドを抽出するには、`_key.` で始まるソースフィールドをマッピングします。たとえば、JSON キー `{"customer":{"id":42}}` の場合、`_key.customer.id` を `customer_id` などの宛先カラムにマッピングします。
 

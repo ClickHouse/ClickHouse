@@ -17,9 +17,7 @@ Les dictionnaires sont utiles pour :
 
 <Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Cas d'utilisation des dictionnaires dans ClickHouse" />
 
-<div id="speeding-up-joins-using-a-dictionary">
-  ## Accélérer les jointures à l’aide d’un dictionnaire
-</div>
+## Accélérer les jointures à l’aide d’un dictionnaire {#speeding-up-joins-using-a-dictionary}
 
 Les dictionnaires peuvent être utilisés pour accélérer un type spécifique de `JOIN` : le [type `LEFT ANY`](/fr/reference/statements/select/join#supported-types-of-join), dans lequel la clé de jointure doit correspondre à l’attribut clé du stockage clé-valeur sous-jacent.
 
@@ -30,7 +28,7 @@ Dans ce cas, ClickHouse peut exploiter le dictionnaire pour effectuer une [Direc
 L’algorithme de jointure directe exige que la table de droite repose sur un dictionnaire, afin que les données à joindre de cette table soient déjà présentes en mémoire sous la forme d’une structure de données clé-valeur à faible latence.
 
 <div id="example">
-  ### Exemple
+  ### Exemple {#example}
 </div>
 
 En utilisant le [jeu de données Stack Overflow](/fr/get-started/sample-datasets/stackoverflow), répondons à la question :
@@ -88,7 +86,7 @@ Peak memory usage: 3.18 GiB.
 Bien que cette requête soit rapide, elle nous oblige à écrire le `JOIN` avec soin pour obtenir de bonnes performances. Dans l&#39;idéal, nous filtrerions simplement les posts pour ne conserver que ceux contenant &quot;SQL&quot;, avant d&#39;examiner les nombres de `UpVote` et de `DownVote` pour le sous-ensemble de blogs afin de calculer notre métrique.
 
 <div id="applying-a-dictionary">
-  #### Utilisation d’un dictionnaire
+  #### Utilisation d’un dictionnaire {#applying-a-dictionary}
 </div>
 
 Pour illustrer ces concepts, nous utilisons un dictionnaire pour nos données de vote. Comme les dictionnaires sont généralement stockés en mémoire ([ssd&#95;cache](/fr/reference/statements/create/dictionary/layouts/ssd-cache) faisant exception), vous devez prêter attention à la taille des données. Vérifions la taille de notre table `votes` :
@@ -197,7 +195,7 @@ Peak memory usage: 552.26 MiB.
 Non seulement cette requête est beaucoup plus simple, mais elle est aussi plus de deux fois plus rapide ! Il serait possible de l’optimiser davantage en ne chargeant dans le dictionnaire que les posts ayant reçu plus de 10 votes positifs et négatifs, et en n’y stockant qu’une valeur de controverse précalculée.
 
 <div id="query-time-enrichment">
-  ## Enrichissement à l’exécution de la requête
+  ## Enrichissement à l’exécution de la requête {#query-time-enrichment}
 </div>
 
 Les dictionnaires peuvent être utilisés pour rechercher des valeurs à l’exécution de la requête. Ces valeurs peuvent être renvoyées dans les résultats ou utilisées dans des agrégations. Supposons que nous créions un dictionnaire pour associer des ID utilisateur à leur lieu :
@@ -266,15 +264,17 @@ LIMIT 5
 Peak memory usage: 248.84 MiB.
 ```
 
-<div id="index-time-enrichment">
-  ## Enrichissement au moment de l’indexation
-</div>
+## Enrichissement au moment de l’indexation {#index-time-enrichment}
 
 Dans l’exemple ci-dessus, nous avons utilisé un dictionnaire à l’exécution de la requête pour éviter une jointure. Les dictionnaires peuvent aussi servir à enrichir des lignes au moment de l’insertion. C’est généralement pertinent si la valeur d’enrichissement ne change pas et provient d’une source externe pouvant être utilisée pour alimenter le dictionnaire. Dans ce cas, enrichir la ligne au moment de l’insertion évite d’avoir à interroger le dictionnaire à l’exécution de la requête.
 
+<Note>
+  Évitez les dispositions de dictionnaire basées sur un cache pour l’enrichissement au moment de l’insertion lorsque la prévisibilité de la latence et la disponibilité de la source sont importantes. Chaque serveur gère son propre cache local, qu’un redémarrage ou un remplacement laisse vide : les insertions dépendent alors de recherches à froid auprès de la source du dictionnaire. L’autoscaling de ClickHouse Cloud et le remplacement géré des nœuds rendent cette situation plus probable. Choisissez une disposition qui charge l’intégralité du dictionnaire sur chaque serveur. Consultez [Dictionnaires cache dans les chemins d’ingestion](/fr/concepts/features/dictionaries/best-practices#cache-dictionaries-in-ingestion-path).
+</Note>
+
 Supposons que le `Location` d’un utilisateur dans Stack Overflow ne change jamais (en réalité, il change) — plus précisément, la colonne `Location` de la table `users`. Supposons que nous voulions exécuter une requête analytique sur la table posts par lieu. Celle-ci contient un `UserId`.
 
-Un dictionnaire fournit une correspondance entre l’identifiant d’un utilisateur et son lieu, en s’appuyant sur la table `users` :
+Un dictionnaire fournit une correspondance entre l’identifiant d’un utilisateur et son lieu, en s’appuyant sur la table `users` :
 
 ```sql
 CREATE DICTIONARY users_dict
@@ -288,9 +288,9 @@ LIFETIME(MIN 600 MAX 900)
 LAYOUT(HASHED())
 ```
 
-> Nous excluons les utilisateurs dont l’`Id < 0`, ce qui nous permet d’utiliser le type de Dictionary `Hashed`. Les utilisateurs dont l’`Id < 0` sont des utilisateurs système.
+> Nous excluons les utilisateurs dont l’`Id < 0`, ce qui nous permet d’utiliser le type de dictionnaire `Hashed`. Les utilisateurs dont l’`Id < 0` sont des utilisateurs système.
 
-Pour exploiter ce dictionnaire au moment de l’insert dans la table posts, nous devons modifier le schéma :
+Pour exploiter ce dictionnaire au moment de l’insertion dans la table posts, nous devons modifier le schéma :
 
 ```sql
 CREATE TABLE posts_with_location
@@ -308,7 +308,7 @@ Dans l’exemple ci-dessus, `Location` est déclarée comme une colonne `MATERIA
 
 > ClickHouse prend également en charge les [colonnes `DEFAULT`](/fr/reference/statements/create/table#default_values) (où la valeur peut être insérée ou calculée si elle n’est pas fournie).
 
-Pour alimenter la table, nous pouvons utiliser l’habituel `INSERT INTO SELECT` depuis S3 :
+Pour alimenter la table, nous pouvons utiliser l’habituel `INSERT INTO SELECT` depuis S3 :
 
 ```sql
 INSERT INTO posts_with_location SELECT Id, PostTypeId::UInt8, AcceptedAnswerId, CreationDate, Score, ViewCount, Body, OwnerUserId, OwnerDisplayName, LastEditorUserId, LastEditorDisplayName, LastEditDate, LastActivityDate, Title, Tags, AnswerCount, CommentCount, FavoriteCount, ContentLicense, ParentId, CommunityOwnedDate, ClosedDate FROM s3('https://datasets-documentation.s3.eu-west-3.amazonaws.com/stackoverflow/parquet/posts/*.parquet')
@@ -318,7 +318,7 @@ INSERT INTO posts_with_location SELECT Id, PostTypeId::UInt8, AcceptedAnswerId, 
 0 rows in set. Elapsed: 36.830 sec. Processed 238.98 million rows, 2.64 GB (6.49 million rows/s., 71.79 MB/s.)
 ```
 
-Nous pouvons maintenant obtenir le nom du lieu d’où provient le plus grand nombre de posts :
+Nous pouvons maintenant obtenir le nom du lieu d’où provient le plus grand nombre de posts :
 
 ```sql
 SELECT Location, count() AS c
@@ -342,13 +342,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## Aspects avancés des dictionnaires
+  ## Aspects avancés des dictionnaires {#advanced-dictionary-topics}
 </div>
 
 Pour savoir comment choisir les layout de dictionnaire, quand utiliser des dictionnaires plutôt que des JOIN, et comment surveiller l’utilisation des dictionnaires, consultez [Bonnes pratiques pour les dictionnaires](/fr/concepts/features/dictionaries/best-practices).
 
 <div id="refreshing-dictionaries">
-  ### Actualisation des dictionnaires
+  ### Actualisation des dictionnaires {#refreshing-dictionaries}
 </div>
 
 Nous avons spécifié un `LIFETIME` pour le dictionnaire de `MIN 600 MAX 900`. LIFETIME est l’intervalle de mise à jour du dictionnaire ; les valeurs indiquées ici entraînent un rechargement périodique à un intervalle aléatoire compris entre 600 et 900 s. Cet intervalle aléatoire est nécessaire afin de répartir la charge sur la source du dictionnaire lors des mises à jour sur un grand nombre de serveurs. Pendant les mises à jour, l’ancienne version d’un dictionnaire peut toujours être interrogée ; seul le chargement initial bloque les requêtes. Notez que définir `(LIFETIME(0))` empêche la mise à jour des dictionnaires.
@@ -357,14 +357,12 @@ Les dictionnaires peuvent être rechargés de force à l’aide de la commande `
 Pour les sources de base de données telles que ClickHouse et Postgres, vous pouvez configurer une requête qui mettra à jour les dictionnaires uniquement s’ils ont réellement changé (c’est la réponse de la requête qui le détermine), plutôt qu’à intervalles périodiques. Vous trouverez plus de détails [ici](/fr/reference/statements/create/dictionary/lifetime).
 
 <div id="other-dictionary-types">
-  ### Autres types de dictionnaires
+  ### Autres types de dictionnaires {#other-dictionary-types}
 </div>
 
 ClickHouse prend également en charge les dictionnaires [hiérarchiques](/fr/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/fr/reference/statements/create/dictionary/layouts/polygon) et [à expression régulière](/fr/reference/statements/create/dictionary/layouts/regexp-tree).
 
-<div id="more-reading">
-  ### Pour aller plus loin
-</div>
+### Pour aller plus loin {#more-reading}
 
 * [Bonnes pratiques pour les dictionnaires](/fr/concepts/features/dictionaries/best-practices) — choix du layout, dictionnaires ou JOIN, supervision
 * [Utiliser les dictionnaires pour accélérer les requêtes](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)

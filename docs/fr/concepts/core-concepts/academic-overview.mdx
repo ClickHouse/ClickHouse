@@ -14,16 +14,14 @@ Voici la version web de notre [article scientifique VLDB 2024](https://www.vldb.
 </Frame>
 
 <div id="abstract">
-  ## RÉSUMÉ
+  ## RÉSUMÉ {#abstract}
 </div>
 
 Au cours des dernières décennies, la quantité de données stockées et analysées a augmenté de façon exponentielle. Les entreprises de tous les secteurs ont commencé à s’appuyer sur ces données pour améliorer leurs produits, évaluer leurs performances et prendre des décisions stratégiques. Toutefois, à mesure que les volumes de données ont atteint l’échelle d’Internet, elles ont dû gérer à moindre coût et de façon évolutive les données historiques comme les nouvelles données, tout en les analysant au moyen d’un grand nombre de requêtes concurrentes, avec des exigences de latence en temps réel (par exemple inférieure à une seconde, selon le cas d’usage).
 
 Cet article présente une vue d’ensemble de ClickHouse, une base de données OLAP open source populaire conçue pour l’analytique haute performance sur des jeux de données à l’échelle du pétaoctet, avec des taux d’ingestion élevés. Sa couche de stockage combine un format de données fondé sur des arbres LSM (log-structured merge) traditionnels avec de nouvelles techniques de transformation continue (par exemple agrégation, archivage) des données historiques en arrière-plan. Les requêtes sont écrites dans un dialecte SQL simple d’utilisation et traitées par un moteur moderne d’exécution vectorisée des requêtes, avec compilation de code en option. ClickHouse utilise largement des techniques d’élagage afin d’éviter de traiter des données non pertinentes dans les requêtes. D’autres systèmes de gestion de données peuvent être intégrés au niveau de la fonction de table, du moteur de table ou du moteur de base de données. Des benchmarks en conditions réelles montrent que ClickHouse figure parmi les bases de données analytiques les plus rapides du marché.
 
-<div id="1-introduction">
-  ## 1 INTRODUCTION
-</div>
+## 1 INTRODUCTION {#1-introduction}
 
 Cet article décrit ClickHouse, une base de données OLAP columnar conçue pour exécuter des requêtes analytiques hautes performances sur des tables contenant des billions de lignes et des centaines de colonnes. ClickHouse a été [créé](https://clickhou.se/evolution) en 2009 comme opérateur de filtrage et d’agrégation pour des données de fichiers journaux à l’échelle du Web, puis a été publié en open source en 2016. La [figure 1](#page-1-0) montre à quel moment les principales fonctionnalités décrites dans cet article ont été introduites dans ClickHouse.
 
@@ -45,9 +43,7 @@ ClickHouse est conçu pour répondre à cinq grands défis de la gestion moderne
   <img src="/images/managing-data/core-concepts/_vldb2024_1_Figure_0.webp" alt="Figure 1 : chronologie de ClickHouse." />
 </Frame>
 
-<div id="2-architecture">
-  ## 2 ARCHITECTURE
-</div>
+## 2 ARCHITECTURE {#2-architecture}
 
 <a id="page-2-0" style={{display:"block",scrollMarginTop:"80px"}} />
 
@@ -69,11 +65,11 @@ ClickHouse prend en charge le sharding et la réplication des tables sur plusieu
 
 Enfin, le moteur de base de données ClickHouse peut être utilisé en modes on-premise, Cloud, standalone ou in-process. En mode on-premise, les utilisateurs configurent ClickHouse localement comme un serveur unique ou un cluster multinœud avec sharding et/ou réplication. Les clients communiquent avec la base de données via les protocoles binaires natif, MySQL et PostgreSQL, ou via une API REST HTTP. Le mode Cloud est représenté par ClickHouse Cloud, une offre DBaaS entièrement managée avec autoscaling. Bien que cet article se concentre sur le mode on-premise, nous prévoyons de décrire l’architecture de ClickHouse Cloud dans une publication ultérieure. Le [mode standalone](https://clickhou.se/local-fastest-tool) transforme ClickHouse en utilitaire en ligne de commande pour analyser et transformer des fichiers, ce qui en fait une alternative fondée sur SQL à des outils Unix comme cat et grep. Bien que cela ne nécessite aucune configuration préalable, le mode standalone est limité à un seul serveur. Récemment, un mode in-process appelé chDB <sup>[&#91;15&#93;](#page-12-3)</sup> a été développé pour des cas d’usage d’analyse interactive de données comme les Jupyter notebooks <sup>[&#91;37&#93;](#page-12-4)</sup> avec des DataFrames Pandas <sup>[&#91;61&#93;](#page-13-5)</sup>. Inspiré par DuckDB <sup>[&#91;67&#93;](#page-13-6)</sup>, [chDB](https://clickhou.se/chdb-rocket-engine) intègre ClickHouse comme moteur OLAP haute performance dans un processus hôte. Par rapport aux autres modes, cela permet de transférer efficacement les données source et les données de résultat entre le moteur de base de données et l’application sans copie, puisqu’ils s’exécutent dans le même espace d’adressage.
 
-## <a id="page-1-1" style={{display:"block",scrollMarginTop:"80px"}} />3 COUCHE DE STOCKAGE
+## <a id="page-1-1" style={{display:"block",scrollMarginTop:"80px"}} />3 COUCHE DE STOCKAGE {#3-storage-layer}
 
 Cette section présente les moteurs de table MergeTree* comme le format de stockage natif de ClickHouse. Nous décrivons leur représentation sur disque et examinons trois techniques d’élagage des données dans ClickHouse. Nous présentons ensuite des stratégies de fusion qui transforment continuellement les données sans perturber les insertions simultanées. Enfin, nous expliquons comment sont mises en œuvre les mises à jour et les suppressions, ainsi que la déduplication des données, la réplication des données et la conformité ACID.
 
-### <a id="page-2-2" style={{display:"block",scrollMarginTop:"80px"}} />3.1 Format sur disque
+### <a id="page-2-2" style={{display:"block",scrollMarginTop:"80px"}} />3.1 Format sur disque {#3-1-on-disk-format}
 
 Chaque table utilisant le moteur de table MergeTree* est organisée comme un ensemble de table parts immuables. Une part est créée chaque fois qu’un ensemble de lignes est inséré dans la table. Les parts sont autonomes, en ce sens qu’elles incluent toutes les métadonnées nécessaires pour interpréter leur contenu sans lookup supplémentaire dans un catalog central. Afin de limiter le nombre de parts par table, une tâche de fusion en arrière-plan combine périodiquement plusieurs petites parts en une part plus grande, jusqu’à atteindre une part size configurable (150 GB par défaut). Comme les parts sont triées selon les colonnes de clé primaire de la table (voir Section [3.2)](#page-3-0), un algorithme efficace de tri par fusion k-way <sup>[&#91;40&#93;](#page-12-5)</sup> est utilisé pour la fusion. Les parts source sont marquées comme inactives puis, à terme, supprimées dès que leur compteur de références tombe à zéro, c.-à-d. qu’aucune requête ne les lit encore.
 
@@ -95,7 +91,7 @@ Les colonnes peuvent en outre être encodées par dictionnaire <sup>[&#91;2,](#p
 
 Enfin, les tables peuvent être partitionnées par plage, hachage ou round-robin à l’aide d’expressions de partitionnement arbitraires. Pour permettre l’élagage de partition, ClickHouse stocke en plus les valeurs minimum et maximum de l’expression de partitionnement pour chaque partition. Les utilisateurs peuvent éventuellement créer des statistiques de colonnes plus avancées (par exemple des statistiques HyperLogLog <sup>[&#91;30&#93;](#page-12-11)</sup> ou t-digest <sup>[&#91;28&#93;](#page-12-12)</sup>) qui fournissent également des estimations de cardinalité.
 
-### <a id="page-3-0" style={{display:"block",scrollMarginTop:"80px"}} />3.2 Élagage des données
+### <a id="page-3-0" style={{display:"block",scrollMarginTop:"80px"}} />3.2 Élagage des données {#3-2-data-pruning}
 
 Dans la plupart des cas d’usage, parcourir des pétaoctets de données simplement pour répondre à une seule requête est trop lent et trop coûteux. ClickHouse prend en charge trois techniques d’élagage des données qui permettent d’ignorer la majorité des lignes lors des recherches et, par conséquent, d’accélérer considérablement les requêtes.
 
@@ -113,7 +109,7 @@ Deuxièmement, les utilisateurs peuvent créer des **projections de table**, c.-
 
 Troisièmement, les **indices de saut** offrent une alternative légère aux projections. Le principe des indices de saut consiste à stocker de petites quantités de métadonnées au niveau de plusieurs granules consécutifs, ce qui permet d’éviter de parcourir des lignes non pertinentes. Les indices de saut peuvent être créés pour des expressions d’index arbitraires et avec une granularité configurable, c.-à-d. un nombre de granules dans un bloc d’index de saut. Les types d’indices de saut disponibles incluent : 1. les indices min-max <sup>[&#91;51&#93;](#page-13-14)</sup>, qui stockent les valeurs minimale et maximale de l’expression d’index pour chaque bloc d’index. Ce type d’index fonctionne bien pour des données clusterisées localement avec de faibles plages de valeurs absolues, par exemple des données grossièrement triées. 2. les indices Set, qui stockent un nombre configurable de valeurs uniques par bloc d’index. Ces index sont particulièrement adaptés aux données ayant une faible cardinalité locale, c.-à-d. des valeurs « regroupées ». 3. les indices à filtre de Bloom <sup>[&#91;9&#93;](#page-12-14)</sup> construits pour des valeurs de ligne, de jeton ou de n-gramme avec un taux de faux positifs configurable. Ces index prennent en charge la recherche textuelle <sup>[&#91;73&#93;](#page-13-15)</sup>, mais contrairement aux indices min-max et Set, ils ne peuvent pas être utilisés pour des prédicats d’intervalle ou négatifs.
 
-### <a id="page-4-3" style={{display:"block",scrollMarginTop:"80px"}} />3.3 Transformation des données lors des fusions
+### <a id="page-4-3" style={{display:"block",scrollMarginTop:"80px"}} />3.3 Transformation des données lors des fusions {#3-3-merge-time-data-transformation}
 
 Les cas d’usage de business intelligence et d’observabilité doivent souvent traiter des données générées à des débits durablement élevés ou par pics. En outre, les données récentes sont généralement plus pertinentes pour produire des informations exploitables en temps réel que les données historiques. De tels cas d’usage exigent des bases de données qu’elles prennent en charge des taux élevés d’ingestion de données tout en réduisant en continu le volume des données historiques grâce à des techniques comme l’agrégation ou le vieillissement des données. ClickHouse permet une transformation incrémentielle continue des données existantes au moyen de différentes stratégies de fusion. La transformation des données lors des fusions ne compromet pas les performances des instructions INSERT, mais elle ne peut pas garantir que les tables ne contiennent jamais de valeurs indésirables (par ex. obsolètes ou non agrégées). Si nécessaire, toutes les transformations effectuées lors des fusions peuvent être appliquées au moment de la requête en spécifiant le mot-clé FINAL dans les instructions SELECT.
 
@@ -143,7 +139,7 @@ Les **fusions TTL (time-to-live)** assurent le vieillissement des données histo
 
 Liste 1 : Déplacer une part vers le stockage d’objets au bout d’une semaine.
 
-### <a id="page-4-0" style={{display:"block",scrollMarginTop:"80px"}} />3.4 Mises à jour et suppressions
+### <a id="page-4-0" style={{display:"block",scrollMarginTop:"80px"}} />3.4 Mises à jour et suppressions {#3-4-updates-and-deletes}
 
 La conception des moteurs de table MergeTree* privilégie les charges de travail en ajout uniquement, mais certains cas d’usage exigent de modifier occasionnellement des données existantes, par exemple pour satisfaire à des exigences de conformité réglementaire. Il existe deux approches pour mettre à jour ou supprimer des données, et aucune ne bloque les insertions parallèles.
 
@@ -153,15 +149,15 @@ Comme alternative, les **lightweight deletes** ne mettent à jour qu’une colon
 
 Les opérations de mise à jour et de suppression effectuées sur la même table sont censées être rares et sérialisées afin d’éviter les conflits logiques.
 
-### <a id="page-5-2" style={{display:"block",scrollMarginTop:"80px"}} />3.5 Insertions idempotentes
+### <a id="page-5-2" style={{display:"block",scrollMarginTop:"80px"}} />3.5 Insertions idempotentes {#3-5-idempotent-inserts}
 
 Un problème fréquent en pratique est de savoir comment les clients doivent gérer les délais d’expiration de connexion après avoir envoyé des données au serveur pour les insérer dans une table. Dans cette situation, il est difficile pour les clients de déterminer si les données ont bien été insérées ou non. Traditionnellement, ce problème est résolu en renvoyant les données du client au serveur et en s’appuyant sur la clé primaire ou sur des contraintes d’unicité pour rejeter les insertions en double. Les bases de données effectuent rapidement les recherches ponctuelles nécessaires à l’aide de structures d’index fondées sur des arbres binaires <sup>[&#91;39,](#page-12-15)</sup> <sup>[68&#93;](#page-13-16)</sup>, des arbres radix <sup>[&#91;45&#93;](#page-13-17)</sup> ou des tables de hachage <sup>[&#91;29&#93;](#page-12-16)</sup>. Comme ces structures de données indexent chaque tuple, leur coût en espace et en mises à jour devient prohibitif pour de grands jeux de données et des taux d’ingestion élevés.
 
 ClickHouse propose une alternative plus légère, fondée sur le fait que chaque insertion finit par créer une part. Plus précisément, le serveur conserve les hachages des N dernières parts insérées (par exemple N=100) et ignore les réinsertions de parts dont le hachage est déjà connu. Les hachages des tables non répliquées et répliquées sont stockés respectivement en local et dans Keeper. Les insertions deviennent ainsi idempotentes, c’est-à-dire que les clients peuvent simplement renvoyer le même lot de lignes après un délai d’expiration et partir du principe que le serveur se charge de la déduplication. Pour un contrôle plus fin du processus de déduplication, les clients peuvent également fournir un jeton d’insertion qui tient lieu de hachage de part. Bien que la déduplication fondée sur le hachage entraîne un surcoût lié au calcul du hachage des nouvelles lignes, le coût de stockage et de comparaison des hachages est négligeable.
 
-### <a id="page-5-0" style={{display:"block",scrollMarginTop:"80px"}} />3.6 Réplication des données
+### <a id="page-5-0" style={{display:"block",scrollMarginTop:"80px"}} />3.6 Réplication des données {#3-6-data-replication}
 
-La réplication est un prérequis pour la haute disponibilité (tolérance aux défaillances des nœuds), mais elle sert aussi à la répartition de charge et aux mises à niveau sans interruption de service <sup>[&#91;14&#93;](#page-12-17)</sup>. Dans ClickHouse, la réplication repose sur la notion d’états de table, qui se composent d’un ensemble de parts de table (section [3.1)](#page-2-2) et de métadonnées de table, telles que les noms de colonnes et les types. Les nœuds font évoluer l’état d’une table au moyen de trois opérations : 1. les insertions ajoutent une nouvelle part à l’état, 2. les fusions ajoutent une nouvelle part à l’état et en retirent des parts existantes, 3. les mutations et les instructions DDL ajoutent des parts, et/ou suppriment des parts, et/ou modifient les métadonnées de table, selon l’opération concernée. Les opérations sont exécutées localement sur un seul nœud et consignées comme une séquence de transitions d’état dans un journal global de réplication.
+La réplication est un prérequis pour la haute disponibilité (tolérance aux défaillances des nœuds), mais elle sert aussi à la répartition de charge et aux mises à niveau sans interruption de service <sup>[&#91;14&#93;](#page-12-17)</sup>. Dans ClickHouse, la réplication repose sur la notion d’états de table, qui se composent d’un ensemble de parts de table (section [3.1)](#page-2-2) et de métadonnées de table, telles que les noms de colonnes et les types. Les nœuds font évoluer l’état d’une table au moyen de trois opérations : 1. les insertions ajoutent une nouvelle part à l’état, 2. les fusions ajoutent une nouvelle part à l’état et en retirent des parts existantes, 3. les mutations et les instructions DDL ajoutent des parts, et/ou suppriment des parts, et/ou modifient les métadonnées de table, selon l’opération concernée. Les opérations sont exécutées localement sur un seul nœud et consignées comme une séquence de transitions d’état dans un journal global de réplication.
 
 Le journal de réplication est maintenu par un ensemble de généralement trois processus ClickHouse Keeper, qui utilisent l’algorithme de consensus Raft <sup>[&#91;59&#93;](#page-13-4)</sup> pour fournir une couche de coordination distribuée et tolérante aux pannes à un cluster de nœuds ClickHouse. Tous les nœuds du cluster pointent initialement vers la même position dans le journal de réplication. Tandis que les nœuds exécutent localement des insertions, des fusions, des mutations et des instructions DDL, le journal de réplication est rejoué de manière asynchrone sur tous les autres nœuds. En conséquence, les tables répliquées ne sont cohérentes qu’à terme, c’est-à-dire que les nœuds peuvent temporairement lire d’anciens états de table tout en convergeant vers l’état le plus récent. La plupart des opérations susmentionnées peuvent aussi être exécutées de manière synchrone jusqu’à ce qu’un quorum de nœuds (par exemple, une majorité des nœuds ou l’ensemble des nœuds) ait adopté le nouvel état.
 
@@ -169,19 +165,19 @@ Le journal de réplication est maintenu par un ensemble de généralement trois 
 
 <a id="page-5-3" style={{display:"block",scrollMarginTop:"80px"}} />
 
-<Frame caption="Figure 6 : Réplication dans un cluster de trois nœuds.">
-  <img src="/images/managing-data/core-concepts/_vldb2024_5_Figure_8.webp" alt="Figure 6 : Réplication dans un cluster de trois nœuds." />
+<Frame caption="Figure 6 : Réplication dans un cluster de trois nœuds.">
+  <img src="/images/managing-data/core-concepts/_vldb2024_5_Figure_8.webp" alt="Figure 6 : Réplication dans un cluster de trois nœuds." />
 </Frame>
 
-Il existe trois optimisations pour accélérer la synchronisation : premièrement, les nouveaux nœuds ajoutés au cluster ne rejouent pas le journal de réplication depuis le début ; ils copient simplement l’état du nœud qui a écrit la dernière entrée du journal de réplication. Deuxièmement, les fusions sont rejouées soit en les répétant localement, soit en récupérant la part résultante depuis un autre nœud. Le comportement exact est configurable et permet d’arbitrer entre consommation CPU et E/S réseau. Par exemple, la réplication entre centres de données privilégie généralement les fusions locales afin de minimiser les coûts d’exploitation. Troisièmement, les nœuds rejouent en parallèle les entrées mutuellement indépendantes du journal de réplication. Cela inclut, par exemple, la récupération de nouvelles parts insérées consécutivement dans la même table, ou des opérations sur différentes tables.
+Il existe trois optimisations pour accélérer la synchronisation : premièrement, les nouveaux nœuds ajoutés au cluster ne rejouent pas le journal de réplication depuis le début ; ils copient simplement l’état d’une réplique à jour. Deuxièmement, les fusions sont rejouées soit en les répétant localement, soit en récupérant la part résultante depuis un autre nœud. Le comportement exact est configurable et permet d’arbitrer entre consommation CPU et E/S réseau. Par exemple, la réplication entre centres de données privilégie généralement les fusions locales afin de minimiser les coûts d’exploitation. Troisièmement, les nœuds rejouent en parallèle les entrées mutuellement indépendantes du journal de réplication. Cela inclut, par exemple, la récupération de nouvelles parts insérées consécutivement dans la même table, ou des opérations sur différentes tables.
 
-### <a id="page-5-1" style={{display:"block",scrollMarginTop:"80px"}} />3.7 Conformité ACID
+### <a id="page-5-1" style={{display:"block",scrollMarginTop:"80px"}} />3.7 Conformité ACID {#3-7-acid-compliance}
 
 Pour maximiser les performances des opérations concurrentes de lecture et d&#39;écriture, ClickHouse évite autant que possible le verrouillage. Les requêtes sont exécutées sur un instantané de toutes les parts de toutes les tables impliquées, créé au début de la requête. Cela garantit que les nouvelles parts insérées par des INSERT parallèles ou des fusions (section [3.1)](#page-2-2) ne participent pas à l&#39;exécution. Pour éviter que des parts soient modifiées ou supprimées simultanément (section [3.4)](#page-4-0), le compteur de références des parts traitées est incrémenté pendant toute la durée de la requête. Formellement, cela correspond à une isolation par instantané reposant sur une variante de MVCC <sup>[&#91;6&#93;](#page-12-18)</sup> basée sur des parts versionnées. Par conséquent, les instructions ne sont généralement pas conformes à ACID, sauf dans le cas rare où les écritures concurrentes au moment de la prise de l&#39;instantané n&#39;affectent chacune qu&#39;une seule part.
 
 En pratique, la plupart des cas d&#39;usage de ClickHouse orientés prise de décision et générant beaucoup d&#39;écritures tolèrent même un faible risque de perte de nouvelles données en cas de panne de courant. La base de données en tire parti en ne forçant pas, par défaut, le commit (`fsync`) des parts nouvellement insérées sur disque, ce qui permet au noyau de regrouper les écritures au prix de l&#39;abandon de l&#39;atomicité.
 
-## <a id="page-6-0" style={{display:"block",scrollMarginTop:"80px"}} />4 COUCHE DE TRAITEMENT DES REQUÊTES
+## <a id="page-6-0" style={{display:"block",scrollMarginTop:"80px"}} />4 COUCHE DE TRAITEMENT DES REQUÊTES {#4-query-processing-layer}
 
 <a id="page-6-1" style={{display:"block",scrollMarginTop:"80px"}} />
 
@@ -194,14 +190,12 @@ Comme l’illustre la [figure 7,](#page-6-1) ClickHouse parallélise les requê
 Le reste de cette section décrit d’abord plus en détail le traitement parallèle à la granularité des éléments de données, des blocs de données et des segments. Nous présentons ensuite quelques optimisations clés pour maximiser les performances des requêtes. Enfin, nous examinons la manière dont ClickHouse gère les ressources système partagées en présence de requêtes simultanées.
 
 <div id="4-1-simd-parallelization">
-  ### 4.1 Parallélisation SIMD
+  ### 4.1 Parallélisation SIMD {#4-1-simd-parallelization}
 </div>
 
 Le passage de plusieurs lignes entre les opérateurs crée une opportunité de vectorisation. La vectorisation repose soit sur des intrinsèques écrits manuellement <sup>[&#91;64,](#page-13-18)</sup> <sup>[80&#93;](#page-13-19)</sup>, soit sur l’auto-vectorisation du compilateur <sup>[&#91;25&#93;](#page-12-19)</sup>. Le code qui en bénéficie est compilé en différents noyaux de calcul. Par exemple, la boucle interne critique d’un opérateur de requête peut être implémentée sous la forme d’un noyau non vectorisé, d’un noyau AVX2 auto-vectorisé et d’un noyau AVX-512 vectorisé manuellement. Le noyau le plus rapide est [choisi à l’exécution](https://clickhou.se/cpu-dispatch) en fonction de l’instruction `cpuid`. Cette approche permet à ClickHouse de fonctionner sur des systèmes vieux de 15 ans (avec SSE 4.2 comme minimum), tout en offrant des accélérations significatives sur du matériel récent.
 
-<div id="4-2-multi-core-parallelization">
-  ### 4.2 Parallélisation multicœur
-</div>
+### 4.2 Parallélisation multicœur {#4-2-multi-core-parallelization}
 
 <a id="page-7-1" style={{display:"block",scrollMarginTop:"80px"}} />
 
@@ -222,14 +216,14 @@ Les opérateurs peuvent en outre influer sur l&#39;exécution des requêtes de d
 Le moteur d’exécution des requêtes de ClickHouse et le parallélisme piloté par morsels <sup>[&#91;44&#93;](#page-12-20)</sup> se ressemblent en ce que les voies sont généralement exécutées sur des cœurs / sockets NUMA différents et que les threads de travail peuvent voler des tâches à d’autres voies. De plus, il n’existe pas de composant central d’ordonnancement ; à la place, les threads de travail sélectionnent individuellement leurs tâches en parcourant en continu le plan d’opérateurs. Contrairement au parallélisme piloté par morsels, ClickHouse intègre le degré maximal de parallélisme au plan et utilise des ranges bien plus grands pour partitionner la table source, par rapport aux tailles de morsel par défaut d’environ 100 000 lignes. Bien que cela puisse, dans certains cas, provoquer des blocages (par exemple lorsque le temps d’exécution des opérateurs de filtrage dans différentes voies varie fortement), nous constatons qu’un usage généreux d’opérateurs d’échange tels que Repartition évite au moins que de tels déséquilibres ne s’accumulent d’une étape à l’autre.
 
 <div id="4-3-multi-node-parallelization">
-  ### 4.3 Parallélisation sur plusieurs nœuds
+  ### 4.3 Parallélisation sur plusieurs nœuds {#4-3-multi-node-parallelization}
 </div>
 
 Si la table source d’une requête est fragmentée, l’optimiseur de requête du nœud qui a reçu la requête (nœud initiateur) tente de faire exécuter autant de travail que possible sur les autres nœuds. Les résultats provenant des autres nœuds peuvent être intégrés à différents endroits du plan de requête. Selon la requête, les nœuds distants peuvent soit 1. envoyer en flux les colonnes brutes de la table source au nœud initiateur, 2. filtrer les colonnes de la table source et envoyer les lignes conservées, 3. exécuter les étapes de filtrage et d’agrégation, puis envoyer des groupes de résultats locaux avec des états d’agrégation partiels, ou 4. exécuter l’intégralité de la requête, y compris les filtres, l’agrégation et le tri.
 
 Les nœuds 2 ... N de la [Figure 8](#page-7-1) montrent des fragments de plan exécutés sur d’autres nœuds hébergeant des fragments de la table hits. Ces nœuds filtrent et regroupent les données locales, puis envoient le résultat au nœud initiateur. L’opérateur GroupStateMerge sur le nœud 1 fusionne les résultats locaux et distants avant le tri final des groupes de résultats.
 
-### <a id="page-7-0" style={{display:"block",scrollMarginTop:"80px"}} />4.4 Optimisation globale des performances
+### <a id="page-7-0" style={{display:"block",scrollMarginTop:"80px"}} />4.4 Optimisation globale des performances {#4-4-holistic-performance-optimization}
 
 Cette section présente une sélection des principales optimisations de performances appliquées aux différentes étapes de l&#39;exécution des requêtes.
 
@@ -262,7 +256,7 @@ Comme les jointures comptent parmi les opérations de base de données les plus 
   <img src="/images/managing-data/core-concepts/_vldb2024_8_Figure_7.webp" alt="Figure 9 : Jointure par hachage parallèle avec trois partitions de table de hachage." />
 </Frame>
 
-### <a id="page-9-1" style={{display:"block",scrollMarginTop:"80px"}} />4.5 Isolation des charges de travail
+### <a id="page-9-1" style={{display:"block",scrollMarginTop:"80px"}} />4.5 Isolation des charges de travail {#4-5-workload-isolation}
 
 ClickHouse offre un contrôle de la concurrence, des limites d’utilisation de la mémoire et une planification des E/S, ce qui permet aux utilisateurs d’isoler les requêtes dans des classes de charge de travail. En définissant des limites sur les ressources partagées (cœurs de CPU, DRAM, E/S disque et réseau) pour des classes de charge de travail spécifiques, ClickHouse garantit que ces requêtes n’affectent pas d’autres requêtes métier critiques.
 
@@ -272,7 +266,7 @@ ClickHouse suit la taille en octets des allocations mémoire au niveau du serveu
 
 Enfin, la planification des E/S permet aux utilisateurs de restreindre les accès aux disques locaux et distants pour les classes de charge de travail selon une bande passante maximale, les requêtes en cours et la politique (par ex. FIFO, SFC <sup>[&#91;32&#93;](#page-12-24)</sup>).
 
-### <a id="page-9-0" style={{display:"block",scrollMarginTop:"80px"}} />5 COUCHE D’INTÉGRATION
+### <a id="page-9-0" style={{display:"block",scrollMarginTop:"80px"}} />5 COUCHE D’INTÉGRATION {#5-integration-layer}
 
 Les applications de prise de décision en temps réel dépendent souvent d’un accès efficace et à faible latence à des données réparties sur plusieurs sites. Il existe deux approches pour rendre des données externes accessibles dans une base de données OLAP. Avec un accès aux données de type push, un composant tiers fait le lien entre la base de données et des systèmes de stockage externes. Les outils spécialisés d’extract-transform-load (ETL), qui poussent les données distantes vers le système de destination, en sont un exemple. Dans le modèle pull, la base de données elle-même se connecte aux sources de données distantes et récupère les données pour les interroger dans des tables locales, ou exporte les données vers des systèmes distants. Bien que les approches de type push soient plus polyvalentes et plus répandues, elles impliquent une architecture plus lourde et créent un goulot d’étranglement en matière de montée en charge. À l’inverse, la connectivité distante directement dans la base de données offre des capacités intéressantes, comme les jointures entre données locales et distantes, tout en conservant une architecture simple et en réduisant le temps nécessaire pour obtenir des insights.
 
@@ -301,13 +295,13 @@ Formats de données. Pour interagir avec des systèmes tiers, les bases de donn�
 Interfaces de compatibilité. Outre son protocole binaire natif et HTTP, les clients peuvent interagir avec ClickHouse via des interfaces compatibles avec les protocoles réseau MySQL ou PostgreSQL. Cette fonctionnalité de compatibilité est utile pour permettre l’accès depuis des applications propriétaires (par exemple certains outils de business intelligence), lorsque les éditeurs n’ont pas encore implémenté de connectivité ClickHouse native.
 
 <div id="6-performance-as-a-feature">
-  ## 6 LA PERFORMANCE COMME FONCTIONNALITÉ
+  ## 6 LA PERFORMANCE COMME FONCTIONNALITÉ {#6-performance-as-a-feature}
 </div>
 
 Cette section présente les outils intégrés d’analyse des performances et évalue celles-ci à l’aide de requêtes issues de cas réels et de benchmarks.
 
 <div id="6-1-built-in-performance-analysis-tools">
-  ### 6.1 Outils intégrés d’analyse des performances
+  ### 6.1 Outils intégrés d’analyse des performances {#6-1-built-in-performance-analysis-tools}
 </div>
 
 Un large éventail d’outils est disponible pour analyser les goulots d’étranglement des performances dans des requêtes individuelles ou des opérations en arrière-plan. Les utilisateurs interagissent avec tous ces outils via une interface uniforme basée sur les tables système.
@@ -321,14 +315,12 @@ Un large éventail d’outils est disponible pour analyser les goulots d’étra
 **Requête EXPLAIN**. Comme dans d’autres bases de données, les requêtes SELECT peuvent être précédées de EXPLAIN pour obtenir des informations détaillées sur l’AST d’une requête, ses plans d’opérateurs logiques et physiques, et son comportement à l’exécution.
 
 <div id="6-2-benchmarks">
-  ### 6.2 Tests de performance
+  ### 6.2 Tests de performance {#6-2-benchmarks}
 </div>
 
 Bien que les tests de performance aient été critiqués pour leur manque de réalisme <sup>[&#91;10,](#page-12-27)</sup> <sup>[52,](#page-13-22)</sup> <sup>[66,](#page-13-23)</sup> <sup>[74&#93;](#page-13-24)</sup>, ils restent utiles pour identifier les forces et les faiblesses des bases de données. Dans ce qui suit, nous expliquons comment les tests de performance sont utilisés pour évaluer les performances de ClickHouse.
 
-<div id="6-2-1-denormalized-tables">
-  #### 6.2.1 Tables dénormalisées
-</div>
+#### 6.2.1 Tables dénormalisées {#6-2-1-denormalized-tables}
 
 Les requêtes de filtrage et d’agrégation sur des tables de faits dénormalisées constituent historiquement le principal cas d’usage de ClickHouse. Nous présentons les temps d’exécution de ClickBench, une charge de travail typique de ce type qui simule des requêtes de reporting ad hoc et périodiques utilisées pour l’analyse des flux de clics et du trafic. Le benchmark se compose de 43 requêtes sur une table contenant 100 millions de visites de pages anonymisées, issues de l’une des plus grandes plateformes d’analytics du web. Un dashboard en ligne <sup>[&#91;17&#93;](#page-12-28)</sup> affiche les mesures (temps d’exécution à froid/à chaud, temps d’importation des données, taille sur disque) pour plus de 45 bases de données commerciales et de recherche, en date de juin 2024. Les résultats sont soumis par des contributeurs indépendants à partir du jeu de données et des requêtes disponibles publiquement <sup>[&#91;16&#93;](#page-12-29)</sup>. Les requêtes testent des chemins d’accès par scan séquentiel et par scan d’index, et mettent régulièrement en évidence des opérateurs relationnels limités par le CPU, les IO ou la mémoire.
 
@@ -350,9 +342,7 @@ La [figure 11](#page-10-5) montre l’évolution des temps d’exécution de Ver
   <img src="/images/managing-data/core-concepts/_vldb2024_10_Figure_12.webp" alt="Figure 11 : Temps d’exécution à chaud de VersionsBench 2018-2024." />
 </Frame>
 
-<div id="6-2-2-normalized-tables">
-  #### 6.2.2 Tables normalisées
-</div>
+#### 6.2.2 Tables normalisées {#6-2-2-normalized-tables}
 
 Dans les entrepôts de données classiques, les données sont souvent modélisées selon des schémas en étoile ou en flocon. Nous présentons les temps d’exécution des requêtes TPC-H (facteur d’échelle 100), tout en soulignant que les tables normalisées constituent un cas d’usage émergent pour ClickHouse. La [Figure 12](#page-10-6) montre les temps d’exécution à chaud des requêtes TPC-H obtenus avec l’algorithme de jointure par hachage parallèle décrit à la section [4.4.](#page-7-0) Les mesures ont été effectuées sur une seule instance AWS EC2 c6i.16xlarge, avec 64 vCPU, 128 GB de RAM et un disque à 5000 IOPS / 1000 MiB/s. Le meilleur temps parmi cinq exécutions a été retenu. À titre de référence, nous avons effectué les mêmes mesures sur un système Snowflake de taille comparable (taille de warehouse L, 8x8 vCPU, 8x16 GB de RAM). Les résultats de onze requêtes sont exclus du tableau : les requêtes Q2, Q4, Q13, Q17 et Q20-22 incluent des sous-requêtes corrélées, qui ne sont pas prises en charge à ce jour dans ClickHouse v24.6. Les requêtes Q7-Q9 et Q19 dépendent d’optimisations étendues au niveau du plan pour les jointures, comme la réorganisation des jointures et le pushdown des prédicats de jointure (toutes deux absentes à ce jour dans ClickHouse v24.6.), pour atteindre des temps d’exécution acceptables. La décorrélation automatique des sous-requêtes et une meilleure prise en charge des jointures par l’optimiseur sont prévues pour 2024 <sup>[&#91;18&#93;](#page-12-33)</sup>. Parmi les 11 requêtes restantes, 5 (6) s’exécutent plus rapidement dans ClickHouse (Snowflake). Les optimisations mentionnées ci-dessus étant connues pour être essentielles aux performances <sup>[&#91;27&#93;](#page-12-34)</sup>, nous nous attendons à ce qu’une fois implémentées, elles améliorent encore les temps d’exécution de ces requêtes.
 
@@ -362,9 +352,7 @@ Dans les entrepôts de données classiques, les données sont souvent modélisé
   <img src="/images/managing-data/core-concepts/_vldb2024_10_Figure_13.webp" alt="Figure 12 : Temps d’exécution à chaud (en secondes) des requêtes TPC-H." />
 </Frame>
 
-<div id="7-related-work">
-  ## 7 TRAVAUX CONNEXES
-</div>
+## 7 TRAVAUX CONNEXES {#7-related-work}
 
 Les bases de données analytiques suscitent un vif intérêt académique et commercial depuis plusieurs décennies <sup>[&#91;1&#93;](#page-12-35)</sup>. Les premiers systèmes comme Sybase IQ <sup>[&#91;48&#93;](#page-13-28)</sup>, Teradata <sup>[&#91;72&#93;](#page-13-29)</sup>, Vertica <sup>[&#91;42&#93;](#page-12-36)</sup> et Greenplum <sup>[&#91;47&#93;](#page-13-30)</sup> se caractérisaient par des traitements ETL par lots coûteux et une élasticité limitée du fait de leur nature on-premise. Au début des années 2010, l’avènement des entrepôts de données cloud-native et des offres de base de données en tant que service (DBaaS) telles que Snowflake <sup>[&#91;22&#93;](#page-12-37)</sup>, BigQuery <sup>[&#91;49&#93;](#page-13-31)</sup> et Redshift <sup>[&#91;4&#93;](#page-12-38)</sup> a considérablement réduit le coût et la complexité de l’analytique pour les organisations, tout en apportant une haute disponibilité et une mise à l’échelle automatique des ressources. Plus récemment, des noyaux d’exécution analytiques (par ex. Photon <sup>[&#91;5&#93;](#page-12-39)</sup> et Velox <sup>[&#91;62&#93;](#page-13-32)</sup>) proposent un traitement de données réutilisable dans différentes applications analytiques, de streaming et d’apprentissage automatique.
 
@@ -379,7 +367,7 @@ peuvent créer d’autres opérateurs à l’exécution, principalement pour bas
 DuckDB <sup>[&#91;67&#93;](#page-13-6)</sup> est également conçu pour être embarqué dans un processus hôte, mais fournit en plus l’optimisation des requêtes et les transactions. Il a été conçu pour des requêtes OLAP mêlées à des instructions OLTP occasionnelles. DuckDB a donc choisi le format de stockage DataBlocks <sup>[&#91;43&#93;](#page-12-43)</sup>, qui utilise des méthodes de compression légères telles que des dictionnaires préservant l’ordre ou le frame-of-reference <sup>[&#91;2&#93;](#page-12-10)</sup> afin d’obtenir de bonnes performances dans des charges de travail hybrides. En revanche, ClickHouse est optimisé pour des cas d’usage en ajout uniquement, c.-à-d. sans mises à jour ni suppressions, ou avec de très rares mises à jour et suppressions. Les blocs sont compressés à l’aide de techniques lourdes comme LZ4, en partant du principe que les utilisateurs recourent largement à l’élagage des données pour accélérer les requêtes fréquentes et que les coûts d’E/S l’emportent sur les coûts de décompression pour les requêtes restantes. DuckDB fournit également des transactions sérialisables basées sur le schéma MVCC de Hyper <sup>[&#91;55&#93;](#page-13-35)</sup>, tandis que ClickHouse n’offre que l’isolation snapshot.
 
 <div id="8-conclusion-and-outlook">
-  ## 8 CONCLUSION ET PERSPECTIVES
+  ## 8 CONCLUSION ET PERSPECTIVES {#8-conclusion-and-outlook}
 </div>
 
 Nous avons présenté l&#39;architecture de ClickHouse, une base de données OLAP open-source à hautes performances. Reposant sur une couche de stockage optimisée pour l&#39;écriture et un moteur de requête vectorisé de pointe, ClickHouse permet l&#39;analytics en temps réel sur des jeux de données à l&#39;échelle du pétaoctet avec des taux d&#39;ingestion élevés. En fusionnant et en transformant les données de manière asynchrone en arrière-plan, ClickHouse dissocie efficacement la maintenance des données des insertions parallèles. Sa couche de stockage permet un élagage agressif des données à l&#39;aide d&#39;index primaires creux, d&#39;index de saut et de tables de projection. Nous avons décrit l&#39;implémentation, dans ClickHouse, des mises à jour et des suppressions, des insertions idempotentes et de la réplication des données entre nœuds pour assurer une haute disponibilité. La couche de traitement des requêtes optimise les requêtes grâce à un large éventail de techniques et parallélise leur exécution sur l&#39;ensemble des ressources du serveur et du cluster. Les moteurs de table d&#39;intégration et les fonctions offrent un moyen pratique d&#39;interagir en toute transparence avec d&#39;autres systèmes de gestion de données et d&#39;autres formats de données. À travers des benchmarks, nous montrons que ClickHouse figure parmi les bases de données analytiques les plus rapides du marché, et nous avons mis en évidence des améliorations significatives des performances des requêtes typiques dans des déploiements réels de ClickHouse au fil des ans.
@@ -387,13 +375,13 @@ Nous avons présenté l&#39;architecture de ClickHouse, une base de données OLA
 Toutes les fonctionnalités et améliorations prévues pour 2024 figurent sur la feuille de route publique <sup>[&#91;18&#93;](#page-12-33)</sup>. Les améliorations prévues comprennent la prise en charge des transactions utilisateur, de PromQL <sup>[&#91;69&#93;](#page-13-36)</sup> comme query language alternatif, d&#39;un nouveau type de données pour les données semi-structurées (par ex. JSON), de meilleures optimisations des jointures au niveau du plan, ainsi que l&#39;implémentation de mises à jour légères en complément des suppressions légères.
 
 <div id="acknowledgements">
-  ## REMERCIEMENTS
+  ## REMERCIEMENTS {#acknowledgements}
 </div>
 
 Depuis la version 24.6, SELECT * FROM system.contributors renvoie 1994 personnes ayant contribué à ClickHouse. Nous tenons à remercier toute l’équipe d’ingénierie de ClickHouse Inc. ainsi que l’incroyable communauté open-source de ClickHouse pour leur travail acharné et leur engagement à développer cette base de données ensemble.
 
 <div id="references">
-  ## RÉFÉRENCES
+  ## RÉFÉRENCES {#references}
 </div>
 
 <div style={{fontSize: '0.85em', lineHeight: '1.7'}}>

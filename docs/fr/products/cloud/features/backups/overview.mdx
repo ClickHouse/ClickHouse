@@ -13,12 +13,14 @@ import { ScalePlanFeatureBadge } from "/snippets/fr/components/ScalePlanFeatureB
 Les sauvegardes de base de données sont conçues pour vous permettre de restaurer un service à un état antérieur à partir de la dernière sauvegarde réussie.
 
 <div id="backups">
-  ## Sauvegardes
+  ## Sauvegardes {#backups}
 </div>
 
 ### Fonctionnement des sauvegardes dans ClickHouse Cloud {#how-backups-work-in-clickhouse-cloud}
 
-Les sauvegardes de ClickHouse Cloud combinent des sauvegardes « complètes » et « incrémentielles » qui forment une chaîne de sauvegarde. La chaîne commence par une sauvegarde complète, puis des sauvegardes incrémentielles sont effectuées au cours des périodes planifiées suivantes afin de constituer une séquence de sauvegardes. Lorsqu’une chaîne de sauvegarde atteint une certaine longueur, une nouvelle chaîne est créée. L’ensemble de cette chaîne de sauvegardes peut ensuite être utilisé pour restaurer les données vers un nouveau service, si nécessaire. Une fois que toutes les sauvegardes d’une chaîne donnée ont dépassé la durée de rétention définie pour le service (plus d’informations sur la rétention ci-dessous), la chaîne est supprimée.
+Les sauvegardes de ClickHouse Cloud combinent des sauvegardes « complètes » et « incrémentielles » qui forment une chaîne de sauvegarde. La chaîne commence par une sauvegarde complète, puis des sauvegardes incrémentielles sont effectuées au cours des périodes planifiées suivantes afin de constituer une séquence de sauvegardes. Lorsqu’une chaîne de sauvegarde atteint une certaine longueur, une nouvelle chaîne est créée. L’ensemble de cette chaîne de sauvegardes peut ensuite être utilisé pour restaurer les données vers un nouveau service, si nécessaire. Une fois que toutes les sauvegardes d’une chaîne donnée ont dépassé la durée de rétention définie pour le service (plus d’informations sur la rétention ci-dessous), la chaîne est supprimée.
+
+Le nombre de points de restauration ne correspond pas au nombre d’objets de sauvegarde physiques. La sauvegarde complète et les sauvegardes incrémentielles dont dépend un point de restauration sont conservées ensemble, sous forme de chaîne.
 
 Dans la capture d’écran ci-dessous, les carrés en trait plein représentent les sauvegardes complètes et les carrés en pointillés représentent les sauvegardes incrémentielles qui font partie de la chaîne.
 
@@ -27,7 +29,7 @@ Le jour 1, une sauvegarde complète est effectuée pour démarrer la chaîne de 
 <Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Exemple de chaîne de sauvegarde dans ClickHouse Cloud" />
 
 <div id="default-backup-policy">
-  ### Politique de sauvegarde par défaut
+  ### Politique de sauvegarde par défaut {#default-backup-policy}
 </div>
 
 Les sauvegardes sont comptabilisées et facturées séparément du stockage dans les niveaux Basic, Scale et Enterprise.
@@ -36,21 +38,23 @@ Actuellement, les services disposent par défaut d’une sauvegarde quotidienne 
 Voir [&quot;Consulter et restaurer les sauvegardes&quot;](/fr/products/cloud/guides/backups/review-and-restore-backups) pour plus de détails.
 
 <div id="configurable-backups">
-  ## Sauvegardes configurables
+  ## Sauvegardes configurables {#configurable-backups}
 </div>
 
 <ScalePlanFeatureBadge feature="Configurable Backups" linking_verb_are="True" />
 
 ClickHouse Cloud vous permet de configurer la planification de vos sauvegardes pour les services des niveaux **Scale** et **Enterprise**. Les sauvegardes peuvent être configurées selon les paramètres suivants, en fonction de vos besoins métier.
 
-* **Rétention** : la durée, en jours, pendant laquelle chaque sauvegarde sera conservée. La rétention peut être définie entre 1 jour et 45 jours, avec plusieurs valeurs intermédiaires au choix.
-* **Fréquence** : la fréquence vous permet de définir l&#39;intervalle entre deux sauvegardes successives. Par exemple, une fréquence de &quot;toutes les 12 heures&quot; signifie que les sauvegardes seront espacées de 12 heures. La fréquence peut aller de &quot;toutes les 6 heures&quot; à &quot;toutes les 48 heures&quot;, avec les incréments horaires suivants : `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`.
-* **Heure de début** : l&#39;heure à laquelle vous souhaitez planifier les sauvegardes chaque jour. Si vous indiquez une heure de début, la **Fréquence** des sauvegardes sera définie par défaut sur une fois toutes les 24 heures. ClickHouse Cloud démarrera la sauvegarde dans l&#39;heure qui suit l&#39;heure de début spécifiée.
+* **Rétention** : la durée, en jours, pendant laquelle chaque sauvegarde sera conservée. La rétention peut être définie entre 1 jour et 45 jours, avec plusieurs valeurs intermédiaires au choix.
+* **Fréquence** : la fréquence vous permet de définir l&#39;intervalle entre deux sauvegardes successives. Par exemple, une fréquence de &quot;toutes les 12 heures&quot; signifie que les sauvegardes seront espacées de 12 heures. La fréquence peut aller de &quot;toutes les 6 heures&quot; à &quot;toutes les 48 heures&quot;, avec les incréments horaires suivants : `6`, `8`, `12`, `16`, `20`, `24`, `36`, `48`.
+* **Heure de début** : l&#39;heure à laquelle vous souhaitez planifier les sauvegardes chaque jour. Si vous indiquez une heure de début, la **Fréquence** des sauvegardes sera définie par défaut sur une fois toutes les 24 heures. ClickHouse Cloud démarrera la sauvegarde dans l&#39;heure qui suit l&#39;heure de début spécifiée.
+
+La rétention détermine la durée de conservation des données de sauvegarde ; la fréquence détermine l&#39;ancienneté du point de restauration le plus récent, et donc l&#39;objectif de point de récupération (RPO). Par exemple, avec une rétention de 1 jour et une sauvegarde toutes les 48 heures, il existe normalement au moins une sauvegarde restaurable. La sauvegarde restaurable la plus récente peut dater de près de 48 heures, et le service peut disposer d&#39;un ou deux points de restauration tout en conservant la chaîne de sauvegardes nécessaire à leur restauration.
 
 <Note>
   La planification personnalisée remplacera la politique de sauvegarde par défaut de ClickHouse Cloud pour le service concerné.
 
-  Dans certains rares cas, le planificateur de sauvegarde peut ne pas respecter l&#39;**Heure de début** spécifiée pour les sauvegardes. Cela se produit notamment si une sauvegarde réussie a été déclenchée moins de 24 heures avant l&#39;heure de la sauvegarde actuellement planifiée. Cela peut arriver en raison d&#39;un mécanisme de nouvelle tentative mis en place pour les sauvegardes. Dans ce cas, le planificateur ignorera la sauvegarde du jour et réessaiera le lendemain à l&#39;heure planifiée.
+  Dans certains rares cas, le planificateur de sauvegarde peut ne pas respecter l&#39;**Heure de début** spécifiée pour les sauvegardes. Cela se produit notamment si une sauvegarde réussie a été déclenchée moins de 24 heures avant l&#39;heure de la sauvegarde actuellement planifiée. Cela peut arriver en raison d&#39;un mécanisme de nouvelle tentative mis en place pour les sauvegardes. Dans ce cas, le planificateur ignorera la sauvegarde du jour et réessaiera le lendemain à l&#39;heure planifiée.
 </Note>
 
 Consultez [&quot;Configurer les planifications de sauvegarde&quot;](/fr/products/cloud/guides/backups/configurable-backups) pour savoir comment configurer vos sauvegardes.

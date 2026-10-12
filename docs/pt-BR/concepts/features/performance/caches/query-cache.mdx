@@ -10,7 +10,7 @@ O cache de consultas permite processar consultas `SELECT` apenas uma vez e atend
 Dependendo do tipo de consulta, isso pode reduzir drasticamente a latência e o consumo de recursos do servidor ClickHouse.
 
 <div id="background-design-and-limitations">
-  ## Contexto, design e limitações
+  ## Contexto, design e limitações {#background-design-and-limitations}
 </div>
 
 Os caches de consultas geralmente podem ser classificados como transacionalmente consistentes ou inconsistentes.
@@ -32,17 +32,16 @@ O cache transacionalmente inconsistente é tradicionalmente fornecido por ferram
 configuração costuma ser duplicada. Com o cache de consultas do ClickHouse, a lógica de cache passa para o lado do servidor. Isso reduz o esforço
 de manutenção e evita redundância.
 
-<div id="configuration-settings-and-usage">
-  ## Configurações e uso
-</div>
+## Configurações e uso {#configuration-settings-and-usage}
 
 <Note>
   No ClickHouse Cloud, você deve usar [configurações em nível de consulta](/pt-BR/concepts/features/configuration/settings/settings-query-level) para editar as configurações do cache de consultas. No momento, não há suporte para editar [configurações em nível de configuração](/pt-BR/concepts/features/configuration/server-config/configuration-files).
 </Note>
 
 <Note>
-  O [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local) executa uma única consulta por vez. Como o cache de resultados de consultas não faz sentido, o
-  cache de resultados de consultas fica desativado no clickhouse-local.
+  O [clickhouse-local](/pt-BR/concepts/features/tools-and-utilities/clickhouse-local) executa uma única consulta por vez. Como armazenar em cache resultados de consultas na memória não faz sentido
+  para um único processo, o cache de consultas em memória fica desativado no clickhouse-local. O [cache de consultas em disco](#query-cache-on-disk) está disponível: suas entradas ficam em um
+  cache do sistema de arquivos em disco, de modo que os resultados armazenados em cache por um processo do clickhouse-local podem ser reaproveitados por processos posteriores que usem o mesmo diretório do cache do sistema de arquivos.
 </Note>
 
 A configuração [use&#95;query&#95;cache](/pt-BR/reference/settings/session-settings/use-query#use_query_cache) pode ser usada para controlar se uma consulta específica ou todas as consultas da
@@ -82,23 +81,26 @@ use_query_cache = true`), mas é preciso ter em mente que todas as consultas `SE
 O cache de consultas pode ser limpo usando a instrução `SYSTEM CLEAR QUERY CACHE`. O conteúdo do cache de consultas é exibido na tabela de sistema
 [system.query&#95;cache](/pt-BR/reference/system-tables/query_cache). O número de acertos e falhas do cache de consultas desde a inicialização do banco de dados é mostrado como eventos
 &quot;QueryCacheHits&quot; e &quot;QueryCacheMisses&quot; na tabela de sistema [system.events](/pt-BR/reference/system-tables/events). Ambos os contadores são atualizados apenas para
-consultas `SELECT` executadas com a configuração `use_query_cache = true`; outras consultas não afetam &quot;QueryCacheMisses&quot;. O campo `query_cache_usage`
+consultas `SELECT` executadas com a configuração `use_query_cache = true`; outras consultas não afetam &quot;QueryCacheMisses&quot;. Eles descrevem o cache de consultas
+como um todo: com o cache de consultas em disco habilitado (veja abaixo), uma consulta que não é encontrada na memória e é então atendida a partir do disco conta como
+um &quot;QueryCacheHits&quot;, e uma consulta que não é encontrada em nenhum dos dois backends conta como um &quot;QueryCacheMisses&quot;. O campo `query_cache_usage`
 na tabela de sistema [system.query&#95;log](/pt-BR/reference/system-tables/query_log) mostra, para cada consulta executada, se o resultado da consulta foi gravado no
 cache de consultas ou lido dele. As métricas `QueryCacheEntries` e `QueryCacheBytes` na tabela de sistema
-[system.metrics](/pt-BR/reference/system-tables/metrics) mostram quantas entradas / bytes o cache de consultas contém no momento.
+[system.metrics](/pt-BR/reference/system-tables/metrics) mostram quantas entradas / bytes o cache de consultas em memória contém no momento. Elas
+não contabilizam as entradas do [cache de consultas em disco](#query-cache-on-disk), que atualmente não possui métricas de ocupação.
 
 O cache de consultas existe uma vez por processo do servidor ClickHouse. No entanto, por padrão, os resultados em cache não são compartilhados entre usuários. Isso pode ser
 alterado (veja abaixo), mas não é recomendado por motivos de segurança.
 
-Os resultados das consultas são referenciados no cache de consultas pela [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) de
-cada consulta. Isso significa que o cache não diferencia maiúsculas de minúsculas; por exemplo, `SELECT 1` e `select 1` são tratados como a mesma consulta. Para
-tornar a correspondência mais natural, todas as configurações no nível da consulta relacionadas ao cache de consultas e à [formatação de saída](/pt-BR/reference/settings/formats))
+Os resultados de consulta são referenciados no cache de consultas pela [Abstract Syntax Tree (AST)](https://en.wikipedia.org/wiki/Abstract_syntax_tree) de
+sua consulta. Isso significa que o caching não diferencia maiúsculas de minúsculas; por exemplo, `SELECT 1` e `select 1` são tratadas como a mesma consulta. Para
+tornar a correspondência mais natural, todas as configurações em nível de consulta relacionadas ao cache de consultas e à [formatação de saída](/pt-BR/reference/settings/formats))
 são removidas da AST.
 
-Se a consulta foi interrompida devido a uma exceção ou a um cancelamento pelo usuário, nenhuma entrada é gravada no cache de consultas.
+Se a consulta for abortada devido a uma exceção ou a um cancelamento pelo usuário, nenhuma entrada será gravada no cache de consultas.
 
 O tamanho do cache de consultas em bytes, o número máximo de entradas de cache e o tamanho máximo de entradas individuais de cache (em bytes e em
-registros) podem ser configurados usando diferentes [opções de configuração do servidor](/pt-BR/reference/settings/server-settings/settings/query#query_cache).
+registros) podem ser configurados por meio de diferentes [opções de configuração do servidor](/pt-BR/reference/settings/server-settings/settings/query#query_cache).
 
 ```xml
 <query_cache>
@@ -109,9 +111,10 @@ registros) podem ser configurados usando diferentes [opções de configuração 
 </query_cache>
 ```
 
-Também é possível limitar o uso do cache por usuários individuais usando [perfis de configurações](/pt-BR/concepts/features/configuration/settings/settings-profiles) e [restrições de
+Também é possível limitar o uso do cache por usuários individuais usando [settings profiles](/pt-BR/concepts/features/configuration/settings/settings-profiles) e [restrições de
 configurações](/pt-BR/concepts/features/configuration/settings/constraints-on-settings). Mais especificamente, você pode restringir a quantidade máxima de memória (em bytes) que um usuário pode
-alocar no cache de consultas e o número máximo de resultados de consulta armazenados. Para isso, primeiro defina as configurações
+alocar no cache de consultas em memória e o número máximo de resultados de consulta armazenados (esses limites não se aplicam ao [cache de consultas em
+disco](#query-cache-on-disk)). Para isso, primeiro defina as configurações
 [query&#95;cache&#95;max&#95;size&#95;in&#95;bytes](/pt-BR/reference/settings/session-settings/query-cache#query_cache_max_size_in_bytes) e
 [query&#95;cache&#95;max&#95;entries](/pt-BR/reference/settings/session-settings/query-cache#query_cache_max_entries) em um perfil de usuário no `users.xml` e, em seguida, torne ambas as configurações
 somente leitura:
@@ -174,9 +177,7 @@ SELECT 1 SETTINGS use_query_cache = true, query_cache_tag = 'tag 2';
 
 Para remover apenas as entradas com a tag `tag` do cache de consultas, você pode usar a instrução `SYSTEM CLEAR QUERY CACHE TAG 'tag'`.
 
-<div id="subquery-caching">
-  ## Armazenamento em cache de subconsultas
-</div>
+## Armazenamento em cache de subconsultas {#subquery-caching}
 
 Por padrão, `use_query_cache` na consulta externa não é propagado para as subconsultas. Isso significa que cada subconsulta deve habilitar explicitamente o armazenamento em cache:
 
@@ -206,7 +207,7 @@ WHERE number > 500
 SETTINGS use_query_cache = true, query_cache_for_subqueries = true;
 ```
 
-As entradas de cache de subconsultas são visíveis em [system.query&#95;cache](/pt-BR/reference/system-tables/query_cache) com `is_subquery = 1`. A configuração `query_cache_ttl` também se aplica às entradas de cache de subconsultas e pode ser definida para cada subconsulta.
+As entradas de cache de subconsultas do cache de consultas em memória são visíveis em [system.query&#95;cache](/pt-BR/reference/system-tables/query_cache) com `is_subquery = 1`. Os resultados de subconsultas também são armazenados em cache em disco se o [cache de consultas em disco](#query-cache-on-disk) estiver habilitado, mas essas entradas não são exibidas em `system.query_cache`. A configuração `query_cache_ttl` também se aplica às entradas de cache de subconsultas e pode ser definida para cada subconsulta.
 
 O ClickHouse lê os dados da tabela em blocos de [max&#95;block&#95;size](/pt-BR/reference/settings/session-settings/max#max_block_size) linhas. Devido à filtragem, agregação,
 etc., os blocos de resultado normalmente são muito menores que &#39;max&#95;block&#95;size&#39;, mas também há casos em que são bem maiores. A configuração
@@ -241,17 +242,90 @@ Além disso, os resultados de consultas com funções não determinísticas não
 Para forçar o armazenamento em cache dos resultados de consultas com funções não determinísticas mesmo assim, use a configuração
 [query&#95;cache&#95;nondeterministic&#95;function&#95;handling](/pt-BR/reference/settings/session-settings/query-cache#query_cache_nondeterministic_function_handling).
 
-Os resultados de consultas que envolvem tabelas de sistema (por exemplo, [system.processes](/pt-BR/reference/system-tables/processes)&#96; ou
-[information&#95;schema.tables](/pt-BR/reference/system-tables/information_schema)) não são armazenados em cache por padrão. Para forçar o armazenamento em cache dos resultados de consultas com
-tabelas de sistema mesmo assim, use a configuração [query&#95;cache&#95;system&#95;table&#95;handling](/pt-BR/reference/settings/session-settings/query-cache#query_cache_system_table_handling).
+Resultados de consultas que envolvem tabelas de sistema (por exemplo, [system.processes](/pt-BR/reference/system-tables/processes)&#96; ou
+[information&#95;schema.tables](/pt-BR/reference/system-tables/information_schema)) não são armazenados em cache por padrão. Para forçar mesmo assim o armazenamento em cache de resultados de consultas com
+tabelas de sistema, use a configuração [query&#95;cache&#95;system&#95;table&#95;handling](/pt-BR/reference/settings/session-settings/query-cache#query_cache_system_table_handling).
 
 Por fim, as entradas no cache de consultas não são compartilhadas entre usuários por motivos de segurança. Por exemplo, o usuário A não deve conseguir contornar uma
 ROW POLICY em uma tabela executando a mesma consulta que outro usuário B para quem essa política não existe. No entanto, se necessário, as entradas de cache podem
 ser marcadas como acessíveis a outros usuários (isto é, compartilhadas) informando a configuração
 [query&#95;cache&#95;share&#95;between&#95;users](/pt-BR/reference/settings/session-settings/query-cache#query_cache_share_between_users).
 
+## Cache de consultas em disco {#query-cache-on-disk}
+
+Por padrão, o cache de consultas mantém suas entradas em memória. Além disso, os resultados de consultas também podem ser armazenados em cache em disco, com suporte de um
+[cache do sistema de arquivos](/pt-BR/concepts/features/configuration/server-config/storing-data#using-local-cache). Em comparação com o cache de consultas em memória, o cache de consultas em
+disco oferece mais espaço e persiste após reinicializações do servidor. Uma entrada só é servida pela mesma compilação do servidor que a gravou: após um
+upgrade ou downgrade, as entradas gravadas pela compilação anterior resultam em falhas de cache e acabam sendo sobrescritas ou removidas.
+
+Para usar o cache de consultas em disco, primeiro configure um cache do sistema de arquivos na seção `filesystem_caches` da configuração do servidor:
+
+```xml
+<filesystem_caches>
+    <query_results>
+        <path>query_results_cache/</path>
+        <max_size>10Gi</max_size>
+    </query_results>
+</filesystem_caches>
+```
+
+em seguida, especifique o nome dele na configuração `query_cache_on_disk_cache_name`:
+
+```sql
+SELECT some_expensive_calculation(column_1, column_2)
+FROM table
+SETTINGS use_query_cache = true, query_cache_on_disk_cache_name = 'query_results';
+```
+
+O cache de consultas em disco funciona de forma independente do cache de consultas em memória e pode ser habilitado separadamente para leituras e/ou gravações usando as
+configurações `enable_reads_from_query_cache_on_disk` e `enable_writes_to_query_cache_on_disk` (ambas `true`
+por padrão). Se as leituras estiverem habilitadas para ambos os caches, a consulta é feita primeiro na memória e, somente em caso de falha de cache, no disco. Se as gravações
+estiverem habilitadas para ambos os caches, o resultado é armazenado em ambos. Se nenhum cache puder armazenar o resultado (por exemplo, no `clickhouse-local`, que não possui
+cache de consultas em memória, com `enable_writes_to_query_cache_on_disk = false`), a consulta não é rejeitada por causa de funções não determinísticas,
+tabelas de sistema ou de um modo de overflow diferente de `throw`: essas verificações servem apenas para evitar o armazenamento de resultados incorretos. As entradas em disco são comprimidas com o codec especificado pela configuração
+`query_cache_on_disk_codec` (`ZSTD(3)` por padrão). As configurações de servidor `max_entry_size_in_bytes` e `max_entry_size_in_rows` do
+cache de consultas limitam as entradas de ambos os backends; cada backend mede uma entrada da forma como a armazena, de modo que, em disco, o limite de bytes se aplica
+à entrada serializada e comprimida. Definir qualquer uma delas como 0 desabilita as gravações em ambos os backends. Todas as
+demais configurações do cache de consultas (por exemplo, `query_cache_ttl`, `query_cache_min_query_duration`) se aplicam ao cache de consultas em disco da mesma forma que
+ao cache de consultas em memória, com as duas exceções a seguir.
+
+As configurações `query_cache_max_size_in_bytes` e `query_cache_max_entries` são limites por usuário que se aplicam apenas ao cache de consultas em memória. Elas
+não são aplicadas ao cache de consultas em disco: as entradas em disco são limitadas pelo tamanho do cache do sistema de arquivos configurado e removidas de acordo com as regras dele
+(veja abaixo), de modo que um usuário com um settings profile restritivo ainda pode armazenar mais resultados em disco do que essas configurações permitem em
+memória. Isso é intencional — o cache do sistema de arquivos é um recurso compartilhado e de tamanho limitado, no qual o cache de consultas em disco não reserva
+espaço.
+
+A configuração `query_cache_share_between_users` é outra exceção: ela tem o mesmo significado para ambos os backends — uma entrada gravada com ela é servida
+a todos os usuários —, mas as entradas não compartilhadas são isoladas de forma diferente. O cache de consultas em memória mantém uma única entrada por consulta e a rejeita
+na leitura se ela pertencer a outro usuário, de modo que uma entrada não compartilhada do usuário A sobrepõe-se às gravações do usuário B até que a entrada expire ou seja
+removida. Já o cache de consultas em disco inclui o usuário e o conjunto de funções atuais dele na chave de uma entrada não compartilhada, de modo que
+o usuário B não encontra a entrada do usuário A e armazena sua própria cópia do resultado. O mesmo vale para um único usuário com diferentes conjuntos de funções
+atuais, por exemplo, após `SET ROLE`: as funções carregam privilégios e row policies, portanto os resultados calculados com funções diferentes são armazenados em cache
+separadamente.
+
+As entradas do cache de consultas em disco são entradas comuns do cache do sistema de arquivos, indistinguíveis de outros dados armazenados em cache no
+mesmo cache do sistema de arquivos: elas não são protegidas contra exclusão e são removidas pelas mesmas regras (por exemplo, least-recently-used) quando o
+cache do sistema de arquivos fica sem espaço. Não há limites específicos para o tamanho total ou a quantidade dessas entradas; valem apenas os limites do próprio
+cache do sistema de arquivos. A instrução `SYSTEM CLEAR QUERY CACHE` (e `SYSTEM CLEAR QUERY CACHE TAG 'tag'`) também remove as entradas (com a
+tag informada; entradas corrompidas e entradas em formato incompatível são removidas independentemente da tag) do cache de consultas em disco do
+cache do sistema de arquivos selecionado pela configuração `query_cache_on_disk_cache_name` da sessão
+(por exemplo, após `SET query_cache_on_disk_cache_name = 'query_results'`), mantendo intactos os demais dados do cache do sistema de arquivos. Para
+encontrar as entradas, ela percorre os metadados de todos os segmentos de arquivo do cache do sistema de arquivos (em memória, sem ler do disco) e lê
+o cabeçalho de cada chave marcada como entrada do cache de consultas. Essa varredura leva um tempo proporcional ao número de segmentos de arquivo no
+cache do sistema de arquivos; por isso, um cache do sistema de arquivos dedicado a resultados de consultas mantém o custo de `SYSTEM CLEAR QUERY CACHE` baixo. Se o
+cache do sistema de arquivos já tiver removido o início de uma entrada, o restante dela permanece armazenado até que o cache do sistema de arquivos
+o remova ou que o mesmo resultado de consulta seja gravado novamente, mas ele nunca é retornado. Uma entrada
+que ainda está sendo gravada também é mantida. A instrução `SYSTEM DROP FILESYSTEM CACHE '<name>'` remove essas entradas junto
+com todo o restante do cache do sistema de arquivos. A tabela de sistema
+[system.query&#95;cache](/pt-BR/reference/system-tables/query_cache) e as métricas `QueryCacheEntries` e `QueryCacheBytes` mostram apenas as
+entradas do cache de consultas em memória. O número de acertos e
+falhas do cache de consultas em disco é exibido nos eventos &quot;QueryCacheOnDiskHits&quot; e &quot;QueryCacheOnDiskMisses&quot; da tabela de sistema
+[system.events](/pt-BR/reference/system-tables/events). Esses eventos refletem apenas o backend em disco, enquanto &quot;QueryCacheHits&quot; e
+&quot;QueryCacheMisses&quot; continuam sendo os contadores do cache de consultas como um todo, e &quot;QueryCacheAgeSeconds&quot; contabiliza acertos de ambos os backends. O
+cache em memória é verificado primeiro, portanto o número de acertos em memória é &quot;QueryCacheHits&quot; menos &quot;QueryCacheOnDiskHits&quot;.
+
 <div id="related-content">
-  ## Conteúdo relacionado
+  ## Conteúdo relacionado {#related-content}
 </div>
 
 * Blog: [Conheça o cache de consultas do ClickHouse](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

@@ -19,9 +19,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Этот подход позволяет клиентам управлять всем доступом к своим S3 бакетам в одном месте (в политике IAM для принимаемой роли), не просматривая все политики бакетов, чтобы добавить или удалить доступ.
 В разделе ниже вы узнаете, как это настроить.
 
-<div id="obtaining-the-clickhouse-service-iam-role-arn">
-  ## Получение ARN роли IAM вашего сервиса ClickHouse
-</div>
+## Получение ARN роли IAM вашего сервиса ClickHouse {#obtaining-the-clickhouse-service-iam-role-arn}
 
 1. Войдите в свой аккаунт ClickHouse Cloud.
 
@@ -36,7 +34,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Получение ARN роли IAM сервиса ClickHouse" border />
 
 <div id="setting-up-iam-assume-role">
-  ## Настройка IAM Assume Role
+  ## Настройка IAM Assume Role {#setting-up-iam-assume-role}
 </div>
 
 IAM Assume Role можно настроить одним из двух способов:
@@ -45,7 +43,7 @@ IAM Assume Role можно настроить одним из двух спос�
 * [Создав роль IAM вручную](#option-2-manually-create-iam-role)
 
 <div id="option-1-deploying-with-cloudformation-stack">
-  ### Развертывание с помощью стека CloudFormation
+  ### Развертывание с помощью стека CloudFormation {#option-1-deploying-with-cloudformation-stack}
 </div>
 
 1. Войдите в свою учетную запись AWS в браузере под пользователем IAM, у которого есть права на создание роли IAM и управление ею.
@@ -84,7 +82,7 @@ IAM Assume Role можно настроить одним из двух спос�
 <Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="Вывод стека CloudFormation с IAM Role ARN" border />
 
 <div id="option-2-manually-create-iam-role">
-  ### Создайте роль IAM вручную
+  ### Создайте роль IAM вручную {#option-2-manually-create-iam-role}
 </div>
 
 1. Войдите в свой аккаунт AWS в браузере под пользователем IAM, у которого есть права на создание и управление ролью IAM.
@@ -140,9 +138,7 @@ IAM Assume Role можно настроить одним из двух спос�
 
 4. После создания скопируйте новый **ARN роли IAM** — он понадобится для доступа к вашему **S3 бакету**.
 
-<div id="access-your-s3-bucket-with-the-clickhouseaccess-role">
-  ## Получите доступ к S3 бакету с ролью ClickHouseAccess
-</div>
+## Получите доступ к S3 бакету с ролью ClickHouseAccess {#access-your-s3-bucket-with-the-clickhouseaccess-role}
 
 ClickHouse Cloud позволяет указывать `extra_credentials` в табличной функции S3.
 Ниже приведён пример выполнения запроса с использованием только что созданной роли, скопированной выше.
@@ -153,6 +149,7 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
 
 Ниже приведён пример запроса, в котором `role_session_name` используется в качестве общего секрета для запроса данных из бакета.
 Если `role_session_name` указан неверно, эта операция завершится ошибкой.
+Поскольку `role_session_name` может выступать в роли общего секрета, ClickHouse, как и в случае с `external_id`, скрывает его значение, заменяя на `[HIDDEN]` в `system.query_log`, `SHOW CREATE TABLE` и везде, где отображается текст запроса.
 
 ```sql
 DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWithNames',extra_credentials(role_arn = 'arn:aws:iam::111111111111:role/ClickHouseAccessRole-001', role_session_name = 'secret-role-name'))
@@ -163,9 +160,7 @@ DESCRIBE TABLE s3('https://s3.amazonaws.com/BUCKETNAME/BUCKETOBJECT.csv','CSVWit
   Подробнее см. в разделе [Тарифы S3](https://aws.amazon.com/s3/pricing/)
 </Note>
 
-<div id="advanced-action-control">
-  ## Расширенный контроль действий
-</div>
+## Расширенный контроль действий {#advanced-action-control}
 
 Для более строгого управления доступом можно ограничить политику бакета так, чтобы она принимала только запросы, поступающие через конечные точки VPC ClickHouse Cloud, с помощью [условия `aws:SourceVpce`](https://docs.aws.amazon.com/AmazonS3/latest/userguide/example-bucket-policies-vpc-endpoint.html#example-bucket-policies-restrict-accesss-vpc-endpoint). Чтобы получить конечные точки VPC для вашего региона ClickHouse Cloud, откройте терминал и выполните:
 

@@ -8,7 +8,7 @@ doc_type: 'referência'
 ---
 
 <div id="overview">
-  ## Visão geral
+  ## Visão geral {#overview}
 </div>
 
 Os protocolos componíveis permitem configurar com mais flexibilidade o acesso TCP ao
@@ -16,7 +16,7 @@ servidor ClickHouse. Essa configuração pode coexistir com a configuração
 convencional ou substituí-la.
 
 <div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
-  ## Configurando protocolos componíveis
+  ## Configurando protocolos componíveis {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
 </div>
 
 Os protocolos componíveis podem ser configurados em um arquivo de configuração XML. A seção de protocolos
@@ -29,7 +29,7 @@ Os protocolos componíveis podem ser configurados em um arquivo de configuraçã
 ```
 
 <div id="basic-modules-define-protocol-layers">
-  ### Configurando camadas de protocolo
+  ### Configurando camadas de protocolo {#basic-modules-define-protocol-layers}
 </div>
 
 Você pode definir camadas de protocolo usando módulos base. Por exemplo, para definir uma
@@ -65,7 +65,7 @@ Os módulos podem ser configurados da seguinte forma:
 </Note>
 
 <div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
-  ### Configurando endpoints
+  ### Configurando endpoints {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
 </div>
 
 Os endpoints (portas de escuta) são representados pelas tags `<port>` e `<host>` opcionais.
@@ -90,7 +90,7 @@ poderíamos modificar nossa configuração da seguinte forma:
 Se a tag `<host>` for omitida, será usada a `<listen_host>` da configuração raiz.
 
 <div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
-  ### Configurando sequências de camadas
+  ### Configurando sequências de camadas {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
 </div>
 
 As sequências de camadas são definidas com a tag `<impl>`, fazendo referência a outro
@@ -117,7 +117,7 @@ podemos ajustar ainda mais a configuração da seguinte forma:
 ```
 
 <div id="endpoint-can-be-attached-to-any-layer">
-  ### Associando endpoints às camadas
+  ### Associando endpoints às camadas {#endpoint-can-be-attached-to-any-layer}
 </div>
 
 Endpoints podem ser associados a qualquer camada. Por exemplo, podemos definir endpoints para
@@ -143,7 +143,7 @@ HTTP (porta 8123) e HTTPS (porta 8443):
 ```
 
 <div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
-  ### Definição de endpoints adicionais
+  ### Definição de endpoints adicionais {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
 </div>
 
 É possível definir endpoints adicionais referenciando qualquer módulo e omitindo a
@@ -176,7 +176,7 @@ módulo `plain_http` da seguinte forma:
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### Handlers HTTP personalizados por endpoint
+  ### Handlers HTTP personalizados por endpoint {#custom-http-handlers-per-endpoint}
 </div>
 
 Por padrão, todas as entradas do protocolo `type=http` compartilham a mesma
@@ -231,9 +231,7 @@ A seção de handlers personalizados segue o mesmo formato de
 As alterações na seção de handlers personalizados são detectadas durante a recarga da configuração, e o
 endpoint correspondente é reiniciado automaticamente.
 
-<div id="default-session-user-per-endpoint">
-  ### Usuário de sessão padrão por endpoint
-</div>
+### Usuário de sessão padrão por endpoint {#default-session-user-per-endpoint}
 
 Quando um cliente se conecta sem especificar um nome de usuário (por exemplo, uma requisição HTTP
 sem o parâmetro `user` ou um pacote `Hello` do protocolo nativo com um nome de usuário
@@ -278,9 +276,7 @@ particular, um `default_session_user` vazio não os rejeita. Ela não pode ser u
 protocolo `interservidor`: as conexões interservidor são autenticadas pelo Secret do cluster
 e pelo usuário inicial e nunca usam o usuário de sessão padrão.
 
-<div id="some-modules-can-contain-specific-for-its-layer-parameters">
-  ### Especificando parâmetros adicionais da camada
-</div>
+### Especificando parâmetros adicionais da camada {#some-modules-can-contain-specific-for-its-layer-parameters}
 
 Alguns módulos podem conter parâmetros adicionais de camada. Por exemplo, a camada TLS
 permite especificar uma chave privada (`privateKeyFile`) e arquivos de certificado (`certificateFile`)
@@ -306,3 +302,7 @@ da seguinte forma:
 
 </protocols>
 ```
+
+Uma camada TLS também pode definir `cipherList` e `cipherSuites`, mas esses parâmetros só têm efeito quando a camada
+tem seu próprio `privateKeyFile` (e `certificateFile`, se o certificado estiver em um arquivo separado). Um
+`cipherSuites` não vazio em uma camada sem esses parâmetros causa um erro na inicialização.

@@ -18,9 +18,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   تشرح هذه الصفحة كيفية ربط أنظمة production الخاصة بك بـ Postgres. إذا كنت تريد طريقة سريعة لتنفيذ query، فيمكنك الاتصال من خلال [SQL Console](/ar/integrations/connectors/sql-clients/sql-console)، تمامًا كما تفعل مع مثيلات ClickHouse.
 </Tip>
 
-<div id="accessing-connection-details">
-  ## الوصول إلى تفاصيل الاتصال
-</div>
+## الوصول إلى تفاصيل الاتصال {#accessing-connection-details}
 
 لتوصيل تطبيقاتك بـ ClickHouse Managed Postgres، انتقل إلى عرض **Connect** في الشريط الجانبي الأيسر للمثيل.
 
@@ -40,7 +38,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يوفّر ClickHouse Managed Postgres صلاحيات superuser على قاعدة البيانات. استخدم بيانات الاعتماد هذه للاتصال بصفة superuser، ما يتيح لك إنشاء مستخدمين إضافيين وإدارة كائنات قاعدة البيانات.
 
 <div id="connection-string">
-  ## تنسيقات سلسلة الاتصال
+  ## تنسيقات سلسلة الاتصال {#connection-string}
 </div>
 
 توفّر علامات التبويب **الاتصال عبر** سلسلة اتصالك بعدة تنسيقات لتناسب متطلبات تطبيقك:
@@ -55,9 +53,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لدواعٍ أمنية، تكون كلمة المرور في سلاسل الاتصال مخفية افتراضيًا. انقر على أيقونة النسخ بجوار أي حقل أو سلسلة اتصال لنسخها مباشرةً إلى الحافظة.
 
-<div id="pgbouncer">
-  ## تجميع الاتصالات عبر PgBouncer
-</div>
+## تجميع الاتصالات عبر PgBouncer {#pgbouncer}
 
 يتضمن ClickHouse Managed Postgres مثيل [PgBouncer](https://www.pgbouncer.org/) مضمّنًا لتجميع الاتصالات على جانب الخادم. يساعد PgBouncer في تحسين إدارة الاتصالات والأداء واستغلال الموارد، خاصةً للتطبيقات التي:
 
@@ -70,19 +66,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 <Tip>
   **متى تستخدم PgBouncer**
 
-  استخدم PgBouncer عندما يفتح تطبيقك عددًا كبيرًا من الاتصالات قصيرة العمر. أما إذا كانت الاتصالات طويلة الأمد أو كان تطبيقك يستخدم ميزات في PostgreSQL غير متوافقة مع تجميع الاتصالات (مثل العبارات المُحضّرة عبر المعاملات)، فاتصل مباشرةً.
+  استخدم PgBouncer عندما يفتح تطبيقك عددًا كبيرًا من الاتصالات قصيرة العمر. تعمل العبارات المُحضّرة على مستوى البروتوكول عبر PgBouncer؛ راجع [العبارات المُحضّرة عبر PgBouncer](/ar/products/managed-postgres/faq#prepared-statement-errors). أما في حالة الاتصالات طويلة الأمد، وعمليات الترحيل، والتطبيقات التي تعتمد على ميزات على مستوى الجلسة لا تعمل مع تجميع المعاملات، مثل أوامر `SET` على مستوى الجلسة، والأقفال الاستشارية على مستوى الجلسة، و`LISTEN`، و`PREPARE` على مستوى SQL، فاتصل مباشرةً.
 
   نقل البيانات إلى ClickHouse باستخدام ClickPipes غير مدعوم عبر PgBouncer.
 </Tip>
 
-<div id="tls">
-  ## تهيئة TLS
-</div>
+## تهيئة TLS {#tls}
 
 جميع مثيلات ClickHouse Managed Postgres مؤمّنة باستخدام TLS. وأدنى إصدار مدعوم هو **TLS 1.3**.
 
 <div id="quick-connection">
-  ### اتصال سريع (مشفّر باستخدام TLS)
+  ### اتصال سريع (مشفّر باستخدام TLS) {#quick-connection}
 </div>
 
 تستخدم الاتصالات، افتراضيًا، تشفير TLS من دون التحقق من الشهادة:
@@ -91,9 +85,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres'
 ```
 
-<div id="verified-tls">
-  ### اتصال TLS مع التحقق (موصى به لبيئات الإنتاج)
-</div>
+### اتصال TLS مع التحقق (موصى به لبيئات الإنتاج) {#verified-tls}
 
 بالنسبة إلى أحمال العمل في بيئات الإنتاج، نوصي بالاتصال عبر TLS مع التحقق لضمان أنك تتواصل مع الخادم الصحيح. للقيام بذلك، نزّل حزمة شهادة CA من علامة التبويب **Settings** وأضِفها إلى الشهادات الموثوق بها لدى عميل قاعدة البيانات لديك.
 

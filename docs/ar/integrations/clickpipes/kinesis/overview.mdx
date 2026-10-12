@@ -15,7 +15,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 يمكن نشر ClickPipes لـ Kinesis وإدارتها يدويًا عبر ClickPipes UI، وكذلك برمجيًا باستخدام [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) و[Terraform](/ar/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="prerequisite">
-  ## المتطلبات الأساسية
+  ## المتطلبات الأساسية {#prerequisite}
 </div>
 
 يُفترض أنك اطّلعت على [مقدمة ClickPipes](/ar/integrations/clickpipes/home) وأعددت [بيانات اعتماد IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) أو [دور IAM](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html). اتبع [دليل الوصول المستند إلى الأدوار في Kinesis](/ar/integrations/clickpipes/kinesis/auth) للحصول على معلومات حول كيفية إعداد دور يعمل مع ClickHouse Cloud.
@@ -38,11 +38,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="املأ تفاصيل الاتصال" size="lg" border />
 
-5. حدِّد تدفق Kinesis و**تنسيق البيانات** وإزاحة البدء. بالنسبة إلى `Protobuf`، ارفع ملف `.proto` أو `FileDescriptorSet` مُسلسلًا (بحد أقصى 768 KiB). ولا يُشترط وجود schema registry.
+5. حدِّد دفق Kinesis و**صيغة البيانات** وإزاحة البدء. تدعم ClickPipes الخاصة بـ Kinesis صيغ JSON وAvro وProtobuf. بالنسبة إلى `Protobuf`، ارفع ملف `.proto` أو `FileDescriptorSet` مُسلسلًا (بحد أقصى 768 KiB)، أو قم بتهيئة AWS Glue Schema Registry. أما بالنسبة إلى Avro، فقم بتهيئة AWS Glue Schema Registry. ولا تجمع بين مخطط Protobuf مرفوع وسجل مخططات.
 
-   تعرض واجهة المستخدم بيانات العينة من التدفق المحدد. ويكون خيار **Use Kinesis Enhanced Fan-Out** مُمكّنًا افتراضيًا. راجع [توثيق Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) لمزيد من التفاصيل.
+   تعرض واجهة المستخدم بيانات العينة من الدفق المحدد. ويكون خيار **Use Kinesis Enhanced Fan-Out** مُمكّنًا افتراضيًا. راجع [توثيق Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) لمزيد من التفاصيل.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="تعيين تنسيق البيانات والموضوع" size="lg" border />
+<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="تعيين صيغة البيانات والموضوع" size="lg" border />
 
 6. في الخطوة التالية، يمكنك اختيار ما إذا كنت تريد إدخال البيانات إلى جدول ClickHouse جديد أو إعادة استخدام جدول موجود. اتبع الإرشادات الظاهرة على الشاشة لتعديل اسم الجدول والمخطط والإعدادات. ويمكنك رؤية معاينة فورية لتغييراتك في الجدول النموذجي بالأعلى.
 
@@ -60,7 +60,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 **الأذونات:** سيُنشئ ClickPipes مستخدمًا مخصصًا لكتابة البيانات إلى الجدول الوجهة. يمكنك تحديد دور لهذا المستخدم الداخلي باستخدام دور مخصص أو أحد الأدوار المعرّفة مسبقًا:
 
-* `Full access`: وصول كامل إلى العنقود. قد يكون ذلك مفيدًا إذا كنت تستخدم عرض مُجسَّد أو Dictionary مع الجدول الوجهة.
+* `Full access`: وصول كامل إلى العنقود. قد يكون ذلك مفيدًا إذا كنت تستخدم عرض مُجسَّد أو Dictionary مع الجدول الوجهة.
   * `Only destination table`: مع أذونات `INSERT` على الجدول الوجهة فقط.
 
 <Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="الأذونات" border />
@@ -82,16 +82,23 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 10. **تهانينا!** لقد أعددت أول ClickPipe بنجاح. إذا كان هذا ClickPipe من نوع streaming، فسيستمر في العمل بشكل متواصل مع إدخال البيانات في الوقت الفعلي من مصدر البيانات البعيد لديك. أما إذا لم يكن كذلك، فسيُدخل الدفعة ثم يكتمل.
 
 <div id="supported-data-formats">
-  ## تنسيقات البيانات المدعومة
+  ## صيغ البيانات المدعومة {#supported-data-formats}
 </div>
 
-التنسيقات المدعومة هي:
+الصيغ المدعومة هي:
 
 * [JSON](/ar/reference/formats/JSON/JSON)
+* [Avro](/ar/reference/formats/Avro/AvroConfluent) (مع AWS Glue Schema Registry)
 * [Protobuf](/ar/reference/formats/Protobuf/Protobuf)
 
+## AWS Glue Schema Registry {#aws-glue-schema-registry}
+
+يمكن لـ ClickPipes الخاصة بـ Kinesis استرداد مخططات Avro وProtobuf من AWS Glue Schema Registry. اختر **AWS Glue** في مسار إنشاء ClickPipe، ثم أدخل منطقة AWS التي يوجد فيها السجل واسمه. ويمكنك اختياريًا تحديد دور IAM للوصول إلى السجل؛ وإلا فستستخدم ClickPipes هوية IAM الخاصة بمصدر Kinesis. ويجب أن تمتلك هذه الهوية صلاحية `glue:GetSchemaVersion`.
+
+يمكنك تهيئة الحقول نفسها عبر [OpenAPI](/ar/integrations/clickpipes/programmatic-access/openapi) أو [Terraform](/ar/integrations/clickpipes/programmatic-access/terraform). ويتضمن [دليل سجل المخططات](/ar/integrations/clickpipes/kafka/schema-registries#aws-glue-schema-registry) سياسة IAM المطلوبة وتفاصيل التهيئة.
+
 <div id="compression">
-  ## الضغط
+  ## الضغط {#compression}
 </div>
 
 يكتشف ClickPipes for Kinesis السجلات المضغوطة ويفك ضغطها تلقائيًا. وعلى عكس Kafka، حيث تتولى مكتبة العميل فك الضغط تلقائيًا وبشفافية، يرسل Kinesis بايتات خام — ويتولى ClickPipes هذه المهمة نيابةً عنك من دون الحاجة إلى أي إعدادات.
@@ -110,11 +117,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 </Note>
 
 <div id="supported-data-types">
-  ## أنواع البيانات المدعومة
+  ## أنواع البيانات المدعومة {#supported-data-types}
 </div>
 
 <div id="standard-types-support">
-  ### دعم الأنواع القياسية
+  ### دعم الأنواع القياسية {#standard-types-support}
 </div>
 
 تدعم ClickPipes حاليًا أنواع البيانات التالية في ClickHouse:
@@ -137,7 +144,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * أنواع SimpleAggregateFunction (لوجهات AggregatingMergeTree أو SummingMergeTree)
 
 <div id="variant-type-support">
-  ### دعم النوع Variant
+  ### دعم النوع Variant {#variant-type-support}
 </div>
 
 يمكنك تحديد نوع Variant يدويًا (مثل `Variant(String, Int64, DateTime)`) لأي حقل JSON
@@ -145,14 +152,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 في تعريف Variant — على سبيل المثال، `Variant(Int64, UInt32)` غير مدعوم.
 
 <div id="json-type-support">
-  ### دعم نوع JSON
+  ### دعم نوع JSON {#json-type-support}
 </div>
 
 يمكن إسناد حقول JSON التي تكون دائمًا كائنات JSON إلى عمود وجهة من نوع JSON. سيتعين عليك تغيير عمود
 الوجهة يدويًا إلى نوع JSON المطلوب، بما في ذلك أي مسارات ثابتة أو متجاهلة.
 
 <div id="kinesis-virtual-columns">
-  ## الأعمدة الافتراضية لـ Kinesis
+  ## الأعمدة الافتراضية لـ Kinesis {#kinesis-virtual-columns}
 </div>
 
 الأعمدة الافتراضية التالية مدعومة لتدفق Kinesis. عند إنشاء جدول وجهة جديد، يمكن إضافة الأعمدة الافتراضية باستخدام الزر `Add Column`.
@@ -169,18 +176,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 لاحق). بالنسبة إلى مثل هذه الـ pipes، قد يؤدي حذف جميع الأعمدة &quot;غير الافتراضية&quot; إلى تحسين أداء ClickPipes.
 
 <div id="limitations">
-  ## القيود
+  ## القيود {#limitations}
 </div>
 
 * [DEFAULT](/ar/reference/statements/create/table#default) غير مدعوم.
 * يقتصر حجم كل رسالة افتراضيًا على 16MB (غير مضغوط) عند التشغيل بأصغر حجم نسخة متماثلة ‏(XS)، وعلى 32MB (غير مضوط) مع النسخ المتماثلة الأكبر.  وستُرفض الرسائل التي تتجاوز هذا الحد مع ظهور خطأ.  إذا كنت بحاجة إلى رسائل أكبر، يُرجى التواصل مع فريق الدعم.
 
 <div id="performance">
-  ## الأداء
+  ## الأداء {#performance}
 </div>
 
 <div id="batching">
-  ### التجميع على دفعات
+  ### التجميع على دفعات {#batching}
 </div>
 
 تُدرِج ClickPipes البيانات في ClickHouse على دفعات. يهدف ذلك إلى تجنّب إنشاء عدد كبير جدًا من الأجزاء في قاعدة البيانات، ما قد يؤدي إلى مشكلات في أداء العنقود.
@@ -191,7 +198,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * عندما تظل الدفعة مفتوحة للمدة القصوى (5 ثوانٍ)
 
 <div id="latency">
-  ### زمن الاستجابة
+  ### زمن الاستجابة {#latency}
 </div>
 
 يعتمد زمن الاستجابة (المُعرَّف بأنه الوقت بين إرسال رسالة Kinesis إلى التدفق وإتاحة الرسالة في ClickHouse) على عدد من العوامل (مثل زمن استجابة Kinesis، وزمن استجابة الشبكة، وحجم الرسالة/تنسيقها). كما أن [التجميع على دفعات](#batching) الموضَّح في القسم أعلاه سيؤثر أيضًا في زمن الاستجابة. نوصي دائمًا باختبار حالة الاستخدام الخاصة بك لفهم زمن الاستجابة المتوقع.
@@ -199,13 +206,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 إذا كانت لديك متطلبات محددة لزمن استجابة منخفض، يُرجى [التواصل معنا](https://clickhouse.com/company/contact?loc=clickpipes).
 
 <div id="active-shards">
-  ### الشظايا النشطة
+  ### الشظايا النشطة {#active-shards}
 </div>
 
 قد يؤدي وجود عدد كبير من الشظايا النشطة إلى خفض إنتاجية ClickPipe إذا لم يكن الـ ClickPipe [موسّعًا](#scaling) بالقدر الكافي للتعامل معها.
 
 <div id="scaling">
-  ### التوسّع
+  ### التوسّع {#scaling}
 </div>
 
 صُمِّم ClickPipes for Kinesis ليدعم التوسّع أفقيًا وعموديًا. وبشكلٍ افتراضي، ننشئ مجموعة مستهلكين تضم مستهلكًا واحدًا. ويمكن تهيئة ذلك أثناء إنشاء ClickPipe، أو في أي وقت لاحق ضمن **الإعدادات** -&gt; **الإعدادات المتقدمة** -&gt; **التوسّع**.

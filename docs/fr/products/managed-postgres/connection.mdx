@@ -18,9 +18,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   Cette page explique comment connecter vos systèmes de production à Postgres. Si vous cherchez un moyen rapide d’exécuter une requête, vous pouvez vous connecter via la [SQL Console](/fr/integrations/connectors/sql-clients/sql-console), comme vous pouvez le faire avec des instances ClickHouse.
 </Tip>
 
-<div id="accessing-connection-details">
-  ## Accéder aux informations de connexion
-</div>
+## Accéder aux informations de connexion {#accessing-connection-details}
 
 Pour connecter vos applications à ClickHouse Managed Postgres, accédez à la section **Connect** dans la barre latérale gauche de votre instance.
 
@@ -40,7 +38,7 @@ La fenêtre modale de connexion affiche les informations suivantes :
 ClickHouse Managed Postgres vous donne un accès superutilisateur à votre base de données. Utilisez ces identifiants pour vous connecter en tant que superutilisateur, ce qui vous permet de créer des utilisateurs supplémentaires et de gérer les objets de la base de données.
 
 <div id="connection-string">
-  ## Formats de chaîne de connexion
+  ## Formats de chaîne de connexion {#connection-string}
 </div>
 
 Les onglets **Connect via** fournissent votre chaîne de connexion dans plusieurs formats afin de s&#39;adapter aux besoins de votre application :
@@ -55,11 +53,9 @@ Les onglets **Connect via** fournissent votre chaîne de connexion dans plusieur
 
 Pour des raisons de sécurité, le mot de passe dans les chaînes de connexion est masqué par défaut. Cliquez sur l&#39;icône de copie à côté de n’importe quel champ ou de n’importe quelle chaîne de connexion pour la copier directement dans votre presse-papiers.
 
-<div id="pgbouncer">
-  ## Pool de connexions PgBouncer
-</div>
+## Pool de connexions PgBouncer {#pgbouncer}
 
-ClickHouse Managed Postgres inclut une instance [PgBouncer](https://www.pgbouncer.org/) intégrée pour le pool de connexions côté serveur. PgBouncer améliore la gestion des connexions, les performances et l’utilisation des ressources, en particulier pour les applications qui :
+ClickHouse Managed Postgres inclut une instance [PgBouncer](https://www.pgbouncer.org/) intégrée pour le pool de connexions côté serveur. PgBouncer améliore la gestion des connexions, les performances et l’utilisation des ressources, en particulier pour les applications qui :
 
 * ouvrent de nombreuses connexions concurrentes
 * créent et ferment fréquemment des connexions
@@ -70,19 +66,17 @@ Pour utiliser le pool de connexions, cliquez sur le bouton bascule **via PgBounc
 <Tip>
   **Quand utiliser PgBouncer**
 
-  Utilisez PgBouncer lorsque votre application ouvre de nombreuses connexions de courte durée. Pour les connexions longues ou les applications qui utilisent des fonctionnalités PostgreSQL incompatibles avec le pool de connexions (comme les prepared statements utilisées d’une transaction à l’autre), connectez-vous directement.
+  Utilisez PgBouncer lorsque votre application ouvre de nombreuses connexions de courte durée. Les prepared statements au niveau du protocole fonctionnent via PgBouncer ; consultez [les prepared statements via PgBouncer](/fr/products/managed-postgres/faq#prepared-statement-errors). Connectez-vous directement pour les connexions longues, pour les migrations et pour les applications qui s’appuient sur des fonctionnalités de niveau session incompatibles avec le pool de connexions en mode transaction, telles que les commandes `SET` de session, les verrous consultatifs de session, `LISTEN` ou `PREPARE` au niveau SQL.
 
   Le transfert de données vers ClickHouse à l’aide de ClickPipes n’est pas pris en charge via PgBouncer.
 </Tip>
 
-<div id="tls">
-  ## Configuration de TLS
-</div>
+## Configuration de TLS {#tls}
 
 Toutes les instances ClickHouse Managed Postgres sont sécurisées par TLS. La version minimale prise en charge est **TLS 1.3**.
 
 <div id="quick-connection">
-  ### Connexion rapide (chiffrée avec TLS)
+  ### Connexion rapide (chiffrée avec TLS) {#quick-connection}
 </div>
 
 Par défaut, les connexions utilisent le chiffrement TLS sans vérification du certificat :
@@ -91,9 +85,7 @@ Par défaut, les connexions utilisent le chiffrement TLS sans vérification du c
 psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/postgres'
 ```
 
-<div id="verified-tls">
-  ### Connexion TLS vérifiée (recommandée pour la production)
-</div>
+### Connexion TLS vérifiée (recommandée pour la production) {#verified-tls}
 
 Pour les charges de travail de production, nous vous recommandons d’utiliser une connexion TLS vérifiée afin de garantir que vous communiquez avec le bon serveur. Pour ce faire, téléchargez le bundle de certificats CA depuis l’onglet **Settings** et ajoutez-le aux certificats de confiance de votre client de base de données.
 

@@ -7,7 +7,7 @@ doc_type: 'reference'
 ---
 
 <div id="overview">
-  ## Vue d’ensemble
+  ## Vue d’ensemble {#overview}
 </div>
 
 Les protocoles composables permettent une configuration plus souple de l’accès TCP au
@@ -15,7 +15,7 @@ serveur ClickHouse. Cette configuration peut coexister avec la configuration
 classique ou la remplacer.
 
 <div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
-  ## Configuration des protocoles composables
+  ## Configuration des protocoles composables {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
 </div>
 
 Les protocoles composables peuvent être configurés dans un fichier de configuration XML. La section
@@ -28,7 +28,7 @@ Les protocoles composables peuvent être configurés dans un fichier de configur
 ```
 
 <div id="basic-modules-define-protocol-layers">
-  ### Configuration des couches de protocole
+  ### Configuration des couches de protocole {#basic-modules-define-protocol-layers}
 </div>
 
 Vous pouvez définir des couches de protocole à l’aide de modules de base. Par exemple, pour définir une
@@ -64,7 +64,7 @@ Les modules peuvent être configurés comme suit :
 </Note>
 
 <div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
-  ### Configuration des points de terminaison
+  ### Configuration des points de terminaison {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
 </div>
 
 Les points de terminaison (ports d’écoute) sont indiqués par les balises facultatives `<port>` et `<host>`.
@@ -90,7 +90,7 @@ Si la balise `<host>` est absente, le `<listen_host>` de la configuration racine
 utilisé.
 
 <div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
-  ### Configuration des séquences de couches
+  ### Configuration des séquences de couches {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
 </div>
 
 Les séquences de couches sont définies à l’aide de la balise `<impl>`, en faisant référence à un autre
@@ -117,7 +117,7 @@ nous pourrions modifier davantage notre configuration comme suit :
 ```
 
 <div id="endpoint-can-be-attached-to-any-layer">
-  ### Associer des points de terminaison à des couches
+  ### Associer des points de terminaison à des couches {#endpoint-can-be-attached-to-any-layer}
 </div>
 
 Des points de terminaison peuvent être associés à n’importe quelle couche. Par exemple, nous pouvons définir des points de terminaison pour
@@ -143,7 +143,7 @@ HTTP (port 8123) et HTTPS (port 8443) :
 ```
 
 <div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
-  ### Définir des points de terminaison supplémentaires
+  ### Définir des points de terminaison supplémentaires {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
 </div>
 
 Des points de terminaison supplémentaires peuvent être définis en faisant référence à n’importe quel module et en omettant la
@@ -176,7 +176,7 @@ module `plain_http` comme suit :
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### Gestionnaires HTTP personnalisés par point de terminaison
+  ### Gestionnaires HTTP personnalisés par point de terminaison {#custom-http-handlers-per-endpoint}
 </div>
 
 Par défaut, toutes les entrées de protocole `type=http` partagent la même
@@ -231,9 +231,7 @@ La section des handlers personnalisés suit le même format que
 Les modifications apportées à la section des handlers personnalisés sont détectées lors du rechargement de la config, et le point de terminaison
 correspondant est automatiquement redémarré.
 
-<div id="default-session-user-per-endpoint">
-  ### Utilisateur de session par défaut par point de terminaison
-</div>
+### Utilisateur de session par défaut par point de terminaison {#default-session-user-per-endpoint}
 
 Lorsqu’un client se connecte sans spécifier de nom d’utilisateur (par exemple, une requête HTTP
 sans le paramètre `user`, ou un paquet `Hello` du protocole natif avec un nom d’utilisateur
@@ -279,13 +277,11 @@ en particulier, un `default_session_user` vide ne les rejette pas. Ce paramètre
 protocole `interserver` : les connexions interserveur sont authentifiées à l&#39;aide du secret du cluster
 et de l&#39;utilisateur initial, et n&#39;utilisent jamais l&#39;utilisateur de session `default`.
 
-<div id="some-modules-can-contain-specific-for-its-layer-parameters">
-  ### Spécification de paramètres supplémentaires pour la couche
-</div>
+### Spécification de paramètres supplémentaires pour la couche {#some-modules-can-contain-specific-for-its-layer-parameters}
 
 Certains modules peuvent inclure des paramètres de couche supplémentaires. Par exemple, la couche TLS
 permet de spécifier un fichier de clé privée (`privateKeyFile`) et un fichier de certificat (`certificateFile`)
-comme suit :
+comme suit :
 
 ```xml
 <protocols>
@@ -307,3 +303,7 @@ comme suit :
 
 </protocols>
 ```
+
+Une couche TLS peut également définir `cipherList` et `cipherSuites`, mais ces paramètres ne prennent effet que si la couche
+dispose de son propre `privateKeyFile` (et de son propre `certificateFile`, si le certificat se trouve dans un fichier distinct). Un
+`cipherSuites` non vide dans une couche qui ne les définit pas provoque une erreur au démarrage.
