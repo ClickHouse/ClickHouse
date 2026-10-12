@@ -55,8 +55,9 @@ def test_maintenance_on_spark_table(started_cluster_iceberg_with_spark, format_v
 
     expired = metrics(instance, table, "expire_snapshots(retention_period = '1ms', retain_last = 1)")
     assert expired["deleted_data_files_count"] > 0
-    # v3 deletion vectors go with the data files they belong to. v2 position delete files stay live:
-    # the rewritten files keep the sequence number of the delete, so the deletes still apply to them.
+    # v3 deletion vectors go with the data files they belong to. v2 position delete files stay in the
+    # current snapshot: the rewritten files keep the starting sequence number, so Spark does not treat
+    # the deletes as old enough to drop, and expire must not delete files a snapshot still references.
     if format_version == "3":
         assert expired["deleted_position_delete_files_count"] > 0
     else:
