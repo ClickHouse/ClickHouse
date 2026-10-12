@@ -634,8 +634,11 @@ void registerStorageMySQL(StorageFactory & factory)
         /// Bridge the query-context value of `mysql_datatypes_support_level` into the engine settings
         /// (and freeze it into the table definition) so that it is honored during schema inference,
         /// the same way the MySQL database engine does. An explicit per-engine SETTINGS value, loaded
-        /// right after, takes precedence over it.
-        mysql_settings.loadFromQueryContext(args.getLocalContext(), *args.storage_def);
+        /// right after, takes precedence over it. Not on `RESTORE`: it creates the table with its definition from the
+        /// backup and rejects a table whose definition differs from it (`RestorerFromBackup::checkTable`), so the table
+        /// is created as on server startup, where there is no query context.
+        if (!args.is_restore_from_backup)
+            mysql_settings.loadFromQueryContext(args.getLocalContext(), *args.storage_def);
         if (args.storage_def->settings)
             mysql_settings.loadFromQuery(*args.storage_def);
 
