@@ -422,7 +422,9 @@ bool analyzeProjectionCandidate(
     {
         const auto & created_projections = part_with_ranges.data_part->getProjectionParts();
         auto it = created_projections.find(candidate.projection->name);
+        /// A projection part returns every matching row of its part, so it cannot replace a read cut by exact counting.
         if (it != created_projections.end() && !it->second->is_broken
+            && !(parent_reading_select_result.exact_ranges_excluded && !part_with_ranges.exact_ranges.empty())
             && projectionPartHasRequiredColumns(
                 *it->second, *part_with_ranges.data_part, *candidate.projection, parent_metadata, required_column_names)
             && !partHasPendingMetadataMutationsOnColumns(
