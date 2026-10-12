@@ -1909,9 +1909,11 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT query_id, type, query, query_duration_ms
 FROM system.query_log
-WHERE query_id IN (SELECT query_id FROM system.session_query_ids)
+WHERE query_id GLOBAL IN (SELECT query_id FROM system.session_query_ids)
 ORDER BY event_time_microseconds;
 ```
+
+`GLOBAL IN` evaluates the subquery once, in the current session. With plain `IN`, a query executed with parallel replicas also evaluates it on the other replicas, which do not see the history of the current session, so the rows they read are filtered out.
 
 .see_also
 - [system.query_log](/reference/system-tables/query_log) - Details of executed queries.
