@@ -104,7 +104,7 @@ void ApplyWithSubqueryVisitor::visit(ASTSelectQuery & ast, const Data & data)
                 if (!new_data)
                     new_data = scope;
                 if (ast_with_elem)
-                    new_data->subqueries[ast_with_elem->name] = ast_with_elem->subquery;
+                    new_data->subqueries[ast_with_elem->name] = {ast_with_elem->subquery, ast.recursive_with};
                 else
                 {
                     new_data->literals[child_alias] = child;
@@ -141,8 +141,10 @@ void ApplyWithSubqueryVisitor::visit(ASTTableExpression & table, const Data & da
                 auto old_alias = table.database_and_table_name->tryGetAlias();
                 table.children.clear();
                 table.database_and_table_name.reset();
-                table.subquery = subquery_it->second->clone();
-                table.subquery->as<ASTSubquery &>().cte_name = table_id.table_name;
+                table.subquery = subquery_it->second.ast->clone();
+                auto & subquery = table.subquery->as<ASTSubquery &>();
+                subquery.cte_name = table_id.table_name;
+                subquery.recursive_with = subquery_it->second.recursive_with;
                 if (!old_alias.empty())
                     table.subquery->setAlias(old_alias);
                 table.children.emplace_back(table.subquery);
@@ -168,8 +170,10 @@ void ApplyWithSubqueryVisitor::visit(ASTFunction & func, const Data & data)
                 if (subquery_it != data.subqueries.end())
                 {
                     auto old_alias = func.arguments->children[1]->tryGetAlias();
-                    func.arguments->children[1] = subquery_it->second->clone();
-                    func.arguments->children[1]->as<ASTSubquery>()->cte_name = name;
+                    func.arguments->children[1] = subquery_it->second.ast->clone();
+                    auto & subquery = func.arguments->children[1]->as<ASTSubquery &>();
+                    subquery.cte_name = name;
+                    subquery.recursive_with = subquery_it->second.recursive_with;
                     if (!old_alias.empty())
                         func.arguments->children[1]->setAlias(old_alias);
                 }
