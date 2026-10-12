@@ -355,7 +355,8 @@ private:
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
         LazyFileRegistryPtr lazy_row_index_registry_ = nullptr,
-        TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
+        TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr,
+        const UUID & query_condition_cache_table_id_ = UUIDHelpers::Nil);
 
     /**
       * If specified option --rename_files_after_processing and files created by TableFunctionFile

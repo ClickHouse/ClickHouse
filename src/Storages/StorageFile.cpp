@@ -1681,7 +1681,8 @@ StorageFileSource::StorageFileSource(
     FormatParserSharedResourcesPtr parser_shared_resources_,
     FormatFilterInfoPtr format_filter_info_,
     LazyFileRegistryPtr lazy_row_index_registry_,
-    TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_)
+    TopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_,
+    const UUID & query_condition_cache_table_id_)
     : ISource(std::make_shared<const Block>(info.source_header), false)
     , WithContext(context_)
     , storage(std::move(storage_))
@@ -1689,6 +1690,7 @@ StorageFileSource::StorageFileSource(
     , read_buf(std::move(read_buf_))
     , parser_shared_resources(std::move(parser_shared_resources_))
     , format_filter_info(std::move(format_filter_info_))
+    , query_condition_cache_table_id(query_condition_cache_table_id_)
     , top_k_query_condition_cache_key(std::move(top_k_query_condition_cache_key_))
     , columns_description(info.columns_description)
     , requested_columns(info.requested_columns)
@@ -1700,18 +1702,6 @@ StorageFileSource::StorageFileSource(
     , need_only_count(need_only_count_)
     , lazy_row_index_registry(std::move(lazy_row_index_registry_))
 {
-    if (format_filter_info && (format_filter_info->condition_hash || top_k_query_condition_cache_key))
-    {
-        auto metadata_snapshot = storage->getInMemoryMetadataPtr(context_, false);
-        query_condition_cache_table_id = QueryConditionCache::getTableIdForFileEntries(
-            storage->getStorageID().uuid,
-            storage->format_name,
-            storage->compression_method,
-            metadata_snapshot->getColumns(),
-            format_filter_info->column_mapper.get(),
-            storage->format_settings ? &*storage->format_settings : nullptr);
-    }
-
     if (!storage->use_table_fd)
     {
         read_lock = storage->lockRwlock(RWLockImpl::Read, getContext());
@@ -2850,6 +2840,19 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
         format_filter_info->top_k_filter = std::move(top_k_filter_tracking_best_values);
     }
 
+    /// Derived from the snapshot the query is planned against, not from the live metadata, so a concurrent
+    /// `ALTER` cannot make this query write entries under the identity of the altered table.
+    /// The format settings of the storage are fixed at `CREATE`.
+    UUID query_condition_cache_table_id = UUIDHelpers::Nil;
+    if (format_filter_info->condition_hash || top_k_query_condition_cache_key)
+        query_condition_cache_table_id = QueryConditionCache::getTableIdForFileEntries(
+            storage->getStorageID().uuid,
+            storage->format_name,
+            storage->compression_method,
+            storage_snapshot->metadata->getColumns(),
+            format_filter_info->column_mapper.get(),
+            storage->format_settings ? &*storage->format_settings : nullptr);
+
     for (size_t i = 0; i < num_streams; ++i)
     {
         /// In case of reading from fd we have to check whether we have already created
@@ -2871,7 +2874,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
             parser_shared_resources,
             format_filter_info,
             lazy_row_index_registry,
-            top_k_query_condition_cache_key);
+            top_k_query_condition_cache_key,
+            query_condition_cache_table_id);
 
         pipes.emplace_back(std::move(source));
     }
