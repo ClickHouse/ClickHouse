@@ -9,8 +9,8 @@ SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY number, number % 2 RANG
 SELECT '-- ORDER BY key types without RANGE offset support';
 SELECT count() OVER (ORDER BY toString(number) RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
 SELECT count() OVER (ORDER BY toFixedString(toString(number), 1) RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
-SELECT count() OVER (ORDER BY toDecimal32(number, 2) RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
-SELECT count() OVER (ORDER BY toDecimal128(number, 2) RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
+-- Waits for the `NULLS LAST` ordering of `RANGE` frames over a `Nullable` key, see `05269`
+SELECT count() OVER (ORDER BY toNullable(toDecimal32(number, 2)) RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
 SELECT count() OVER (ORDER BY toDateTime64(number, 3, 'UTC') RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
 SELECT count() OVER (ORDER BY toUInt128(number) RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
 SELECT count() OVER (ORDER BY toInt256(number) RANGE BETWEEN 1 PRECEDING AND 1 FOLLOWING) FROM numbers(3); -- { serverError NOT_IMPLEMENTED }
@@ -21,9 +21,6 @@ SELECT '-- Offsets must be non-negative integer constants';
 SELECT count() OVER (ORDER BY number RANGE BETWEEN 'a' PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY number ROWS BETWEEN NULL PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND NULL FOLLOWING) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
-SELECT count() OVER (ORDER BY number RANGE BETWEEN 1.5 PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
-SELECT count() OVER (ORDER BY number RANGE BETWEEN 1.0 PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
-SELECT count() OVER (ORDER BY toFloat64(number) RANGE BETWEEN 0.5 PRECEDING AND 0.5 FOLLOWING) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY number ROWS BETWEEN number PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY number RANGE BETWEEN CURRENT ROW AND number FOLLOWING) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY number GROUPS BETWEEN number PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
@@ -43,8 +40,19 @@ SELECT count() OVER (ORDER BY number GROUPS BETWEEN 1 PRECEDING AND -1 PRECEDING
 SELECT '-- Offsets that do not fit into 32 bits';
 SELECT count() OVER (ORDER BY number ROWS BETWEEN 4294967296 PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY number ROWS BETWEEN CURRENT ROW AND 4294967296 FOLLOWING) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
-SELECT count() OVER (ORDER BY number RANGE BETWEEN 4294967296 PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
 SELECT count() OVER (ORDER BY number GROUPS BETWEEN 4294967296 PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError BAD_ARGUMENTS }
+
+SELECT '-- A RANGE offset is in units of the ORDER BY column, so it only has to be representable in its type';
+SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY number RANGE BETWEEN 1.0 PRECEDING AND CURRENT ROW) AS c FROM numbers(3));
+SELECT count() OVER (ORDER BY number RANGE BETWEEN 1.5 PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY toFloat64(number) RANGE BETWEEN 0.5 PRECEDING AND 0.5 FOLLOWING) AS c FROM numbers(3));
+SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY number RANGE BETWEEN 4294967296 PRECEDING AND CURRENT ROW) AS c FROM numbers(3));
+SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY number RANGE BETWEEN 1.0::Decimal64(3) PRECEDING AND CURRENT ROW) AS c FROM numbers(3));
+SELECT count() OVER (ORDER BY number RANGE BETWEEN 1.5::Decimal32(1) PRECEDING AND CURRENT ROW) FROM numbers(3); -- { serverError ARGUMENT_OUT_OF_BOUND }
+SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY x RANGE 9007199254740993::Decimal64(0) PRECEDING) AS c FROM values('x Int64', 0, 9007199254740993, 9007199254740994));
+SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY toInt128(number) RANGE BETWEEN 1.0::Decimal64(1) PRECEDING AND CURRENT ROW) AS c FROM numbers(3));
+SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY x RANGE toDecimal128('18446744073709551617', 0) PRECEDING) AS c FROM (SELECT arrayJoin([toInt128(0), toInt128('18446744073709551617'), toInt128('18446744073709551618')]) AS x));
+SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY toFloat64(number) RANGE BETWEEN 0.5::Decimal32(1) PRECEDING AND 0.5::Decimal32(1) FOLLOWING) AS c FROM numbers(3));
 
 SELECT '-- Constant expressions are accepted as offsets';
 SELECT groupArray(c) FROM (SELECT count() OVER (ORDER BY number RANGE BETWEEN 1 + 1 PRECEDING AND CURRENT ROW) AS c FROM numbers(4));

@@ -1,7 +1,10 @@
 #include <Processors/Transforms/Window/WindowTransformParams.h>
 
+#include <Columns/ColumnDecimal.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnsNumber.h>
+
+#include <DataTypes/DataTypeNullable.h>
 
 #include <Interpreters/convertFieldToType.h>
 
@@ -9,6 +12,7 @@
 
 #include <Common/Exception.h>
 #include <Common/FieldAccurateComparison.h>
+#include <Common/FieldVisitorConvertToNumber.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
@@ -23,6 +27,7 @@ namespace DB
 
 namespace ErrorCodes
 {
+    extern const int ARGUMENT_OUT_OF_BOUND;
     extern const int BAD_ARGUMENTS;
     extern const int NOT_IMPLEMENTED;
 }
@@ -52,9 +57,12 @@ int compareRangeOffset(
     const IColumn * rhs_column, size_t rhs_row,
     const Field & offset, bool offset_is_preceding)
 {
-    const T lhs_value = assert_cast<const ColumnVector<T> &>(*lhs_column).getData()[lhs_row];
-    const T rhs_value = assert_cast<const ColumnVector<T> &>(*rhs_column).getData()[rhs_row];
-    const std::optional<T> shifted_rhs = shift(rhs_value, static_cast<T>(offset.safeGet<T>()), offset_is_preceding);
+    /// A `Decimal` is shifted as its underlying integer: `prepareRangeOffsets` gave the offset the key's scale.
+    using Value = NativeType<T>;
+    const Value lhs_value = assert_cast<const ColumnVectorOrDecimal<T> &>(*lhs_column).getData()[lhs_row];
+    const Value rhs_value = assert_cast<const ColumnVectorOrDecimal<T> &>(*rhs_column).getData()[rhs_row];
+    const Value offset_value = static_cast<T>(offset.safeGet<T>());
+    const std::optional<Value> shifted_rhs = shift(rhs_value, offset_value, offset_is_preceding);
 
     if (!shifted_rhs)
         return offset_is_preceding ? 1 : -1;
@@ -99,11 +107,16 @@ RangeOffsetComparator chooseRangeOffsetComparatorForValueType(const IColumn & co
         case TypeIndex::Int32: return nullable ? compareNullableRangeOffset<Int32> : compareRangeOffset<Int32>;
         case TypeIndex::Int64: return nullable ? compareNullableRangeOffset<Int64> : compareRangeOffset<Int64>;
         case TypeIndex::Int128: return nullable ? compareNullableRangeOffset<Int128> : compareRangeOffset<Int128>;
+        case TypeIndex::Decimal32: if constexpr (!nullable) return compareRangeOffset<Decimal32>; else break;
+        case TypeIndex::Decimal64: if constexpr (!nullable) return compareRangeOffset<Decimal64>; else break;
+        case TypeIndex::Decimal128: if constexpr (!nullable) return compareRangeOffset<Decimal128>; else break;
+        case TypeIndex::Decimal256: if constexpr (!nullable) return compareRangeOffset<Decimal256>; else break;
         case TypeIndex::Float32: return nullable ? compareNullableRangeOffset<Float32> : compareRangeOffset<Float32>;
         case TypeIndex::Float64: return nullable ? compareNullableRangeOffset<Float64> : compareRangeOffset<Float64>;
         default:
-            throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", column.getName());
+            break;
     }
+    throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The RANGE OFFSET frame for '{}' ORDER BY column is not implemented", column.getName());
 }
 
 bool isRangeOffsetFrame(const WindowFrame & frame)
@@ -155,7 +168,7 @@ std::vector<bool> markColumnsToMaterialize(
     for (const auto & column : partition_by)
         should_materialize[header.getPositionByName(column.column_name)] = true;
 
-    /// Compared across blocks for peer groups, and cast to a concrete ColumnVector by the RANGE comparator.
+    /// Compared across blocks for peer groups, and cast to a concrete `ColumnVector` or `ColumnDecimal` by the `RANGE` comparator.
     for (const auto & column : order_by)
         should_materialize[header.getPositionByName(column.column_name)] = true;
 
@@ -179,12 +192,29 @@ WindowFrame applyFunctionDefaultFrame(const WindowFrame & frame, const std::vect
     return window_function->getDefaultFrame().value_or(frame);
 }
 
+/// `convertFieldToType` converts a `Decimal` only to another `Decimal`.
+Field decimalToNumber(const Field & offset, const IDataType & order_by_type)
+{
+    if (isFloat(order_by_type))
+        return applyVisitor(FieldVisitorConvertToNumber<Float64>(), offset);
+
+    Field integer = applyVisitor(FieldVisitorConvertToNumber<Int256>(), offset);
+    if (!accurateEquals(integer, offset))
+        throw Exception(ErrorCodes::ARGUMENT_OUT_OF_BOUND,
+            "Cannot convert value '{}': it cannot be represented as {}", offset, order_by_type.getName());
+    return integer;
+}
+
 /// We need convert offsets to order by type to be able to use them in shift function.
 WindowFrame prepareRangeOffsets(const WindowFrame & frame, const DataTypePtr & order_by_type)
 {
+    const auto key_type = removeNullable(order_by_type);
     auto convert = [&](const Field & offset, std::string_view bound_name)
     {
-        const Field converted = convertFieldToTypeOrThrow(offset, *order_by_type, nullptr, {}, /*convert_inexact_floats=*/true);
+        const Field source = Field::isDecimal(offset.getType()) && (isInteger(key_type) || isFloat(key_type))
+            ? decimalToNumber(offset, *key_type)
+            : offset;
+        const Field converted = convertFieldToTypeOrThrow(source, *order_by_type, nullptr, {}, /*convert_inexact_floats=*/true);
         if (accurateLess(converted, Field(0)))
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Window frame {} offset must be nonnegative, {} given", bound_name, converted);
 

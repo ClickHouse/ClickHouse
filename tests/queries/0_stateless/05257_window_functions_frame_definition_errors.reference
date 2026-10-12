@@ -4,6 +4,15 @@
 -- Offsets must be non-negative integer constants
 -- Negative offsets in every position
 -- Offsets that do not fit into 32 bits
+-- A RANGE offset is in units of the ORDER BY column, so it only has to be representable in its type
+[1,2,2]
+[1,1,1]
+[1,2,3]
+[1,2,2]
+[1,2,2]
+[1,2,2]
+[1,2,2]
+[1,1,1]
 -- Constant expressions are accepted as offsets
 [1,2,3,3]
 [1,2,3,3]
