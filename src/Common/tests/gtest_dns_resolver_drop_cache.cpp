@@ -14,7 +14,6 @@ TEST(DNSResolver, DropCacheDuringUpdate)
     constexpr size_t iterations = 200;
 
     auto & resolver = DNSResolver::instance();
-    resolver.setDisableCacheFlag(false); /// `Common.ReverseDNS` leaves the cache disabled
     resolver.dropCache();
 
     /// An address literal is resolved without a DNS request.
