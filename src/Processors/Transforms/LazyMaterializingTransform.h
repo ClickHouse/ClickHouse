@@ -50,9 +50,20 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 class LazyMaterializingTransform final : public IProcessor
 {
 public:
-    LazyMaterializingTransform(SharedHeader main_header, SharedHeader lazy_header, ILazyMaterializingRowsPtr lazy_materializing_rows_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_);
+    /// `index_column_name` names the column of the main input holding the row index the lazy input is
+    /// addressed by. It is either `UInt64` or `Nullable(UInt64)`: a NULL index is a row that a join above
+    /// the source matched nothing for, which has no row of the source to read, and gets the default of each
+    /// lazy column instead - what the join itself would have stood there.
+    LazyMaterializingTransform(
+        SharedHeader main_header,
+        SharedHeader lazy_header,
+        ILazyMaterializingRowsPtr lazy_materializing_rows_,
+        RuntimeDataflowStatisticsCacheUpdaterPtr updater_,
+        String index_column_name_ = default_index_column_name);
 
-    static Block transformHeader(const Block & main_header, const Block & lazy_header);
+    static constexpr auto default_index_column_name = "__global_row_index";
+
+    static Block transformHeader(const Block & main_header, const Block & lazy_header, const String & index_column_name = default_index_column_name);
 
     void setPassThrough(bool value);
 
@@ -75,6 +86,12 @@ private:
 
     ILazyMaterializingRowsPtr lazy_materializing_rows;
     RuntimeDataflowStatisticsCacheUpdaterPtr updater;
+    String index_column_name;
+
+    /// Set when the index is Nullable: which rows of the main chunk have a row of the source to read.
+    /// The permutation and the offsets above cover those rows only.
+    std::optional<IColumn::Filter> matched_rows;
+    bool lazy_chunk_prepared = false;
 
     /// When true, pass lazy chunks directly to output without combining
     /// with main columns or permuting. Used when main input only has

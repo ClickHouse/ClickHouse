@@ -1,0 +1,43 @@
+-- FINAL keeps the newest version, and the rest of its row is read after the LIMIT
+581	1	v1_581	d581
+1551	1	v1_1551	d1551
+2521	1	v1_2521	d2521
+3491	1	v1_3491	d3491
+4461	1	v1_4461	d4461
+2	0
+-- the same with lazy FINAL
+581	1	v1_581	d581
+1551	1	v1_1551	d1551
+2521	1	v1_2521	d2521
+3491	1	v1_3491	d3491
+4461	1	v1_4461	d4461
+1	1
+-- the FINAL table on the side a join can leave unmatched
+2	2	v2_2	d2
+16	2	v2_16	d16
+44	2	v2_44	d44
+58	2	v2_58	d58
+86	2	v2_86	d86
+\N	\N	\N	d29983
+\N	\N	\N	d29990
+\N	\N	\N	d29997
+30004	1	v1_30004	d30004
+30011	1	v1_30011	d30011
+30018	1	v1_30018	d30018
+-- the same results without either optimization
+581	1	v1_581	d581
+1551	1	v1_1551	d1551
+2521	1	v1_2521	d2521
+3491	1	v1_3491	d3491
+4461	1	v1_4461	d4461
+2	2	v2_2	d2
+16	2	v2_16	d16
+44	2	v2_44	d44
+58	2	v2_58	d58
+86	2	v2_86	d86
+\N	\N	\N	d29983
+\N	\N	\N	d29990
+\N	\N	\N	d29997
+30004	1	v1_30004	d30004
+30011	1	v1_30011	d30011
+30018	1	v1_30018	d30018
