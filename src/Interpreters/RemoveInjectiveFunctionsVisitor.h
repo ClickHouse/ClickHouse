@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Core/NamesAndTypes.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/InDepthNodeVisitor.h>
 #include <Parsers/IAST_fwd.h>
@@ -15,7 +16,12 @@ class RemoveInjectiveFunctionsMatcher
 public:
     struct Data : public WithContext
     {
-        explicit Data(ContextPtr context_) : WithContext(context_) {}
+        Data(ContextPtr context_, const NamesAndTypesList & source_columns_, NameSet array_join_result_names_)
+            : WithContext(context_), source_columns(source_columns_), array_join_result_names(std::move(array_join_result_names_)) {}
+
+        const NamesAndTypesList & source_columns;
+        /// See `getArrayJoinResultNames`.
+        NameSet array_join_result_names;
     };
 
     static void visit(ASTPtr & ast, const Data & data);

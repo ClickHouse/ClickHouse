@@ -2,6 +2,7 @@
 
 #include <Formats/FormatParserSharedResources.h>
 #include <IO/copyData.h>
+#include <IO/ReadBufferFromFileBase.h>
 #include <IO/SeekableReadBuffer.h>
 #include <IO/WithFileSize.h>
 #include <IO/WriteBufferFromVector.h>
@@ -74,7 +75,14 @@ void Prefetcher::determineReadModeAndFileSize(ReadBuffer * reader_, const ReadOp
             }
 
             if (reader)
+            {
                 file_size = getFileSizeFromReadBuffer(*seekable);
+                if (auto * file_buf = dynamic_cast<ReadBufferFromFileBase *>(seekable))
+                {
+                    size_t view_offset = 0;
+                    is_local_file = file_buf->isRegularLocalFile(&view_offset);
+                }
+            }
         }
     }
 

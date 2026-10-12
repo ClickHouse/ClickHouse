@@ -21,6 +21,7 @@
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/DataTypeObject.h>
+#include <DataTypes/DataTypeQBit.h>
 #include <DataTypes/DataTypesBinaryEncoding.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
@@ -35,6 +36,7 @@
 #include <Columns/validateColumnType.h>
 
 #include <Common/FieldVisitorToString.h>
+#include <Common/checkStackSize.h>
 #include <Common/typeid_cast.h>
 
 #include <base/unit.h>
@@ -47,6 +49,7 @@
 #include <Storages/IStorage.h>
 
 #include <Interpreters/Context.h>
+#include <Interpreters/castColumn.h>
 
 #include <Analyzer/ArrayJoinNode.h>
 #include <Analyzer/ColumnNode.h>
@@ -1506,6 +1509,9 @@ namespace
 /// literal instead: `Variant`, `Dynamic`, dynamic `JSON` paths, shared data and `JSON` object names.
 Field getFieldFromColumnForASTLiteralImpl(const ColumnPtr & column, size_t row, const DataTypePtr & data_type, bool is_inside_object, bool datetime64_as_numbers, bool date_time_as_numbers)
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     if (isColumnConst(*column))
         return getFieldFromColumnForASTLiteralImpl(assert_cast<const ColumnConst& >(*column).getDataColumnPtr(), 0, data_type, is_inside_object, datetime64_as_numbers, date_time_as_numbers);
 
@@ -1693,13 +1699,15 @@ Field getFieldFromColumnForASTLiteral(const ColumnPtr & column, size_t row, cons
 
 /// True if a value of this type cannot be printed as a plain literal and re-parsed into the same type:
 /// a static `Decimal`/`DateTime64`/`Time64` anywhere (all scaled decimals), a `Variant` anywhere (a literal
-/// does not keep the active member type), or a `Dynamic` whose value's type is not visible in the type.
+/// does not keep the active member type), a `Dynamic` whose value's type is not visible in the type, or a
+/// `QBit`, whose `Field` is its internal tuple of bit planes.
 bool typeNeedsExactLiteralSerialization(const IDataType & type)
 {
     return anyInTypeTree(type, [](const IDataType & nested)
     {
         WhichDataType which(nested);
-        return which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic();
+        return which.isDecimal() || which.isDateTime64() || which.isTime64() || which.isVariant() || which.isDynamic()
+            || which.isQBit();
     });
 }
 
@@ -1778,6 +1786,9 @@ ASTPtr makeExactDecimalCarrierAST(const Field & field)
 
 ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row, const DataTypePtr & type, bool date_time_as_numbers)
 {
+    /// Nesting is part of the value rather than of the query text, so no parser limit bounds it.
+    checkStackSize();
+
     /// Subtrees the default literal path already serializes exactly are left unchanged.
     if (!typeNeedsExactLiteralSerialization(*type))
         return make_intrusive<ASTLiteral>(getFieldFromColumnForASTLiteral(column, row, type, date_time_as_numbers));
@@ -1803,6 +1814,24 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             return makeASTFunction(
                 "_CAST", make_intrusive<ASTLiteral>(decimalFieldToText((*column)[row])),
                 make_intrusive<ASTLiteral>(type->getName()));
+        case TypeIndex::QBit:
+        {
+            /// A QBit `Field` is its tuple of bit planes, which does not cast back to QBit. The bit patterns of its elements do,
+            /// exactly (NaN sign and payload included) and whatever the byte order of either server.
+            const auto & element_type = assert_cast<const DataTypeQBit &>(*type).getElementType();
+            const auto elements = castColumn({column->cut(row, 1), type, ""}, std::make_shared<DataTypeArray>(element_type));
+            const auto & values = assert_cast<const ColumnArray &>(*elements).getData();
+            Array bit_patterns;
+            bit_patterns.reserve(values.size());
+            for (size_t i = 0; i < values.size(); ++i)
+                bit_patterns.push_back(values.get64(i));
+            auto patterns = makeASTFunction(
+                "_CAST", make_intrusive<ASTLiteral>(std::move(bit_patterns)),
+                make_intrusive<ASTLiteral>(fmt::format("Array(UInt{})", 8 * element_type->getSizeOfValueInMemory())));
+            auto bytes = makeASTFunction("reinterpret", std::move(patterns), make_intrusive<ASTLiteral>("String"));
+            auto array = makeASTFunction("reinterpret", std::move(bytes), make_intrusive<ASTLiteral>("Array(" + element_type->getName() + ")"));
+            return makeASTFunction("_CAST", std::move(array), make_intrusive<ASTLiteral>(type->getName()));
+        }
         case TypeIndex::DateTime64:
         case TypeIndex::Time64:
             /// DateTime64/Time64 are backed by a scaled decimal. Serialize the exact (UTC-based) decimal
@@ -1891,17 +1920,24 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             if (global_discr == ColumnVariant::NULL_DISCRIMINATOR)
                 return make_intrusive<ASTLiteral>(Null());
 
+            /// A literal alone loses the member type (an `Enum8` is inferred back as its number): name it and the `Dynamic` type.
+            /// A consumer that clears `date_time_as_numbers` has no `Dynamic` and gets the bare member literal.
+            auto name_member = [&](ASTPtr member_ast, const DataTypePtr & member_type)
+            {
+                if (!date_time_as_numbers)
+                    return member_ast;
+                return makeCastToTypeNameAST(makeCastToTypeNameAST(std::move(member_ast), member_type->getName()), type->getName());
+            };
+
             if (global_discr != dynamic_column.getSharedVariantDiscriminator())
             {
-                /// Recurse into the active member itself rather than through the `Variant` branch above:
-                /// `Dynamic` accepts a value of any type, so its member type must not be named, and doing so
-                /// would change the stored subtype of values whose literal is inferred back as a wider or
-                /// narrower type than the initiator's.
                 const auto & variant_types
                     = assert_cast<const DataTypeVariant &>(*dynamic_column.getVariantInfo().variant_type).getVariants();
-                return columnConstantToExactLiteralASTImpl(
-                    variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
-                    variant_types[global_discr], /*date_time_as_numbers=*/false);
+                return name_member(
+                    columnConstantToExactLiteralASTImpl(
+                        variant_column.getVariantPtrByGlobalDiscriminator(global_discr), variant_column.offsetAt(row),
+                        variant_types[global_discr], date_time_as_numbers),
+                    variant_types[global_discr]);
             }
 
             /// Value stored in the shared binary variant (e.g. Dynamic(max_types=0)): decode its type
@@ -1913,7 +1949,8 @@ ASTPtr columnConstantToExactLiteralASTImpl(const ColumnPtr & column, size_t row,
             auto tmp_column = decoded_type->createColumn();
             tmp_column->reserve(1);
             decoded_type->getDefaultSerialization()->deserializeBinary(*tmp_column, buf, FormatSettings{});
-            return columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, /*date_time_as_numbers=*/false);
+            return name_member(
+                columnConstantToExactLiteralASTImpl(std::move(tmp_column), 0, decoded_type, date_time_as_numbers), decoded_type);
         }
         case TypeIndex::Object:
         {
