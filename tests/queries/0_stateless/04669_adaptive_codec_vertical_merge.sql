@@ -23,7 +23,7 @@ WHERE database = currentDatabase() AND table = 't_vert_adaptive' AND event_type 
 ORDER BY event_time_microseconds DESC LIMIT 1;
 
 -- `n` is gathered vertically and is monotonic, so T64 wins on every block.
-SELECT 'vertical', max(mapContains(codec_block_counts, 'T64')), max(mapContains(codec_block_counts, 'NONE'))
+SELECT 'vertical', max(mapContains(codec_block_counts, 'T64, LZ4')), max(mapContains(codec_block_counts, 'NONE'))
 FROM mergeTreeCodecBlockCounts(currentDatabase(), t_vert_adaptive) WHERE column = 'n';
 
 SELECT 'roundtrip', count(), sum(n) FROM t_vert_adaptive;

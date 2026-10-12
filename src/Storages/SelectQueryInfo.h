@@ -29,9 +29,6 @@ using InputOrderInfoPtr = std::shared_ptr<const InputOrderInfo>;
 struct TreeRewriterResult;
 using TreeRewriterResultPtr = std::shared_ptr<const TreeRewriterResult>;
 
-class ReadInOrderOptimizer;
-using ReadInOrderOptimizerPtr = std::shared_ptr<const ReadInOrderOptimizer>;
-
 class Cluster;
 using ClusterPtr = std::shared_ptr<Cluster>;
 
@@ -182,8 +179,8 @@ struct SelectQueryInfo
     /// (See comment in ReadFromMergeTree::applyFilters.)
     std::shared_ptr<const ActionsDAG> filter_actions_dag;
 
-    ReadInOrderOptimizerPtr order_optimizer;
-    /// Can be modified while reading from storage
+    /// Set by `ReadFromMergeTree::requestReadingInOrder` / `ReadFromMerge::requestReadingInOrder`
+    /// when the query plan optimizer decides to read in the order of the sorting key.
     InputOrderInfoPtr input_order_info;
 
     /// The columns read-in-order may treat as fixed, when something has restricted them. Set on the

@@ -1,0 +1,113 @@
+-- same result with and without the pushdown
+on	1	2
+regex	1	2
+not_equal	1	2
+both_sides	1	1
+ignoring	1	2
+right_to_left	1	1
+label_not_in_on	1	1
+sum_by	1	1
+sum_by_other_label	1	1
+sum_without	1	1
+sum	1	1
+topk_by	1	1
+topk	1	1
+group_left	1	2
+group_right	1	1
+and	1	2
+and_right_to_left	1	1
+unless	1	1
+unless_right_to_left	1	2
+or	1	4
+offset	1	2
+subquery	1	2
+scalar	1	2
+quantile_over_time	1	2
+predict_linear	1	2
+comparison	1	2
+comparison_several_metrics	1	3
+contradiction	1	0
+label_replace	1	1
+nested	1	2
+nested_unless	1	2
+empty_matcher	1	1
+regex_matching_empty	1	2
+not_empty	1	1
+count_values	1	0
+absent	1	0
+fusion	1	1
+-- a duplicate series in a matched group is still an error
+CANNOT_EXECUTE_PROMQL_QUERY
+CANNOT_EXECUTE_PROMQL_QUERY
+-- as in Prometheus, a duplicate series on the one side or after dropping the metric name is an error in any group
+CANNOT_EXECUTE_PROMQL_QUERY
+CANNOT_EXECUTE_PROMQL_QUERY
+CANNOT_EXECUTE_PROMQL_QUERY
+-- as in Prometheus, duplicate left series of a one-to-one match are an error only in a matched group
+[('instance','i1')]	[('1970-01-01 00:01:40.000',4),('1970-01-01 00:01:50.000',3.3333333333333335),('1970-01-01 00:02:00.000',2.857142857142857),('1970-01-01 00:02:10.000',2.5)]
+-- the selectors read
+rate(lim[30s]) / on(instance) rate(req{instance="i1"}[30s])
+lim i1
+req i1
+rate(req{instance="i1"}[30s]) / on(instance) rate(lim[30s])
+lim
+req i1
+req{job="api"} / on(job, instance) lim{instance="i2"}
+lim i2
+req api i2
+req{job="api"} / ignoring(team) lim{team="t1"}
+lim t1
+req api
+sum by (job) (rate(req{job="api"}[30s])) / on(job) sum by (job) (rate(lim[30s]))
+lim api
+req api
+sum by (instance) (req{job="api"}) / on(instance) lim{instance="i1"}
+lim i1
+req api i1
+req unless on(job) lim{job="db"}
+lim db
+req
+req{job="api"} unless on(job) lim
+lim api
+req api
+req{job="api"} or on(job, instance) lim
+lim
+req api
+label_replace(req{job="api"}, "job", "db", "", "") / on(job) lim
+lim
+req api
+count_values("job", req) * on(job) group_left info{job="api"}
+info api
+req
+absent(req{instance="i3"}) / ignoring(team) lim{job="api"}
+lim api
+req i3
+lim / on(job) group_left sum by (job) (req{job="api"})
+lim api
+req api
+(-lim) / on(job) group_left sum by (job) (req{job="api"})
+lim
+req api
+abs(lim) / on(job) group_left sum by (job) (req{job="api"})
+lim
+req api
+({__name__=~"req|opt"} > 0) and on(job) lim{job="api"}
+api
+lim api
+({__name__=~"req|opt"} > bool 0) and on(job) lim{job="api"}
+
+lim api
+-- more than 20 binary operators turn the pushdown off
+((((lim and lim) and (lim and (lim and lim))) and ((lim and lim) and (lim and (lim and lim)))) and (((lim and lim) and (lim and (lim and lim))) and ((lim and lim) and (lim and (lim and lim))))) / on(job) req{job="api"}
+lim api
+req api
+((((lim and lim) and (lim and (lim and lim))) and ((lim and lim) and (lim and (lim and lim)))) and (((lim and lim) and (lim and (lim and lim))) and ((lim and (lim and lim)) and (lim and (lim and lim))))) / on(job) req{job="api"}
+lim
+req api
+-- the setting turns the pushdown off
+rate(lim[30s]) / on(instance) rate(req{instance="i1"}[30s])
+lim
+req i1
+-- the two sides become the same, so they are read once
+1	0
+2	1

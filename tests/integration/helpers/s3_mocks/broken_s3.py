@@ -235,6 +235,9 @@ class _ServerRuntime:
     class NoSuchUploadAction:
         # Answers directly instead of redirecting, so the upload is never completed upstream and
         # whatever object the key already holds stays in place.
+        def __init__(self, early=None):
+            self.early = early == "1"
+
         def inject_error(self, request_handler):
             data = (
                 '<?xml version="1.0" encoding="UTF-8"?>'
@@ -245,7 +248,19 @@ class _ServerRuntime:
                 "<RequestId>txfbd566d03042474888193-00608d7538</RequestId>"
                 "</Error>"
             )
-            request_handler.write_error(404, data)
+            if self.early:
+                request_handler.send_response(404)
+                request_handler.send_header("Content-Type", "text/xml")
+                request_handler.send_header("Content-Length", str(len(data)))
+                request_handler.send_header("Connection", "close")
+                request_handler.end_headers()
+                request_handler.wfile.write(bytes(data, "UTF-8"))
+                # like MinIO: stop sending, wait, then close with the body unread, which resets the connection
+                request_handler.connection.shutdown(socket.SHUT_WR)
+                time.sleep(0.5)
+                request_handler.connection.close()
+            else:
+                request_handler.write_error(404, data)
 
     class SlowDownAction:
         def inject_error(self, request_handler):
@@ -415,7 +430,9 @@ class _ServerRuntime:
             elif self.action == "timeout":
                 self.error_handler = _ServerRuntime.TimeoutAction()
             elif self.action == "no_such_upload":
-                self.error_handler = _ServerRuntime.NoSuchUploadAction()
+                self.error_handler = _ServerRuntime.NoSuchUploadAction(
+                    *self.action_args
+                )
             else:
                 self.error_handler = _ServerRuntime.Expected500ErrorAction()
 

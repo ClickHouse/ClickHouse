@@ -174,9 +174,12 @@ void inlineMaterializedCTEIfNeeded(QueryTreeNodePtr & node, ContextPtr context)
     if (use_count.empty())
         return;
 
+    /// A CTE with a single static reference site is inlined, unless that site is inside a recursive member
+    /// of a recursive CTE: `RecursiveCTESource` re-executes the recursive members once per recursion step,
+    /// so the snapshot must be kept to be evaluated once (see `QueryAnalyzer::resolveUnion`).
     ReusedMaterializedCTEs reused_materialized_cte;
     for (const auto & [materialized_cte, count] : use_count)
-        if (count >= 2)
+        if (count >= 2 || materialized_cte->is_referenced_from_recursive_cte_member)
             reused_materialized_cte.insert(materialized_cte);
 
     if (context->hasQueryContext())

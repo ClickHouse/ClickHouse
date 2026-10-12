@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: zookeeper, no-parallel, no-replicated-database
+# Tags: zookeeper, no-parallel, no-replicated-database, no-fasttest
 # Tag no-parallel: REGULAR failpoints affect the whole server process; parallel tests
 #                  running SYSTEM RESTART REPLICA would also fail while the failpoint is active
 # Tag no-replicated-database: failpoints are enabled only on one server node

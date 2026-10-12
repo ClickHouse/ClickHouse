@@ -23,6 +23,7 @@
 #include <Parsers/ASTOptimizeQuery.h>
 #include <Parsers/ASTQueryWithOnCluster.h>
 #include <Parsers/ASTQueryWithTableAndOutput.h>
+#include <Parsers/ASTUpdateQuery.h>
 #include <Parsers/ParserQuery.h>
 #include <Storages/IStorage.h>
 
@@ -822,12 +823,16 @@ bool DDLWorker::taskShouldBeExecutedOnLeader(const ASTPtr & ast_ddl, const Stora
     if (auto * query = ast_ddl->as<ASTDropQuery>(); query && query->kind != ASTDropQuery::Kind::Truncate)
         return false;
 
+    /// These queries run on one replica per shard of a replicated table, and replication carries
+    /// the result to the other replicas. `UPDATE` must be here: it is not idempotent, so running
+    /// it on every replica would apply `SET v = v + 1` once per replica.
     if (!ast_ddl->as<ASTAlterQuery>() &&
         !ast_ddl->as<ASTOptimizeQuery>() &&
         !ast_ddl->as<ASTDropQuery>() &&
         !ast_ddl->as<ASTCreateIndexQuery>() &&
         !ast_ddl->as<ASTDropIndexQuery>() &&
-        !ast_ddl->as<ASTDeleteQuery>())
+        !ast_ddl->as<ASTDeleteQuery>() &&
+        !ast_ddl->as<ASTUpdateQuery>())
         return false;
 
     if (auto * alter = ast_ddl->as<ASTAlterQuery>())
