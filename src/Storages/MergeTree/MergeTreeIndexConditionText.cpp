@@ -49,7 +49,6 @@ namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
     extern const int LOGICAL_ERROR;
-    extern const int NO_SUCH_COLUMN_IN_TABLE;
 }
 
 namespace Setting
@@ -452,31 +451,17 @@ bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node &
     return tokenizerArgumentMatchesIndex(function_name, function_node.getArgumentAt(2));
 }
 
-std::optional<String> MergeTreeIndexConditionText::replaceToVirtualColumn(const TextSearchQuery & query, const String & index_name)
+std::optional<String> MergeTreeIndexConditionText::tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const
 {
     if (query.getTokens().empty() && query.getPatterns().empty() && query.getDirectReadMode() == TextIndexDirectReadMode::Hint)
         return std::nullopt;
 
     auto query_hash = query.getHash();
-    auto it = all_search_queries.find(query_hash);
-
-    if (it == all_search_queries.end())
+    if (!all_search_queries.contains(query_hash))
         return std::nullopt;
 
     auto hash_str = getSipHash128AsHexString(query_hash);
-    String virtual_column_name = fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.getFunctionName(), hash_str);
-
-    virtual_column_to_search_query[virtual_column_name] = it->second;
-    return virtual_column_name;
-}
-
-TextSearchQueryPtr MergeTreeIndexConditionText::getSearchQueryForVirtualColumn(const String & column_name) const
-{
-    auto it = virtual_column_to_search_query.find(column_name);
-    if (it == virtual_column_to_search_query.end())
-        throw Exception(ErrorCodes::NO_SUCH_COLUMN_IN_TABLE, "Virtual column {} not found in MergeTreeIndexConditionText", column_name);
-
-    return it->second;
+    return fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.getFunctionName(), hash_str);
 }
 
 bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const

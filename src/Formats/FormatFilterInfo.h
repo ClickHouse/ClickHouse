@@ -152,6 +152,9 @@ struct FormatFilterInfo
     /// it just ignore it - the filter only ever removes rows the sort + limit above would discard,
     /// so applying it partially or not at all is always correct.
     std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
+
+    /// Output columns are consumed only by `min` / `max`: the format may return any rows with the same per-column min and max.
+    bool min_max_from_statistics = false;
 private:
     /// For lazily initializing the fields above.
     std::once_flag init_flag;
