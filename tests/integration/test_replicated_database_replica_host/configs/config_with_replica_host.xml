@@ -1,0 +1,7 @@
+<clickhouse>
+    <!-- Configure replica_host for advertised address -->
+    <replica_host>public.node1.com</replica_host>
+
+    <!-- Disable async loading for deterministic testing -->
+    <async_load_databases>false</async_load_databases>
+</clickhouse>
