@@ -13700,6 +13700,18 @@ void MergeTreeData::writePartLog(
     const std::map<String, UInt64> & projections_duration_ms)
 try
 {
+    /// MemoryCredits advances only on allocation/free transitions, so charge the final interval (from the last
+    /// alloc/free of the merge or mutation until now) into the thread group's own counters first. This is the
+    /// single finish path shared by all merge and mutation tasks, and for a synchronous `OPTIMIZE` it runs before
+    /// the counters are replayed into the initial query, so both `system.part_log` and the query see the whole
+    /// execution of the operation. It is done before the `part_log` check, so that the query and
+    /// `system.events` are charged also when `part_log` is disabled.
+    if (merge_entry && profile_counters)
+    {
+        const auto & thread_group = (*merge_entry)->thread_group;
+        thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
+    }
+
     auto table_id = getStorageID();
     auto part_log = getContext()->getPartLog();
     if (!part_log)
@@ -13775,14 +13787,7 @@ try
             /// snapshot the caller passed in is left alone: it may be shared with other part-log events.
             if (merge_entry)
             {
-                /// The integral advances only on allocation/free transitions, so charge the final interval
-                /// (from the last alloc/free of the merge or mutation until now) into the thread group's own
-                /// counters first. This is the single finish path shared by all merge and mutation tasks, and
-                /// for a synchronous `OPTIMIZE` it runs before the counters are replayed into the initial query,
-                /// so both `system.part_log` and the query see the whole execution of the operation.
                 const auto & thread_group = (*merge_entry)->thread_group;
-                thread_group->memory_tracker.flushMemoryCredits(thread_group->performance_counters);
-
                 element.profile_counters->set(
                     ProfileEvents::MemoryCredits,
                     thread_group->performance_counters[ProfileEvents::MemoryCredits]);
