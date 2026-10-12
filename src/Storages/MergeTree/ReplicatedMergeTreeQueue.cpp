@@ -2318,8 +2318,11 @@ Strings ReplicatedMergeTreeQueue::getMutationsWithLegacyPartitionScope(const Str
     for (const auto & [name, status] : mutations_by_znode)
     {
         /// `is_done` is local to this replica: a lagging replica may still have to load and execute
-        /// the entry, so it is skipped only once every replica has passed it.
-        if (status.is_done && !min_replicas_mutation_pointer.empty() && name <= min_replicas_mutation_pointer)
+        /// the entry, so it is skipped only once every replica has passed it. The local `is_done` is
+        /// not checked: an entry just loaded by `updateMutations` (e.g. after a restart) is not marked
+        /// done until `tryFinalizeMutations` runs, but every entry not greater than the `mutation_pointer`
+        /// of this replica is marked done there unconditionally, and `clearOldMutations` removes it.
+        if (!min_replicas_mutation_pointer.empty() && name <= min_replicas_mutation_pointer)
             continue;
 
         /// The znode keeps the original literals whatever this replica pinned in memory, so every
