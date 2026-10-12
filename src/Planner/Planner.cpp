@@ -2264,7 +2264,8 @@ void addAdditionalFilterStepIfNeeded(QueryPlan & query_plan,
     PlannerContextPtr & planner_context
 )
 {
-    if (select_query_options.subquery_depth != 0)
+    /// A plan united into a parent plan (a local shard, a `Merge` or `Buffer` child) leaves the filter to the parent.
+    if (select_query_options.subquery_depth != 0 || select_query_options.is_local_plan_for_distributed_query)
         return;
 
     const auto & query_context = planner_context->getQueryContext();
@@ -3297,10 +3298,11 @@ void Planner::buildPlanForQueryNode()
                 "Project names",
                 useful_sets);
         }
-
-        // For additional_result_filter setting
-        addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
     }
+
+    /// Also when the storage has processed the whole query: its header already has the projection names.
+    if (query_processing_info.isFinalizingStage())
+        addAdditionalFilterStepIfNeeded(query_plan, query_node, select_query_options, planner_context);
 
     /// A header carrying nothing but row-count-only columns cannot express "N rows" across a
     /// mergeable-stage boundary, and both sides must derive the same header.
