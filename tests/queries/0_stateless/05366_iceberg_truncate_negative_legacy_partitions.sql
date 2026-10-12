@@ -73,3 +73,23 @@ ALTER TABLE t_legacy UPDATE s = 'x' WHERE s = '05366 no such row'; -- { serverEr
 SELECT count() FROM t_legacy SETTINGS use_iceberg_partition_pruning = 0;
 
 DROP TABLE t_legacy;
+
+-- A current server stores truncate(10, INT64_MIN) as a positive value that is not a multiple of 10
+-- (the subtraction wraps). That is a spec value, so it must not be taken for a legacy one: the
+-- mutation below is allowed.
+DROP TABLE IF EXISTS t_wrap;
+CREATE TABLE t_wrap (i64 Int64)
+ENGINE = IcebergS3(s3_conn, filename = '05366_wrap/' || currentDatabase())
+PARTITION BY icebergTruncate(10, i64);
+INSERT INTO t_wrap VALUES (-9223372036854775808), (-1), (5);
+
+SELECT partition FROM system.iceberg_files WHERE database = currentDatabase() AND table = 't_wrap' ORDER BY partition;
+SELECT 'i64 = INT64_MIN',
+    (SELECT count() FROM t_wrap WHERE i64 = -9223372036854775808 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 1),
+    (SELECT count() FROM t_wrap WHERE i64 = -9223372036854775808 SETTINGS use_iceberg_partition_pruning = 1, use_iceberg_manifest_list_partition_pruning = 0),
+    (SELECT count() FROM t_wrap WHERE i64 = -9223372036854775808 SETTINGS use_iceberg_partition_pruning = 0);
+
+ALTER TABLE t_wrap DELETE WHERE i64 = 42;
+SELECT count() FROM t_wrap SETTINGS use_iceberg_partition_pruning = 0;
+
+DROP TABLE t_wrap;
