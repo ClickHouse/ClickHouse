@@ -10,6 +10,7 @@ from ci.defs.defs import (
     LLVM_FT_NUM_BATCHES,
     LLVM_FT_S3_DB_REPL_NUM_BATCHES,
     LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,
+    LLVM_FT_S3_PARALLEL_NUM_BATCHES,
     LLVM_IT_NUM_BATCHES,
     ArtifactNames,
     BuildTypes,
@@ -709,6 +710,8 @@ class JobConfigs:
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
+                # The parameter sets below choose which package flavour each job installs.
+                "./ci/defs/job_configs.py",
             ],
         ),
         timeout=1800,
@@ -718,23 +721,58 @@ class JobConfigs:
         pre_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
+        # One job per package flavour: praktika downloads every required artifact up
+        # front, and the three together take more disk than a runner has left beside the
+        # container installing one of them. `CH_*` is needed only where a binary test runs.
         Job.ParamSet(
-            parameter="amd_release",
+            parameter="amd_release, deb",
             runs_on=RunnerLabels.AMD_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
                 ArtifactNames.CH_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="amd_release, rpm",
+            runs_on=RunnerLabels.AMD_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-tgz",
+            requires=[
                 ArtifactNames.RPM_AMD_RELEASE,
+                ArtifactNames.CH_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="amd_release, tgz",
+            runs_on=RunnerLabels.AMD_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-rpm",
+            requires=[
                 ArtifactNames.TGZ_AMD_RELEASE,
             ],
         ),
         Job.ParamSet(
-            parameter="arm_release",
+            parameter="arm_release, deb",
             runs_on=RunnerLabels.ARM_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
                 ArtifactNames.CH_ARM_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, rpm",
+            runs_on=RunnerLabels.ARM_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-tgz",
+            requires=[
                 ArtifactNames.RPM_ARM_RELEASE,
+                ArtifactNames.CH_ARM_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, tgz",
+            runs_on=RunnerLabels.ARM_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-rpm",
+            requires=[
                 ArtifactNames.TGZ_ARM_RELEASE,
             ],
         ),
@@ -748,6 +786,7 @@ class JobConfigs:
                 "./ci/jobs/install_check.py",
                 "./ci/docker/install",
                 "./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py",
+                "./ci/defs/job_configs.py",
             ],
         ),
         timeout=1800,
@@ -756,23 +795,55 @@ class JobConfigs:
         post_hooks=["python3 ./ci/jobs/scripts/job_hooks/docker_clean_up_hook.py"],
     ).parametrize(
         Job.ParamSet(
-            parameter="amd_release",
+            parameter="amd_release, deb",
             runs_on=RunnerLabels.AMD_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
             requires=[
                 ArtifactNames.DEB_AMD_RELEASE,
-                ArtifactNames.RPM_AMD_RELEASE,
-                ArtifactNames.TGZ_AMD_RELEASE,
                 ArtifactNames.CH_AMD_RELEASE,
             ],
         ),
         Job.ParamSet(
-            parameter="arm_release",
+            parameter="amd_release, rpm",
+            runs_on=RunnerLabels.AMD_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-tgz",
+            requires=[
+                ArtifactNames.RPM_AMD_RELEASE,
+                ArtifactNames.CH_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="amd_release, tgz",
+            runs_on=RunnerLabels.AMD_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-rpm",
+            requires=[
+                ArtifactNames.TGZ_AMD_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, deb",
             runs_on=RunnerLabels.ARM_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-rpm --no-tgz",
             requires=[
                 ArtifactNames.DEB_ARM_RELEASE,
-                ArtifactNames.RPM_ARM_RELEASE,
-                ArtifactNames.TGZ_ARM_RELEASE,
                 ArtifactNames.CH_ARM_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, rpm",
+            runs_on=RunnerLabels.ARM_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-tgz",
+            requires=[
+                ArtifactNames.RPM_ARM_RELEASE,
+                ArtifactNames.CH_ARM_RELEASE,
+            ],
+        ),
+        Job.ParamSet(
+            parameter="arm_release, tgz",
+            runs_on=RunnerLabels.ARM_TINY,
+            command="python3 ./ci/jobs/install_check.py --no-deb --no-rpm",
+            requires=[
+                ArtifactNames.TGZ_ARM_RELEASE,
             ],
         ),
     )
@@ -930,24 +1001,36 @@ class JobConfigs:
             for total_batches in (LLVM_FT_S3_DB_REPL_SEQUENTIAL_NUM_BATCHES,)
             for batch in range(1, total_batches + 1)
         ],
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_parallel"],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_llvm_coverage, ParallelReplicas, s3 storage, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
+                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                provides=[
+                    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_parallel_{batch}"
+                ],
+            )
+            for total_batches in (LLVM_FT_S3_PARALLEL_NUM_BATCHES,)
+            for batch in range(1, total_batches + 1)
+        ],
         Job.ParamSet(
             parameter="amd_llvm_coverage, ParallelReplicas, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
             requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
             provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_sequential"],
         ),
-        Job.ParamSet(
-            parameter="amd_llvm_coverage, AsyncInsert, s3 storage, parallel",
-            runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
-            requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
-            provides=[ArtifactNames.LLVM_COVERAGE_FILE + "_ft_s3_async_parallel"],
-        ),
+        *[
+            Job.ParamSet(
+                parameter=f"amd_llvm_coverage, AsyncInsert, s3 storage, parallel, {batch}/{total_batches}",
+                runs_on=RunnerLabels.AMD_MEDIUM,  # large machine - no boost, why?
+                requires=[ArtifactNames.CH_AMD_LLVM_COVERAGE_BUILD],
+                provides=[
+                    ArtifactNames.LLVM_COVERAGE_FILE + f"_ft_s3_async_parallel_{batch}"
+                ],
+            )
+            for total_batches in (LLVM_FT_S3_PARALLEL_NUM_BATCHES,)
+            for batch in range(1, total_batches + 1)
+        ],
         Job.ParamSet(
             parameter="amd_llvm_coverage, AsyncInsert, s3 storage, sequential",
             runs_on=RunnerLabels.AMD_SMALL,
@@ -1326,7 +1409,7 @@ class JobConfigs:
                 runs_on=RunnerLabels.AMD_MEDIUM,
                 requires=[ArtifactNames.CH_AMD_TSAN],
             )
-            for total_batches in (6,)
+            for total_batches in (8,)
             for batch in range(1, total_batches + 1)
         ],
         *[
@@ -1339,6 +1422,14 @@ class JobConfigs:
             for batch in range(1, total_batches + 1)
         ],
     )
+    # The full `amd_tsan` shards of master. Pull requests run them only when they change a
+    # `contrib/` submodule (see `should_skip_job`): the targeted jobs select tests by the
+    # coverage of the changed lines, and third-party code is built without coverage, so for a
+    # submodule bump they select no test at all, while a data race in the bumped library is
+    # visible only under TSan.
+    integration_test_contrib_tsan_pr_jobs = [
+        job for job in integration_test_jobs_non_required if "amd_tsan" in job.name
+    ]
     integration_test_asan_flaky_pr_jobs = (
         common_integration_test_job_config.parametrize(
             Job.ParamSet(

@@ -1,3 +1,4 @@
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/FinishAggregatingInOrderAlgorithm.h>
 #include <Processors/Transforms/MergingAggregatedMemoryEfficientTransform.h>
 #include <Processors/Transforms/AggregatingTransform.h>
@@ -157,7 +158,7 @@ Chunk FinishAggregatingInOrderAlgorithm::prepareToMerge()
     accumulated_bytes = 0;
 
     auto info = std::make_shared<ChunksToMerge>();
-    info->chunks = std::make_unique<Chunks>(std::move(chunks));
+    info->chunks = std::make_shared<VectorWithMemoryTracking<Chunk>>(std::move(chunks));
     info->chunk_num = chunk_num++;
 
     Chunk chunk;
