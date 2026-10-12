@@ -31,7 +31,7 @@ SELECT '-- view with unused projection column';
 DROP VIEW IF EXISTS v_nested;
 CREATE VIEW v_nested AS SELECT n.a AS a, n.b AS b, n.c AS c FROM t_nested ARRAY JOIN n;
 SELECT b FROM v_nested ORDER BY 1;
-SELECT * FROM (EXPLAIN header = 1 SELECT count() FROM (SELECT b FROM v_nested)) WHERE explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%Header: n.%';
+SELECT * FROM (EXPLAIN header = 1 SELECT sum(b) FROM (SELECT b FROM v_nested)) WHERE explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%Header: n.%';
 DROP VIEW v_nested;
 
 SELECT '-- numeric tupleElement index inside subquery';

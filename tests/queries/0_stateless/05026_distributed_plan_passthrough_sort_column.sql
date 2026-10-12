@@ -97,7 +97,7 @@ SELECT 'empty input', count() FROM
 -- and the outer query must stay local.
 SELECT 'inner sorted gather moved up', count() = 0 FROM
 (
-    EXPLAIN SELECT count() FROM
+    EXPLAIN SELECT sum(r) FROM
     (
         SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
             OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
@@ -111,7 +111,7 @@ SETTINGS make_distributed_plan = 0;
 -- gather must still be there. Without this the arm could pass for a planner that stopped distributing.
 SELECT 'rewrite off keeps the gather below', count() > 0 FROM
 (
-    EXPLAIN SELECT count() FROM
+    EXPLAIN SELECT sum(r) FROM
     (
         SELECT uniq(modulo(s, finalizeAggregation(initializeAggregation('anyState', toNullable(-1)))))
             OVER (PARTITION BY 'c' ROWS BETWEEN CURRENT ROW AND CURRENT ROW) AS r
