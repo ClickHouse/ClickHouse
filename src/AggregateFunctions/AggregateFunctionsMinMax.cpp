@@ -1,6 +1,7 @@
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/SingleValueData.h>
+#include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
@@ -161,6 +162,21 @@ public:
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
     {
         this->data(place).insertResultInto(to, this->result_type);
+    }
+
+    /// The merged value is exactly the extremum of the partial values (a group's state is never
+    /// empty in GROUP BY: the group exists because at least one row was added to it). This holds
+    /// only for types with a total order that the merge respects: floating point is excluded,
+    /// because the merge skips `NaN` (partials `NaN` and `1` of `max` merge to `1`, which is not
+    /// the maximum of the two under any `NaN` placement), and so are compound types, which may
+    /// contain floating-point elements.
+    MergedValueBound getMergedValueBound() const override
+    {
+        const auto type = removeLowCardinality(this->result_type);
+        const WhichDataType which(type);
+        if (which.isFloat() || !(type->isValueRepresentedByNumber() || which.isStringOrFixedString()))
+            return MergedValueBound::Unknown;
+        return isMin ? MergedValueBound::Minimum : MergedValueBound::Maximum;
     }
 
 #if USE_EMBEDDED_COMPILER
