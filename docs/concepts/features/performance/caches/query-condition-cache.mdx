@@ -52,6 +52,13 @@ SETTINGS use_query_condition_cache = true;
 will store ranges of the table which do not satisfy the predicate.
 Subsequent executions of the same query, also with parameter `use_query_condition_cache = true`, will utilize the query condition cache to scan less data.
 
+### Parquet files {#parquet-files}
+
+The query condition cache also works for Parquet files read from local files, object storage (e.g. S3) and data lakes (e.g. Iceberg), through tables as well as through table functions such as `file`, `s3` or `icebergS3`.
+For these, the cache remembers the row groups of a file which contain no matching rows.
+The entries are keyed by the location of the file and its version (the ETag of a remote object, the modification time, inode and size of a local file), so a query after the file was rewritten does not reuse them. Data files of data lakes are never rewritten, so their location alone identifies them.
+A local file is only cached a few seconds after its last modification, as file system timestamps are too coarse to tell apart two writes in quick succession.
+
 ### `ORDER BY ... LIMIT n` (TopK) queries {#top-k-queries}
 
 Queries which use the TopK optimization (`ORDER BY <column> LIMIT n`, accelerated by dynamic filtering or by a minmax skip index on the sort column) use the query condition cache as well.

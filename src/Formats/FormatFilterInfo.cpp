@@ -5,6 +5,8 @@
 #include <Storages/VirtualColumnUtils.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
+#include <Common/SipHash.h>
+#include <Formats/FormatSettings.h>
 #include <boost/functional/hash.hpp>
 
 #include <DataTypes/DataTypeTuple.h>
@@ -27,6 +29,62 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool use_query_condition_cache;
+    extern const SettingsBool input_format_parquet_filter_push_down;
+    extern const SettingsBool input_format_parquet_bloom_filter_push_down;
+    extern const SettingsUInt64 input_format_parquet_dictionary_filter_push_down;
+    extern const SettingsBool input_format_parquet_page_filter_push_down;
+    extern const SettingsBool input_format_parquet_spatial_filter_push_down;
+    extern const SettingsBool input_format_orc_filter_push_down;
+    extern const SettingsBool input_format_parquet_case_insensitive_column_matching;
+    extern const SettingsBool input_format_orc_case_insensitive_column_matching;
+    extern const SettingsBool input_format_arrow_case_insensitive_column_matching;
+    extern const SettingsBool input_format_parquet_allow_missing_columns;
+    extern const SettingsBool input_format_orc_allow_missing_columns;
+    extern const SettingsBool input_format_arrow_allow_missing_columns;
+}
+
+/// The entries for files are written from the row groups the reader pruned, not from evaluating the
+/// condition. With a condition that is not a filter of rows (e.g. `indexHint`), a pruned row group
+/// still has rows the query returns when it is not pruned, so a read with another set of enabled
+/// pruning methods must not consult the entries of this one. The column matching settings decide
+/// which physical column a predicate is evaluated against, so they are part of the key as well. So are
+/// the settings allowing missing columns: a read that fills a missing column with defaults may cache
+/// a verdict, and a read that must throw for that column would otherwise skip the file instead.
+UInt64 fileFormatPruningSettingsSalt(const Settings & settings)
+{
+    SipHash hash;
+    hash.update(settings[Setting::input_format_parquet_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_bloom_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_dictionary_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_page_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_spatial_filter_push_down].value);
+    hash.update(settings[Setting::input_format_orc_filter_push_down].value);
+    hash.update(settings[Setting::input_format_parquet_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_orc_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_arrow_case_insensitive_column_matching].value);
+    hash.update(settings[Setting::input_format_parquet_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_orc_allow_missing_columns].value);
+    hash.update(settings[Setting::input_format_arrow_allow_missing_columns].value);
+    return hash.get64();
+}
+
+/// The same settings as above, taken from the format settings a reader actually uses. Keep them in sync.
+UInt64 fileFormatPruningSettingsSalt(const FormatSettings & format_settings)
+{
+    SipHash hash;
+    hash.update(format_settings.parquet.filter_push_down);
+    hash.update(format_settings.parquet.bloom_filter_push_down);
+    hash.update(static_cast<UInt64>(format_settings.parquet.dictionary_filter_push_down));
+    hash.update(format_settings.parquet.page_filter_push_down);
+    hash.update(format_settings.parquet.spatial_filter_push_down);
+    hash.update(format_settings.orc.filter_push_down);
+    hash.update(format_settings.parquet.case_insensitive_column_matching);
+    hash.update(format_settings.orc.case_insensitive_column_matching);
+    hash.update(format_settings.arrow.case_insensitive_column_matching);
+    hash.update(format_settings.parquet.allow_missing_columns);
+    hash.update(format_settings.orc.allow_missing_columns);
+    hash.update(format_settings.arrow.allow_missing_columns);
+    return hash.get64();
 }
 
 void ColumnMapper::setStorageColumnEncoding(std::unordered_map<String, Int64> && storage_encoding_)
@@ -94,7 +152,10 @@ std::optional<size_t> FormatFilterInfo::computeConditionHash(
     if (outputs.size() != 1 || !VirtualColumnUtils::isDeterministic(outputs[0]))
         return {};
 
-    return queryConditionCacheHash(filter_actions_dag.getHash(), queryConditionCacheSettingsSalt(context->getSettingsRef()));
+    const auto & settings = context->getSettingsRef();
+    return queryConditionCacheHash(
+        filter_actions_dag.getHash(),
+        queryConditionCacheSettingsSalt(settings) ^ fileFormatPruningSettingsSalt(settings));
 }
 
 FormatFilterInfo::FormatFilterInfo() = default;
