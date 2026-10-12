@@ -188,6 +188,7 @@ Cluster::Address::Address(
     host_name = parsed_host_port.first;
     database_shard_name = info.shard_name;
     database_replica_name = info.replica_name;
+    replica_group = info.replica_group;
     port = parsed_host_port.second;
     secure = params.secure ? Protocol::Secure::Enable : Protocol::Secure::Disable;
     bind_host = params.bind_host;
@@ -629,7 +630,7 @@ Cluster::Cluster(
         Addresses current;
         for (const auto & replica : shard)
             current.emplace_back(
-                DatabaseReplicaInfo{replica, "", "", {}},
+                DatabaseReplicaInfo{replica, "", "", {}, ""},
                 params,
                 current_shard_num,
                 current.size() + 1);
@@ -947,6 +948,7 @@ Cluster::Cluster(Cluster::ReplicasAsShardsTag, const Cluster & from, const Setti
 
     secret = from.secret;
     name = from.name;
+    replicas_as_shards = true;
     /// Every replica became a shard of its own, so a shard number here denotes a different shard than the same
     /// number does in `from`. The identity is left empty, and an empty identity authenticates nothing.
 
@@ -973,6 +975,7 @@ Cluster::Cluster(Cluster::SubclusterTag, const Cluster & from, const std::vector
     /// `shards_info.emplace_back(from_shard)` above keeps each shard's `shard_num`, so a shard number
     /// still denotes the same shard as in `from` and the identity carries over.
     shard_scope_identity = from.shard_scope_identity;
+    replicas_as_shards = from.replicas_as_shards;
 
     initMisc();
 }

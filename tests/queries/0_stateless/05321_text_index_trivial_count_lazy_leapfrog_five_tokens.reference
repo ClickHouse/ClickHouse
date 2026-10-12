@@ -1,0 +1,5 @@
+└──ReadFromTextIndexCount (Trivial count from text index (idx, tokens = ["burst", "every", "half", "seventh", "third"]))
+burst leapfrog	96
+burst bruteforce	96
+rare auto	10
+rare bruteforce	10
