@@ -82,7 +82,7 @@ for asynchronous in (0, 1):
                 decoding = [symbol for symbol in sample["symbols"] if "Connection::receiveProfileTraces" in symbol]
                 assert not decoding, (asynchronous, hedged, sample["trace_type"], decoding)
             remote_samples = sum(sample["query_id"] != query_id and any(sample["symbols"]) for sample in samples)
-            log_query("SYSTEM FLUSH LOGS")
+            log_query("SYSTEM FLUSH LOGS trace_log")
             # `Connection::receiveProfileTraces` must still be sampled in `system.trace_log`.
             # Numeric symbol ranges avoid demangling every frame in the allocation samples.
             decoder_samples = int(log_query(
