@@ -8,6 +8,7 @@
 #include <Server/ClientEmbedded/PtyClientDescriptorSet.h>
 #include <Access/Credentials.h>
 #include <Core/ServerSettings.h>
+#include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/Session.h>
 #include <Common/Exception.h>
@@ -45,6 +46,13 @@ namespace ErrorCodes
 namespace ServerSetting
 {
     extern const ServerSettingsString default_session_user;
+}
+
+namespace Setting
+{
+    extern const SettingsUInt64 idle_connection_timeout;
+    extern const SettingsSeconds receive_timeout;
+    extern const SettingsSeconds send_timeout;
 }
 
 namespace
@@ -610,7 +618,6 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// close frame and the browser would see an abnormal close (1006). Send
     /// an explicit policy-violation close (1008) instead so clients can
     /// distinguish login failure from network errors deterministically.
-    /// Note: do not call makeSessionContext() here - it will be called by ClientEmbedded's constructor.
     auto session = std::make_unique<Session>(server.context(), ClientInfo::Interface::HTTP, request.isSecure());
     try
     {
@@ -638,6 +645,26 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
         sendWebSocketClose(socket, 1008, "Authentication failed");
         return;
     }
+
+    /// Create the session context here rather than in the embedded client thread, so that the
+    /// same limits as for other interfaces apply before any PTY or thread is allocated:
+    /// `max_sessions_for_user` is checked by `makeSessionContext`, and the user's
+    /// `idle_connection_timeout`, `receive_timeout` and `send_timeout` settings are applied below.
+    try
+    {
+        session->makeSessionContext();
+    }
+    catch (...)
+    {
+        tryLogCurrentException(log, "Failed to create WebSocket session");
+        sendWebSocketClose(socket, 1008, "Cannot create session");
+        return;
+    }
+
+    const auto & settings = session->sessionContext()->getSettingsRef();
+    const Poco::Timespan receive_timeout = settings[Setting::receive_timeout];
+    const Poco::Timespan send_timeout = settings[Setting::send_timeout];
+    const UInt64 idle_connection_timeout = settings[Setting::idle_connection_timeout];
 
     LOG_DEBUG(log, "WebSocket connection established for user {}", auth_user);
 
@@ -673,7 +700,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     int pty_master_fd = server_descriptors.out;
 
     /// Set a send timeout to avoid hanging indefinitely on slow/non-reading clients
-    socket.setSendTimeout(Poco::Timespan(30, 0)); /// 30 seconds
+    socket.setSendTimeout(send_timeout);
 
     /// Make PTY master non-blocking for polling. If we cannot put it into
     /// non-blocking mode, the read loop below would deadlock on the first
@@ -712,10 +739,22 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
     /// handler thread by trickling bytes after poll() indicates readability.
     /// If a timeout fires mid-frame, the catch block below terminates the
     /// connection (rather than continuing), so there is no protocol desync.
-    socket.setReceiveTimeout(Poco::Timespan(30, 0)); /// 30 seconds per socket read
+    socket.setReceiveTimeout(receive_timeout);
+
+    /// Close the session after `idle_connection_timeout` seconds without any traffic in either
+    /// direction, as `TCPHandler` does for idle native protocol connections. Output from the
+    /// embedded client (e.g. progress of a long-running query) counts as activity.
+    Stopwatch idle_time;
 
     while (running && !server.isCancelled() && !client_runner->hasFinished())
     {
+        if (idle_time.elapsedSeconds() > static_cast<double>(idle_connection_timeout))
+        {
+            LOG_DEBUG(log, "Closing idle WebSocket connection");
+            send_close_once(1000, "Idle timeout");
+            break;
+        }
+
         struct pollfd fds[2];
         fds[0].fd = socket.impl()->sockfd();
         fds[0].events = POLLIN;
@@ -741,6 +780,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
             if (n > 0)
             {
                 sendWebSocketBinary(socket, pty_buf, static_cast<size_t>(n));
+                idle_time.restart();
             }
             else if (n == 0)
             {
@@ -763,7 +803,7 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                 /// the per-read timeout to hold the handler thread indefinitely.
                 /// The absolute deadline closes that hole by capping the total
                 /// time spent reading a single frame.
-                UInt64 frame_deadline = clock_gettime_ns() + 30'000'000'000ULL; /// 30 seconds per frame
+                UInt64 frame_deadline = clock_gettime_ns() + static_cast<UInt64>(receive_timeout.totalMicroseconds()) * 1000;
                 WebSocketFrame frame = readWebSocketFrame(socket, frame_deadline);
 
                 if (frame.message_too_big)
@@ -785,6 +825,8 @@ void WebTerminalRequestHandler::handleWebSocket(HTTPServerRequest & request, HTT
                     running = false;
                     continue;
                 }
+
+                idle_time.restart();
 
                 /// Handle control frames (can appear between fragmented data frames)
                 if (frame.opcode >= 0x08)
