@@ -1134,15 +1134,33 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
     def last_removal_attempt(timeout=QUERY_TIMEOUT):
         """The newest `last_removal_attempt_time` over the parts of `table`, in epoch seconds.
 
-        `grabOldParts` stamps it on every part it examines, before it tests whether a transaction
-        can still see it, so a value newer than a baseline is the chance the defect needs. A plain
-        test against zero would accept the stamp of a setup round instead: `TRUNCATE` cleans up
-        synchronously (`StorageMergeTree::truncate`), and that round ran while the truncating
-        transaction still protected the part.
+        Taken as a baseline for `kept_as_visible`, because the setup leaves a stamp of its own:
+        `StorageMergeTree::truncate` cleans up synchronously, in a round that ran while the
+        truncating transaction still protected the part.
         """
         return int(
             q(
                 "SELECT max(toUnixTimestamp(last_removal_attempt_time)) FROM system.parts "
+                f"WHERE database = currentDatabase() AND table = '{table}'",
+                timeout=timeout,
+            ).strip()
+            or 0
+        )
+
+    def kept_as_visible(since, timeout=QUERY_TIMEOUT):
+        """Whether a cleanup round after `since` kept the part because a transaction still sees it.
+
+        `grabOldParts` stamps the attempt time first, then tests visibility, then unique ownership,
+        and `removal_state` says which test stopped it. A fresh attempt time on its own would also
+        accept a round that found the part removable and skipped it under `NON_UNIQUE_OWNERSHIP` --
+        the reference this poll's own read of `system.parts` holds -- which leaves the same part on
+        disk as the snapshot protecting it, and would report a server that still removes it as one
+        that does not.
+        """
+        return int(
+            q(
+                "SELECT countIf(removal_state = 'VISIBLE_TO_TRANSACTIONS' AND "
+                f"toUnixTimestamp(last_removal_attempt_time) > {since}) FROM system.parts "
                 f"WHERE database = currentDatabase() AND table = '{table}'",
                 timeout=timeout,
             ).strip()
@@ -1180,11 +1198,11 @@ def test_lowered_snapshot_keeps_the_part_it_sees(start_cluster):
         require(
             poll(
                 lambda remaining: parts_on_disk(remaining) == 0
-                or last_removal_attempt(remaining) > baseline,
+                or kept_as_visible(baseline, remaining),
                 60,
             ),
-            "the cleanup thread never looked at the part while the lowered snapshot was set, so "
-            "this run says nothing about what it skips",
+            "no cleanup round since the snapshot was lowered got as far as deciding that the part "
+            "is still visible to a transaction, so this run says nothing about what it skips",
         )
 
         assert tx(3, f"SELECT count() FROM {table}").strip() == "1"
