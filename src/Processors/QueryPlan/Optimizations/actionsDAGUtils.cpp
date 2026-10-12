@@ -601,9 +601,10 @@ static bool isConstantExpression(const ActionsDAG::Node * root, NodeMap & consta
         const auto * node = frame.node;
 
         if (node->column)
-            /// A constant lambda can still execute non-deterministic functions.
-            finish(
-                allColumnFunctions(*node->column, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); }));
+            /// A constant lambda can still execute non-deterministic or server-specific functions.
+            finish(allColumnFunctions(
+                *node->column,
+                [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery() && !function.isServerConstant(); }));
         else if (!canInheritConstnessFromChildren(*node))
             finish(false);
         else if (frame.next_child == node->children.size())
@@ -640,7 +641,7 @@ std::optional<ActionsDAGLineageHop> describeActionsDAGLineageHop(const ActionsDA
         kind = ActionsDAGLineageKind::DistinctValuesBound;
     else
     {
-        if (!node.function_base->isDeterministicInScopeOfQuery())
+        if (!node.function_base->isDeterministicInScopeOfQuery() || node.function_base->isServerConstant())
             return {};
 
         /// Constant arguments do not increase NDV; follow the only non-const argument.

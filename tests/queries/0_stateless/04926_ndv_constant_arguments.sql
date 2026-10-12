@@ -157,3 +157,74 @@ SELECT extract(explain, 'Join:.*') FROM
     ON probe.n = aggregated.key
 )
 WHERE explain LIKE '% Join:%';
+
+-- `addressToSymbol` depends on both its argument and the executing server.
+SET allow_introspection_functions = 1;
+
+-- A folded lambda must retain the server-specific property of its body.
+SELECT 'arrayMap(x -> length(addressToSymbol(x)), [n])[1]';
+SELECT extract(explain, 'Join:.*') FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT *
+    FROM probe
+    JOIN
+    (
+        SELECT arrayMap(x -> length(addressToSymbol(x)), [n])[1] AS key, count()
+        FROM source
+        GROUP BY key
+    ) AS aggregated
+    ON probe.n = aggregated.key
+)
+WHERE explain LIKE '% Join:%';
+
+-- The folded inner lambda is captured by the outer lambda.
+SELECT 'arrayMap(x -> arraySum(arrayMap(y -> length(addressToSymbol(y)), [x])), [n])[1]';
+SELECT extract(explain, 'Join:.*') FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT *
+    FROM probe
+    JOIN
+    (
+        SELECT arrayMap(x -> arraySum(arrayMap(y -> length(addressToSymbol(y)), [x])), [n])[1] AS key, count()
+        FROM source
+        GROUP BY key
+    ) AS aggregated
+    ON probe.n = aggregated.key
+)
+WHERE explain LIKE '% Join:%';
+
+-- A lambda capturing `n` must not pass a bound through its capture.
+SELECT 'arrayMap(x -> length(addressToSymbol(x)) + n, [toUInt64(1)])[1]';
+SELECT extract(explain, 'Join:.*') FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT *
+    FROM probe
+    JOIN
+    (
+        SELECT arrayMap(x -> length(addressToSymbol(x)) + n, [toUInt64(1)])[1] AS key, count()
+        FROM source
+        GROUP BY key
+    ) AS aggregated
+    ON probe.n = aggregated.key
+)
+WHERE explain LIKE '% Join:%';
+
+-- The same server-specific restriction applies to a direct call.
+SELECT 'length(addressToSymbol(n))';
+SELECT extract(explain, 'Join:.*') FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT *
+    FROM probe
+    JOIN
+    (
+        SELECT length(addressToSymbol(n)) AS key, count()
+        FROM source
+        GROUP BY key
+    ) AS aggregated
+    ON probe.n = aggregated.key
+)
+WHERE explain LIKE '% Join:%';
