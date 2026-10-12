@@ -156,8 +156,10 @@ DROP TABLE IF EXISTS t_stale_part_type_5;
 -- rewritten. Here `b` is renamed to `d` after the part was detached across the type change, so the
 -- part still carries `d` as `String` while the table says `Nullable(String)`, and the rewrite reads it
 -- through the rename branch.
+-- `old_parts_lifetime = 0` removes the empty part left by `DETACH PART` from disk at once: a server restart
+-- would otherwise load it as active, and its mutation would fail on the renamed-away `b` until cleanup drops it.
 CREATE TABLE t_stale_part_type_5 (a String, b String, c String MATERIALIZED concat(a, '!'))
-ENGINE = MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0;
+ENGINE = MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part = 0, min_bytes_for_full_part_storage = 0, old_parts_lifetime = 0;
 
 INSERT INTO t_stale_part_type_5 VALUES ('x', 'y');
 
