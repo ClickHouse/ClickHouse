@@ -224,7 +224,10 @@ TEST(IcebergFileNamesGenerator, ContinuesCurrentMetadataNaming)
     EXPECT_FALSE(Iceberg::isVersionNumberedCommitScheme(numbered));
     /// Without a catalog the name is the commit's compare-and-set: every writer of version 5 must aim at it.
     EXPECT_EQ(numbered, next_name("00004-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.metadata.json"));
-    EXPECT_TRUE(next_name("v4-3f2b6c1e-8a43-4d5e-9b7f-0c1d2e3f4a5b.metadata.json").starts_with("v5-"));
+    const String versioned = next_name("v4-3f2b6c1e-8a43-4d5e-9b7f-0c1d2e3f4a5b.metadata.json");
+    EXPECT_TRUE(versioned.starts_with("v5-") && versioned.ends_with(".metadata.json") && versioned.size() == 53) << versioned;
+    EXPECT_FALSE(Iceberg::isVersionNumberedCommitScheme(versioned));
+    EXPECT_EQ(versioned, next_name("v4-0a1b2c3d-4e5f-4a6b-8c7d-9e0f1a2b3c4d.metadata.json"));
 }
 
 #endif
