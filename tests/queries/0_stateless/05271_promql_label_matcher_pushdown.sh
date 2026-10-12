@@ -103,13 +103,14 @@ echo "-- as in Prometheus, duplicate left series of a one-to-one match are an er
 $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'lim / on(instance) req{instance=\"i1\"}', 100, 130, 10) ORDER BY tags"
 
 # Prints the label values each selector filters by. EXPLAIN keeps the selector filters in the plan only for an empty table.
+# Only the filter lines are looked at: the join with the time ranges table lists `metric_name` among its input columns too.
 function selectors()
 {
     echo "$1"
     $CLIENT -q "
         SELECT DISTINCT arrayStringConcat(extractAll(explain, '= \'([a-z0-9]+)\''), ' ') AS filter
         FROM (EXPLAIN SELECT * FROM prometheusQueryRange('prometheus_empty', '$1', 100, 130, 10))
-        WHERE explain LIKE '%metric_name%'
+        WHERE explain LIKE '%Filter column:%metric_name%'
         ORDER BY filter"
 }
 
