@@ -664,6 +664,24 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 {
     std::vector<std::pair<ISystemLog *, ISystemLog::Index>> logs_to_wait;
 
+    auto flush_buffer_to_log = [&](ISystemLog * log)
+    {
+        if (!ignore_errors)
+        {
+            log->flushBufferToLog(std::chrono::system_clock::now());
+            return;
+        }
+
+        try
+        {
+            log->flushBufferToLog(std::chrono::system_clock::now());
+        }
+        catch (...)
+        {
+            tryLogCurrentException(__PRETTY_FUNCTION__);
+        }
+    };
+
     if (names.empty())
     {
         if (text_log)
@@ -671,7 +689,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
 
         for (auto * log : getAllLogs())
         {
-            log->flushBufferToLog(std::chrono::system_clock::now());
+            flush_buffer_to_log(log);
 
             auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});
@@ -734,7 +752,7 @@ void SystemLogs::flushImpl(const std::vector<std::pair<String, String>> & names,
             if (log == text_log.get())
                 flushAsyncTextLogsIfPossible();
 
-            log->flushBufferToLog(std::chrono::system_clock::now());
+            flush_buffer_to_log(log);
 
             const auto last_log_index = log->getLastLogIndex();
             logs_to_wait.push_back({log, last_log_index});

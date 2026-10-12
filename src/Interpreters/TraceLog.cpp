@@ -13,6 +13,7 @@
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/InstrumentationManager.h>
+#include <Interpreters/TraceCollector.h>
 #include <Interpreters/TraceLog.h>
 #include <base/demangle.h>
 #include <base/getFQDNOrHostName.h>
@@ -243,6 +244,11 @@ void TraceLogElement::appendToBlock(MutableColumns & columns) const
         .insertData(entry_type.has_value() ? reinterpret_cast<const char *>(&entry_type.value()) : nullptr, sizeof(Instrumentation::EntryType));
     typeid_cast<ColumnNullable &>(*columns[i++])
         .insertData(duration_nanoseconds.has_value() ? reinterpret_cast<const char *>(&duration_nanoseconds.value()) : nullptr, sizeof(UInt64));
+}
+
+void TraceLog::flushBufferToLog(std::chrono::system_clock::time_point)
+{
+    TraceCollector::drain();
 }
 
 }
