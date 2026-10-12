@@ -14,6 +14,7 @@ namespace DB
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool allow_remote_fs_zero_copy_replication;
+    extern const MergeTreeSettingsBool transfer_caches_on_disk_move;
 }
 
 namespace ErrorCodes
@@ -267,6 +268,7 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
             /// FIXME for some reason we cannot just use this part, we have to re-create it through MergeTreeDataPartBuilder
             preserve_blobs = true;
             zero_copy_part->is_temp = false;    /// Do not remove it in dtor
+            zero_copy_part->owns_columns_cache_entries = false;    /// The active part with the same name does
             cloned_part_storage = zero_copy_part->getDataPartStoragePtr();
         }
         else
@@ -283,6 +285,9 @@ MergeTreePartsMover::TemporaryClonedPart MergeTreePartsMover::clonePart(const Me
 
     MergeTreeDataPartBuilder builder(*data, part->name, cloned_part_storage, getReadSettings(), PartDirIntent::OpenExisting);
     cloned_part.part = std::move(builder).withPartFormatFromDisk().build();
+    /// Until the copy replaces the part, the part owns the entries of both in the columns cache,
+    /// see `MergeTreeData::swapActivePart`.
+    cloned_part.part->owns_columns_cache_entries = false;
     LOG_TRACE(log, "Part {} was cloned to {}", part->name, cloned_part.part->getDataPartStorage().getFullPath());
 
     cloned_part.part->is_temp = false;
@@ -334,8 +339,8 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
 
     /// `getActiveContainingPart` and `swapActivePart` are called under the same lock
     /// to prevent part becoming inactive between calls
-    auto part_lock = data->lockParts();
-    auto active_part = data->getActiveContainingPart(cloned_part.part->name, part_lock);
+    std::optional<DataPartsLock> part_lock(data->lockParts());
+    auto active_part = data->getActiveContainingPart(cloned_part.part->name, *part_lock);
 
     /// It's ok, because we don't block moving parts for merges or mutations
     if (!active_part || active_part->name != cloned_part.part->name)
@@ -367,11 +372,27 @@ void MergeTreePartsMover::swapClonedPart(TemporaryClonedPart & cloned_part) cons
     /// And on the next ClickHouse startup during loading parts the first copy (in the order of defining disks
     /// in the storage policy) will be loaded as Active, the second one will be loaded as Outdated and removed as duplicate.
     /// See MergeTreeData::loadDataParts().
-    data->swapActivePart(cloned_part.part, part_lock);
+    data->swapActivePart(cloned_part.part, *part_lock);
+    part_lock.reset();
 
     LOG_TRACE(log, "Part {} was moved to {}", cloned_part.part->name, cloned_part.part->getDataPartStorage().getFullPath());
 
     cloned_part.temporary_directory_lock = {};
+
+    /// Outside of the lock of the parts: a part has an entry in the mark cache per stream. The replaced
+    /// part stays on its disk at least until `active_part` is released, so its keys are still valid.
+    if ((*data->getSettings())[MergeTreeSetting::transfer_caches_on_disk_move])
+    {
+        /// The part has been moved already, keeping its caches is only an optimization.
+        try
+        {
+            active_part->moveCachesTo(*cloned_part.part);
+        }
+        catch (...)
+        {
+            tryLogCurrentException(log, fmt::format("while moving the caches of part {}", cloned_part.part->name));
+        }
+    }
 }
 
 }
