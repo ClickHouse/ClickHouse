@@ -341,6 +341,17 @@ size_t canonicalChild(const QueryPlan::Node & node, size_t index)
     return index;
 }
 
+/// A rename-only `Expression` gets its child's key in `calculateHashTableCacheKeys`, so the plans can match
+/// with such a step present in one and absent in the other: when PREWHERE takes over a filter, the
+/// single-node plan keeps one the parallel replicas local branch merges away.
+const QueryPlan::Node & skipRenames(const QueryPlan::Node & node)
+{
+    const auto * current = &node;
+    while (current->children.size() == 1 && isPassthroughExpressionWithRenames(*current->step))
+        current = current->children.front();
+    return *current;
+}
+
 /// Walk the two plans together and fill `reads`, returning whether the coordinated read is at or below
 /// this pair of nodes. They can be walked together because they are identical below the node whose output
 /// the replicas ship, which is what `findCorrespondingNodeInSingleNodePlan` establishes by comparing hashes
@@ -363,8 +374,11 @@ size_t canonicalChild(const QueryPlan::Node & node, size_t index)
 ///
 /// The nodes are taken as `const`, which still hands out mutable steps: `shared_ptr::get() const` returns
 /// `T *`.
-bool collectCoordinatedReads(const QueryPlan::Node & replicas_node, const QueryPlan::Node & single_node, CoordinatedReads & reads)
+bool collectCoordinatedReads(const QueryPlan::Node & replicas_node_in, const QueryPlan::Node & single_node_in, CoordinatedReads & reads)
 {
+    const auto & replicas_node = skipRenames(replicas_node_in);
+    const auto & single_node = skipRenames(single_node_in);
+
     if (auto * coordinated = typeid_cast<ReadFromMergeTree *>(replicas_node.step.get());
         coordinated && coordinated->isParallelReadingFromReplicas())
     {
