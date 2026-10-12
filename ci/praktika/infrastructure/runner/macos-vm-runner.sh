@@ -51,7 +51,7 @@ brew cleanup --prune=all -s
 "$(brew --prefix python@3)/bin/python3" -m venv ~/venv
 ~/venv/bin/pip install --upgrade pip
 ~/venv/bin/pip install --upgrade boto3 pygithub requests urllib3 unidiff dohq-artifactory pyjwt \
-    numpy==2.3.2 pandas==2.3.3 scipy==1.16.1 Jinja2==3.1.6
+    numpy==2.3.2 pandas==2.3.3 Jinja2==3.1.6
 case $(uname -m) in arm64) ARCH=arm64 ;; *) ARCH=x64 ;; esac
 VERSION=$(curl -fsSL https://api.github.com/repos/actions/runner/releases/latest | jq -r '.tag_name | ltrimstr("v")')
 mkdir -p ~/actions-runner && cd ~/actions-runner
