@@ -376,7 +376,7 @@ IProcessor::PipelineUpdate LazyReadReplacingFinalSource::updatePipeline()
     /// We need to retag the processors in order to track their execution time correctly in EXPLAIN ANALYZE
     for (auto & processor : processors)
         processor->inheritQueryPlanStepFromParent(*this, getQueryPlanStepGroup());
-    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}};
+    return PipelineUpdate{.to_add = std::move(processors), .to_remove = {}, .to_reconnect = {}};
 }
 
 }
