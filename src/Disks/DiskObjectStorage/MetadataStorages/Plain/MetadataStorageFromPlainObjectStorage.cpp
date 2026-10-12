@@ -41,6 +41,13 @@ MetadataStorageFromPlainObjectStorage::MetadataStorageFromPlainObjectStorage(
         object_metadata_cache = std::make_shared<CacheBase<UInt128, ObjectMetadataEntry>>(CurrentMetrics::end(), CurrentMetrics::end(), object_metadata_cache_size);
 }
 
+bool MetadataStorageFromPlainObjectStorage::isPathOnLocalFilesystem() const
+{
+    /// `storage_path_full` is an object key prefix inside the object storage, so it names a real
+    /// local directory only when the object storage itself is backed by the local filesystem.
+    return !object_storage->isRemote();
+}
+
 MetadataTransactionPtr MetadataStorageFromPlainObjectStorage::createTransaction()
 {
     return std::make_shared<MetadataStorageFromPlainObjectStorageTransaction>(*this, object_storage);

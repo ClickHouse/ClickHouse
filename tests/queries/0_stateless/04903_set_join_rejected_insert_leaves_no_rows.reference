@@ -1,0 +1,20 @@
+-- Set
+Injected failure
+staged files left behind: 0
+matching rows immediately after failed insert:
+0
+matching rows after reattach:
+1
+-- Join
+Injected failure
+staged files left behind: 0
+rows immediately after failed insert:
+0
+rows after reattach:
+1
+-- Join limit
+SET_SIZE_LIMIT_EXCEEDED
+rows immediately after rejected insert:
+0
+rows after reattach:
+0
