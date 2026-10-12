@@ -113,6 +113,8 @@ struct FormatSettings
 
     DateTimeOutputFormat date_time_output_format = DateTimeOutputFormat::Simple;
 
+    bool date_time_overflow_behavior_use_local_timezone = false;
+
     /// Read an unquoted number for a `DateTime`/`DateTime64` column as the raw underlying value — seconds for
     /// `DateTime`, ticks at the column precision for `DateTime64` — instead of a Unix timestamp in seconds.
     /// Restores the pre-26.8 behavior (see the `input_format_read_datetime_number_as_raw_value` setting). Also
