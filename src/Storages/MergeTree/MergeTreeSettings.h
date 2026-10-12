@@ -94,6 +94,13 @@ struct MergeTreeSettings
     SettingsChanges changesFrom(const MergeTreeSettings & base) const;
     void applyChanges(const SettingsChanges & changes, ContextPtr context, bool is_loading_from_existing_metadata);
     void applyChange(const SettingChange & change, ContextPtr context, bool is_loading_from_existing_metadata);
+    /// For the computations that derive a value from the settings a statement would leave behind, and
+    /// read scalar settings only. Resolving the `disk` setting creates and registers the disk its
+    /// definition describes, and a computation that runs before the statement is known to be allowed
+    /// must not do that: a rejected `ALTER TABLE ... MODIFY SETTING disk = disk(...)` would leave the
+    /// disk, and the directory it created, behind. The settings update itself resolves it, see
+    /// `MergeTreeData::changeSettings`.
+    void applyChangesLeavingDiskUnresolved(const SettingsChanges & changes);
     VectorWithMemoryTracking<std::string_view> getAllRegisteredNames() const;
     static std::vector<std::string_view> getAllAliasNames();
     std::string_view getDescription(std::string_view name) const;

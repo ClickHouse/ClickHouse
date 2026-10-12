@@ -404,7 +404,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// Skip if projection was applied. A non-null analysis result alone does not imply
     /// a projection: join-order estimation runs index analysis for join relations and
-    /// memoizes the result (see estimateReadRowsCount in RelationStatisticsEstimator.cpp).
+    /// memoizes the result (see estimateReadRowsCount in optimizeJoin.cpp).
     if (auto analyzed = reading_step->getAnalyzedResult(); analyzed && analyzed->readFromProjection())
         return;
 
@@ -517,10 +517,7 @@ void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::N
 
     /// Use FutureSetFromStorage — the Set will be filled by CreatingSetStep before
     /// LazyFinalKeyAnalysisStep runs (they are in the same pipeline).
-    /// Not mutable: the query owns this set, fills it once through the `CreatingSetStep` below, and
-    /// nothing outside the query can reach it.
-    auto future_set = std::make_shared<FutureSetFromStorage>(
-        FutureSet::Hash{}, /*ast=*/ nullptr, set, /*storage_id=*/ std::nullopt, /*is_mutable_during_query_=*/ false);
+    auto future_set = std::make_shared<FutureSetFromStorage>(FutureSet::Hash{}, /*ast=*/ nullptr, set, /*storage_id=*/ std::nullopt);
 
     /// Build the set-building sub-plan: read columns needed for predicates
     /// (prewhere, row policy, filter) and primary key, then project to PK columns.

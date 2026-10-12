@@ -76,10 +76,10 @@ class RPNBuilderTreeNode
 {
 public:
     /// Construct RPNBuilderTreeNode with non null dag node and tree context
-    explicit RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, RPNBuilderTreeContext & tree_context_);
+    explicit RPNBuilderTreeNode(const ActionsDAG::Node * dag_node_, const RPNBuilderTreeContext & tree_context_);
 
     /// Construct RPNBuilderTreeNode with non null ast node and tree context
-    explicit RPNBuilderTreeNode(const IAST * ast_node_, RPNBuilderTreeContext & tree_context_);
+    explicit RPNBuilderTreeNode(const IAST * ast_node_, const RPNBuilderTreeContext & tree_context_);
 
     /// Get AST node
     const IAST * getASTNode() const { return ast_node; }
@@ -113,6 +113,7 @@ public:
 
     /** Try get constant from node. If node is constant returns true, and constant value and constant type output parameters are set.
       * Otherwise false is returned.
+      * The output type is the type of the value: `LowCardinality` is removed, and `Nullable` is removed when the value is not NULL.
       */
     bool tryGetConstant(Field & output_value, DataTypePtr & output_type) const;
 
@@ -141,16 +142,10 @@ public:
         return tree_context;
     }
 
-    /// Get tree context
-    RPNBuilderTreeContext & getTreeContext()
-    {
-        return tree_context;
-    }
-
 protected:
     const IAST * ast_node = nullptr;
     const ActionsDAG::Node * dag_node = nullptr;
-    RPNBuilderTreeContext & tree_context;
+    const RPNBuilderTreeContext & tree_context;
 };
 
 /** RPNBuilderFunctionTreeNode is wrapper around RPNBuilderTreeNode with function type.
@@ -172,6 +167,17 @@ public:
     /// Get function argument at index
     RPNBuilderTreeNode getArgumentAt(size_t index) const;
 };
+
+/// Whether the node is `CAST`, `_CAST`, `toNullable` or `toLowCardinality` whose conversion never changes
+/// a non-NULL value: `LowCardinality` or `Nullable` added or dropped, at any depth of `Array`.
+/// Dropping `Nullable` throws on NULL, but an index may skip such granules and the query will not throw.
+/// Pass `allow_drop_nullable = false` when the predicate is replaced and must still throw, e.g. by direct read from a text index.
+bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop_nullable = true);
+
+/// Strips lossless conversions (see above) from the node. Indexes are analyzed on the expression under them.
+/// The AST form carries no types and is returned as is.
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable = true);
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node, bool allow_drop_nullable = true);
 
 /** RPN Builder build stack of reverse polish notation elements (RPNElements) required for index analysis.
   *
@@ -199,28 +205,6 @@ public:
   * In addition client must provide ExtractAtomFromTreeFunction that returns true and RPNElement as output parameter,
   * if it can convert RPNBuilderTree node to RPNElement, false otherwise.
   */
-/// `indexHint` exists so that index analysis can see a condition that is never executed. A consumer
-/// that analyses indexes has to descend into it - that is the whole point of the hint. A consumer
-/// that estimates how selective an expression is must not: the condition removes no rows, since the
-/// function evaluates to 1 for every row, so descending into it applies a selectivity the query does
-/// not have. Where the hint holds a conjunct derived from its siblings (`LogicalExpressionOptimizerPass`
-/// wraps those it derived from a chain of comparisons), it would also apply that conjunct's
-/// selectivity twice, once for the original and once for the copy. Such a consumer specialises this
-/// trait and gets an `ALWAYS_TRUE` leaf for the whole hint.
-///
-/// `ALWAYS_TRUE` bounds the claim to the number of rows the condition removes; a hint is not inert.
-/// It takes part in index analysis and prunes the read set, so a relation under one can yield fewer
-/// rows than a selectivity-based estimate suggests. That is invisible to
-/// `ConditionSelectivityEstimator` for every predicate, not just hints: it estimates
-/// `total_rows * selectivity`, and `total_rows` counts whole parts, mark ranges included whether the
-/// index selected them or not. Pruning is carried by a separate estimate,
-/// `RowEstimateSource::PrimaryIndex`, which is used only when column statistics are missing.
-template <typename RPNElement>
-struct RPNBuilderTraits
-{
-    static constexpr bool expand_index_hint = true;
-};
-
 template <typename RPNElement>
 class RPNBuilder
 {

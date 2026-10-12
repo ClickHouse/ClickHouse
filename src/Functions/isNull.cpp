@@ -45,7 +45,7 @@ ColumnPtr FunctionIsNull::getConstantResultForNonConstArguments(const ColumnsWit
 }
 
 
-ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const
+ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t) const
 {
     const ColumnWithTypeAndName & elem = arguments[0];
 
@@ -75,13 +75,8 @@ ColumnPtr FunctionIsNull::executeImpl(const ColumnsWithTypeAndName & arguments, 
 
     if (const auto * nullable = checkAndGetColumn<ColumnNullable>(&*elem.column))
     {
-        /// A null map byte only has to be non-zero to mean NULL, so it cannot be returned as the result.
-        auto res_column = ColumnUInt8::create(input_rows_count);
-        const auto & null_map = nullable->getNullMapData();
-        auto & res_data = res_column->getData();
-        for (size_t i = 0; i < input_rows_count; ++i)
-            res_data[i] = null_map[i] != 0;
-        return res_column;
+        /// Merely return the embedded null map.
+        return nullable->getNullMapColumnPtr();
     }
 
     /// Since no element is nullable, return a zero-constant column representing

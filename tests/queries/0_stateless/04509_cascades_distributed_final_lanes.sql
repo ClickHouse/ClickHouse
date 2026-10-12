@@ -1,3 +1,6 @@
+-- Tags: no-old-analyzer
+-- no-old-analyzer: distributed planning requires the analyzer.
+
 -- A distributed FINAL read splits into primary-key-range layers; with more layers than tasks,
 -- each task carries several lanes in its `read_bucket` parameter. The optimizer clones the read
 -- step when it extracts the best plan, and the clone must keep both the coordinator-computed
@@ -28,6 +31,7 @@ INSERT INTO t_final_lanes SELECT number, number, 1 FROM numbers(7000, 1000);
 INSERT INTO t_final_lanes SELECT number, number * 10, 2 FROM numbers(7000, 1000);
 
 SET enable_parallel_replicas = 0;
+SET automatic_parallel_replicas_mode = 0;
 SET max_rows_to_group_by = 0;
 -- The hinted size makes the parallel read win; the physical table stays small.
 SET param__internal_join_table_stat_hints = '{"t_final_lanes": {"cardinality": 100000000, "avg_row_bytes": 24, "distinct_keys": {"k": 10000000}}}';

@@ -2,13 +2,11 @@
 
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingFieldASTFunction.h>
-#include <Core/SettingFieldDataType.h>
 #include <Core/SettingsFields.h>
 
 
 namespace DB
 {
-class ASTCreateQuery;
 class ASTStorage;
 class SettingsChanges;
 struct TimeSeriesSettingsImpl;
@@ -17,7 +15,6 @@ struct TimeSeriesSettingsImpl;
 #define TIMESERIES_SETTINGS_SUPPORTED_TYPES(CLASS_NAME, M) \
     M(CLASS_NAME, ASTFunction) \
     M(CLASS_NAME, Bool) \
-    M(CLASS_NAME, DataType) \
     M(CLASS_NAME, Map) \
     M(CLASS_NAME, UInt64) \
 
@@ -56,25 +53,5 @@ private:
 
 /// Checks that the combination of settings is consistent.
 void checkTimeSeriesSettings(const TimeSeriesSettings & settings);
-
-/// Whether a CREATE TABLE ... ENGINE=TimeSeries query has `recent_samples_ttl_seconds` in its SETTINGS clause.
-bool hasExplicitTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
-
-/// Returns the value of `recent_samples_ttl_seconds` from the SETTINGS clause of a
-/// CREATE TABLE ... ENGINE=TimeSeries query, or the setting's default value if the query
-/// doesn't specify it (the normalization pins an explicit value into every query except
-/// the initial CREATE query, so an absent setting means a new table getting the default).
-/// A non-zero result means the query enables the optional "recent samples" target table.
-UInt64 getTimeSeriesSettingRecentSamplesTTL(const ASTCreateQuery & query);
-
-/// The similar function for `version` is `getTimeSeriesSettingVersion` in Parsers/getTimeSeriesSettingVersion.h,
-/// because it's used while formatting a CREATE query.
-
-/// Whether a CREATE TABLE ... ENGINE=TimeSeries query has `version` in its SETTINGS clause.
-bool hasExplicitTimeSeriesSettingVersion(const ASTCreateQuery & query);
-
-/// Sets `version` in the SETTINGS clause of a CREATE TABLE ... ENGINE=TimeSeries query,
-/// creating the SETTINGS clause if the query doesn't have one yet.
-void setTimeSeriesSettingVersion(ASTCreateQuery & query, UInt64 version);
 
 }

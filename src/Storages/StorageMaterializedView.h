@@ -8,13 +8,9 @@
 #include <Storages/StorageWithCommonVirtualColumns.h>
 #include <Storages/StorageInMemoryMetadata.h>
 #include <Storages/MaterializedView/RefreshTask.h>
-#include <Parsers/ASTRefreshStrategy.h>
 
 namespace DB
 {
-
-class CursorTreeNode;
-using CursorTreeNodePtr = std::shared_ptr<CursorTreeNode>;
 
 class StorageMaterializedView final : public StorageWithCommonVirtualColumns, WithMutableContext
 {
@@ -75,7 +71,7 @@ public:
         bool cleanup,
         ContextPtr context) override;
 
-    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder, DDLGuardPtr & ddl_guard) override;
+    void alter(const AlterCommands & params, ContextPtr context, AlterLockHolder & table_lock_holder) override;
 
     void checkMutationIsPossible(const MutationCommands & commands, const Settings & settings) const override;
 
@@ -164,8 +160,7 @@ private:
     /// out_temp_table_id may be assigned before throwing an exception, in which case the caller
     /// must drop the temp table before rethrowing.
     std::tuple<boost::intrusive_ptr<ASTInsertQuery>, QueryScope>
-    prepareRefresh(RefreshMode mode, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id,
-        const CursorTreeNodePtr & stream_cursor) const;
+    prepareRefresh(bool append, ContextMutablePtr refresh_context, std::optional<StorageID> & out_temp_table_id) const;
     std::optional<StorageID> exchangeTargetTable(StorageID fresh_table, ContextPtr refresh_context) const;
     void dropTempTable(StorageID table, ContextMutablePtr refresh_context, String & out_exception);
 

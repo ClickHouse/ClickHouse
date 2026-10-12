@@ -943,16 +943,12 @@ void writeColumnImpl(
     }
 
     s.column_chunk.meta_data.__isset.size_statistics = true;
-    auto reset_size_statistics = [&]
-    {
-        if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
-            s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
-        if (s.max_rep > 0)
-            s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
-        if (s.max_def > 0)
-            s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
-    };
-    reset_size_statistics();
+    if constexpr (std::is_same_v<ParquetDType, parquet::ByteArrayType>)
+        s.column_chunk.meta_data.size_statistics.__set_unencoded_byte_array_data_bytes(0);
+    if (s.max_rep > 0)
+        s.column_chunk.meta_data.size_statistics.__set_repetition_level_histogram(std::vector<Int64>(s.max_rep + 1));
+    if (s.max_def > 0)
+        s.column_chunk.meta_data.size_statistics.__set_definition_level_histogram(std::vector<Int64>(s.max_def + 1));
 
     /// Could use an arena here (by passing a custom MemoryPool), to reuse memory across pages.
     /// Alternatively, we could avoid using arrow's dictionary encoding code and leverage
@@ -1225,11 +1221,7 @@ void writeColumnImpl(
                 use_dictionary = false;
 
                 s.indexes = {};
-                /// Everything the discarded pass accumulated is about to be accumulated again.
-                /// (no need to clear hashes_for_bloom_filter: the same values hash to the same set)
-                reset_size_statistics();
-                page_statistics.clear();
-                total_statistics.clear();
+                /// (no need to clear hashes_for_bloom_filter)
 
 #ifndef NDEBUG
                 /// Arrow's DictEncoderImpl destructor asserts that FlushValues() was called, so we

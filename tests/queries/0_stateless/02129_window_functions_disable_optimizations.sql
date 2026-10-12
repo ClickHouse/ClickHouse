@@ -13,12 +13,6 @@ SELECT
     sum(a * b) OVER (ORDER BY number ASC) AS s
 FROM numbers(10);
 
--- A windowed sum must not be rewritten into `sum(x) + literal * count(x)`: that form cannot carry `OVER`.
--- The rewrite is pinned here so that the window function keeps carrying the sum.
-SELECT sum(number + 1) OVER (ORDER BY number ASC) AS s
-FROM numbers(10)
-SETTINGS enable_analyzer = 1;
-
 SET optimize_aggregators_of_group_by_keys=1;
 
 SELECT

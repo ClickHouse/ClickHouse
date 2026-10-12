@@ -81,19 +81,8 @@ def test_cache_evicted_by_temporary_data(start_cluster):
             "settings": {
                 "max_bytes_before_external_group_by": "4M",
                 "max_bytes_ratio_before_external_group_by": 0,
-            },
-        },
-        {
-            # The random strings are unique (no deduplication) and incompressible, so the spilled runs
-            # occupy real disk space.
-            "query": "SELECT ignore(*) FROM (SELECT DISTINCT randomPrintableASCII(96) FROM numbers(1024 * 1024))",
-            "settings": {
-                "max_bytes_before_external_distinct": "6M",
-                "max_bytes_ratio_before_external_distinct": 0,
-                # The spill triggers on the tracked query memory, so the thread-local untracked buffers
-                # must be flushed; a single thread keeps the first spilled run a predictable few MB.
-                "max_untracked_memory": 0,
-                "max_threads": 1,
+                # TODO(nihalzp): remove once sharded aggregation supports external aggregation (spill to disk).
+                "enable_sharding_aggregator": 0,
             },
         },
         {

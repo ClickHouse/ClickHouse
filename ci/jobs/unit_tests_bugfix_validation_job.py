@@ -695,20 +695,12 @@ def mark_reproduced(result):
     result.set_status(Result.Status.XFAIL)
 
 
-def finalize(results, info_lines, status=""):
-    # `Result.create_from` derives the job status from the children and skips over
-    # OK/SKIPPED/XFAIL ones, so a lone SKIPPED child yields a job status of OK. A caller
-    # that needs the job itself to read SKIPPED has to pass `status` explicitly.
-    #
-    # No verdict here is cacheable: each reads the merge base, the PR's labels or the PR's
-    # changed-file set, and a digest hashes the checkout's files and submodule revisions
-    # only. The digest is kept because it also gates affectedness.
+def finalize(results, info_lines):
     Result.create_from(
         results=results,
         info=info_lines,
         with_info_from_results=True,
-        status=status,
-    ).complete_job(do_not_cache=True)
+    ).complete_job()
 
 
 def main():
@@ -809,85 +801,33 @@ def main():
     # which would otherwise leak base-tip contrib sources into the merge-base build.
     # Either way the "before" binary would be built against the wrong submodule content
     # (or miss a merge-base-only submodule entirely) and the validator could report a
-    # false reproduction or refutation. None of these outcomes counts as a validation: a
-    # PR-side or unattributable difference reports ERROR, base-only motion reports
-    # SKIPPED, and `is_success` counts neither.
+    # false reproduction or refutation. Inconclusive (ERROR), not a pass.
     checkout_head = Shell.get_output("git rev-parse HEAD").strip()
     assert (
         checkout_head
     ), "Failed to resolve the checkout HEAD; cannot verify submodule state"
     submodule_changes = get_submodule_state_changes(merge_base, checkout_head)
     if submodule_changes:
-        # `checkout_head` is the base+PR merge ref, so it carries the base tip's gitlinks
-        # too: a base-only bump after the branch split lands in the diff above with nothing
-        # contributed by the PR. `None` means the attribution itself could not be computed.
-        try:
-            pr_submodule_changes = get_submodule_state_changes(merge_base, pr_sha)
-        except Exception as e:
-            print(f"WARNING: failed to attribute the submodule difference: {e}")
-            pr_submodule_changes = None
-        changed = ", ".join(submodule_changes)
-        why_inconclusive = (
-            "The before-worktree can only be populated with the primary checkout's "
-            "submodule content, not the merge-base's, so building the before-binary "
-            "would validate against the wrong submodule code. This is "
-            "inconclusive, NOT a reproduction or a refutation."
-        )
-        if pr_submodule_changes is None:
-            finalize(
-                [
-                    Result(
-                        name="Bugfix validation (unit tests)",
-                        status=Result.Status.ERROR,
-                        info=(
-                            f"Submodule state differs between the merge-base and the "
-                            f"checkout ({changed}), and the diff that would attribute it "
-                            f"to the PR or to the base branch could not be computed. "
-                            f"{why_inconclusive}"
-                        ),
-                    )
-                ],
-                "Bugfix validation inconclusive: submodule state differs between the "
-                "merge-base and the checkout, and the change could not be attributed to "
-                "the PR or to the base branch.",
-            )
-            return
-        if pr_submodule_changes:
-            finalize(
-                [
-                    Result(
-                        name="Bugfix validation (unit tests)",
-                        status=Result.Status.ERROR,
-                        info=(
-                            f"The PR changes submodule state "
-                            f"({', '.join(pr_submodule_changes)}), so submodule state "
-                            f"differs between the merge-base and the checkout "
-                            f"({changed}). {why_inconclusive}"
-                        ),
-                    )
-                ],
-                "Bugfix validation inconclusive: the PR changes submodule state, and the "
-                "before-worktree cannot be populated at the merge-base submodule "
-                "revisions.",
-            )
-            return
-        # Base-only motion is a function of the branch's age, not of anything the author
-        # can influence.
         finalize(
             [
                 Result(
                     name="Bugfix validation (unit tests)",
-                    status=Result.Status.SKIPPED,
+                    status=Result.Status.ERROR,
                     info=(
-                        f"The base branch moved submodule state after the branch split "
-                        f"({changed}) and the PR changes none of it. {why_inconclusive}"
+                        "Submodule state differs between the merge-base and the "
+                        "checkout (" + ", ".join(submodule_changes) + ") — either the "
+                        "PR changes submodule state, or the base branch moved a "
+                        "submodule after the branch split. The before-worktree can "
+                        "only be populated with the primary checkout's submodule "
+                        "content, not the merge-base's, so building the before-binary "
+                        "would validate against the wrong submodule code. This is "
+                        "inconclusive — NOT a reproduction or a refutation."
                     ),
                 )
             ],
-            "Bugfix validation skipped: the base branch moved a submodule after the "
-            "branch split, so the before-worktree cannot be populated at the merge-base "
-            "submodule revisions.",
-            status=Result.Status.SKIPPED,
+            "Bugfix validation inconclusive: submodule state differs between the "
+            "merge-base and the checkout, and the before-worktree cannot be populated "
+            "at the merge-base submodule revisions.",
         )
         return
 

@@ -1,5 +1,6 @@
--- Tags: no-fasttest
+-- Tags: no-fasttest, no-old-analyzer
 -- no-fasttest: the remote distributed plan needs the stateless worker configuration.
+-- no-old-analyzer: `make_distributed_plan` requires the analyzer.
 -- A satisfied LIMIT must stop the upstream stages of a distributed plan. The LIMIT is inside a
 -- subquery, so its stage is in the middle of the plan, not at the root. The query runs twice:
 -- with local in-memory exchanges and over the real streaming exchange transport. The remote run

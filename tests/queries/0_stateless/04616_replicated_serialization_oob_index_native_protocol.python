@@ -436,10 +436,8 @@ def indexRowCountMismatchScenario():
 
 
 def sendSparseOverReplicatedBlock(s):
-    # A Sparse-over-Replicated kind stack makes SerializationSparse hand its values column
-    # (a fresh ColumnSparse always seeds one default value) to the nested Replicated
-    # deserialization, which then hits the "non-empty column" check. That check is decided
-    # by the wire-supplied kind stack and must be INCORRECT_DATA, not LOGICAL_ERROR.
+    # Sparse can sit inside Replicated but not the other way round, so this kind stack is rejected as
+    # out of order. A wire-supplied kind stack must produce INCORRECT_DATA, not LOGICAL_ERROR.
     END_OF_GRANULE_FLAG = 1 << 62
     limit = 4
 
@@ -474,7 +472,7 @@ def sparseOverReplicatedScenario():
         s.connect((CLICKHOUSE_HOST, CLICKHOUSE_PORT))
         connectAndStartInsert(s)
         sendSparseOverReplicatedBlock(s)
-        expectIncorrectData(s, "Reading into non-empty column ColumnReplicated")
+        expectIncorrectData(s, "is out of order")
         print("sparse over replicated: caught expected exception INCORRECT_DATA")
 
 

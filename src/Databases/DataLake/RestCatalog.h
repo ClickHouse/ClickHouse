@@ -74,9 +74,6 @@ public:
         return DB::DatabaseDataLakeCatalogType::ICEBERG_REST;
     }
 
-    /// Inherited by every catalog based on the Iceberg REST protocol.
-    DataLakeTableFormat getTableFormat(const TableMetadata &) const override { return DataLakeTableFormat::ICEBERG; }
-
     void createTable(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr metadata_content) const override;
 
     bool updateMetadata(const String & namespace_name, const String & table_name, const String & new_metadata_path, Poco::JSON::Object::Ptr new_snapshot) const override;
@@ -92,8 +89,7 @@ public:
 
     void dropTable(const String & namespace_name, const String & table_name, bool delete_data) const override;
 
-    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(
-        const DB::StorageID & storage_id, const TableMetadata & table_metadata) override;
+    ICatalog::CredentialsRefreshCallback getCredentialsConfigurationCallback(const DB::StorageID & storage_id) override;
 
     struct Config
     {

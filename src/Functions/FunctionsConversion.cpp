@@ -427,10 +427,6 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
     WhichDataType to(to_type_index);
     bool can_apply_accurate_cast = (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
         && (which.isInt() || which.isUInt() || which.isFloat());
-    /// `Time` and `Time64` share the accurate temporal path: widening an exact `Time` value to
-    /// `Time64(0)` must not change what `accurateCast` accepts.
-    can_apply_accurate_cast |= (cast_type == CastType::accurate || cast_type == CastType::accurateOrNull)
-        && which.isTimeOrTime64() && (to.isTime() || to.isDateOrDate32() || to.isDateTimeOrDateTime64());
     can_apply_accurate_cast |= cast_type == CastType::accurate && which.isStringOrFixedString() && to.isNativeInteger();
 
     if (requested_result_is_nullable && checkAndGetDataType<DataTypeString>(from_type.get()))
@@ -476,7 +472,7 @@ FunctionCast::WrapperType FunctionCast::createWrapper(const DataTypePtr & from_t
             using LeftDataType = typename Types::LeftType;
             using RightDataType = typename Types::RightType;
 
-            if constexpr (IsDataTypeNumber<LeftDataType> || is_any_of<LeftDataType, DataTypeTime, DataTypeTime64>)
+            if constexpr (IsDataTypeNumber<LeftDataType>)
             {
                 if constexpr (IsDataTypeDateOrDateTimeOrTime<RightDataType>)
                 {
@@ -710,31 +706,6 @@ FunctionCast::WrapperType FunctionCast::createDecimalWrapper(const DataTypePtr &
                     return true;
                 }
             }
-            else if constexpr (std::is_same_v<LeftDataType, DataTypeTime64>
-                && (std::is_same_v<RightDataType, DataTypeTime64> || std::is_same_v<RightDataType, DataTypeDateTime64>))
-            {
-                if (cast_type == CastType::accurate)
-                {
-                    AccurateConvertStrategyAdditions additions;
-                    additions.scale = scale;
-                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
-                }
-                else if (cast_type == CastType::accurateOrNull)
-                {
-                    AccurateOrNullConvertStrategyAdditions additions;
-                    additions.scale = scale;
-                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, additions);
-                }
-                else
-                {
-                    result_column = ConvertImpl<LeftDataType, RightDataType, FunctionCastName>::execute(
-                        arguments, result_type, input_rows_count, BehaviourOnErrorFromString::ConvertDefaultBehaviorTag, settings, scale);
-                }
-
-                return true;
-            }
             else if constexpr (std::is_same_v<LeftDataType, DataTypeDate32> && std::is_same_v<RightDataType, DataTypeDateTime64>)
             {
                 /// The only conversion handled by this wrapper that can overflow the target: the whole-seconds value
@@ -871,21 +842,42 @@ FunctionCast::WrapperType FunctionCast::createAggregateFunctionWrapper(const Dat
 namespace
 {
 
-/// `Map(K, V)` is physically an `Array(Tuple(K, V))`, and `CAST` converts between the two shapes at
-/// the top level. It is also how a `Map` constant is written down when the analyzer serializes a
-/// query for a remote server: `ConstantNode::toASTImpl` renders the field as an array of tuples and
-/// wraps it into `_CAST(..., 'Array(Map(K, V))')`. Counting a `Map` as the array it stands for puts
-/// both shapes at the same depth, so the nesting check below does not reject a cast the element
-/// wrappers can perform. A genuine depth mismatch, such as `Array(String)` to `Array(Array(String))`,
-/// is still rejected. A `Tuple` adds no depth, hence a `Map` counts as one dimension regardless of
-/// its value type.
-size_t getNumberOfDimensionsWithMapAsArray(const IDataType & type)
+/// The number of `Array` dimensions of a type as `CAST` sees it. It is a range rather than a single
+/// number, because `Map(K, V)` is physically an `Array(Tuple(K, V))` and `CAST` converts between the
+/// two spellings: a `Map` can be matched either by another `Map`, contributing no dimension of its
+/// own, or by the `Array(Tuple(K, V))` it stands for, contributing one. A `Tuple` adds no dimension,
+/// hence a `Map` is at most one dimension whatever its value type is.
+///
+/// The array spelling is how a `Map` constant is written down when the analyzer serializes a query
+/// for a remote server: `ConstantNode::toASTImpl` renders the field as an array of tuples and wraps
+/// it into `_CAST(..., 'Array(Map(K, V))')`.
+struct DimensionsRange
+{
+    size_t min;
+    size_t max;
+};
+
+DimensionsRange getNumberOfDimensionsForCast(const IDataType & type)
 {
     if (const auto * type_array = typeid_cast<const DataTypeArray *>(&type))
-        return 1 + getNumberOfDimensionsWithMapAsArray(*type_array->getNestedType());
+    {
+        const DimensionsRange nested = getNumberOfDimensionsForCast(*type_array->getNestedType());
+        return {nested.min + 1, nested.max + 1};
+    }
     if (typeid_cast<const DataTypeMap *>(&type))
-        return 1;
-    return 0;
+        return {0, 1};
+    return {0, 0};
+}
+
+/// The nesting depths have to be reconcilable under some spelling of the `Map`s the two types
+/// contain. This rejects a genuine depth mismatch, such as `Array(String)` to `Array(Array(String))`,
+/// before an element wrapper does something unexpected with it (`CAST` from a `String` parses it).
+/// Anything else is left to the element wrappers, which name the types that cannot be converted.
+bool canHaveSameNumberOfDimensions(const IDataType & from, const IDataType & to)
+{
+    const DimensionsRange from_dimensions = getNumberOfDimensionsForCast(from);
+    const DimensionsRange to_dimensions = getNumberOfDimensionsForCast(to);
+    return from_dimensions.min <= to_dimensions.max && to_dimensions.min <= from_dimensions.max;
 }
 
 }
@@ -943,7 +935,7 @@ FunctionCast::WrapperType FunctionCast::createArrayWrapper(const DataTypePtr & f
     /// In query SELECT CAST([] AS Array(Array(String))) from type is Array(Nothing)
     bool from_empty_array = isNothing(from_nested_type);
 
-    if (getNumberOfDimensionsWithMapAsArray(*from_type) != getNumberOfDimensionsWithMapAsArray(to_type) && !from_empty_array)
+    if (!canHaveSameNumberOfDimensions(*from_type, to_type) && !from_empty_array)
         throw Exception(ErrorCodes::TYPE_MISMATCH,
             "CAST AS Array can only be performed between same-dimensional array types");
 
@@ -1025,19 +1017,10 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
     ElementWrappers element_wrappers;
     VectorWithMemoryTracking<std::optional<size_t>> to_reverse_index;
 
-    /// For named tuples with at least one element name in common allow conversions for tuples
-    /// with different sets of elements: elements are matched by name, source elements without
-    /// a counterpart are dropped, and target elements without a counterpart are filled by default
-    /// values (schema evolution: adding, dropping and renaming elements of a Tuple or a Nested
-    /// column with ALTER).
-    /// For named tuples with disjoint sets of element names, matching by name cannot be meant,
-    /// and elements are converted positionally, as for unnamed tuples (e.g. the result of function
-    /// tuple with enable_named_columns_in_function_tuple inserted into a column whose tuple
-    /// elements are named differently). Previously such conversions silently filled the whole
-    /// result by default values, losing all the data (see issue #70830).
-    bool convert_positionally = !(from_type->hasExplicitNames() && to_type->hasExplicitNames());
-
-    if (!convert_positionally)
+    /// For named tuples allow conversions for tuples with
+    /// different sets of elements. If element exists in @to_type
+    /// and doesn't exist in @to_type it will be filled by default values.
+    if (from_type->hasExplicitNames() && to_type->hasExplicitNames())
     {
         const auto & from_names = from_type->getElementNames();
         UnorderedMapWithMemoryTracking<String, size_t> from_positions;
@@ -1046,38 +1029,25 @@ FunctionCast::WrapperType FunctionCast::createTupleWrapper(const DataTypePtr & f
             from_positions[from_names[i]] = i;
 
         const auto & to_names = to_type->getElementNames();
+        element_wrappers.reserve(to_names.size());
+        to_reverse_index.reserve(from_names.size());
 
-        size_t common_names_count = 0;
-        for (const auto & to_name : to_names)
-            common_names_count += from_positions.contains(to_name);
-
-        if (common_names_count == 0)
+        for (size_t i = 0; i < to_names.size(); ++i)
         {
-            convert_positionally = true;
-        }
-        else
-        {
-            element_wrappers.reserve(to_names.size());
-            to_reverse_index.reserve(from_names.size());
-
-            for (size_t i = 0; i < to_names.size(); ++i)
+            auto it = from_positions.find(to_names[i]);
+            if (it != from_positions.end())
             {
-                auto it = from_positions.find(to_names[i]);
-                if (it != from_positions.end())
-                {
-                    element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
-                    to_reverse_index.emplace_back(it->second);
-                }
-                else
-                {
-                    element_wrappers.emplace_back();
-                    to_reverse_index.emplace_back();
-                }
+                element_wrappers.emplace_back(prepareUnpackDictionaries(from_element_types[it->second], to_element_types[i]));
+                to_reverse_index.emplace_back(it->second);
+            }
+            else
+            {
+                element_wrappers.emplace_back();
+                to_reverse_index.emplace_back();
             }
         }
     }
-
-    if (convert_positionally)
+    else
     {
         if (from_element_types.size() != to_element_types.size())
             throw Exception(ErrorCodes::TYPE_MISMATCH, "CAST AS Tuple can only be performed between tuple types "
@@ -2848,12 +2818,6 @@ FunctionCast::WrapperType FunctionCast::createEnumToStringWrapper() const
 
 FunctionCast::WrapperType FunctionCast::prepareUnpackDictionaries(const DataTypePtr & from_type, const DataTypePtr & to_type) const
 {
-    /// A `Nothing` column carries no values, so it converts trivially to any target, which is what
-    /// `createNothingWrapper` does. `Variant` and `Dynamic` instead resolve the source against their
-    /// member list, which cannot name `Nothing`, so they need that path rather than the one below.
-    if (isNothing(from_type) && (isVariant(to_type) || isDynamic(to_type)))
-        return createNothingWrapper(to_type.get());
-
     /// Conversion from/to Variant/Dynamic data type is processed in a special way.
     /// We don't need to remove LowCardinality/Nullable.
     if (isDynamic(to_type) || isDynamic(from_type))
@@ -3520,12 +3484,6 @@ bool FunctionCast::isCompilable() const
 
     const auto & input_type = argument_types[0];
     const auto & result_type = getResultType();
-
-    /// Converting a NULL to a non-Nullable type raises CANNOT_INSERT_NULL_IN_ORDINARY_COLUMN,
-    /// and a compiled expression produces a value with no way to raise.
-    if (isNullableOrLowCardinalityNullable(input_type) && !isNullableOrLowCardinalityNullable(result_type))
-        return false;
-
     auto denull_input_type = removeNullable(input_type);
     auto denull_result_type = removeNullable(result_type);
     if (!canBeNativeType(denull_input_type) || !canBeNativeType(denull_result_type))

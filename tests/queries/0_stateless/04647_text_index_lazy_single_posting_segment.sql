@@ -19,8 +19,6 @@
 --     is the only one reaching the block decoder; brute force takes the dense-segment shortcut.
 
 SET use_query_condition_cache = 0;
--- The lazy-cursor counters below are only incremented when a posting segment is decoded, so keep them independent of what earlier queries have already put into the server-wide postings cache.
-SET use_text_index_postings_cache = 0;
 
 DROP TABLE IF EXISTS t_lazy_single_posting_segment;
 

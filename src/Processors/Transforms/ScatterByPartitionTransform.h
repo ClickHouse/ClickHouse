@@ -27,8 +27,6 @@ struct ScatterByPartitionTransform : IProcessor
 private:
 
     void generateOutputChunks();
-    /// Hands the scattered chunks to the outputs. Returns true once all of them are handed over.
-    bool pushOutputChunks();
 
     size_t output_size;
     ColumnNumbers key_columns;
@@ -37,7 +35,8 @@ private:
     /// When set, chunks are routed round-robin starting from this output instead of by key hash.
     std::optional<size_t> round_robin_bucket;
 
-    bool has_output_chunks = false;
+    bool has_data = false;
+    bool all_outputs_processed = true;
     std::vector<char> was_output_processed;
     Chunk chunk;
 
