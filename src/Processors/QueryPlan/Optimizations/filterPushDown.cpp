@@ -1537,7 +1537,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// only a condition leaving them nothing to fix a column by takes the ordering away, and one
         /// that leaves them an equality gives it back, for itself and for whatever was pushed before
         /// it. Teach either side something new - an `in` against a one-element set, say - and this has
-        /// to be revisited; tests 05255 and 05259 pin the shapes.
+        /// to be revisited; test 05255 pins the shapes.
         const auto * condition = filter->getExpression().tryFindInOutputs(filter->getFilterColumnName());
         if (condition && mayFixColumn(condition))
         {

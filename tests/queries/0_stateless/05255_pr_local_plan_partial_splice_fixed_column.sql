@@ -1,31 +1,46 @@
--- Whether the replicas get a condition pushed into the fragment is answered once for the whole
--- fragment, not per conjunct, and the answer decides whether the initiator may order its read by that
--- condition. So the initiator can order a read off a condition while the splice carries only part of
--- that condition to the replicas - safe for one reason only: the part that can fix a column is the
--- part the splice never drops.
+-- Whether the replicas get a condition pushed into the fragment decides whether the initiator may
+-- order its read by it, and the splice into their query works conjunct by conjunct: it can carry one
+-- and drop the next. So what may order the read has to be asked of the conjuncts as well.
 --
 --   * `appendFixedColumnsFromFilterExpression` fixes a column only from an `equals` against a
 --     constant, reached through `and` and aliases - not from an `or`, an `in`, or anything else;
 --   * `tryBuildAdditionalFilterAST` drops the non-deterministic, the stateful and what it cannot
---     name - a constant is none of those, so such an `equals` always travels.
+--     name - of those only a lambda can stand in such an `equals`, because a sorting key may be a
+--     higher-order expression.
 --
--- The two lists do not meet, which is why one answer per fragment is enough. This test pins the
--- consequence rather than the argument: the read below orders itself off `tenant = 5`, so the query
--- the replicas were sent must contain `tenant = 5`. Should the rewrite ever start dropping such a
--- conjunct - or read-in-order start fixing a column from something the rewrite can drop, an `in`
--- against a one-element set, say - the initiator would read `InOrder` while the replicas read
--- `Default`, and the read would fail with "Replica N decided to read in X mode, not in Y".
+-- An equality the replicas receive may order the read whatever was dropped beside it, and one they do
+-- not receive may not. Should the rewrite start dropping a plain `equals` - or read-in-order start
+-- fixing a column from something the rewrite drops, an `in` against a one-element set, say - the
+-- initiator would read `InOrder` while the replicas read `Default`, and the read would fail with
+-- "Replica N decided to read in X mode, not in Y".
 -- https://github.com/ClickHouse/ClickHouse/issues/95524
+--
+-- Read-in-order does not match a higher-order key expression in the first place today, so the first
+-- check guards the invariant rather than reproducing a failure: no ordering off a condition the
+-- replicas do not have, whichever of the two implementations changes. The conditions are pushed in one
+-- at a time and the first of them may not answer for the rest, hence the last case.
+--
+-- The plain positive - a condition both sides have ordering the read - is 05055; the shapes where the
+-- splice does not reach the fragment at all are 05161, 05182 and 05183.
 
 DROP TABLE IF EXISTS t_pr_partial_splice;
 DROP VIEW IF EXISTS v_pr_partial_splice;
+DROP TABLE IF EXISTS t_pr_lambda_key;
+DROP VIEW IF EXISTS v_pr_lambda_key;
 
-CREATE TABLE t_pr_partial_splice (tenant UInt64, ts UInt64) ENGINE = MergeTree ORDER BY (tenant, ts)
-    SETTINGS index_granularity = 128;
-INSERT INTO t_pr_partial_splice SELECT number % 100, number FROM numbers(10000);
+CREATE TABLE t_pr_partial_splice (tenant UInt64, arr Array(UInt64), ts UInt64)
+    ENGINE = MergeTree ORDER BY (tenant, ts) SETTINGS index_granularity = 128;
+INSERT INTO t_pr_partial_splice SELECT number % 100, arrayMap(i -> i % 4, range(number % 8)), number FROM numbers(10000);
+
+-- Sorted by a higher-order expression, so that a lambda-bearing equality is the one that would fix the
+-- key prefix.
+CREATE TABLE t_pr_lambda_key (arr Array(UInt64), ts UInt64)
+    ENGINE = MergeTree ORDER BY (arrayCount(x -> x = 1, arr), ts) SETTINGS index_granularity = 128;
+INSERT INTO t_pr_lambda_key SELECT arrayMap(i -> i % 4, range(number % 8)), number FROM numbers(10000);
 
 -- The sort has to be inside the fragment for the read to order itself at all.
-CREATE VIEW v_pr_partial_splice AS SELECT tenant, ts FROM t_pr_partial_splice ORDER BY ts;
+CREATE VIEW v_pr_partial_splice AS SELECT tenant, arr, ts FROM t_pr_partial_splice ORDER BY ts;
+CREATE VIEW v_pr_lambda_key AS SELECT arr, ts FROM t_pr_lambda_key ORDER BY ts;
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 1;
@@ -40,47 +55,83 @@ SET parallel_replicas_allow_view_over_mergetree = 1;
 SET optimize_read_in_order = 1;
 SET query_plan_optimize_prewhere = 1;
 SET optimize_move_to_prewhere = 1;
--- Pin what decides whether the condition reaches the replicas: it is spliced into the query they are
+-- Pin what decides whether a condition reaches the replicas: it is spliced into the query they are
 -- sent, so neither a plan-based fragment nor a serialized plan carries it.
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 SET serialize_query_plan = 0;
 SET parallel_replicas_plan_based = 0;
 
-SELECT 'the read orders itself off the condition';
+SELECT 'a lambda-bearing equality does not order the read';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (
     EXPLAIN description = 0, actions = 1
-    SELECT tenant, ts FROM v_pr_partial_splice WHERE tenant = 5 AND ts < 100000 LIMIT 5
+    SELECT arr, ts FROM v_pr_lambda_key WHERE arrayCount(x -> x = 1, arr) = 2 LIMIT 5
 )
 WHERE explain LIKE '%Read type%';
 
 SELECT 'and answers correctly';
-SELECT tenant, ts FROM v_pr_partial_splice WHERE tenant = 5 AND ts < 100000 ORDER BY ts LIMIT 3;
+SELECT arrayCount(x -> x = 1, arr), ts FROM v_pr_lambda_key WHERE arrayCount(x -> x = 1, arr) = 2 ORDER BY ts LIMIT 3;
 
--- The same query again for the query the replicas are sent, with the local plan off. With one, the
+SELECT 'a plain equality standing next to one still orders it';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts FROM v_pr_partial_splice WHERE tenant = 5 AND arrayCount(x -> x = 1, arr) = 1 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+
+SELECT 'and answers correctly';
+SELECT tenant, ts FROM v_pr_partial_splice WHERE tenant = 5 AND arrayCount(x -> x = 1, arr) = 1 ORDER BY ts LIMIT 3;
+
+-- Here the two arrive as two conditions, the lambda-bearing one first.
+SELECT 'and so does one pushed in after it';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts
+    FROM (SELECT tenant, arr, ts FROM v_pr_partial_splice WHERE arrayCount(x -> x = 1, arr) = 1)
+    WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+
+SELECT 'and answers correctly';
+SELECT tenant, ts
+FROM (SELECT tenant, arr, ts FROM v_pr_partial_splice WHERE arrayCount(x -> x = 1, arr) = 1)
+WHERE tenant = 5 ORDER BY ts LIMIT 3;
+
+-- Both conditions again for the queries the replicas are sent, with the local plan off. With one, the
 -- initiator's own share covers the table and the replicas are cancelled before they start - their log
 -- rows are then written after the initiator has finished, and can miss the flush below. Without one
 -- the initiator has to consume their streams to the end, so by the time it returns they are logged.
 -- The splice does not depend on there being a local plan: it is the remote step that performs it.
-SELECT tenant, ts FROM v_pr_partial_splice WHERE tenant = 5 AND ts < 100000 ORDER BY ts
-SETTINGS log_comment = '05255_pr_partial_splice', parallel_replicas_local_plan = 0 FORMAT Null;
+SELECT arr, ts FROM v_pr_lambda_key WHERE arrayCount(x -> x = 1, arr) = 2 ORDER BY ts
+SETTINGS log_comment = '05255_lambda_key', parallel_replicas_local_plan = 0 FORMAT Null;
+
+SELECT tenant, ts FROM v_pr_partial_splice WHERE tenant = 5 AND arrayCount(x -> x = 1, arr) = 1 ORDER BY ts
+SETTINGS log_comment = '05255_lambda_beside', parallel_replicas_local_plan = 0 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
-SELECT 'the replicas were sent that same condition';
--- A replica query is scoped by the database it reads, not by `current_database`: that one is logged
--- as `default` for it, while `databases` holds this test's. `log_comment` travels with the query to
--- the replicas, which is what separates this query's replicas from any other. Rows of every type
--- count: the initiator cancels a replica once it has the rows it needs, and one cancelled before it
--- started logs `ExceptionBeforeStart` and no `QueryStart` - but it still logs the query it was sent,
--- which is the whole of what is checked here.
-SELECT
-    count() > 0 AS replicas_were_sent_a_query,
-    countIf(query LIKE '%HAVING%equals(%tenant%') = count() AS every_one_got_the_condition
+-- A replica query is scoped by the database it reads, not by `current_database`: that one is logged as
+-- `default` for it, while `databases` holds this test's. `log_comment` travels with the query to the
+-- replicas, which is what separates these queries' replicas from any other. Rows of every type count:
+-- a replica cancelled before it started logs `ExceptionBeforeStart` and no `QueryStart`, but it still
+-- logs the query it was sent, which is the whole of what is checked here.
+SELECT 'the lambda reaches none of them';
+SELECT count() > 0 AS replicas_were_sent_a_query, countIf(query LIKE '%arrayCount%') AS carrying_it
 FROM system.query_log
-WHERE has(databases, currentDatabase()) AND log_comment = '05255_pr_partial_splice'
-  AND NOT is_initial_query
+WHERE has(databases, currentDatabase()) AND log_comment = '05255_lambda_key' AND NOT is_initial_query
 SETTINGS enable_parallel_replicas = 0;
 
+SELECT 'the plain equality standing next to one reaches all of them, that one none';
+SELECT count() > 0 AS replicas_were_sent_a_query,
+       countIf(query LIKE '%HAVING%equals(%tenant%') = count() AS carrying_the_equality,
+       countIf(query LIKE '%arrayCount%') AS carrying_the_lambda
+FROM system.query_log
+WHERE has(databases, currentDatabase()) AND log_comment = '05255_lambda_beside' AND NOT is_initial_query
+SETTINGS enable_parallel_replicas = 0;
+
+DROP VIEW v_pr_lambda_key;
 DROP VIEW v_pr_partial_splice;
+DROP TABLE t_pr_lambda_key;
 DROP TABLE t_pr_partial_splice;
