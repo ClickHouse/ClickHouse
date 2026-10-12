@@ -201,8 +201,10 @@ def test_session_toggle_does_not_corrupt_cache():
 def test_interval_zero_disables_only_background_refresh():
     # The statistics caches are populated by the queries themselves and keyed by the immutable
     # parts, so `refresh_statistics_interval = 0` only disables the background prewarm: the
-    # cached entries survive both the setting change and a reattach, and the session setting
-    # `use_statistics_cache = 0` is the way to bypass them.
+    # cached selectivity estimator survives both the setting change and a reattach, and the
+    # session setting `use_statistics_cache = 0` is the way to bypass it. The part statistics
+    # entries do not survive the reattach, they are removed when the old part objects are
+    # destroyed, but the estimator keyed by the same parts does not need them.
     _create_tbl(ch1, "z_tbl", 1)
     _wait_hit(
         ch1, "z-warm",
