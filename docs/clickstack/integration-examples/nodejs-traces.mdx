@@ -41,7 +41,11 @@ An API key to send traces to ClickStack's OTLP endpoint.
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
 
+<div className="ch-image-lg">
+
 ![ClickStack API Key](/images/clickstack/api-key.webp)
+
+</div>
 </Step>
 <Step title="Run your application" id="run-application">
 
@@ -70,11 +74,19 @@ for i in {1..100}; do curl -s http://localhost:3000/ > /dev/null; done
 
 Once configured, log into HyperDX and verify traces are flowing. You should see something like this. If you don't see traces, try adjusting your time range:
 
+<div className="ch-image-lg">
+
 ![Traces search view](/images/clickstack/nodejs/traces-search-view.webp)
+
+</div>
 
 Click on any trace to see the detailed view with spans, timing, and attributes:
 
+<div className="ch-image-lg">
+
 ![Individual trace view](/images/clickstack/nodejs/trace-view.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -111,7 +123,11 @@ An API key to send traces to ClickStack's OTLP endpoint.
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
 
+<div className="ch-image-lg">
+
 ![ClickStack API Key](/images/clickstack/api-key.webp)
+
+</div>
 
 Set your API key as an environment variable:
 
@@ -136,9 +152,17 @@ You should see a response like `{"partialSuccess":{}}` indicating the traces wer
 2. Navigate to the **Search** view and set the source to **Traces**
 3. Set the time range to **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
 
+<div className="ch-image-lg">
+
 ![Traces search view](/images/clickstack/nodejs/traces-search-view.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Individual trace view](/images/clickstack/nodejs/trace-view.webp)
+
+</div>
 
 <Info>
 **Timezone Display**
@@ -162,15 +186,27 @@ To help you get started monitoring Node.js application performance, we provide a
 1. Open HyperDX and navigate to the **Dashboards** section
 2. Click **Import Dashboard** in the upper right corner (under the ellipses)
 
+<div className="ch-image-lg">
+
 ![Import Dashboard](/images/clickstack/import-dashboard.webp)
+
+</div>
 
 3. Upload the `nodejs-traces-dashboard.json` file and click **Finish Import**
 
+<div className="ch-image-lg">
+
 ![Finish import](/images/clickstack/nodejs/finish-import.webp)
+
+</div>
 </Step>
 <Step title="The dashboard will be created with all visualizations pre-configured" id="created-dashboard">
 
+<div className="ch-image-lg">
+
 ![Example dashboard](/images/clickstack/nodejs/example-traces-dashboard.webp)
+
+</div>
 
 <Note>
 For the demo dataset, set the time range to **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.

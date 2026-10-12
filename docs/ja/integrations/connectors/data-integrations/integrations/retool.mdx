@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
+
 import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -23,32 +24,52 @@ import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.
   <Step title="ClickHouse リソースを作成する" id="2-create-a-clickhouse-resource">
     Retool アカウントにログインし、*Resources* タブに移動します。次に、「Create New」-&gt;「Resource」を選択します。
 
+    <div className="ch-image-lg">
+
     ![新しいリソースの作成](/images/integrations/tools/data-integration/retool/retool_01.webp)
+
+    </div>
 
     <br />
 
     使用可能なコネクタの一覧から「JDBC」を選択します。
 
+    <div className="ch-image-lg">
+
     ![JDBC コネクタの選択](/images/integrations/tools/data-integration/retool/retool_02.webp)
+
+    </div>
 
     <br />
 
     セットアップウィザードで、「Driver name」に `com.clickhouse.jdbc.ClickHouseDriver` が選択されていることを確認します。
 
+    <div className="ch-image-lg">
+
     ![適切なドライバーの選択](/images/integrations/tools/data-integration/retool/retool_03.webp)
+
+    </div>
 
     <br />
 
     次の形式で ClickHouse の認証情報を入力します。`jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`
     インスタンスで SSL が必要な場合、または ClickHouse Cloud を使用している場合は、接続文字列に `&ssl=true` を追加して、`jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true` のようにします。
 
+    <div className="ch-image-lg">
+
     ![認証情報の指定](/images/integrations/tools/data-integration/retool/retool_04.webp)
+
+    </div>
 
     <br />
 
     その後、接続をテストします。
 
+    <div className="ch-image-lg">
+
     ![接続のテスト](/images/integrations/tools/data-integration/retool/retool_05.webp)
+
+    </div>
 
     <br />
 

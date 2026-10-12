@@ -18,13 +18,21 @@ doc_type: 'guide'
 
 전통적인 [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) ClickHouse 클러스터에서는 ① 데이터가 단일 서버에 담기에는 너무 크거나 ② 단일 서버로는 데이터를 처리하기에 너무 느릴 때 세그먼트 분할을 사용합니다. 다음 그림은 [uk&#95;price&#95;paid&#95;simple](/ko/concepts/core-concepts/parts) 테이블이 단일 머신의 용량을 초과하는 ①의 경우를 보여줍니다:
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_01.webp)
+
+</div>
 
 <br />
 
 이 경우 데이터는 테이블 세그먼트 형태로 여러 ClickHouse 서버에 분산할 수 있습니다:
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_02.webp)
+
+</div>
 
 <br />
 
@@ -57,7 +65,11 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 아래 다이어그램은 분산 테이블에 대한 INSERT가 ClickHouse에서 어떻게 처리되는지 보여줍니다:
 
+<div className="ch-image-lg">
+
 ![세그먼트](/images/managing-data/core-concepts/shards_03.webp)
+
+</div>
 
 <br />
 
@@ -73,7 +85,11 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 이 다이어그램은 ClickHouse에서 분산 테이블을 사용할 때 SELECT 쿼리가 처리되는 방식을 보여줍니다:
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_04.webp)
+
+</div>
 
 <br />
 
@@ -93,7 +109,11 @@ ClickHouse의 복제는 여러 서버에 **세그먼트 데이터의 복사본**
 
 다음 다이어그램은 6개의 서버로 구성된 ClickHouse 클러스터를 보여 줍니다. 여기서 앞서 소개한 두 개의 테이블 세그먼트 `Shard-1` 및 `Shard-2`는 각각 3개의 레플리카를 가집니다. 이 클러스터로 쿼리가 전송됩니다.
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_replicas_01.webp)
+
+</div>
 
 <br />
 

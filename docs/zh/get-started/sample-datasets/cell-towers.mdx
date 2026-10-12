@@ -232,7 +232,11 @@ doc_type: 'guide'
     输入“Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables”，然后点击发送。
     在某次运行中，智能体执行了以下步骤：
 
+    <div className="ch-image-lg">
+
     ![ClickHouse 智能体聊天界面，展示为德国构建蜂窝基站密度网格所执行的步骤](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
+
+    </div>
 
     * 在 `mcc_country_dict` 中查找德国的移动国家代码 (MCC) ，得到 MCC `262`。
     * 使用 `pointInPolygon` 统计落在 `germany` 多边形内且 `mcc = 262` 的基站数量，结果为 2,588,635 个。这一数字略少于上文的计数，因为额外的 `mcc` 过滤器排除了位于多边形内、但注册在其他国家的基站。
@@ -241,7 +245,11 @@ doc_type: 'guide'
 
     打开生成的文件即可查看结果。图中明亮的聚集区域即为主要大都市区：柏林、汉堡、慕尼黑和法兰克福。
 
+    <div className="ch-image-md">
+
     ![德国蜂窝基站密度热力图，采用 0.1 度网格和对数色标](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
+
+    </div>
   </Step>
 </Steps>
 

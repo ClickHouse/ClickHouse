@@ -45,7 +45,11 @@ PARTITION BY toStartOfMonth(date);
 
 عند إدراج مجموعة من الصفوف في الجدول، لا ينشئ ClickHouse جزء بيانات واحدًا يحتوي على جميع الصفوف المُدرجة (على [الأقل](/ar/reference/settings/session-settings/max-insert#max_insert_block_size))، كما هو موضح [هنا](/ar/concepts/core-concepts/parts)، بل ينشئ جزء بيانات جديدًا لكل قيمة فريدة لمفتاح التقسيم بين الصفوف المُدرجة:
 
+<div className="ch-image-lg">
+
 ![معالجة INSERT](/images/managing-data/core-concepts/partitions.webp)
+
+</div>
 
 <br />
 
@@ -60,7 +64,11 @@ PARTITION BY toStartOfMonth(date);
 
 عند تمكين التقسيم، لا يَدمج ClickHouse [أجزاء البيانات](/ar/concepts/core-concepts/merges) إلا داخل القسم نفسه، وليس عبر الأقسام. نوضّح ذلك في مثال الجدول أعلاه:
 
+<div className="ch-image-lg">
+
 ![PART MERGES](/images/managing-data/core-concepts/merges_with_partitions.webp)
+
+</div>
 
 <br />
 
@@ -157,7 +165,11 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 
 يعالج ClickHouse هذا الاستعلام من خلال تطبيق سلسلة من تقنيات تقليم البيانات لتجنّب فحص البيانات غير ذات الصلة:
 
+<div className="ch-image-lg">
+
 ![PART MERGES 2](/images/managing-data/core-concepts/partition-pruning.webp)
+
+</div>
 
 <br />
 

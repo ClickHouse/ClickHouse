@@ -279,19 +279,35 @@ PrivateLink لديك توفر بالفعل أسماء DNS خاصة، فلست ب
 
 1. انتقل إلى SQL Console لخدمة ClickHouse Cloud الخاصة بك.
 
+<div className="ch-image-md">
+
 ![خدمة ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. اختر زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على «Set up a ClickPipe».
 
+<div className="ch-image-lg">
+
 ![اختيار عمليات الاستيراد](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. اختر Kafka أو Postgres مصدرًا للبيانات.
 
+<div className="ch-image-lg">
+
 ![اختيار مصدر البيانات](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
+
+</div>
 
 4. اختر الخيار `Reverse private endpoint`.
 
+<div className="ch-image-lg">
+
 ![اختيار نقطة النهاية الخاصة العكسية](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
+
+</div>
 
 5. اختر إحدى نقاط النهاية الخاصة العكسية الموجودة أو أنشئ نقطة نهاية جديدة.
 
@@ -302,11 +318,19 @@ PrivateLink لديك توفر بالفعل أسماء DNS خاصة، فلست ب
   للوصول ضمن المنطقة نفسها، يُوصى بإنشاء مورد VPC.
 </Info>
 
+<div className="ch-image-lg">
+
 ![اختيار نقطة النهاية الخاصة العكسية](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
+
+</div>
 
 6. أدخل المعلمات المطلوبة لنوع نقطة النهاية المحدد.
 
+<div className="ch-image-lg">
+
 ![اختيار نقطة النهاية الخاصة العكسية](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
+
+</div>
 
 * بالنسبة إلى مورد VPC، أدخل ARN لمشاركة التكوين ومعرّف التكوين.
   * بالنسبة إلى MSK متعدد VPC، أدخل ARN للعنقود وطريقة المصادقة المستخدمة مع نقطة النهاية المنشأة.
@@ -319,7 +343,11 @@ PrivateLink لديك توفر بالفعل أسماء DNS خاصة، فلست ب
    ستُحدَّث الصفحة تلقائيًا بمجرد أن تصبح نقطة النهاية جاهزة.
    قد تتطلب خدمة نقطة نهاية VPC قبول طلب الاتصال من وحدة تحكم AWS الخاصة بك.
 
+<div className="ch-image-lg">
+
 ![اختيار نقطة النهاية الخاصة العكسية](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
+
+</div>
 
 8. بعد أن تصبح نقطة النهاية جاهزة، يمكنك استخدام اسم DNS للاتصال بمصدر البيانات.
 
@@ -341,11 +369,19 @@ PrivateLink لديك توفر بالفعل أسماء DNS خاصة، فلست ب
 
 1. في الشريط الجانبي، ابحث عن زر `Settings` وانقر عليه.
 
+   <div className="ch-image-lg">
+
    ![إعدادات ClickHouse Cloud](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
+
+   </div>
 
 2. انقر على `Reverse private endpoints` ضمن قسم `ClickPipe reverse private endpoints`.
 
+   <div className="ch-image-md">
+
    ![إعدادات ClickHouse Cloud](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
+
+   </div>
 
    تُعرض المعلومات التفصيلية لنقطة النهاية الخاصة العكسية في اللوحة المنبثقة.
 

@@ -35,7 +35,11 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
 
     3. Une fois la bannière Airbyte affichée dans votre terminal, vous pouvez vous connecter à <a href="http://localhost:8000" target="_blank">localhost:8000</a>
 
+       <div className="ch-image-lg">
+
        ![Bannière Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_01.webp)
+
+       </div>
 
     <Note>
       Vous pouvez également vous inscrire et utiliser <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>
@@ -53,11 +57,19 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
 
     2. Dans Airbyte, sélectionnez la page &quot;Destinations&quot; et ajoutez une nouvelle destination :
 
+       <div className="ch-image-lg">
+
        ![Ajouter une destination dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_02.webp)
+
+       </div>
 
     3. Sélectionnez ClickHouse dans la liste déroulante &quot;Destination type&quot;, puis remplissez le formulaire &quot;Set up the destination&quot; en indiquant le nom d&#39;hôte et les ports de votre instance ClickHouse, le nom de la base de données, le nom d&#39;utilisateur et le mot de passe, puis précisez s&#39;il s&#39;agit d&#39;une connexion SSL (équivalente au flag `--secure` dans `clickhouse-client`) :
 
+       <div className="ch-image-lg">
+
        ![Création de la destination ClickHouse dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_03.webp)
+
+       </div>
 
     4. Félicitations ! Vous avez maintenant ajouté ClickHouse comme destination dans Airbyte.
 
@@ -77,7 +89,11 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
 
     1. Dans Airbyte, sélectionnez la page &quot;Sources&quot; et ajoutez une nouvelle source de type fichier.
 
+       <div className="ch-image-lg">
+
        ![Ajouter une source dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_04.webp)
+
+       </div>
 
     2. Remplissez le formulaire &quot;Set up the source&quot; en donnant un nom à la source et en fournissant l’URL du fichier NYC Taxi de janvier 2022 (voir ci-dessous). Veillez à sélectionner `parquet` comme format de fichier, `HTTPS Public Web` comme fournisseur de stockage et `nyc_taxi_2022` comme nom du jeu de données.
 
@@ -85,7 +101,11 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
        https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2022-01.parquet
        ```
 
+       <div className="ch-image-lg">
+
        ![Création d’une source ClickHouse dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_05.webp)
+
+       </div>
 
     3. Félicitations ! Vous avez maintenant ajouté une source de type fichier dans Airbyte.
   </Step>
@@ -93,21 +113,37 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
   <Step title="Créer une connexion et charger le jeu de données dans ClickHouse" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
     1. Dans Airbyte, ouvrez la page &quot;Connexions&quot; et ajoutez une nouvelle connexion
 
+    <div className="ch-image-lg">
+
     ![Ajouter une connexion dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_06.webp)
+
+    </div>
 
     2. Sélectionnez &quot;Utiliser une source existante&quot;, puis choisissez New York City Taxi Data. Sélectionnez ensuite &quot;Utiliser une destination existante&quot; et choisissez votre instance ClickHouse.
 
     3. Remplissez le formulaire &quot;Configurer la connexion&quot; en choisissant une fréquence de réplication (nous utiliserons `manual` pour ce tutoriel), puis sélectionnez `nyc_taxi_2022` comme flux à synchroniser. Assurez-vous de choisir `Normalized Tabular Data` comme option de normalisation.
 
+    <div className="ch-image-lg">
+
     ![Création d’une connexion dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_07.webp)
+
+    </div>
 
     4. Une fois la connexion créée, cliquez sur &quot;Synchroniser maintenant&quot; pour déclencher le chargement des données (car nous avons choisi `Manual` comme fréquence de réplication)
 
+    <div className="ch-image-lg">
+
     ![Synchronisez maintenant dans Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_08.webp)
+
+    </div>
 
     5. Le chargement de vos données commencera, vous pouvez développer la vue pour voir les logs et la progression d’Airbyte. Une fois l’opération terminée, vous verrez un message `Completed successfully` dans les logs :
 
+    <div className="ch-image-lg">
+
     ![Terminé avec succès](/images/integrations/data-ingestion/etl-tools/airbyte_09.webp)
+
+    </div>
 
     6. Connectez-vous à votre instance ClickHouse à l’aide de votre client SQL préféré et vérifiez la table qui en résulte :
 

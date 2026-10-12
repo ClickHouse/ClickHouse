@@ -34,13 +34,21 @@ ClickHouse est proposé comme connexion préconfigurée dans Notion (actuellemen
 1. Dans Notion, créez un nouveau Custom Agent depuis la section **Agents** de la barre latérale.
 2. Dans les **Settings** de votre Agent, sous **Tools and Access**, sélectionnez **Add connection** et ajoutez **ClickHouse** depuis la liste des connexions disponibles.
 
+<div className="ch-image-md">
+
 ![Sélection de ClickHouse dans le sélecteur Add connection de Notion](/images/integrations/tools/data-integration/notion/add-clickhouse-connection.webp)
+
+</div>
 
 3. Cliquez sur **Connect** et terminez le flux OAuth à l’aide de vos identifiants ClickHouse Cloud. L’accès est limité aux organisations et aux services auxquels votre compte a déjà accès.
 
 4. Développez la nouvelle connexion ClickHouse dans les paramètres de l’agent et activez les outils que vous souhaitez que cet agent utilise. Pour chaque outil, vous pouvez également choisir si l’agent doit l’exécuter automatiquement ou toujours demander une approbation. Tous les outils exposés par le ClickHouse Remote MCP server sont en lecture seule. Consultez la référence des [outils disponibles](/fr/products/cloud/features/ai-ml/remote-mcp#available-tools) pour obtenir la liste complète et à jour.
 
+<div className="ch-image-md">
+
 ![La connexion ClickHouse développée dans Notion, avec les bascules par outil](/images/integrations/tools/data-integration/notion/clickhouse-tools-toggles.webp)
+
+</div>
 
 <Note>
   Chaque Custom Agent nécessite sa propre connexion ClickHouse, et seule la personne qui a authentifié une connexion peut modifier les paramètres de ses outils. Consultez les [bonnes pratiques de sécurité pour les connexions d’Agent](https://www.notion.com/help/security-best-practices-for-agent-connections) de Notion pour plus de détails.

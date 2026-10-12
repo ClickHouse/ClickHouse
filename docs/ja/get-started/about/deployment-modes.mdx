@@ -31,7 +31,11 @@ ClickHouse は、ニーズに応じて複数の方法でデプロイできる柔
 
 ClickHouse Server は従来型のクライアント/サーバーアーキテクチャを採用しており、本番環境へのデプロイに最適です。このデプロイメントモードでは、ClickHouse が得意とする高スループットかつ低レイテンシのクエリ処理に加え、OLAP データベースとしての完全な機能を利用できます。
 
+<div className="ch-image-sm">
+
 ![ClickHouse Server](/images/deployment-modes/ch-server.webp)
+
+</div>
 
 <br />
 
@@ -45,7 +49,11 @@ ClickHouse Server は従来型のクライアント/サーバーアーキテク�
 
 [ClickHouse Cloud](/ja/products/cloud/getting-started/intro) は、ClickHouse の完全マネージド型サービスであり、自前でデプロイメントを運用する負担を取り除きます。ClickHouse Server の中核機能をすべて備えつつ、開発や運用を効率化するための追加機能により、利用体験をさらに向上させています。
 
+<div className="ch-image-sm">
+
 ![ClickHouse Cloud](/images/deployment-modes/ch-cloud.webp)
+
+</div>
 
 ClickHouse Cloud の大きな利点の 1 つは、ツール群が統合されていることです。[ClickPipes](/ja/get-started/setup/cloud#clickpipes) は堅牢なデータインジェスト基盤を提供し、複雑な ETL パイプラインを管理しなくても、さまざまなソースからのデータを簡単に接続してストリーミングできるようにします。さらに、このプラットフォームは専用の[クエリ API](/ja/products/cloud/guides/sql-console/query-endpoints)も提供しており、アプリケーションの構築を大幅に容易にします。
 
@@ -81,7 +89,11 @@ clickhousectl local client
 
 [clickhouse-local](/ja/concepts/features/tools-and-utilities/clickhouse-local) は、ClickHouse の完全な機能をスタンドアロンの実行可能ファイルとして提供する強力なコマンドラインツールです。実質的には ClickHouse Server と同じデータベースですが、サーバーインスタンスを実行しなくても、コマンドラインから ClickHouse のあらゆる機能を直接活用できる形でパッケージ化されています。
 
+<div className="ch-image-sm">
+
 ![clickhouse-local](/images/deployment-modes/ch-local.webp)
+
+</div>
 
 このツールは、アドホックなデータ分析、特にローカルファイルやクラウドストレージサービスに保存されたデータを扱う場合に威力を発揮します。ClickHouse の SQL 方言を使って、さまざまなフォーマットのファイル (CSV、JSON、Parquet など) に直接クエリできるため、ちょっとしたデータ探索や単発の分析タスクに最適です。
 
@@ -95,7 +107,11 @@ clickhouse-local には ClickHouse のすべての機能が含まれているた
 
 [chDB](/ja/chdb/index) は、ClickHouse をプロセス内で動作するデータベースエンジンとして埋め込んだもので、主な実装は Python ですが、Go、Rust、NodeJS、Bun でも利用できます。このデプロイオプションでは、ClickHouse の強力な OLAP 機能をアプリケーションのプロセスに直接組み込めるため、別途データベースをインストールする必要がありません。
 
+<div className="ch-image-sm">
+
 ![chDB - 埋め込み ClickHouse](/images/deployment-modes/chdb.webp)
+
+</div>
 
 chDB は、アプリケーションのエコシステムとシームレスにインテグレーションできます。たとえば Python では、Pandas や Arrow などの一般的なデータサイエンスツールと効率的に連携できるよう最適化されており、Python の `memoryview` によってデータコピーのオーバーヘッドを最小限に抑えます。そのため、既存のワークフローの中で ClickHouse のクエリ性能を活用したいデータサイエンティストやアナリストにとって、特に有用です。
 

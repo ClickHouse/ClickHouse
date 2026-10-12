@@ -35,11 +35,19 @@ Une fois qu’un utilisateur a accès au Cloud, il apparaît dans la page **Team
 
 <Tabs>
   <Tab title="Utilisateurs et rôles Cloud">
+    <div className="ch-image-lg">
+
     ![Page Utilisateurs et rôles de ClickHouse Cloud](/images/clickstack/rbac/team-page-cloud.webp)
+
+    </div>
   </Tab>
 
   <Tab title="ClickStack Team Settings">
+    <div className="ch-image-lg">
+
     ![Page ClickStack Team Settings affichant les membres de l’équipe et leurs rôles](/images/clickstack/rbac/team-page-clickstack.webp)
+
+    </div>
   </Tab>
 </Tabs>
 
@@ -82,7 +90,11 @@ Vous pouvez définir un rôle par défaut pour les nouveaux utilisateurs dans le
   <Step title="Accéder à Team Settings" id="step-navigate">
     Ouvrez **Team Settings** et faites défiler jusqu’à **RBAC Roles**.
 
+    <div className="ch-image-lg">
+
     ![RBAC Roles](/images/clickstack/rbac/rbac-section.webp)
+
+    </div>
   </Step>
 
   <Step title="Ajouter un nouveau rôle" id="step-add-role">
@@ -92,7 +104,11 @@ Vous pouvez définir un rôle par défaut pour les nouveaux utilisateurs dans le
   <Step title="Configurer les autorisations et enregistrer" id="step-configure">
     Définissez les autorisations du rôle, puis cliquez sur **Create Role**.
 
+    <div className="ch-image-md">
+
     ![Fenêtre modale Add Role](/images/clickstack/rbac/add-role-modal.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -149,7 +165,11 @@ Chaque type de ressource dispose d’un **mode de contrôle d’accès** :
 
 Pour changer de mode, cliquez sur le chevron pour développer un type de ressource dans l’éditeur de rôle, puis utilisez la bascule du **mode de contrôle d’accès**.
 
+<div className="ch-image-md">
+
 ![Modes Accès par défaut et Contrôles granulaires dans l’éditeur de rôle](/images/clickstack/rbac/default-vs-fine-grained.webp)
+
+</div>
 
 <div id="configuring-access-rules">
   #### Configuration des règles d’accès
@@ -157,7 +177,11 @@ Pour changer de mode, cliquez sur le chevron pour développer un type de ressour
 
 Chaque règle d’accès se compose d’une **condition** et d’un **niveau d’accès**. Les conditions permettent de faire correspondre les ressources en fonction de leurs propriétés :
 
+<div className="ch-image-md">
+
 ![Infobulle de condition : faire correspondre les ressources par nom ou par tag (indiqué par le titre), ou par ID (visible dans l’URL)](/images/clickstack/rbac/condition-tip.webp)
+
+</div>
 
 | Champ de condition | Opérateurs       | Correspondance                                                                                                                                                                             | Exemple                                                                                                             |
 | ------------------ | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------- |
@@ -167,11 +191,19 @@ Chaque règle d’accès se compose d’une **condition** et d’un **niveau d�
 
 La capture d’écran suivante montre à la fois l’ID du dashboard mis en évidence dans la barre d’URL et un tag &quot;TESTING&quot; visible dans le panneau de tags (en haut à droite).
 
+<div className="ch-image-lg">
+
 ![Dashboard montrant l’ID de la ressource dans la barre d’URL et un tag dans l’angle supérieur droit](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
+
+</div>
 
 Vous pouvez ajouter plusieurs règles par type de ressource. Chaque règle est évaluée indépendamment selon une logique OR — une ressource est accessible si elle correspond à **au moins une** règle. Les ressources qui ne correspondent à aucune règle ne sont pas accessibles.
 
+<div className="ch-image-md">
+
 ![Infobulle des règles d’accès avec logique OR](/images/clickstack/rbac/access-rules-tip.webp)
+
+</div>
 
 **Exemple** : pour donner à un rôle un accès en lecture seule aux tableaux de bord de test, développez tableaux de bord, activez le contrôle granulaire, puis ajoutez deux règles :
 
@@ -180,7 +212,11 @@ Vous pouvez ajouter plusieurs règles par type de ressource. Chaque règle est �
 
 Un dashboard qui correspond à l’une ou l’autre de ces règles est accessible.
 
+<div className="ch-image-md">
+
 ![Deux règles d’accès granulaires reliées par OR : Name contains testing avec accès Read, et Tag is testing avec accès Read](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
+
+</div>
 
 <div id="security-policies">
   ## Security policies
@@ -192,4 +228,8 @@ La section **Security Policies** de **Team Settings** offre des contrôles suppl
 
 **Generative AI** permet d’activer ou de désactiver les fonctionnalités basées sur les LLM (comme la génération de requêtes en langage naturel) fournies par Anthropic ou Amazon Bedrock. Lorsqu’elle est désactivée, aucune donnée n’est envoyée aux AI providers.
 
+<div className="ch-image-lg">
+
 ![Security policies](/images/clickstack/rbac/security-policies.webp)
+
+</div>

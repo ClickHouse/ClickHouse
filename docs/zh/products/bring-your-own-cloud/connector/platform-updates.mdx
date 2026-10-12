@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 托管集群会运行一个小型平台层，ClickHouse 服务依赖于该层。ClickHouse Cloud 会为该层提出更新建议；在您使用自己的集群凭证逐项批准之前，executor不会应用任何更新。
@@ -27,7 +28,11 @@ executor 绝不会应用未经你批准的支持包。若某次平台同步缺�
 
 ## 批准平台更新 {#approve-a-platform-update}
 
+<div className="ch-image-lg">
+
 ![ClickHouse 连接器平台审批流程](/images/cloud/reference/byoc-connector-platform-approval.svg)
+
+</div>
 
 ### Registry 凭证 {#registry-credentials}
 

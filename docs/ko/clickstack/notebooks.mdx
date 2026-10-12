@@ -13,7 +13,11 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 AI Notebooks는 ClickStack에서 AI 에이전트와 수동 분석을 결합한 대화형 조사 도구입니다. 일반적인 언어로 문제를 설명하면 AI 에이전트가 대신 로그, 트레이스, 메트릭을 쿼리하여 관련 데이터, 차트, 요약을 일련의 타일로 보여줍니다. 또한 AI가 생성한 출력과 함께 자체 타일(차트, 테이블, 검색, 마크다운 노트)을 추가하여 조사 과정의 전체 기록을 만들 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![Visa 캐시 포화 장애를 조사하는 AI Notebook](/images/use-cases/observability/hyperdx-notebook-hero.webp)
+
+</div>
 
 <Info>
   **Managed ClickStack 전용**
@@ -44,7 +48,11 @@ AI Notebooks를 사용하기 전에 다음 사항을 확인하십시오:
 2. **Generative AI**를 켜세요.
 3. 동의 대화 상자를 검토한 후 수락하세요.
 
+<div className="ch-image-lg">
+
 ![Team Settings의 Generative AI 토글](/images/use-cases/observability/hyperdx-notebook-ai-consent.webp)
+
+</div>
 
 <div id="using-notebooks">
   ## AI Notebooks 사용하기
@@ -59,7 +67,11 @@ AI Notebooks를 사용하기 전에 다음 사항을 확인하십시오:
 
 노트북 목록 페이지에는 접근 권한이 있는 모든 노트북이 표시됩니다. 이름이나 태그로 필터링하거나 **내 노트북**과 **모든 노트북** 사이를 전환할 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![노트북 목록 페이지](/images/use-cases/observability/hyperdx-notebook-list.webp)
+
+</div>
 
 <div id="running-investigation">
   ### AI 조사 실행하기
@@ -77,7 +89,11 @@ AI Notebooks를 사용하기 전에 다음 사항을 확인하십시오:
 
 조사가 실행 중일 때는 **Stop**을 클릭하여 취소할 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![AI가 생성한 타일이 있는 노트북](/images/use-cases/observability/hyperdx-notebook-tiles.webp)
+
+</div>
 
 <div id="branching">
   ### 조사 브랜치하기
@@ -91,11 +107,19 @@ AI가 조사를 진행하는 동안 중간 단계에서 흥미로운 내용을 �
 2. 대화 상자에서 조사를 새로운 방향으로 이끌 수정된 프롬프트를 입력합니다.
 3. **Interrupt &amp; Create Branch**를 클릭합니다. 그러면 AI가 해당 지점에서 새 조사 브랜치를 시작합니다.
 
+<div className="ch-image-md">
+
 ![새 브랜치 생성 대화 상자](/images/use-cases/observability/hyperdx-notebook-branch-modal.webp)
+
+</div>
 
 타일에 브랜치가 여러 개 생기면, 타일 헤더에 왼쪽 및 오른쪽 화살표 버튼이 표시되며 브랜치 수를 나타내는 배지(예: **1/2**)도 함께 표시됩니다. 화살표를 클릭하여 브랜치 간에 전환합니다.
 
+<div className="ch-image-lg">
+
 ![타일의 브랜치 탐색 화살표와 1/2 배지](/images/use-cases/observability/hyperdx-notebook-branching.webp)
+
+</div>
 
 <div id="manual-tiles">
   ### 수동 타일 추가하기
@@ -114,7 +138,11 @@ AI가 생성한 타일 외에도 노트북 하단의 버튼을 사용해 직접 
 
 수동 타일은 현재 브랜치에서 마지막으로 표시된 타일 아래에 추가됩니다. 타일 하단 가장자리를 끌어 세로 크기를 조정할 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![노트북 하단의 수동 타일 버튼](/images/use-cases/observability/hyperdx-notebook-manual-tiles.webp)
+
+</div>
 
 <Note>
   현재 AI 조사가 실행 중이면 수동 타일을 추가하거나 편집할 때 해당 조사가 취소됩니다. 계속하기 전에 확인 대화상자가 표시됩니다.
@@ -142,4 +170,8 @@ AI가 생성한 타일 외에도 노트북 하단의 버튼을 사용해 직접 
 
 이 컨텍스트는 팀 전체의 모든 노트북 조사에 대해 AI의 system prompt에 추가됩니다.
 
+<div className="ch-image-lg">
+
 ![사용자 지정 컨텍스트를 위한 Agent Settings 패널](/images/use-cases/observability/hyperdx-notebook-agent-context.webp)
+
+</div>

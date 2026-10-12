@@ -418,7 +418,11 @@ Les utilisateurs qui déploient des OTel collectors dans le rôle d’agent util
 
     Cette intégration garantit que l’endpoint OTLP est sécurisé à l’aide d’une API key d’ingestion générée automatiquement, créée lors du déploiement de l’application HyperDX. Toutes les données de télémétrie envoyées au collector doivent inclure cette API key pour l’authentification. Vous pouvez trouver la clé dans l’application HyperDX, sous `Team Settings → API Keys`.
 
+    <div className="ch-image-lg">
+
     ![Clés d’ingestion](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     Pour renforcer la sécurité de votre déploiement, nous recommandons :
 
@@ -557,7 +561,11 @@ En général, les utilisateurs sont contraints d’envoyer des lots plus petits 
 
 S’il n’est pas possible de garantir des lots volumineux, vous pouvez déléguer le traitement par lots à ClickHouse à l’aide des [Asynchronous Inserts](/fr/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). Avec les insertions asynchrones, les données sont d’abord insérées dans un buffer, puis écrites plus tard dans le storage de la base de données, donc de manière asynchrone.
 
+<div className="ch-image-md">
+
 ![Insertions asynchrones](/images/use-cases/observability/observability-6.webp)
+
+</div>
 
 Lorsque les [insertions asynchrones sont activées](/fr/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), quand ClickHouse ① reçoit une insert query, les données de la requête sont ② immédiatement écrites dans un buffer en mémoire. Lorsque ③ le buffer est ensuite vidé, ses données sont [triées](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) puis écrites sous forme de part dans le storage de la base de données. Notez que les données ne peuvent pas être interrogées par des queries avant d’avoir été écrites dans le storage de la base de données ; le flush du buffer est [configurable](/fr/concepts/features/operations/insert/asyncinserts).
 
@@ -581,7 +589,11 @@ Tous les détails sur la configuration de cette fonctionnalité sont disponibles
 
 Le ClickStack OTel collector joue le rôle d’une instance de gateway - voir [Rôles du collector](#collector-roles). Celles-ci constituent un service autonome, généralement par centre de données ou par région. Elles reçoivent les événements des applications (ou d’autres collectors dans le rôle d’agent) via un unique endpoint OTLP. En général, un ensemble d’instances de collector est déployé, avec un load balancer prêt à l’emploi pour répartir la charge entre elles.
 
+<div className="ch-image-lg">
+
 ![Mise à l’échelle avec des gateways](/images/use-cases/observability/clickstack-with-gateways.webp)
+
+</div>
 
 L’objectif de cette architecture est de décharger les agents des traitements gourmands en calcul, ce qui minimise leur consommation de ressources. Ces gateways ClickStack peuvent effectuer des tâches de transformation qui, autrement, devraient être réalisées par les agents. De plus, en agrégeant les événements de nombreux agents, les gateways peuvent garantir l’envoi de lots volumineux vers ClickHouse, ce qui permet une insertion efficace. Ces collectors jouant le rôle de gateway peuvent facilement passer à l’échelle à mesure que davantage d’agents et de sources via SDK sont ajoutés et que le throughput d’événements augmente.
 
@@ -597,7 +609,11 @@ Cependant, ClickHouse peut insérer des données très rapidement — des millio
 
 Cependant, si vous avez besoin de fortes garanties de livraison ou de la possibilité de rejouer les données (éventuellement vers plusieurs sources), Kafka peut être un ajout architectural utile.
 
+<div className="ch-image-lg">
+
 ![Ajouter Kafka](/images/use-cases/observability/observability-8.webp)
+
+</div>
 
 Dans ce cas, les agents OTel peuvent être configurés pour envoyer les données à Kafka via le [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). Les instances de gateway, à leur tour, consomment les messages à l’aide du [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). Nous vous recommandons de consulter la documentation de Confluent et d’OTel pour plus de détails.
 

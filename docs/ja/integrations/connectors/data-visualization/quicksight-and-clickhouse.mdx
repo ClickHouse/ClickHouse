@@ -116,44 +116,72 @@ Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 
 まず、[https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com) にアクセスし、Datasets に移動して「New dataset」をクリックします。
 
+<div className="ch-image-md">
+
 ![Datasets セクションで New dataset ボタンが表示されている Amazon QuickSight ダッシュボード](/images/integrations/data-visualization/quicksight_01.webp)
+
+</div>
 
 <br />
 
 QuickSight に含まれている公式の MySQL コネクタ (名前は **MySQL**) を検索します。
 
+<div className="ch-image-md">
+
 ![検索結果で MySQL が強調表示されている QuickSight のデータソース選択画面](/images/integrations/data-visualization/quicksight_02.webp)
+
+</div>
 
 <br />
 
 接続情報を指定します。MySQL インターフェイスのポートはデフォルトで 9004 ですが、
 サーバー設定によって異なる場合があるので注意してください。
 
+<div className="ch-image-md">
+
 ![hostname、ポート、データベース、認証情報のフィールドがある QuickSight の MySQL 接続設定フォーム](/images/integrations/data-visualization/quicksight_03.webp)
+
+</div>
 
 <br />
 
 ここで、ClickHouse からデータを取得する方法は 2 つあります。1 つ目は、一覧からテーブルを選択する方法です。
 
+<div className="ch-image-md">
+
 ![ClickHouse で利用可能なデータベーステーブルが表示されている QuickSight のテーブル選択インターフェイス](/images/integrations/data-visualization/quicksight_04.webp)
+
+</div>
 
 <br />
 
 また、データを取得するために custom SQL を指定することもできます。
 
+<div className="ch-image-md">
+
 ![ClickHouse からデータを取得するための QuickSight の custom SQL クエリエディタ](/images/integrations/data-visualization/quicksight_05.webp)
+
+</div>
 
 <br />
 
 「Edit/Preview data」をクリックすると、取得したテーブル構造を確認したり、custom SQL でデータにアクセスする場合はその内容を調整したりできます。
 
+<div className="ch-image-md">
+
 ![カラムとサンプルデータを含むテーブル構造が表示されている QuickSight のデータプレビュー](/images/integrations/data-visualization/quicksight_06.webp)
+
+</div>
 
 <br />
 
 UI の左下で「Direct Query」モードが選択されていることを確認してください。
 
+<div className="ch-image-md">
+
 ![下隅で Direct Query モードのオプションが強調表示されている QuickSight インターフェイス](/images/integrations/data-visualization/quicksight_07.webp)
+
+</div>
 
 <br />
 

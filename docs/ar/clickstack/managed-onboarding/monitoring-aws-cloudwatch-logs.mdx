@@ -255,11 +255,19 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   <Step title="أكّد ذلك في واجهة ClickStack" id="confirm-in-ui">
     افتح خدمتك في [وحدة تحكم ClickHouse Cloud](https://console.clickhouse.cloud) واختر **ClickStack** من القائمة اليمنى.
 
+    <div className="ch-image-lg">
+
     ![تشغيل ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+    </div>
 
     في عرض **Search**، غيّر المصدر إلى `Logs` واضبط النطاق الزمني على **آخر 15 دقيقة**. من المفترض أن تظهر أحداث CloudWatch خلال بضع فترات poll.
 
+    <div className="ch-image-lg">
+
     ![عرض Search في ClickStack مع سجلات CloudWatch](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
+
+    </div>
 
     يتضمن كل حدث مجموعة السجل وstream المصدر ضمن resource attributes:
 
@@ -270,11 +278,19 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
     عدّل البحث إلى `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body` لتضمين هذه السمات:
 
+    <div className="ch-image-lg">
+
     ![عرض Search في ClickStack مع سجلات CloudWatch والسمات](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
+
+    </div>
 
     حدّد log entry لفحص بياناته الوصفية:
 
+    <div className="ch-image-lg">
+
     ![سمات CloudWatch في عرض تفاصيل السجل](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
+
+    </div>
 
     إذا لم يظهر شيء:
 
@@ -289,11 +305,19 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">نزّل `cloudwatch-logs-dashboard.json`</TrackedLink>، ثم انتقل في ClickStack UI إلى **Dashboards** وانقر على **Import**.
 
+    <div className="ch-image-lg">
+
     ![زر استيراد لوحة المعلومات](/images/clickstack/clickstack-import-dashboard.webp)
+
+    </div>
 
     ارفَع ملف JSON ثم انقر على **Finish Import**.
 
+    <div className="ch-image-lg">
+
     ![مربع حوار إتمام الاستيراد](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
+
+    </div>
   </Step>
 
   <Step title="للمزيد من القراءة" id="further-reading">

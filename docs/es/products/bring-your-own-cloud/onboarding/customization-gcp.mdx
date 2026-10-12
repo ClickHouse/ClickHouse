@@ -21,7 +21,11 @@ Si prefieres usar una VPC existente para desplegar ClickHouse BYOC en lugar de d
       Para exponer servicios a través de [Private Service Connect](/es/cloud/reference/byoc/onboarding/network-gcp#setup-psc), también necesitas una subred dedicada con el propósito `PRIVATE_SERVICE_CONNECT` en esta VPC. Puedes crearla ahora o más adelante, antes de habilitar private link.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![Detalles de la subred BYOC de GCP que muestran rangos IPv4 primarios y secundarios con Private Google Access habilitado](/images/cloud/reference/byoc-gcp-subnet.webp)
+
+    </div>
   </Step>
 
   <Step title="Garantiza la conectividad de red" id="ensure-network-connectivity">
@@ -51,7 +55,11 @@ Si prefieres usar una VPC existente para desplegar ClickHouse BYOC en lugar de d
     5. Si tu VPC reside en un proyecto host de VPC compartida, introduce el **Shared VPC host project ID**. Déjalo vacío cuando la VPC esté en el mismo proyecto que la infraestructura. Consulta [VPC compartida desde un proyecto host](#shared-vpc-host-project) más abajo.
     6. Haz clic en **Set up Infrastructure** para iniciar el aprovisionamiento.
 
+    <div className="ch-image-lg">
+
     ![Interfaz de usuario de configuración de BYOC de ClickHouse Cloud con Use existing VPC seleccionado para GCP, que muestra los campos VPC network name, subnet name, secondary range names y Shared VPC host project ID](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
+
+    </div>
   </Step>
 </Steps>
 

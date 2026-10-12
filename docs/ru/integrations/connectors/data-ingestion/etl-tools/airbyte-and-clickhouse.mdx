@@ -35,7 +35,11 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 
     3. Как только в терминале появится баннер Airbyte, вы сможете перейти по адресу <a href="http://localhost:8000" target="_blank">localhost:8000</a>
 
+       <div className="ch-image-lg">
+
        ![Баннер Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_01.webp)
+
+       </div>
 
     <Note>
       Также вы можете зарегистрироваться и использовать <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>
@@ -53,11 +57,19 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 
     2. В Airbyte откройте страницу &quot;Destinations&quot; и добавьте новый пункт назначения:
 
+       <div className="ch-image-lg">
+
        ![Добавление пункта назначения в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_02.webp)
+
+       </div>
 
     3. Выберите ClickHouse в раскрывающемся списке &quot;Destination type&quot; и заполните форму &quot;Set up the destination&quot;: укажите hostname и порты ClickHouse, имя базы данных, имя пользователя и пароль, а также выберите, будет ли использоваться SSL-соединение (эквивалент флага `--secure` в `clickhouse-client`):
 
+       <div className="ch-image-lg">
+
        ![Создание пункта назначения ClickHouse в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_03.webp)
+
+       </div>
 
     4. Поздравляем! Теперь ClickHouse добавлен в Airbyte в качестве пункта назначения.
 
@@ -77,7 +89,11 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 
     1. В Airbyte откройте страницу &quot;Sources&quot; и добавьте новый источник типа файла.
 
+       <div className="ch-image-lg">
+
        ![Добавление источника в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_04.webp)
+
+       </div>
 
     2. Заполните форму &quot;Set up the source&quot;: укажите имя источника и URL файла NYC Taxi за январь 2022 года (см. ниже). Убедитесь, что в качестве формата файла выбран `parquet`, в качестве Storage Provider — `HTTPS Public Web`, а в качестве Dataset Name — `nyc_taxi_2022`.
 
@@ -85,7 +101,11 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
        https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2022-01.parquet
        ```
 
+       <div className="ch-image-lg">
+
        ![Создание источника ClickHouse в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_05.webp)
+
+       </div>
 
     3. Готово! Теперь вы добавили в Airbyte файловый источник.
   </Step>
@@ -93,21 +113,37 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
   <Step title="Создание подключения и загрузка набора данных в ClickHouse" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
     1. В Airbyte перейдите на страницу &quot;Connections&quot; и добавьте новое подключение
 
+    <div className="ch-image-lg">
+
     ![Добавить подключение в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_06.webp)
+
+    </div>
 
     2. Выберите &quot;Использовать существующий источник&quot; и New York City Taxi Data, затем — &quot;Использовать существующий пункт назначения&quot; и свой экземпляр ClickHouse.
 
     3. Заполните форму &quot;Настройка соединения&quot;: выберите частоту репликации (в этом руководстве мы будем использовать `manual`) и выберите `nyc_taxi_2022` в качестве потока для синхронизации. Убедитесь, что в качестве нормализации выбрано `Normalized Tabular Data`.
 
+    <div className="ch-image-lg">
+
     ![Создание подключения в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_07.webp)
+
+    </div>
 
     4. Теперь, когда подключение создано, нажмите &quot;Синхронизировать сейчас&quot;, чтобы запустить загрузку данных (так как в качестве частоты репликации мы выбрали `Manual`)
 
+    <div className="ch-image-lg">
+
     ![Запустите синхронизацию в Airbyte](/images/integrations/data-ingestion/etl-tools/airbyte_08.webp)
+
+    </div>
 
     5. Начнется загрузка данных; вы можете развернуть это представление, чтобы увидеть журналы Airbyte и прогресс. Когда операция завершится, в журналах появится сообщение `Completed successfully`:
 
+    <div className="ch-image-lg">
+
     ![Успешно завершено](/images/integrations/data-ingestion/etl-tools/airbyte_09.webp)
+
+    </div>
 
     6. Подключитесь к своему экземпляру ClickHouse с помощью любого удобного SQL-клиента и проверьте полученную таблицу:
 

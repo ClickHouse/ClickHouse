@@ -30,7 +30,11 @@ keywords: ['agentic data stack', 'agentic analytics', 'ClickHouse', 'MCP', 'Libr
   ## 技术栈如何协同工作
 </div>
 
+<div className="ch-image-md">
+
 ![Agentic Data Stack 架构：用户与 LibreChat 交互，LibreChat 连接到 LLM，并通过 MCP 服务器连接到 ClickHouse，还连接到 Langfuse 进行追踪](/images/agentic-data-stack/01-architecture.webp)
+
+</div>
 
 用户在 LibreChat 中提出问题。模型会规划如何回答，并通过 MCP 服务器调用工具来浏览和查询 ClickHouse。结果返回后，agent 会组织生成最终答案。Langfuse 基于 OpenTelemetry 构建，可记录每次运行从提示词到工具调用再到响应的全过程，支持自动或人工审核对输出进行评分，并跟踪质量、成本和延迟。
 

@@ -232,7 +232,11 @@ doc_type: 'guide'
     اكتب &quot;Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables&quot; ثم اضغط إرسال.
     في إحدى مرات التشغيل، نفّذ الوكيل الخطوات التالية:
 
+    <div className="ch-image-lg">
+
     ![دردشة ClickHouse Agent تعرض الخطوات المتّبعة لبناء شبكة كثافة أبراج الاتصالات الخلوية في ألمانيا](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
+
+    </div>
 
     * بحث عن رمز الدولة للهاتف المحمول (Mobile Country Code) الخاص بألمانيا في `mcc_country_dict` فوجد أن قيمة MCC هي `262`.
     * أحصى الأبراج ذات `mcc = 262` الواقعة داخل المضلّع في `germany` باستخدام `pointInPolygon`، فبلغ عددها 2,588,635 برجًا. وهذا العدد أقل قليلًا من العدد السابق، لأن عامل التصفية الإضافي `mcc` يستبعد الأبراج الواقعة داخل المضلّع والمسجّلة لدولة أخرى.
@@ -241,7 +245,11 @@ doc_type: 'guide'
 
     افتح الملف المُنشأ لرؤية النتيجة. تمثّل التجمّعات الساطعة المناطق الحضرية الكبرى: برلين وهامبورغ وميونخ وفرانكفورت.
 
+    <div className="ch-image-md">
+
     ![خريطة حرارية لكثافة أبراج الاتصالات الخلوية في ألمانيا على شبكة بدقة 0.1 درجة مع مقياس ألوان لوغاريتمي](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
+
+    </div>
   </Step>
 </Steps>
 

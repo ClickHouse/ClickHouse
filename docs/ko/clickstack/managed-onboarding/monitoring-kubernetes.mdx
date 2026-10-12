@@ -300,15 +300,27 @@ Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 
   <Step title="ClickStack UI에서 확인" id="confirm-in-ui">
     [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 열고 왼쪽 메뉴에서 **ClickStack**을 선택합니다.
 
+    <div className="ch-image-lg">
+
     ![ClickStack 시작](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+    </div>
 
     **검색** 뷰에서 소스를 `Logs`로 전환하고 시간 범위를 **Last 15 minutes**로 설정합니다. 그러면 클러스터 전반의 컨테이너 로그가 몇 초 안에 표시되며, `k8s.namespace.name`, `k8s.pod.name`, `k8s.node.name`과 같은 속성으로 보강되어 나타납니다.
 
+    <div className="ch-image-lg">
+
     ![Kubernetes 로그가 포함된 ClickStack 검색 뷰](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+
+    </div>
 
     인프라 메트릭과 이벤트를 함께 보려면 **Dashboards** -&gt; **Kubernetes**로 이동해 기본 제공 **Kubernetes** 대시보드를 엽니다. `Pods`, `Nodes`, `Namespaces` 탭에 모두 데이터가 표시되어야 합니다.
 
+    <div className="ch-image-lg">
+
     ![ClickStack Kubernetes 대시보드](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+
+    </div>
 
     아무것도 표시되지 않으면:
 

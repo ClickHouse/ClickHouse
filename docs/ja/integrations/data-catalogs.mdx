@@ -15,7 +15,11 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 ClickHouse Cloud をデータカタログに接続すると、オープンテーブルフォーマットのテーブルにアクセスできます。接続は **データソース** UI で設定できます。SQL で設定する場合は、任意の SQL エディタで [`DataLakeCatalog`](/ja/reference/engines/database-engines/datalake) データベースエンジンを使用します。
 
+<div className="ch-image-md">
+
 ![データカタログインテグレーションを表示する ClickHouse Cloud UI](/images/cloud/features/data-catalogs-ui.png)
+
+</div>
 
 接続後、カタログ内のテーブルは指定したデータベース名の下に SQL コンソールで表示されます。標準の ClickHouse SQL でクエリを実行したり、[MergeTree](/ja/reference/engines/table-engines/mergetree-family/mergetree) テーブルと結合したり、[materialized view](/ja/concepts/features/materialized-views) のソースとして使用したりできます。
 
@@ -39,7 +43,11 @@ ClickHouse Cloud をデータカタログに接続すると、オープンテー
     2. データソースをまだ設定していない場合は、**+ カタログを追加**をクリックします。設定済みの場合は、**データソースを追加** &gt; **データレイクカタログを追加**をクリックします。
     3. **データカタログに接続**フライアウトで、**カタログを選択**ドロップダウンからカタログを選択します。カタログが複数のオープンテーブルフォーマットに対応している場合は、**オープンテーブルフォーマット**でフォーマットを選択します。
 
+    <div className="ch-image-lg">
+
     ![AWS Glue、BigLake Metastore、Microsoft OneLake、Polaris、REST Catalog、Unity Catalog が表示された［カタログを選択］ドロップダウンを含む［データカタログに接続］フライアウト](/images/integrations/data-catalogs/catalog-flyout-select.png)
+
+    </div>
   </Step>
 
   <Step title="カタログ接続を追加する" id="add-your-catalog-connection">
@@ -205,7 +213,11 @@ ClickHouse Cloud をデータカタログに接続すると、オープンテー
   <Step title="カタログのテーブルを表示する" id="view-tables">
     **データソース**ページで、**リンク済みカタログ**テーブルからカタログを見つけ、**テーブルを表示**をクリックします。
 
+    <div className="ch-image-lg">
+
     ![「テーブルを表示」操作を含むリンク済みカタログのテーブル](/images/integrations/data-catalogs/linked-catalogs-table.png)
+
+    </div>
 
     ClickHouse で SQL コンソールが開き、カタログデータベースが選択された状態で利用可能なテーブルが一覧表示されます。
 
@@ -213,7 +225,11 @@ ClickHouse Cloud をデータカタログに接続すると、オープンテー
       カタログを接続した直後は、テーブルが表示されないことがあります。カタログによっては、すべてのテーブルが一覧表示されるまでに最大 3 分かかる場合があります。
     </Note>
 
+    <div className="ch-image-lg">
+
     ![カタログのテーブルを表示する SQL コンソールのテーブルブラウザ](/images/integrations/data-catalogs/catalog-tables-browser.png)
+
+    </div>
   </Step>
 
   <Step title="クエリを実行する" id="run-a-query">
@@ -223,7 +239,11 @@ ClickHouse Cloud をデータカタログに接続すると、オープンテー
     SELECT * FROM `identity_profiles.identity_profiles_iceberg`
     ```
 
+    <div className="ch-image-lg">
+
     ![ドットを含むテーブル名をバッククォートで囲んだ、結果付きの SQL クエリ](/images/integrations/data-catalogs/catalog-sql-query.png)
+
+    </div>
   </Step>
 </Steps>
 

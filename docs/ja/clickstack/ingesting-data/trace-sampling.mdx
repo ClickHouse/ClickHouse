@@ -49,6 +49,10 @@ greatest(toUInt64OrZero(toString(expr)), 1)
 
 たとえば、OpenTelemetry tail-sampling processor がそのレートを `SpanAttributes['SampleRate']` に書き込む場合:
 
+<div className="ch-image-lg">
+
 ![ClickStack のソース設定にあるサンプルレート式フィールド](/images/clickstack/trace-sampling-source-settings.webp)
+
+</div>
 
 設定すると、すべてのチャート、ダッシュボード、アラート、サービスダッシュボードのパネルで、サンプルレートに基づく重み付き集計が自動的に適用されます。個々のクエリを変更する必要はありません。

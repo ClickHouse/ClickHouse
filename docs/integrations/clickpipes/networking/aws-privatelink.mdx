@@ -262,19 +262,35 @@ To configure custom private DNS names:
 
 1. Access the SQL Console for your ClickHouse Cloud Service.
 
+<div className="ch-image-md">
+
 ![ClickPipes service](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. Select the `Data Sources` button on the left-side menu and click on "Set up a ClickPipe"
 
+<div className="ch-image-lg">
+
 ![Select imports](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. Select either Kafka or Postgres as a data source.
 
+<div className="ch-image-lg">
+
 ![Select data source](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
+
+</div>
 
 4. Select the `Reverse private endpoint` option.
 
+<div className="ch-image-lg">
+
 ![Select reverse private endpoint](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
+
+</div>
 
 5. Select any of existing reverse private endpoints or create a new one.
 
@@ -285,11 +301,19 @@ If cross-region access is required for RDS, you need to create a VPC endpoint se
 For same-region access, creating a VPC Resource is the recommended approach.
 </Info>
 
+<div className="ch-image-lg">
+
 ![Select reverse private endpoint](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
+
+</div>
 
 6. Provide the required parameters for the selected endpoint type.
 
+<div className="ch-image-lg">
+
 ![Select reverse private endpoint](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
+
+</div>
 
     - For VPC resource, provide the configuration share ARN and configuration ID.
     - For MSK multi-VPC, provide the cluster ARN and authentication method used with a created endpoint.
@@ -302,7 +326,11 @@ For same-region access, creating a VPC Resource is the recommended approach.
    The page will refresh automatically once the endpoint is ready.
    VPC endpoint service might require accepting the connection request in your AWS console.
 
+<div className="ch-image-lg">
+
 ![Select reverse private endpoint](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
+
+</div>
 
 8. Once the endpoint is ready, you can use a DNS name to connect to the data source.
 
@@ -322,11 +350,19 @@ You can manage existing reverse private endpoints in the ClickHouse Cloud servic
 
 1. On a sidebar find the `Settings` button and click on it.
 
+    <div className="ch-image-lg">
+
     ![ClickHouse Cloud settings](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
+
+    </div>
 
 2. Click on `Reverse private endpoints` in a `ClickPipe reverse private endpoints` section.
 
+    <div className="ch-image-md">
+
     ![ClickHouse Cloud settings](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
+
+    </div>
 
    Reverse private endpoint extended information is shown in the flyout.
 

@@ -9,6 +9,7 @@ doc_type: 'guide'
 ---
 
 import AsyncInserts from '/snippets/zh/_async_inserts.mdx';
+
 import BulkInserts from '/snippets/zh/_bulk_inserts.mdx';
 
 高效的数据摄取是构建高性能 ClickHouse 部署的基础。选择合适的插入策略会显著影响吞吐量、成本和可靠性。本节将概述最佳实践、利弊权衡以及配置选项，帮助你根据自身工作负载做出正确决策。
@@ -31,7 +32,11 @@ import BulkInserts from '/snippets/zh/_bulk_inserts.mdx';
 
 下面我们简要介绍 ClickHouse 的 MergeTree 插入机制：
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![插入过程](/images/bestpractices/insert_process.webp)
+
+</div>
 
 <div id="client-side-steps">
   #### 客户端侧步骤

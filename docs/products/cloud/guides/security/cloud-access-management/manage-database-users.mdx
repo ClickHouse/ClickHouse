@@ -92,7 +92,11 @@ Configure the following within the services and databases using the SQL [GRANT](
 
 The illustration below shows the different ways a user could be granted permissions.
 
-![](/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp)
+<div className="ch-image-md ch-image-background-black">
+
+![An illustration showing the different ways a user could be granted permissions](/images/cloud/security/cloud-access-management/user_grant_permissions_options.webp)
+
+</div>
 
 ### Initial settings {#initial-settings}
 Databases have an account named `default` that is added automatically and granted the default_role upon service creation. The user that creates the service is presented with the automatically generated, random password that is assigned to the `default` account when the service is created. The password isn't shown after initial setup, but may be changed by any user with Service Admin permissions in the console at a later time. This account or an account with Service Admin privileges within the console may set up additional database users and roles at any time.

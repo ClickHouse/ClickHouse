@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
 本指南提供分步说明，介绍如何使用 `pg_dump` 和 `pg_restore` 实用工具将您的 PostgreSQL 数据库迁移至 ClickHouse Managed Postgres。
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pg_dump-pg_restore-beta" />
@@ -25,7 +26,11 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 为了完成这些步骤，我们以一个示例 RDS Postgres 数据库作为源数据库。大致如下：
 
+<div className="ch-image-lg">
+
 ![源 PostgreSQL 数据库设置](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</div>
 
 我们要处理的内容包括：
 
@@ -60,7 +65,11 @@ pg_dump \
 
 以下是运行此命令后的效果：
 
+<div className="ch-image-lg">
+
 ![pg_dump 命令执行](/images/managed-postgres/pg_dump_restore/dump-command.webp)
+
+</div>
 
 <div id="migration-pgdump-pg-restore-restore">
   ## 将转储恢复到 ClickHouse Managed Postgres
@@ -74,7 +83,11 @@ pg_dump \
 
 首先，请确保你已创建好一个 ClickHouse Managed Postgres 实例，最好与源位于同一区域。你可以参考[这里](/zh/products/managed-postgres/quickstart#create-postgres-database)的快速入门指南。下面是本指南中将要创建的实例：
 
+<div className="ch-image-md">
+
 ![创建 ClickHouse Managed Postgres 实例](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</div>
 
 <div id="migration-pgdump-pg-restore-restore-dump">
   ### 恢复转储
@@ -98,7 +111,11 @@ pg_restore \
 
 在我们的示例中，命令如下所示：
 
+<div className="ch-image-lg">
+
 ![pg_restore 命令执行](/images/managed-postgres/pg_dump_restore/restore-command.webp)
+
+</div>
 
 <div id="migration-pgdump-pg-restore-verify">
   ## 验证迁移
@@ -107,7 +124,11 @@ pg_restore \
 恢复完成后，您可以连接到 ClickHouse Managed Postgres 实例，确认所有数据和对象都已成功迁移。您可以使用任意 PostgreSQL 客户端进行连接并执行查询。
 以下是迁移完成后我们的 ClickHouse Managed Postgres 配置：
 
+<div className="ch-image-lg">
+
 ![目标 ClickHouse Managed Postgres 数据库配置](/images/managed-postgres/pg_dump_restore/target-setup.webp)
+
+</div>
 
 可以看到，所有表、索引、视图和序列都完好无损，数据量也一致。
 

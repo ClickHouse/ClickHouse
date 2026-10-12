@@ -265,19 +265,31 @@ Go to [https://console.clickhouse.cloud/](https://console.clickhouse.cloud/)
 </Step>
 <Step title="Create a new service" id="create-new-service">
 
+<div className="ch-image-md">
+
 ![create a new service](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
+
+</div>
 </Step>
 <Step title="Configure and create a service" id="configure-and-create">
 
 Choose your desired region and configuration, then click `Create service`
 
+<div className="ch-image-md">
+
 ![setup service preferences](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
+
+</div>
 </Step>
 <Step title="Create an access role" id="create-an-access-role">
 
 Open SQL console
 
+<div className="ch-image-md">
+
 ![setup service preferences](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
+
+</div>
 
 ### Set up S3 access {#set-up-s3-access}
 
@@ -376,7 +388,11 @@ TO S3(
 
 If you check your previously empty S3 bucket you will now see some folders have appeared:
 
+<div className="ch-image-md">
+
 ![backup, data and metadata](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
+
+</div>
 
 If you're performing a full migration then you can run the following command to backup the entire server:
 

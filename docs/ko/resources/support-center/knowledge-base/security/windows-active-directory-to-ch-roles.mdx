@@ -35,15 +35,27 @@ keywords: ['Windows']
 
 * 예시 AD 환경 및 UO 구조:
 
+<div className="ch-image-md">
+
 ![예시 AD 환경 및 UO 구조](/images/knowledgebase/windows-ad-ch-roles/AD_Env_and_UO_structure.webp)
+
+</div>
 
 * 예시 AD 보안 그룹 구성:
 
+<div className="ch-image-md">
+
 ![예시 AD 보안 그룹 구성](/images/knowledgebase/windows-ad-ch-roles/AD_Group_clickhouse_ad_db1_users.webp)
+
+</div>
 
 * 예시 AD 사용자 구성:
 
+<div className="ch-image-md">
+
 ![예시 AD 사용자 구성](/images/knowledgebase/windows-ad-ch-roles/AD_user_clickhouse_db1_user.webp)
+
+</div>
 
 1. Windows AD Users and Groups에서 각 사용자를 해당 그룹에 추가하십시오. 그러면 사용자가 ClickHouse 역할에 매핑됩니다(예시는 다음 단계 참조).
 
@@ -56,7 +68,11 @@ keywords: ['Windows']
 
 * 예시 사용자 그룹 멤버십:
 
+<div className="ch-image-md">
+
 ![예시 사용자 그룹 멤버십](/images/knowledgebase/windows-ad-ch-roles/AD_user_to_group.webp)
+
+</div>
 
 2. ClickHouse `config.xml`에서 각 ClickHouse 노드에 `ldap_servers` 구성을 추가하십시오.
 

@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge/>
 
 is a per-user store the agent can recall across conversations. It is composed of several entries, each one a key-value pair - your preferred
@@ -24,7 +25,11 @@ You see this as continuity: tell an agent once that you prefer SQL output in low
 
 Open the memory panel from the **Memories** (brain) icon in the left navigation. The panel lists your stored memories with controls to create, edit, delete, and filter entries.
 
+<div className="ch-image-sm">
+
 ![Memories panel showing the brain icon highlighted in the left navigation, a filter input, an Add button, a Use memory checkbox, a memory entry with edit and delete controls, and an Admin Settings button](/images/cloud/agent-builder/memory/memories.webp)
+
+</div>
 
 Memory is private to your user. Other people's agents never see your entries, and your agents never see theirs.
 
@@ -32,25 +37,41 @@ Memory is private to your user. Other people's agents never see your entries, an
 
 Click the **+** button at the top of the panel to open the **Create Memory** dialog. Enter a **Key** (lowercase letters and underscores only) and a **Value**, then click **Create**.
 
+<div className="ch-image-sm">
+
 ![Memory panel with the Create Memory + button highlighted](/images/cloud/agent-builder/memory/create.webp)
+
+</div>
 
 ### Filter memories {#filter-memories}
 
 Use the **Filter memories** input at the top of the panel to find an entry by key.
 
+<div className="ch-image-sm">
+
 ![Memory panel with the Filter memories input highlighted and 'demo' typed in](/images/cloud/agent-builder/memory/filter.webp)
+
+</div>
 
 ### Edit a memory {#edit-memory}
 
 Click the pencil icon on a memory to open the **Edit Memory** dialog. Adjust the Key or Value and click **Save**.
 
+<div className="ch-image-sm">
+
 ![Memory entry with the Edit Memory pencil icon highlighted](/images/cloud/agent-builder/memory/edit.webp)
+
+</div>
 
 ### Delete a memory {#delete-memory}
 
 Click the trash icon on a memory to remove it.
 
+<div className="ch-image-sm">
+
 ![Memory entry with the Delete Memory trash icon highlighted](/images/cloud/agent-builder/memory/delete.webp)
+
+</div>
 
 ## Toggle memory {#toggle-memory}
 
@@ -58,7 +79,11 @@ Turn memory on or off with the **Use memory** checkbox at the top of the memory 
 
 When memory is off, the agent neither reads from nor writes to your memory store.
 
+<div className="ch-image-sm">
+
 ![Memory panel with the Use memory checkbox highlighted at the top](/images/cloud/agent-builder/memory/toggle.webp)
+
+</div>
 
 ## Memory best practices {#memory-best-practices}
 

@@ -39,13 +39,21 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
       <Step title="Активируйте коннектор и создайте подключение" id="activate-the-connector">
         После оформления подписки выберите версию Glue, соответствующую требованиям вашей задачи. В разделе **Additional details**, в подразделе **Usage instructions** нажмите ссылку **Open Glue Studio - Add ClickHouse connector**. Откроется страница создания подключения Glue с уже заполненными ключевыми полями. Задайте имя подключения и нажмите Create (на этом этапе указывать сведения о подключении к ClickHouse не нужно).
 
+        <div className="ch-image-md">
+
         ![AWS Marketplace usage instructions for ClickHouse Glue connector](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
+
+        </div>
       </Step>
 
       <Step title="Использование в задаче Glue" id="use-in-glue-job">
         В задаче Glue выберите вкладку `Job details` и раскройте раздел `Advanced properties`. В разделе `Connections` выберите только что созданное подключение. Коннектор автоматически добавит необходимые JAR-файлы в среду выполнения задачи.
 
+        <div className="ch-image-md">
+
         ![Glue Notebook connections config](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
+
+        </div>
 
         <Note>
           Обязательно выберите версию коннектора, соответствующую конфигурации вашей задачи Glue:
@@ -72,7 +80,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
       <Step title="Настройте путь к зависимым JAR-файлам">
         На вкладке `Job details` прокрутите страницу вниз, раскройте список `Advanced properties` и укажите путь к JAR-файлам в поле `Dependent JARs path`:
 
+        <div className="ch-image-md">
+
         ![Glue Notebook JAR path options](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -153,7 +165,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
   <Tab title="Визуальный редактор">
     Вы можете использовать коннектор ClickHouse как источник или целевое назначение в визуальном редакторе Glue Studio. Просто перетащите компонент Spark-коннектора ClickHouse на холст и подключите его к своему конвейеру данных.
 
+    <div className="ch-image-md">
+
     ![Визуальный редактор Glue Studio с коннектором ClickHouse](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
+
+    </div>
   </Tab>
 
   <Tab title="Scala">

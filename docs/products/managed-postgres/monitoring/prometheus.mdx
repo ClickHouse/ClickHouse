@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
@@ -109,7 +110,11 @@ usage with threshold alerts, connections by state, transactions and
 rollback ratio, tuple activity, I/O, per-database storage, and
 deadlocks.
 
+<div className="ch-image-md">
+
 ![Grafana dashboard of ClickHouse Managed Postgres Services](/images/managed-postgres/monitoring/grafana-dashboard.webp)
+
+</div>
 
 ### Importing the dashboard {#import-dashboard}
 

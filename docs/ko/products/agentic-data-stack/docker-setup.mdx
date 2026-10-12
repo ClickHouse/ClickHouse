@@ -72,18 +72,30 @@ Docker Compose로 로컬에서 전체 에이전트형 데이터 스택을 실행
   <Step title="모델 선택">
     기본적으로 모델이 선택되어 있습니다. 변경하려면 모델 셀렉터를 열고 사용할 모델을 선택하십시오.
 
+    <div className="ch-image-md">
+
     ![왼쪽 상단에 있는 LibreChat 모델 셀렉터에 기본 모델과 「Select a model」 툴팁이 표시된 모습](/images/agentic-data-stack/select-model.webp)
+
+    </div>
 
     Setup 중에 제공업체 키를 설정하지 않았다면 UI에서 추가하십시오.
 
     <Accordion title="UI에서 제공업체 키 설정">
       모델 셀렉터를 열고 제공업체 옆의 **Set API Key**를 클릭하십시오.
 
+      <div className="ch-image-md">
+
       ![Anthropic provider 옆에 Set API Key 버튼이 표시된 LibreChat 모델 셀렉터](/images/agentic-data-stack/set-api-key.webp)
+
+      </div>
 
       대화 상자에 키를 붙여넣고 **Submit**을 클릭하십시오. 만료 시간을 설정하거나, 키가 만료되지 않도록 유지할 수 있습니다.
 
+      <div className="ch-image-md">
+
       ![만료 드롭다운, Key 필드, Submit 및 Revoke 버튼이 있는 Anthropic용 Set API Key 대화 상자](/images/agentic-data-stack/set-api-key-modal.webp)
+
+      </div>
     </Accordion>
   </Step>
 
@@ -94,7 +106,11 @@ Docker Compose로 로컬에서 전체 에이전트형 데이터 스택을 실행
 
     {/* TODO: guide users (or link out to the Remote MCP docs at /cloud/features/ai-ml/remote-mcp) on connecting ClickHouse-Cloud — it requires an OAuth flow, unlike the bundled local server. */}
 
+    <div className="ch-image-md">
+
     ![LibreChat 컴포저에서 MCP Servers 메뉴가 열려 있으며, 녹색 연결 점이 있는 ClickHouse-Local과 ClickHouse-Cloud가 표시된 모습](/images/agentic-data-stack/select-clickhouse-local.webp)
+
+    </div>
   </Step>
 
   <Step title="첫 번째 질문하기">
@@ -104,7 +120,11 @@ Docker Compose로 로컬에서 전체 에이전트형 데이터 스택을 실행
 
     에이전트는 MCP 서버의 도구를 사용해 데이터베이스와 테이블을 나열하고, ClickHouse에 읽기 전용 쿼리를 실행한 뒤, 결과를 바탕으로 답변을 구성합니다. SQL을 직접 작성할 필요는 없습니다.
 
+    <div className="ch-image-md">
+
     ![ClickHouse-Local MCP 도구를 호출해 예시 질문에 답변하고, 사용 가능한 데이터베이스와 테이블을 나열하는 LibreChat](/images/agentic-data-stack/prompt-chat.webp)
+
+    </div>
   </Step>
 </Steps>
 

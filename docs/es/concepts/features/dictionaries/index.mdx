@@ -13,7 +13,11 @@ Los diccionarios son útiles para:
 * Mejorar el rendimiento de las consultas, especialmente cuando se usan con `JOIN`s
 * Enriquecer los datos ingeridos sobre la marcha sin ralentizar el proceso de ingestión
 
+<div className="ch-image-lg">
+
 ![Casos de uso del diccionario en ClickHouse](/images/dictionary/dictionary-use-cases.webp)
+
+</div>
 
 <div id="speeding-up-joins-using-a-dictionary">
   ## Acelerar los JOIN usando un Diccionario
@@ -21,7 +25,11 @@ Los diccionarios son útiles para:
 
 Los diccionarios pueden usarse para acelerar un tipo específico de `JOIN`: el [tipo `LEFT ANY`](/es/reference/statements/select/join#supported-types-of-join), en el que la clave de join debe coincidir con el atributo clave del almacenamiento clave-valor subyacente.
 
+<div className="ch-image-sm">
+
 ![Uso de un Diccionario con LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+
+</div>
 
 Si este es el caso, ClickHouse puede aprovechar el diccionario para realizar un [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). Este es el algoritmo de join más rápido de ClickHouse y puede aplicarse cuando el [motor de tabla](/es/reference/engines/table-engines/index) de la tabla del lado derecho admite solicitudes clave-valor de baja latencia. ClickHouse tiene tres motores de tabla que ofrecen esto: [Join](/es/reference/engines/table-engines/special/join) (que básicamente es una tabla hash precalculada), [EmbeddedRocksDB](/es/reference/engines/table-engines/integrations/embedded-rocksdb) y [Diccionario](/es/reference/engines/table-engines/special/dictionary). Describiremos el enfoque basado en diccionarios, pero el funcionamiento es el mismo para los tres motores.
 

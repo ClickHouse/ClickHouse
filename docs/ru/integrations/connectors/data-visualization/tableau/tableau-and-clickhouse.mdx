@@ -12,6 +12,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
 import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -56,7 +57,11 @@ ClickHouse предлагает официальный коннектор Tablea
 
 2. В меню слева нажмите **More** в разделе **To a Server**. Найдите **ClickHouse by ClickHouse** в списке доступных коннекторов:
 
+<div className="ch-image-md">
+
 ![Экран подключения Tableau, показывающий меню выбора коннектора с выделенным вариантом ClickHouse by ClickHouse](/images/integrations/data-visualization/tableau_connecttoserver.webp)
+
+</div>
 
 <br />
 
@@ -67,14 +72,22 @@ ClickHouse предлагает официальный коннектор Tablea
 
 3. Нажмите **ClickHouse by ClickHouse**, и откроется следующее диалоговое окно:
 
+<div className="ch-image-md">
+
 ![Диалог установки коннектора Tableau, показывающий сведения о коннекторе ClickHouse JDBC и кнопку установки](/images/integrations/data-visualization/tableau_connector_details.webp)
+
+</div>
 
 <br />
 
 4. Нажмите **Install and Restart Tableau**. Перезапустите приложение.
 5. После перезапуска коннектор будет отображаться под полным именем: `ClickHouse JDBC by ClickHouse, Inc.`. При нажатии на него откроется следующее диалоговое окно:
 
+<div className="ch-image-md">
+
 ![Диалог подключения ClickHouse в Tableau с полями server, port, database, username и password](/images/integrations/data-visualization/tableau_connector_dialog.webp)
+
+</div>
 
 <br />
 
@@ -102,13 +115,21 @@ ClickHouse предлагает официальный коннектор Tablea
 
 7. Нажмите кнопку **Sign In**, и откроется новая рабочая книга Tableau:
 
+<div className="ch-image-md">
+
 ![Новая рабочая книга Tableau, показывающая начальный экран подключения с вариантами выбора базы данных](/images/integrations/data-visualization/tableau_newworkbook.webp)
+
+</div>
 
 <br />
 
 8. Выберите **TPCD** в раскрывающемся списке **Schema**, и вы увидите список таблиц в **TPCD**:
 
+<div className="ch-image-md">
+
 ![Выбор схемы в Tableau, показывающий таблицы базы данных TPCD, включая CUSTOMER, LINEITEM, NATION, ORDERS и другие](/images/integrations/data-visualization/tableau_tpcdschema.webp)
+
+</div>
 
 <br />
 
@@ -122,7 +143,11 @@ ClickHouse предлагает официальный коннектор Tablea
 
 1. Перетащите таблицу **CUSTOMER** в рабочую книгу. Обратите внимание: столбцы появились, но таблица данных пуста:
 
+<div className="ch-image-md">
+
 ![Рабочая книга Tableau с таблицей CUSTOMER, перетащенной на холст: видны заголовки столбцов, но данных нет](/images/integrations/data-visualization/tableau_workbook1.webp)
+
+</div>
 
 <br />
 
@@ -130,14 +155,22 @@ ClickHouse предлагает официальный коннектор Tablea
 
 3. Перетащите таблицу **ORDERS** в рабочую книгу, затем укажите **Custkey** как поле связи между двумя таблицами:
 
+<div className="ch-image-md">
+
 ![Редактор связей Tableau, показывающий связь между таблицами CUSTOMER и ORDERS по полю Custkey](/images/integrations/data-visualization/tableau_workbook2.webp)
+
+</div>
 
 <br />
 
 4. Теперь таблицы **ORDERS** и **LINEITEM** связаны друг с другом и образуют ваш источник данных, поэтому вы можете использовать
    эту связь, чтобы отвечать на вопросы по данным. Выберите вкладку **Sheet 1** внизу рабочей книги.
 
+<div className="ch-image-md">
+
 ![Лист Tableau, показывающий Dimensions и Measures из таблиц ClickHouse, доступные для анализа](/images/integrations/data-visualization/tableau_workbook3.webp)
+
+</div>
 
 <br />
 
@@ -145,7 +178,11 @@ ClickHouse предлагает официальный коннектор Tablea
    раздел **Columns** (горизонтальное поле), затем перетащите **Quantity** из **LINEITEM** в **Rows**. Tableau
    построит следующую линейную диаграмму:
 
+<div className="ch-image-sm">
+
 ![Линейная диаграмма Tableau, показывающая количество заказанных товаров по годам на основе данных ClickHouse](/images/integrations/data-visualization/tableau_workbook4.webp)
+
+</div>
 
 <br />
 
@@ -161,21 +198,33 @@ ClickHouse предлагает официальный коннектор Tablea
 
 Вы должны увидеть следующее:
 
+<div className="ch-image-sm">
+
 ![Перекрёстная таблица Tableau с кварталами в столбцах и способами доставки в строках](/images/integrations/data-visualization/tableau_workbook5.webp)
+
+</div>
 
 <br />
 
 7. Значения **Abc** просто заполняют пустое место, пока вы не перетащите метрику в таблицу. Перетащите **Totalprice** из *
    *ORDERS** в таблицу. Обратите внимание, что по умолчанию используется расчёт **SUM** для **Totalprices**:
 
+<div className="ch-image-md">
+
 ![Перекрёстная таблица Tableau, показывающая сумму общей стоимости по кварталам и способам доставки](/images/integrations/data-visualization/tableau_workbook6.webp)
+
+</div>
 
 <br />
 
 8. Нажмите на **SUM** и измените **Measure** на **Average**. В том же выпадающем меню выберите **Format** и измените
    **Numbers** на **Currency (Standard)**:
 
+<div className="ch-image-md">
+
 ![Перекрёстная таблица Tableau, показывающая среднюю стоимость заказа по кварталам и способам доставки с валютным форматированием](/images/integrations/data-visualization/tableau_workbook7.webp)
+
+</div>
 
 <br />
 

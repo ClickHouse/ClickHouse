@@ -53,7 +53,11 @@ Graphs display data ingress and egress from ClickHouse Cloud. Learn more about [
 
 This dashboard is a modified version of the [built-in advanced observability dashboard](/products/cloud/features/monitoring/advanced-dashboard), with each series representing metrics per replica. This dashboard can be useful for monitoring and troubleshooting ClickHouse-specific issues.
 
+<div className="ch-image-lg">
+
 ![Advanced dashboard in ClickHouse Cloud](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</div>
 
 <Note>
 ClickHouse Cloud scrapes and stores metrics displayed on this dashboard from system tables so they can be viewed even when a service is idled. Accessing these metrics does not issue a query to the underlying service and will not wake idle services.
@@ -98,29 +102,49 @@ The **Query Insights** feature makes ClickHouse's built-in query log easier to u
 
 After selecting a service, the **Monitoring** navigation item in the left sidebar expands to reveal a **Query insights** sub-item:
 
+<div className="ch-image-md">
+
 ![Query Insights UI Overview](/images/cloud/sqlconsole/insights_overview.webp)
+
+</div>
 
 ### Top-level metrics {#top-level-metrics}
 
 The stat boxes at the top represent basic query metrics over the selected time period. Beneath them, time-series charts show query volume, latency, and error rate broken down by query kind (select, insert, other). The latency chart can be adjusted to display p50, p90, and p99 latencies:
 
+<div className="ch-image-md">
+
 ![Query Insights latency chart](/images/cloud/sqlconsole/insights_latency.webp)
+
+</div>
 
 ### Recent queries {#recent-queries}
 
 A table displays query log entries grouped by normalized query hash and user over the selected time window. Recent queries can be filtered and sorted by any available field, and the table can be configured to display or hide additional fields such as tables, p90, and p99 latencies:
 
+<div className="ch-image-md">
+
 ![Query Insights recent queries table](/images/cloud/sqlconsole/insights_recent.webp)
+
+</div>
 
 ### Query drill-down {#query-drill-down}
 
 Selecting a query from the recent queries table will open a flyout containing metrics and information specific to the selected query:
 
+<div className="ch-image-md">
+
 ![Query Insights UI Query Drill down](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</div>
 
 All metrics in the **Query info** tab are aggregated metrics, but we can also view metrics from individual runs by selecting the **Query history** tab:
 
+<div className="ch-image-sm">
+
 ![Query Insights UI Query Information](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</div>
 
 From this pane, the `Settings` and `Profile Events` items for each query run can be expanded to reveal additional information.
 

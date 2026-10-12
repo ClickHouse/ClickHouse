@@ -97,11 +97,23 @@ keywords: ['Dataflow', 'BigQuery']
     سجّل الدخول إلى Google Cloud Console وابحث عن DataFlow.
 
     1. اضغط على الزر `CREATE JOB FROM TEMPLATE`
+       <div className="ch-image-lg">
+
        ![وحدة تحكم DataFlow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+
+       </div>
     2. بعد فتح نموذج قالب، أدخل اسم المهمة وحدد المنطقة المطلوبة.
+       <div className="ch-image-lg">
+
        ![النموذج الأولي لـ DataFlow قالب](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
+
+       </div>
     3. في حقل `DataFlow Template`، اكتب `ClickHouse` أو `BigQuery`، ثم اختر قالب ‏`BigQuery to ClickHouse`
+       <div className="ch-image-lg">
+
        ![اختر قالب ‏من BigQuery إلى ClickHouse](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
+
+       </div>
     4. بعد الاختيار، سيتوسع النموذج ليتيح لك إدخال تفاصيل إضافية:
        * عنوان JDBC URL لخادم ClickHouse، بالتنسيق التالي `jdbc:clickhouse://host:port/schema`.
        * اسم مستخدم ClickHouse.
@@ -114,7 +126,11 @@ keywords: ['Dataflow', 'BigQuery']
       لإضافتها، يُرجى التمرير إلى أسفل حتى خيار `Password for ClickHouse Endpoint`.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![نموذج القالب الموسّع لـ من BigQuery إلى ClickHouse](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
+
+    </div>
 
     5. خصّص وأضف أي إعدادات مرتبطة بـ BigQuery/ClickHouseIO، كما هو موضح في
        قسم [معلمات القالب](#template-parameters)
@@ -172,7 +188,11 @@ keywords: ['Dataflow', 'BigQuery']
 انتقل إلى [علامة التبويب Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) في Google Cloud Console
 لمراقبة حالة المهمة. ستجد تفاصيل المهمة، بما في ذلك مدى التقدّم وأي أخطاء:
 
+<div className="ch-image-lg">
+
 ![واجهة Dataflow تعرض مهمة قيد التشغيل لنقل البيانات من BigQuery إلى ClickHouse](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
+
+</div>
 
 <div id="troubleshooting">
   ## استكشاف الأخطاء وإصلاحها

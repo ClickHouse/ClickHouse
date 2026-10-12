@@ -18,15 +18,27 @@ ClickPipes supports Postgres version 12 and later.
 
 1. Click on the **Server parameters** section
 
+<div className="ch-image-lg">
+
 ![Server Parameters in Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp)
+
+</div>
 
 2. Edit the `wal_level` to `logical`
 
+<div className="ch-image-lg">
+
 ![Change wal_level to logical in Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp)
+
+</div>
 
 3. This change would require a server restart. So restart when requested.
 
+<div className="ch-image-lg">
+
 ![Restart server after changing wal_level](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp)
+
+</div>
 
 ## Creating ClickPipes users and granting permissions {#creating-clickpipes-user-and-granting-permissions}
 
@@ -79,7 +91,11 @@ Please follow the below steps to add [ClickPipes IPs](/integrations/clickpipes/n
 1. Go to the **Networking** tab and add the [ClickPipes IPs](/integrations/clickpipes/networking/static-ips) to the Firewall
    of your Azure Flexible Server Postgres OR the Jump Server/Bastion if you're using SSH tunneling.
 
+<div className="ch-image-lg">
+
 ![Add ClickPipes IPs to Firewall in Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp)
+
+</div>
 
 ## What's next? {#whats-next}
 

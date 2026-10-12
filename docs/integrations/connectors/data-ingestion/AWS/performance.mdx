@@ -22,7 +22,11 @@ Two main factors, in addition to hardware size, influence the performance and re
 
 ### Insert block size {#insert-block-size}
 
+<div className="ch-image-lg">
+
 ![Insert block size mechanics in ClickHouse](/images/integrations/data-ingestion/s3/insert_mechanics.webp)
+
+</div>
 
 When performing an `INSERT INTO SELECT`, ClickHouse receives some data portion, and ① forms (at least) one in-memory insert block (per [partitioning key](/reference/engines/table-engines/mergetree-family/custom-partitioning-key)) from the received data. The block's data is sorted, and table engine-specific optimizations are applied. The data is then compressed and ② written to the database storage in the form of a new data part.
 
@@ -30,7 +34,11 @@ The insert block size impacts both the [disk file I/O usage](https://en.wikipedi
 
 When using an `INSERT INTO SELECT` query in combination with an integration table engine or a table function, the data is pulled by the ClickHouse server: 
 
+<div className="ch-image-lg">
+
 ![Pulling data from external sources in ClickHouse](/images/integrations/data-ingestion/s3/pull.webp)
+
+</div>
 
 Until the data is completely loaded, the server executes a loop:
 
@@ -61,7 +69,11 @@ ClickHouse query performance will be negatively impacted if the part count excee
 
 ClickHouse will continuously [merge parts](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) into larger parts until they [reach](/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) a compressed size of ~150 GiB. This diagram shows how a ClickHouse server merges parts:
 
+<div className="ch-image-lg">
+
 ![Background merges in ClickHouse](/images/integrations/data-ingestion/s3/merges.webp)
+
+</div>
 
 A single ClickHouse server utilizes several [background merge threads](/reference/settings/server-settings/settings/background#background_pool_size) to execute concurrent [part merges](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes). Each thread executes a loop:
 
@@ -83,13 +95,21 @@ Parts that were merged into larger parts are marked as [inactive](/reference/sys
 
 ### Insert parallelism {#insert-parallelism}
 
+<div className="ch-image-lg">
+
 ![Resource usage for insert parallelism](/images/integrations/data-ingestion/s3/resource_usage.webp)
+
+</div>
 
 A ClickHouse server can process and insert data in parallel. The level of insert parallelism impacts the ingest throughput and memory usage of a ClickHouse server. Loading and processing data in parallel requires more main memory but increases the ingest throughput as data is processed faster.
 
 Table functions like s3 allow specifying sets of to-be-loaded-file names via glob patterns. When a glob pattern matches multiple existing files, ClickHouse can parallelize reads across and within these files and insert the data in parallel into a table by utilizing parallel running insert threads (per server): 
 
+<div className="ch-image-lg">
+
 ![Parallel insert threads in ClickHouse](/images/integrations/data-ingestion/s3/insert_threads.webp)
+
+</div>
 
 Until all data from all files is processed, each insert thread executes a loop: 
 
@@ -113,7 +133,11 @@ Optimizing the performance of queries using the S3 table functions is required w
 
 ## Impact of hardware size {#impact-of-hardware-size}
 
+<div className="ch-image-lg">
+
 ![Impact of hardware size on ClickHouse performance](/images/integrations/data-ingestion/s3/hardware_size.webp)
+
+</div>
 
 The number of available CPU cores and the size of RAM impacts the:
 
@@ -328,7 +352,11 @@ Utilizing a cluster for S3 reads requires using the `s3Cluster` function as desc
 
 The server that initially receives the insert query first resolves the glob pattern and then dispatches the processing of each matching file dynamically to itself and the other servers.
 
+<div className="ch-image-lg">
+
 ![s3Cluster function in ClickHouse](/images/integrations/data-ingestion/s3/s3Cluster.webp)
+
+</div>
 
 We repeat our earlier read query distributing the workload across 3 nodes, adjusting the query to use `s3Cluster`. This is performed automatically in ClickHouse Cloud, by referring to the `default` cluster.
 

@@ -301,15 +301,27 @@ spec:
 
 Open your service in the [ClickHouse Cloud console](https://console.clickhouse.cloud) and select **ClickStack** from the left menu.
 
+<div className="ch-image-lg">
+
 ![Launch ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+</div>
 
 In the **Search** view, switch the source to `Logs` and set the time range to **Last 15 minutes**. Container logs from across the cluster should appear within a few seconds, enriched with attributes like `k8s.namespace.name`, `k8s.pod.name`, and `k8s.node.name`.
 
+<div className="ch-image-lg">
+
 ![ClickStack Search view with Kubernetes logs](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+
+</div>
 
 To see infrastructure metrics and events in context, open the built-in **Kubernetes** dashboard  by navigating to **Dashboards** -> **Kubernetes**. The `Pods`, `Nodes`, and `Namespaces` tabs should all be populated.
 
+<div className="ch-image-lg">
+
 ![ClickStack Kubernetes dashboard](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+
+</div>
 
 If nothing shows up:
 

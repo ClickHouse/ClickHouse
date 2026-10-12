@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+
 import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge/>
@@ -26,7 +27,11 @@ This partnership brings together **ClickHouse’s speed** and **Lightdash’s de
 In this guide, you’ll see how **Lightdash** connects to **ClickHouse** to explore your dbt models and build interactive dashboards.  
 The example below shows a finished dashboard powered by data from ClickHouse.
 
+<div className="ch-image-md">
+
 ![Lightdash dashboard example](/images/integrations/data-visualization/lightdash_02.webp)
+
+</div>
 
 <Steps>
 <Step title="Gather connection data" id="connection-data-required">
@@ -54,7 +59,11 @@ To connect ClickHouse, make sure your local `~/.dbt/profiles.yml` file contains 
 
 For example:
 
+<div className="ch-image-md">
+
 ![Example profiles.yml configuration for a lightdash-clickhouse project](/images/integrations/data-visualization/lightdash_01.webp)
+
+</div>
 <br/>
 </Step>
 <Step title="Create a Lightdash project connected to ClickHouse" id="creating-a-lightdash-project-connected-to-clickhouse">
@@ -85,7 +94,11 @@ You can now build dashboards, share insights, and even use **Ask AI** to generat
 
 In Lightdash, all **metrics** and **dimensions** are defined directly in your dbt model `.yml` files. This makes your business logic version-controlled, consistent, and fully transparent.
 
+<div className="ch-image-md">
+
 ![Example of metrics being defined in the .yml file](/images/integrations/data-visualization/lightdash_03.webp)
+
+</div>
 <br/>
 
 Defining these in YAML ensures your team is using the same definitions across dashboards and analyses. For example, you can create reusable metrics like `total_order_count`, `total_revenue`, or `avg_order_value` right next to your dbt models — no duplication required in the UI.
@@ -109,7 +122,11 @@ The **Explore** page is made up of five main areas:
 4. **Results** — view the raw data returned from your ClickHouse database  
 5. **SQL** — inspect the generated SQL query behind your results  
 
+<div className="ch-image-lg">
+
 ![Lightdash Explore view showing dimensions, filters, chart, results, and SQL](/images/integrations/data-visualization/lightdash_04.webp)
+
+</div>
 
 From here, you can build and adjust queries interactively — dragging and dropping fields, adding filters, and switching between visualization types such as tables, bar charts, or time series.
 
@@ -132,7 +149,11 @@ To create a dashboard-only chart:
 3. Build your visualization in the chart builder  
 4. Save it — it will appear at the bottom of your dashboard  
 
+<div className="ch-image-lg">
+
 ![Creating and organizing charts within a Lightdash dashboard](/images/integrations/data-visualization/lightdash_05.webp)
+
+</div>
 
 Learn more about how to create and organize dashboards here:  
 [Building dashboards → Lightdash Docs](https://docs.lightdash.com/get-started/exploring-data/dashboards?utm_source=clickhouse&utm_medium=partner&utm_campaign=integration_docs)
@@ -146,7 +167,11 @@ Instead of writing queries, you can simply ask questions in plain language — l
 
 It’s powered by the same semantic layer you use in dbt, meaning every answer stays governed, explainable, and fast — all backed by ClickHouse.
 
+<div className="ch-image-lg">
+
 ![Lightdash Ask AI interface showing natural language query powered by dbt metrics](/images/integrations/data-visualization/lightdash_06.webp)
+
+</div>
 
 <Tip>
 Learn more about AI Agents here: [AI Agents → Lightdash Docs](https://docs.lightdash.com/guides/ai-agents?utm_source=clickhouse&utm_medium=partner&utm_campaign=integration_docs)

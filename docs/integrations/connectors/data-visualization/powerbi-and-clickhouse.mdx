@@ -62,7 +62,11 @@ Download the most recent [ClickHouse ODBC release](https://github.com/ClickHouse
 
 Execute the supplied `.msi` installer and follow the wizard.
 
+<div className="ch-image-md">
+
 ![ClickHouse ODBC driver installation wizard showing installation options](/images/integrations/data-visualization/powerbi_odbc_install.webp)
+
+</div>
 <br/>
 
 <Note>
@@ -75,12 +79,20 @@ When the driver installation is completed, you can verify the installation was s
 
 Searching for ODBC in the Start menu and select "ODBC Data Sources **(64-bit)**".
 
+<div className="ch-image-md">
+
 ![Windows search showing ODBC Data Sources (64-bit) option](/images/integrations/data-visualization/powerbi_odbc_search.webp)
+
+</div>
 <br/>
 
 Verify the ClickHouse Driver is listed.
 
+<div className="ch-image-md">
+
 ![ODBC Data Source Administrator showing ClickHouse drivers in the Drivers tab](/images/integrations/data-visualization/powerbi_odbc_verify.webp)
+
+</div>
 <br/>
 
 ### Find the ClickHouse Connector {#find-the-clickhouse-connector}
@@ -90,12 +102,20 @@ Available in version `2.137.751.0` of Power BI Desktop
 </Note>
 On the Power BI Desktop start screen, click "Get Data".
 
+<div className="ch-image-md">
+
 ![Power BI Desktop home screen showing the Get Data button](/images/integrations/data-visualization/powerbi_get_data.webp)
+
+</div>
 <br/>
 
 Search for "ClickHouse"
 
+<div className="ch-image-md">
+
 ![Power BI Get Data dialog with ClickHouse searched in the search bar](/images/integrations/data-visualization/powerbi_search_clickhouse.webp)
+
+</div>
 <br/>
 
 ### Connect to ClickHouse {#connect-to-clickhouse}
@@ -109,7 +129,11 @@ Select the connector, and enter in the ClickHouse instance credentials:
   in [ClickHouse ODBC GitHub Page](https://github.com/ClickHouse/clickhouse-odbc#configuration)
 * Data Connectivity mode - DirectQuery
 
+<div className="ch-image-md">
+
 ![ClickHouse connection dialog showing host, port, database and connectivity mode fields](/images/integrations/data-visualization/powerbi_connect_db.webp)
+
+</div>
 <br/>
 
 <Note>
@@ -120,7 +144,11 @@ If you have a use case that has a small amount of data, you can choose import mo
 
 * Specify username and password
 
+<div className="ch-image-md">
+
 ![ClickHouse connection credentials dialog for username and password](/images/integrations/data-visualization/powerbi_connect_user.webp)
+
+</div>
 <br/>
 
 ### Query and Visualise Data {#query-and-visualise-data}
@@ -128,7 +156,11 @@ If you have a use case that has a small amount of data, you can choose import mo
 Finally, you should see the databases and tables in the Navigator view. Select the desired table and click "Load" to
 import the data from ClickHouse.
 
+<div className="ch-image-md">
+
 ![Power BI Navigator view showing ClickHouse database tables and sample data](/images/integrations/data-visualization/powerbi_table_navigation.webp)
+
+</div>
 <br/>
 
 Once the import is complete, your ClickHouse Data should be accessible in Power BI as usual.
@@ -150,22 +182,38 @@ Install the [ODBC Driver](#install-the-odbc-driver) onto the on-premise data gat
 
 When the driver installation is complete, an ODBC data source can be created. Search for ODBC in the Start menu and select "ODBC Data Sources (64-bit)".
 
+<div className="ch-image-md">
+
 ![Windows search showing ODBC Data Sources (64-bit) option](/images/integrations/data-visualization/powerbi_odbc_search.webp)
+
+</div>
 <br/>
 
 We need to add a new User DSN here. Click "Add" button on the left.
 
+<div className="ch-image-md">
+
 ![ODBC Data Source Administrator with Add button highlighted for creating new DSN](/images/integrations/data-visualization/powerbi_add_dsn.webp)
+
+</div>
 <br/>
 
 Choose the Unicode version of the ODBC driver.
 
+<div className="ch-image-md">
+
 ![Create New Data Source dialog showing ClickHouse Unicode Driver selection](/images/integrations/data-visualization/powerbi_select_unicode.webp)
+
+</div>
 <br/>
 
 Fill in the connection details.
 
+<div className="ch-image-sm">
+
 ![ClickHouse ODBC Driver configuration dialog with connection parameters](/images/integrations/data-visualization/powerbi_connection_details.webp)
+
+</div>
 <br/>
 
 <Note>
@@ -182,29 +230,49 @@ yet, [download and install Power BI Desktop](https://www.microsoft.com/en-us/dow
 
 On the Power BI Desktop start screen, click "Get Data".
 
+<div className="ch-image-md">
+
 ![Power BI Desktop home screen showing the Get Data button](/images/integrations/data-visualization/powerbi_get_data.webp)
+
+</div>
 <br/>
 
 Select "Other" -> "ODBC".
 
+<div className="ch-image-md">
+
 ![Power BI Get Data dialog with ODBC option selected under the Other category](/images/integrations/data-visualization/powerbi_select_odbc.webp)
+
+</div>
 <br/>
 
 Select your previously created data source from the list.
 
+<div className="ch-image-md">
+
 ![ODBC driver selection dialog showing the configured ClickHouse DSN](/images/integrations/data-visualization/powerbi_select_dsn.webp)
+
+</div>
 <br/>
 
 <Note>
 If you didn't specify credentials during the data source creation, you will be prompted to specify username and password.
 </Note>
 
+<div className="ch-image-md">
+
 ![Credentials dialog for the ODBC DSN connection](/images/integrations/data-visualization/powerbi_dsn_credentials.webp)
+
+</div>
 <br/>
 
 Finally, you should see the databases and tables in the Navigator view. Select the desired table and click "Load" to import the data from ClickHouse.
 
+<div className="ch-image-md">
+
 ![Power BI Navigator view showing ClickHouse database tables and sample data](/images/integrations/data-visualization/powerbi_table_navigation.webp)
+
+</div>
 <br/>
 
 Once the import is complete, your ClickHouse Data should be accessible in Power BI as usual.
@@ -253,7 +321,11 @@ In this example, `pageviews` table has a UInt64 column, which is recognized as "
 "Transform Data" opens Power Query Editor, where we can reassign the type of the column, setting it as, for example,
 Text.
 
+<div className="ch-image-md">
+
 ![Power Query Editor showing data type transformation for UInt64 column](/images/integrations/data-visualization/powerbi_16.webp)
+
+</div>
 <br/>
 
 Once finished, click "Close & Apply" in the top left corner, and proceed with loading the data.

@@ -41,17 +41,33 @@ Caso ainda não esteja configurado, siga estas etapas:
 1. Crie um novo grupo de parâmetros para a sua versão do Postgres com as configurações necessárias:
    * Defina `rds.logical_replication` como 1
 
+<div className="ch-image-lg">
+
 ![Onde encontrar grupos de parâmetros no RDS?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![Alterando rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
 
+</div>
+
 2. Aplique o novo grupo de parâmetros ao seu banco de dados RDS Postgres
+
+<div className="ch-image-lg">
 
 ![Modificando o RDS Postgres com o novo grupo de parâmetros](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
 
+</div>
+
 3. Reinicie a sua instância do RDS para aplicar as alterações
 
+<div className="ch-image-lg">
+
 ![Reiniciando o RDS Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+
+</div>
 
 <div id="configure-database-user">
   ## Configurar o usuário do banco de dados
@@ -119,9 +135,17 @@ A publicação `clickpipes` define o conjunto de tabelas cujos eventos de altera
 
 Se você quiser restringir o tráfego para sua instância do RDS, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/networking/static-ips) às `Inbound rules` do grupo de segurança do RDS.
 
+<div className="ch-image-lg">
+
 ![Onde encontrar o grupo de segurança no RDS Postgres?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Editar as regras de entrada do grupo de segurança acima](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### Acesso privado via AWS PrivateLink

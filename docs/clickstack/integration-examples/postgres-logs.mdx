@@ -189,9 +189,17 @@ Once configured, log into HyperDX and verify logs are flowing:
 3. Filter by `source:postgresql` to see PostgreSQL-specific logs
 4. You should see structured log entries with fields like `user_name`, `database_name`, `error_severity`, `message`, `query`, etc.
 
+<div className="ch-image-lg">
+
 ![Logs search view](/images/clickstack/postgres/postgres-logs-search-view.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Log view](/images/clickstack/postgres/postgres-log-view.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -280,9 +288,17 @@ Once ClickStack is running:
 HyperDX displays timestamps in your browser's local timezone. The demo data spans **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. The wide time range ensures you'll see the demo logs regardless of your location. Once you see the logs, you can narrow the range to a 24-hour period for clearer visualizations.
 </Info>
 
+<div className="ch-image-lg">
+
 ![Logs search view](/images/clickstack/postgres/postgres-logs-search-view.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Log view](/images/clickstack/postgres/postgres-log-view.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -300,17 +316,29 @@ To help you get started monitoring PostgreSQL with ClickStack, we provide essent
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
+<div className="ch-image-lg">
+
 ![Import dashboard button](/images/clickstack/import-dashboard.webp)
+
+</div>
 
 3. Upload the `postgresql-logs-dashboard.json` file and click **Finish Import**
 
+<div className="ch-image-lg">
+
 ![Finish import](/images/clickstack/postgres/import-logs-dashboard.webp)
+
+</div>
 </Step>
 <Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 
+<div className="ch-image-lg">
+
 ![Logs dashboard](/images/clickstack/postgres/postgres-logs-dashboard.webp)
+
+</div>
 
 <Note>
 For the demo dataset, set the time range to **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.

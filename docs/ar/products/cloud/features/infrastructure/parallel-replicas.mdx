@@ -29,7 +29,11 @@ doc_type: 'مرجع'
 ستنفّذ كل شظية الاستعلامات المطلوبة. وسيقوم الخادم الذي تم الاستعلام من خلاله عن
 الجدول الموزّع بتجميع البيانات وإرجاع الرد إلى العميل:
 
+<div className="ch-image-md">
+
 ![البنية المُجزّأة](/images/deployment-guides/parallel-replicas-1.webp)
+
+</div>
 
 يوضح الشكل أعلاه ما يحدث عندما يرسل عميل استعلامًا إلى جدول موزّع:
 
@@ -70,7 +74,11 @@ doc_type: 'مرجع'
 
 يوضح الشكل أدناه بنية ClickHouse Cloud:
 
+<div className="ch-image-md">
+
 ![بنية غير مُشظّاة](/images/deployment-guides/parallel-replicas-2.webp)
+
+</div>
 
 تتيح لنا هذه البنية إضافة النسخ المتماثلة وإزالتها بشكل شبه
 فوري، مما يضمن قابلية توسع عالية جدًا للعنقود. ويضمن عنقود ClickHouse
@@ -97,7 +105,11 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 
 والآن، لنرَ كيف يعمل ذلك عمليًا بمساعدة الشكل أدناه:
 
+<div className="ch-image-md">
+
 ![النسخ المتماثلة المتوازية](/images/deployment-guides/parallel-replicas-3.webp)
+
+</div>
 
 مع النسخ المتماثلة المتوازية:
 
@@ -160,7 +172,11 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 لمعالجة (1) و(2) من القائمة أعلاه، قدّمنا مفهوم
 الإعلان. لنتصوّر كيف يعمل ذلك باستخدام الشكل أدناه:
 
+<div className="ch-image-md">
+
 ![الإعلانات](/images/deployment-guides/parallel-replicas-4.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -204,7 +220,11 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
 
 يوضّح الشكل أدناه كيفية عمل التنسيق الديناميكي:
 
+<div className="ch-image-md">
+
 ![التنسيق الديناميكي - الجزء 1](/images/deployment-guides/parallel-replicas-5.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -217,7 +237,11 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
   </li>
 </ol>
 
+<div className="ch-image-md">
+
 ![التنسيق الديناميكي - الجزء 2](/images/deployment-guides/parallel-replicas-6.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -230,7 +254,11 @@ Keeper (الموضح على اليمين) وجود مرجع وحيد موثوق
   </li>
 </ol>
 
+<div className="ch-image-md">
+
 ![التنسيق الديناميكي - الجزء 3](/images/deployment-guides/parallel-replicas-7.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -504,7 +532,11 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
+<div className="ch-image-lg">
+
 ![EXPLAIN بدون النسخة_المتماثلة_المتوازية](/images/deployment-guides/parallel-replicas-8.webp)
+
+</div>
 
 والآن مع النسخ المتماثلة المتوازية:
 
@@ -519,4 +551,8 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
+<div className="ch-image-lg">
+
 ![EXPLAIN باستخدام النسخة_المتماثلة_المتوازية](/images/deployment-guides/parallel-replicas-9.webp)
+
+</div>

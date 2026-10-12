@@ -9,7 +9,11 @@ doc_type: 'guide'
 
 import AddARemoteSystem from '/snippets/fr/_add_remote_ip_access_list_detail.mdx';
 
+<div className="ch-image-lg">
+
 ![Migration de ClickHouse autogéré](/images/integrations/migration/ch-local-01.webp)
+
+</div>
 
 Vous pouvez utiliser ClickHouse, ou plus précisément [`clickhouse-local`](/fr/concepts/features/tools-and-utilities/clickhouse-local),
 comme outil ETL pour migrer des données de votre système de base de données actuel vers ClickHouse Cloud, à condition que ce système dispose soit d’un [moteur de table d’intégration](/fr/reference/engines/table-engines/index#integration-engines) ou d’une [fonction de table](/fr/reference/functions/table-functions/index) fournis par ClickHouse,
@@ -24,7 +28,11 @@ Pour tous les autres systèmes de base de données courants, un JDBC driver ou u
   ## Qu’est-ce que clickhouse-local ?
 </div>
 
+<div className="ch-image-lg">
+
 ![Migration de ClickHouse autogéré](/images/integrations/migration/ch-local-02.webp)
+
+</div>
 
 En règle générale, ClickHouse s’exécute sous forme de cluster, où plusieurs instances du moteur de base de données ClickHouse fonctionnent de manière distribuée sur différents serveurs.
 
@@ -92,7 +100,11 @@ Sur cette machine hôte, téléchargez la version appropriée de `clickhouse-loc
 Nous utiliserons le [moteur de table d’intégration](/fr/reference/engines/table-engines/integrations/mysql) (créé à la volée par la [fonction de table mysql](/fr/reference/functions/table-functions/mysql)) pour lire les données de la base de données MySQL source, et nous utiliserons la [fonction de table remoteSecure](/fr/reference/functions/table-functions/remote)
 pour écrire les données dans une table de destination sur votre service ClickHouse Cloud.
 
+<div className="ch-image-lg">
+
 ![Migration de ClickHouse autogéré](/images/integrations/migration/ch-local-03.webp)
+
+</div>
 
 <div id="on-the-destination-clickhouse-cloud-service">
   ### Dans le service ClickHouse Cloud de destination :

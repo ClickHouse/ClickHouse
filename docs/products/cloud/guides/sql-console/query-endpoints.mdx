@@ -64,11 +64,19 @@ The SQL console query editor automatically detects ClickHouse query parameter ex
 
 Let's quickly run this query to make sure that it works by specifying the year `2010` in the query variables input box on the right side of the SQL editor:
 
+<div className="ch-image-md">
+
 ![Test the example query](/images/cloud/sqlconsole/endpoints-testquery.webp)
+
+</div>
 
 Next, save the query:
 
+<div className="ch-image-md">
+
 ![Save example query](/images/cloud/sqlconsole/endpoints-savequery.webp)
+
+</div>
 
 More documentation around saved queries can be found in section ["Saving a query"](/products/cloud/features/sql-console-features/sql-console#saving-a-query).
 </Step>
@@ -77,7 +85,11 @@ More documentation around saved queries can be found in section ["Saving a query
 Query API endpoints can be configured directly from query view by clicking the **Share** button and selecting `API Endpoint`.
 You'll be prompted to specify which API keys should be able to access the endpoint:
 
+<div className="ch-image-md">
+
 ![Configure query endpoint](/images/cloud/sqlconsole/endpoints-configure.webp)
+
+</div>
 
 After selecting an API key, you will be asked to:
 - Select the Database role that will be used to run the query (`Full access`, `Read only` or `Create a custom role`)
@@ -87,7 +99,11 @@ After selecting these options, the query API endpoint will automatically be prov
 
 An example `curl` command will be displayed so you can send a test request:
 
+<div className="ch-image-md">
+
 ![Endpoint curl command](/images/cloud/sqlconsole/endpoints-completed.webp)
+
+</div>
 
 The curl command displayed in the interface is given below for convenience:
 
@@ -103,11 +119,19 @@ Query parameters in a query can be specified with the syntax `{parameter_name: t
 
 Once a Query API endpoint is created, you can test that it works by using `curl` or any other HTTP client:
 
+<div className="ch-image-md">
+
 ![endpoint curl test](/images/cloud/sqlconsole/endpoints-curltest.webp)
+
+</div>
 
 After you've sent your first request, a new button should appear immediately to the right of the **Share** button. Clicking it will open a flyout containing monitoring data about the query:
 
+<div className="ch-image-sm">
+
 ![Endpoint monitoring](/images/cloud/sqlconsole/endpoints-monitoring.webp)
+
+</div>
 </Step>
 </Steps>
 

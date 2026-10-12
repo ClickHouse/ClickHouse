@@ -8,17 +8,26 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
 読み取りレプリカを使用すると、プライマリの ClickHouse Managed Postgres データベースのコピーを 1 つ以上作成できます。これらのレプリカは、PostgreSQL のネイティブなレプリケーションを使用してプライマリ データベースに継続的に追従し、変更内容を常に反映します。
 
 読み取りレプリカを管理するには、warehouse の編集アイコンをクリックします。
 
+<div className="ch-image-md">
+
 ![編集アイコンが表示された warehouse ビュー](/images/managed-postgres/warehouse-view.webp)
+
+</div>
 
 これにより warehouse ダイアログが開き、既存のサービスを確認したり、新しい読み取りレプリカを作成したりできます。
 
+<div className="ch-image-md">
+
 ![読み取りレプリカ管理ダイアログ](/images/managed-postgres/read-replica-dialog.webp)
+
+</div>
 
 <div id="managing-read-replicas">
   ## 読み取りレプリカの管理
@@ -28,11 +37,19 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 **Flow** ビューにはレプリケーションのトポロジーが表示されます。上部にプライマリ インスタンスがあり、そこから各レプリカへ下向きの矢印で接続され、ティア、リージョン、ステータスをひと目で確認できます。
 
+<div className="ch-image-lg">
+
 ![プライマリとレプリカのトポロジーを示す読み取りレプリカのフロービュー](/images/managed-postgres/read-replicas-flow.webp)
+
+</div>
 
 **Table** ビューには、各レプリカのサービス名、クラウドプロバイダーとリージョン、サービスのステータス、作成時刻、そして **Detach service** アクションが一覧表示されます。
 
+<div className="ch-image-lg">
+
 ![読み取りレプリカのテーブルビュー](/images/managed-postgres/read-replicas-table.webp)
+
+</div>
 
 新しいレプリカを作成するには、いずれかのビューの右上にある **Create read replica** をクリックします。
 

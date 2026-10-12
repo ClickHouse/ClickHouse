@@ -30,9 +30,17 @@ ClickHouse에서 OLTP 프라이머리 키를 사용하는 것이 적절하지 �
 
 자세한 내용은 이 [심층 가이드](/ko/guides/clickhouse/data-modelling/sparse-primary-indexes)를 참고하십시오.
 
+<div className="ch-image-lg">
+
 ![PostgreSQL B-Tree 인덱스](/images/migrations/postgres-b-tree.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![PostgreSQL 희소 인덱스](/images/migrations/postgres-sparse-index.webp)
+
+</div>
 
 ClickHouse에서 선택한 키는 인덱스뿐 아니라 데이터가 디스크에 기록되는 순서도 결정합니다. 따라서 이는 압축 수준에 큰 영향을 줄 수 있고, 결과적으로 쿼리 성능에도 영향을 미칠 수 있습니다. 대부분의 컬럼 값이 연속된 순서로 기록되도록 하는 정렬 키를 사용하면, 선택한 압축 알고리즘(및 코덱)이 데이터를 더 효과적으로 압축할 수 있습니다.
 
@@ -54,7 +62,11 @@ Postgres를 사용해 왔다면, 대규모 데이터베이스의 성능과 관�
 
 ClickHouse에서는 테이블을 처음 정의할 때 `PARTITION BY` 절을 통해 파티셔닝을 지정합니다. 이 절에는 임의의 컬럼에 대한 SQL 표현식을 포함할 수 있으며, 그 결과에 따라 행이 어떤 파티션으로 전송될지가 결정됩니다.
 
+<div className="ch-image-md">
+
 ![PostgreSQL 파티션에서 ClickHouse 파티션으로](/images/migrations/postgres-partitions.webp)
+
+</div>
 
 데이터 파트는 디스크에서 각 파티션과 논리적으로 연결되며, 개별적으로 쿼리할 수 있습니다. 아래 예시에서는 `toYear(CreationDate)` 표현식을 사용해 `posts` 테이블을 연도별로 파티셔닝합니다. 행이 ClickHouse에 삽입되면 이 표현식이 각 행에 대해 평가되고, 그 결과에 해당하는 파티션으로 전달됩니다(해당 연도의 첫 번째 행이면 파티션이 생성됩니다).
 
@@ -272,7 +284,11 @@ WHERE UserId = 8592047
 테이블에만 보내면 되고, 가능할 때는 프로젝션이 활용되어 응답
 시간을 단축합니다.
 
+<div className="ch-image-md">
+
 ![ClickHouse의 PostgreSQL 프로젝션](/images/migrations/postgres-projections.webp)
+
+</div>
 
 이는 필터에 따라 사용자가 적절히 최적화된 대상 테이블을 선택하거나
 쿼리를 재작성해야 하는 materialized view와는 대조적입니다.

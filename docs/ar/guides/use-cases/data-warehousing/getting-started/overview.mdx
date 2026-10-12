@@ -39,7 +39,11 @@ doc_type: 'guide'
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![استعلام Iceberg](/images/datalake/iceberg-query-direct.webp)
+
+    </div>
 
     يقرأ ClickHouse البيانات الوصفية لـ Iceberg مباشرةً من S3 ويستنتج المخطط تلقائيًا. وينطبق النهج نفسه على [`deltaLake()`](/ar/reference/functions/table-functions/deltalake) و[`hudi()`](/ar/reference/functions/table-functions/hudi) و[`paimon()`](/ar/reference/functions/table-functions/paimon).
 
@@ -66,7 +70,11 @@ doc_type: 'guide'
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![استعلام Iceberg](/images/datalake/iceberg-query-engine.webp)
+
+    </div>
 
     يدعم محرك الجدول التخزين المؤقت للبيانات، والتخزين المؤقت للبيانات الوصفية، وتطوّر المخطط، والسفر عبر الزمن. راجع دليل [الاستعلام مباشرةً](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) للحصول على تفاصيل حول ميزات محرك الجدول، و[مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) للاطلاع على مقارنة شاملة للميزات.
   </Step>
@@ -158,7 +166,11 @@ doc_type: 'guide'
 
     يفحص هذا الاستعلام مجموعة البيانات بالكامل في S3 لأن Iceberg لا يراعي عامل التصفية `counterid` — لذا توقّع أن يستغرق ذلك عدة ثوانٍ.
 
+    <div className="ch-image-lg">
+
     ![استعلام Iceberg](/images/datalake/iceberg-query.webp)
+
+    </div>
 
     الآن أنشئ جدول MergeTree وحمّل البيانات:
 
@@ -192,7 +204,11 @@ doc_type: 'guide'
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![استعلام ClickHouse](/images/datalake/clickhouse-query.webp)
+
+    </div>
 
     نظرًا لأن `counterid` هو العمود الأول في مفتاح `ORDER BY`، فإن الفهرس الأساسي المتناثر في ClickHouse يتخطّى مباشرةً إلى وحدات granule ذات الصلة، فلا يقرأ إلا الصفوف الخاصة بـ `counterid = 38` بدلًا من فحص جميع الصفوف المئة مليون. والنتيجة هي تسارع كبير جدًا.
 

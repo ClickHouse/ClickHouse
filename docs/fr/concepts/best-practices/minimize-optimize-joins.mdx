@@ -54,7 +54,11 @@ ClickHouse prend en charge plusieurs algorithmes de JOIN, chacun offrant un comp
 * **Partial Merge JOIN :** minimise la consommation mémoire, mais est plus lent — convient le mieux pour joindre de grandes tables lorsque la mémoire est limitée.
 * **Grace Hash JOIN :** flexible et ajustable en mémoire, bien adapté aux grands jeux de données avec des caractéristiques de performance modulables.
 
+<div className="ch-image-md">
+
 ![Joins — vitesse vs mémoire](/images/bestpractices/joins-speed-memory.png)
+
+</div>
 
 <Note>
   La prise en charge des types de JOIN varie selon l’algorithme. La liste complète des types de JOIN pris en charge par chaque algorithme est disponible [ici](/fr/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).

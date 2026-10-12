@@ -45,15 +45,27 @@ MongoDB ClickPipe の同期を制御する主な方法は 2 つあります。�
 ClickPipe の作成時または既存の ClickPipe の編集時に、同期間隔とプルバッチサイズを設定できます。
 ClickPipe の作成時には、以下のように作成ウィザードの 2 番目のステップに表示されます。
 
+<div className="ch-image-md">
+
 ![同期設定の作成](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
+
+</div>
 
 既存の ClickPipe を編集する場合は、パイプの **Settings** タブに移動し、パイプを一時停止してから、ここで **Configure** をクリックします。
 
+<div className="ch-image-md">
+
 ![同期の編集ボタン](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
+
+</div>
 
 すると、同期設定を表示するフライアウトが開き、そこで同期間隔とプルバッチサイズを変更できます。
 
+<div className="ch-image-md">
+
 ![同期設定の編集](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
+
+</div>
 
 <div id="monitoring">
   ### 同期制御の動作を監視する
@@ -61,4 +73,8 @@ ClickPipe の作成時には、以下のように作成ウィザードの 2 番�
 
 各バッチにかかる時間は、ClickPipe の **メトリクス** タブにある **CDC Syncs** テーブルで確認できます。ここでの所要時間にはプッシュ時間が含まれます。また、受信する行がない場合は ClickPipe が待機し、その待機時間も所要時間に含まれる点に注意してください。
 
+<div className="ch-image-md">
+
 ![CDC Syncs テーブル](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)
+
+</div>

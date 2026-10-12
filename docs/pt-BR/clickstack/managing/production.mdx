@@ -130,7 +130,11 @@ Ao implantar o ClickStack em produção, há várias considerações adicionais 
 
     Toda a ingestão deve ocorrer por meio das portas OTLP expostas pela distribuição ClickStack do coletor OpenTelemetry (OTel). Por padrão, isso requer uma API key de ingestão segura gerada na inicialização. Essa chave é obrigatória ao enviar dados para as portas OTel e pode ser encontrada na interface do HyperDX em `Team Settings → API Keys`.
 
+    <div className="ch-image-lg">
+
     ![Chaves de ingestão](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     Além disso, é recomendável habilitar TLS para os endpoints OTLP.
 

@@ -74,7 +74,11 @@ PostgreSQL 使用 MVCC (多版本并发控制) 来处理并发事务，这需要
 
 启用异步插入后，数据会先写入缓冲区，然后再按下图所示分 3 步写入数据库存储：
 
+<div className="ch-image-md">
+
 ![Postgres inserts](/images/guides/postgres-inserts.webp)
+
+</div>
 
 启用异步插入后，ClickHouse 会：
 

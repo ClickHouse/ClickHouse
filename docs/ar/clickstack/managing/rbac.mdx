@@ -35,11 +35,19 @@ keywords: ['clickstack', 'rbac', 'الأدوار', 'الأذونات', 'التح
 
 <Tabs>
   <Tab title="Cloud Users and roles">
+    <div className="ch-image-lg">
+
     ![صفحة Users and roles في ClickHouse Cloud](/images/clickstack/rbac/team-page-cloud.webp)
+
+    </div>
   </Tab>
 
   <Tab title="ClickStack Team Settings">
+    <div className="ch-image-lg">
+
     ![صفحة إعدادات الفريق في ClickStack التي تعرض أعضاء الفريق وأدوارهم](/images/clickstack/rbac/team-page-clickstack.webp)
+
+    </div>
   </Tab>
 </Tabs>
 
@@ -82,7 +90,11 @@ keywords: ['clickstack', 'rbac', 'الأدوار', 'الأذونات', 'التح
   <Step title="الانتقال إلى إعدادات الفريق" id="step-navigate">
     افتح **إعدادات الفريق** ثم مرّر لأسفل إلى **RBAC Roles**.
 
+    <div className="ch-image-lg">
+
     ![RBAC Roles](/images/clickstack/rbac/rbac-section.webp)
+
+    </div>
   </Step>
 
   <Step title="إضافة دور جديد" id="step-add-role">
@@ -92,7 +104,11 @@ keywords: ['clickstack', 'rbac', 'الأدوار', 'الأذونات', 'التح
   <Step title="إعداد الأذونات وحفظها" id="step-configure">
     اضبط أذونات الدور، ثم انقر على **Create Role**.
 
+    <div className="ch-image-md">
+
     ![نافذة Add Role المنبثقة](/images/clickstack/rbac/add-role-modal.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -149,7 +165,11 @@ keywords: ['clickstack', 'rbac', 'الأدوار', 'الأذونات', 'التح
 
 للتبديل بين الوضعين، انقر على رمز السهم لتوسيع نوع مورد في محرر الدور، ثم بدّل **وضع التحكم في الوصول**.
 
+<div className="ch-image-md">
+
 ![وضعا الوصول الافتراضي وعناصر التحكم الدقيقة في محرر الدور](/images/clickstack/rbac/default-vs-fine-grained.webp)
+
+</div>
 
 <div id="configuring-access-rules">
   #### تهيئة قواعد الوصول
@@ -157,7 +177,11 @@ keywords: ['clickstack', 'rbac', 'الأدوار', 'الأذونات', 'التح
 
 تتكوّن كل قاعدة وصول من **شرط** و**مستوى وصول**. وتُطابِق الشروط الموارد استنادًا إلى خصائصها:
 
+<div className="ch-image-md">
+
 ![تلميح الشرط: طابِق الموارد حسب الاسم أو الوسم (كما يظهر في العنوان) أو حسب المعرّف (الموجود في عنوان URL)](/images/clickstack/rbac/condition-tip.webp)
+
+</div>
 
 | حقل الشرط   | المعاملات        | ما الذي يطابقه                                                                                                                                       | مثال                                                                                              |
 | ----------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -167,11 +191,19 @@ keywords: ['clickstack', 'rbac', 'الأدوار', 'الأذونات', 'التح
 
 تُظهر لقطة الشاشة التالية معرّف لوحة المعلومات مميزًا في شريط عنوان URL، ووسم &quot;TESTING&quot; ظاهرًا في لوحة الوسوم (أعلى اليمين).
 
+<div className="ch-image-lg">
+
 ![لوحة معلومات تُظهر معرّف المورد في شريط عنوان URL ووسمًا في الزاوية العلوية اليمنى](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
+
+</div>
 
 يمكنك إضافة قواعد متعددة لكل نوع مورد. ويُتحقق من كل قاعدة بشكل مستقل باستخدام منطق OR — ويكون المورد متاحًا إذا طابق **أي** قاعدة. أما الموارد التي لا تطابق أي قاعدة فلن تكون متاحة.
 
+<div className="ch-image-md">
+
 ![تلميح لقواعد الوصول باستخدام منطق OR](/images/clickstack/rbac/access-rules-tip.webp)
+
+</div>
 
 **مثال**: لمنح دورٍ ما وصولًا للقراءة فقط إلى لوحات معلومات الاختبار، وسّع لوحات معلومات، وبدّل إلى Fine-Grained Controls، ثم أضف قاعدتين:
 
@@ -180,7 +212,11 @@ keywords: ['clickstack', 'rbac', 'الأدوار', 'الأذونات', 'التح
 
 تكون لوحة المعلومات التي تطابق أيًّا من القاعدتين متاحة.
 
+<div className="ch-image-md">
+
 ![قاعدتا وصول تفصيليتان موصولتان بـ OR: الاسم يحتوي على testing مع وصول Read، والوسم يساوي testing مع وصول Read](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
+
+</div>
 
 <div id="security-policies">
   ## سياسات الأمان
@@ -192,4 +228,8 @@ keywords: ['clickstack', 'rbac', 'الأدوار', 'الأذونات', 'التح
 
 يتيح لك **الذكاء الاصطناعي التوليدي** تمكين الميزات المعتمدة على نماذج اللغة الكبيرة أو تعطيلها (مثل إنشاء الاستعلامات باللغة الطبيعية) باستخدام Anthropic أو Amazon Bedrock. وعند تعطيله، لا تُرسَل أي بيانات إلى موفّري خدمات الذكاء الاصطناعي.
 
+<div className="ch-image-lg">
+
 ![سياسات الأمان](/images/clickstack/rbac/security-policies.webp)
+
+</div>

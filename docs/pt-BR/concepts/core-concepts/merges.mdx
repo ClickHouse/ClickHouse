@@ -24,7 +24,11 @@ Para controlar o número de partes por tabela e implementar o item ② acima, o 
 
 O diagrama a seguir ilustra esse processo de mesclagem em segundo plano:
 
+<div className="ch-image-lg">
+
 ![mesclagem de partes](/images/managing-data/core-concepts/merges_01.webp)
+
+</div>
 
 <br />
 
@@ -67,7 +71,11 @@ O resultado da [consulta documentada anteriormente](/pt-BR/concepts/core-concept
 
 No ClickHouse 24.10, um novo [dashboard de mesclagens](https://presentations.clickhouse.com/2024-release-24.10/index.html#17) foi adicionado aos [dashboards de monitoramento](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) integrados. Disponível tanto no OSS quanto no Cloud por meio do manipulador HTTP `/merges`, podemos usá-lo para visualizar todas as mesclagens de partes da nossa tabela de exemplo:
 
+<div className="ch-image-lg">
+
 ![mesclagem de partes](/images/managing-data/core-concepts/merges-dashboard.webp)
+
+</div>
 
 <br />
 
@@ -85,7 +93,11 @@ A gravação do dashboard acima mostra todo o processo, desde as inserções ini
 
 Um único servidor ClickHouse usa várias [threads de mesclagem](/pt-BR/reference/settings/server-settings/settings/background#background_pool_size) em segundo plano para executar mesclagens de partes simultaneamente:
 
+<div className="ch-image-lg">
+
 ![MESCLAGENS DE PARTES](/images/managing-data/core-concepts/merges_02.webp)
+
+</div>
 
 <br />
 
@@ -119,7 +131,11 @@ O ClickHouse não necessariamente carrega na memória, de uma só vez, todas as 
 
 O diagrama abaixo ilustra como uma única [thread de mesclagem](/pt-BR/concepts/core-concepts/merges#concurrent-merges) em segundo plano no ClickHouse mescla partes (por padrão, sem [mesclagem vertical](/pt-BR/concepts/core-concepts/merges#memory-optimized-merges)):
 
+<div className="ch-image-lg">
+
 ![mesclagem de partes](/images/managing-data/core-concepts/merges_03.webp)
+
+</div>
 
 <br />
 
@@ -155,7 +171,11 @@ Em seguida, apresentaremos brevemente a mecânica de mesclagem de motores espec�
 
 O diagrama abaixo ilustra como as partes em uma tabela [MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/mergetree) padrão são mescladas:
 
+<div className="ch-image-lg">
+
 ![MESCLAGEM DE PARTES](/images/managing-data/core-concepts/merges_04.webp)
+
+</div>
 
 <br />
 
@@ -169,7 +189,11 @@ As colunas da tabela ① descomprimidas e pré-ordenadas são ② mescladas, pre
 
 As mesclagens de partes em uma tabela [ReplacingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/replacingmergetree) funcionam de forma semelhante às [mesclagens padrão](/pt-BR/concepts/core-concepts/merges#standard-merges), mas apenas a versão mais recente de cada linha é mantida, enquanto as versões mais antigas são descartadas:
 
+<div className="ch-image-lg">
+
 ![mesclagem de partes](/images/managing-data/core-concepts/merges_05.webp)
+
+</div>
 
 <br />
 
@@ -187,7 +211,11 @@ No entanto, a `ReplacingMergeTree` remove linhas duplicadas com a mesma chave de
 
 Os dados numéricos são agregados automaticamente durante as mesclagens de partes de uma tabela [SummingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/summingmergetree):
 
+<div className="ch-image-lg">
+
 ![mesclagem de partes](/images/managing-data/core-concepts/merges_06.webp)
+
+</div>
 
 <br />
 
@@ -201,7 +229,11 @@ Na etapa de mesclagem ②, o ClickHouse substitui todas as linhas com a mesma ch
 
 O exemplo de tabela `SummingMergeTree` acima é uma variante especializada da tabela [AggregatingMergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/aggregatingmergetree), permitindo a [transformação automática e incremental de dados](https://www.youtube.com/watch?v=QDAJTKZT8y4) ao aplicar qualquer uma das [mais de 90](/pt-BR/reference/functions/aggregate-functions/reference-index) funções de agregação durante as mesclagens de partes:
 
+<div className="ch-image-lg">
+
 ![MESCLAGENS DE PARTES](/images/managing-data/core-concepts/merges_07.webp)
+
+</div>
 
 <br />
 

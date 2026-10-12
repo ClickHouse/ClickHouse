@@ -7,6 +7,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 Une session d’assistance accorde à ClickHouse un accès temporaire à des fins de diagnostic via le ClickHouse Connector. Cette page explique ce qu’est une session, comment l’activer et la désactiver, ce que les ingénieurs du support ClickHouse peuvent faire pendant celle-ci et comment l’auditer.
@@ -17,7 +18,11 @@ Une session d&#39;assistance est une fenêtre de temps limitée pendant laquelle
 
 Les sessions ne régissent que les diagnostics. Les commandes de cycle de vie des services en mode managé transitent par le canal distinct de l&#39;executor, qu&#39;une session d&#39;assistance n&#39;ouvre ni ne contrôle ; voir [services managés](/fr/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
+<div className="ch-image-lg">
+
 ![Flux de confiance des sessions d'assistance de ClickHouse Connector](/images/cloud/reference/byoc-connector-session-trust.svg)
+
+</div>
 
 Vous contrôlez les sessions par deux biais :
 

@@ -17,7 +17,11 @@ import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaint
 Dans ce guide, vous allez installer Rocket.BI et créer un tableau de bord simple.
 Voici le tableau de bord :
 
+<div className="ch-image-md">
+
 ![Tableau de bord Rocket BI affichant des métriques de ventes avec des graphiques et des KPI](/images/integrations/data-visualization/rocketbi_01.webp)
+
+</div>
 
 <br />
 
@@ -52,7 +56,11 @@ Dans Dashboard, vous trouverez vos rapports. Pour commencer à créer des visual
 
 Vous pouvez créer un nombre **illimité de tableaux de bord** &amp; un nombre **illimité de graphiques** dans un tableau de bord.
 
+<div className="ch-image-md">
+
 ![Animation montrant la création d’un nouveau graphique dans Rocket BI](/images/integrations/data-visualization/rocketbi_02.webp)
+
+</div>
 
 <br />
 
@@ -68,13 +76,21 @@ Consultez le tutoriel en haute résolution sur YouTube : [https://www.youtube.c
 
 Dans le filtre Tab, sélectionnez les champs de métrique que vous souhaitez utiliser. Veillez à laisser l’option d’agrégation cochée.
 
+<div className="ch-image-md">
+
 ![Panneau de configuration du contrôle de métriques Rocket BI affichant les champs sélectionnés et les paramètres d’agrégation](/images/integrations/data-visualization/rocketbi_03.webp)
+
+</div>
 
 <br />
 
 Renommez les filtres et enregistrez le contrôle dans le Dashboard
 
+<div className="ch-image-md">
+
 ![Contrôle de métriques avec filtres renommés, prêt à être enregistré dans le Dashboard](/images/integrations/data-visualization/rocketbi_04.webp)
+
+</div>
 
 <div id="create-a-date-type-control">
   #### Créer un contrôle de type Date
@@ -82,19 +98,31 @@ Renommez les filtres et enregistrez le contrôle dans le Dashboard
 
 Choisissez un champ Date comme colonne Date principale :
 
+<div className="ch-image-md">
+
 ![Interface de sélection du champ Date dans Rocket BI affichant les colonnes de date disponibles](/images/integrations/data-visualization/rocketbi_05.webp)
+
+</div>
 
 <br />
 
 Ajoutez des variantes dupliquées avec différentes granularités. Par exemple : année, mois, jour ou jour de la semaine.
 
+<div className="ch-image-md">
+
 ![Configuration de plage de dates affichant différentes options de période comme l’année, le mois et le jour](/images/integrations/data-visualization/rocketbi_06.webp)
+
+</div>
 
 <br />
 
 Renommez les filtres et enregistrez le contrôle dans le Dashboard
 
+<div className="ch-image-md">
+
 ![Contrôle de plage de dates avec filtres renommés, prêt à être enregistré dans le Dashboard](/images/integrations/data-visualization/rocketbi_07.webp)
+
+</div>
 
 <div id="now-let-build-the-charts">
   ### Maintenant, créons les graphiques
@@ -106,25 +134,41 @@ Renommez les filtres et enregistrez le contrôle dans le Dashboard
 
 Choisissez Adding new chart, puis sélectionnez Pie Chart
 
+<div className="ch-image-md">
+
 ![Panneau de sélection du type de graphique avec l’option de diagramme circulaire mise en évidence](/images/integrations/data-visualization/rocketbi_08.webp)
+
+</div>
 
 <br />
 
 Faites d’abord glisser-déposer la colonne &quot;Region&quot; du Dataset vers Legend Field
 
+<div className="ch-image-md">
+
 ![Interface de glisser-déposer montrant la colonne Region ajoutée au champ de légende](/images/integrations/data-visualization/rocketbi_09.webp)
+
+</div>
 
 <br />
 
 Ensuite, passez à l’onglet Chart Control
 
+<div className="ch-image-md">
+
 ![Interface de l’onglet Chart Control montrant les options de configuration de la visualisation](/images/integrations/data-visualization/rocketbi_10.webp)
+
+</div>
 
 <br />
 
 Faites glisser-déposer le Metrics Control dans Value Field
 
+<div className="ch-image-md">
+
 ![Metrics Control ajouté au champ de valeur du diagramme circulaire](/images/integrations/data-visualization/rocketbi_11.webp)
+
+</div>
 
 <br />
 
@@ -132,19 +176,31 @@ Faites glisser-déposer le Metrics Control dans Value Field
 
 Accédez à Chart Setting pour personnaliser davantage le graphique
 
+<div className="ch-image-md">
+
 ![Panneau des paramètres du graphique montrant les options de personnalisation du diagramme circulaire](/images/integrations/data-visualization/rocketbi_12.webp)
+
+</div>
 
 <br />
 
 Par exemple, remplacez Data label par Percentage
 
+<div className="ch-image-md">
+
 ![Paramètres de l’étiquette de données modifiés pour afficher les pourcentages sur le diagramme circulaire](/images/integrations/data-visualization/rocketbi_13.webp)
+
+</div>
 
 <br />
 
 Enregistrez et ajoutez le graphique au Dashboard
 
+<div className="ch-image-md">
+
 ![Vue du dashboard montrant le nouveau diagramme circulaire ajouté avec d’autres contrôles](/images/integrations/data-visualization/rocketbi_14.webp)
+
+</div>
 
 <div id="use-date-control-in-a-time-series-chart">
   #### Utiliser le contrôle de date dans un graphique de séries temporelles
@@ -152,25 +208,41 @@ Enregistrez et ajoutez le graphique au Dashboard
 
 Utilisons un graphique en colonnes empilées
 
+<div className="ch-image-md">
+
 ![Interface de création d’un graphique en colonnes empilées avec des données de séries temporelles](/images/integrations/data-visualization/rocketbi_15.webp)
+
+</div>
 
 <br />
 
 Dans le Chart Control, utilisez le Metrics Control pour l’axe Y et le Date Range pour l’axe X
 
+<div className="ch-image-md">
+
 ![Configuration du Chart Control montrant le Metrics Control sur l’axe Y et le Date Range sur l’axe X](/images/integrations/data-visualization/rocketbi_16.webp)
+
+</div>
 
 <br />
 
 Ajoutez la colonne Region dans Breakdown
 
+<div className="ch-image-md">
+
 ![Ajout de la colonne Region comme dimension de ventilation dans le graphique en colonnes empilées](/images/integrations/data-visualization/rocketbi_17.webp)
+
+</div>
 
 <br />
 
 Ajoutez un Number Chart comme KPI pour mettre en valeur le dashboard
 
+<div className="ch-image-md">
+
 ![Dashboard complet avec des KPI sous forme de Number Chart, un diagramme circulaire et une visualisation de séries temporelles](/images/integrations/data-visualization/rocketbi_18.webp)
+
+</div>
 
 <br />
 

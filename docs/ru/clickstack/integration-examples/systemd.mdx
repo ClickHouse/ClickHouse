@@ -40,7 +40,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     3. Перейдите в **Team Settings → API Keys**
     4. Скопируйте свой **ключ API для приёма данных**
 
+    <div className="ch-image-lg">
+
     ![Ключ API ClickStack](/images/clickstack/api-key.webp)
+
+    </div>
 
     5. Задайте его как переменную окружения:
 
@@ -183,9 +187,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     3. Отфильтруйте по `service.name:systemd-logs`
     4. Вы должны увидеть структурированные записи логов с такими полями, как `unit`, `priority`, `MESSAGE`, `_HOSTNAME`
 
+    <div className="ch-image-lg">
+
     ![Представление поиска по логам](/images/clickstack/systemd/systemd-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Представление логов](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -264,9 +276,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     2. Перейдите в представление Search и установите источник `Logs`
     3. Установите временной диапазон **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
 
+    <div className="ch-image-lg">
+
     ![Представление поиска по журналам](/images/clickstack/systemd/systemd-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Представление логов](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </div>
 
     <Info>
       **Отображение часового пояса**
@@ -291,11 +311,19 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
+    <div className="ch-image-lg">
+
     ![Кнопка импорта панели мониторинга](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Загрузите файл `systemd-logs-dashboard.json` и нажмите **Finish Import**
 
+    <div className="ch-image-lg">
+
     ![Завершение импорта](/images/clickstack/systemd/finish-import-systemd.webp)
+
+    </div>
   </Step>
 
   <Step title="Просмотрите панель мониторинга" id="created-dashboard">
@@ -307,7 +335,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     * Сбоев сервисов
     * Уровня ошибок
 
+    <div className="ch-image-lg">
+
     ![Пример панели мониторинга](/images/clickstack/systemd/systemd-logs-dashboard.webp)
+
+    </div>
 
     <Note>
       Для демо-набора данных установите диапазон времени **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** (с учётом вашего локального часового пояса).

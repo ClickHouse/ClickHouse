@@ -255,11 +255,19 @@ O coletor do ClickStack pode ser implantado como um **contêiner Docker** (consu
   <Step title="Confirme na ClickStack UI" id="confirm-in-ui">
     Abra seu serviço no [console do ClickHouse Cloud](https://console.clickhouse.cloud) e selecione **ClickStack** no menu à esquerda.
 
+    <div className="ch-image-lg">
+
     ![Iniciar o ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+    </div>
 
     Na visualização **Busca**, altere a fonte para `Logs` e defina o intervalo de tempo como **Últimos 15 minutos**. Os eventos do CloudWatch devem aparecer em um ou dois intervalos de polling.
 
+    <div className="ch-image-lg">
+
     ![Visualização Busca do ClickStack com logs do CloudWatch](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
+
+    </div>
 
     Cada evento traz o grupo e o stream de origem como atributos de recurso:
 
@@ -270,11 +278,19 @@ O coletor do ClickStack pode ser implantado como um **contêiner Docker** (consu
 
     Modifique a busca para `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body` para incluir esses atributos:
 
+    <div className="ch-image-lg">
+
     ![Visualização Busca do ClickStack com logs e atributos do CloudWatch](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
+
+    </div>
 
     Selecione uma entrada de log para inspecionar seus metadados:
 
+    <div className="ch-image-lg">
+
     ![Atributos do CloudWatch na visualização de detalhes do log](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
+
+    </div>
 
     Se nada aparecer:
 
@@ -289,11 +305,19 @@ O coletor do ClickStack pode ser implantado como um **contêiner Docker** (consu
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Baixe `cloudwatch-logs-dashboard.json`</TrackedLink> e, em seguida, na ClickStack UI, navegue até **Dashboards** e clique em **Import**.
 
+    <div className="ch-image-lg">
+
     ![Botão de importação de dashboard](/images/clickstack/clickstack-import-dashboard.webp)
+
+    </div>
 
     Faça upload do arquivo JSON e clique em **Finish Import**.
 
+    <div className="ch-image-lg">
+
     ![Janela de diálogo Finish Import](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
+
+    </div>
   </Step>
 
   <Step title="Leitura adicional" id="further-reading">

@@ -116,44 +116,72 @@ Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 
 Прежде всего, перейдите на [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), откройте раздел Datasets и нажмите &quot;New dataset&quot;:
 
+<div className="ch-image-md">
+
 ![Панель мониторинга Amazon QuickSight с кнопкой New dataset в разделе Datasets](/images/integrations/data-visualization/quicksight_01.webp)
+
+</div>
 
 <br />
 
 Найдите официальный коннектор MySQL, входящий в состав QuickSight (он называется просто **MySQL**):
 
+<div className="ch-image-md">
+
 ![Экран выбора источника данных в QuickSight, где в результатах поиска выделен MySQL](/images/integrations/data-visualization/quicksight_02.webp)
+
+</div>
 
 <br />
 
 Укажите свои сведения о подключении. Обратите внимание, что порт интерфейса MySQL по умолчанию — 9004,
 и он может отличаться в зависимости от конфигурации сервера.
 
+<div className="ch-image-md">
+
 ![Форма настройки подключения MySQL в QuickSight с полями hostname, port, database и учетных данных](/images/integrations/data-visualization/quicksight_03.webp)
+
+</div>
 
 <br />
 
 Теперь у вас есть два варианта получения данных из ClickHouse. Во-первых, можно выбрать таблицу из списка:
 
+<div className="ch-image-md">
+
 ![Интерфейс выбора таблицы в QuickSight со списком таблиц базы данных, доступных из ClickHouse](/images/integrations/data-visualization/quicksight_04.webp)
+
+</div>
 
 <br />
 
 Либо можно указать custom SQL для получения данных:
 
+<div className="ch-image-md">
+
 ![Редактор custom SQL в QuickSight для получения данных из ClickHouse](/images/integrations/data-visualization/quicksight_05.webp)
+
+</div>
 
 <br />
 
 Нажав &quot;Edit/Preview data&quot;, вы сможете увидеть автоматически определённую структуру таблицы или изменить свой custom SQL, если выбрали такой способ доступа к данным:
 
+<div className="ch-image-md">
+
 ![Предварительный просмотр данных в QuickSight, показывающий структуру таблицы со столбцами и примерами данных](/images/integrations/data-visualization/quicksight_06.webp)
+
+</div>
 
 <br />
 
 Убедитесь, что в левом нижнем углу интерфейса выбран режим &quot;Direct Query&quot;:
 
+<div className="ch-image-md">
+
 ![Интерфейс QuickSight, где в нижнем углу выделен режим Direct Query](/images/integrations/data-visualization/quicksight_07.webp)
+
+</div>
 
 <br />
 

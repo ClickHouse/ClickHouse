@@ -11,13 +11,18 @@ integration:
 ---
 
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
 <CommunityMaintainedBadge />
 
 <a href="https://www.fabi.ai/" target="_blank">Fabi.ai</a> هي منصة شاملة لتحليل البيانات بشكل تعاوني. يمكنك الاستفادة من SQL وPython والذكاء الاصطناعي وأدوات بدون برمجة لبناء لوحة معلومات وسير عمل البيانات أسرع من أي وقت مضى. ومع قابلية التوسع التي يوفّرها ClickHouse وقوته، يمكنك إنشاء أول لوحة معلومات عالية الأداء على مجموعة بيانات ضخمة ومشاركتها في غضون دقائق.
 
+<div className="ch-image-md">
+
 ![منصة Fabi.ai لاستكشاف البيانات وسير العمل](/images/integrations/data-visualization/fabi_01.webp)
+
+</div>
 
 <div id="gather-your-connection-details">
   ## اجمع تفاصيل الاتصال
@@ -33,11 +38,19 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
 1. سيُطلب منك ربط قاعدة البيانات عند إنشاء حسابك لأول مرة. وإذا كان لديك حساب بالفعل، فانقر على لوحة مصدر البيانات على يسار أي Smartbook، ثم اختر إضافة مصدر بيانات.
 
+   <div className="ch-image-lg">
+
    ![إضافة مصدر بيانات](/images/integrations/data-visualization/fabi_02.webp)
+
+   </div>
 
 2. سيُطلب منك بعد ذلك إدخال تفاصيل الاتصال.
 
+   <div className="ch-image-md">
+
    ![نموذج بيانات اعتماد ClickHouse](/images/integrations/data-visualization/fabi_03.webp)
+
+   </div>
 
 3. تهانينا! لقد ربطت ClickHouse الآن بـ Fabi.ai.
 
@@ -47,7 +60,11 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
 بعد توصيل Fabi.ai بـ ClickHouse، انتقل إلى أي [Smartbook](https://docs.fabi.ai/analysis_and_reporting/smartbooks) وأنشئ خلية SQL. إذا كان لديك مصدر بيانات واحد فقط متصل بمثيل Fabi.ai، فسيُحدَّد ClickHouse تلقائيًا لخلية SQL، وإلا يمكنك اختيار المصدر الذي تريد الاستعلام منه من القائمة المنسدلة للمصدر.
 
+<div className="ch-image-lg">
+
 ![الاستعلام في ClickHouse](/images/integrations/data-visualization/fabi_04.webp)
+
+</div>
 
 <div id="additional-resources">
   ## موارد إضافية

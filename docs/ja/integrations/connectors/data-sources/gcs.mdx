@@ -8,6 +8,7 @@ keywords: ['Google Cloud Storage ClickHouse', 'GCS ClickHouse integration', 'GCS
 ---
 
 import BucketDetails from '/snippets/ja/_GCS_authentication_and_bucket.mdx';
+
 <Note>
   [Google Cloud](https://cloud.google.com) 上で ClickHouse Cloud を使用している場合、このページは該当しません。サービスはすでに [Google Cloud Storage](https://cloud.google.com/storage) を使用しているためです。GCS からデータを `SELECT` または `INSERT` したい場合は、[`gcs` テーブル関数](/ja/reference/functions/table-functions/gcs) を参照してください。
 </Note>
@@ -683,10 +684,18 @@ formatReadableSize(total_bytes): 36.42 MiB
   #### レプリカ1用のバケット
 </div>
 
+<div className="ch-image-lg">
+
 ![データパーティションを含むフォルダ構造が表示された Google Cloud Storage 内のレプリカ1用バケット](/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp)
+
+</div>
 
 <div id="bucket-for-replica-two">
   #### レプリカ2用のバケット
 </div>
 
+<div className="ch-image-lg">
+
 ![データパーティションを含むフォルダ構造が表示された Google Cloud Storage 内のレプリカ2のバケット](/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp)
+
+</div>

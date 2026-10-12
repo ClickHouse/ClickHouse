@@ -16,7 +16,11 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 
 [marimo](https://marimo.io/) — это реактивный ноутбук с открытым исходным кодом для Python со встроенной поддержкой SQL. Когда вы запускаете ячейку или взаимодействуете с элементом интерфейса, marimo автоматически выполняет затронутые ячейки (или помечает их как устаревшие), сохраняя согласованность кода и результатов и предотвращая ошибки ещё до их возникновения. Каждый ноутбук marimo хранится как обычный Python-код, может выполняться как скрипт и разворачиваться как приложение.
 
+<div className="ch-image-md">
+
 ![Подключение к ClickHouse](/images/integrations/sql-clients/marimo/clickhouse-connect.webp)
+
+</div>
 
 <Steps>
   <Step title="Установите marimo с поддержкой SQL" id="install-marimo-sql">
@@ -31,21 +35,37 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
   <Step title="Подключение к ClickHouse." id="connect-to-clickhouse">
     Перейдите на панель источников данных в левой части редактора marimo и нажмите &#39;Add database&#39;.
 
+    <div className="ch-image-sm">
+
     ![Добавить новую базу данных](/images/integrations/sql-clients/marimo/panel-arrow.webp)
+
+    </div>
 
     Затем вам будет предложено заполнить параметры подключения к базе данных.
 
+    <div className="ch-image-md">
+
     ![Заполните данные базы данных](/images/integrations/sql-clients/marimo/add-db-details.webp)
+
+    </div>
 
     После этого появится ячейка, которую можно запустить для установления подключения.
 
+    <div className="ch-image-md">
+
     ![Запустите ячейку для подключения к ClickHouse](/images/integrations/sql-clients/marimo/run-cell.webp)
+
+    </div>
   </Step>
 
   <Step title="Выполните SQL" id="run-sql">
     После настройки подключения вы можете создать новую SQL-ячейку и выбрать движок ClickHouse.
 
+    <div className="ch-image-md">
+
     ![Выберите SQL-движок](/images/integrations/sql-clients/marimo/choose-sql-engine.webp)
+
+    </div>
 
     В этом руководстве мы будем использовать датасет New York Taxi.
 
@@ -103,16 +123,28 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
     SELECT * FROM trips LIMIT 1000;
     ```
 
+    <div className="ch-image-lg">
+
     ![Результаты в датафрейме](/images/integrations/sql-clients/marimo/results.webp)
+
+    </div>
 
     Теперь вы можете просматривать результаты в датафрейме. Я хочу визуализировать самые дорогие поездки из заданной точки посадки. marimo предоставляет несколько компонентов интерфейса, которые помогут вам в этом. Я буду использовать выпадающий список для выбора места и Altair для построения диаграмм.
 
+    <div className="ch-image-lg">
+
     ![Сочетание выпадающего списка, таблицы и диаграммы](/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp)
+
+    </div>
 
     Реактивная модель выполнения marimo распространяется и на SQL-запросы, поэтому изменения в SQL автоматически запускают последующие вычисления для зависимых ячеек (или, при желании, помечают ячейки как устаревшие, если вычисления слишком затратны). Поэтому при обновлении запроса меняются и диаграмма, и таблица.
 
     Вы также можете переключиться в App View, чтобы получить более чистый интерфейс для изучения данных.
 
+    <div className="ch-image-md">
+
     ![Режим App View](/images/integrations/sql-clients/marimo/run-app-view.webp)
+
+    </div>
   </Step>
 </Steps>

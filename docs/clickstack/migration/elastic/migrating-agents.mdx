@@ -52,7 +52,11 @@ Alternatively, Vector also supports receiving events over the Lumberjack protoco
 
 We illustrate both of these architectures below.
 
+<div className="ch-image-lg">
+
 ![Migrating agents](/images/use-cases/observability/clickstack-migrating-agents.webp)
+
+</div>
 
 In the following example, we provide the initial steps to configure Vector to receive log events from Filebeat via the Lumberjack protocol. We provide VRL for mapping the inbound ECS events to OTel specification, before sending these to the ClickStack OpenTelemetry collector via OTLP. Users consuming events from Kafka can replace the Vector Logstash source with the [Kafka source](https://vector.dev/docs/reference/configuration/sources/kafka/) - all other steps remain the same.
 
@@ -242,7 +246,11 @@ sinks:
 
 The `YOUR_INGESTION_API_KEY` here is produced by ClickStack. You can find the key in the ClickStack UI (HyperDX) under `Team Settings → API Keys`.
 
+<div className="ch-image-lg">
+
 ![Ingestion keys](/images/use-cases/observability/ingestion-keys.webp)
+
+</div>
 
 Our final complete configuration is shown below:
 
@@ -327,11 +335,19 @@ Elastic Agent needs to be configured to send data via the Logstash protocol Lumb
 
 Central configuration through Kibana can be achieved by adding [an Output to Fleet](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings).
 
+<div className="ch-image-md">
+
 ![Add Logstash output](/images/use-cases/observability/add-logstash-output.webp)
+
+</div>
 
 This output can then be used in an [agent policy](https://www.elastic.co/docs/reference/fleet/agent-policy). This will automatically mean any agents using the policy will send their data to Vector.
 
+<div className="ch-image-md">
+
 ![Agent settings](/images/use-cases/observability/agent-output-settings.webp)
+
+</div>
 
 Since this requires secure communication over TLS to be configured, we recommend the guide ["Configure SSL/TLS for the Logstash output"](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output), which can be followed with the user assuming their Vector instance assumes the role of Logstash.
 
@@ -384,7 +400,11 @@ By default, an API ingestion key isn't required if running an OpenTelemetry Coll
 
 The `YOUR_INGESTION_API_KEY` here is produced by ClickStack. You can find the key in the ClickStack UI under `Team Settings → API Keys`.
 
+<div className="ch-image-lg">
+
 ![Ingestion keys](/images/use-cases/observability/ingestion-keys.webp)
+
+</div>
 
 If Vector has been configured to use mutual TLS, with the certificate and keys generated using the steps from the guide ["Configure SSL/TLS for the Logstash output"](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output), the `otlp` exporter will need to be configured accordingly e.g.
 

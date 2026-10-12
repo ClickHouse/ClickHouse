@@ -8,6 +8,7 @@ keywords: ['clickstack', 'vector', 'trazas', 'observabilidad', 'telemetría']
 ---
 
 import InstallingVector from '/snippets/es/_installing_vector.mdx';
+
 import VectorSampleData from '/snippets/es/_vector_sample_data.mdx';
 
 [Vector](https://vector.dev) es una canalización de datos de observabilidad de alto rendimiento y agnóstica respecto del proveedor. Se usa habitualmente para recopilar, transformar y enrutar logs y métricas desde una amplia variedad de fuentes, y es especialmente popular para la ingestión de logs por su flexibilidad y bajo consumo de recursos.
@@ -105,13 +106,21 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
       <Step title="Accede a la UI de ClickStack" id="navigate-to-clickstack-ui">
         Accede a tu servicio Managed ClickStack y selecciona &quot;ClickStack&quot; en el menú de la izquierda. Si ya has completado el onboarding, se abrirá la UI de ClickStack en una pestaña nueva y se te autenticará automáticamente. Si no, puedes completar el onboarding y seleccionar “Launch ClickStack” una vez que hayas elegido Vector como fuente de entrada.
 
+        <div className="ch-image-lg">
+
         ![Iniciar ClickStack para Vector](/images/clickstack/launch-clickstack-vector.webp)
+
+        </div>
       </Step>
 
       <Step title="Crear un origen de datos" id="create-a-datasource-managed">
         Crea un origen de datos para logs. Si no existe ningún origen de datos, se te pedirá que crees uno al iniciar sesión por primera vez. De lo contrario, ve a configuración del equipo y añade un nuevo origen de datos.
 
+        <div className="ch-image-lg">
+
         ![Crear origen de datos - vector](/images/clickstack/create-vector-datasource.webp)
+
+        </div>
 
         La configuración anterior asume un esquema de estilo Nginx con una columna `time_local` usada como timestamp. Siempre que sea posible, esta debería ser la columna de timestamp declarada en la clave primaria. Esta columna es obligatoria.
 
@@ -125,7 +134,11 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
       <Step title="Explora los datos" id="explore-the-data-managed">
         Ve a la vista de logs para explorar los datos y empezar a usar ClickStack.
 
+        <div className="ch-image-lg">
+
         ![Logs de Nginx en ClickStack](/images/clickstack/nginx-logs-vector-search.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -137,7 +150,11 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
 
         Primero, cree una base de datos. Esto puede hacerse desde la [interfaz web de ClickHouse](/es/concepts/features/interfaces/http#web-ui) en [http://localhost:8123/play](http://localhost:8123/play). Use el nombre de usuario y la contraseña predeterminados `api:api`.
 
+        <div className="ch-image-lg">
+
         ![UI Play de ClickStack](/images/clickstack/play-ui-clickstack.webp)
+
+        </div>
 
         En el siguiente ejemplo, usamos `logs`:
 
@@ -212,13 +229,21 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
       <Step title="Accede a la UI de ClickStack" id="navigate-to-clickstack-ui-oss">
         Accede a la UI de ClickStack en [http://localhost:8080](http://localhost:8080). Crea un usuario si aún no has completado el onboarding.
 
+        <div className="ch-image-lg">
+
         ![inicio de sesión en ClickStack](/images/use-cases/observability/hyperdx-login.webp)
+
+        </div>
       </Step>
 
       <Step title="Crear un origen de datos" id="create-a-datasource-oss">
         Ve a configuración del equipo y añade un nuevo origen de datos.
 
+        <div className="ch-image-lg">
+
         ![Crear origen de datos - vector](/images/clickstack/create-vector-datasource-oss.webp)
+
+        </div>
 
         La configuración anterior asume un esquema de estilo Nginx con una columna `time_local` usada como timestamp. Siempre que sea posible, esta debería ser la columna de timestamp declarada en la clave primaria. Esta columna es obligatoria.
 
@@ -232,7 +257,11 @@ El único requisito estricto de ClickStack, tanto en la implementación open sou
       <Step title="Explora los datos" id="explore-the-data-oss">
         Ve a la vista de logs para explorar los datos y empezar a usar ClickStack.
 
+        <div className="ch-image-lg">
+
         ![Logs de Nginx en ClickStack](/images/clickstack/nginx-logs-vector-search.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -353,13 +382,21 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
       <Step title="Accede a la UI de ClickStack" id="navigate-to-clickstack-ui-nginx-managed">
         Ve a tu servicio de Managed ClickStack y selecciona &quot;ClickStack&quot; en el menú de la izquierda. Si ya has completado el onboarding, se abrirá la UI de ClickStack en una pestaña nueva y se te autenticará automáticamente. Si no, puedes completar el onboarding y seleccionar “Launch ClickStack” una vez que hayas elegido Vector como fuente de entrada.
 
+        <div className="ch-image-lg">
+
         ![Iniciar ClickStack para Vector](/images/clickstack/launch-clickstack-vector.webp)
+
+        </div>
       </Step>
 
       <Step title="Crear un origen de datos" id="create-a-datasource-nginx-managed">
         Crea un origen de datos de logs. Si no existe ningún origen de datos, se te pedirá que crees uno al iniciar sesión por primera vez. De lo contrario, ve a configuración del equipo y añade un nuevo origen de datos.
 
+        <div className="ch-image-lg">
+
         ![Crear origen de datos - vector](/images/clickstack/create-vector-datasource.webp)
+
+        </div>
 
         La configuración asume el esquema de Nginx, con una columna `time_local` utilizada como timestamp. Esta es la columna de timestamp declarada en la clave primaria. Esta columna es obligatoria.
 
@@ -392,7 +429,11 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
       <Step title="Explora los datos" id="explore-the-data-nginx-managed">
         Ve a la vista de búsqueda de `20 de octubre de 2025` para explorar los datos y empezar a usar ClickStack.
 
+        <div className="ch-image-lg">
+
         ![Interfaz de HyperDX](/images/clickstack/nginx-logs-vector-search.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -414,7 +455,11 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
 
         Primero, cree una base de datos. Puede hacerlo desde la [interfaz web de ClickHouse](/es/concepts/features/interfaces/http#web-ui) en [http://localhost:8123/play](http://localhost:8123/play). Use las credenciales predeterminadas `api:api`.
 
+        <div className="ch-image-lg">
+
         ![Interfaz Play de ClickStack](/images/clickstack/play-ui-clickstack.webp)
+
+        </div>
 
         Cree una base de datos `logs`:
 
@@ -509,7 +554,11 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
       <Step title="Crear un origen de datos" id="create-a-datasource-nginx-oss">
         Cree un origen de datos de logs desde `Team -> Sources`
 
+        <div className="ch-image-lg">
+
         ![Crear origen de datos - vector](/images/clickstack/create-vector-datasource-oss.webp)
+
+        </div>
 
         La configuración asume el esquema de Nginx, con una columna `time_local` usada como marca temporal. Esta es la columna de marca temporal declarada en la clave primaria. Esta columna es obligatoria.
 
@@ -542,13 +591,21 @@ Para ver un ejemplo más completo, a continuación usamos un **archivo de logs d
       <Step title="Ve a la UI de ClickStack" id="navigate-to-clickstack-ui-nginx-oss">
         Accede a la UI de ClickStack en [http://localhost:8080](http://localhost:8080). Crea un usuario si aún no has completado el onboarding.
 
+        <div className="ch-image-lg">
+
         ![Inicio de sesión de ClickStack](/images/use-cases/observability/hyperdx-login.webp)
+
+        </div>
       </Step>
 
       <Step title="Explora los datos" id="explore-the-data-nginx-oss">
         Ve a la vista de búsqueda de `20 de octubre de 2025` para explorar los datos y empezar a usar ClickStack.
 
+        <div className="ch-image-lg">
+
         ![Interfaz de HyperDX](/images/clickstack/nginx-logs-vector-search.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>

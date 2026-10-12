@@ -277,8 +277,16 @@ Once the collector is running, log into HyperDX and verify logs are flowing with
    - `host.type` (instance type)
    - `cloud.availability_zone`
 
+<div className="ch-image-lg">
+
 ![EC2 logs search view](/images/clickstack/host-logs/ec2/search-view.webp)
+
+</div>
+<div className="ch-image-lg">
+
 ![EC2 log detail showing metadata](/images/clickstack/host-logs/ec2/log-view.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -397,8 +405,16 @@ Once the collector is running:
 4. Filter by `source:ec2-demo`
 5. Expand a log entry to view EC2 metadata in the resource attributes
 
+<div className="ch-image-lg">
+
 ![EC2 logs search view](/images/clickstack/host-logs/ec2/search-view-demo.webp)
+
+</div>
+<div className="ch-image-lg">
+
 ![EC2 log detail with metadata](/images/clickstack/host-logs/ec2/log-view-demo.webp)
+
+</div>
 
 <Info>
 **Timezone display**
@@ -428,17 +444,29 @@ To help you get started monitoring EC2 host logs with ClickStack, we provide ess
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
+<div className="ch-image-lg">
+
 ![Import dashboard button](/images/clickstack/import-dashboard.webp)
+
+</div>
 
 3. Upload the `host-logs-dashboard.json` file and click **Finish Import**
 
+<div className="ch-image-lg">
+
 ![Finish import](/images/clickstack/host-logs/import-dashboard.webp)
+
+</div>
 </Step>
 <Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 
+<div className="ch-image-lg">
+
 ![EC2 logs dashboard](/images/clickstack/host-logs/host-logs-dashboard.webp)
+
+</div>
 
 You can filter dashboard visualizations by EC2 context:
 - `cloud.region:us-east-1` - Show logs from specific region

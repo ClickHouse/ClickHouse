@@ -130,7 +130,11 @@ import ResourceEstimation from '/snippets/zh/_resource_estimation.mdx';
 
     所有数据摄取均应通过 ClickStack 发行版 OpenTelemetry (OTel) collector 所暴露的 OTLP 端口进行。默认情况下，需要使用启动时生成的安全摄取 API key。向 OTel 端口发送数据时必须提供此 key，可在 HyperDX UI 的 `Team Settings → API Keys` 中找到。
 
+    <div className="ch-image-lg">
+
     ![摄取密钥](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     此外，建议为 OTLP 端点启用 TLS。
 

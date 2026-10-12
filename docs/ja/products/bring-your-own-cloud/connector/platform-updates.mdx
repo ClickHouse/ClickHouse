@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 マネージドクラスターでは、ClickHouse のサービスが依存する小規模なプラットフォームレイヤーが動作しています。ClickHouse Cloud はそのレイヤーに対するプラットフォーム更新を提案しますが、各更新をご自身のクラスターの認証情報で承認するまで、executor は何も適用しません。
@@ -27,7 +28,11 @@ executor が未承認の バンドル を適用することは決してありま
 
 ## プラットフォーム更新の承認 {#approve-a-platform-update}
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector のプラットフォーム承認フロー](/images/cloud/reference/byoc-connector-platform-approval.svg)
+
+</div>
 
 ### レジストリ認証情報 {#registry-credentials}
 

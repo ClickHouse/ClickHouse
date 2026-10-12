@@ -8,6 +8,7 @@ keywords: ['ClickStack', '관측성', 'materialized views', '성능', '최적화
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 <div id="introduction">
@@ -34,7 +35,11 @@ materialized view를 사용하는 주된 이유는 대상 테이블에 기록되
 
 ClickHouse의 materialized view는 데이터가 원본 테이블로 들어오는 동안 지속적으로 업데이트되며, 항상 최신 상태를 유지하는 인덱스처럼 동작합니다. 이는 많은 다른 데이터베이스의 materialized view와 다릅니다. 다른 데이터베이스에서는 materialized view가 정적인 스냅샷이며, ClickHouse의 [갱신 가능 구체화 뷰](/ko/concepts/features/materialized-views/refreshable-materialized-view)처럼 주기적으로 갱신해야 합니다.
 
+<div className="ch-image-md">
+
 ![materialized view 다이어그램](/images/materialized-view/materialized-view-diagram.webp)
+
+</div>
 
 증분형 materialized view는 새 데이터가 들어올 때 뷰의 변경분만 계산하므로 계산을 삽입 시점으로 넘깁니다. ClickHouse는 수집에 매우 최적화되어 있으므로, 삽입되는 각 블록에 대해 뷰를 유지하는 데 드는 추가 비용은 쿼리 실행 시 얻는 절감 효과에 비해 작습니다. 집계 계산 비용은 매번 읽을 때마다 반복해서 지불하는 대신 여러 삽입 작업에 걸쳐 분산됩니다. 따라서 사전 집계된 결과를 쿼리하는 것은 이를 다시 계산하는 것보다 훨씬 비용 효율적이며, 그 결과 운영 비용을 낮추고 페타바이트 규모에서도 다운스트림 시각화에 거의 실시간 성능을 제공합니다.
 
@@ -122,7 +127,11 @@ GROUP BY time, ServiceName, StatusCode
 
 속도를 높이려는 시각화 또는 시각화 집합을 파악했다면, 다음 단계는 그 기반이 되는 쿼리를 파악하는 것입니다. 실제로는 시각화 구성을 살펴보고 생성된 SQL을 검토하면서, 사용된 집계 메트릭과 적용된 함수에 특히 주의를 기울여야 합니다.
 
+<div className="ch-image-lg">
+
 ![생성된 SQL](/images/clickstack/materialized_views/generated_sql.webp)
+
+</div>
 
 <Note>
   HyperDX에서 특정 구성 요소에 디버그 패널이 없는 경우, 브라우저 콘솔을 확인하면 됩니다. 모든 쿼리는 그곳에 기록됩니다.
@@ -227,13 +236,21 @@ materialized VIEW는 HyperDX에서 해당 뷰가 파생된 **원본 테이블**�
   <Step title="소스 편집" id="edit-the-source">
     HyperDX에서 해당 **소스**로 이동한 다음 **구성 편집** 대화상자를 여십시오. materialized VIEW 섹션까지 스크롤하십시오.
 
+    <div className="ch-image-lg">
+
     ![소스 편집](/images/clickstack/materialized_views/edit_source.webp)
+
+    </div>
   </Step>
 
   <Step title="materialized VIEW 추가" id="add-the-materialized-view">
     **Add materialized view**를 선택한 다음, materialized VIEW를 구성하는 데이터베이스와 대상 테이블을 선택하십시오.
 
+    <div className="ch-image-lg">
+
     ![소스 편집](/images/clickstack/materialized_views/add_view.webp)
+
+    </div>
   </Step>
 
   <Step title="메트릭 선택" id="select-metrics">
@@ -246,13 +263,21 @@ materialized VIEW는 HyperDX에서 해당 뷰가 파생된 **원본 테이블**�
 
     차원의 경우 타임스탬프를 제외하고, 뷰에서 그룹화하는 모든 컬럼을 지정하십시오.
 
+    <div className="ch-image-lg">
+
     ![메트릭 선택](/images/clickstack/materialized_views/select_metrics.webp)
+
+    </div>
   </Step>
 
   <Step title="시간 세분화 수준 선택" id="select-time-granularity">
     materialized VIEW의 **시간 세분화 수준**을 선택하십시오(예: 1분).
 
+    <div className="ch-image-lg">
+
     ![시간 세분화 수준 선택](/images/clickstack/materialized_views/select_time_granularity.webp)
+
+    </div>
   </Step>
 
   <Step title="최소 날짜 선택" id="specify-the-minimum-date">
@@ -263,7 +288,11 @@ materialized VIEW는 HyperDX에서 해당 뷰가 파생된 **원본 테이블**�
       materialized VIEW 백필에 대한 전체 가이드는 [&quot;데이터 백필&quot;](/ko/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)에서 확인할 수 있습니다.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![최소 시간 선택](/images/clickstack/materialized_views/select_min_time.webp)
+
+    </div>
 
     정확한 시작 시간이 불분명한 경우에는 예를 들어 대상 테이블의 최소 타임스탬프를 쿼리하여 확인할 수 있습니다:
 
@@ -275,7 +304,11 @@ materialized VIEW는 HyperDX에서 해당 뷰가 파생된 **원본 테이블**�
   <Step title="소스 저장" id="save-the-source">
     소스 구성을 저장하십시오.
 
+    <div className="ch-image-lg">
+
     ![소스 저장](/images/clickstack/materialized_views/save_source.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -298,7 +331,11 @@ ClickStack는 materialized view 사용 여부를 확인할 수 있도록 명확�
 * **초록색 번개**는 쿼리가 materialized view로 가속되고 있음을 나타냅니다.
 * **주황색 번개**는 쿼리가 원본 테이블에서 실행되고 있음을 나타냅니다.
 
+<div className="ch-image-lg">
+
 ![가속된 시각화](/images/clickstack/materialized_views/accelerated_visual.webp)
+
+</div>
 
 2. **최적화 세부 정보 확인**  번개 아이콘을 클릭하면 다음 정보가 표시되는 세부 정보 패널이 열립니다:
 

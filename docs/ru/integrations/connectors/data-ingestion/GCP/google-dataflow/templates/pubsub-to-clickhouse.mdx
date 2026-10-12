@@ -161,7 +161,11 @@ ORDER BY failed_at;
 Войдите в Google Cloud Console и найдите Dataflow.
 
 1. Нажмите кнопку `CREATE JOB FROM TEMPLATE`.
+   <div className="ch-image-lg">
+
    ![Консоль Dataflow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+
+   </div>
 
 2. Когда откроется форма шаблона, введите имя задачи и выберите нужный регион.
 
@@ -188,7 +192,11 @@ ORDER BY failed_at;
 
 Перейдите на [вкладку задач Dataflow](https://console.cloud.google.com/dataflow/jobs) в Google Cloud Console, чтобы отслеживать состояние задачи. Там вы найдете сведения о задаче, включая ход выполнения и возможные ошибки:
 
+<div className="ch-image-lg">
+
 ![Консоль Dataflow с выполняющейся задачей Pub/Sub to ClickHouse](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
+
+</div>
 
 Шаблон также отправляет следующие пользовательские метрики в пространстве имен `PubSubToClickHouse`; их можно просмотреть на странице задачи Dataflow:
 

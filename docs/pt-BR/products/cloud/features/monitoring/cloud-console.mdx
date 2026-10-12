@@ -66,7 +66,11 @@ Os gráficos exibem o tráfego de entrada e saída de dados do ClickHouse Cloud.
 
 Este dashboard é uma versão modificada do [dashboard avançado de observabilidade nativo](/pt-BR/products/cloud/features/monitoring/advanced-dashboard), em que cada série representa métricas por réplica. Ele pode ser útil para monitorar e solucionar problemas específicos do ClickHouse.
 
+<div className="ch-image-lg">
+
 ![Dashboard avançado no ClickHouse Cloud](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</div>
 
 <Note>
   O ClickHouse Cloud coleta e armazena as métricas exibidas neste dashboard a partir de tabelas de sistema, para que elas possam ser visualizadas mesmo quando um serviço estiver inativo. O acesso a essas métricas não emite uma consulta para o serviço subjacente e não reativará serviços inativos.
@@ -113,7 +117,11 @@ O recurso **Query Insights** facilita o uso do log de consultas integrado do Cli
 
 Após selecionar um serviço, o item de navegação **Monitoring** na barra lateral esquerda se expande e revela o subitem **Query insights**:
 
+<div className="ch-image-md">
+
 ![Visão geral da interface do Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
+
+</div>
 
 <div id="top-level-metrics">
   ### Métricas principais
@@ -121,7 +129,11 @@ Após selecionar um serviço, o item de navegação **Monitoring** na barra late
 
 As caixas de estatísticas na parte superior representam métricas básicas de consulta no período selecionado. Abaixo delas, gráficos de séries temporais mostram o volume de consultas, a latência e a taxa de erro, divididos por tipo de consulta (select, insert, other). O gráfico de latência pode ser ajustado para exibir as latências p50, p90 e p99:
 
+<div className="ch-image-md">
+
 ![Gráfico de latência do Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
+
+</div>
 
 <div id="recent-queries">
   ### Recent queries
@@ -129,7 +141,11 @@ As caixas de estatísticas na parte superior representam métricas básicas de c
 
 Uma tabela exibe registros do log de consultas agrupados por hash de consulta normalizada e usuário na janela de tempo selecionada. Recent queries podem ser filtradas e ordenadas por qualquer campo disponível, e a tabela pode ser configurada para exibir ou ocultar campos adicionais, como tabelas e latências p90 e p99:
 
+<div className="ch-image-md">
+
 ![Tabela de Recent queries no Query Insights](/images/cloud/sqlconsole/insights_recent.webp)
+
+</div>
 
 <div id="query-drill-down">
   ### Detalhamento da consulta
@@ -137,11 +153,19 @@ Uma tabela exibe registros do log de consultas agrupados por hash de consulta no
 
 Selecionar uma consulta na tabela **Recent queries** abrirá um painel lateral com métricas e informações específicas da consulta selecionada:
 
+<div className="ch-image-md">
+
 ![Detalhamento da consulta na UI do Query Insights](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</div>
 
 Todas as métricas na aba **Query info** são métricas agregadas, mas também podemos ver métricas de execuções individuais selecionando a aba **Query history**:
 
+<div className="ch-image-sm">
+
 ![Informações da consulta na UI do Query Insights](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</div>
 
 Nesse painel, os itens `Settings` e `Profile Events` de cada execução da consulta podem ser expandidos para mostrar informações adicionais.
 

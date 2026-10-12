@@ -14,7 +14,11 @@ doc_type: 'guide'
 
 باختصار: لأن ClickHouse أسرع وأقل تكلفة وأكثر كفاءة من BigQuery في تحليلات البيانات الحديثة:
 
+<div className="ch-image-md">
+
 ![ClickHouse مقابل BigQuery](/images/migrations/bigquery-2.webp)
+
+</div>
 
 <div id="loading-data-from-bigquery-to-clickhouse-cloud">
   ## تحميل البيانات من BigQuery إلى ClickHouse Cloud
@@ -26,7 +30,11 @@ doc_type: 'guide'
 
 كمثال على مجموعة بيانات يوضّح عملية ترحيل نموذجية من BigQuery إلى ClickHouse Cloud، نستخدم مجموعة بيانات Stack Overflow الموثقة [هنا](/ar/get-started/sample-datasets/stackoverflow). تحتوي هذه المجموعة على كل `post` و`vote` و`user` و`comment` و`badge` على Stack Overflow من عام 2008 حتى أبريل 2024. يظهر المخطط الخاص بـ BigQuery لهذه البيانات أدناه:
 
+<div className="ch-image-lg">
+
 ![Schema](/images/migrations/bigquery-3.webp)
+
+</div>
 
 بالنسبة إلى المستخدمين الذين يرغبون في تعبئة مجموعة البيانات هذه في مثيل BigQuery لاختبار خطوات الترحيل، فقد وفرنا بيانات هذه الجداول بتنسيق Parquet في حاوية GCS، كما تتوفر أوامر DDL لإنشاء الجداول وتحميلها في BigQuery [هنا](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==).
 
@@ -49,7 +57,11 @@ doc_type: 'guide'
 
 2. استورد البيانات إلى ClickHouse Cloud. ويمكننا استخدام [دالة الجدول gcs](/ar/reference/functions/table-functions/gcs) لهذا الغرض. تتوفر أوامر DDL واستعلامات الاستيراد [هنا](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==). لاحظ أنه نظرًا لأن مثيل ClickHouse Cloud يتكوّن من عدة عُقد حوسبة، فإننا نستخدم [دالة الجدول s3Cluster](/ar/reference/functions/table-functions/s3Cluster) بدلًا من دالة الجدول `gcs`. وتعمل هذه الدالة أيضًا مع حاويات GCS، كما [تستفيد من جميع عُقد خدمة ClickHouse Cloud](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers) لتحميل البيانات على التوازي.
 
+<div className="ch-image-md">
+
 ![التحميل المجمّع](/images/migrations/bigquery-4.webp)
+
+</div>
 
 يتميّز هذا النهج بعدد من المزايا:
 
@@ -159,7 +171,11 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
 * تُعد كفاءة الذاكرة والقرص أمرًا بالغ الأهمية على النطاق الذي يُستخدم فيه ClickHouse عادةً. وتُكتب البيانات إلى جداول ClickHouse على هيئة أجزاء تُعرف باسم جزء، مع تطبيق قواعد لدمج هذه الأجزاء في الخلفية. في ClickHouse، لكل جزء فهرسه الأساسي الخاص. وعند دمج الأجزاء، تُدمج أيضًا الفهارس الأساسية الخاصة بالجزء المدمج. لاحظ أن هذه الفهارس لا تُبنى لكل صف. وبدلًا من ذلك، يحتوي الفهرس الأساسي لكل جزء على مُدخل فهرسة واحد لكل مجموعة من الصفوف — وتُسمى هذه التقنية بالفهرسة المتناثرة.
 * تصبح الفهرسة المتناثرة ممكنة لأن ClickHouse يخزّن صفوف جزء على القرص مرتبةً حسب مفتاح محدد. وبدلًا من تحديد الصفوف المفردة مباشرةً (كما في فهرس يعتمد على B-Tree)، يتيح الفهرس الأساسي المتناثر تحديد مجموعات الصفوف التي قد تطابق الاستعلام بسرعة (عبر binary search على مُدخلات الفهرس). ثم تُمرَّر مجموعات الصفوف التي يُحتمل أن تكون مطابقة، بالتوازي، إلى ClickHouse engine للعثور على النتائج المطابقة. ويتيح تصميم الفهرس هذا أن يكون الفهرس الأساسي صغيرًا (بحيث يلائم الذاكرة الرئيسية بالكامل) مع تسريع أزمنة تنفيذ الاستعلامات بشكل ملحوظ، خاصةً في استعلامات النطاق الشائعة في حالات استخدام تحليلات البيانات. ولمزيد من التفاصيل، نوصي بهذا [الدليل المتعمق](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
+<div className="ch-image-md">
+
 ![المفاتيح الأساسية في ClickHouse](/images/migrations/bigquery-5.webp)
+
+</div>
 
 لا يحدد المفتاح الأساسي المختار في ClickHouse الفهرس فقط، بل يحدد أيضًا ترتيب كتابة البيانات على القرص. ولذلك، يمكن أن يؤثر بشكل كبير في مستويات الضغط، مما قد ينعكس بدوره على أداء الاستعلامات. فمفتاح الترتيب الذي يجعل قيم معظم الأعمدة تُكتب بترتيب متجاور يسمح لخوارزمية الضغط المحددة (وترميزات الضغط) بضغط البيانات بفاعلية أكبر.
 
@@ -187,7 +203,11 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
 
 في ClickHouse، يُحدَّد التقسيم للجدول عند تعريفه مبدئيًا عبر عبارة [`PARTITION BY`](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key). ويمكن أن تحتوي هذه العبارة على تعبير SQL على أي عمود أو أعمدة، وتحدد نتيجته القسم الذي يُرسَل إليه الصف.
 
+<div className="ch-image-md">
+
 ![التقسيم](/images/migrations/bigquery-6.webp)
+
+</div>
 
 ترتبط أجزاء البيانات منطقيًا بكل قسم على القرص، ويمكن الاستعلام عنها بصورة مستقلة. في المثال أدناه، نقسم جدول posts حسب السنة باستخدام التعبير [`toYear(CreationDate)`](/ar/reference/functions/regular-functions/date-time-functions#toYear). ومع إدراج الصفوف في ClickHouse، سيُقيَّم هذا التعبير على كل صف، ثم تُوجَّه الصفوف إلى القسم الناتج في صورة أجزاء بيانات جديدة تنتمي إلى ذلك القسم.
 
@@ -403,7 +423,11 @@ WHERE UserId = 8592047
 واحد، حيث تُستغل الإسقاطات متى أمكن لتسريع زمن
 الاستجابة.
 
+<div className="ch-image-md">
+
 ![الإسقاطات](/images/migrations/bigquery-7.webp)
+
+</div>
 
 وهذا بخلاف العروض المادية، حيث يتعين على المستخدم اختيار
 الجدول الهدف المُحسَّن المناسب أو إعادة كتابة الاستعلام، وفقًا لعوامل التصفية.
@@ -429,7 +453,11 @@ WHERE UserId = 8592047
 
 *BigQuery*
 
+<div className="ch-image-sm">
+
 ![إعادة صياغة استعلامات BigQuery](/images/migrations/bigquery-8.webp)
+
+</div>
 
 *ClickHouse*
 
@@ -464,7 +492,11 @@ Peak memory usage: 323.37 MiB.
 
 <br />
 
+<div className="ch-image-sm">
+
 ![BigQuery 1](/images/migrations/bigquery-9.webp)
+
+</div>
 
 *ClickHouse*
 
@@ -500,9 +532,17 @@ Peak memory usage: 567.41 MiB.
 
 *BigQuery*
 
+<div className="ch-image-sm">
+
 ![الدوال التجميعية 1](/images/migrations/bigquery-10.webp)
 
+</div>
+
+<div className="ch-image-sm">
+
 ![الدوال التجميعية 2](/images/migrations/bigquery-11.webp)
+
+</div>
 
 *ClickHouse*
 
@@ -558,7 +598,11 @@ Peak memory usage: 377.26 MiB.
 
 *BigQuery*
 
+<div className="ch-image-sm">
+
 ![الشروط والمصفوفات](/images/migrations/bigquery-12.webp)
+
+</div>
 
 *ClickHouse*
 

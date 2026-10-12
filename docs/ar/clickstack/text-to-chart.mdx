@@ -66,7 +66,11 @@ keywords: ['clickstack', 'text-to-chart', 'AI', 'التصور البياني', '
   <Step title="تحديد مصدر بيانات" id="select-data-source">
     اختر مصدر البيانات الذي تريد عرضه بصريًا — على سبيل المثال، **السجلات** أو **التتبعات** أو **المقاييس**.
 
+    <div className="ch-image-lg">
+
     ![مستكشف المخططات](/images/clickstack/text-to-chart/chart-explorer.webp)
+
+    </div>
   </Step>
 
   <Step title="إدخال موجّه نصي" id="enter-text-prompt">
@@ -78,7 +82,11 @@ keywords: ['clickstack', 'text-to-chart', 'AI', 'التصور البياني', '
 
     يحوّل ClickStack الموجّه إلى استعلام ويعرض التصوّر تلقائيًا.
 
+    <div className="ch-image-lg">
+
     ![تحويل النص إلى مخطط](/images/clickstack/text-to-chart/text-to-chart.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -99,7 +107,11 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 * **اسم المستخدم**: `otel_demo`
 * **كلمة المرور**: اتركه فارغًا
 
+<div className="ch-image-lg">
+
 ![إنشاء اتصال](/images/clickstack/text-to-chart/create-connection.webp)
+
+</div>
 
 ثم عدّل كل مصدر من المصادر — **سجل** و**تتبّع** و**مقياس** و**Sessions** — لاستخدام قاعدة البيانات `otel_v2`. للاطلاع على التفاصيل الكاملة حول تهيئة المصادر، راجع [دليل مجموعة بيانات العرض التجريبي البعيدة](/ar/clickstack/example-datasets/remote-demo-data).
 

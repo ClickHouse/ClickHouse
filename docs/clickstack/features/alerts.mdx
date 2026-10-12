@@ -32,7 +32,11 @@ For an alert to be created for a search, the search must be saved. You can eithe
 
 Start by entering a [search](/clickstack/features/search) and clicking the `Alerts` button in the top-right corner of the `Search` page.
 
+<div className="ch-image-lg">
+
 ![Alerts search view](/images/use-cases/observability/alerts_search_view.webp)
+
+</div>
 </Step>
 <Step title="Create the alert" id="create-the-alert">
 
@@ -45,13 +49,21 @@ From the alert creation panel, you can:
 
 Before saving, ClickStack visualizes the threshold condition so you can confirm it will behave as expected.
 
+<div className="ch-image-lg">
+
 ![Search alerts](/images/use-cases/observability/search_alert.webp)
+
+</div>
 </Step>
 </Steps>
 
 Note that multiple alerts can be added to a search. If the above process is repeated, you will see the current alerts as tabs at the top of the edit alert dialog, with each alert assigned a number.
 
+<div className="ch-image-md">
+
 ![Multiple alerts](/images/use-cases/observability/multiple_search_alerts.webp)
+
+</div>
 
 ### 2. Dashboard chart alerts {#dashboard-alerts}
 
@@ -74,19 +86,31 @@ Alerts can be created during the chart creation process, when adding a chart to 
 
 Open the chart's configuration menu and select the alert button. This will show the chart edit dialog.
 
+<div className="ch-image-lg">
+
 ![Edit chart alert](/images/use-cases/observability/edit_chart_alert.webp)
+
+</div>
 </Step>
 <Step title="Add the alert" id="add-chart-alert">
 
 Select **Add Alert**.
 
+<div className="ch-image-lg">
+
 ![Add alert to chart](/images/use-cases/observability/add_chart_alert.webp)
+
+</div>
 </Step>
 <Step title="Define the alert conditions" id="define-alert-conditions">
 
 Define the condition (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), threshold, duration, and webhook. The duration here will also dictate how often the alert is triggered.
 
+<div className="ch-image-lg">
+
 ![Create alert for chart](/images/use-cases/observability/create_chart_alert.webp)
+
+</div>
 
 You can add a new webhook directly from this view. See [Adding a webhook](#add-webhook) for details.
 </Step>
@@ -100,11 +124,19 @@ A webhook can be created for different service types, including Slack and PagerD
 
 For example, consider the alert creation for a chart below. Before specifying the webhook, the user can select `Add New Webhook`.
 
+<div className="ch-image-lg">
+
 ![Add new webhook](/images/use-cases/observability/add_new_webhook.webp)
+
+</div>
 
 This opens the webhook creation dialog, where you can create a new webhook:
 
+<div className="ch-image-md">
+
 ![Webhook creation](/images/use-cases/observability/add_webhook_dialog.webp)
+
+</div>
 
 A webhook name is required, while descriptions are optional. Other settings that must be completed depend on the service type.
 
@@ -148,11 +180,19 @@ Depending on the service type, you will need to provide different details. Speci
 
 Alerts can be centrally managed through the alerts panel on the left-hand side of HyperDX.
 
+<div className="ch-image-lg">
+
 ![Manage alerts](/images/use-cases/observability/manage_alerts.webp)
+
+</div>
 
 From this view, you can see all alerts that have been created and are currently running in ClickStack.
 
+<div className="ch-image-lg">
+
 ![Alerts view](/images/use-cases/observability/alerts_view.webp)
+
+</div>
 
 This view also displays the alert evaluation history. Alerts are evaluated on a recurring time interval (defined by the period/duration set during alert creation). During each evaluation, HyperDX queries your data to check whether the alert condition is met:
 
@@ -170,7 +210,11 @@ Clicking an alert takes you to the chart or search the alert is attached to.
 To remove an alert, open the edit dialog for the associated search or chart, then select **Remove Alert**.
 In the example below, the `Remove Alert` button will remove the alert from the chart.
 
+<div className="ch-image-lg">
+
 ![Remove chart alert](/images/use-cases/observability/remove_chart_alert.webp)
+
+</div>
 
 ## SQL-based chart alerts {#sql-based-alerts}
 
@@ -199,7 +243,11 @@ From a saved dashboard, either [create a new chart with the **SQL** chart mode](
 
 Choose **Line**, **Stacked Bar**, or **Number** as the display type.
 
+<div className="ch-image-lg">
+
 ![Create SQL chart](/images/use-cases/observability/open_sql_chart_mode.webp)
+
+</div>
 </Step>
 <Step title="Add the alert" id="add-sql-alert">
 
@@ -210,7 +258,11 @@ Select **Add Alert** from the alert section of the chart editor. Configure:
 - **Interval**: How often the alert is evaluated (1m, 5m, 15m, 30m, 1h, 6h, 12h, or 1d). This also defines the time window for each evaluation.
 - **Webhook**: The notification channel to use when the alert fires. See [Adding a webhook](#add-webhook).
 
+<div className="ch-image-lg">
+
 ![Edit chart alert](/images/use-cases/observability/add_raw_sql_alert.webp)
+
+</div>
 
 <Warning>
 **Alert Time Range**

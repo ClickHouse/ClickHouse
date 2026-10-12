@@ -199,7 +199,11 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
 
     Crie um usuário, fornecendo um nome de usuário e uma senha que atendam aos requisitos de complexidade.
 
+    <div className="ch-image-lg">
+
     ![UI do HyperDX](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
   </Step>
 
   <Step title="Obter API key de ingestão" id="retrieve-ingestion-api-key">
@@ -207,7 +211,11 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
 
     Acesse [`Team Settings`](http://localhost:8080/team) e copie a `Ingestion API Key` na seção `API Keys`. Essa API key garante que a ingestão de dados pelo OpenTelemetry collector seja segura.
 
+    <div className="ch-image-lg">
+
     ![Copiar API key](/images/use-cases/observability/copy_api_key.webp)
+
+    </div>
   </Step>
 
   <Step title="Criar Secret do Kubernetes com API key" id="create-api-key-kubernetes-secret">
@@ -231,7 +239,11 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
 
     Os traces e logs dos serviços de demonstração agora devem começar a chegar ao HyperDX.
 
+    <div className="ch-image-lg">
+
     ![Dados do Kubernetes no HyperDX](/images/use-cases/observability/hyperdx-kubernetes-data.webp)
+
+    </div>
   </Step>
 
   <Step title="Adicione o repositório Helm do OpenTelemetry" id="add-otel-helm-repo">
@@ -482,4 +494,8 @@ Para simular o tráfego da aplicação, você também pode implantar o fork da C
   </Step>
 </Steps>
 
+<div className="ch-image-lg">
+
 ![ClickHouse no Kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</div>

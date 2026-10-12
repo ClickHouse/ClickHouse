@@ -8,6 +8,7 @@ keywords: ['clickstack', 'خرائط الخدمات', 'الطوبولوجيا', 
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
 import { Video } from "/snippets/ar/components/Video/Video.jsx";
 
 <BetaBadge />
@@ -16,7 +17,11 @@ import { Video } from "/snippets/ar/components/Video/Video.jsx";
 
 انقر على **خرائط الخدمات** في لوحة التنقل اليسرى لفتح الرسم البياني الكامل. تظهر الخدمات بمجرد البدء في [إدخال بيانات التتبّع](/ar/clickstack/ingesting-data/overview) باستخدام OpenTelemetry.
 
+<div className="ch-image-lg">
+
 ![خرائط الخدمات تُظهر عُقد الخدمات وتدفّق الطلبات بينها](/images/clickstack/service-maps/service-map-overview.webp)
+
+</div>
 
 <div id="exploring-the-service-map">
   ## استكشاف خريطة خدمات
@@ -28,15 +33,27 @@ import { Video } from "/snippets/ar/components/Video/Video.jsx";
 
 **محدد المصدر** — صفِّ الخريطة بحسب مصدر تتبعات محدد (مثل &quot;ClickPy Traces&quot;).
 
+<div className="ch-image-lg">
+
 ![تمييز محدد المصدر في شريط أدوات خريطة خدمات](/images/clickstack/service-maps/source-selector.webp)
+
+</div>
 
 **مُنزلق أخذ العينات** — اضبط معدل أخذ العينات لتحقيق توازن بين الأداء والدقة. وتُحمَّل المعدلات المنخفضة بسرعة أكبر في المجموعات كبيرة الحجم.
 
+<div className="ch-image-lg">
+
 ![تمييز مُنزلق أخذ العينات في شريط أدوات خريطة خدمات](/images/clickstack/service-maps/sampling.webp)
+
+</div>
 
 **منتقي نطاق التاريخ** — حدِّد النافذة الزمنية لبيانات التتبّع المستخدمة لإنشاء الخريطة.
 
+<div className="ch-image-lg">
+
 ![تمييز منتقي نطاق التاريخ في شريط أدوات خريطة خدمات](/images/clickstack/service-maps/date-selector.webp)
+
+</div>
 
 استخدم الزرين **+/-** في الزاوية السفلية اليسرى من الخريطة، أو مرِّر للتكبير والتصغير.
 

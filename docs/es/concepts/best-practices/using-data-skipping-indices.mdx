@@ -190,7 +190,11 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 La siguiente animación ilustra cómo se construye nuestro índice minmax de omisión para la tabla de ejemplo, registrando los valores mínimos y máximos de `ViewCount` para cada bloque de filas (gránulo) de la tabla:
 
+<div className="ch-image-lg">
+
 ![Creación de índices de omisión](/images/bestpractices/building_skipping_indices.webp)
+
+</div>
 
 Si repetimos la consulta anterior, veremos mejoras significativas en el rendimiento. Observe la reducción en el número de filas analizadas:
 
@@ -255,7 +259,11 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 También mostramos una animación que ilustra cómo el índice minmax de omisión descarta todos los bloques de filas que no pueden contener coincidencias para el predicado `ViewCount` &gt; 10,000,000 en nuestra consulta de ejemplo:
 
+<div className="ch-image-lg">
+
 ![Uso de índices de omisión](/images/bestpractices/using_skipping_indices.webp)
+
+</div>
 
 <div id="related-docs">
   ## Documentación relacionada

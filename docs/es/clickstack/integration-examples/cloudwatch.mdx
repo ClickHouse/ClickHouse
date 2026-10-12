@@ -56,7 +56,11 @@ Si desea probar la integración antes de configurar su entorno de producción, p
     3. Ve a **Configuración del equipo → API keys**
     4. Copia tu **API key de ingesta**
 
+    <div className="ch-image-lg">
+
     ![API key de ClickStack](/images/clickstack/api-key.webp)
+
+    </div>
 
     Guarda esto en una variable de entorno:
 
@@ -292,7 +296,11 @@ Si desea probar la integración antes de configurar su entorno de producción, p
     3. Espere 1-2 minutos a que aparezcan los logs (según el intervalo de sondeo configurado)
     4. Busque logs de sus grupos de logs de CloudWatch
 
+    <div className="ch-image-lg">
+
     ![Vista de búsqueda de logs](/images/clickstack/cloudwatch/log-search-view.webp)
+
+    </div>
 
     Busque estos atributos clave en los logs:
 
@@ -301,7 +309,11 @@ Si desea probar la integración antes de configurar su entorno de producción, p
     * `ResourceAttributes['cloudwatch.log.stream']`: El nombre del stream de logs
     * `Body`: El contenido real del mensaje de log
 
+    <div className="ch-image-lg">
+
     ![Valores de la columna del log de error](/images/clickstack/cloudwatch/error-log-column-values.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -356,7 +368,11 @@ Para quienes quieran probar la integración de logs de CloudWatch antes de confi
 
     Deberías ver logs de varios grupos de logs de CloudWatch.
 
+    <div className="ch-image-lg">
+
     ![Vista de búsqueda de demostración](/images/clickstack/cloudwatch/demo-search-view.webp)
+
+    </div>
 
     <Info>
       **Visualización de la zona horaria**
@@ -381,17 +397,29 @@ Para ayudarte a supervisar los logs de CloudWatch con ClickStack, proporcionamos
     1. Abre HyperDX y ve a la sección Dashboards
     2. Haz clic en **Import Dashboard** en la esquina superior derecha, dentro del menú de puntos suspensivos
 
+    <div className="ch-image-lg">
+
     ![Botón Import Dashboard](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Sube el archivo `cloudwatch-logs-dashboard.json` y haz clic en **Finish Import**
 
+    <div className="ch-image-lg">
+
     ![Diálogo Finish Import](/images/clickstack/cloudwatch/finish-import.webp)
+
+    </div>
   </Step>
 
   <Step title="Ver el dashboard" id="created-dashboard">
     El dashboard se creará con todas las visualizaciones ya configuradas:
 
+    <div className="ch-image-lg">
+
     ![Dashboard de logs de CloudWatch](/images/clickstack/cloudwatch/logs-dashboard.webp)
+
+    </div>
 
     <Note>
       Para el dataset de demostración, establece el intervalo de tiempo en **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (ajústalo según tu zona horaria local). El dashboard importado no tendrá un intervalo de tiempo especificado de forma predeterminada.

@@ -15,7 +15,11 @@ Private Service Connect (PSC) is a Google Cloud networking feature that allows c
 
 Service producers publish their applications to consumers by creating Private Service Connect services. Service consumers access those Private Service Connect services directly through one of these Private Service Connect types.
 
+<div className="ch-image-lg">
+
 ![Overview of Private Service Connect](/images/cloud/security/gcp-psc-overview.webp)
+
+</div>
 
 <Warning>
 GCP Private Service Connect supports only connections initiated from your GCP VPC to ClickHouse Cloud. It can't be used for connections initiated from ClickHouse Cloud to services in your VPC, such as a [private database](#connecting-to-a-remote-database).
@@ -85,7 +89,11 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
 
 In the ClickHouse Cloud console, open the service that you would like to connect via Private Service Connect, then open the **Settings** menu. Click on the **Set up private endpoint** button. Make a note of the **Service name** (`endpointServiceId`) and **DNS name** (`privateDnsHostname`). You'll use them in the next steps.
 
+<div className="ch-image-lg">
+
 ![Private Endpoints](/images/cloud/security/gcp-privatelink-pe-create.webp)
+
+</div>
 
 ### Option 2: API {#option-2-api}
 
@@ -125,7 +133,11 @@ First, you'll create a Private Service Connection.
 
 In the Google Cloud console, navigate to **Network services -> Private Service Connect**.
 
+<div className="ch-image-lg">
+
 ![Open Private Service Connect in Google Cloud console](/images/cloud/security/gcp-psc-open.webp)
+
+</div>
 
 Open the Private Service Connect creation dialog by clicking on the **Connect Endpoint** button.
 
@@ -135,13 +147,21 @@ Open the Private Service Connect creation dialog by clicking on the **Connect En
 - **Network/Subnetwork/IP address**: Choose the network you want to use for the connection. You will need to create an IP address or use an existing one for the Private Service Connect endpoint. In our example, we pre-created an address with the name **your-ip-address** and assigned IP address `10.128.0.2`.
 - To make the endpoint available from any region, you can enable the **Enable global access** checkbox.
 
+<div className="ch-image-md">
+
 ![Enable Global Access for Private Service Connect](/images/cloud/security/gcp-psc-enable-global-access.webp)
+
+</div>
 
 To create the PSC Endpoint, use the **ADD ENDPOINT** button.
 
 The **Status** column will change from **Pending** to **Accepted** once the connection is approved.
 
+<div className="ch-image-lg">
+
 ![Copy PSC Connection ID](/images/cloud/security/gcp-psc-copy-connection-id.webp)
+
+</div>
 
 Copy ***PSC Connection ID***; you'll use it as ***Endpoint ID*** in the next steps.
 
@@ -217,7 +237,11 @@ To add an endpoint to your organization, proceed to the [Add "Endpoint ID" to Cl
 
 To remove an endpoint, open **Organization details -> Private Endpoints** and click the delete button to remove the endpoint.
 
+<div className="ch-image-lg">
+
 ![Remove Private Endpoint from ClickHouse Cloud](/images/cloud/security/gcp-pe-remove-private-endpoint.webp)
+
+</div>
 
 ### Option 2: API {#option-2-api-1}
 
@@ -280,7 +304,11 @@ In the ClickHouse Cloud console, open the service that you would like to connect
 If you want to allow access from an existing Private Service Connect connection, use the existing endpoint drop-down menu.
 </Note>
 
+<div className="ch-image-lg">
+
 ![Private Endpoints Filter](/images/cloud/security/gcp-privatelink-pe-filters.webp)
+
+</div>
 
 ### Option 2: API {#option-2-api-2}
 
@@ -332,7 +360,11 @@ Each service with Private Service Connect enabled has a public and private endpo
 
 In the ClickHouse Cloud console, navigate to **Settings**. Click on the **Set up private endpoint** button. In the opened flyout, copy the **DNS Name**.
 
+<div className="ch-image-lg">
+
 ![Private Endpoint DNS Name](/images/cloud/security/gcp-privatelink-pe-dns.webp)
+
+</div>
 
 #### Option 2: API {#option-2-api-3}
 

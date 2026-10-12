@@ -160,4 +160,8 @@ CMEK を使用している場合、指定された KMS キーが有効かどう�
 
 データベース暗号化では、ClickHouse に組み込まれている[データ暗号化向け仮想ファイルシステム機能](/ja/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system)を利用して、データを暗号化し保護します。この機能で使用されるアルゴリズムは `AES_256_CTR` で、ワークロードに応じて 5～15% の性能低下が見込まれます。
 
+<div className="ch-image-lg">
+
 ![CMEK の性能低下](/images/_snippets/cmek-performance.webp)
+
+</div>

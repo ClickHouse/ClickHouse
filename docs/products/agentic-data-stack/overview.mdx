@@ -24,7 +24,11 @@ In agentic analytics, the model grounds its answers by running queries against y
 
 ## How the stack fits together {#architecture}
 
+<div className="ch-image-md">
+
 ![Agentic Data Stack architecture: users interact with LibreChat, which connects to an LLM, to ClickHouse through the MCP server, and to Langfuse for tracing](/images/agentic-data-stack/01-architecture.webp)
+
+</div>
 
 A user asks a question in LibreChat. The model plans a response and, through the MCP server, calls tools to explore and query ClickHouse. Results flow back, and the agent composes an answer. Langfuse, built on OpenTelemetry, records each run from prompt to tool call to response, lets you score outputs automatically or with human review, and tracks quality, cost, and latency.
 

@@ -19,7 +19,11 @@ ClickHouse [专为速度而打造](/zh/get-started/about/why-clickhouse-is-so-fa
 
 当 ClickHouse ① 执行带有表主键过滤条件的聚合查询时，会 ② 将主索引加载到内存中，以 ③ 判断哪些粒度需要处理，哪些可以安全地跳过：
 
+<div className="ch-image-md">
+
 ![索引分析](/images/guides/best-practices/query-parallelism_01.webp)
+
+</div>
 
 <div id="distributing-work-across-processing-lanes">
   ### 将工作分配到各处理通道
@@ -27,7 +31,11 @@ ClickHouse [专为速度而打造](/zh/get-started/about/why-clickhouse-is-so-fa
 
 然后，选定的数据会被[动态](#load-balancing-across-processing-lanes)分配到 `n` 个并行的[处理通道](/zh/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)中，这些通道会将数据按[块](/zh/resources/develop-contribute/introduction/architecture#block)流式传输并逐块处理，最终得到结果：
 
+<div className="ch-image-md">
+
 ![4 个并行处理通道](/images/guides/best-practices/query-parallelism_02.webp)
+
+</div>
 
 <br />
 
@@ -37,7 +45,11 @@ ClickHouse [专为速度而打造](/zh/get-started/about/why-clickhouse-is-so-fa
 
 在一台具有 `8` 个核心的机器上，查询处理吞吐量大致会翻倍 (但内存占用也会相应增加) ，因为会有更多通道并行处理数据：
 
+<div className="ch-image-md">
+
 ![8 个并行处理通道](/images/guides/best-practices/query-parallelism_03.webp)
+
+</div>
 
 <br />
 
@@ -51,7 +63,11 @@ ClickHouse [专为速度而打造](/zh/get-started/about/why-clickhouse-is-so-fa
 
 当表数据作为[分片](/zh/guides/oss/deployment-and-scaling/shards)分布在多台服务器上时，每台服务器都会并行处理自己的分片。在每台服务器内部，本地数据也会像上文所述那样，通过并行处理通道进行处理：
 
+<div className="ch-image-md">
+
 ![分布式通道](/images/guides/best-practices/query-parallelism_04.webp)
+
+</div>
 
 <br />
 
@@ -125,7 +141,11 @@ FROM
 
 ClickHouse 的[嵌入式 web UI](/zh/concepts/features/interfaces/http) (可通过 `/play` 端点访问) 可以将上面的物理计划渲染为图形化视图。在此示例中，我们将 `max_threads` 设置为 `4`，以使可视化更紧凑，因此只显示 4 条并行处理通道：
 
+<div className="ch-image-lg">
+
 ![查询管道](/images/guides/best-practices/query-parallelism_05.webp)
+
+</div>
 
 注意：请从左到右阅读该可视化图。每一行代表一条并行处理通道，数据以数据块为单位流式传输，并依次应用过滤、聚合和最终处理等转换。在这个示例中，你可以看到与 `max_threads = 4` 设置对应的四条并行通道。
 

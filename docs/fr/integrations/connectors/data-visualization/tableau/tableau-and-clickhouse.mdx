@@ -12,6 +12,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+
 import { ClickHouseSupportedBadge } from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -56,7 +57,11 @@ dans Tableau qui se connecte à la base de données **TPCD** dans ClickHouse.
 
 2. Dans le menu de gauche, cliquez sur **More** dans la section **To a Server**. Recherchez **ClickHouse by ClickHouse** dans la liste des connecteurs disponibles :
 
+<div className="ch-image-md">
+
 ![Écran de connexion de Tableau montrant le menu de sélection du connecteur, avec l'option ClickHouse by ClickHouse mise en évidence](/images/integrations/data-visualization/tableau_connecttoserver.webp)
+
+</div>
 
 <br />
 
@@ -67,14 +72,22 @@ dans Tableau qui se connecte à la base de données **TPCD** dans ClickHouse.
 
 3. Cliquez sur **ClickHouse by ClickHouse** et la boîte de dialogue suivante s&#39;affichera :
 
+<div className="ch-image-md">
+
 ![Boîte de dialogue d'installation du connecteur Tableau affichant les détails du connecteur ClickHouse JDBC et le bouton d'installation](/images/integrations/data-visualization/tableau_connector_details.webp)
+
+</div>
 
 <br />
 
 4. Cliquez sur **Install and Restart Tableau**. Redémarrez l&#39;application.
 5. Après le redémarrage, le connecteur affichera son nom complet : `ClickHouse JDBC by ClickHouse, Inc.`. En cliquant dessus, la boîte de dialogue suivante s&#39;affichera :
 
+<div className="ch-image-md">
+
 ![Boîte de dialogue de connexion ClickHouse dans Tableau affichant les champs server, port, database, username et password](/images/integrations/data-visualization/tableau_connector_dialog.webp)
+
+</div>
 
 <br />
 
@@ -102,13 +115,21 @@ dans Tableau qui se connecte à la base de données **TPCD** dans ClickHouse.
 
 7. Cliquez sur le bouton **Sign In** et vous devriez voir un nouveau workbook Tableau :
 
+<div className="ch-image-md">
+
 ![Nouveau workbook Tableau affichant l'écran de connexion initial avec les options de sélection de base de données](/images/integrations/data-visualization/tableau_newworkbook.webp)
+
+</div>
 
 <br />
 
 8. Sélectionnez **TPCD** dans la liste déroulante **Schema** et vous devriez voir la liste des tables dans **TPCD** :
 
+<div className="ch-image-md">
+
 ![Sélection du schéma dans Tableau affichant les tables de la base de données TPCD, notamment CUSTOMER, LINEITEM, NATION, ORDERS et d'autres](/images/integrations/data-visualization/tableau_tpcdschema.webp)
+
+</div>
 
 <br />
 
@@ -122,7 +143,11 @@ Maintenant que nous avons configuré une source de données ClickHouse dans Tabl
 
 1. Faites glisser la table **CUSTOMER** dans le workbook. Notez que les colonnes apparaissent, mais que la table de données est vide :
 
+<div className="ch-image-md">
+
 ![Workbook Tableau avec la table CUSTOMER glissée sur le canevas, montrant les en-têtes de colonnes mais aucune donnée](/images/integrations/data-visualization/tableau_workbook1.webp)
+
+</div>
 
 <br />
 
@@ -130,14 +155,22 @@ Maintenant que nous avons configuré une source de données ClickHouse dans Tabl
 
 3. Faites glisser la table **ORDERS** dans le workbook, puis définissez **Custkey** comme champ de relation entre les deux tables :
 
+<div className="ch-image-md">
+
 ![Éditeur de relations Tableau montrant la connexion entre les tables CUSTOMER et ORDERS à l'aide du champ Custkey](/images/integrations/data-visualization/tableau_workbook2.webp)
+
+</div>
 
 <br />
 
 4. Les tables **ORDERS** et **LINEITEM** sont maintenant associées dans votre source de données, vous pouvez donc utiliser
    cette relation pour répondre à des questions sur les données. Sélectionnez l&#39;onglet **Sheet 1** en bas du workbook.
 
+<div className="ch-image-md">
+
 ![Feuille de calcul Tableau montrant les dimensions et mesures des tables ClickHouse disponibles pour l'analyse](/images/integrations/data-visualization/tableau_workbook3.webp)
+
+</div>
 
 <br />
 
@@ -145,7 +178,11 @@ Maintenant que nous avons configuré une source de données ClickHouse dans Tabl
    section **Columns** (le champ horizontal), puis faites glisser **Quantity** de **LINEITEM** dans **Rows**. Tableau
    générera le graphique linéaire suivant :
 
+<div className="ch-image-sm">
+
 ![Graphique linéaire Tableau montrant la quantité commandée par année à partir de données ClickHouse](/images/integrations/data-visualization/tableau_workbook4.webp)
+
+</div>
 
 <br />
 
@@ -161,21 +198,33 @@ vous remarquerez qu&#39;il n&#39;y a pas beaucoup de variation dans les commande
 
 Vous devriez voir ce qui suit :
 
+<div className="ch-image-sm">
+
 ![Vue en tableau croisé Tableau avec les trimestres en colonnes et les modes d'expédition en lignes](/images/integrations/data-visualization/tableau_workbook5.webp)
+
+</div>
 
 <br />
 
 7. Les valeurs **Abc** ne servent qu&#39;à occuper l&#39;espace jusqu&#39;à ce que vous fassiez glisser une métrique sur la table. Faites glisser **Totalprice** de *
    *ORDERS** sur la table. Notez que le calcul par défaut consiste à **SUM** les **Totalprices** :
 
+<div className="ch-image-md">
+
 ![Tableau croisé Tableau montrant la somme du prix total par trimestre et par mode d'expédition](/images/integrations/data-visualization/tableau_workbook6.webp)
+
+</div>
 
 <br />
 
 8. Cliquez sur **SUM** et remplacez **Measure** par **Average**. Dans le même menu déroulant, sélectionnez **Format** puis remplacez
    **Numbers** par **Currency (Standard)** :
 
+<div className="ch-image-md">
+
 ![Tableau croisé Tableau montrant le prix moyen des commandes par trimestre et par mode d'expédition avec format monétaire](/images/integrations/data-visualization/tableau_workbook7.webp)
+
+</div>
 
 <br />
 

@@ -42,15 +42,27 @@ doc_type: 'guide'
 
 В меню слева нажмите `Data sources`, затем — `Predefined sample data`:
 
+<div className="ch-image-md">
+
 ![Добавить пример набора данных](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</div>
 
 На карточке данных о ценах продажи недвижимости в Великобритании (4 GB) выберите `Get started`:
 
+<div className="ch-image-md">
+
 ![Выбрать набор данных о ценах в Великобритании](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</div>
 
 Затем нажмите `Import dataset`:
 
+<div className="ch-image-md">
+
 ![Импортировать набор данных о ценах в Великобритании](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</div>
 
 ClickHouse автоматически создаст таблицу `pp_complete` в базе данных `default` и заполнит её 28,92 млн строк с данными о ценах.
 
@@ -91,7 +103,11 @@ marimo edit clickhouse_exploration.py
 
 Должно открыться новое окно браузера с интерфейсом Marimo на localhost:2718:
 
+<div className="ch-image-md">
+
 ![Интерфейс Marimo](/images/use-cases/AI_ML/Marimo/4.webp)
+
+</div>
 
 Ноутбуки Marimo хранятся как обычные Python-файлы, поэтому их легко хранить в системе контроля версий и делиться ими с другими.
 
@@ -122,7 +138,11 @@ result
 
 Вы увидите результат под ячейкой, которую только что запустили:
 
+<div className="ch-image-md">
+
 ![Marimo hello world](/images/use-cases/AI_ML/Marimo/5.webp)
+
+</div>
 
 <div id="exploring-the-data">
   ## Изучение данных
@@ -204,7 +224,11 @@ fig
 
 Неудивительно, что цены на недвижимость в Лондоне со временем значительно выросли.
 
+<div className="ch-image-md">
+
 ![Визуализация данных Marimo](/images/use-cases/AI_ML/Marimo/6.webp)
+
+</div>
 
 Одна из сильных сторон Marimo — реактивная модель выполнения. Давайте создадим интерактивный виджет для динамического выбора разных городов.
 
@@ -265,7 +289,11 @@ fig_reactive
 
 Теперь при выборе города в раскрывающемся списке график будет обновляться автоматически:
 
+<div className="ch-image-md">
+
 ![Динамически обновляемый график Marimo](/images/use-cases/AI_ML/Marimo/7.webp)
+
+</div>
 
 <div id="exploring-price-distributions">
   ### Изучение распределения цен с помощью интерактивных диаграмм размаха
@@ -341,7 +369,11 @@ fig_box
 код.
 При перемещении ползунка график будет автоматически обновляться благодаря реактивному выполнению в Marimo:
 
+<div className="ch-image-md">
+
 ![Динамический график Marimo](/images/use-cases/AI_ML/Marimo/8.webp)
+
+</div>
 
 <div id="summary">
   ## Итоги

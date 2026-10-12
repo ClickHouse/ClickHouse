@@ -72,18 +72,30 @@ Execute o Agentic Data Stack completo localmente com Docker Compose e faça perg
   <Step title="Selecione um modelo">
     Um modelo já vem selecionado por padrão. Se quiser alterá-lo, abra o seletor de modelos e escolha o que deseja usar.
 
+    <div className="ch-image-md">
+
     ![O seletor de modelos do LibreChat no canto superior esquerdo, mostrando o modelo padrão com uma dica de ferramenta Select a model](/images/agentic-data-stack/select-model.webp)
+
+    </div>
 
     Se você não definiu uma chave do provedor durante o Setup, adicione uma na UI.
 
     <Accordion title="Defina uma chave do provedor na UI">
       Abra o seletor de modelos e clique em **Set API Key** ao lado do provedor.
 
+      <div className="ch-image-md">
+
       ![Seletor de modelos do LibreChat com o botão Set API Key ao lado do provedor Anthropic](/images/agentic-data-stack/set-api-key.webp)
+
+      </div>
 
       Cole sua chave na caixa de diálogo e clique em **Submit**. Você pode definir uma expiração ou manter a chave sem expiração.
 
+      <div className="ch-image-md">
+
       ![A caixa de diálogo Set API Key for Anthropic com uma lista suspensa de expiração, um campo Key e os botões Submit e Revoke](/images/agentic-data-stack/set-api-key-modal.webp)
+
+      </div>
     </Accordion>
   </Step>
 
@@ -94,7 +106,11 @@ Execute o Agentic Data Stack completo localmente com Docker Compose e faça perg
 
     {/* TODO: guide users (or link out to the Remote MCP docs at /cloud/features/ai-ml/remote-mcp) on connecting ClickHouse-Cloud — it requires an OAuth flow, unlike the bundled local server. */}
 
+    <div className="ch-image-md">
+
     ![O menu MCP Servers aberto na área de composição do LibreChat, mostrando ClickHouse-Local com um ponto verde indicando conexão e ClickHouse-Cloud](/images/agentic-data-stack/select-clickhouse-local.webp)
+
+    </div>
   </Step>
 
   <Step title="Faça sua primeira pergunta">
@@ -104,7 +120,11 @@ Execute o Agentic Data Stack completo localmente com Docker Compose e faça perg
 
     O agente usa as ferramentas do servidor MCP para listar bancos de dados e tabelas, executar consultas em modo somente leitura no ClickHouse e montar uma resposta com base nos resultados. Você não precisa escrever SQL.
 
+    <div className="ch-image-md">
+
     ![O LibreChat respondendo à pergunta de exemplo ao chamar as ferramentas MCP do ClickHouse-Local e listar os bancos de dados e tabelas disponíveis](/images/agentic-data-stack/prompt-chat.webp)
+
+    </div>
   </Step>
 </Steps>
 

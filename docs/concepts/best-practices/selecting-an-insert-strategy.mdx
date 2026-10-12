@@ -9,6 +9,7 @@ doc_type: 'guide'
 ---
 
 import AsyncInserts from '/snippets/_async_inserts.mdx';
+
 import BulkInserts from '/snippets/_bulk_inserts.mdx';
 
 Efficient data ingestion forms the basis of high-performance ClickHouse deployments. Selecting the right insert strategy can dramatically impact throughput, cost, and reliability. This section outlines best practices, tradeoffs, and configuration options to help you make the right decision for your workload.
@@ -29,7 +30,11 @@ If not, see [Asynchronous inserts](#asynchronous-inserts) below.
 
  We briefly review ClickHouse's MergeTree insert mechanics below:
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![Insert processes](/images/bestpractices/insert_process.webp)
+
+</div>
 
 #### Client-side steps {#client-side-steps}
 

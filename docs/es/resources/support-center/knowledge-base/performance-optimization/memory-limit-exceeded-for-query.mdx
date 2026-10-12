@@ -64,7 +64,11 @@ el lado derecho es muy grande y no cabe en memoria y las operaciones de lookup s
 imposibles, por ejemplo, en una subconsulta compleja. En este caso, tanto el lado derecho como el izquierdo
 se ordenan en disco si no caben en memoria, lo que permite unir tablas grandes.
 
+<div className="ch-image-md">
+
 ![Algoritmos de JOIN](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+
+</div>
 
 Desde la versión 20.3, ClickHouse admite un valor auto para la configuración `join_algorithm`.
 Esto indica a ClickHouse que aplique un enfoque adaptativo de join, en el que se prioriza el algoritmo

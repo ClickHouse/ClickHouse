@@ -15,7 +15,11 @@ doc_type: 'guide'
 
 选择某个服务后，左侧边栏中的 **Monitoring** 导航项会展开，并显示新的 **Query insights** 子项。点击该选项将打开新的 Query insights 页面：
 
+<div className="ch-image-md">
+
 ![Query Insights UI 概览](/images/cloud/sqlconsole/insights_overview.webp)
+
+</div>
 
 <div id="top-level-metrics">
   ## 顶层指标
@@ -23,7 +27,11 @@ doc_type: 'guide'
 
 顶部的统计框展示了所选时间段内的一些基础顶层查询指标。下方提供了三个时间序列图表，按查询 Kind (select、insert、other) 细分，展示所选时间窗口内的查询量、延迟和错误率。延迟图表还可进一步切换为显示 p50、p90 和 p99 延迟：
 
+<div className="ch-image-md">
+
 ![Query Insights UI 延迟图表](/images/cloud/sqlconsole/insights_latency.webp)
+
+</div>
 
 <div id="recent-queries">
   ## Recent queries
@@ -31,7 +39,11 @@ doc_type: 'guide'
 
 在顶层指标下方，表格会显示所选时间窗口内的查询日志条目 (按归一化查询哈希和用户分组) ：
 
+<div className="ch-image-md">
+
 ![Query Insights UI Recent Queries 表格](/images/cloud/sqlconsole/insights_recent.webp)
+
+</div>
 
 Recent queries 可按任意可用字段进行过滤和排序。该表格还可配置为显示或隐藏其他字段，例如表、p90 和 p99 延迟。
 
@@ -41,11 +53,19 @@ Recent queries 可按任意可用字段进行过滤和排序。该表格还可�
 
 在 Recent queries 表中选择某个查询后，会打开一个弹出面板，其中显示该查询特有的指标和信息：
 
+<div className="ch-image-md">
+
 ![Query Insights UI 查询下钻](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</div>
 
 从弹出面板中可以看到，这个查询在过去 24 小时内已运行超过 3000 次。**Query info** 选项卡中的所有指标均为聚合指标；如果选择 **Query history** 选项卡，还可以查看每次单独运行的指标：
 
+<div className="ch-image-sm">
+
 ![Query Insights UI 查询信息](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</div>
 
 <br />
 

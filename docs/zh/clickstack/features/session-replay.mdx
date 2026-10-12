@@ -93,11 +93,19 @@ Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/c
 
 在 ClickStack UI (HyperDX) 中，从左侧边栏进入 **Client Sessions**。此视图会列出所有已捕获的浏览器会话，包括其耗时和事件数量。
 
+<div className="ch-image-lg">
+
 ![会话回放搜索视图](/images/clickstack/session-replay/replay-search-view.webp)
+
+</div>
 
 点击任意会话上的 play 按钮即可回放。回放视图右侧显示重建的用户体验，左侧则显示浏览器事件时间线，包括网络请求、控制台日志和错误。
 
+<div className="ch-image-lg">
+
 ![会话回放播放](/images/clickstack/session-replay/session-replay.webp)
+
+</div>
 
 在 **Highlighted** 和 **All Events** 模式之间切换，以调整时间线上显示的详细程度。错误会以红色标注，点击任意事件都会将回放跳转到该会话中的相应位置。
 
@@ -119,7 +127,11 @@ Browser SDK 还支持为注重隐私的应用[屏蔽输入内容和文本](/zh/c
 
 这种关联在反向场景下同样成立。在 **搜索** 视图中查看某个 trace 时，点击它打开 trace 详情，然后选择 **会话回放** 标签页，即可看到用户在该 trace 发生时的实际体验。这在排查 error 或请求缓慢时尤其有用——你可以从 backend 问题入手，立即切换到用户视角。
 
+<div className="ch-image-lg">
+
 ![会话回放 trace 视图](/images/clickstack/session-replay/trace-to-replay.webp)
+
+</div>
 
 <div id="data-storage">
   ## 会话数据如何存储

@@ -50,8 +50,16 @@ Por ejemplo, para permitir el acceso desde un servicio de ClickHouse Cloud aloja
 
 Por ejemplo, una instancia de AWS RDS que se ejecuta en `us-east-2` y necesita conectarse a un servicio de ClickHouse Cloud debe tener las siguientes reglas de entrada en el grupo de seguridad:
 
+<div className="ch-image-lg">
+
 ![Reglas del grupo de seguridad de AWS](/images/_snippets/aws-rds-mysql.webp)
+
+</div>
 
 Para el mismo servicio de ClickHouse Cloud que se ejecuta en `us-east-2`, pero esta vez conectado a una base de datos MySQL en GCP, las `Authorized networks` deberían verse así:
 
+<div className="ch-image-md">
+
 ![Redes autorizadas de GCP](/images/_snippets/gcp-authorized-network.webp)
+
+</div>

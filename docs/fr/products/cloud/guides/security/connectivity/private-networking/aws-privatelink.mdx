@@ -94,7 +94,11 @@ Suivez ces étapes pour connecter vos services ClickHouse Cloud à l’aide d’
 
 Dans la console ClickHouse Cloud, ouvrez le service auquel vous souhaitez vous connecter via PrivateLink, puis accédez au menu **Settings**.
 
+<div className="ch-image-md">
+
 ![Points de terminaison privés](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+</div>
 
 Relevez le `Service name` et le `nom DNS`, puis [passez à l’étape suivante](#create-aws-endpoint).
 
@@ -160,7 +164,11 @@ Ouvrez la console AWS et accédez à **VPC** → **Endpoints** → **Create endp
 
 Sélectionnez **Endpoint services that use NLBs and GWLBs** et utilisez `Service name`<sup>console</sup> ou `endpointServiceId`<sup>API</sup> obtenu à l’étape [Obtenir le &quot;Service name&quot; de l’endpoint ](#obtain-endpoint-service-info) dans le champ **Service Name**. Cliquez sur **Verify service** :
 
+<div className="ch-image-md">
+
 ![Paramètres de l’endpoint AWS PrivateLink](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+</div>
 
 <Note>
   Pour une connexion interrégionale, cochez la case **Cross region endpoint** et indiquez la région du service dans laquelle votre service ClickHouse s’exécute.
@@ -170,7 +178,11 @@ Si vous obtenez l’erreur &quot;Service name couldn&#39;t be verified.&quot;, v
 
 Ensuite, sélectionnez votre VPC et vos sous-réseaux :
 
+<div className="ch-image-md">
+
 ![Sélectionner le VPC et les sous-réseaux](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+</div>
 
 À titre facultatif, attribuez des groupes de sécurité/Tags :
 
@@ -180,7 +192,11 @@ Ensuite, sélectionnez votre VPC et vos sous-réseaux :
 
 Après avoir créé le VPC Endpoint, notez la valeur de `Endpoint ID` ; vous en aurez besoin à l’étape suivante.
 
+<div className="ch-image-md">
+
 ![ID du VPC Endpoint](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+</div>
 
 <div id="option-2-aws-cloudformation">
   #### Option 2 : AWS CloudFormation
@@ -256,7 +272,11 @@ Pour l’ajouter, accédez à la console ClickHouse Cloud, ouvrez le service que
   Si vous souhaitez autoriser l’accès depuis une connexion PrivateLink existante, utilisez le menu déroulant des endpoints existants.
 </Note>
 
+<div className="ch-image-md">
+
 ![Filtre des endpoints privés](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+</div>
 
 Pour le supprimer, accédez à la console ClickHouse Cloud, recherchez le service, puis accédez à ses **Settings**. Trouvez l’endpoint que vous souhaitez supprimer. Supprimez-le de la liste des endpoints.
 
@@ -333,7 +353,11 @@ Chaque service pour lequel Private Link est activé dispose d’un endpoint publ
 
 Dans la console ClickHouse Cloud, accédez à **Settings**. Cliquez sur le bouton **Set up private endpoint**. Dans le flyout qui s’ouvre, copiez le **nom DNS**.
 
+<div className="ch-image-md">
+
 ![Nom DNS du Private Endpoint](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+</div>
 
 <div id="option-2-api-3">
   ##### Option 2 : API

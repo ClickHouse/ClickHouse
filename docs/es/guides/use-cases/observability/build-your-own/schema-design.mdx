@@ -254,7 +254,11 @@ Las [vistas materializadas](/es/concepts/features/materialized-views/index) prop
 
 Las vistas materializadas le permiten trasladar el coste de cálculo del tiempo de consulta al tiempo de inserción. Una vista materializada de ClickHouse es simplemente un trigger que ejecuta una consulta sobre bloques de datos a medida que se insertan en una tabla. Los resultados de esta consulta se insertan en una segunda tabla &quot;de destino&quot;.
 
+<div className="ch-image-md">
+
 ![Vista materializada](/images/use-cases/observability/observability-10.webp)
+
+</div>
 
 <Info>
   **Actualizaciones en tiempo real**
@@ -409,7 +413,11 @@ FROM otel_logs
 
 Esto se visualiza a continuación:
 
+<div className="ch-image-md">
+
 ![MV de OTel](/images/use-cases/observability/observability-11.webp)
+
+</div>
 
 Si ahora reiniciamos la configuración del collector usada en [&quot;Exportación a ClickHouse&quot;](/es/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse), los datos aparecerán en `otel_logs_v2` con el formato deseado. Fíjese en el uso de funciones tipadas de extracción de JSON.
 
@@ -643,7 +651,11 @@ Además, aunque los timestamps se benefician de la codificación delta en térmi
 
 [Diccionarios](/es/reference/statements/create/dictionary) son una [funcionalidad clave](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) de ClickHouse, ya que proporcionan una representación [clave-valor](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) en memoria de datos procedentes de varias [fuentes](/es/reference/statements/create/dictionary/sources/overview#dictionary-sources) internas y externas, optimizada para consultas de búsqueda de latencia ultrabaja.
 
+<div className="ch-image-md">
+
 ![Observabilidad y diccionarios](/images/use-cases/observability/observability-12.webp)
+
+</div>
 
 Esto resulta útil en distintos escenarios: desde enriquecer sobre la marcha los datos ingeridos sin ralentizar el proceso de ingestión hasta mejorar el rendimiento general de las consultas, con un beneficio especial para los JOINs.
 Aunque en los casos de uso de observabilidad rara vez se necesitan joins, los diccionarios siguen siendo útiles para tareas de enriquecimiento, tanto en tiempo de inserción como en tiempo de consulta. A continuación, proporcionamos ejemplos de ambos casos.
@@ -1471,7 +1483,11 @@ En teoría, esta capacidad puede usarse para proporcionar varias claves de orden
   Las proyecciones ofrecen muchas de las mismas capacidades que las vistas materializadas, pero deben usarse con moderación, y a menudo se prefiere estas últimas. Debe comprender sus inconvenientes y cuándo resultan adecuadas. Por ejemplo, aunque las proyecciones pueden usarse para precalcular agregaciones, recomendamos a los usuarios utilizar vistas materializadas para ello.
 </Info>
 
+<div className="ch-image-md">
+
 ![Observabilidad y proyecciones](/images/use-cases/observability/observability-13.webp)
+
+</div>
 
 Considere la siguiente consulta, que filtra nuestra tabla `otel_logs_v2` por códigos de error 500. Es probable que este sea un patrón de acceso habitual en logging, ya que los usuarios suelen querer filtrar por códigos de error:
 

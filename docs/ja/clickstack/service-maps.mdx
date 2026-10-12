@@ -8,6 +8,7 @@ keywords: ['clickstack', 'サービスマップ', 'トポロジー', 'トレー�
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
 import { Video } from "/snippets/ja/components/Video/Video.jsx";
 
 <BetaBadge />
@@ -16,7 +17,11 @@ import { Video } from "/snippets/ja/components/Video/Video.jsx";
 
 左側のナビゲーションパネルで **サービスマップ** をクリックすると、グラフ全体を表示できます。サービスは、OpenTelemetry で[トレースデータを取り込み](/ja/clickstack/ingesting-data/overview)始めると表示されます。
 
+<div className="ch-image-lg">
+
 ![サービスノードとそれらの間のリクエストフローを示すサービスマップ](/images/clickstack/service-maps/service-map-overview.webp)
+
+</div>
 
 <div id="exploring-the-service-map">
   ## サービスマップの確認
@@ -28,15 +33,27 @@ import { Video } from "/snippets/ja/components/Video/Video.jsx";
 
 **ソースセレクター** — マップを特定のトレースソース (例: &quot;ClickPy Traces&quot;) に絞り込みます。
 
+<div className="ch-image-lg">
+
 ![サービスマップのツールバーでソースセレクターが強調表示されている](/images/clickstack/service-maps/source-selector.webp)
+
+</div>
 
 **サンプリングスライダー** — パフォーマンスと精度のバランスを取るために、サンプリング率を調整します。高トラフィックのクラスターでは、低い値のほうがより速く読み込まれます。
 
+<div className="ch-image-lg">
+
 ![サービスマップのツールバーでサンプリングスライダーが強調表示されている](/images/clickstack/service-maps/sampling.webp)
+
+</div>
 
 **日付範囲ピッカー** — マップの作成に使用するトレースデータの時間範囲を設定します。
 
+<div className="ch-image-lg">
+
 ![サービスマップのツールバーで日付範囲ピッカーが強調表示されている](/images/clickstack/service-maps/date-selector.webp)
+
+</div>
 
 マップ左下の **+/-** ボタン、またはスクロール操作で拡大・縮小できます。
 

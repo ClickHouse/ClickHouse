@@ -51,9 +51,17 @@ ClickHouse Spark コネクタは Databricks とシームレスに連携します
    * **DBFS** または **Workspace** を選択し、アップロードした JAR ファイルを指定します
    * **Install** をクリックします
 
+<div className="ch-image-lg">
+
 ![Databricks の Libraries タブ](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![ワークスペース volume からライブラリをインストールする](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
+
+</div>
 
 4. ライブラリを読み込むため、クラスターを再起動します
 
@@ -88,7 +96,11 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
+<div className="ch-image-lg">
+
 ![Databricks Maven ライブラリの設定](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
+
+</div>
 
 3. **Install** をクリックし、ライブラリを読み込むためにクラスターを再起動します
 

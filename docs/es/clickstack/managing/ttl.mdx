@@ -25,7 +25,11 @@ El particionado en ClickHouse permite separar lógicamente los datos en disco se
 
 Como se muestra en el ejemplo anterior, el particionado se especifica en una tabla cuando se define inicialmente mediante la cláusula `PARTITION BY`. Esta cláusula puede contener una expresión SQL sobre cualquier columna o columnas, cuyos resultados definirán a qué partición se envía una fila. Esto hace que los datos queden asociados lógicamente (mediante un prefijo común en el nombre de la carpeta) con cada partición en el disco, que luego puede consultarse de forma aislada. En el ejemplo anterior, el esquema predeterminado de `otel_logs` particiona por día usando la expresión `toDate(Timestamp)`. A medida que las filas se insertan en ClickHouse, esta expresión se evaluará para cada fila y se enviará a la partición resultante si existe (si la fila es la primera de un día, se creará la partición). Para obtener más detalles sobre el particionado y sus otras aplicaciones, consulta [&quot;Table Partitions&quot;](/es/concepts/core-concepts/partitions).
 
+<div className="ch-image-lg">
+
 ![Particiones](/images/use-cases/observability/observability-14.webp)
+
+</div>
 
 El esquema de la tabla también incluye `TTL toDateTime(Timestamp) + ${TABLES_TTL}` y la configuración `ttl_only_drop_parts = 1`. La primera cláusula garantiza que los datos se eliminen una vez superado el TTL configurado (3 días de forma predeterminada). La configuración `ttl_only_drop_parts = 1` hace que solo caduquen las partes de datos en las que todos los datos han expirado (en lugar de intentar eliminar filas de forma parcial). Como el particionado garantiza que los datos de días distintos nunca se &quot;fusionen&quot;, los datos pueden eliminarse de forma eficiente.
 

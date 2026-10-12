@@ -118,7 +118,11 @@ Telflo هو control plane محايد تجاه المزوّدين لـ OpenTeleme
 
     ارسم الأسهم (edges) من المستقبلات (receivers) مروراً بالمعالجات (processors) وصولاً إلى المُصدِّر (exporter)، بواقع pipeline واحد لكل إشارة. ويعرض صف الـ status إما **config valid** أو عدد الأخطاء التي يلزم إصلاحها، بينما يعرض تبويب **YAML** الإعداد (configuration) المُولَّد.
 
+    <div className="ch-image-lg">
+
     ![مسار تجميع في محرر Telflo مع تهيئة مُصدِّر ClickHouse](/images/clickstack/telflo/telflo-configuration.webp)
+
+    </div>
 
     قبل نشر أي شيء، يمكنك تمرير عيّنة من بيانات التتبع (telemetry) عبر التكوين والتحقق من الناتج في الطرف الآخر. راجع [الاختبار في Telflo](https://docs.telflo.com/docs/testing/overview). أو بدلاً من ذلك، يمكنك وصف ما تريد تحقيقه، فيقوم مساعد الذكاء الاصطناعي في Telflo، الذي يُفتح بزر **AI** في شريط الأدوات، ببناء التكوين والتحقق من صحته واختباره نيابةً عنك. ويمكن للوكيل (agent) الخاص بك القيام بالأمر نفسه عبر [واجهة سطر أوامر Telflo](https://docs.telflo.com/docs/cli/).
   </Step>
@@ -135,7 +139,11 @@ Telflo هو control plane محايد تجاه المزوّدين لـ OpenTeleme
 
     لتنفيذ rollout لتغيير ما، انشر إصدارًا جديدًا وأسنِده إلى المجموعة؛ وللرجوع إلى الوضع السابق، أسنِد إصدارًا سبق نشره.
 
+    <div className="ch-image-lg">
+
     ![fleet في Telflo وجميع collectors فيه متزامنة بعد عملية rollout](/images/clickstack/telflo/telflo-fleet.webp)
+
+    </div>
   </Step>
 
   <Step title="تحقّق من بيانات التتبّع" id="verify-telemetry">

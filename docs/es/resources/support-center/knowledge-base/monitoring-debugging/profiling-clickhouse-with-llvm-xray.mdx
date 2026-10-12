@@ -50,7 +50,11 @@ Convertimos los datos recopilados en system.trace&#95;log [al formato de Chrome]
 visualizarlos en [Perfetto](https://ui.perfetto.dev). Observe el query&#95;id, cpu&#95;id y la traza de pila de
 cada registro.
 
+<div className="ch-image-md">
+
 ![orden temporal](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
+
+</div>
 
 <div id="profiling-a-native-application-using-xray">
   ## Perfilado de una aplicación nativa con XRay
@@ -160,19 +164,31 @@ para generar un flamegraph y una vista tipo sándwich de tus datos.
   #### Orden temporal
 </div>
 
+<div className="ch-image-md">
+
 ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
+
+</div>
 
 <div id="left-heavy">
   #### Cargado a la izquierda
 </div>
 
+<div className="ch-image-md">
+
 ![cargado a la izquierda](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
+
+</div>
 
 <div id="sandwitch">
   #### Sándwich
 </div>
 
+<div className="ch-image-md">
+
 ![sándwich](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
+
+</div>
 
 <div id="check-out-the-docs">
   ## Consulta la documentación

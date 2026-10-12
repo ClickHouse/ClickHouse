@@ -30,7 +30,11 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
   <Step title="自動バックアップでバイナリログを有効にする" id="enable-binlog-logging-rds">
     自動バックアップ機能によって、MySQL のバイナリログを有効にするかどうかが決まります。これは AWS コンソールで設定できます。
 
+    <div className="ch-image-lg">
+
     ![RDS で自動バックアップを有効にする](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+
+    </div>
 
     レプリケーションのユースケースに応じて、バックアップ保持期間を十分長く設定することをお勧めします。
   </Step>
@@ -52,25 +56,45 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
 
 パラメータグループは、RDS Console で MariaDB インスタンスをクリックし、`Configurations` タブに移動すると確認できます。
 
+<div className="ch-image-lg">
+
 ![RDS でパラメータグループを確認する場所](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
+
+</div>
 
 パラメータグループのリンクをクリックすると、パラメータグループのページに移動します。右上に `Edit` ボタンがあります。
 
+<div className="ch-image-lg">
+
 ![パラメータグループを編集](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</div>
 
 `binlog_format`、`binlog_row_metadata`、`binlog_row_image` は次のように設定する必要があります。
 
 1. `binlog_format` を `ROW` に設定します。
 
+<div className="ch-image-lg">
+
 ![Binlog format を ROW に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</div>
 
 2. `binlog_row_metadata` を `FULL` に設定します。
 
+<div className="ch-image-lg">
+
 ![Binlog row metadata を FULL に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</div>
 
 3. `binlog_row_image` を `FULL` に設定します。
 
+<div className="ch-image-lg">
+
 ![Binlog row image を FULL に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</div>
 
 次に、右上の `Save Changes` をクリックします。変更を反映するには、インスタンスの再起動が必要になる場合があります。RDS インスタンスの `Configurations` タブで、パラメータグループのリンクの横に `Pending reboot` と表示されている場合は、インスタンスの再起動が必要である可能性が高いことを示しています。
 
@@ -131,9 +155,17 @@ Global Transaction Identifiers (GTID) は、MySQL/MariaDB でコミットされ�
 
 RDS インスタンスへのトラフィックを制限する場合は、RDS のセキュリティグループの `Inbound rules` に、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を追加してください。
 
+<div className="ch-image-lg">
+
 ![RDS でセキュリティグループはどこにありますか？](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![上記のセキュリティグループのインバウンドルールを編集](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### AWS PrivateLink 経由のプライベートアクセス

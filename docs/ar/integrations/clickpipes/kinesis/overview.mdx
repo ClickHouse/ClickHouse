@@ -22,37 +22,69 @@ integration:
 
 1. افتح SQL Console الخاصة بخدمة ClickHouse Cloud لديك.
 
+<div className="ch-image-lg">
+
 ![خدمة ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. حدِّد زر `Data Sources` من القائمة الجانبية اليسرى، ثم انقر على &quot;إعداد ClickPipe&quot;
 
+<div className="ch-image-lg">
+
 ![تحديد عمليات الاستيراد](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. حدِّد مصدر البيانات.
 
+<div className="ch-image-lg">
+
 ![تحديد نوع مصدر البيانات](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
+
+</div>
 
 4. املأ النموذج بإدخال اسم لـ ClickPipe ووصف له (اختياري)، ودور IAM أو بيانات الاعتماد الخاصة بك، بالإضافة إلى تفاصيل الاتصال الأخرى.
 
+<div className="ch-image-lg">
+
 ![املأ تفاصيل الاتصال](/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp)
+
+</div>
 
 5. حدِّد تدفق Kinesis و**تنسيق البيانات** وإزاحة البدء. بالنسبة إلى `Protobuf`، ارفع ملف `.proto` أو `FileDescriptorSet` مُسلسلًا (بحد أقصى 768 KiB). ولا يُشترط وجود schema registry.
 
    تعرض واجهة المستخدم بيانات العينة من التدفق المحدد. ويكون خيار **Use Kinesis Enhanced Fan-Out** مُمكّنًا افتراضيًا. راجع [توثيق Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) لمزيد من التفاصيل.
 
+<div className="ch-image-lg">
+
 ![تعيين تنسيق البيانات والموضوع](/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp)
+
+</div>
 
 6. في الخطوة التالية، يمكنك اختيار ما إذا كنت تريد إدخال البيانات إلى جدول ClickHouse جديد أو إعادة استخدام جدول موجود. اتبع الإرشادات الظاهرة على الشاشة لتعديل اسم الجدول والمخطط والإعدادات. ويمكنك رؤية معاينة فورية لتغييراتك في الجدول النموذجي بالأعلى.
 
+<div className="ch-image-lg">
+
 ![تعيين الجدول والمخطط والإعدادات](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+
+</div>
 
 يمكنك أيضًا تخصيص الإعدادات المتقدمة باستخدام عناصر التحكم المتاحة
 
+<div className="ch-image-lg">
+
 ![تعيين عناصر التحكم المتقدمة](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
+
+</div>
 
 7. أو يمكنك اختيار إدخال بياناتك في جدول ClickHouse موجود. في هذه الحالة، ستتيح لك واجهة المستخدم تعيين حقول المصدر إلى حقول ClickHouse في الجدول الوجهة المحدد.
 
+<div className="ch-image-lg">
+
 ![استخدام جدول موجود](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
+
+</div>
 
 8. أخيرًا، يمكنك تهيئة الأذونات لمستخدم ClickPipes الداخلي.
 
@@ -61,21 +93,41 @@ integration:
 * `Full access`: وصول كامل إلى العنقود. قد يكون ذلك مفيدًا إذا كنت تستخدم عرض مُجسَّد أو Dictionary مع الجدول الوجهة.
   * `Only destination table`: مع أذونات `INSERT` على الجدول الوجهة فقط.
 
+<div className="ch-image-lg">
+
 ![الأذونات](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+
+</div>
 
 9. عند النقر على &quot;إكمال الإعداد&quot;، سيسجّل النظام ClickPipe الخاص بك، وستتمكن من رؤيته مُدرجًا في جدول الملخص.
 
+<div className="ch-image-sm">
+
 ![إشعار النجاح](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![إشعار الإزالة](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
 
+</div>
+
 يوفر جدول الملخص عناصر تحكم لعرض بيانات العينة من المصدر أو من الجدول الوجهة في ClickHouse
+
+<div className="ch-image-lg">
 
 ![عرض الوجهة](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
 
+</div>
+
 بالإضافة إلى عناصر تحكم لإزالة ClickPipe وعرض ملخص مهمة الإدخال.
 
+<div className="ch-image-lg">
+
 ![عرض الملخص](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+
+</div>
 
 10. **تهانينا!** لقد أعددت أول ClickPipe بنجاح. إذا كان هذا ClickPipe من نوع streaming، فسيستمر في العمل بشكل متواصل مع إدخال البيانات في الوقت الفعلي من مصدر البيانات البعيد لديك. أما إذا لم يكن كذلك، فسيُدخل الدفعة ثم يكتمل.
 

@@ -25,12 +25,24 @@ Anything on or after Postgres 12
 
 1. Click on **Edit** button on the Overview page.
 
+<div className="ch-image-lg">
+
 ![Edit Button in Cloud SQL Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
+
+</div>
 
 2. Go to Flags and change `cloudsql.logical_decoding` to on. This change will need restarting your Postgres server.
 
+<div className="ch-image-lg">
+
 ![Change cloudsql.logical_decoding to on](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
+
+</div>
+<div className="ch-image-lg">
+
 ![Restart Server](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
+
+</div>
 
 ## Creating ClickPipes user and granting permissions {#creating-clickpipes-user-and-granting-permissions}
 
@@ -89,16 +101,32 @@ If your are using SSH Tunneling, then you need to add the [ClickPipes IPs](/inte
 
 1. Go to **Connections** section
 
+<div className="ch-image-lg">
+
 ![Connections Section in Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
+
+</div>
 
 2. Go to the Networking subsection
 
+<div className="ch-image-lg">
+
 ![Networking Subsection in Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
+
+</div>
 
 3. Add the [public IPs of ClickPipes](/integrations/clickpipes/networking/static-ips)
 
+<div className="ch-image-lg">
+
 ![Add ClickPipes Networks to Firewall](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
+
+</div>
+<div className="ch-image-lg">
+
 ![ClickPipes Networks Added to Firewall](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
+
+</div>
 
 ## What's next? {#whats-next}
 

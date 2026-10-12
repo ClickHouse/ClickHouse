@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
 
 ClickHouse Cloud supports role-based access control (RBAC) for ClickHouse Managed Postgres services. You can create custom roles with specific permissions and assign them to organization members to control who can view or manage your Postgres services.
@@ -31,16 +32,28 @@ More granular permissions will be available in a future release.
 
 1. Click your organization name in the left sidebar and select **Users and roles**.
 
+<div className="ch-image-md">
+
 ![Users and roles menu](/images/managed-postgres/rbac/usersandroles.webp)
+
+</div>
 
 2. Switch to the **Roles** tab and click **Create role**.
 3. Enter a name for the role, then click **+ Allow** and select **Postgres Service** from the entity list.
 
+<div className="ch-image-md">
+
 ![Selecting the Postgres Service entity](/images/managed-postgres/rbac/postgresentity.webp)
+
+</div>
 
 4. Choose the Postgres service to scope the role to, then select the permissions to grant.
 
+<div className="ch-image-md">
+
 ![Configuring Postgres permissions on a role](/images/managed-postgres/rbac/newpostgresperms.webp)
+
+</div>
 
 5. Click **Create role** to save.
 

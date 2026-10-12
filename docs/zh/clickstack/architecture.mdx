@@ -21,7 +21,11 @@ ClickStack 的架构会因部署方式不同而有所差异。**ClickStack Open 
 
     在这种模式下，**ClickHouse 和 ClickStack UI (HyperDX) **均由 ClickHouse Cloud 托管、运维并保障安全。用户只需负责运行 **OpenTelemetry (OTel) 收集器**，将遥测数据发送到托管服务中。
 
+    <div className="ch-image-lg">
+
     ![托管架构](/images/use-cases/observability/clickstack-managed-architecture.webp)
+
+    </div>
 
 ### ClickHouse Cloud：引擎
 
@@ -75,7 +79,11 @@ ClickStack 的架构会因部署方式不同而有所差异。**ClickStack Open 
   <Tab title="开源 ClickStack">
     ClickStack 开源架构由三个核心组件构成：**ClickHouse**、**HyperDX** 和 **OpenTelemetry (OTel) collector**。**MongoDB** 实例用于存储应用状态。三者共同组成了一个高性能的开源可观测性技术栈，并针对日志、指标和链路追踪进行了优化。
 
+    <div className="ch-image-lg">
+
     ![架构](/images/use-cases/observability/clickstack-oss-architecture.webp)
+
+    </div>
 
 ### ClickHouse：数据库引擎
 

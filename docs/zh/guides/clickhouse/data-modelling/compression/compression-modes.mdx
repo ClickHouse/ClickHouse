@@ -44,7 +44,11 @@ LZ4 和 ZSTD 都出自同一位作者，但取舍各不相同。
 | mode                | byte    | 压缩模式                                                                    |
 | compressed&#95;data | binary  | 压缩数据块                                                                   |
 
+<div className="ch-image-md">
+
 ![说明 ClickHouse 压缩块结构的示意图](/images/data-compression/ch_compression_block.webp)
+
+</div>
 
 请求头为 (raw&#95;size + data&#95;size + mode)，raw&#95;size 的值为 len(请求头 + compressed&#95;data)。
 

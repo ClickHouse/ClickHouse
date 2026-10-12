@@ -24,7 +24,11 @@ ClickHouse [速度很快](/zh/get-started/about/why-clickhouse-is-so-fast)，不
 
 下图概述了这一后台合并过程：
 
+<div className="ch-image-lg">
+
 ![分片合并](/images/managing-data/core-concepts/merges_01.webp)
+
+</div>
 
 <br />
 
@@ -67,7 +71,11 @@ ORDER BY name ASC;
 
 在 ClickHouse 24.10 中，内置的[监控仪表盘](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards)新增了一个[合并仪表盘](https://presentations.clickhouse.com/2024-release-24.10/index.html#17)。在 OSS 和 Cloud 中都可通过 `/merges` HTTP handler 访问，我们可以用它来可视化示例表中的所有分片合并：
 
+<div className="ch-image-lg">
+
 ![part 合并](/images/managing-data/core-concepts/merges-dashboard.webp)
+
+</div>
 
 <br />
 
@@ -85,7 +93,11 @@ ORDER BY name ASC;
 
 单个 ClickHouse server 会使用多个后台[合并线程](/zh/reference/settings/server-settings/settings/background#background_pool_size)并发执行分片合并：
 
+<div className="ch-image-lg">
+
 ![parts 合并](/images/managing-data/core-concepts/merges_02.webp)
+
+</div>
 
 <br />
 
@@ -119,7 +131,11 @@ ClickHouse 不一定会像[前面的示例](/zh/concepts/core-concepts/merges#co
 
 下图说明了 ClickHouse 中单个后台[合并线程](/zh/concepts/core-concepts/merges#concurrent-merges)如何合并分片 (默认情况下，不使用[垂直合并](/zh/concepts/core-concepts/merges#memory-optimized-merges)) ：
 
+<div className="ch-image-lg">
+
 ![parts 合并](/images/managing-data/core-concepts/merges_03.webp)
+
+</div>
 
 <br />
 
@@ -155,7 +171,11 @@ ClickHouse 不一定会像[前面的示例](/zh/concepts/core-concepts/merges#co
 
 下图说明了标准 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表中的分片是如何合并的：
 
+<div className="ch-image-lg">
+
 ![part 合并](/images/managing-data/core-concepts/merges_04.webp)
+
+</div>
 
 <br />
 
@@ -169,7 +189,11 @@ ClickHouse 不一定会像[前面的示例](/zh/concepts/core-concepts/merges#co
 
 在 [ReplacingMergeTree](/zh/reference/engines/table-engines/mergetree-family/replacingmergetree) 表中，分片合并的工作方式与[标准合并](/zh/concepts/core-concepts/merges#standard-merges)类似，但每一行只会保留最新版本，旧版本会被丢弃：
 
+<div className="ch-image-lg">
+
 ![part 合并](/images/managing-data/core-concepts/merges_05.webp)
+
+</div>
 
 <br />
 
@@ -187,7 +211,11 @@ ClickHouse 不一定会像[前面的示例](/zh/concepts/core-concepts/merges#co
 
 在 [SummingMergeTree](/zh/reference/engines/table-engines/mergetree-family/summingmergetree) 表的 分片合并期间，数值数据会被自动汇总：
 
+<div className="ch-image-lg">
+
 ![分片 合并](/images/managing-data/core-concepts/merges_06.webp)
+
+</div>
 
 <br />
 
@@ -201,7 +229,11 @@ ClickHouse 不一定会像[前面的示例](/zh/concepts/core-concepts/merges#co
 
 上面的 `SummingMergeTree` 表示例是 [AggregatingMergeTree](/zh/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 表的一种特化变体，它支持在 分片合并期间应用 [90+](/zh/reference/functions/aggregate-functions/reference-index) 种聚合函数中的任意一种，从而实现[自动增量数据转换](https://www.youtube.com/watch?v=QDAJTKZT8y4)：
 
+<div className="ch-image-lg">
+
 ![part 合并](/images/managing-data/core-concepts/merges_07.webp)
+
+</div>
 
 <br />
 

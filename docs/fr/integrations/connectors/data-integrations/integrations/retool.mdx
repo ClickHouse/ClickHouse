@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+
 import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -23,32 +24,52 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
   <Step title="Créer une ressource ClickHouse" id="2-create-a-clickhouse-resource">
     Connectez-vous à votre compte Retool et accédez à l’onglet *Resources*. Choisissez &quot;Create New&quot; -&gt; &quot;Resource&quot; :
 
+    <div className="ch-image-lg">
+
     ![Création d’une nouvelle ressource](/images/integrations/tools/data-integration/retool/retool_01.webp)
+
+    </div>
 
     <br />
 
     Sélectionnez &quot;JDBC&quot; dans la liste des connecteurs disponibles :
 
+    <div className="ch-image-lg">
+
     ![Choix du connecteur JDBC](/images/integrations/tools/data-integration/retool/retool_02.webp)
+
+    </div>
 
     <br />
 
     Dans l’assistant de configuration, assurez-vous de sélectionner `com.clickhouse.jdbc.ClickHouseDriver` comme &quot;Driver name&quot; :
 
+    <div className="ch-image-lg">
+
     ![Sélection du bon driver](/images/integrations/tools/data-integration/retool/retool_03.webp)
+
+    </div>
 
     <br />
 
     Renseignez vos identifiants ClickHouse au format suivant : `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
     Si votre instance nécessite SSL ou si vous utilisez ClickHouse Cloud, ajoutez `&ssl=true` à la chaîne de connexion, afin d’obtenir `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
 
+    <div className="ch-image-lg">
+
     ![Saisie de vos identifiants](/images/integrations/tools/data-integration/retool/retool_04.webp)
+
+    </div>
 
     <br />
 
     Ensuite, testez votre connexion :
 
+    <div className="ch-image-lg">
+
     ![Test de votre connexion](/images/integrations/tools/data-integration/retool/retool_05.webp)
+
+    </div>
 
     <br />
 

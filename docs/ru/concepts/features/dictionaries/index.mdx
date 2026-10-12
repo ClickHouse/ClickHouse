@@ -13,7 +13,11 @@ doc_type: 'guide'
 * Повышения производительности запросов, особенно при использовании `JOIN`
 * Обогащения принимаемых данных на лету без замедления процесса ингестии
 
+<div className="ch-image-lg">
+
 ![Сценарии использования словаря в ClickHouse](/images/dictionary/dictionary-use-cases.webp)
+
+</div>
 
 <div id="speeding-up-joins-using-a-dictionary">
   ## Ускорение JOIN с помощью словаря
@@ -21,7 +25,11 @@ doc_type: 'guide'
 
 Словари можно использовать для ускорения определённого типа `JOIN`: [`LEFT ANY`](/ru/reference/statements/select/join#supported-types-of-join), где ключ JOIN должен совпадать с ключевым атрибутом базового хранилища ключ-значение.
 
+<div className="ch-image-sm">
+
 ![Использование словаря с LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+
+</div>
 
 В этом случае ClickHouse может использовать словарь для выполнения [Direct JOIN](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). Это самый быстрый алгоритм JOIN в ClickHouse; он применим, когда базовый [движок таблицы](/ru/reference/engines/table-engines/index) правой таблицы поддерживает низколатентные запросы ключ-значение. В ClickHouse есть три движка таблиц, которые это обеспечивают: [Join](/ru/reference/engines/table-engines/special/join) (по сути, это заранее вычисленная хеш-таблица), [EmbeddedRocksDB](/ru/reference/engines/table-engines/integrations/embedded-rocksdb) и [Dictionary](/ru/reference/engines/table-engines/special/dictionary). Мы опишем подход на основе словаря, но механизм одинаков для всех трёх движков.
 

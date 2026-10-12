@@ -187,7 +187,11 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 The following animation illustrates how our minmax skipping index is built for the example table, tracking the minimum and maximum `ViewCount` values for each block of rows (granule) in the table:
 
+<div className="ch-image-lg">
+
 ![Building skipping indices](/images/bestpractices/building_skipping_indices.webp)
+
+</div>
 
 Repeating our earlier query shows significant performance improvements. Notice the reduced number of rows scanned:
 
@@ -252,7 +256,11 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 We also show an animation how the minmax skipping index prunes all row blocks that can't possibly contain matches for the `ViewCount` > 10,000,000 predicate in our example query:
 
+<div className="ch-image-lg">
+
 ![Using skipping indices](/images/bestpractices/using_skipping_indices.webp)
+
+</div>
 
 ## Related docs {#related-docs}
 - [Data skipping indices guide](/concepts/features/performance/skip-indexes/skipping-indexes)

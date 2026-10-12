@@ -23,7 +23,11 @@ Les membres de l’organisation disposant du rôle **Admin** peuvent configurer 
   Les services Scale à réplique unique et les services Enterprise avec des profils `1:4` standard prennent en charge la mise à l’échelle verticale automatique. Les services Enterprise avec des profils personnalisés nécessitent un redimensionnement vertical avec l’assistance du support. Les services du niveau Basic restent de taille fixe et ne peuvent pas être mis à l’échelle.
 </Note>
 
+<div className="ch-image-lg">
+
 ![Page des paramètres de mise à l’échelle](/images/cloud/manage/AutoScaling.webp)
+
+</div>
 
 Définissez la **Mémoire maximale** de vos répliques sur une valeur supérieure à la **Mémoire minimale**. Le service s’adaptera ensuite selon les besoins dans ces limites. Ces paramètres sont également disponibles lors de la création initiale du service. Chaque réplique de votre service se verra attribuer les mêmes ressources de mémoire et de CPU.
 

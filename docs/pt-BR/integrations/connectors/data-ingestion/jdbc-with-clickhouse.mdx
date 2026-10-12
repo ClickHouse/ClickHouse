@@ -17,7 +17,11 @@ doc_type: 'guide'
 
 **Visão geral:** O <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a>, em combinação com a [função de tabela JDBC](/pt-BR/reference/functions/table-functions/jdbc) ou o [engine de tabela JDBC](/pt-BR/reference/engines/table-engines/integrations/jdbc), permite que o ClickHouse acesse dados de qualquer fonte de dados externa para a qual haja um <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">driver JDBC</a> disponível:
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![Diagrama da arquitetura do ClickHouse JDBC Bridge](/images/integrations/data-ingestion/dbms/jdbc-01.webp)
+
+</div>
 
 Isso é útil quando não há um [integration engine](/pt-BR/reference/engines/table-engines/integrations/index), uma função de tabela ou um dicionário externo nativo disponível para a fonte de dados externa, mas existe um driver JDBC para essa fonte de dados.
 
@@ -45,7 +49,11 @@ Vamos começar!
 
 A forma mais fácil de usar o ClickHouse JDBC Bridge é instalá-lo e executá-lo no mesmo host em que o ClickHouse também está sendo executado:
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![Diagrama de implantação local do ClickHouse JDBC Bridge](/images/integrations/data-ingestion/dbms/jdbc-02.webp)
+
+</div>
 
 Vamos começar nos conectando ao shell Unix da máquina em que o ClickHouse está em execução e criando uma pasta local onde instalaremos o ClickHouse JDBC Bridge mais adiante (fique à vontade para dar à pasta o nome que quiser e colocá-la onde preferir):
 
@@ -147,7 +155,11 @@ A maneira mais fácil de executar os exemplos a seguir é copiá-los e colá-los
 
 Para um cluster distribuído do ClickHouse (um cluster com mais de um host do ClickHouse), faz sentido instalar e executar o ClickHouse JDBC Bridge externamente, em um host próprio:
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![Diagrama de implantação externa do ClickHouse JDBC Bridge](/images/integrations/data-ingestion/dbms/jdbc-03.webp)
+
+</div>
 
 Isso traz a vantagem de permitir que cada host do ClickHouse acesse o JDBC Bridge. Caso contrário, o JDBC Bridge precisaria ser instalado localmente em cada instância do ClickHouse que deve acessar fontes de dados externas por meio do Bridge.
 

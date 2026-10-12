@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
 쿼리 인사이트는 [ClickHouse Managed Postgres](/ko/products/managed-postgres/overview) 인스턴스에서 SQL 문별 텔레메트리를 수집하고
@@ -60,7 +61,11 @@ Cloud Console에서 ClickHouse Managed Postgres 인스턴스를 열고 왼쪽 �
 애플리케이션 트래픽과 함께 움직이며, 오류율은 일정하거나 0에 가깝고, 백분위수
 지연 시간은 서로 비슷한 수준으로 따라갑니다.
 
+<div className="ch-image-lg">
+
 ![초당 쿼리 수, 쿼리 지연 시간 백분위수, 작업 구성 도넛 차트, 반환/영향을 받은 행 영역 차트, 95.2%의 buffer hit ratio 도넛 차트, 오류 세로 막대 차트를 보여주는 Query Insights 개요](/images/managed-postgres/monitoring/query-insights-overview.webp)
+
+</div>
 
 <div id="slow-patterns">
   ## 느린 쿼리 패턴
@@ -70,7 +75,11 @@ Cloud Console에서 ClickHouse Managed Postgres 인스턴스를 열고 왼쪽 �
 정규화된 쿼리 패턴이 한 행씩 표시되며, 리터럴은 제거되므로 동일한
 구문을 실행한 항목은 같은 행으로 묶입니다.
 
+<div className="ch-image-lg">
+
 ![Database, User, Operation, Calls, Errors, Avg latency, P95, Max latency, Total runtime, Rows returned, Cache hit 컬럼과 함께 정규화된 쿼리별로 한 행씩 표시되는 느린 쿼리 패턴 테이블](/images/managed-postgres/monitoring/query-insights-patterns.webp)
+
+</div>
 
 <div id="sort">
   ### 의심되는 항목을 기준으로 정렬하기
@@ -124,7 +133,11 @@ SQL 문(statement) 1개당 1행이 표시됩니다. 집계 대신 원시 이벤�
 적용되었는지 확인하거나 오류가 정확히 발생한 시점을
 찾을 때 유용합니다.
 
+<div className="ch-image-lg">
+
 ![Database, User, Operation, Application 필터 드롭다운과 Time, Operation, Query, Duration, Rows, Database, User, Blks read 컬럼이 있는 최근 쿼리 테이블](/images/managed-postgres/monitoring/query-insights-recent-queries.webp)
+
+</div>
 
 기본 컬럼은 Time, Operation, Query, Duration, Rows,
 Database, User, Blks read입니다. **Columns** 선택기를 열면
@@ -158,9 +171,17 @@ Application, Blks hit, CPU user, CPU sys, PID를 볼 수 있습니다. 이
 * **최근 실행 내역** — 동일한 패턴의 개별 실행이며,
   실행별 카운터가 포함됩니다.
 
+<div className="ch-image-md">
+
 ![쿼리 패턴 코드 블록과 총 호출 수, 지연 시간 백분위수, 총 런타임, 반환된 행 수, 캐시 적중률, 읽은 block 수, 적중한 block 수, CPU 시간, WAL 바이트, 오류를 포함한 13개의 통계 카드가 있는 집계 리소스 사용량 그리드를 보여 주는 쿼리 세부 정보 플라이아웃](/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp)
 
+</div>
+
+<div className="ch-image-md">
+
 ![쿼리 세부 정보 플라이아웃의 다음 화면으로, 데이터베이스, 사용자, 작업, 애플리케이션이 있는 쿼리 컨텍스트 섹션과 timestamp, OK 상태, server role, host id, duration, 행 수, 캐시 적중, CPU, 공유 block 읽기 수, 공유 block 적중 수에 대한 실행별 카운터가 있는 최근 실행 내역 카드를 보여 줍니다](/images/managed-postgres/monitoring/query-insights-detail-recent.webp)
+
+</div>
 
 <div id="counters">
   ### 실행별 카운터

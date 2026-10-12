@@ -11,6 +11,7 @@ integration:
 ---
 
 import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
 O SQL Console é a maneira mais rápida e fácil de explorar e consultar seus bancos de dados no ClickHouse Cloud. Você pode usar o SQL Console para:
 
 * Conectar-se aos seus serviços do ClickHouse Cloud
@@ -28,11 +29,19 @@ O SQL Console é a maneira mais rápida e fácil de explorar e consultar seus ba
 
 Uma visão geral das tabelas contidas na sua instância do ClickHouse pode ser encontrada na barra lateral esquerda. Use o seletor de banco de dados na parte superior dessa barra para ver as tabelas de um banco de dados específico
 
+<div className="ch-image-lg">
+
 ![Lista de tabelas e visualização do esquema mostrando as tabelas do banco de dados na barra lateral esquerda](/images/cloud/sqlconsole/table-list-and-schema.webp)
+
+</div>
 
 As tabelas da lista também podem ser expandidas para ver colunas e tipos de dados
 
+<div className="ch-image-lg">
+
 ![Visualização de uma tabela expandida mostrando nomes de colunas e tipos de dados](/images/cloud/sqlconsole/view-columns.webp)
+
+</div>
 
 <div id="exploring-table-data">
   ### Explorando os dados da tabela
@@ -40,7 +49,11 @@ As tabelas da lista também podem ser expandidas para ver colunas e tipos de dad
 
 Clique em uma tabela na lista para abri-la em uma nova aba. Na Table View, os dados podem ser facilmente visualizados, selecionados e copiados. Observe que a estrutura e a formatação são preservadas ao copiar e colar em aplicativos de planilha, como Microsoft Excel e Google Sheets. Você pode alternar entre as páginas dos dados da tabela (paginados em incrementos de 30 linhas) usando a navegação no rodapé.
 
+<div className="ch-image-lg">
+
 ![Visualização da tabela mostrando dados que podem ser selecionados e copiados](/images/cloud/sqlconsole/abc.webp)
+
+</div>
 
 <div id="inspecting-cell-data">
   ### Inspecionando os dados da célula
@@ -48,7 +61,11 @@ Clique em uma tabela na lista para abri-la em uma nova aba. Na Table View, os da
 
 A ferramenta Cell Inspector pode ser usada para visualizar grandes quantidades de dados contidas em uma única célula. Para abri-la, clique com o botão direito em uma célula e selecione &#39;Inspecionar célula&#39;. O conteúdo do Cell Inspector pode ser copiado clicando no ícone de cópia no canto superior direito.
 
+<div className="ch-image-lg">
+
 ![Janela do Cell Inspector mostrando o conteúdo de uma célula selecionada](/images/cloud/sqlconsole/inspecting-cell-content.webp)
+
+</div>
 
 <div id="filtering-and-sorting-tables">
   ## Filtrar e ordenar tabelas
@@ -60,7 +77,11 @@ A ferramenta Cell Inspector pode ser usada para visualizar grandes quantidades d
 
 Para ordenar uma tabela no SQL Console, abra uma tabela e selecione o botão &#39;Ordenar&#39; na barra de ferramentas. Esse botão abrirá um menu no qual você poderá configurar a ordenação. Você pode escolher a coluna pela qual deseja ordenar e definir a ordem da classificação (crescente ou decrescente). Selecione &#39;Apply&#39; ou pressione Enter para ordenar a tabela
 
+<div className="ch-image-lg">
+
 ![Caixa de diálogo de ordenação mostrando a configuração de ordenação decrescente em uma coluna](/images/cloud/sqlconsole/sort-descending-on-column.webp)
+
+</div>
 
 O SQL Console também permite adicionar várias ordenações a uma tabela. Clique no botão &#39;Ordenar&#39; novamente para adicionar outra ordenação. Observação: as ordenações são aplicadas na ordem em que aparecem no painel de ordenação (de cima para baixo). Para remover uma ordenação, basta clicar no botão &#39;x&#39; ao lado dela.
 
@@ -70,11 +91,19 @@ O SQL Console também permite adicionar várias ordenações a uma tabela. Cliqu
 
 Para filtrar uma tabela no SQL Console, abra uma tabela e selecione o botão &#39;Filtrar&#39;. Assim como na ordenação, esse botão abrirá um menu que permitirá configurar o filtro. Você pode escolher uma coluna para filtrar e selecionar os critérios necessários. O SQL Console exibe de forma inteligente opções de filtro que correspondem ao tipo de dado contido na coluna.
 
+<div className="ch-image-lg">
+
 ![Caixa de diálogo de filtro mostrando a configuração para filtrar a coluna de rádio igual a GSM](/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp)
+
+</div>
 
 Quando estiver satisfeito com o filtro, você pode selecionar &#39;Apply&#39; para filtrar os dados. Também é possível adicionar filtros extras, como mostrado abaixo.
 
+<div className="ch-image-lg">
+
 ![Caixa de diálogo mostrando como adicionar um filtro adicional para um intervalo maior que 2000](/images/cloud/sqlconsole/add-more-filters.webp)
+
+</div>
 
 Assim como na funcionalidade de ordenação, clique no botão &#39;x&#39; ao lado de um filtro para removê-lo.
 
@@ -84,7 +113,11 @@ Assim como na funcionalidade de ordenação, clique no botão &#39;x&#39; ao lad
 
 O SQL Console permite filtrar e ordenar uma tabela ao mesmo tempo. Para fazer isso, adicione todos os filtros e ordenações desejados seguindo as etapas descritas acima e clique no botão &#39;Apply&#39;.
 
+<div className="ch-image-lg">
+
 ![Interface mostrando filtragem e ordenação aplicadas simultaneamente](/images/cloud/sqlconsole/filtering-and-sorting-together.webp)
+
+</div>
 
 <div id="creating-a-query-from-filters-and-sorts">
   ### Criando uma consulta a partir de filtros e ordenações
@@ -92,7 +125,11 @@ O SQL Console permite filtrar e ordenar uma tabela ao mesmo tempo. Para fazer is
 
 O SQL Console pode converter suas ordenações e filtros diretamente em consultas com um clique. Basta selecionar o botão &#39;Create Query&#39; na barra de ferramentas com os parâmetros de ordenação e filtro que desejar. Depois de clicar em &#39;Create Query&#39;, uma nova aba de consulta será aberta, já preenchida com o comando SQL correspondente aos dados exibidos na visualização da tabela.
 
+<div className="ch-image-lg">
+
 ![Interface mostrando o botão Create Query, que gera SQL a partir de filtros e ordenações](/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp)
+
+</div>
 
 <Note>
   Filtros e ordenações não são obrigatórios ao usar o recurso &#39;Create Query&#39;.
@@ -113,7 +150,11 @@ Há duas maneiras de criar uma nova consulta no SQL Console.
 * Clique no botão &#39;+&#39; na barra de abas
 * Selecione o botão &#39;New Query&#39; na lista de consultas na barra lateral esquerda
 
+<div className="ch-image-lg">
+
 ![Interface mostrando como criar uma nova consulta usando o botão + ou o botão New Query](/images/cloud/sqlconsole/creating-a-query.webp)
+
+</div>
 
 <div id="running-a-query">
   ### Executando uma consulta
@@ -129,17 +170,29 @@ Por padrão, clicar no botão Run executará todos os comandos contidos no SQL E
 
 Para executar comandos selecionados, destaque o comando desejado ou a sequência de comandos e clique no botão &#39;Run&#39; (ou use o atalho `cmd / ctrl + enter`). Você também pode selecionar &#39;Run selected&#39; no menu de contexto do SQL Editor (aberto ao clicar com o botão direito em qualquer lugar do editor) quando houver uma seleção.
 
+<div className="ch-image-lg">
+
 ![Interface mostrando como executar uma parte selecionada de uma consulta SQL](/images/cloud/sqlconsole/run-selected-query.webp)
+
+</div>
 
 A execução do comando na posição atual do cursor pode ser feita de duas maneiras:
 
 * Selecione &#39;At Cursor&#39; no menu expandido de opções de execução (ou use o atalho de teclado correspondente `cmd / ctrl + shift + enter`
 
+<div className="ch-image-lg">
+
 ![Opção Run at cursor no menu expandido de opções de execução](/images/cloud/sqlconsole/run-at-cursor-2.webp)
+
+</div>
 
 * Selecione &#39;Run at cursor&#39; no menu de contexto do SQL Editor
 
+<div className="ch-image-lg">
+
 ![Opção Run at cursor no menu de contexto do SQL Editor](/images/cloud/sqlconsole/run-at-cursor.webp)
+
+</div>
 
 <Note>
   O comando na posição do cursor piscará em amarelo durante a execução.
@@ -151,7 +204,11 @@ A execução do comando na posição atual do cursor pode ser feita de duas mane
 
 Enquanto uma consulta estiver em execução, o botão &#39;Run&#39; na barra de ferramentas do Editor de consultas será substituído pelo botão &#39;Cancel&#39;. Basta clicar nesse botão ou pressionar `Esc` para cancelar a consulta. Observação: todos os resultados que já tiverem sido retornados permanecerão após o cancelamento.
 
+<div className="ch-image-lg">
+
 ![Botão 'Cancel' exibido durante a execução da consulta](/images/cloud/sqlconsole/cancel-a-query.webp)
+
+</div>
 
 <div id="saving-a-query">
   ### Salvando uma consulta
@@ -159,11 +216,19 @@ Enquanto uma consulta estiver em execução, o botão &#39;Run&#39; na barra de 
 
 Se ainda não tiver um nome, sua consulta deve aparecer como &#39;Untitled Query&#39;. Clique no nome da consulta para alterá-lo. Ao renomear uma consulta, ela será salva.
 
+<div className="ch-image-lg">
+
 ![Interface mostrando como renomear uma consulta a partir de Untitled Query](/images/cloud/sqlconsole/give-a-query-a-name.webp)
+
+</div>
 
 Você também pode usar o botão Salvar ou o atalho de teclado `cmd / ctrl + s` para salvar uma consulta.
 
+<div className="ch-image-lg">
+
 ![Botão Salvar na barra de ferramentas do editor de consultas](/images/cloud/sqlconsole/save-the-query.webp)
+
+</div>
 
 <div id="using-genai-to-manage-queries">
   ## Usando GenAI para gerenciar consultas
@@ -314,11 +379,19 @@ Lembre-se de que o GenAI é um recurso experimental. Tenha cautela ao executar c
 
 Depois que uma consulta é executada, você pode pesquisar rapidamente no conjunto de resultados retornado usando o campo de busca no painel de resultados. Esse recurso ajuda a visualizar previamente os resultados de uma cláusula `WHERE` adicional ou simplesmente a verificar se determinados dados estão incluídos no conjunto de resultados. Depois de inserir um valor no campo de busca, o painel de resultados será atualizado e retornará registros que contenham um valor correspondente ao que foi inserido. Neste exemplo, vamos procurar todas as ocorrências de `breakfast` na tabela `hackernews` em comentários que contenham `ClickHouse` (sem diferenciar maiúsculas de minúsculas):
 
+<div className="ch-image-lg">
+
 ![Buscar dados do Hacker News](/images/cloud/sqlconsole/search-hn.webp)
+
+</div>
 
 Observação: qualquer campo que corresponda ao valor inserido será retornado. Por exemplo, o terceiro registro na captura de tela acima não corresponde a &#39;breakfast&#39; no campo `by`, mas corresponde no campo `text`:
 
+<div className="ch-image-lg">
+
 ![Correspondência no corpo](/images/cloud/sqlconsole/match-in-body.webp)
+
+</div>
 
 <div id="adjusting-pagination-settings">
   ### Ajustando as configurações de paginação
@@ -326,11 +399,19 @@ Observação: qualquer campo que corresponda ao valor inserido será retornado. 
 
 Por padrão, o painel de resultados da consulta exibe todos os registros de resultado em uma única página. Para conjuntos de resultados maiores, pode ser preferível paginar os resultados para facilitar a visualização. Isso pode ser feito usando o seletor de paginação no canto inferior direito do painel de resultados da consulta:
 
+<div className="ch-image-lg">
+
 ![Opções de paginação](/images/cloud/sqlconsole/pagination.webp)
+
+</div>
 
 Ao selecionar um tamanho de página, a paginação será aplicada imediatamente ao conjunto de resultados, e as opções de navegação aparecerão no centro do rodapé do painel de resultados da consulta
 
+<div className="ch-image-lg">
+
 ![Navegação da paginação](/images/cloud/sqlconsole/pagination-nav.webp)
+
+</div>
 
 <div id="exporting-query-result-data">
   ### Exportando os dados do resultado da consulta
@@ -338,7 +419,11 @@ Ao selecionar um tamanho de página, a paginação será aplicada imediatamente 
 
 Os resultados da consulta podem ser exportados facilmente em formato CSV diretamente do SQL Console. Para isso, abra o menu `•••` no lado direito da barra de ferramentas do painel de resultados e selecione &#39;Baixar como CSV&#39;.
 
+<div className="ch-image-lg">
+
 ![Baixar como CSV](/images/cloud/sqlconsole/download-as-csv.webp)
+
+</div>
 
 <div id="visualizing-query-data">
   ## Visualizando dados de consulta
@@ -360,7 +445,11 @@ ORDER BY
    1 ASC
 ```
 
+<div className="ch-image-lg">
+
 ![Resultados tabulares da consulta](/images/cloud/sqlconsole/tabular-query-results.webp)
+
+</div>
 
 Sem uma visualização, esses resultados são difíceis de interpretar. Vamos transformá-los em um gráfico.
 
@@ -370,15 +459,27 @@ Sem uma visualização, esses resultados são difíceis de interpretar. Vamos tr
 
 Para começar a montar sua visualização, selecione a opção &#39;Chart&#39; na barra de ferramentas do painel de resultados da consulta. Um painel de configuração do gráfico será exibido:
 
+<div className="ch-image-lg">
+
 ![Alternar da consulta para o gráfico](/images/cloud/sqlconsole/switch-from-query-to-chart.webp)
+
+</div>
 
 Vamos começar criando um gráfico de barras simples para acompanhar `trip_total` por `week`. Para isso, arrastaremos o campo `week` para o eixo x e o campo `trip_total` para o eixo y:
 
+<div className="ch-image-lg">
+
 ![Total de viagens por semana](/images/cloud/sqlconsole/trip-total-by-week.webp)
+
+</div>
 
 A maioria dos tipos de gráfico oferece suporte a vários campos nos eixos numéricos. Para demonstrar, arrastaremos o campo fare&#95;total para o eixo y:
 
+<div className="ch-image-lg">
+
 ![Gráfico de barras](/images/cloud/sqlconsole/bar-chart.webp)
+
+</div>
 
 <div id="customizing-charts">
   ### Personalizando gráficos
@@ -386,11 +487,19 @@ A maioria dos tipos de gráfico oferece suporte a vários campos nos eixos numé
 
 O SQL Console oferece suporte a dez tipos de gráfico que podem ser selecionados no seletor de tipos de gráfico, no painel de configuração do gráfico. Por exemplo, podemos alterar facilmente o tipo do gráfico anterior de Barra para Área:
 
+<div className="ch-image-lg">
+
 ![Alterar de gráfico de Barras para Área](/images/cloud/sqlconsole/change-from-bar-to-area.webp)
+
+</div>
 
 Os títulos dos gráficos correspondem ao nome da consulta que fornece os dados. Ao atualizar o nome da consulta, o título do gráfico também é atualizado:
 
+<div className="ch-image-lg">
+
 ![Atualizar nome da consulta](/images/cloud/sqlconsole/update-query-name.webp)
+
+</div>
 
 Algumas características mais avançadas do gráfico também podem ser ajustadas na seção &#39;Advanced&#39; do painel de configuração do gráfico. Para começar, vamos ajustar as seguintes configurações:
 
@@ -400,11 +509,19 @@ Algumas características mais avançadas do gráfico também podem ser ajustadas
 
 Nosso gráfico será atualizado de acordo:
 
+<div className="ch-image-lg">
+
 ![Atualizar subtítulo etc.](/images/cloud/sqlconsole/update-subtitle-etc.webp)
+
+</div>
 
 Em alguns cenários, pode ser necessário ajustar de forma independente as escalas dos eixos de cada campo. Isso também pode ser feito na seção &#39;Advanced&#39; do painel de configuração do gráfico, especificando valores mínimo e máximo para uma faixa do eixo. Como exemplo, o gráfico acima está bom, mas, para demonstrar a correlação entre nossos campos `trip_total` e `fare_total`, as faixas dos eixos precisam de alguns ajustes:
 
+<div className="ch-image-lg">
+
 ![Ajustar escala do eixo](/images/cloud/sqlconsole/adjust-axis-scale.webp)
+
+</div>
 
 <div id="sharing-queries">
   ## Compartilhar consultas
@@ -414,16 +531,36 @@ O SQL Console permite compartilhar consultas com sua equipe. Quando uma consulta
 
 Para compartilhar uma consulta, clique no botão &#39;Share&#39; na barra de ferramentas da consulta.
 
+<div className="ch-image-lg">
+
 ![Botão Share na barra de ferramentas da consulta](/images/cloud/sqlconsole/sql-console-share.webp)
+
+</div>
 
 Uma caixa de diálogo será aberta, permitindo que você compartilhe a consulta com todos os membros de uma equipe. Se você tiver várias equipes, poderá selecionar com qual equipe compartilhar a consulta.
 
+<div className="ch-image-lg">
+
 ![Caixa de diálogo para editar o acesso a uma consulta compartilhada](/images/cloud/sqlconsole/sql-console-edit-access.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![Interface para adicionar uma equipe a uma consulta compartilhada](/images/cloud/sqlconsole/sql-console-add-team.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Interface para editar o acesso de um membro a uma consulta compartilhada](/images/cloud/sqlconsole/sql-console-edit-member.webp)
+
+</div>
 
 Em alguns cenários, pode ser necessário ajustar as escalas dos eixos de cada campo de forma independente. Isso também pode ser feito na seção &#39;Advanced&#39; do painel de configuração do gráfico, especificando valores mínimo e máximo para um intervalo do eixo. Por exemplo, o gráfico acima parece bom, mas, para demonstrar a correlação entre nossos campos `trip_total` e `fare_total`, os intervalos dos eixos precisam de alguns ajustes:
 
+<div className="ch-image-lg">
+
 ![Seção Shared with me na lista de consultas](/images/cloud/sqlconsole/sql-console-access-queries.webp)
+
+</div>

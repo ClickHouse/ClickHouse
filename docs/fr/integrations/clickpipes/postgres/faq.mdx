@@ -431,7 +431,11 @@ Si votre chargement initial s’est terminé sans erreur, mais qu’il manque de
 
 Oui. Pour un Postgres ClickPipe dont le mode de réplication est défini sur CDC ou Snapshot + CDC, vous pouvez demander à ClickPipes de créer un slot de réplication avec le basculement activé en activant le commutateur ci-dessous dans la section `Advanced Settings` lors de la création du ClickPipe. Notez que votre version de Postgres doit être 17 ou supérieure pour utiliser cette fonctionnalité.
 
+<div className="ch-image-md">
+
 ![](/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp)
+
+</div>
 
 Si la source est configurée en conséquence, le slot est conservé après un basculement vers une réplique de lecture Postgres, ce qui garantit une réplication continue des données. Pour en savoir plus, consultez [ce lien](https://www.postgresql.org/docs/current/logical-replication-failover.html).
 

@@ -22,37 +22,69 @@ Kinesis ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 1. ClickHouse Cloud サービスの SQL Console にアクセスします。
 
+<div className="ch-image-lg">
+
 ![ClickPipes サービス](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. 左側のメニューで `Data Sources` ボタンを選択し、&quot;Set up a ClickPipe&quot; をクリックします。
 
+<div className="ch-image-lg">
+
 ![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. データソースを選択します。
 
+<div className="ch-image-lg">
+
 ![データソースの種類を選択](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
+
+</div>
 
 4. ClickPipe の名前、説明 (任意) 、IAM ロールまたは認証情報、そのほかの接続情報を入力します。
 
+<div className="ch-image-lg">
+
 ![接続情報を入力](/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp)
+
+</div>
 
 5. Kinesis ストリーム、**Data format**、開始オフセットを選択します。`Protobuf` の場合は、`.proto` ファイルまたはシリアライズされた `FileDescriptorSet` (最大 768 KiB) をアップロードします。スキーマレジストリは不要です。
 
    UI には、選択した stream のサンプルデータが表示されます。**Use Kinesis Enhanced Fan-Out** はデフォルトで有効になっています。詳細は [Amazon Kinesis のドキュメント](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html)を参照してください。
 
+<div className="ch-image-lg">
+
 ![データフォーマットと topic を設定](/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp)
+
+</div>
 
 6. 次のステップでは、データの取り込み先を新しい ClickHouse テーブルにするか、既存のテーブルを再利用するかを選択できます。画面の指示に従って、テーブル名、スキーマ、設定を変更してください。変更内容は、上部のサンプルテーブルでリアルタイムにプレビューできます。
 
+<div className="ch-image-lg">
+
 ![table、スキーマ、settings を設定](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+
+</div>
 
 用意されているコントロールを使って、高度な設定をカスタマイズすることもできます。
 
+<div className="ch-image-lg">
+
 ![高度な controls を設定](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
+
+</div>
 
 7. また、既存の ClickHouse テーブルにデータを取り込むこともできます。その場合、UI ではソースのフィールドを、選択した宛先テーブル内の ClickHouse フィールドにマッピングできます。
 
+<div className="ch-image-lg">
+
 ![既存の table を使用](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
+
+</div>
 
 8. 最後に、内部 ClickPipes ユーザーの権限を設定できます。
 
@@ -61,21 +93,41 @@ Kinesis ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 * `Full access`: クラスターへのフルアクセス権を持ちます。宛先テーブルで materialized view や Dictionary を使用する場合に便利です。
   * `Only destination table`: 宛先テーブルに対する `INSERT` 権限のみを持ちます。
 
+<div className="ch-image-lg">
+
 ![Permissions](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+
+</div>
 
 9. &quot;Complete Setup&quot; をクリックすると、システムに ClickPipe が登録され、サマリーテーブルに表示されるようになります。
 
+<div className="ch-image-sm">
+
 ![成功通知](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![削除通知](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
 
+</div>
+
 サマリーテーブルには、ソースまたは ClickHouse 内の宛先テーブルからサンプルデータを表示するためのコントロールがあります。
+
+<div className="ch-image-lg">
 
 ![宛先を表示](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
 
+</div>
+
 また、ClickPipe を削除したり、インジェストジョブの概要を表示したりするためのコントロールもあります。
 
+<div className="ch-image-lg">
+
 ![概要を表示](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+
+</div>
 
 10. **おめでとうございます！** 最初の ClickPipe の設定は正常に完了しました。これが streaming ClickPipe の場合は継続的に動作し、リモートデータソースからデータをリアルタイムで取り込み続けます。それ以外の場合は、バッチを取り込んで完了します。
 

@@ -60,7 +60,11 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     Accédez à `Team Settings` et cliquez sur `Edit` pour `Local Connection` :
 
+    <div className="ch-image-lg">
+
     ![Modifier la connexion](/images/use-cases/observability/edit_connection.webp)
+
+    </div>
 
     Renommez la connexion en `Demo` et remplissez le formulaire suivant avec les informations de connexion suivantes pour le serveur de démonstration :
 
@@ -69,7 +73,11 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
     * `Username` : `otel_demo`
     * `Password` : laissez vide
 
+    <div className="ch-image-lg">
+
     ![Modifier la connexion de démonstration](/images/use-cases/observability/hyperdx-demo/edit_demo_connection.webp)
+
+    </div>
   </Step>
 
   <Step title="Modifiez les sources" id="modify-sources">
@@ -81,7 +89,11 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     Remontez jusqu’à `Sources` et modifiez chacune des sources — `Logs`, `Traces`, `Metrics` et `Sessions` — pour utiliser la base de données `otel_v2`.
 
+    <div className="ch-image-lg">
+
     ![Modifier la source Demo](/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp)
+
+    </div>
 
     <Note>
       Il se peut que vous deviez recharger la page pour que la liste complète des bases de données s’affiche dans chaque source.
@@ -91,7 +103,11 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
   <Step title="Ajuster la période" id="adjust-the-timeframe">
     Ajustez la période pour afficher toutes les données des dernières `1 day` à l’aide du sélecteur de temps en haut à droite.
 
+    <div className="ch-image-lg">
+
     ![Étape 2](/images/use-cases/observability/hyperdx-demo/step_2.webp)
+
+    </div>
 
     Vous pourrez constater une légère différence dans le nombre d’erreurs dans le graphique à barres de l’Overview, avec une légère augmentation en rouge sur plusieurs barres consécutives.
 
@@ -105,7 +121,11 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     L’erreur devrait davantage ressortir :
 
+    <div className="ch-image-lg">
+
     ![Étape 3](/images/use-cases/observability/hyperdx-demo/step_3.webp)
+
+    </div>
   </Step>
 
   <Step title="Identifier les schémas d’erreur" id="identify-error-patterns">
@@ -113,7 +133,11 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     Les clusters d’erreurs révèlent des problèmes liés à des échecs de paiement, notamment un modèle nommé `Failed to place order`. D’autres clusters indiquent également des problèmes de débit des cartes et des caches saturés.
 
+    <div className="ch-image-lg">
+
     ![Étape 4](/images/use-cases/observability/hyperdx-demo/step_4.webp)
+
+    </div>
 
     Notez que ces clusters d’erreurs proviennent probablement de différents services.
   </Step>
@@ -123,13 +147,21 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     Cela affichera une liste de toutes les occurrences de cette erreur associées au service `frontend` :
 
+    <div className="ch-image-lg">
+
     ![Étape 5](/images/use-cases/observability/hyperdx-demo/step_5.webp)
+
+    </div>
 
     Sélectionnez l’une des erreurs obtenues. Les métadonnées des logs s’afficheront en détail. En parcourant `Overview` et `Column Values`, on constate qu’il s’agit d’un problème de débit de carte lié à un cache :
 
     `failed to charge card: could not charge the card: rpc error: code = Unknown desc = Visa cache full: cannot add new item.`
 
+    <div className="ch-image-lg">
+
     ![Étape 6](/images/use-cases/observability/hyperdx-demo/step_6.webp)
+
+    </div>
   </Step>
 
   <Step title="Explorer l’infrastructure" id="explore-the-infrastructure">
@@ -139,7 +171,11 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     Sélectionnez l’onglet `Infrastructure` pour afficher les métriques associées aux pods sous-jacents du service `frontend`, puis élargissez la période à `1d` :
 
+    <div className="ch-image-lg">
+
     ![Étape 7](/images/use-cases/observability/hyperdx-demo/step_7.webp)
+
+    </div>
 
     Le problème ne semble pas lié à l’infrastructure : aucune métrique n’a sensiblement évolué sur la période considérée, ni avant ni après l’erreur. Fermez l’onglet Infrastructure.
   </Step>
@@ -149,11 +185,19 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     Sélectionnez `Trace` pour visualiser la trace associée. En faisant défiler l’écran dans la vue suivante, on peut voir comment HyperDX visualise la trace distribuée à travers les microservices, en reliant les spans de chaque service. Un paiement implique clairement plusieurs microservices, notamment ceux qui effectuent le checkout et les conversions de devises.
 
+    <div className="ch-image-lg">
+
     ![Étape 8](/images/use-cases/observability/hyperdx-demo/step_8.webp)
+
+    </div>
 
     En faisant défiler jusqu’en bas de la vue, on peut voir que le service `payment` est à l’origine de l’erreur, qui se propage ensuite dans la chaîne d’appels.
 
+    <div className="ch-image-lg">
+
     ![Étape 9](/images/use-cases/observability/hyperdx-demo/step_9.webp)
+
+    </div>
   </Step>
 
   <Step title="Recherche de traces" id="searching-traces">
@@ -161,25 +205,45 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     Basculez vers la vue Search principale en sélectionnant `Search`. Changez la source de données pour `Traces` et sélectionnez la vue `Results table`. **Assurez-vous que la période couvre toujours le dernier jour.**
 
+    <div className="ch-image-lg">
+
     ![Étape 10](/images/use-cases/observability/hyperdx-demo/step_10.webp)
+
+    </div>
 
     Cette vue affiche toutes les traces du dernier jour. Nous savons que le problème provient de notre service de paiement, appliquez donc le filtre `payment` sur `ServiceName`.
 
+    <div className="ch-image-lg">
+
     ![Étape 11](/images/use-cases/observability/hyperdx-demo/step_11.webp)
+
+    </div>
 
     Si nous appliquons le clustering des événements aux traces en sélectionnant `Event Patterns`, nous voyons immédiatement notre problème de cache sur le service `payment`.
 
+    <div className="ch-image-lg">
+
     ![Étape 12](/images/use-cases/observability/hyperdx-demo/step_12.webp)
+
+    </div>
   </Step>
 
   <Step title="Explorer l’infrastructure d’une trace" id="explore-infrastructure-for-a-trace">
     Passez à la vue des résultats en cliquant sur `Results table`. Filtrez pour n’afficher que les erreurs à l’aide du filtre `StatusCode` et de la valeur `Error`.
 
+    <div className="ch-image-lg">
+
     ![Étape 13](/images/use-cases/observability/hyperdx-demo/step_13.webp)
+
+    </div>
 
     Sélectionnez l’erreur `Error: Visa cache full: cannot add new item.`, passez à l’onglet `Infrastructure` et étendez la plage temporelle à `1d`.
 
+    <div className="ch-image-lg">
+
     ![Étape 14](/images/use-cases/observability/hyperdx-demo/step_14.webp)
+
+    </div>
 
     En corrélant les traces avec les métriques, nous pouvons voir que la mémoire et le CPU ont augmenté pour le service `payment`, avant de retomber à `0` (ce que l’on peut attribuer au redémarrage d’un pod), ce qui laisse penser que le problème de cache a provoqué des problèmes de ressources. On peut s’attendre à ce que cela ait affecté les temps de finalisation des paiements.
   </Step>
@@ -191,17 +255,29 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     Revenez à la vue du tableau de résultats et sélectionnez la période contenant les erreurs afin de limiter les données. Veillez à sélectionner aussi plusieurs heures avant les erreurs et, si possible, après celles-ci (le problème est peut-être toujours en cours) :
 
+    <div className="ch-image-lg">
+
     ![Étape 15](/images/use-cases/observability/hyperdx-demo/step_15.webp)
+
+    </div>
 
     Supprimez le filtre sur les erreurs et sélectionnez `Event Deltas` dans le menu `Analysis Mode` à gauche.
 
+    <div className="ch-image-lg">
+
     ![Étape 16](/images/use-cases/observability/hyperdx-demo/step_16.webp)
+
+    </div>
 
     Le panneau supérieur affiche la distribution des durées, les couleurs indiquant la densité des événements (nombre de spans). Le sous-ensemble d’événements situé en dehors de la zone de concentration principale est généralement celui qui mérite d’être examiné.
 
     Si nous sélectionnons les événements dont la durée est supérieure à `1ms` et appliquons le filtre `Filter by selection`, nous pouvons analyser les différences entre les événements « normaux » et le groupe à forte densité de spans d’une durée d’environ 0ms :
 
+    <div className="ch-image-lg">
+
     ![Étape 17](/images/use-cases/observability/hyperdx-demo/step_17.webp)
+
+    </div>
 
     En effectuant l’analyse sur ce sous-ensemble de données, nous pouvons voir que les spans « background » en dehors de la sélection sont principalement des transactions Visa, associées à des réponses de 0ms en raison d’erreurs de cache.
   </Step>
@@ -230,11 +306,19 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     En cliquant sur `▶️`, vous verrez comment les performances des paiements se sont dégradées au fil du temps.
 
+    <div className="ch-image-lg">
+
     ![Étape 18](/images/use-cases/observability/hyperdx-demo/step_18.webp)
+
+    </div>
 
     Si nous définissons `Group By` sur `SpanAttributes['app.payment.card_type']` (saisissez simplement `card` pour l’autocomplétion), nous pouvons voir comment les performances du service se sont dégradées pour les transactions Visa par rapport à Mastercard :
 
+    <div className="ch-image-lg">
+
     ![Étape 19](/images/use-cases/observability/hyperdx-demo/step_19.webp)
+
+    </div>
 
     Notez qu’une fois l’erreur survenue, les réponses reviennent en `0s`.
   </Step>
@@ -252,7 +336,11 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     On voit que la taille du cache a augmenté sur une période de 4 à 5 heures (probablement après un déploiement logiciel) avant d’atteindre une taille maximale de `100,000`. D’après les `Sample Matched Events`, on constate que nos erreurs coïncident avec l’atteinte de cette limite par le cache, après quoi sa taille est enregistrée à `0` et les réponses reviennent également en `0s`.
 
+    <div className="ch-image-lg">
+
     ![Étape 20](/images/use-cases/observability/hyperdx-demo/step_20.webp)
+
+    </div>
 
     En résumé, en explorant les logs, les traces et enfin les métriques, nous avons conclu que :
 
@@ -272,11 +360,19 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     Accédez à l’onglet `Client Sessions` dans le menu de gauche, puis assurez-vous que la source de données est définie sur `Sessions` et que la période est définie sur `Last 1 day` :
 
+    <div className="ch-image-lg">
+
     ![Étape 21](/images/use-cases/observability/hyperdx-demo/step_21.webp)
+
+    </div>
 
     Recherchez `SpanAttributes.userEmail: Ronny.Windler` pour trouver la session de notre client. En sélectionnant la session, vous verrez à gauche les événements du navigateur et les spans associés à la session du client, tandis qu’à droite, l’expérience de navigation de l’utilisateur sera reconstituée :
 
+    <div className="ch-image-lg">
+
     ![Étape 22](/images/use-cases/observability/hyperdx-demo/step_22.webp)
+
+    </div>
   </Step>
 
   <Step title="Rejouer des sessions" id="replaying-sessions">
@@ -284,11 +380,19 @@ Cette démonstration utilise un [fork maintenu par ClickStack](https://github.co
 
     En faisant défiler jusqu’en bas de la liste des spans, nous pouvons voir une erreur `500` associée à `/api/checkout`. Sélectionner le bouton ▶️ pour ce span précis fait avancer la relecture jusqu’à ce point de la session, ce qui nous permet de confirmer l’expérience du client : le paiement semble tout simplement ne pas fonctionner, sans qu’aucune erreur ne s’affiche.
 
+    <div className="ch-image-lg">
+
     ![Étape 23](/images/use-cases/observability/hyperdx-demo/step_23.webp)
+
+    </div>
 
     En sélectionnant le span, nous pouvons confirmer que cela a été causé par une erreur interne. En cliquant sur l’onglet `Trace` et en faisant défiler les spans liés, nous pouvons confirmer que le client a bien été victime de notre problème de cache.
 
+    <div className="ch-image-lg">
+
     ![Étape 24](/images/use-cases/observability/hyperdx-demo/step_24.webp)
+
+    </div>
   </Step>
 </Steps>
 

@@ -25,17 +25,33 @@ De forma predeterminada, Amazon DocumentDB tiene un período de retención de re
 
 1. Haga clic en `Parameter groups` en el panel izquierdo y busque el grupo de parámetros que usa su clúster de DocumentDB (si está usando el grupo de parámetros predeterminado, primero deberá crear uno nuevo para poder modificarlo).
 
+<div className="ch-image-lg">
+
 ![Seleccionar grupo de parámetros](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp)
+
+</div>
 
 2. Busque `change_stream_log_retention_duration`, selecciónelo y cámbielo a `259200` (72 horas)
 
+<div className="ch-image-lg">
+
 ![Modificar grupo de parámetros](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp)
+
+</div>
 
 3. Haga clic en `Apply Changes` para aplicar de inmediato el grupo de parámetros modificado a su clúster de DocumentDB. Debería ver que el estado del grupo de parámetros cambia primero a `applying` y luego a `in-sync` cuando se aplique el cambio.
 
+<div className="ch-image-lg">
+
 ![Aplicar grupo de parámetros](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Estado del grupo de parámetros](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp)
+
+</div>
 
 <div id="update-change-stream-log-retention-via-aws-cli">
   ### Actualiza la retención de registros del change stream con AWS CLI

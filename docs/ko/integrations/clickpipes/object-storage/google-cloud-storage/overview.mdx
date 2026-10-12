@@ -155,7 +155,11 @@ Pub/Sub 알림을 사용하는 [unordered mode](#continuous-ingestion-any-order)
 
 인증에 [HMAC keys](https://docs.cloud.google.com/storage/docs/authentication/hmackeys)를 사용하려면 ClickPipe 연결을 설정할 때 **인증 방법**에서 `Credentials`를 선택하십시오. 그런 다음 `Access key`와 `Secret key`에 각각 액세스 키(예: `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`)와 시크릿 키(예: `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`)를 입력하십시오.
 
+<div className="ch-image-lg">
+
 ![GCS ClickPipes용 HMAC 자격 증명](/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp)
+
+</div>
 
 HMAC 키가 포함된 서비스 계정을 생성하려면 [이 가이드](/ko/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret)를 따르십시오.
 
@@ -193,7 +197,11 @@ ClickPipes는 대부분의 사용 사례 요구 사항을 충족하는 적절한
 | `Parallel view processing`           | false   | attached 상태인 뷰로의 푸시를 [순차 처리 대신 동시에](/ko/reference/settings/session-settings/parallel#parallel_view_processing) 수행할지 여부입니다. |
 | `Use cluster function`               | true    | 여러 노드에서 파일을 병렬로 처리할지 여부입니다.                                                                                             |
 
+<div className="ch-image-lg">
+
 ![ClickPipes의 고급 설정](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</div>
 
 <div id="scaling">
   ### 스케일링

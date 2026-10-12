@@ -10,10 +10,12 @@ keywords: ['clickstack', 'развертывание', 'настройка', 'к
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 import JSONSupport from '/snippets/ru/_json_support.mdx';
+
 import ExampleOTelConfig from '/snippets/ru/clickstack/_config_example_otel.mdx';
 
 import SetupManagedIngestion from '/snippets/ru/clickstack/_setup_managed_ingestion.mdx';
 import NavigateClickStackUI from '/snippets/ru/clickstack/_navigate_managed.mdx';
+
 import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
 Это **руководство предназначено для существующих пользователей ClickHouse Cloud**. Если вы только начинаете работать с ClickHouse Cloud, рекомендуем руководство [Начало работы](/ru/clickstack/getting-started/managed) по Управляемому ClickStack.
@@ -56,7 +58,11 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
       <Step title="Создайте новый сервис" id="create-a-service">
         На главной странице ClickHouse Cloud выберите `New service`, чтобы создать новый сервис.
 
+        <div className="ch-image-lg">
+
         ![Сервис](/images/clickstack/getting-started/new_service.webp)
+
+        </div>
       </Step>
 
       <Step title="Укажите провайдера, регион и ресурс" id="specify-your-region-and-resources">
@@ -92,7 +98,11 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
           Если ваш сервис ClickHouse уже используется для существующих рабочих нагрузок, например аналитики приложений в реальном времени, мы рекомендуем создать дочерний сервис с помощью [функции хранилищ ClickHouse Cloud](/ru/products/cloud/features/infrastructure/warehouses), чтобы изолировать рабочую нагрузку обсервабилити. Это позволит не влиять на работу существующих приложений и при этом сохранить доступ к наборам данных из обоих сервисов.
         </Warning>
 
+        <div className="ch-image-lg">
+
         ![Выберите сервис](/images/clickstack/select_service.webp)
+
+        </div>
       </Step>
 
       <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-the-clickstack-ui-existing">
@@ -108,7 +118,11 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
         Если автообнаружение прошло успешно, вы будете перенаправлены в представление Search, где сразу сможете приступить к изучению данных.
 
+        <div className="ch-image-lg">
+
         ![Интерфейс ClickStack](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+        </div>
 
         Если этот шаг выполнен успешно, то на этом всё — всё готово 🎉, в противном случае переходите к настройке ингестии.
       </Step>
@@ -116,11 +130,19 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
       <Step title="Настройте ингестию" id="setup-ingestion-existing-service">
         Если автоматическое обнаружение завершится неудачей или у вас нет существующих таблиц, система предложит вам настроить ингестию.
 
+        <div className="ch-image-lg">
+
         ![Настройка ингестии в интерфейсе ClickStack](/images/clickstack/clickstack-ui-setup-ingestion.webp)
+
+        </div>
 
         Выберите &quot;Start Ingestion&quot; — вам будет предложено выбрать источник ингестии. Управляемый ClickStack поддерживает OpenTelemetry и [Vector](https://vector.dev/) в качестве основных источников ингестии. При этом пользователи также могут отправлять данные напрямую в ClickHouse в собственной схеме, используя любую из [интеграций, поддерживаемых ClickHouse Cloud](/ru/integrations/home).
 
+        <div className="ch-image-lg">
+
         ![Выберите источник данных — интерфейс ClickStack](/images/clickstack/select-source-clickstack-ui.webp)
+
+        </div>
 
         <Info>
           **Рекомендуется OpenTelemetry**
@@ -141,7 +163,11 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
             Чтобы быстро начать, скопируйте и выполните показанную Docker-команду.
 
+            <div className="ch-image-md">
+
             ![Источник OTel collector](/images/clickstack/otel-collector-start-clickstack-ui.webp)
+
+            </div>
 
             **Измените эту команду, подставив учётные данные вашего сервиса, сохранённые при его создании.**
 
@@ -167,7 +193,11 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
             <ExampleOTelConfig />
 
+            <div className="ch-image-lg">
+
             ![Расширенный источник OTel collector](/images/clickstack/advanced-otel-collector-clickstack-ui.webp)
+
+            </div>
 
             Подробнее о настройке OpenTelemetry Collectors см. в разделе [&quot;Ингестия с OpenTelemetry&quot;](/ru/clickstack/ingesting-data/opentelemetry)
 
@@ -235,7 +265,11 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
             После создания таблицы скопируйте показанный фрагмент конфигурации. При необходимости настройте вход так, чтобы использовать существующие конвейеры, а также укажите целевую таблицу и базу данных. Учётные данные должны быть подставлены автоматически.
 
+            <div className="ch-image-lg">
+
             ![Конфигурация Vector](/images/clickstack/vector-config-clickstack-ui.webp)
+
+            </div>
 
             Дополнительные примеры приёма данных с помощью Vector см. в [&quot;Приём данных с Vector&quot;](/ru/clickstack/ingesting-data/vector) или в [документации по sink ClickHouse в Vector](https://vector.dev/docs/reference/configuration/sinks/clickhouse/) для ознакомления с расширенными параметрами.
 
@@ -251,7 +285,11 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
           <Tab title="OpenTelemetry">
             Если вы настроили ингестию данных OpenTelemetry с помощью этого руководства, источники данных будут созданы автоматически, и дополнительная настройка не потребуется. Вы можете сразу приступить к работе с ClickStack. Вы будете перенаправлены в Search view, где источник будет выбран автоматически, чтобы вы могли сразу выполнять запросы.
 
+            <div className="ch-image-lg">
+
             ![Интерфейс ClickStack](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+            </div>
 
             Вот и всё — всё готово 🎉.
 
@@ -261,7 +299,11 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
           <Tab title="Vector">
             Если вы настроили ингестию данных через Vector или другой источник, вам будет предложено настроить источник данных.
 
+            <div className="ch-image-lg">
+
             ![Создание источника данных — Vector](/images/clickstack/create-vector-datasource.webp)
+
+            </div>
 
             Приведённая выше конфигурация предполагает схему в стиле Nginx со столбцом `time_local`, используемым в качестве временной метки. По возможности это должен быть столбец временной метки, объявленный в primary key. **Этот столбец обязателен**.
 
@@ -273,7 +315,11 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
 
             После настройки источника нажмите &quot;Save&quot; и приступайте к изучению своих данных.
 
+            <div className="ch-image-lg">
+
             ![Интерфейс ClickStack](/images/clickstack/getting-started/clickstack_managed_ui.webp)
+
+            </div>
 
             <br />
           </Tab>
@@ -296,7 +342,11 @@ import ProviderSelection from '/snippets/ru/clickstack/_select_provider.mdx';
    * **Service Read Only → Read Only** - Может просматривать данные обсервабилити и создавать панели мониторинга
    * **No access** - Не может получить доступ к HyperDX
 
+<div className="ch-image-md">
+
 ![ClickHouse Cloud только для чтения](/images/clickstack/read-only-access.webp)
+
+</div>
 
 <Warning>
   **Для оповещений требуется доступ администратора**
@@ -351,15 +401,27 @@ ClickStack изначально поддерживает OpenTelemetry, но н�
 
 Если вы используете OTel collector для создания базы данных и таблиц в ClickHouse, оставьте все значения по умолчанию в форме создания источника и укажите в поле `Table` значение `otel_logs`, чтобы создать источник логов. Все остальные настройки должны определиться автоматически, после чего вы сможете нажать `Save New Source`.
 
+<div className="ch-image-lg">
+
 ![Источник данных HyperDX в ClickHouse Cloud](/images/use-cases/observability/hyperdx_cloud_datasource.webp)
+
+</div>
 
 Чтобы создать источники для трассировок и OTel-метрик, выберите `Create New Source` в верхнем меню.
 
+<div className="ch-image-lg">
+
 ![ClickStack: создать новый источник](/images/use-cases/observability/hyperdx_create_new_source.webp)
+
+</div>
 
 Здесь выберите нужный тип источника, а затем соответствующую таблицу; например, для трассировок выберите таблицу `otel_traces`. Все настройки должны определиться автоматически.
 
+<div className="ch-image-lg">
+
 ![ClickStack: создать источник трассировок](/images/use-cases/observability/hyperdx_create_trace_datasource.webp)
+
+</div>
 
 <Info>
   **Коррелирование источников**

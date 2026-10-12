@@ -41,17 +41,33 @@ postgres=> SHOW rds.logical_replication ;
 1. 必要な設定を含む、使用中の Postgres バージョン用の新しいパラメータグループを作成します。
    * `rds.logical_replication` を 1 に設定します
 
+<div className="ch-image-lg">
+
 ![RDS でパラメータグループを確認する場所](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![rds.logical_replication の変更](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
 
+</div>
+
 2. 新しいパラメータグループを RDS Postgres データベースに適用します
+
+<div className="ch-image-lg">
 
 ![新しいパラメータグループを使用して RDS Postgres を変更](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
 
+</div>
+
 3. 変更を反映するため、RDS インスタンスを再起動します
 
+<div className="ch-image-lg">
+
 ![RDS Postgres の再起動](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+
+</div>
 
 <div id="configure-database-user">
   ## データベースユーザーを設定する
@@ -119,9 +135,17 @@ postgres=> SHOW rds.logical_replication ;
 
 RDS インスタンスへのトラフィックを制限する場合は、RDS のセキュリティグループの `Inbound rules` に、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を追加してください。
 
+<div className="ch-image-lg">
+
 ![RDS Postgres でセキュリティグループはどこにありますか？](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![上記のセキュリティグループの Inbound rules を編集](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### AWS PrivateLink を介したプライベートアクセス

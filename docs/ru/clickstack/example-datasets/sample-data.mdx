@@ -17,13 +17,21 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
       <Step title="Выберите сервис" id="select-your-service-managed">
         На главной странице ClickHouse Cloud выберите сервис с Управляемым ClickStack.
 
+        <div className="ch-image-lg">
+
         ![Выберите сервис](/images/clickstack/select_service.webp)
+
+        </div>
       </Step>
 
       <Step title="Перейдите в интерфейс ClickStack (HyperDX)" id="navigate-to-the-hyperdx-ui-managed">
         Выберите `ClickStack` в левом меню, чтобы перейти в интерфейс ClickStack, где вы будете автоматически авторизованы.
 
+        <div className="ch-image-lg">
+
         ![Интерфейс ClickStack](/images/use-cases/observability/hyperdx.webp)
+
+        </div>
       </Step>
 
       <Step title="Скачайте пример данных" id="download-sample-data-managed">
@@ -63,7 +71,11 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
 
         Вернувшись к представлению `Search`, вы должны увидеть, что данные начали загружаться (измените временной диапазон на `Last 1 hour`, если данные не отображаются):
 
+        <div className="ch-image-lg">
+
         ![Поиск HyperDX](/images/use-cases/observability/hyperdx-10.webp)
+
+        </div>
 
         Загрузка данных займет несколько минут. Прежде чем переходить к следующим шагам, дождитесь ее завершения.
       </Step>
@@ -73,7 +85,11 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
 
         Выберите `Client Sessions` в левом меню.
 
+        <div className="ch-image-lg">
+
         ![Сеансы](/images/use-cases/observability/hyperdx-11.webp)
+
+        </div>
 
         В этом представлении отображаются фронтенд-сеансы для нашего интернет-магазина. Сеансы остаются Anonymous, пока пользователи не переходят к оформлению заказа и не пытаются завершить покупку.
 
@@ -81,7 +97,11 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
 
         Выберите трейс со сбоем и связанным с ним адресом электронной почты. В следующем представлении можно воспроизвести сеанс пользователя и разобраться в его проблеме. Нажмите play, чтобы просмотреть сеанс.
 
+        <div className="ch-image-lg">
+
         ![Воспроизведение сеанса](/images/use-cases/observability/hyperdx-12.webp)
+
+        </div>
 
         На записи видно, как пользователь перемещается по сайту и добавляет товары в корзину. При желании можно перейти к более позднему моменту сеанса, где он пытается завершить оплату.
 
@@ -91,7 +111,11 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
 
         Пользователь не смог оформить заказ, при этом явной ошибки не видно. Прокрутите левую панель вниз — в ней показаны сетевые события и события консоли из браузера пользователя. Вы заметите, что при вызове `/api/checkout` возникла ошибка 500.
 
+        <div className="ch-image-lg">
+
         ![Ошибка в сеансе](/images/use-cases/observability/hyperdx-13.webp)
+
+        </div>
 
         Выберите эту ошибку `500`. Ни `Overview`, ни `Column Values` не указывают на источник проблемы, кроме того, что ошибка является неожиданной и приводит к `Internal Error`.
       </Step>
@@ -99,19 +123,35 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
       <Step title="Просмотр трассировок" id="explore-traces-managed">
         Перейдите на вкладку `Trace`, чтобы увидеть полную распределенную трассировку.
 
+        <div className="ch-image-lg">
+
         ![Трассировка сеанса](/images/use-cases/observability/hyperdx-14.webp)
+
+        </div>
 
         Прокрутите трассировку вниз, чтобы увидеть источник ошибки — спан сервиса `checkout`. Выберите спан сервиса `Payment`.
 
+        <div className="ch-image-lg">
+
         ![Спан](/images/use-cases/observability/hyperdx-15.webp)
+
+        </div>
 
         Выберите вкладку `Column Values` и прокрутите вниз. Мы видим, что проблема связана с переполнением кэша.
 
+        <div className="ch-image-lg">
+
         ![Значения столбцов](/images/use-cases/observability/hyperdx-16.webp)
+
+        </div>
 
         Если прокрутить вверх и вернуться к трассировке, видно, что журналы коррелируются со спаном благодаря выполненной ранее настройке. Это дает дополнительный контекст.
 
+        <div className="ch-image-lg">
+
         ![Скоррелированный журнал](/images/use-cases/observability/hyperdx-17.webp)
+
+        </div>
 
         Мы установили, что в сервисе Payment заполняется кэш, из-за чего платежи не могут завершиться.
       </Step>
@@ -121,7 +161,11 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
 
         Выберите `Logs` в списке источников и примените фильтр по сервису `payment`.
 
+        <div className="ch-image-lg">
+
         ![Журналы](/images/use-cases/observability/hyperdx-18.webp)
+
+        </div>
 
         Мы видим, что, хотя проблема возникла недавно, количество затронутых платежей велико. Кроме того, похоже, что проблемы вызывает кэш, связанный с платежами Visa.
       </Step>
@@ -131,7 +175,11 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
 
         Выберите `Metrics` в качестве источника данных. Настройте диаграмму в конструкторе так, чтобы построить `Maximum` для `visa_validation_cache.size (Gauge)`, и нажмите кнопку play. До достижения максимального размера кэш явно рос, после чего начали возникать ошибки.
 
+        <div className="ch-image-lg">
+
         ![Метрики](/images/use-cases/observability/hyperdx-19.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -143,13 +191,21 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
       <Step title="Перейдите в интерфейс ClickStack (HyperDX)" id="navigate-to-the-hyperdx-ui">
         Чтобы открыть интерфейс ClickStack, перейдите по адресу [http://localhost:8080](http://localhost:8080).
 
+        <div className="ch-image-lg">
+
         ![Интерфейс ClickStack](/images/use-cases/observability/hyperdx.webp)
+
+        </div>
       </Step>
 
       <Step title="Скопируйте ключ API для приёма данных" id="copy-ingestion-api-key">
         Перейдите в [`Team Settings`](http://localhost:8080/team) и скопируйте `Ingestion API Key` из раздела `API Keys`. Этот ключ API обеспечивает безопасный приём данных через OpenTelemetry Collector.
 
+        <div className="ch-image-lg">
+
         ![Копирование ключа API](/images/use-cases/observability/copy_api_key.webp)
+
+        </div>
       </Step>
 
       <Step title="Скачайте пример данных" id="download-sample-data">
@@ -196,7 +252,11 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
 
         Вернувшись к представлению `Search`, вы должны увидеть, что данные начали загружаться (измените временной диапазон на `Last 1 hour`, если данные не отображаются):
 
+        <div className="ch-image-lg">
+
         ![Поиск HyperDX](/images/use-cases/observability/hyperdx-10.webp)
+
+        </div>
 
         Загрузка данных займет несколько минут. Прежде чем переходить к следующим шагам, дождитесь ее завершения.
       </Step>
@@ -206,7 +266,11 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
 
         Выберите [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000\&to=1747312920000\&sessionSource=l1324572572) в левом меню.
 
+        <div className="ch-image-lg">
+
         ![Сеансы](/images/use-cases/observability/hyperdx-11.webp)
+
+        </div>
 
         В этом представлении можно увидеть фронтенд-сеансы нашего интернет-магазина. Сеансы остаются анонимными, пока пользователи не переходят к оформлению заказа и не пытаются завершить покупку.
 
@@ -214,7 +278,11 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
 
         Выберите трассировку со сбоем и связанным адресом электронной почты. В следующем представлении можно воспроизвести сеанс пользователя и изучить проблему. Нажмите play, чтобы просмотреть сеанс.
 
+        <div className="ch-image-lg">
+
         ![Воспроизведение сеанса](/images/use-cases/observability/hyperdx-12.webp)
+
+        </div>
 
         На записи видно, как пользователь перемещается по сайту и добавляет товары в корзину. При желании можно перейти к более позднему моменту сеанса, где он пытается завершить оплату.
 
@@ -224,7 +292,11 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
 
         Пользователь не смог оформить заказ, хотя явной ошибки не видно. Прокрутите левую панель вниз — в ней показаны события Network и консоли из браузера пользователя. Вы увидите, что при вызове `/api/checkout` была сгенерирована ошибка 500.
 
+        <div className="ch-image-lg">
+
         ![Ошибка в сеансе](/images/use-cases/observability/hyperdx-13.webp)
+
+        </div>
 
         Выберите эту ошибку `500`. Ни `Overview`, ни `Column Values` не указывают на источник проблемы, кроме того, что ошибка является неожиданной и приводит к `Internal Error`.
       </Step>
@@ -232,19 +304,35 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
       <Step title="Просмотр трассировок" id="explore-traces">
         Перейдите на вкладку `Trace`, чтобы увидеть полную распределенную трассировку.
 
+        <div className="ch-image-lg">
+
         ![Трассировка сеанса](/images/use-cases/observability/hyperdx-14.webp)
+
+        </div>
 
         Прокрутите трассировку вниз, чтобы увидеть источник ошибки — спан сервиса `checkout`. Выберите спан сервиса `Payment`.
 
+        <div className="ch-image-lg">
+
         ![Спан](/images/use-cases/observability/hyperdx-15.webp)
+
+        </div>
 
         Выберите вкладку `Column Values` и прокрутите вниз. Мы видим, что проблема связана с переполнением кэша.
 
+        <div className="ch-image-lg">
+
         ![Значения столбцов](/images/use-cases/observability/hyperdx-16.webp)
+
+        </div>
 
         Если прокрутить вверх и вернуться к трассировке, видно, что журналы коррелируются со спаном благодаря выполненной ранее настройке. Это дает дополнительный контекст.
 
+        <div className="ch-image-lg">
+
         ![Скоррелированный журнал](/images/use-cases/observability/hyperdx-17.webp)
+
+        </div>
 
         Мы установили, что в сервисе Payment заполняется кэш, из-за чего платежи не могут завершиться.
       </Step>
@@ -254,7 +342,11 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
 
         В списке источников выберите `Logs` и примените фильтр по сервису `payment`.
 
+        <div className="ch-image-lg">
+
         ![Журналы](/images/use-cases/observability/hyperdx-18.webp)
+
+        </div>
 
         Мы видим, что, хотя проблема возникла недавно, число затронутых платежей велико. Кроме того, похоже, проблемы вызывает кэш, связанный с платежами Visa.
       </Step>
@@ -264,7 +356,11 @@ keywords: ['clickstack', 'демонстрационные данные', 'де�
 
         Выберите `Metrics` в качестве источника данных. Настройте диаграмму в конструкторе так, чтобы построить `Maximum` для `visa_validation_cache.size (Gauge)`, и нажмите кнопку play. До достижения максимального размера кэш явно рос, после чего начали возникать ошибки.
 
+        <div className="ch-image-lg">
+
         ![Метрики](/images/use-cases/observability/hyperdx-19.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>

@@ -18,13 +18,21 @@ doc_type: 'guide'
 
 Dans les clusters ClickHouse [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) traditionnels, le sharding est utilisé lorsque ① les données sont trop volumineuses pour un seul serveur ou ② un seul serveur est trop lent pour les traiter. La figure suivante illustre le cas ①, où la table [uk&#95;price&#95;paid&#95;simple](/fr/concepts/core-concepts/parts) dépasse la capacité d&#39;une seule machine :
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_01.webp)
+
+</div>
 
 <br />
 
 Dans ce cas, les données peuvent être réparties sur plusieurs serveurs ClickHouse sous forme de shards de table :
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_02.webp)
+
+</div>
 
 <br />
 
@@ -57,7 +65,11 @@ Pour les [paramètres du moteur Distributed](/fr/reference/engines/table-engines
 
 Le diagramme ci-dessous illustre comment les INSERT dans une table distribuée sont traités dans ClickHouse :
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_03.webp)
+
+</div>
 
 <br />
 
@@ -73,7 +85,11 @@ La section suivante explique comment fonctionne le transfert des SELECT.
 
 Ce schéma montre comment les requêtes SELECT sont traitées avec une table distribuée dans ClickHouse :
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_04.webp)
+
+</div>
 
 <br />
 
@@ -93,7 +109,11 @@ Notez que la réplication nécessite un composant [Keeper](https://clickhouse.co
 
 Le schéma suivant illustre un cluster ClickHouse avec six serveurs, où les deux shards de table `Shard-1` et `Shard-2` introduits précédemment disposent chacun de trois répliques. Une requête est envoyée à ce cluster :
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_replicas_01.webp)
+
+</div>
 
 <br />
 

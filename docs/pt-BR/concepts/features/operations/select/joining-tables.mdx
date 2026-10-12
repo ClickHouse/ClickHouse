@@ -12,7 +12,11 @@ O ClickHouse tem [suporte completo a `JOIN`](https://clickhouse.com/blog/clickho
 * A partir do ClickHouse 24.12, o planejador de consultas reordena automaticamente junções entre duas tabelas para colocar a tabela menor no lado direito, visando ao melhor desempenho. Na versão 25.9, isso foi estendido para otimizar a ordem das junções em consultas que envolvem três ou mais tabelas.
 * Se a sua consulta exigir um direct join, ou seja, um `LEFT ANY JOIN`, como mostrado abaixo, recomendamos usar [Dictionaries](/pt-BR/concepts/features/dictionaries/index) sempre que possível.
 
+<div className="ch-image-sm">
+
 ![Junção LEFT ANY](/images/guides/joins-1.webp)
+
+</div>
 
 * Ao fazer junções internas, em geral é mais eficiente escrevê-las como subconsultas usando a cláusula `IN`. Considere as consultas a seguir, que são funcionalmente equivalentes. Ambas encontram o número de `posts` que não mencionam ClickHouse na pergunta, mas mencionam em `comments`.
 
@@ -138,7 +142,11 @@ O ClickHouse oferece vários [algoritmos de junção](https://clickhouse.com/blo
 
 <br />
 
+<div className="ch-image-lg">
+
 ![velocidade em função da memória para junções](/images/guides/joins-2.png)
+
+</div>
 
 <br />
 
@@ -148,7 +156,11 @@ Os tipos de `JOIN` compatíveis com cada algoritmo de junção são mostrados ab
 
 <br />
 
+<div className="ch-image-lg">
+
 ![recursos de junção](/images/guides/joins-3.webp)
+
+</div>
 
 <br />
 
@@ -164,7 +176,11 @@ Se a sua principal métrica de otimização for o desempenho e você estiver bus
 
 <br />
 
+<div className="ch-image-lg">
+
 ![fluxograma de junção](/images/guides/joins-4.webp)
+
+</div>
 
 <br />
 
@@ -190,7 +206,11 @@ Se você quiser otimizar uma junção para usar o mínimo possível de memória,
 
 <br />
 
+<div className="ch-image-lg">
+
 ![Árvore de decisão para otimização de memória de junção](/images/guides/joins-5.webp)
+
+</div>
 
 <br />
 

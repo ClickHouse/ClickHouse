@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+
 import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -28,7 +29,11 @@ Lightdash는 현대적인 데이터 팀을 위해 구축된 **AI 우선 BI 플�
 이 가이드에서는 **Lightdash**를 **ClickHouse**에 연결해 dbt 모델을 탐색하고 인터랙티브 대시보드를 만드는 방법을 설명합니다.
 아래 예시는 ClickHouse 데이터를 기반으로 한 완성된 대시보드를 보여줍니다.
 
+<div className="ch-image-md">
+
 ![Lightdash 대시보드 예시](/images/integrations/data-visualization/lightdash_02.webp)
+
+</div>
 
 <Steps>
   <Step title="연결 정보 수집" id="connection-data-required">
@@ -55,7 +60,11 @@ Lightdash는 현대적인 데이터 팀을 위해 구축된 **AI 우선 BI 플�
 
     예시는 다음과 같습니다:
 
+    <div className="ch-image-md">
+
     ![lightdash-clickhouse 프로젝트용 profiles.yml 구성 예시](/images/integrations/data-visualization/lightdash_01.webp)
+
+    </div>
 
     <br />
   </Step>
@@ -87,7 +96,11 @@ Lightdash는 현대적인 데이터 팀을 위해 구축된 **AI 우선 BI 플�
   <Step title="Lightdash에서 메트릭과 차원 정의하기" id="defining-metrics-and-dimensions-in-lightdash">
     Lightdash에서는 모든 **메트릭**과 **차원**을 dbt 모델 `.yml` 파일에서 직접 정의합니다. 이렇게 하면 비즈니스 로직을 버전 관리할 수 있고, 일관성과 투명성도 확보됩니다.
 
+    <div className="ch-image-md">
+
     ![.yml 파일에 메트릭을 정의한 예시](/images/integrations/data-visualization/lightdash_03.webp)
+
+    </div>
 
     <br />
 
@@ -113,7 +126,11 @@ Lightdash는 현대적인 데이터 팀을 위해 구축된 **AI 우선 BI 플�
     4. **Results** — ClickHouse 데이터베이스에서 반환된 원시 데이터를 확인합니다
     5. **SQL** — 결과를 생성한 생성된 SQL 쿼리를 확인합니다
 
+    <div className="ch-image-lg">
+
     ![차원, 필터, 차트, 결과, SQL이 표시된 Lightdash Explore 화면](/images/integrations/data-visualization/lightdash_04.webp)
+
+    </div>
 
     여기에서는 필드를 끌어다 놓고, 필터를 추가하고, 테이블, 막대 차트, 시계열 등의 시각화로 전환하면서 대화형으로 쿼리를 만들고 조정할 수 있습니다.
 
@@ -137,7 +154,11 @@ Lightdash는 현대적인 데이터 팀을 위해 구축된 **AI 우선 BI 플�
     3. 차트 빌더에서 시각화를 만듭니다
     4. 저장하면 대시보드 하단에 표시됩니다
 
+    <div className="ch-image-lg">
+
     ![Lightdash 대시보드 내에서 차트 만들기 및 정리하기](/images/integrations/data-visualization/lightdash_05.webp)
+
+    </div>
 
     대시보드를 만들고 정리하는 방법에 대한 자세한 내용은 여기에서 확인하십시오:
     [대시보드 만들기 → Lightdash 문서](https://docs.lightdash.com/get-started/exploring-data/dashboards?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
@@ -151,7 +172,11 @@ Lightdash는 현대적인 데이터 팀을 위해 구축된 **AI 우선 BI 플�
 
     이는 dbt에서 사용하는 것과 동일한 시맨틱 레이어를 기반으로 하므로 모든 답변에 거버넌스가 적용되고, 설명 가능하며, 빠르게 제공됩니다. 이 모든 기능은 ClickHouse를 기반으로 합니다.
 
+    <div className="ch-image-lg">
+
     ![dbt 메트릭 기반 자연어 쿼리를 보여주는 Lightdash Ask AI 인터페이스](/images/integrations/data-visualization/lightdash_06.webp)
+
+    </div>
 
     <Tip>
       여기에서 AI Agents에 대해 자세히 알아보세요: [AI Agents → Lightdash Docs](https://docs.lightdash.com/guides/ai-agents?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)

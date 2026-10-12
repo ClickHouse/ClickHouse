@@ -8,7 +8,11 @@ title: 移行ガイド
 
 [Amazon Redshift](https://aws.amazon.com/redshift/) は、Amazon Web Services が提供する人気の高いクラウドデータウェアハウスソリューションです。このガイドでは、Redshift インスタンスから ClickHouse へデータを移行するためのさまざまな方法を紹介します。ここでは、次の 3 つの選択肢を取り上げます。
 
+<div className="ch-image-md">
+
 ![Redshift から ClickHouse への移行オプション](/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp)
+
+</div>
 
 ClickHouse インスタンスの観点では、次のいずれかの方法を選択できます。
 
@@ -28,7 +32,11 @@ ClickHouse インスタンスの観点では、次のいずれかの方法を選
 
 Push シナリオでは、サードパーティ製のツールやサービス (カスタムコード、または [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT)) を利用して、データを ClickHouse インスタンスに送信します。たとえば、[Airbyte](https://www.airbyte.com/) のようなソフトウェアを使用すると、Redshift インスタンスをソース、ClickHouse を宛先として、両者の間でデータを移動できます ([Airbyte のインテグレーションガイドをご覧ください](/ja/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
 
+<div className="ch-image-md">
+
 ![PUSH Redshift から ClickHouse](/images/integrations/data-ingestion/redshift/push.webp)
+
+</div>
 
 <div id="pros">
   ### 利点
@@ -51,7 +59,11 @@ Push シナリオでは、サードパーティ製のツールやサービス (�
 
 Pull シナリオでは、ClickHouse JDBC Bridge を利用して、ClickHouse インスタンスから Redshift クラスターに直接接続し、`INSERT INTO ... SELECT` クエリを実行します。
 
+<div className="ch-image-md">
+
 ![Redshift から ClickHouse への PULL](/images/integrations/data-ingestion/redshift/pull.webp)
+
+</div>
 
 <div id="pros">
   ### 利点
@@ -189,7 +201,11 @@ Pull シナリオでは、ClickHouse JDBC Bridge を利用して、ClickHouse �
 
 このシナリオでは、まずデータを中間の Pivot 形式で S3 にエクスポートし、次に S3 から ClickHouse に読み込みます。
 
+<div className="ch-image-md">
+
 ![S3 を使用した Redshift からの PIVOT](/images/integrations/data-ingestion/redshift/pivot.webp)
+
+</div>
 
 <div id="pros">
   ### 利点
@@ -214,11 +230,19 @@ Pull シナリオでは、ClickHouse JDBC Bridge を利用して、ClickHouse �
   <Step title="UNLOAD を使用してデータを S3 バケットにエクスポートする" id="export-data-into-an-s3-bucket-using-unload">
     Redshift の [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) 機能を使用して、既存のプライベート S3 バケットにデータをエクスポートします。
 
+    <div className="ch-image-md ch-image-background-white">
+
     ![Redshift から S3 への UNLOAD](/images/integrations/data-ingestion/redshift/s3-1.webp)
+
+    </div>
 
     これにより、S3 に生データを含む part ファイルが生成されます。
 
+    <div className="ch-image-md ch-image-background-white">
+
     ![S3 内のデータ](/images/integrations/data-ingestion/redshift/s3-2.webp)
+
+    </div>
   </Step>
 
   <Step title="ClickHouse にテーブルを作成する" id="create-the-table-in-clickhouse">

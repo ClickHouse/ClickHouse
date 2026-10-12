@@ -24,7 +24,11 @@ Le journal binaire est un ensemble de fichiers de log contenant des informations
   <Step title="Activer la journalisation binaire via la sauvegarde automatisée" id="enable-binlog-logging">
     La fonctionnalité de sauvegardes automatisées détermine si la journalisation binaire est activée ou non pour MySQL. Vous pouvez configurer les sauvegardes automatisées pour votre instance dans la RDS Console en accédant à **Modify** &gt; **Additional configuration** &gt; **Backup**, puis en cochant la case **Enable automated backups** (si ce n’est pas déjà fait).
 
+    <div className="ch-image-lg">
+
     ![Activation des sauvegardes automatisées dans RDS](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+
+    </div>
 
     Nous recommandons de définir la **Backup retention period** sur une valeur suffisamment longue, selon votre cas d’usage de la réplication.
   </Step>
@@ -56,27 +60,47 @@ Vous trouverez le groupe de paramètres en cliquant sur votre instance MySQL dan
   Si vous avez un cluster MySQL, les paramètres ci-dessous se trouvent dans le groupe de paramètres du [DB cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) plutôt que dans celui de la DB instance.
 </Tip>
 
+<div className="ch-image-lg">
+
 ![Où trouver le groupe de paramètres dans RDS](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
+
+</div>
 
 <br />
 
 Cliquez sur le lien du groupe de paramètres pour accéder à sa page dédiée. Vous devriez voir un bouton **Edit** en haut à droite.
 
+<div className="ch-image-lg">
+
 ![Modifier le groupe de paramètres](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</div>
 
 Les paramètres suivants doivent être définis comme suit :
 
 1. `binlog_format` sur `ROW`.
 
+<div className="ch-image-lg">
+
 ![Format du binlog défini sur ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</div>
 
 2. `binlog_row_metadata` sur `FULL`
 
+<div className="ch-image-lg">
+
 ![Métadonnées de ligne du binlog définies sur FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</div>
 
 3. `binlog_row_image` sur `FULL`
 
+<div className="ch-image-lg">
+
 ![Image de ligne du binlog définie sur FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</div>
 
 <br />
 
@@ -103,7 +127,11 @@ La réplication basée sur GTID est prise en charge pour Amazon RDS for MySQL ve
 7. Cliquez sur **Save Changes** dans l’angle supérieur droit.
 8. Redémarrez votre instance pour que les modifications prennent effet.
 
+<div className="ch-image-lg">
+
 ![GTID activé](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
+
+</div>
 
 <br />
 
@@ -152,9 +180,17 @@ Connectez-vous à votre instance RDS MySQL avec un utilisateur administrateur, p
 
 Pour restreindre le trafic vers votre instance Aurora MySQL, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/networking/static-ips) aux **Inbound rules** de votre groupe de sécurité RDS.
 
+<div className="ch-image-lg">
+
 ![Où trouver le groupe de sécurité dans RDS MySQL ?](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Modifier les règles entrantes du groupe de sécurité ci-dessus](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### Accès privé via AWS PrivateLink

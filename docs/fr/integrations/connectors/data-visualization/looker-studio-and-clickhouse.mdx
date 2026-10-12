@@ -11,6 +11,7 @@ integration:
 ---
 
 import MySQLCloudSetup from '/snippets/fr/_clickhouse_mysql_cloud_setup.mdx';
+
 import MySQLOnPremiseSetup from '/snippets/fr/_clickhouse_mysql_on_premise_setup.mdx';
 
 import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
@@ -37,38 +38,62 @@ Looker Studio peut se connecter à ClickHouse via l’interface MySQL à l’aid
 
 Commencez par vous connecter à [Looker Studio](https://lookerstudio.google.com) avec votre compte Google, puis créez une nouvelle source de données :
 
+<div className="ch-image-md">
+
 ![Création d’une nouvelle source de données dans l’interface Looker Studio](/images/integrations/data-visualization/looker_studio_01.webp)
+
+</div>
 
 <br />
 
 Recherchez le connecteur MySQL officiel fourni par Google (simplement nommé **MySQL**) :
 
+<div className="ch-image-md">
+
 ![Recherche du connecteur MySQL dans la liste des connecteurs de Looker Studio](/images/integrations/data-visualization/looker_studio_02.webp)
+
+</div>
 
 <br />
 
 Renseignez vos informations de connexion. Notez que le port de l’interface MySQL est 9004 par défaut,
 et qu’il peut être différent selon la configuration du serveur.
 
+<div className="ch-image-md">
+
 ![Saisie des informations de connexion MySQL à ClickHouse dans Looker Studio](/images/integrations/data-visualization/looker_studio_03.webp)
+
+</div>
 
 <br />
 
 Vous avez maintenant deux options pour récupérer les données depuis ClickHouse. Vous pouvez d’abord utiliser la fonctionnalité de navigation dans les tables :
 
+<div className="ch-image-md">
+
 ![Utilisation du navigateur de tables pour sélectionner des tables ClickHouse dans Looker Studio](/images/integrations/data-visualization/looker_studio_04.webp)
+
+</div>
 
 <br />
 
 Vous pouvez également spécifier une requête SQL personnalisée pour récupérer vos données :
 
+<div className="ch-image-md">
+
 ![Utilisation d’une requête SQL personnalisée pour récupérer des données depuis ClickHouse dans Looker Studio](/images/integrations/data-visualization/looker_studio_05.webp)
+
+</div>
 
 <br />
 
 Enfin, vous devriez voir la structure de la table détectée automatiquement et pouvoir ajuster les types de données si nécessaire.
 
+<div className="ch-image-md">
+
 ![Affichage de la structure de table ClickHouse détectée automatiquement dans Looker Studio](/images/integrations/data-visualization/looker_studio_06.webp)
+
+</div>
 
 <br />
 
@@ -80,13 +105,21 @@ Vous pouvez maintenant explorer vos données ou créer un nouveau rapport !
 
 Lorsque vous utilisez ClickHouse Cloud, vous devez d’abord activer l’interface MySQL. Vous pouvez le faire dans la boîte de dialogue de connexion, dans l’onglet « MySQL ».
 
+<div className="ch-image-md">
+
 ![Activation de l’interface MySQL dans les paramètres de ClickHouse Cloud](/images/integrations/data-visualization/looker_studio_enable_mysql.webp)
+
+</div>
 
 <br />
 
 Dans l’UI de Looker Studio, sélectionnez l’option « Enable SSL ». Le certificat SSL de ClickHouse Cloud est signé par [Let&#39;s Encrypt](https://letsencrypt.org/certificates/). Vous pouvez télécharger ce certificat racine [ici](https://letsencrypt.org/certs/isrgrootx1.pem).
 
+<div className="ch-image-md">
+
 ![Configuration de la connexion Looker Studio avec les paramètres SSL de ClickHouse Cloud](/images/integrations/data-visualization/looker_studio_mysql_cloud.webp)
+
+</div>
 
 <br />
 

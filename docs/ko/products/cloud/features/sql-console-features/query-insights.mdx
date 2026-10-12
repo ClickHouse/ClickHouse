@@ -15,7 +15,11 @@ doc_type: 'guide'
 
 서비스를 선택하면 왼쪽 사이드바의 **모니터링** 메뉴가 확장되며, 새 **쿼리 인사이트** 하위 항목이 표시됩니다. 이 옵션을 클릭하면 쿼리 인사이트 페이지가 열립니다:
 
+<div className="ch-image-md">
+
 ![쿼리 인사이트 UI 개요](/images/cloud/sqlconsole/insights_overview.webp)
+
+</div>
 
 <div id="top-level-metrics">
   ## 상위 메트릭
@@ -23,7 +27,11 @@ doc_type: 'guide'
 
 상단의 통계 상자는 선택한 기간의 기본적인 상위 쿼리 메트릭을 나타냅니다. 그 아래에는 선택한 시간 구간 동안 쿼리 종류(select, insert, 기타)별 쿼리 볼륨, 지연 시간, 오류율을 보여주는 3개의 시계열 차트가 표시됩니다. 지연 시간 차트는 p50, p90, p99 지연 시간을 표시하도록 추가로 조정할 수 있습니다:
 
+<div className="ch-image-md">
+
 ![쿼리 인사이트 UI 지연 시간 차트](/images/cloud/sqlconsole/insights_latency.webp)
+
+</div>
 
 <div id="recent-queries">
   ## 최근 쿼리
@@ -31,7 +39,11 @@ doc_type: 'guide'
 
 상위 메트릭 아래에는 선택한 시간 범위의 쿼리 로그 항목(정규화된 쿼리 해시와 사용자별로 그룹화됨)을 표시하는 테이블이 있습니다:
 
+<div className="ch-image-md">
+
 ![쿼리 인사이트 UI 최근 쿼리 테이블](/images/cloud/sqlconsole/insights_recent.webp)
+
+</div>
 
 최근 쿼리는 사용 가능한 모든 필드를 기준으로 필터링하고 정렬할 수 있습니다. 또한 이 테이블은 tables, p90, p99 지연 시간과 같은 추가 필드를 표시하거나 숨기도록 설정할 수도 있습니다.
 
@@ -41,11 +53,19 @@ doc_type: 'guide'
 
 최근 쿼리 테이블에서 쿼리를 선택하면, 선택한 쿼리에 대한 메트릭과 정보가 담긴 플라이아웃이 열립니다:
 
+<div className="ch-image-md">
+
 ![Query Insights UI 쿼리 드릴다운](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</div>
 
 플라이아웃에서 확인할 수 있듯이, 이 쿼리는 지난 24시간 동안 3000회 이상 실행되었습니다. **쿼리 정보** 탭의 모든 메트릭은 집계 메트릭이지만, **쿼리 이력** 탭을 선택하면 개별 실행의 메트릭도 확인할 수 있습니다:
 
+<div className="ch-image-sm">
+
 ![Query Insights UI 쿼리 정보](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</div>
 
 <br />
 

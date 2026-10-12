@@ -27,7 +27,11 @@ integration:
 
 قبل التعمق في إعداد الوصول الآمن إلى Kinesis، من المهم فهم الآلية. في ما يلي نظرة عامة على كيفية وصول ClickPipes إلى تدفقات Amazon Kinesis عبر تولّي دور ضمن حسابات AWS الخاصة بالعملاء.
 
+<div className="ch-image-lg">
+
 ![Kinesis الآمن](/images/integrations/data-ingestion/clickpipes/securekinesis.jpg)
+
+</div>
 
 باستخدام هذا النهج، يمكن للعملاء إدارة جميع أذونات الوصول إلى تدفقات بيانات Kinesis الخاصة بهم من مكان واحد (سياسة IAM للدور المُتولّى)، من دون الحاجة إلى تعديل سياسة الوصول لكل تدفق على حدة.
 
@@ -45,7 +49,11 @@ integration:
 * 4. مرّر لأسفل إلى قسم **معلومات أمان الشبكة** في أسفل الصفحة
 * 5. انسخ قيمة **معرّف دور الخدمة (IAM)** الخاصة بالخدمة، كما هو موضّح أدناه.
 
+<div className="ch-image-lg">
+
 ![ARN الآمن لـ S3](/images/cloud/security/secures3_arn.webp)
+
+</div>
 
 <div id="setting-up-iam-assume-role">
   ### إعداد افتراض الدور في IAM

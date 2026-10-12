@@ -37,15 +37,27 @@ doc_type: 'guide'
 
 В меню слева нажмите `Data sources`, затем — `Predefined sample data`:
 
+<div className="ch-image-md">
+
 ![Добавление примера набора данных](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</div>
 
 Выберите `Get started` на карточке `UK property price paid data` (4 GB):
 
+<div className="ch-image-md">
+
 ![Выбор набора данных UK price paid](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</div>
 
 Затем нажмите `Import dataset`:
 
+<div className="ch-image-md">
+
 ![Импорт набора данных UK price paid](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</div>
 
 ClickHouse автоматически создаст таблицу `pp_complete` в базе данных `default` и заполнит её данными о ценах в объёме 28,92 млн строк.
 
@@ -78,12 +90,20 @@ jupyter notebook
 В браузере должно открыться новое окно с интерфейсом Jupyter на `localhost:8888`.
 Нажмите `File` &gt; `New` &gt; `Notebook`, чтобы создать новый ноутбук.
 
+<div className="ch-image-md">
+
 ![Создание нового ноутбука](/images/use-cases/AI_ML/jupyter/4.webp)
+
+</div>
 
 Затем вам будет предложено выбрать ядро.
 Выберите любое доступное ядро Python; в этом примере мы выберем `ipykernel`:
 
+<div className="ch-image-md">
+
 ![Выбор ядра](/images/use-cases/AI_ML/jupyter/5.webp)
+
+</div>
 
 В пустой ячейке введите следующую команду, чтобы установить chDB, который мы будем использовать для подключения к удалённому экземпляру ClickHouse Cloud:
 
@@ -163,7 +183,11 @@ df.head()
 
 `df.head` отображает только первые несколько строк возвращённых данных:
 
+<div className="ch-image-md">
+
 ![предварительный просмотр DataFrame](/images/use-cases/AI_ML/jupyter/6.webp)
+
+</div>
 
 Выполните следующую команду в новой ячейке, чтобы проверить типы столбцов:
 
@@ -200,7 +224,11 @@ plt.tight_layout()
 plt.show()
 ```
 
+<div className="ch-image-md">
+
 ![предварительный просмотр DataFrame](/images/use-cases/AI_ML/jupyter/7.webp)
+
+</div>
 
 Возможно, это и неудивительно, но цены на недвижимость в Лондоне со временем заметно выросли.
 
@@ -256,7 +284,11 @@ df_2.head()
   ```
 </Accordion>
 
+<div className="ch-image-md">
+
 ![предварительный просмотр DataFrame](/images/use-cases/AI_ML/jupyter/8.webp)
+
+</div>
 
 Хотя данные начиная с 2020 года отсутствуют, мы можем построить график для этих двух наборов данных за период с 1995 по 2019 год.
 В новой ячейке выполните следующую команду:
@@ -302,7 +334,11 @@ plt.tight_layout()
 plt.show()
 ```
 
+<div className="ch-image-md">
+
 ![График удалённого набора данных и локального набора данных](/images/use-cases/AI_ML/jupyter/9.webp)
+
+</div>
 
 Из графика видно, что объём продаж в 1995 году составлял около 160 000, а затем быстро вырос и достиг пика — примерно 540 000 — в 1999 году.
 После этого объёмы резко снижались вплоть до середины 2000-х, сильно просели во время финансового кризиса 2007–2008 годов и упали примерно до 140 000.

@@ -19,25 +19,41 @@ keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
   <Step title="الوصول إلى إعدادات المؤسسة واختيار `Users and roles`" id="users-and-roles-1">
     من صفحة الخدمات، اختر اسم مؤسستك. ثم اختر عنصر القائمة `Users and roles` من القائمة المنبثقة.
 
+    <div className="ch-image-lg">
+
     ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
+
+    </div>
   </Step>
 
   <Step title={<>اختر علامة التبويب <code>Roles</code></>} id="roles-tab">
     اختر علامة التبويب `Roles` من أعلى منتصف الشاشة.
 
+    <div className="ch-image-lg">
+
     ![](/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp)
+
+    </div>
   </Step>
 
   <Step title={<>اختر <code>Create new role</code> من أعلى اليمين</>} id="create-new-role">
     اختر الزر `Create new role` في أعلى يمين الشاشة.
 
+    <div className="ch-image-lg">
+
     ![](/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp)
+
+    </div>
   </Step>
 
   <Step title="سمِّ الدور" id="name-the-role">
     أدخل اسمًا وصفيًا للدور. سيكون هذا هو الاسم الذي ستراه عند تعيين الأدوار للمستخدمين ولمفاتيح API.
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp)
+
+    </div>
   </Step>
 
   <Step title={<>انقر على <code>Allow</code> وحدد نطاق الأذونات</>} id="scope-permissions">
@@ -53,13 +69,21 @@ keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
       للوصول إلى علامة التبويب **مصادر البيانات**، يتطلب الدور حاليًا الإذن `Manage selected services`.
     </Info>
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp)
+
+    </div>
   </Step>
 
   <Step title="راجع دورك الجديد" id="review-role">
     راجع الأذونات المعيَّنة إلى دورك الجديد قبل الإنهاء. انقر على `Create role` عند الانتهاء.
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -81,7 +105,11 @@ keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
 
 تعتمد أدوار قاعدة البيانات المخصصة في الخدمة على [مصادقة JWT](/ar/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)، ولا تُطبّق عندما تكون معطّلة. قبل إضافة سياسة `Data` إلى دور، انتقل إلى الخدمة، وافتح `Settings`، ثم ابحث عن بطاقة `JWT authentication` في قسم `Security`. تأكد من أن مفتاح التبديل `SQL Console` مفعّل.
 
+<div className="ch-image-lg">
+
 ![بطاقة مصادقة JWT مع تفعيل مفتاح تبديل SQL Console](/images/cloud/security/jwt/jwt-sql-console-toggle.png)
+
+</div>
 
 <Steps>
   <Step title="فتح مربع حوار الدور" id="open-role-dialog">
@@ -109,7 +137,11 @@ keywords: ['الأدوار المخصصة', 'الأمان', 'الأذونات']
   <Step title="اختيار مستوى الوصول" id="choose-data-access-level">
     حدد مستوى الوصول `Read-only` أو `Admin` أو `Custom`. عند اختيار `Custom`، عرّف أذونات محددة للوصول إلى البيانات باستخدام عبارات [`GRANT`](/ar/reference/statements/grant) في ClickHouse. لا يمكن تحديد مستوى الوصول `Custom` إلا عندما تستهدف السياسة خدمة واحدة؛ ولتحديد أذونات مخصصة لخدمات متعددة، أضف سياسة `Data` منفصلة لكل خدمة.
 
+    <div className="ch-image-md">
+
     ![مربع حوار إنشاء دور جديد مع أذونات للبيانات محددة بعبارات منح مخصصة](/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp)
+
+    </div>
   </Step>
 
   <Step title="إنشاء الدور" id="create-role-with-data-permissions">

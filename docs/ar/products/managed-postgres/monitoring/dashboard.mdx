@@ -8,13 +8,18 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-dashboard-beta" />
 
 يعرض تبويب **المراقبة** في الشريط الجانبي الأيسر للمثيل
 مخططات آنية لاستخدام الموارد ونشاط قاعدة البيانات خلال
 الفترة الزمنية المحددة.
 
+<div className="ch-image-lg">
+
 ![لوحة معلومات المراقبة تعرض IOPS، وCPU usage، والذاكرة، والقرص، والبايتات المستلَمة والمرسَلة، وعدد البايتات لكل قاعدة بيانات، والاتصالات، ومعدل النقل، وعملية commit وrollback، والنسبة المئوية لعمليات قراءة block التي تُخدَّم من buffer cache بدلًا من القرص، وdeadlock](/images/managed-postgres/monitoring/dashboard.webp)
+
+</div>
 
 <div id="panels">
   ## اللوحات

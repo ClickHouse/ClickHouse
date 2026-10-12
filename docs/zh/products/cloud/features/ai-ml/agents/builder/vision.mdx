@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 视觉功能支持用户上传图片供智能体分析。智能体会将图片传给支持视觉的模型，由其对图片内容进行描述、总结，或回答相关问题。
@@ -24,7 +25,11 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 点击消息输入框左下角的回形针图标，然后选择 **上传到提供商** 来添加图片——可以是截图、照片、图表或示意图。接着，提出任何需要读取图像内容的问题，例如：*&quot;这个查询计划有什么问题？&quot;*、*&quot;请转录这张截图中的文字。&quot;* 或 *&quot;把这个仪表板和上周的对比一下。&quot;*
 
+<div className="ch-image-lg">
+
 ![消息输入框中的回形针菜单已打开，显示“上传到提供商”“作为文本上传”和“上传到代码环境”选项](/images/cloud/agent-builder/vision/vision.webp)
+
+</div>
 
 智能体会将图像视为消息上下文的一部分，因此在同一轮对话中的后续问题里，你可以直接引用它看到的内容，而无需重新上传。
 

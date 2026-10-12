@@ -68,7 +68,11 @@ Esta seção pressupõe que o Cloudflare Logpush esteja configurado para exporta
     1. ClickHouse Cloud Console → **Fontes de dados** → **Criar ClickPipe**
     2. **Origem**: Amazon S3
 
+    <div className="ch-image-lg">
+
     ![Clickpipe s3](/images/clickstack/cloudflare/clickpipe-s3.webp)
+
+    </div>
 
     **Conexão:**
 
@@ -84,7 +88,11 @@ Esta seção pressupõe que o Cloudflare Logpush esteja configurado para exporta
     * Ative **Ingestão contínua**
     * **Ordenação**: Ordem lexicográfica
 
+    <div className="ch-image-lg">
+
     ![Ingestão contínua](/images/clickstack/cloudflare/continuous-ingestion.webp)
+
+    </div>
 
     O Cloudflare Logpush grava arquivos com nomes baseados em data (por exemplo, `20250127/...`), o que naturalmente segue a ordem lexicográfica. O ClickPipes verifica novos arquivos a cada 30 segundos e faz a ingestão de qualquer arquivo com nome maior que o do último arquivo processado.
 
@@ -92,7 +100,11 @@ Esta seção pressupõe que o Cloudflare Logpush esteja configurado para exporta
 
     Clique em **Informações de parsing**. O ClickPipes faz uma amostragem dos seus arquivos de log e detecta automaticamente o esquema. Revise as colunas mapeadas e ajuste os tipos conforme necessário. Defina uma **Chave de ordenação** para a tabela de destino — para logs do Cloudflare, uma boa escolha é `(EdgeStartTimestamp, ClientCountry, EdgeResponseStatus)`.
 
+    <div className="ch-image-lg">
+
     ![Informações de parsing](/images/clickstack/cloudflare/parse-information.webp)
+
+    </div>
 
     Clique em **Concluir Setup**.
 
@@ -106,11 +118,19 @@ Esta seção pressupõe que o Cloudflare Logpush esteja configurado para exporta
 
     1. Abra o HyperDX → **Team Settings** → **Sources**
 
+    <div className="ch-image-lg">
+
     ![Adicionar fonte](/images/clickstack/cloudflare/add-source.webp)
+
+    </div>
 
     2. Clique em **Add source** e configure as seguintes opções. Clique em **Configure Optional Fields** para acessar todos os campos:
 
+    <div className="ch-image-lg">
+
     ![Configurar opcionais](/images/clickstack/cloudflare/configure-optional-fields.webp)
+
+    </div>
 
     | Configuração                          | Valor                                                                                                                                                                                                                                                                                                             |
     | ------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -129,7 +149,11 @@ Esta seção pressupõe que o Cloudflare Logpush esteja configurado para exporta
 
     3. Clique em **Save Source**
 
+    <div className="ch-image-lg">
+
     ![Salvar fonte](/images/clickstack/cloudflare/save-source.webp)
+
+    </div>
 
     Isso mapeia as colunas nativas do Cloudflare diretamente para o visualizador de logs do HyperDX, sem nenhuma transformação ou duplicação de dados. O **Body** exibe um resumo da requisição, como `GET /api/v1/users 200`, e todos os campos do Cloudflare ficam disponíveis como atributos pesquisáveis.
   </Step>
@@ -141,9 +165,17 @@ Esta seção pressupõe que o Cloudflare Logpush esteja configurado para exporta
     * Níveis de severidade codificados por cores de acordo com o status HTTP (INFO para 2xx, WARN para 4xx, ERROR para 5xx)
     * Atributos pesquisáveis, como `http.status_code`, `client.country`, `cache.status` e `bot.score`
 
+    <div className="ch-image-lg">
+
     ![Tela de Busca](/images/clickstack/cloudflare/search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Tela de logs](/images/clickstack/cloudflare/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -182,9 +214,17 @@ Para usuários que querem testar a integração antes de configurar o Cloudflare
 
     Você deverá ver entradas de log com resumos de requisições, atributos pesquisáveis do Cloudflare e níveis de severidade com base nos códigos de status HTTP.
 
+    <div className="ch-image-lg">
+
     ![Visualização de Busca](/images/clickstack/cloudflare/search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Visualização de logs](/images/clickstack/cloudflare/log-view.webp)
+
+    </div>
 
     <Info>
       **Exibição de fuso horário**
@@ -206,15 +246,27 @@ Para usuários que querem testar a integração antes de configurar o Cloudflare
   <Step title="Importar dashboard" id="import-dashboard">
     1. HyperDX → **Dashboards** → **Import Dashboard**
 
+    <div className="ch-image-lg">
+
     ![Importar dashboard](/images/clickstack/cloudflare/import-dashboard.webp)
+
+    </div>
 
     2. Faça upload de `cloudflare-logs-dashboard.json` → **Finish Import**
 
+    <div className="ch-image-lg">
+
     ![Importar dashboard](/images/clickstack/cloudflare/finish-import.webp)
+
+    </div>
   </Step>
 
   <Step title="Ver dashboard" id="view-dashboard">
+    <div className="ch-image-lg">
+
     ![Dashboard de exemplo](/images/clickstack/cloudflare/example-dashboard.webp)
+
+    </div>
 
     <Note>
       Para o dataset de demonstração, defina o intervalo de tempo como **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)** (ajuste com base no seu fuso horário local). Por padrão, o dashboard importado não terá um intervalo de tempo definido.

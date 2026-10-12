@@ -19,11 +19,19 @@ SharedMergeTree テーブルエンジンファミリーは ClickHouse Cloud を�
 
 SharedMergeTree の大きな改善点の 1 つは、ReplicatedMergeTree と比べて、コンピュートとストレージの分離がより進んでいることです。以下は、ReplicatedMergeTree におけるコンピュートとストレージの分離方法を示したものです。
 
+<div className="ch-image-md">
+
 ![ReplicatedMergeTree の図](/images/cloud/reference/shared-merge-tree-1.png)
+
+</div>
 
 ご覧のとおり、ReplicatedMergeTree ではデータ自体はオブジェクトストレージに保存されますが、メタデータは引き続き各 clickhouse-server 上に保持されます。つまり、レプリケーションを伴うあらゆる操作で、メタデータもすべてのレプリカに複製する必要があります。
 
+<div className="ch-image-md">
+
 ![メタデータ付き ReplicatedMergeTree の図](/images/cloud/reference/shared-merge-tree-2.png)
+
+</div>
 
 ReplicatedMergeTree とは異なり、SharedMergeTree ではレプリカ同士が通信する必要はありません。代わりに、すべての通信は共有ストレージと clickhouse-keeper を介して行われます。SharedMergeTree は非同期のリーダーレス レプリケーションを実装しており、協調とメタデータストレージのために clickhouse-keeper を使用します。つまり、サービスの scale-up や scale-down に合わせてメタデータを複製する必要がありません。その結果、レプリケーション、mutation、マージ、scale-up が高速化されます。SharedMergeTree では各テーブルで数百のレプリカを持てるため、分片なしで動的にスケールできます。ClickHouse Cloud では、1 つのクエリにより多くのコンピュートリソースを活用するために、分散クエリ実行のアプローチが採用されています。
 

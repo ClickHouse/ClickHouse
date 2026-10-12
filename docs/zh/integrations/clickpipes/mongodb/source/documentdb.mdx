@@ -25,17 +25,33 @@ ClickPipes 支持 DocumentDB 5.0。
 
 1. 在左侧面板中点击 `Parameter groups`，找到你的 DocumentDB 集群使用的参数组 (如果你使用的是默认参数组，则需要先创建一个新的参数组才能修改) 。
 
+<div className="ch-image-lg">
+
 ![选择参数组](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp)
+
+</div>
 
 2. 搜索 `change_stream_log_retention_duration`，选中后将其编辑为 `259200` (72 小时)
 
+<div className="ch-image-lg">
+
 ![修改参数组](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp)
+
+</div>
 
 3. 点击 `Apply Changes`，立即将修改后的参数组应用到你的 DocumentDB 集群。你应该会看到参数组的状态先变为 `applying`，变更应用后再变为 `in-sync`。
 
+<div className="ch-image-lg">
+
 ![应用参数组](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![参数组状态](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp)
+
+</div>
 
 <div id="update-change-stream-log-retention-via-aws-cli">
   ### 通过 AWS CLI 更新变更流日志保留期

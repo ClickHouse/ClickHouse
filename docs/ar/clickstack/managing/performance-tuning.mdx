@@ -10,6 +10,7 @@ keywords: ['clickstack', 'observability', 'السجلات', 'الأداء', 'ا�
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 import OtelLogsSchema from '/snippets/ar/clickstack/_schema_otel_logs.mdx';
+
 import OtelTracesSchema from '/snippets/ar/clickstack/_schema_otel_traces.mdx';
 
 <div id="introduction">
@@ -113,7 +114,11 @@ import OtelTracesSchema from '/snippets/ar/clickstack/_schema_otel_traces.mdx';
 
 يمكن للمستخدم تصفية التتبعات باستخدام صيغة Lucene، مثل `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`:
 
+<div className="ch-image-lg">
+
 ![تصفية التتبعات](/images/clickstack/performance_guide/trace_filtering.webp)
+
+</div>
 
 ويؤدي ذلك إلى مسند SQL مشابه لما يلي:
 
@@ -137,7 +142,11 @@ MATERIALIZED ResourceAttributes['k8s.pod.name']
 
 يمكن للمستخدمين الآن الاستعلام عن أسماء الكبسولات بكفاءة باستخدام بناء جملة Lucene، مثل `PodName:"checkout-675775c4cc-f2p9c"`
 
+<div className="ch-image-lg">
+
 ![تصفية التتبعات v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
+
+</div>
 
 بالنسبة إلى البيانات المُدرجة حديثًا، يُلغي هذا الحاجة إلى الوصول إلى `map` بالكامل ويقلّل بشكل كبير من عمليات الإدخال/الإخراج.
 
@@ -764,7 +773,11 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
   <Step title="Update the واجهة ClickStack to read from the merge table" id="update-clickstack-ui-to-read-from-merge-tree">
     Configure the واجهة ClickStack to use `otel_logs_merge` as the table for the logs data source.
 
+    <div className="ch-image-lg">
+
     ![Select Merge Table](/images/clickstack/performance_guide/select_merge_table.webp)
+
+    </div>
 
     At this point, writes continue to `otel_logs` with the original مفتاح أساسي, while reads use the merge table. There is no visible change for users or impact on ingestion.
   </Step>

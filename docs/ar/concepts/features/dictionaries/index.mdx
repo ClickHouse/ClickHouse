@@ -13,7 +13,11 @@ doc_type: 'guide'
 * تحسين أداء الاستعلامات، خاصةً عند استخدامها مع عمليات `JOIN`
 * إثراء البيانات الواردة لحظيًا من دون إبطاء عملية الإدخال
 
+<div className="ch-image-lg">
+
 ![حالات استخدام القاموس في ClickHouse](/images/dictionary/dictionary-use-cases.webp)
+
+</div>
 
 <div id="speeding-up-joins-using-a-dictionary">
   ## تسريع عمليات JOIN باستخدام قاموس
@@ -21,7 +25,11 @@ doc_type: 'guide'
 
 يمكن استخدام القواميس لتسريع نوع محدد من `JOIN`: [النوع `LEFT ANY`](/ar/reference/statements/select/join#supported-types-of-join)، حيث يجب أن يتطابق مفتاح الربط مع سمة المفتاح في مخزن المفتاح-القيمة الأساسي.
 
+<div className="ch-image-sm">
+
 ![استخدام القاموس مع LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
+
+</div>
 
 في هذه الحالة، يمكن لـ ClickHouse الاستفادة من القاموس لتنفيذ [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). وهذه أسرع خوارزمية JOIN في ClickHouse، وتُطبَّق عندما يدعم [محرك الجدول](/ar/reference/engines/table-engines/index) الأساسي للجدول الموجود على الجانب الأيمن طلبات مفتاح-قيمة منخفضة زمن الانتقال. يوفّر ClickHouse ثلاثة محركات جداول تدعم ذلك: [Join](/ar/reference/engines/table-engines/special/join) (وهو في الأساس جدول hash محسوب مسبقًا)، و[EmbeddedRocksDB](/ar/reference/engines/table-engines/integrations/embedded-rocksdb)، و[Dictionary](/ar/reference/engines/table-engines/special/dictionary). سنشرح النهج القائم على القاموس، لكن الآلية نفسها تنطبق على المحركات الثلاثة جميعًا.
 

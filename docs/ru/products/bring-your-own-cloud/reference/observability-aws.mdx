@@ -203,19 +203,39 @@ scrape_configs:
 1. **Добавьте Prometheus как источник данных в Grafana**
    Перейдите в раздел &quot;Data sources&quot; на боковой панели Grafana, нажмите &quot;Add data source&quot; и выберите &quot;Prometheus&quot;. Укажите URL вашего экземпляра Prometheus и необходимые учетные данные для подключения.
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 1](/images/cloud/reference/byoc-mixin-1.webp)
+
+</div>
+
+<div className="ch-image-lg ch-image-background-black">
 
 ![BYOC Mixin 2](/images/cloud/reference/byoc-mixin-2.webp)
 
+</div>
+
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 3](/images/cloud/reference/byoc-mixin-3.webp)
+
+</div>
 
 2. **Импортируйте панель мониторинга ClickHouse**
    В Grafana перейдите в раздел панелей мониторинга и выберите &quot;Import&quot;. Вы можете либо загрузить JSON‑файл панели мониторинга, либо вставить его содержимое напрямую. JSON‑файл доступен в репозитории ClickHouse mixin:
    [JSON панели мониторинга ClickHouse Mix-in](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 4](/images/cloud/reference/byoc-mixin-4.webp)
+
+</div>
 
 3. **Просмотрите свои метрики**
    После импорта панели мониторинга и ее настройки с источником данных Prometheus вы увидите метрики в реальном времени из ваших сервисов ClickHouse Cloud.
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 5](/images/cloud/reference/byoc-mixin-5.webp)
+
+</div>

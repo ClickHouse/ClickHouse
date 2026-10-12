@@ -24,7 +24,11 @@ import { IAMAuthentication } from "/snippets/ar/clickpipes/_iam_authentication.m
   <Step title="تمكين binary logging عبر النسخ الاحتياطي التلقائي" id="enable-binlog-logging">
     تحدد ميزة النسخ الاحتياطية التلقائية ما إذا كان binary logging ممكّنًا أم معطّلًا في MySQL. يمكن تهيئة النسخ الاحتياطية التلقائية لمثيلك في RDS Console بالانتقال إلى **Modify** &gt; **Additional configuration** &gt; **Backup** وتحديد مربع الاختيار **Enable automated backups** (إذا لم يكن محددًا بالفعل).
 
+    <div className="ch-image-lg">
+
     ![تمكين النسخ الاحتياطية التلقائية في RDS](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+
+    </div>
 
     نوصي بضبط **Backup retention period** على قيمة طويلة بشكل معقول، وفقًا لحالة استخدام النسخ المتماثل.
   </Step>
@@ -56,27 +60,47 @@ import { IAMAuthentication } from "/snippets/ar/clickpipes/_iam_authentication.m
   إذا كان لديك عنقود MySQL، فيمكن العثور على المعلمات أدناه في مجموعة المعلمات الخاصة بـ [DB cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) بدلًا من مجموعة معلمات مثيل DB.
 </Tip>
 
+<div className="ch-image-lg">
+
 ![مكان العثور على مجموعة المعلمات في RDS](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
+
+</div>
 
 <br />
 
 انقر على رابط مجموعة المعلمات، وسيأخذك ذلك إلى صفحتها المخصصة. ينبغي أن ترى زر **Edit** في أعلى اليمين.
 
+<div className="ch-image-lg">
+
 ![تحرير مجموعة المعلمات](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</div>
 
 يلزم ضبط المعلمات التالية على النحو الآتي:
 
 1. اضبط `binlog_format` على `ROW`.
 
+<div className="ch-image-lg">
+
 ![تنسيق binlog إلى ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</div>
 
 2. اضبط `binlog_row_metadata` على `FULL`
 
+<div className="ch-image-lg">
+
 ![البيانات الوصفية لصفوف binlog إلى FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</div>
 
 3. اضبط `binlog_row_image` على `FULL`
 
+<div className="ch-image-lg">
+
 ![صورة صف binlog إلى FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</div>
 
 <br />
 
@@ -103,7 +127,11 @@ import { IAMAuthentication } from "/snippets/ar/clickpipes/_iam_authentication.m
 7. انقر على **Save Changes** في الزاوية العلوية اليمنى.
 8. أعد تشغيل المثيل لتطبيق التغييرات.
 
+<div className="ch-image-lg">
+
 ![تم تمكين GTID](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
+
+</div>
 
 <br />
 
@@ -152,9 +180,17 @@ import { IAMAuthentication } from "/snippets/ar/clickpipes/_iam_authentication.m
 
 لتقييد حركة المرور إلى مثيل Aurora MySQL لديك، أضف [عناوين IP الثابتة لـ NAT الموثقة](/ar/integrations/clickpipes/networking/static-ips) إلى **Inbound rules** في مجموعة أمان RDS الخاصة بك.
 
+<div className="ch-image-lg">
+
 ![أين يمكن العثور على مجموعة الأمان في RDS MySQL؟](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![حرّر Inbound rules لمجموعة الأمان المذكورة أعلاه](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### الوصول الخاص عبر AWS PrivateLink

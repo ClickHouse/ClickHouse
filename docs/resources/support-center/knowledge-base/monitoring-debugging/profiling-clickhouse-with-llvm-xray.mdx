@@ -46,7 +46,11 @@ format](/reference/system-tables/trace_log#chrome-event-trace-format) to
 visualize it in [Perfetto](https://ui.perfetto.dev). Notice the query_id, cpu_id and stacktrace for
 every entry.
 
+<div className="ch-image-md">
+
 ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
+
+</div>
 
 ## Profiling a native application using XRay {#profiling-a-native-application-using-xray}
 The following section is left as a reference to know how XRay works under the hood and how it can be
@@ -138,13 +142,25 @@ While Perfetto makes visualizing multiple threads and querying the data easier, 
 generating a flamegraph and a sandwich view of your data.
 
 #### Time Order {#time-order}
+<div className="ch-image-md">
+
 ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
 
+</div>
+
 #### Left Heavy {#left-heavy}
+<div className="ch-image-md">
+
 ![left-heavy](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
 
+</div>
+
 #### Sandwitch {#sandwitch}
+<div className="ch-image-md">
+
 ![sandwich](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
+
+</div>
 
 ## Check out the docs {#check-out-the-docs}
 - [SYSTEM INSTRUMENT](/reference/statements/system#instrument) — Add

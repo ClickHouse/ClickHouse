@@ -50,8 +50,16 @@ keywords: ['ClickHouse Cloud', 'статические IP-адреса', 'кон
 
 Например, для экземпляра AWS RDS, работающего в `us-east-2` и которому нужно подключиться к сервису ClickHouse Cloud, должны быть настроены следующие входящие правила группы безопасности:
 
+<div className="ch-image-lg">
+
 ![Правила группы безопасности AWS](/images/_snippets/aws-rds-mysql.webp)
+
+</div>
 
 Для того же сервиса ClickHouse Cloud, работающего в `us-east-2`, но на этот раз подключенного к MySQL в GCP, список `Authorized networks` должен выглядеть так:
 
+<div className="ch-image-md">
+
 ![Авторизованные сети GCP](/images/_snippets/gcp-authorized-network.webp)
+
+</div>

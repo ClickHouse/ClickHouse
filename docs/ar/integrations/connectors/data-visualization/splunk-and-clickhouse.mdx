@@ -32,7 +32,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 باستخدام هذا الدليل، ستتمكن من إنشاء لوحة معلومات متصلة بـ ClickHouse مشابهة لهذه:
 
+<div className="ch-image-lg">
+
 ![لوحة معلومات في Splunk تعرض تصورات لبيانات سيارات الأجرة في مدينة نيويورك](/images/integrations/splunk/splunk-1.webp)
+
+</div>
 
 <Note>
   يستخدم هذا الدليل [مجموعة بيانات سيارات الأجرة في مدينة نيويورك](/ar/get-started/sample-datasets/nyc-taxi). وهناك العديد من مجموعات البيانات الأخرى التي يمكنك استخدامها من [وثائقنا](http://localhost:3000/docs/getting-started/example-datasets).
@@ -69,7 +73,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 بعد التأكد من تثبيت تطبيق DB Connect App، أضف مسار `java_home` إلى تطبيق DB Connect App ضمن Configuration -&gt; Settings، ثم انقر على save وبعدها reset.
 
+<div className="ch-image-md">
+
 ![صفحة إعدادات Splunk DB Connect التي تعرض إعداد Java Home](/images/integrations/splunk/splunk-2.webp)
+
+</div>
 
 <div id="configure-jdbc-for-clickhouse">
   ## تهيئة JDBC لـ ClickHouse
@@ -104,7 +112,11 @@ ui_default_catalog = $database$
 
 ارجع إلى تطبيق DB Connect App، ثم انتقل إلى Configuration &gt; Settings &gt; Drivers. ينبغي أن ترى علامة صح خضراء بجوار ClickHouse:
 
+<div className="ch-image-lg">
+
 ![صفحة برامج التشغيل في Splunk DB Connect تعرض تثبيت برنامج تشغيل ClickHouse بنجاح](/images/integrations/splunk/splunk-3.webp)
+
+</div>
 
 <div id="connect-splunk-search-to-clickhouse">
   ## ربط بحث Splunk بـ ClickHouse
@@ -114,13 +126,21 @@ ui_default_catalog = $database$
 
 أنشئ اتصالًا جديدًا بـ ClickHouse من Configuration -&gt; Databases -&gt; Connections، ثم اختر &quot;New Connection&quot;.
 
+<div className="ch-image-sm">
+
 ![زر اتصال جديد في Splunk DB Connect](/images/integrations/splunk/splunk-4.webp)
+
+</div>
 
 <br />
 
 أضف بيانات مضيف ClickHouse، وتأكد من تحديد &quot;Enable SSL&quot;:
 
+<div className="ch-image-md">
+
 ![صفحة إعداد اتصال Splunk لـ ClickHouse](/images/integrations/splunk/splunk-5.webp)
+
+</div>
 
 بعد حفظ الاتصال، ستكون قد نجحت في توصيل ClickHouse بـ Splunk!
 
@@ -136,11 +156,19 @@ ui_default_catalog = $database$
 
 حدِّد تفاصيل الاتصال في SQL Explorer ضمن قسم DataLab في تطبيق DB Connect App. سنستخدم جدول `trips` في هذا العرض التوضيحي:
 
+<div className="ch-image-md">
+
 ![يحدِّد SQL Explorer في Splunk اتصالًا بـ ClickHouse](/images/integrations/splunk/splunk-6.webp)
+
+</div>
 
 نفِّذ استعلام SQL على جدول `trips` لإرجاع عدد جميع السجلات في الجدول:
 
+<div className="ch-image-md">
+
 ![تنفيذ استعلام SQL في Splunk لعرض عدد السجلات في جدول trips](/images/integrations/splunk/splunk-7.webp)
+
+</div>
 
 إذا نُفِّذ الاستعلام بنجاح، فسترى النتائج.
 
@@ -162,7 +190,11 @@ ORDER BY count DESC LIMIT 10;" connection="chc"
 
 اختر علامة تبويب التصور لعرض مخطط الأعمدة الذي تم إنشاؤه:
 
+<div className="ch-image-lg">
+
 ![تصور لمخطط أعمدة في Splunk يعرض أفضل 10 أحياء لالتقاط الركاب](/images/integrations/splunk/splunk-8.webp)
+
+</div>
 
 سننشئ الآن لوحة معلومات بالنقر على Save As &gt; Save to a Dashboard.
 
@@ -175,7 +207,11 @@ FROM default.trips GROUP BY passenger_count;" connection="chc"
 
 هذه المرة، لنُنشئ تصورًا على هيئة مخطط أعمدة ونحفظه في لوحة المعلومات السابقة.
 
+<div className="ch-image-lg">
+
 ![مخطط أعمدة في Splunk يُظهر متوسط الأجرة حسب عدد الركاب](/images/integrations/splunk/splunk-9.webp)
+
+</div>
 
 أخيرًا، لنُضِف استعلامًا آخر يُظهر العلاقة بين عدد الركاب ومسافة الرحلة:
 
@@ -188,7 +224,11 @@ ORDER BY year, count(*) DESC; " connection="chc"
 
 ينبغي أن تبدو لوحة المعلومات النهائية لدينا كما يلي:
 
+<div className="ch-image-lg">
+
 ![لوحة معلومات Splunk النهائية مع تصورات متعددة لبيانات سيارات الأجرة في نيويورك](/images/integrations/splunk/splunk-10.webp)
+
+</div>
 
 <div id="time-series-data">
   ## بيانات السلاسل الزمنية

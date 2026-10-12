@@ -7,6 +7,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 Сеанс поддержки предоставляет ClickHouse временный доступ для диагностики через коннектор ClickHouse. На этой странице рассказывается, что такое сеанс, как его включать и отключать, что могут делать инженеры поддержки ClickHouse во время сеанса и как провести его аудит.
@@ -17,7 +18,11 @@ import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge
 
 Сеансы управляют исключительно диагностикой. Команды жизненного цикла для сервисов в режиме managed передаются по отдельному каналу исполнителя, который сеанс поддержки не открывает и не ограничивает; см. [managed services](/ru/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
+<div className="ch-image-lg">
+
 ![Схема доверия сеанса поддержки коннектора ClickHouse](/images/cloud/reference/byoc-connector-session-trust.svg)
+
+</div>
 
 Управлять сеансами можно через две точки:
 

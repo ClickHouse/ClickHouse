@@ -7,6 +7,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 サポートセッションは、ClickHouse Connector を介して ClickHouse に一時的な診断アクセスを付与します。このページでは、セッションの概要、有効化と無効化の方法、セッション中に ClickHouse Support エンジニアが実行できる操作、およびその監査方法について説明します。
@@ -17,7 +18,11 @@ import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge
 
 セッションが制御するのは診断のみです。managed モードのサービスに対するライフサイクルコマンドは executor の別チャネルを経由し、このチャネルはサポートセッションによって開かれることも制御されることもありません。[managed services](/ja/products/bring-your-own-cloud/connector/managed-services#service-lifecycle) を参照してください。
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector support session trust flow](/images/cloud/reference/byoc-connector-session-trust.svg)
+
+</div>
 
 セッションは次の 2 つの手段で制御します。
 

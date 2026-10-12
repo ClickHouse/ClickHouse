@@ -32,7 +32,11 @@ PARTITION BY toStartOfMonth(date)
 
 Каждый раз, когда в таблицу вставляется набор строк, вместо создания (как [минимум](/ru/reference/settings/session-settings/max-insert#max_insert_block_size)) одной части данных, содержащей все вставленные строки (как описано [здесь](/ru/concepts/core-concepts/parts)), ClickHouse создает по одной новой части данных для каждого уникального значения ключа партиционирования среди вставленных строк:
 
+<div className="ch-image-lg">
+
 ![Партиции](/images/bestpractices/partitions.webp)
+
+</div>
 
 Сервер ClickHouse сначала разбивает 4 строки из примера вставки, показанного на диаграмме выше, по значению их ключа партиционирования `toStartOfMonth(date)`. Затем строки в каждой выявленной партиции обрабатываются [обычно](/ru/concepts/core-concepts/parts), проходя несколько последовательных шагов (① Сортировка, ② Разделение на столбцы, ③ Сжатие, ④ Запись на диск).
 
@@ -40,7 +44,11 @@ PARTITION BY toStartOfMonth(date)
 
 При включенном партиционировании ClickHouse выполняет [слияние](/ru/concepts/core-concepts/merges) частей данных только в пределах партиции, но не между партициями. Ниже это показано на примере таблицы выше:
 
+<div className="ch-image-md">
+
 ![Партиции](/images/bestpractices/merges_with_partitions.webp)
+
+</div>
 
 <div id="applications-of-partitioning">
   ## Применение партиционирования

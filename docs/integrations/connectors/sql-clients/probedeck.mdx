@@ -69,7 +69,11 @@ ProbeDeck authenticates SQL requests to the service endpoint with these database
 ClickHouse Cloud uses organization-level keys from the **API Keys** page for the Cloud API and
 Query API endpoints. ProbeDeck's SQL connection flow does not use those keys.
 
+<div className="ch-image-sm">
+
 ![ProbeDeck connection form configured for HTTPS on port 8443 with a ClickHouse username](/images/integrations/sql-clients/probedeck-add-connection.png)
+
+</div>
 
 </Step>
 </Steps>
@@ -142,11 +146,19 @@ Open the saved connection and select **Monitor**. The dashboard summarizes these
 | Memory and server metrics | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | Historical query and disk rates | `system.metric_log`, `system.asynchronous_metric_log` |
 
+<div className="ch-image-sm">
+
 ![ProbeDeck monitoring dashboard showing running queries, replication, disks, parts, mutations, merges, query rate, and memory](/images/integrations/sql-clients/probedeck-dashboard.png)
+
+</div>
 
 Tap **Running queries** to sort active queries by elapsed time and inspect memory and rows read.
 
+<div className="ch-image-sm">
+
 ![ProbeDeck running queries list sorted by elapsed time](/images/integrations/sql-clients/probedeck-running-queries.png)
+
+</div>
 
 ## Query the UK property price dataset {#query-the-uk-property-price-dataset}
 

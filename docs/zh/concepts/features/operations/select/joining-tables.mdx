@@ -12,7 +12,11 @@ ClickHouse [完整支持 `JOIN`](https://clickhouse.com/blog/clickhouse-fully-su
 * 从 ClickHouse 24.12 开始，查询规划器会自动调整双表 JOIN 的顺序，将较小的表放在右侧以获得最佳性能。到了 25.9 版本，这一能力进一步扩展到可优化包含三个或更多表的查询的 JOIN 顺序。
 * 如果你的查询需要 direct join，即 `LEFT ANY JOIN` (如下所示) ，我们建议在可能的情况下使用[字典](/zh/concepts/features/dictionaries/index)。
 
+<div className="ch-image-sm">
+
 ![Left any join](/images/guides/joins-1.webp)
+
+</div>
 
 * 如果执行的是 inner join，通常将其改写为使用 `IN` 子句的子查询会更高效。请看下面这些功能等价的查询。它们都会找出那些在问题中未提到 ClickHouse、但在 `comments` 中提到的 `posts` 数量。
 
@@ -138,7 +142,11 @@ ClickHouse 支持多种 [JOIN 算法](https://clickhouse.com/blog/clickhouse-ful
 
 <br />
 
+<div className="ch-image-lg">
+
 ![JOIN 的内存与速度关系](/images/guides/joins-2.png)
+
+</div>
 
 <br />
 
@@ -148,7 +156,11 @@ ClickHouse 支持多种 [JOIN 算法](https://clickhouse.com/blog/clickhouse-ful
 
 <br />
 
+<div className="ch-image-lg">
+
 ![JOIN 特性](/images/guides/joins-3.webp)
+
+</div>
 
 <br />
 
@@ -164,7 +176,11 @@ ClickHouse 支持多种 [JOIN 算法](https://clickhouse.com/blog/clickhouse-ful
 
 <br />
 
+<div className="ch-image-lg">
+
 ![join flowchart](/images/guides/joins-4.webp)
+
+</div>
 
 <br />
 
@@ -190,7 +206,11 @@ Grace hash join 是这三种不受内存限制的 JOIN 算法中最灵活的一�
 
 <br />
 
+<div className="ch-image-lg">
+
 ![Join 内存优化决策树](/images/guides/joins-5.webp)
+
+</div>
 
 <br />
 

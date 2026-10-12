@@ -23,7 +23,11 @@ ClickHouse Cloud 备份由“全量备份”和“增量备份”共同组成，
 
 第 1 天会执行一次全量备份，以启动备份链。第 2 天会执行一次增量备份，此时全量备份和增量备份都可用于恢复。到第 7 天时，这条链中已有 1 个全量备份和 6 个增量备份，且它们全部可见并可用于恢复。到第 8 天，系统会执行一次新的全量备份；到第 9 天，当新链中已有 2 个备份后，前一条链就会被丢弃。
 
+<div className="ch-image-lg">
+
 ![ClickHouse Cloud 中的备份链示例](/images/cloud/manage/backup-chain.webp)
+
+</div>
 
 ### 默认备份策略 {#default-backup-policy}
 

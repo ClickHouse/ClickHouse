@@ -45,47 +45,87 @@ doc_type: 'guide'
 
     Puedes ver una lista de los endpoints creados en [http://localhost:8000/docs](http://localhost:8000/docs)
 
+    <div className="ch-image-md">
+
     ![Endpoints de Open API](/images/use-cases/AI_ML/MCP/0_endpoints.webp)
+
+    </div>
 
     Para usar estos endpoints con Open WebUI, tenemos que ir a la configuración:
 
+    <div className="ch-image-md">
+
     ![Configuración de Open WebUI](/images/use-cases/AI_ML/MCP/1_settings.webp)
+
+    </div>
 
     Haz clic en `Tools`:
 
+    <div className="ch-image-md">
+
     ![Herramientas de Open WebUI](/images/use-cases/AI_ML/MCP/2_tools_page.webp)
+
+    </div>
 
     Añade [http://localhost:8000](http://localhost:8000) como URL de la herramienta:
 
+    <div className="ch-image-md">
+
     ![Herramienta de Open WebUI](/images/use-cases/AI_ML/MCP/3_add_tool.webp)
+
+    </div>
 
     Una vez hecho esto, deberíamos ver un `1` junto al icono de la herramienta en la barra de chat:
 
+    <div className="ch-image-md">
+
     ![Herramientas disponibles en Open WebUI](/images/use-cases/AI_ML/MCP/4_tools_available.webp)
+
+    </div>
 
     Si hacemos clic en el icono de la herramienta, podremos ver la lista de herramientas disponibles:
 
+    <div className="ch-image-md">
+
     ![Lista de herramientas de Open WebUI](/images/use-cases/AI_ML/MCP/5_list_of_tools.webp)
+
+    </div>
   </Step>
 
   <Step title="Configurar OpenAI" id="configure-openai">
     De forma predeterminada, Open WebUI funciona con modelos de Ollama, pero también podemos añadir endpoints compatibles con OpenAI.
     Estos se configuran desde el menú de configuración, pero esta vez tenemos que hacer clic en la pestaña `Connections`:
 
+    <div className="ch-image-md">
+
     ![Conexiones de Open WebUI](/images/use-cases/AI_ML/MCP/6_connections.webp)
+
+    </div>
 
     Añadamos el endpoint y nuestra clave de OpenAI:
 
+    <div className="ch-image-md">
+
     ![Open WebUI - Añadir OpenAI como conexión](/images/use-cases/AI_ML/MCP/7_add_connection.webp)
+
+    </div>
 
     Los modelos de OpenAI estarán disponibles en el menú superior:
 
+    <div className="ch-image-md">
+
     ![Open WebUI - Modelos](/images/use-cases/AI_ML/MCP/8_openai_models_more.webp)
+
+    </div>
   </Step>
 
   <Step title="Chatear con ClickHouse MCP server desde Open WebUI" id="chat-to-clickhouse-mcp-server">
     A continuación, podremos iniciar una conversación y Open WebUI llamará al MCP server si es necesario:
 
+    <div className="ch-image-md">
+
     ![Open WebUI - Chatear con ClickHouse MCP server](/images/use-cases/AI_ML/MCP/9_conversation.webp)
+
+    </div>
   </Step>
 </Steps>

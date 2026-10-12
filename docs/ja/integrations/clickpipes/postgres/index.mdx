@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 import ChangingTLSSettings from '/snippets/ja/clickpipes/_changing_tls_settings.mdx';
 import PostgresClickPipeCli from '/snippets/ja/clickpipes/_postgres_clickpipe_cli.mdx';
+
 import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.mdx';
 
 <Visibility for="agents">
@@ -64,15 +65,27 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     1. ClickHouse Cloud コンソールで、ClickHouse Cloud サービスに移動します。
 
+    <div className="ch-image-lg">
+
     ![ClickPipes サービス](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+    </div>
 
     2. 左側のメニューで `Data Sources` ボタンを選択し、&quot;Set up a ClickPipe&quot;をクリックします
 
+    <div className="ch-image-lg">
+
     ![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </div>
 
     3. `Postgres CDC` タイルを選択します
 
+       <div className="ch-image-lg">
+
        ![Postgres を選択](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
+
+       </div>
 
 ### ソース Postgres データベース接続の追加
 
@@ -83,7 +96,11 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
       詳細については、[このページの冒頭](#prerequisites)にリンクされているソース Postgres のセットアップガイドを参照してください。
     </Info>
 
+    <div className="ch-image-lg">
+
     ![接続情報を入力](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
+
+    </div>
 
 #### (任意) AWS プライベートリンクのセットアップ
 
@@ -102,7 +119,11 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     2. SSH の接続情報を入力します。
 
+       <div className="ch-image-lg">
+
        ![SSH tunneling](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+       </div>
 
     3. 鍵ベースの認証を使用するには、「Revoke and generate key pair」をクリックして新しい鍵ペアを生成し、生成された公開鍵を SSH サーバーの `~/.ssh/authorized_keys` にコピーします。
 
@@ -118,7 +139,11 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     5. 前提条件のステップで作成した replication slot を、ドロップダウンリストから必ず選択してください。
 
+       <div className="ch-image-lg">
+
        ![レプリケーションスロットの選択](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
+
+       </div>
 
 #### 詳細設定
 
@@ -134,7 +159,11 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     6. ここでは、ClickPipe の宛先データベースを選択できます。既存のデータベースを選択するか、新しいデータベースを作成できます。
 
+       <div className="ch-image-lg">
+
        ![宛先データベースを選択](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
+
+       </div>
 
     7. ソース Postgres データベースからレプリケートするテーブルを選択できます。テーブルの選択時に、宛先の ClickHouse データベースでテーブルをリネームしたり、特定のカラムを除外したりすることもできます。
 
@@ -148,7 +177,11 @@ import SettingPartitionBy from '/snippets/ja/clickpipes/_target_ch_partition_by.
 
     9. 権限のドロップダウンから「Full access」ロールを選択し、「Complete Setup」をクリックします。
 
+       <div className="ch-image-lg">
+
        ![権限を確認する](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+       </div>
 
 ## 次のステップ
 

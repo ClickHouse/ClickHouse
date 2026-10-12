@@ -197,9 +197,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     3. Отфильтруйте по `source:postgresql`, чтобы увидеть журналы PostgreSQL
     4. Вы должны увидеть структурированные записи журнала с такими полями, как `user_name`, `database_name`, `error_severity`, `message`, `query` и т. д.
 
+    <div className="ch-image-lg">
+
     ![Представление поиска по журналам](/images/clickstack/postgres/postgres-logs-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Представление логов](/images/clickstack/postgres/postgres-log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -289,9 +297,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       HyperDX показывает временные метки в локальном часовом поясе вашего браузера. Демо-данные охватывают период **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. Широкий временной диапазон гарантирует, что вы увидите демо-журналы независимо от своего местоположения. Когда журналы появятся, вы сможете сузить диапазон до 24 часов для более наглядной визуализации.
     </Info>
 
+    <div className="ch-image-lg">
+
     ![Представление поиска журналов](/images/clickstack/postgres/postgres-logs-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Представление логов](/images/clickstack/postgres/postgres-log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -310,17 +326,29 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
+    <div className="ch-image-lg">
+
     ![Кнопка импорта панели мониторинга](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Загрузите файл `postgresql-logs-dashboard.json` и нажмите **Finish Import**
 
+    <div className="ch-image-lg">
+
     ![Завершение импорта](/images/clickstack/postgres/import-logs-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="Откройте панель мониторинга" id="created-dashboard">
     Панель мониторинга будет создана со всеми преднастроенными визуализациями:
 
+    <div className="ch-image-lg">
+
     ![Панель мониторинга журналов](/images/clickstack/postgres/postgres-logs-dashboard.webp)
+
+    </div>
 
     <Note>
       Для демо-набора данных установите временной диапазон **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (скорректируйте его в соответствии с вашим часовым поясом). По умолчанию у импортированной панели мониторинга временной диапазон не задан.

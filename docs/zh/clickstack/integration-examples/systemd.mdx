@@ -40,7 +40,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     3. 进入 **Team Settings → API Keys**
     4. 复制你的 **摄取 API key**
 
+    <div className="ch-image-lg">
+
     ![ClickStack API Key](/images/clickstack/api-key.webp)
+
+    </div>
 
     5. 将其设置为环境变量：
 
@@ -183,9 +187,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     3. 按 `service.name:systemd-logs` 进行过滤
     4. 你应该能看到结构化日志条目，其中包含 `unit`、`priority`、`MESSAGE`、`_HOSTNAME` 等字段
 
+    <div className="ch-image-lg">
+
     ![日志搜索视图](/images/clickstack/systemd/systemd-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![日志视图](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -264,9 +276,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     2. 进入搜索视图，并将 source 设置为 `Logs`
     3. 将时间范围设置为 **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
 
+    <div className="ch-image-lg">
+
     ![日志搜索视图](/images/clickstack/systemd/systemd-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![日志视图](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </div>
 
     <Info>
       **时区显示**
@@ -291,11 +311,19 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     1. 打开 HyperDX 并进入仪表盘页面
     2. 点击右上角省略号菜单中的 **导入仪表盘**
 
+    <div className="ch-image-lg">
+
     ![导入仪表盘按钮](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. 上传 `systemd-logs-dashboard.json` 文件，然后点击 **完成导入**
 
+    <div className="ch-image-lg">
+
     ![完成导入](/images/clickstack/systemd/finish-import-systemd.webp)
+
+    </div>
   </Step>
 
   <Step title="查看仪表盘" id="created-dashboard">
@@ -307,7 +335,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     * 服务故障
     * 错误率
 
+    <div className="ch-image-lg">
+
     ![仪表盘示例](/images/clickstack/systemd/systemd-logs-dashboard.webp)
+
+    </div>
 
     <Note>
       对于演示数据集，请将时间范围设置为 **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** (可根据你的本地时区调整) 。

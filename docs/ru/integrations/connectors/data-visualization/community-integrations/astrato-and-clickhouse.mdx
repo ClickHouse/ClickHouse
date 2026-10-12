@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
 import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -38,21 +39,37 @@ Astrato использует Pushdown SQL для прямых запросов �
   ​
 * Нажмите кнопку **Новое подключение к данным** в правом верхнем углу экрана.
 
+<div className="ch-image-sm">
+
 ![Подключение к данным Astrato](/images/integrations/data-visualization/astrato_1_dataconnection.webp)
+
+</div>
 
 * Выберите **ClickHouse**.
 
+<div className="ch-image-sm">
+
 ![Подключение Astrato к данным ClickHouse](/images/integrations/data-visualization/astrato_2a_clickhouse_connection.webp)
+
+</div>
 
 * Заполните обязательные поля в диалоговом окне подключения
 
+<div className="ch-image-sm">
+
 ![Обязательные поля для подключения Astrato к ClickHouse](/images/integrations/data-visualization/astrato_2b_clickhouse_connection.webp)
+
+</div>
 
 * Нажмите **Проверить подключение**. Если подключение успешно, задайте **имя** для подключения к данным и нажмите **Далее.**
 
 * Настройте **доступ пользователей** к подключению к данным и нажмите **Подключить.**
 
+<div className="ch-image-md">
+
 ![Доступ пользователей для подключения Astrato к ClickHouse](/images/integrations/data-visualization/astrato_3_user_access.webp)
+
+</div>
 
 * Подключение будет создано, и будет создано представление данных.
 
@@ -66,17 +83,29 @@ Astrato использует Pushdown SQL для прямых запросов �
 
 В редакторе Data View вы увидите все свои таблицы и схемы в ClickHouse; выберите несколько, чтобы начать.
 
+<div className="ch-image-lg">
+
 ![Astrato: подключение к ClickHouse User Access](/images/integrations/data-visualization/astrato_4a_clickhouse_data_view.webp)
+
+</div>
 
 Теперь, когда данные выбраны, перейдите к настройке **data view**. Нажмите Define в правом верхнем углу веб-страницы.
 
 Здесь можно выполнять JOIN данных, а также **создавать контролируемые измерения и показатели** — это помогает поддерживать согласованную бизнес-логику в разных командах.
 
+<div className="ch-image-lg">
+
 ![Astrato: подключение к ClickHouse User Access](/images/integrations/data-visualization/astrato_4b_clickhouse_data_view_joins.webp)
+
+</div>
 
 **Astrato автоматически предлагает варианты JOIN** на основе ваших метаданных, в том числе используя ключи в ClickHouse. Предлагаемые JOIN помогают быстро начать работу с хорошо управляемыми данными ClickHouse, не изобретая велосипед. Мы также показываем **качество JOIN**, чтобы вы могли детально просмотреть все предложения Astrato.
 
+<div className="ch-image-lg">
+
 ![Astrato: подключение к ClickHouse User Access](/images/integrations/data-visualization/astrato_4c_clickhouse_completed_data_view.webp)
+
+</div>
 
 <div id="creating-a-dashboard">
   ## Создание панели мониторинга
@@ -89,7 +118,11 @@ Astrato использует Pushdown SQL для прямых запросов �
 3. Добавьте измерения
 4. Добавьте показатели
 
+<div className="ch-image-lg">
+
 ![Astrato: подключение к ClickHouse, доступ пользователей](/images/integrations/data-visualization/astrato_5a_clickhouse_build_chart.webp)
+
+</div>
 
 <div id="view-generated-sql-supporting-each-visualization">
   ### Просмотр сгенерированного SQL для каждой визуализации
@@ -97,7 +130,11 @@ Astrato использует Pushdown SQL для прямых запросов �
 
 Прозрачность и точность — в основе Astrato. Мы делаем видимым каждый сгенерированный запрос, чтобы вы сохраняли полный контроль. Все вычисления выполняются напрямую в ClickHouse, используя его скорость при сохранении высокого уровня безопасности и управления.
 
+<div className="ch-image-lg">
+
 ![Astrato: подключение к ClickHouse, доступ пользователей](/images/integrations/data-visualization/astrato_5b_clickhouse_view_sql.webp)
+
+</div>
 
 <div id="example-completed-dashboard">
   ### Пример готовой панели мониторинга
@@ -105,4 +142,8 @@ Astrato использует Pushdown SQL для прямых запросов �
 
 Красивая, полностью готовая панель мониторинга или приложение для работы с данными — уже совсем рядом. Чтобы увидеть больше наших работ, перейдите в галерею демо на нашем сайте: https://astrato.io/gallery
 
+<div className="ch-image-lg">
+
 ![Astrato: подключение к ClickHouse, доступ пользователей](/images/integrations/data-visualization/astrato_5c_clickhouse_complete_dashboard.webp)
+
+</div>

@@ -62,7 +62,11 @@ ORDER BY id;
 
 يوضح الشكل أدناه مثالًا أساسيًا على مزامنة جدول `users` بين PostgreSQL وClickHouse باستخدام ClickPipes.
 
+<div className="ch-image-lg">
+
 ![التحميل الأوّلي في ClickPipes](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
+
+</div>
 
 توضح **الخطوة 1** اللقطة الأولية للصفّين في PostgreSQL، وكيف يجري ClickPipes التحميل الأوّلي لهذين الصفّين إلى ClickHouse. وكما تلاحظ، يُنسخ الصفّان إلى ClickHouse كما هما.
 

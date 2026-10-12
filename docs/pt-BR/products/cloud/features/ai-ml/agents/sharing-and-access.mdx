@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 O ClickHouse Agents usa um modelo de permissões em camadas: as funções controlam quais funcionalidades os usuários podem usar, as listas de acesso em nível de recurso controlam quem pode usar um agente específico ou outro recurso, e as permissões de Admin controlam quem gerencia tudo.
@@ -53,11 +54,19 @@ A visibilidade em toda a organização é o que torna um recurso localizável no
 
 Clique no ícone de **compartilhar** na parte inferior do Agent Builder. Um indicador no ícone mostra quantos usuários ou grupos têm acesso no momento.
 
+<div className="ch-image-sm">
+
 ![Parte inferior do painel do Agent Builder com o ícone de compartilhar destacado e um indicador mostrando um principal com quem foi compartilhado](/images/cloud/agent-builder/sharing/sharing.webp)
+
+</div>
 
 O modal **Compartilhar** é aberto. Procure um usuário ou grupo por nome ou e-mail, escolha o nível de acesso (**Visualizador**, **Editor** ou **Proprietário**) e clique em **Salvar alterações**. Para compartilhar com toda a organização, habilite a opção **Compartilhar com todos no ClickHouse**.
 
+<div className="ch-image-md">
+
 ![Modal Compartilhar com a seção Permissões de usuário e grupo, um campo de busca, um usuário existente com a função de Proprietário, uma opção Compartilhar com todos no ClickHouse e os botões Cancelar e Salvar alterações](/images/cloud/agent-builder/sharing/share-agent-modal.webp)
+
+</div>
 
 O destinatário verá o agente na lista de agentes disponíveis na próxima vez que atualizar. Para revogar o acesso, remova a linha no mesmo modal. O destinatário perde o acesso imediatamente; as conversas em andamento terminam, mas não será possível iniciar novas.
 

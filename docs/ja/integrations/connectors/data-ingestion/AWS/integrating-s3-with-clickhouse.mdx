@@ -857,7 +857,11 @@ SELECT * FROM s3_table1;
 6. AWS コンソールでバケットに移動し、新しく作成したバケットとそのフォルダを選択します。
    次のように表示されるはずです。
 
+<div className="ch-image-lg">
+
 ![S3 に保存された ClickHouse のデータファイルを表示する AWS コンソールの S3 バケットビュー](/images/integrations/data-ingestion/s3/s3-j.webp)
+
+</div>
 
 <div id="s3-multi-region">
   ## S3オブジェクトストレージを使用して、1つの分片を2つのAWSリージョンにまたがってレプリケートする
@@ -1296,9 +1300,17 @@ sudo service clickhouse-server start
 
   各 S3 バケット内のデータを確認します (totals は表示されていませんが、INSERT 後は両方のバケットに約 36 MiB 保存されています) 。
 
+<div className="ch-image-lg">
+
 ![ストレージ使用量メトリクスを示す、1つ目の S3 バケット内のデータサイズ](/images/integrations/data-ingestion/s3/bucket1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![ストレージ使用量メトリクスを示す、2つ目の S3 バケット内のデータサイズ](/images/integrations/data-ingestion/s3/bucket2.webp)
+
+</div>
 
 <div id="s3express">
   ## S3Express

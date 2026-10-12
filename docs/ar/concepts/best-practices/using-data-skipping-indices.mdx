@@ -190,7 +190,11 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 يوضّح الرسم المتحرك التالي كيفية إنشاء فهرس minmax لتخطي البيانات للجدول الوارد في المثال، مع تتبّع الحد الأدنى والحد الأقصى لقيم `ViewCount` لكل كتلة من الصفوف (granule) في الجدول:
 
+<div className="ch-image-lg">
+
 ![إنشاء فهارس تخطي البيانات](/images/bestpractices/building_skipping_indices.webp)
+
+</div>
 
 تُظهر إعادة تنفيذ الاستعلام السابق تحسينات كبيرة في الأداء. لاحظ انخفاض عدد الصفوف التي جرى فحصها:
 
@@ -255,7 +259,11 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 نعرض أيضًا رسمًا متحركًا يوضّح كيف يستبعد فهرس تخطي البيانات minmax جميع كتل الصفوف التي لا يمكن أن تتضمن أي نتائج مطابقة للشرط `ViewCount` &gt; 10,000,000 في استعلامنا المثال:
 
+<div className="ch-image-lg">
+
 ![استخدام فهارس تخطي البيانات](/images/bestpractices/using_skipping_indices.webp)
+
+</div>
 
 <div id="related-docs">
   ## الوثائق ذات الصلة

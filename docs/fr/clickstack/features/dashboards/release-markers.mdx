@@ -17,7 +17,11 @@ Les versions proviennent de la télémétrie que vous envoyez déjà, lue via un
 
 Les marqueurs de version sont désactivés par défaut. Ouvrez le menu d’options d’un dashboard et sélectionnez **Afficher les marqueurs de version**.
 
+<div className="ch-image-sm">
+
 ![Menu d’options du dashboard avec l’élément Afficher les marqueurs de version dans la section Affichage, sous Afficher les annotations d’alertes](/images/clickstack/dashboards/release-markers-menu.webp)
+
+</div>
 
 Le commutateur ajoute `releaseMarkers=true` à l’URL du dashboard, afin que les liens que vous partagez s’ouvrent avec les marqueurs déjà activés. Il s’agit d’un état d’affichage et non de la configuration du dashboard : il n’est pas enregistré avec le dashboard et sa désactivation supprime à nouveau le paramètre.
 
@@ -78,7 +82,11 @@ Dans le troisième cas, le service d’un marqueur n’a aucune ligne correspond
 
 Survolez l’étiquette d’un marqueur pour afficher toutes les versions à cet endroit, ainsi que le service qui les a publiées, leur numéro de version et l’heure.
 
+<div className="ch-image-sm">
+
 ![Infobulle au survol d’un marqueur de version indiquant le service frontend et la version 2.0.2, avec l’heure à laquelle cette version est apparue pour la première fois, sur un graphique représentant deux services](/images/clickstack/dashboards/release-marker-tooltip.webp)
+
+</div>
 
 La couleur associe un marqueur à sa série, mais la légende d’un graphique affiche au maximum quatre entrées avant de regrouper les autres sous « +N autres ». Il n’y a alors plus rien à l’écran permettant d’identifier la couleur. L’infobulle indique explicitement le nom du service et fonctionne donc quel que soit le nombre de séries affichées dans la tuile.
 

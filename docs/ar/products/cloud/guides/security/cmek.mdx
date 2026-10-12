@@ -160,4 +160,8 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ar/components/EnterprisePl
 
 يعتمد التشفير على مستوى قاعدة البيانات على [ميزة نظام الملفات الافتراضي لتشفير البيانات](/ar/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) المدمجة في ClickHouse لتشفير بياناتك وحمايتها. والخوارزمية المستخدمة في هذه الميزة هي `AES_256_CTR`، ومن المتوقع أن تؤدي إلى انخفاض في الأداء بنسبة تتراوح بين 5% و15% بحسب عبء العمل:
 
+<div className="ch-image-lg">
+
 ![انخفاض أداء CMEK](/images/_snippets/cmek-performance.webp)
+
+</div>

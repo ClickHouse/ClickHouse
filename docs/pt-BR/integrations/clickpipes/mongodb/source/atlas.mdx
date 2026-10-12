@@ -18,15 +18,27 @@ Uma retenção mínima do oplog de 24 horas é necessária para a replicação. 
 
 1. Acesse a aba `Overview` do seu cluster no console do MongoDB Atlas e clique na aba `Configuration`.
 
+<div className="ch-image-lg">
+
 ![Acesse a configuração do cluster](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp)
+
+</div>
 
 2. Clique em `Additional Settings` e role a tela para baixo até `More Configuration Options`.
 
+<div className="ch-image-lg">
+
 ![Expanda as configurações adicionais](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp)
+
+</div>
 
 3. Clique em `More Configuration Options` e defina a janela mínima do oplog como `72 hours` ou mais.
 
+<div className="ch-image-lg">
+
 ![Defina as horas de retenção do oplog](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp)
+
+</div>
 
 4. Clique em `Review Changes` para revisar as alterações e, em seguida, em `Apply Changes` para aplicá-las.
 
@@ -38,7 +50,11 @@ Depois de fazer login no console do MongoDB Atlas, clique em `Database Access` n
 
 O ClickPipes exige autenticação por senha:
 
+<div className="ch-image-lg">
+
 ![Adicionar usuário de banco de dados](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp)
+
+</div>
 
 O ClickPipes exige um usuário com as seguintes funções:
 
@@ -47,11 +63,19 @@ O ClickPipes exige um usuário com as seguintes funções:
 
 Você pode encontrá-las na seção `Specific Privileges`:
 
+<div className="ch-image-lg">
+
 ![Configurar funções do usuário](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp)
+
+</div>
 
 Também é possível especificar os clusters/instâncias aos quais você deseja conceder acesso ao usuário do ClickPipes:
 
+<div className="ch-image-lg">
+
 ![Restringir acesso a cluster/instância](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp)
+
+</div>
 
 <div id="whats-next">
   ## O que vem a seguir?

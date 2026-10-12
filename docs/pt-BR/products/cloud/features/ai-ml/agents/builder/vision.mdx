@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 O Vision permite que os usuários façam upload de imagens para um agente analisar. O agente passa a imagem para um modelo compatível com Vision, que descreve, resume ou responde a perguntas sobre o que há nela.
@@ -24,7 +25,11 @@ O Vision só funciona com modelos compatíveis com entrada de imagens. Se o mode
 
 Clique no ícone de clipe de papel no canto inferior esquerdo da área de composição da mensagem e escolha **Upload to Provider** para anexar uma imagem — uma captura de tela, uma foto, um gráfico ou um diagrama. Em seguida, faça qualquer pergunta que exija a leitura da imagem: *&quot;O que há de errado com este plano de execução da consulta?&quot;*, *&quot;Transcreva o texto desta captura de tela&quot;* ou *&quot;Compare este dashboard com o da semana passada.&quot;*
 
+<div className="ch-image-lg">
+
 ![Área de composição da mensagem com o menu do clipe de papel aberto, mostrando as opções Upload to Provider, Upload as Text e Upload to Code Environment](/images/cloud/agent-builder/vision/vision.webp)
+
+</div>
 
 O agente trata a imagem como parte do contexto da mensagem, então perguntas de acompanhamento na mesma interação podem fazer referência ao que ele viu sem precisar reenviá-la.
 

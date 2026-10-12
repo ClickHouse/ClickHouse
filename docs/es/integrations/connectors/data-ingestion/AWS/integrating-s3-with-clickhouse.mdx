@@ -857,7 +857,11 @@ SELECT * FROM s3_table1;
 6. En la consola de AWS, ve a los buckets y selecciona el bucket nuevo y la carpeta.
    Deberías ver algo parecido a lo siguiente:
 
+<div className="ch-image-lg">
+
 ![Vista del bucket de S3 en la consola de AWS que muestra archivos de datos de ClickHouse almacenados en S3](/images/integrations/data-ingestion/s3/s3-j.webp)
+
+</div>
 
 <div id="s3-multi-region">
   ## Replicar un único segmento entre dos regiones de AWS mediante almacenamiento de objetos en S3
@@ -1296,9 +1300,17 @@ Estas pruebas verificarán que los datos se estén replicando entre los dos serv
 
   Compruebe los datos de S3 en cada bucket de S3 (no se muestran los totales, pero ambos buckets tienen aproximadamente 36 MiB almacenados después de las inserciones):
 
+<div className="ch-image-lg">
+
 ![Tamaño de los datos en el primer bucket de S3, con métricas de uso de almacenamiento](/images/integrations/data-ingestion/s3/bucket1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Tamaño de los datos en el segundo bucket de S3, con métricas de uso de almacenamiento](/images/integrations/data-ingestion/s3/bucket2.webp)
+
+</div>
 
 <div id="s3express">
   ## S3Express

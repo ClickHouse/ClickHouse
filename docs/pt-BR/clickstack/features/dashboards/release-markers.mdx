@@ -17,7 +17,11 @@ As versões vêm da telemetria que você já envia, lida por meio de uma express
 
 Os marcadores de lançamento ficam desativados por padrão. Abra o menu de opções de um dashboard e selecione **Mostrar marcadores de lançamento**.
 
+<div className="ch-image-sm">
+
 ![Menu de opções do dashboard com o item Mostrar marcadores de lançamento na seção Visualização, abaixo de Mostrar anotações de alertas](/images/clickstack/dashboards/release-markers-menu.webp)
+
+</div>
 
 O controle adiciona `releaseMarkers=true` à URL do dashboard; assim, um link compartilhado é aberto com os marcadores já ativados. Trata-se de um estado de visualização, e não da configuração do dashboard: ele não é salvo com o dashboard, e desativá-lo remove o parâmetro novamente.
 
@@ -78,7 +82,11 @@ No terceiro caso, o serviço de um marcador não tem uma linha correspondente no
 
 Passe o cursor sobre o rótulo de um marcador para listar todos os lançamentos naquele ponto, cada um com o serviço que o disponibilizou, sua versão e o horário.
 
+<div className="ch-image-sm">
+
 ![Dica de ferramenta exibida ao passar o cursor sobre um marcador de lançamento, mostrando o serviço frontend, a versão 2.0.2 e o horário em que a versão apareceu pela primeira vez, em um gráfico de dois serviços](/images/clickstack/dashboards/release-marker-tooltip.webp)
+
+</div>
 
 A cor associa um marcador à sua série, mas a legenda do gráfico mostra no máximo quatro entradas antes de recolher as demais em &quot;+N more&quot;, e nesse ponto não há nada na tela com que comparar a cor. A dica de ferramenta informa diretamente o nome do serviço, portanto funciona independentemente de quantas séries o bloco exibe.
 

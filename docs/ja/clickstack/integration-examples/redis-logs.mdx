@@ -165,9 +165,17 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
   <Step title="HyperDXでログを確認する" id="verifying-logs">
     設定が完了したら、HyperDX にログインし、ログが取り込まれていることを確認します。
 
+    <div className="ch-image-lg">
+
     ![ログビュー](/images/clickstack/redis/redis-log-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![ログ](/images/clickstack/redis/redis-log.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -258,9 +266,17 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
       HyperDX はタイムスタンプをブラウザーのローカルタイムゾーンで表示します。デモデータの期間は **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** です。広めの時間範囲を設定しているため、どの地域からでもデモログを確認できます。ログが表示されたら、より見やすく可視化するために範囲を 24 時間に絞り込めます。
     </Info>
 
+    <div className="ch-image-lg">
+
     ![ログビュー](/images/clickstack/redis/redis-log-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![ログ](/images/clickstack/redis/redis-log.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -279,11 +295,19 @@ ClickStack で Redis の監視を開始する際に役立つよう、Redis ロ�
     1. HyperDX を開き、ダッシュボードセクションに移動します。
     2. 右上の三点メニューから「Import Dashboard」をクリックします。
 
+    <div className="ch-image-lg">
+
     ![ダッシュボードをインポート](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. redis-logs-dashboard.json ファイルをアップロードし、「finish import」をクリックします。
 
+    <div className="ch-image-lg">
+
     ![インポートを完了](/images/clickstack/redis/redis-import-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="ダッシュボードが作成され、すべての可視化があらかじめ設定された状態になります" id="created-dashboard">
@@ -291,7 +315,11 @@ ClickStack で Redis の監視を開始する際に役立つよう、Redis ロ�
       デモデータセットでは、時間範囲を **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が設定されていません。
     </Note>
 
+    <div className="ch-image-lg">
+
     ![ダッシュボードの例](/images/clickstack/redis/redis-logs-dashboard.webp)
+
+    </div>
   </Step>
 </Steps>
 

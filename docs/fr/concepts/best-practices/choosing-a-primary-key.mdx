@@ -120,7 +120,11 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 L’animation suivante montre comment un index primaire clairsemé optimisé est créé pour la table Posts de Stack Overflow. Au lieu d’indexer les lignes individuellement, l’index cible des blocs de lignes :
 
+<div className="ch-image-lg">
+
 ![Clé primaire](/images/bestpractices/create_primary_key.webp)
+
+</div>
 
 Si la même requête est répétée sur une table avec cette clé de tri :
 
@@ -168,7 +172,11 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 De plus, nous visualisons comment l’index clairsemé écarte tous les blocs de lignes qui ne peuvent en aucun cas contenir de correspondances pour notre requête d’exemple :
 
+<div className="ch-image-lg">
+
 ![Clé primaire](/images/bestpractices/primary_key.webp)
+
+</div>
 
 <Note>
   Toutes les colonnes d’une table sont triées selon la valeur de la clé de tri spécifiée, qu’elles soient ou non incluses dans la clé elle-même. Par exemple, si `CreationDate` est utilisée comme clé, l’ordre des valeurs dans toutes les autres colonnes correspondra à l’ordre des valeurs de la colonne `CreationDate`. Plusieurs clés de tri peuvent être spécifiées : l’ordre suivra alors la même sémantique qu’une clause `ORDER BY` dans une requête `SELECT`.

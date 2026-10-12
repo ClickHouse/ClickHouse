@@ -24,7 +24,11 @@ doc_type: 'guide'
 
 يوضح المخطط التالي بإيجاز عملية الدمج في الخلفية:
 
+<div className="ch-image-lg">
+
 ![دمج الأجزاء](/images/managing-data/core-concepts/merges_01.webp)
+
+</div>
 
 <br />
 
@@ -67,7 +71,11 @@ ORDER BY name ASC;
 
 في ClickHouse 24.10، أُضيفت [لوحة معلومات لدمج الأجزاء](https://presentations.clickhouse.com/2024-release-24.10/index.html#17) جديدة إلى [لوحات معلومات المراقبة](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) المضمنة. وهي متاحة في كلٍّ من OSS وCloud عبر معالج HTTP ‏`/merges`، ويمكن استخدامها لتصوير جميع دمج الأجزاء لجدولنا التجريبي:
 
+<div className="ch-image-lg">
+
 ![دمج الأجزاء](/images/managing-data/core-concepts/merges-dashboard.webp)
+
+</div>
 
 <br />
 
@@ -85,7 +93,11 @@ ORDER BY name ASC;
 
 يستخدم خادم ClickHouse عدة [خيوط دمج](/ar/reference/settings/server-settings/settings/background#background_pool_size) في الخلفية لتنفيذ دمج الأجزاء بشكل متزامن:
 
+<div className="ch-image-lg">
+
 ![دمج الأجزاء](/images/managing-data/core-concepts/merges_02.webp)
+
+</div>
 
 <br />
 
@@ -119,7 +131,11 @@ ORDER BY name ASC;
 
 يوضح المخطط أدناه كيف يقوم [خيط دمج](/ar/concepts/core-concepts/merges#concurrent-merges) واحد يعمل في الخلفية في ClickHouse بدمج الأجزاء (افتراضيًا، من دون [الدمج العمودي](/ar/concepts/core-concepts/merges#memory-optimized-merges)):
 
+<div className="ch-image-lg">
+
 ![دمج الأجزاء](/images/managing-data/core-concepts/merges_03.webp)
+
+</div>
 
 <br />
 
@@ -155,7 +171,11 @@ ORDER BY name ASC;
 
 يوضح المخطط أدناه كيفية دمج الأجزاء في جدول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree) من النوع القياسي:
 
+<div className="ch-image-lg">
+
 ![دمج الأجزاء](/images/managing-data/core-concepts/merges_04.webp)
+
+</div>
 
 <br />
 
@@ -169,7 +189,11 @@ ORDER BY name ASC;
 
 تعمل دمج الأجزاء في جدول [ReplacingMergeTree](/ar/reference/engines/table-engines/mergetree-family/replacingmergetree) بصورة مشابهة لـ [عمليات الدمج القياسية](/ar/concepts/core-concepts/merges#standard-merges)، لكن لا يُحتفَظ إلا بأحدث إصدار من كل صف، بينما تُهمَل الإصدارات الأقدم:
 
+<div className="ch-image-lg">
+
 ![دمج الأجزاء](/images/managing-data/core-concepts/merges_05.webp)
+
+</div>
 
 <br />
 
@@ -187,7 +211,11 @@ ORDER BY name ASC;
 
 تُلخَّص البيانات الرقمية تلقائيًا أثناء دمج الأجزاء في جدول [SummingMergeTree](/ar/reference/engines/table-engines/mergetree-family/summingmergetree):
 
+<div className="ch-image-lg">
+
 ![دمج الأجزاء](/images/managing-data/core-concepts/merges_06.webp)
+
+</div>
 
 <br />
 
@@ -201,7 +229,11 @@ ORDER BY name ASC;
 
 يُعد مثال جدول `SummingMergeTree` الوارد أعلاه صيغة متخصصة من جدول [AggregatingMergeTree](/ar/reference/engines/table-engines/mergetree-family/aggregatingmergetree)، ويتيح [التحويل التلقائي التزايدي للبيانات](https://www.youtube.com/watch?v=QDAJTKZT8y4) من خلال تطبيق أيٍ من دوال [التجميع](/ar/reference/functions/aggregate-functions/reference-index) البالغ عددها [90+] أثناء دمج الأجزاء:
 
+<div className="ch-image-lg">
+
 ![دمج الأجزاء](/images/managing-data/core-concepts/merges_07.webp)
+
+</div>
 
 <br />
 

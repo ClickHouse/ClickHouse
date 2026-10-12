@@ -29,7 +29,11 @@ Le moteur de table Kafka permet à ClickHouse de lire directement depuis un topi
 
 Pour conserver ces données après lecture via le moteur de table, il nous faut un moyen de les capturer et de les insérer dans une autre table. Les vues matérialisées basées sur des déclencheurs offrent nativement cette fonctionnalité. Une vue matérialisée déclenche une lecture sur le moteur de table et reçoit des lots de documents. La clause TO détermine la destination des données — généralement une table de la [famille MergeTree](/fr/reference/engines/table-engines/mergetree-family/index). Ce processus est illustré ci-dessous :
 
+<div className="ch-image-lg">
+
 ![Schéma d’architecture du moteur de table Kafka](/images/integrations/data-ingestion/kafka/kafka_01.webp)
+
+</div>
 
 <div id="steps">
   #### Étapes
@@ -353,7 +357,11 @@ Bien qu’il s’agisse d’un cas d’utilisation plus rare, les données de Cl
 
 Notre objectif initial est illustré au mieux ci-dessous :
 
+<div className="ch-image-lg">
+
 ![Schéma du moteur de table Kafka avec des insertions](/images/integrations/data-ingestion/kafka/kafka_02.webp)
+
+</div>
 
 Nous supposons que vous avez créé les tables et les vues dans les étapes de [Kafka vers ClickHouse](#kafka-to-clickhouse) et que le topic a été entièrement consommé.
 
@@ -397,7 +405,11 @@ Nous supposons que vous avez créé les tables et les vues dans les étapes de [
   <Step title="Utilisation de vues matérialisées" id="2-using-materialized-views">
     Nous pouvons utiliser des vues matérialisées pour envoyer des messages vers un moteur Kafka (et un topic) lorsque des documents sont insérés dans une table. Lorsque des lignes sont insérées dans la table GitHub, une vue matérialisée est déclenchée, ce qui entraîne l&#39;insertion de ces lignes dans un moteur Kafka puis dans un nouveau topic. Là encore, le schéma suivant l&#39;illustre le mieux :
 
+    <div className="ch-image-lg">
+
     ![Schéma du moteur de table Kafka avec des vues matérialisées](/images/integrations/data-ingestion/kafka/kafka_03.webp)
+
+    </div>
 
     Créez un nouveau topic Kafka `github_out` ou un équivalent. Assurez-vous qu&#39;un moteur de table Kafka `github_out_queue` pointe vers ce topic.
 
@@ -491,7 +503,11 @@ Grâce aux groupes de consommateurs Kafka, plusieurs instances ClickHouse peuven
 
 Plusieurs instances ClickHouse peuvent être configurées pour lire à partir d’un topic avec le même identifiant de groupe de consommateurs, spécifié lors de la création du moteur de table Kafka. Chaque instance lira donc une ou plusieurs partitions et insérera des segments dans sa table cible locale. Les tables cibles peuvent ensuite être configurées pour utiliser ReplicatedMergeTree afin de gérer la duplication des données. Cette approche permet de faire évoluer les lectures Kafka avec le cluster ClickHouse, à condition de disposer d’un nombre suffisant de partitions Kafka.
 
+<div className="ch-image-lg">
+
 ![Schéma du moteur de table Kafka avec des clusters ClickHouse](/images/integrations/data-ingestion/kafka/kafka_04.webp)
+
+</div>
 
 <div id="tuning-performance">
   #### Réglage des performances

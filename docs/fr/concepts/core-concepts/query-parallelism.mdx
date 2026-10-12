@@ -19,7 +19,11 @@ Nous utilisons une requête d’agrégation sur le jeu de données [uk&#95;price
 
 Lorsque ClickHouse ① exécute une requête d’agrégation avec un filtre sur la clé primaire de la table, il ② charge l’index primaire en mémoire afin d’③ identifier les granules à traiter et celles qui peuvent être ignorées sans risque :
 
+<div className="ch-image-md">
+
 ![Analyse de l’index](/images/guides/best-practices/query-parallelism_01.webp)
+
+</div>
 
 <div id="distributing-work-across-processing-lanes">
   ### Répartition du travail entre les voies de traitement
@@ -27,7 +31,11 @@ Lorsque ClickHouse ① exécute une requête d’agrégation avec un filtre sur 
 
 Les données sélectionnées sont ensuite réparties [dynamiquement](#load-balancing-across-processing-lanes) entre `n` [voies de traitement](/fr/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) parallèles, qui acheminent et traitent les données [bloc](/fr/resources/develop-contribute/introduction/architecture#block) par bloc jusqu’au résultat final :
 
+<div className="ch-image-md">
+
 ![4 voies de traitement parallèles](/images/guides/best-practices/query-parallelism_02.webp)
+
+</div>
 
 <br />
 
@@ -37,7 +45,11 @@ Le nombre de `n` voies de traitement parallèles est contrôlé par le paramètr
 
 Sur une machine avec `8` cœurs, le débit du traitement des requêtes doublerait approximativement (mais l’utilisation mémoire augmenterait également en conséquence), car davantage de voies traitent les données en parallèle :
 
+<div className="ch-image-md">
+
 ![8 voies de traitement parallèles](/images/guides/best-practices/query-parallelism_03.webp)
+
+</div>
 
 <br />
 
@@ -51,7 +63,11 @@ Une répartition efficace des voies est essentielle pour maximiser l’utilisati
 
 Lorsque les données d&#39;une table sont réparties sur plusieurs serveurs en [shards](/fr/guides/oss/deployment-and-scaling/shards), chaque serveur traite son shard en parallèle. Sur chaque serveur, les données locales sont traitées via des voies de traitement parallèles, comme décrit ci-dessus :
 
+<div className="ch-image-md">
+
 ![Lanes distribuées](/images/guides/best-practices/query-parallelism_04.webp)
+
+</div>
 
 <br />
 
@@ -125,7 +141,11 @@ Remarque : lisez le plan des opérateurs ci-dessus de bas en haut. Chaque ligne
 
 L’[interface web intégrée](/fr/concepts/features/interfaces/http) de ClickHouse (disponible sur l’endpoint `/play`) peut représenter le plan physique ci-dessus sous forme de visualisation graphique. Dans cet exemple, nous définissons `max_threads` sur `4` afin de conserver une visualisation compacte, avec seulement 4 voies de traitement parallèles affichées :
 
+<div className="ch-image-lg">
+
 ![Pipeline de requête](/images/guides/best-practices/query-parallelism_05.webp)
+
+</div>
 
 Remarque : lisez la visualisation de gauche à droite. Chaque ligne représente une voie de traitement parallèle qui fait circuler les blocs de données bloc par bloc, en appliquant des transformations telles que le filtrage, l’agrégation et les étapes finales de traitement. Dans cet exemple, vous pouvez voir quatre voies parallèles correspondant au paramètre `max_threads = 4`.
 

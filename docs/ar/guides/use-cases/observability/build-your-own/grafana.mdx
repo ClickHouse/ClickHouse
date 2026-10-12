@@ -28,7 +28,11 @@ doc_type: 'guide'
 
 أما إعداد التتبعات فهو أكثر تعقيدًا قليلًا (القائمة الكاملة [هنا](/ar/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)). فالأعمدة المطلوبة هنا ضرورية لكي يمكن تجريد الاستعلامات اللاحقة التي تُنشئ ملف تتبّع كاملًا. وتفترض هذه الاستعلامات أن البيانات منظَّمة بطريقة مشابهة لـ OTel، لذا سيحتاج المستخدمون الذين ينحرفون كثيرًا عن المخطط القياسي إلى استخدام views للاستفادة من هذه الميزة.
 
+<div className="ch-image-sm">
+
 ![إعدادات الموصل](/images/use-cases/observability/observability-15.webp)
+
+</div>
 
 بمجرد اكتمال التهيئة، يمكنك الانتقال إلى [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) وبدء البحث في السجلات والتتبعات.
 
@@ -42,7 +46,11 @@ doc_type: 'guide'
 SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
 ```
 
+<div className="ch-image-lg">
+
 ![إعدادات سجلات الموصّل](/images/use-cases/observability/observability-16.webp)
+
+</div>
 
 يوفّر منشئ الاستعلامات طريقة بسيطة لتعديل الاستعلام من دون الحاجة إلى كتابة SQL. كما يمكن إجراء التصفية، بما في ذلك العثور على السجلات التي تحتوي على كلمات مفتاحية، من خلال منشئ الاستعلامات. ويمكن للمستخدمين الذين يرغبون في كتابة استعلامات أكثر تعقيدًا التبديل إلى محرر SQL. وإذا أُعيدت الأعمدة المناسبة وتم اختيار `logs` بوصفه نوع الاستعلام، فستُعرض النتائج على هيئة سجلات. الأعمدة المطلوبة لعرض السجلات مُدرجة [هنا](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format).
 
@@ -52,7 +60,11 @@ SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as t
 
 إذا كانت السجلات تتضمن معرّفات تتبّع، يمكنك الاستفادة من إمكانية الانتقال من سطر سجل معيّن إلى التتبّع المرتبط به.
 
+<div className="ch-image-lg">
+
 ![من السجلات إلى التتبعات](/images/use-cases/observability/observability-17.webp)
+
+</div>
 
 <div id="traces">
   ## التتبعات
@@ -75,7 +87,11 @@ WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
 
 يعرض هذا الاستعلام أسماء الأعمدة التي يتوقعها Grafana، مما ينتج عنه جدول للتتبعات كما هو موضح أدناه. ويمكن التصفية حسب المدة أو الأعمدة الأخرى دون الحاجة إلى كتابة SQL.
 
+<div className="ch-image-lg">
+
 ![التتبعات](/images/use-cases/observability/observability-18.webp)
+
+</div>
 
 يمكن للمستخدمين الذين يرغبون في كتابة استعلامات أكثر تعقيدًا التبديل إلى `SQL Editor`.
 
@@ -113,7 +129,11 @@ LIMIT 1000
   لاحظ أن الاستعلام أعلاه يستخدم العرض المادي `otel_traces_trace_id_ts` لإجراء بحث عن معرّف التتبّع. راجع [تسريع الاستعلامات - استخدام العروض المادية لعمليات البحث](/ar/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups) لمزيد من التفاصيل.
 </Note>
 
+<div className="ch-image-lg">
+
 ![تفاصيل التتبّع](/images/use-cases/observability/observability-19.webp)
+
+</div>
 
 <div id="traces-to-logs">
   ### من التتبّعات إلى السجلات
@@ -129,7 +149,11 @@ WHERE ( traceID = '<trace_id>' )
 ORDER BY timestamp ASC LIMIT 1000
 ```
 
+<div className="ch-image-lg">
+
 ![من التتبعات إلى السجلات](/images/use-cases/observability/observability-20.webp)
+
+</div>
 
 <div id="dashboards">
   ## لوحات المعلومات
@@ -139,7 +163,11 @@ ORDER BY timestamp ASC LIMIT 1000
 
 توفّر الإضافة عدة لوحات معلومات جاهزة، بما في ذلك لوحة معلومات نموذجية بعنوان &quot;Simple ClickHouse OTel dashboarding&quot; لبيانات التسجيل والتتبّع المتوافقة مع مواصفة OTel. ويتطلب ذلك من المستخدمين الالتزام بأسماء الأعمدة الافتراضية الخاصة بـ OTel، ويمكن تثبيت هذه اللوحة من إعدادات مصدر البيانات.
 
+<div className="ch-image-lg">
+
 ![لوحات المعلومات](/images/use-cases/observability/observability-21.webp)
+
+</div>
 
 نقدّم أدناه بعض النصائح البسيطة لإنشاء التصورات.
 
@@ -162,7 +190,11 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
+<div className="ch-image-lg">
+
 ![السلاسل الزمنية](/images/use-cases/observability/observability-22.webp)
+
+</div>
 
 <div id="multi-line-charts">
   ### المخططات متعددة الخطوط
@@ -189,7 +221,11 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
+<div className="ch-image-lg">
+
 ![رسوم بيانية متعددة الخطوط](/images/use-cases/observability/observability-23.webp)
+
+</div>
 
 <div id="visualizing-geo-data">
   ### تصور البيانات الجغرافية
@@ -215,4 +251,8 @@ FROM coords
 GROUP BY hash
 ```
 
+<div className="ch-image-lg">
+
 ![عرض البيانات الجغرافية بصريًا](/images/use-cases/observability/observability-24.webp)
+
+</div>

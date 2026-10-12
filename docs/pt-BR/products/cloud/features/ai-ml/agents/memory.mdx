@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 é um armazenamento por usuário que o agente pode recuperar em várias conversas. Ele é composto por várias entradas, cada uma delas um par chave-valor — seu
@@ -28,7 +29,11 @@ Na prática, isso se traduz em continuidade: diga uma vez a um agente que você 
 
 Abra o painel de Memory pelo ícone **Memories** (cérebro) na navegação à esquerda. O painel lista as memórias armazenadas, com controles para criar, editar, excluir e filtrar entradas.
 
+<div className="ch-image-sm">
+
 ![Painel Memories mostrando o ícone de cérebro destacado na navegação à esquerda, um campo de filtro, um botão Add, uma caixa de seleção Use memory, uma entrada de Memory com controles de edição e exclusão e um botão Admin Settings](/images/cloud/agent-builder/memory/memories.webp)
+
+</div>
 
 O Memory é privado para cada usuário. Os agentes de outras pessoas nunca veem suas entradas, e os seus agentes nunca veem as delas.
 
@@ -38,7 +43,11 @@ O Memory é privado para cada usuário. Os agentes de outras pessoas nunca veem 
 
 Clique no botão **+** na parte superior do painel para abrir a caixa de diálogo **Criar Memory**. Insira uma **Chave** (apenas letras minúsculas e sublinhados) e um **Valor** e, em seguida, clique em **Criar**.
 
+<div className="ch-image-sm">
+
 ![Painel de Memory com o botão + de Criar Memory destacado](/images/cloud/agent-builder/memory/create.webp)
+
+</div>
 
 <div id="filter-memories">
   ### Filtrar Memories
@@ -46,7 +55,11 @@ Clique no botão **+** na parte superior do painel para abrir a caixa de diálog
 
 Use o campo **Filtrar Memories** no topo do painel para localizar uma entrada pela chave.
 
+<div className="ch-image-sm">
+
 ![Painel de Memory com o campo Filtrar Memories destacado e 'demo' digitado](/images/cloud/agent-builder/memory/filter.webp)
+
+</div>
 
 <div id="edit-memory">
   ### Editar uma Memory
@@ -54,7 +67,11 @@ Use o campo **Filtrar Memories** no topo do painel para localizar uma entrada pe
 
 Clique no ícone de lápis em uma Memory para abrir a caixa de diálogo **Editar Memory**. Ajuste a Chave ou o Valor e clique em **Salvar**.
 
+<div className="ch-image-sm">
+
 ![Entrada de Memory com o ícone de lápis de Editar Memory destacado](/images/cloud/agent-builder/memory/edit.webp)
+
+</div>
 
 <div id="delete-memory">
   ### Excluir uma Memory
@@ -62,7 +79,11 @@ Clique no ícone de lápis em uma Memory para abrir a caixa de diálogo **Editar
 
 Clique no ícone de lixeira de uma Memory para removê-la.
 
+<div className="ch-image-sm">
+
 ![Entrada de Memory com o ícone de lixeira Excluir Memory destacado](/images/cloud/agent-builder/memory/delete.webp)
+
+</div>
 
 <div id="toggle-memory">
   ## Ativar/desativar a Memory
@@ -72,7 +93,11 @@ Ative ou desative a Memory com a caixa de seleção **Use memory** na parte supe
 
 Quando a Memory está desativada, o agente não lê nem grava nada no seu repositório de Memory.
 
+<div className="ch-image-sm">
+
 ![Painel de Memory com a caixa de seleção Use memory destacada na parte superior](/images/cloud/agent-builder/memory/toggle.webp)
+
+</div>
 
 <div id="memory-best-practices">
   ## Boas práticas de Memory

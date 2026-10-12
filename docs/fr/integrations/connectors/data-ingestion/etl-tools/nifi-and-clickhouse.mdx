@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
+
 import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -35,19 +36,35 @@ import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaint
   <Step title={<>Ajouter le Controller Service <code>DBCPConnectionPool</code> et configurer ses propriétés</>} id="4-add-dbcpconnectionpool-controller-service-and-configure-its-properties">
     1. Pour configurer un Controller Service dans Apache NiFi, accédez à la page de configuration du flux NiFi en cliquant sur le bouton &quot;gear&quot;
 
+       <div className="ch-image-sm">
+
        ![Page de configuration du flux NiFi avec le bouton gear mis en évidence](/images/integrations/data-ingestion/etl-tools/nifi_01.webp)
+
+       </div>
 
     2. Sélectionnez l’onglet Controller Services et ajoutez un nouveau Controller Service en cliquant sur le bouton `+` en haut à droite
 
+       <div className="ch-image-lg">
+
        ![Onglet Controller Services avec le bouton d’ajout mis en évidence](/images/integrations/data-ingestion/etl-tools/nifi_02.webp)
+
+       </div>
 
     3. Recherchez `DBCPConnectionPool`, puis cliquez sur le bouton &quot;Add&quot;
 
+       <div className="ch-image-lg">
+
        ![Boîte de dialogue de sélection du Controller Service avec DBCPConnectionPool mis en évidence](/images/integrations/data-ingestion/etl-tools/nifi_03.webp)
+
+       </div>
 
     4. Le `DBCPConnectionPool` nouvellement ajouté sera, par défaut, dans un état invalide. Cliquez sur le bouton &quot;gear&quot; pour commencer la configuration
 
+       <div className="ch-image-lg">
+
        ![Liste des Controller Services affichant un DBCPConnectionPool invalide avec le bouton gear mis en évidence](/images/integrations/data-ingestion/etl-tools/nifi_04.webp)
+
+       </div>
 
     5. Dans la section &quot;Properties&quot;, saisissez les valeurs suivantes
 
@@ -61,25 +78,45 @@ import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaint
 
     6. Dans la section Settings, remplacez le nom du Controller Service par &quot;ClickHouse JDBC&quot; pour le retrouver plus facilement
 
+       <div className="ch-image-lg">
+
        ![Boîte de dialogue de configuration de DBCPConnectionPool affichant les propriétés renseignées](/images/integrations/data-ingestion/etl-tools/nifi_05.webp)
+
+       </div>
 
     7. Activez le Controller Service `DBCPConnectionPool` en cliquant sur le bouton &quot;lightning&quot;, puis sur le bouton &quot;Enable&quot;
 
+       <div className="ch-image-lg">
+
        ![Liste des Controller Services avec le bouton lightning mis en évidence](/images/integrations/data-ingestion/etl-tools/nifi_06.webp)
+
+       </div>
 
        <br />
 
+       <div className="ch-image-lg">
+
        ![Boîte de dialogue de confirmation d’activation du Controller Service](/images/integrations/data-ingestion/etl-tools/nifi_07.webp)
+
+       </div>
 
     8. Vérifiez dans l’onglet Controller Services que le Controller Service est bien activé
 
+       <div className="ch-image-lg">
+
        ![Liste des Controller Services affichant le service ClickHouse JDBC activé](/images/integrations/data-ingestion/etl-tools/nifi_08.webp)
+
+       </div>
   </Step>
 
   <Step title={<>Lire des données d’une table à l’aide du processeur <code>ExecuteSQL</code></>} id="5-read-from-a-table-using-the-executesql-processor">
     1. Ajoutez un processeur ​`​ExecuteSQL`, ainsi que les processeurs en amont et en aval appropriés
 
+       <div className="ch-image-md">
+
        ![Canvas NiFi montrant le processeur ExecuteSQL dans un workflow](/images/integrations/data-ingestion/etl-tools/nifi_09.webp)
+
+       </div>
 
     2. Dans la section &quot;Propriétés&quot; du processeur ​`​ExecuteSQL`, saisissez les valeurs suivantes
 
@@ -90,15 +127,27 @@ import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaint
 
     3. Démarrez le processeur `​​ExecuteSQL`
 
+       <div className="ch-image-lg">
+
        ![Configuration du processeur ExecuteSQL avec les propriétés renseignées](/images/integrations/data-ingestion/etl-tools/nifi_10.webp)
+
+       </div>
 
     4. Pour confirmer que la requête a bien été traitée, inspectez l’un des `FlowFile` dans la file d’attente de sortie
 
+       <div className="ch-image-lg">
+
        ![Boîte de dialogue de liste de file d’attente montrant des FlowFile prêts à être inspectés](/images/integrations/data-ingestion/etl-tools/nifi_11.webp)
+
+       </div>
 
     5. Basculez sur la vue &quot;formatted&quot; pour afficher le résultat du `FlowFile` de sortie
 
+       <div className="ch-image-lg">
+
        ![Visionneuse de contenu FlowFile affichant le résultat de la requête dans la vue formatée](/images/integrations/data-ingestion/etl-tools/nifi_12.webp)
+
+       </div>
   </Step>
 
   <Step title={<>Écrire dans une table à l’aide des processeurs <code>MergeRecord</code> et <code>PutDatabaseRecord</code></>} id="6-write-to-a-table-using-mergerecord-and-putdatabaserecord-processor">
@@ -117,11 +166,19 @@ import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaint
 
        Entrée
 
+       <div className="ch-image-sm">
+
        ![Entrée du processeur MergeRecord montrant des enregistrements individuels](/images/integrations/data-ingestion/etl-tools/nifi_13.webp)
+
+       </div>
 
        Sortie
 
+       <div className="ch-image-sm">
+
        ![Sortie du processeur MergeRecord montrant un tableau fusionné d’enregistrements](/images/integrations/data-ingestion/etl-tools/nifi_14.webp)
+
+       </div>
 
     4. Dans la section &quot;Properties&quot; du processeur `PutDatabaseRecord`, saisissez les valeurs suivantes
 
@@ -137,7 +194,11 @@ import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaint
 
     5. Pour vérifier que chaque insertion contient plusieurs lignes, assurez-vous que le nombre de lignes de la table augmente d’au moins la valeur de &quot;Minimum Number of Records&quot; définie dans `MergeRecord`.
 
+       <div className="ch-image-sm">
+
        ![Résultat de la requête montrant le nombre de lignes dans la table de destination](/images/integrations/data-ingestion/etl-tools/nifi_15.webp)
+
+       </div>
 
     6. Félicitations - vous avez chargé vos données dans ClickHouse avec Apache NiFi !
   </Step>

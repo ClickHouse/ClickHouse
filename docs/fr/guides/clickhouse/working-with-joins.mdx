@@ -20,7 +20,11 @@ les tables localement.
 
 Vous utiliserez les quatre tables suivantes du jeu de données d&#39;exemple :
 
+<div className="ch-image-lg">
+
 ![Schéma IMDB](/images/starter_guides/joins/imdb_schema.webp)
+
+</div>
 
 Les données de ces quatre tables représentent des films, qui peuvent appartenir à un ou plusieurs genres.
 Les rôles d&#39;un film sont interprétés par des acteurs.
@@ -54,7 +58,11 @@ Dans les sections suivantes, vous rédigerez des requêtes d&#39;exemple pour ch
 L’`INNER JOIN` renvoie, pour chaque paire de lignes correspondant aux clés de jointure, les valeurs des colonnes de la ligne de la table de gauche, combinées avec les valeurs des colonnes de la ligne de la table de droite.
 Si une ligne a plus d’une correspondance, toutes les correspondances sont renvoyées (ce qui signifie que le [produit cartésien](https://en.wikipedia.org/wiki/Cartesian_product) est généré pour les lignes dont les clés de jointure correspondent).
 
+<div className="ch-image-lg">
+
 ![Jointure interne](/images/starter_guides/joins/inner_join.webp)
+
+</div>
 
 Cette requête trouve les genres de chaque film en joignant la table `movies` à la table `genres` :
 
@@ -102,7 +110,11 @@ Une requête `RIGHT OUTER JOIN` est similaire et renvoie également les valeurs 
 
 Une requête `FULL OUTER JOIN` combine `LEFT` et `RIGHT OUTER JOIN` et renvoie les valeurs des lignes non correspondantes des tables de gauche et de droite, avec les valeurs par défaut pour les colonnes des tables de droite et de gauche, respectivement.
 
+<div className="ch-image-lg">
+
 ![Jointure externe](/images/starter_guides/joins/outer_join.webp)
+
+</div>
 
 <Note>
   ClickHouse peut être [configuré](/fr/reference/settings/session-settings/join#join_use_nulls) pour renvoyer des [NULL](/fr/reference/syntax#null)s au lieu de valeurs par défaut (cependant, cela est moins recommandé pour des [raisons de performances](/fr/reference/data-types/nullable#storage-features)).
@@ -147,7 +159,11 @@ LIMIT 10;
 Le `CROSS JOIN` produit l’intégralité du produit cartésien des deux tables, sans tenir compte des clés de jointure.
 Chaque ligne de la table de gauche est combinée avec chaque ligne de la table de droite.
 
+<div className="ch-image-lg">
+
 ![Jointure croisée](/images/starter_guides/joins/cross_join.webp)
+
+</div>
 
 La requête suivante combine donc chaque ligne de la table `movies` avec chaque ligne de la table `genres` :
 
@@ -247,7 +263,11 @@ Seule la première correspondance trouvée est renvoyée (le produit cartésien 
 
 Une requête `RIGHT SEMI JOIN` est similaire : elle renvoie les valeurs de toutes les lignes de la table de droite ayant au moins une correspondance dans la table de gauche, mais seule la première correspondance trouvée est renvoyée.
 
+<div className="ch-image-lg">
+
 ![Semi Join](/images/starter_guides/joins/semi_join.webp)
+
+</div>
 
 Cette requête trouve tous les acteurs et actrices ayant joué dans un film en 2023.
 Notez qu&#39;avec une jointure (`INNER`) classique, un même acteur ou une même actrice apparaîtrait plusieurs fois s&#39;il ou elle avait eu plus d&#39;un rôle en 2023 :
@@ -286,7 +306,11 @@ Un `LEFT ANTI JOIN` renvoie les valeurs des colonnes de toutes les lignes non co
 
 De même, un `RIGHT ANTI JOIN` renvoie les valeurs des colonnes de toutes les lignes non correspondantes de la table de droite.
 
+<div className="ch-image-lg">
+
 ![Anti Join](/images/starter_guides/joins/anti_join.webp)
+
+</div>
 
 Une autre formulation de l’exemple de requête de jointure externe précédent consiste à utiliser un anti join pour trouver les films qui n’ont pas de genre dans le jeu de données :
 
@@ -326,7 +350,11 @@ De même, `RIGHT ANY JOIN` combine `RIGHT OUTER JOIN` et `RIGHT SEMI JOIN`.
 
 Et `INNER ANY JOIN` correspond à `INNER JOIN` avec le produit cartésien désactivé.
 
+<div className="ch-image-lg">
+
 ![Jointure ANY](/images/starter_guides/joins/any_join.webp)
+
+</div>
 
 L’exemple suivant illustre `LEFT ANY JOIN` à l’aide d’un exemple abstrait utilisant deux tables temporaires (`left_table` et `right_table`) construites avec la [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [table function](/fr/reference/functions/table-functions/index):
 
@@ -401,14 +429,22 @@ Si une ligne de la table de gauche n’a pas de correspondance exacte dans la ta
 
 C’est particulièrement utile pour l’analyse de séries temporelles et peut réduire considérablement la complexité des requêtes.
 
+<div className="ch-image-lg">
+
 ![Jointure ASOF](/images/starter_guides/joins/asof_join.webp)
+
+</div>
 
 L’exemple suivant effectue une analyse de séries temporelles sur des données boursières.
 Une table `quotes` contient les cotations de symboles boursiers à des moments précis de la journée.
 Dans les données d’exemple, le prix est mis à jour toutes les 10 secondes.
 Une table `trades` répertorie les transactions par symbole : un certain volume d’un symbole a été acheté à un instant précis :
 
+<div className="ch-image-lg">
+
 ![Exemple ASOF](/images/starter_guides/joins/asof_example.webp)
+
+</div>
 
 Pour calculer le coût réel de chaque transaction, nous devons faire correspondre les transactions avec l’heure de cotation la plus proche.
 

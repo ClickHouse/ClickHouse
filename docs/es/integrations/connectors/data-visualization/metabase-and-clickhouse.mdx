@@ -26,7 +26,11 @@ Metabase es una herramienta de interfaz de usuario de código abierto y fácil d
 
 En esta guía consultarás tus datos de ClickHouse con Metabase y visualizarás las respuestas. Una de ellas se verá así:
 
+<div className="ch-image-md">
+
 ![Visualización de gráfico circular de Metabase que muestra datos de ClickHouse](/images/integrations/data-visualization/metabase_08.webp)
+
+</div>
 
 <p />
 
@@ -60,13 +64,21 @@ En esta guía consultarás tus datos de ClickHouse con Metabase y visualizarás 
 
     3. Si la instalación del driver funcionó, verás **ClickHouse** en el menú desplegable de **Database type**:
 
+       <div className="ch-image-md">
+
        ![Selección de base de datos en Metabase que muestra ClickHouse como una opción](/images/integrations/data-visualization/metabase_01.webp)
+
+       </div>
 
     4. Asigna a tu base de datos un **Display name**, que es una configuración de Metabase, así que puedes usar el nombre que prefieras.
 
     5. Introduce los datos de conexión de tu base de datos de ClickHouse. Habilita una conexión segura si tu servidor de ClickHouse está configurado para usar SSL. Por ejemplo:
 
+       <div className="ch-image-md">
+
        ![Formulario de datos de conexión de Metabase para una base de datos de ClickHouse](/images/integrations/data-visualization/metabase_02.webp)
+
+       </div>
 
     6. Haz clic en el botón **Save** y Metabase analizará tu base de datos en busca de tablas.
   </Step>
@@ -76,25 +88,45 @@ En esta guía consultarás tus datos de ClickHouse con Metabase y visualizarás 
 
     2. En la esquina superior derecha, haz clic en el menú **+ New** y verás que puedes hacer preguntas, ejecutar consultas SQL y crear un panel:
 
+       <div className="ch-image-sm">
+
        ![Menú New de Metabase que muestra opciones para crear preguntas, consultas SQL y paneles](/images/integrations/data-visualization/metabase_03.webp)
+
+       </div>
 
     3. Por ejemplo, aquí tienes una consulta SQL ejecutada sobre una tabla llamada `uk_price_paid` que devuelve el precio promedio pagado por año desde 1995 hasta 2022:
 
+       <div className="ch-image-md">
+
        ![SQL Editor de Metabase que muestra una consulta sobre datos de precio pagado del Reino Unido](/images/integrations/data-visualization/metabase_04.webp)
+
+       </div>
   </Step>
 
   <Step title="Haz una pregunta" id="5-ask-a-question">
     1. Haz clic en **+ New** y selecciona **Question**. Ten en cuenta que puedes crear una pregunta empezando por una base de datos y una tabla. Por ejemplo, la siguiente pregunta se hace sobre una tabla llamada `uk_price_paid` en la base de datos `default`. Aquí tienes una pregunta sencilla que calcula el precio promedio por localidad dentro del condado de Greater Manchester:
 
+       <div className="ch-image-md">
+
        ![Interfaz del constructor de preguntas de Metabase con datos de precios del Reino Unido](/images/integrations/data-visualization/metabase_06.webp)
+
+       </div>
 
     2. Haz clic en el botón **Visualize** para ver los resultados en una vista tabular.
 
+       <div className="ch-image-md">
+
        ![Visualización de Metabase que muestra resultados tabulares de precios promedio por localidad](/images/integrations/data-visualization/metabase_07.webp)
+
+       </div>
 
     3. Debajo de los resultados, haz clic en el botón **Visualization** para cambiar la visualización a un gráfico de barras (o cualquiera de las otras opciones disponibles):
 
+       <div className="ch-image-md">
+
        ![Visualización de gráfico circular en Metabase de precios promedio por localidad en Greater Manchester](/images/integrations/data-visualization/metabase_08.webp)
+
+       </div>
   </Step>
 </Steps>
 

@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+
 import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -29,7 +30,11 @@ DbVisualizer는 https://www.dbvis.com/download/ 에서 다운로드할 수 있�
   <Step title="내장 JDBC 드라이버 관리" id="2-built-in-jdbc-driver-management">
     DbVisualizer에는 ClickHouse용 최신 JDBC 드라이버가 포함되어 있습니다. 최신 릴리스는 물론 이전 버전의 드라이버까지 제공하는 완전한 JDBC 드라이버 관리 기능이 기본으로 내장되어 있습니다.
 
+    <div className="ch-image-lg">
+
     ![ClickHouse JDBC 드라이버 구성을 보여주는 DbVisualizer 드라이버 관리자 인터페이스](/images/integrations/sql-clients/dbvisualizer-driver-manager.webp)
+
+    </div>
   </Step>
 
   <Step title="ClickHouse에 연결하기" id="3-connect-to-clickhouse">

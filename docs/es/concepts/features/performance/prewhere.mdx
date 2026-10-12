@@ -17,7 +17,11 @@ Esta guía explica cómo funciona PREWHERE, cómo medir su impacto y cómo ajust
 
 Comenzaremos ilustrando cómo se procesa una consulta en la tabla [uk&#95;price&#95;paid&#95;simple](/es/concepts/core-concepts/parts) sin usar PREWHERE:
 
+<div className="ch-image-md">
+
 ![Procesamiento de consultas sin optimización de PREWHERE](/images/guides/best-practices/prewhere_01.webp)
+
+</div>
 
 <br />
 
@@ -43,7 +47,11 @@ Las siguientes animaciones muestran cómo se procesa la consulta anterior con un
 
 Los tres primeros pasos del procesamiento son los mismos que antes:
 
+<div className="ch-image-md">
+
 ![Procesamiento de la consulta con optimización de PREWHERE](/images/guides/best-practices/prewhere_02.webp)
+
+</div>
 
 <br />
 
@@ -64,7 +72,11 @@ ClickHouse comienza el procesamiento de PREWHERE ① leyendo los gránulos selec
 
 En nuestro ejemplo, todos los gránulos seleccionados coinciden, por lo que ② los gránulos alineados posicionalmente correspondientes de la siguiente columna de filtro, `date`, se seleccionan para su procesamiento:
 
+<div className="ch-image-md">
+
 ![Paso 1: Filtrado por town](/images/guides/best-practices/prewhere_03.webp)
+
+</div>
 
 <br />
 
@@ -75,7 +87,11 @@ A continuación, ClickHouse ① lee los gránulos seleccionados de la columna `d
 
 En este caso, dos de los tres gránulos contienen filas coincidentes, por lo que ② solo se seleccionan para su posterior procesamiento sus gránulos alineados posicionalmente de la siguiente columna de filtro, `price`:
 
+<div className="ch-image-md">
+
 ![Paso 2: Filtrado por date](/images/guides/best-practices/prewhere_04.webp)
+
+</div>
 
 <br />
 
@@ -86,7 +102,11 @@ Por último, ClickHouse ① lee los dos gránulos seleccionados de la columna `p
 
 Solo uno de los dos gránulos contiene filas coincidentes, por lo que ② solo es necesario cargar su gránulo alineado posicionalmente de la columna del `SELECT`, `street`, para continuar el procesamiento:
 
+<div className="ch-image-md">
+
 ![Paso 2: Filtrado por price](/images/guides/best-practices/prewhere_05.webp)
+
+</div>
 
 <br />
 

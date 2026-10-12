@@ -12,7 +12,11 @@ ClickHouse は、幅広い JOIN アルゴリズムを備え、[`JOIN` を完全�
 * ClickHouse 24.12 以降では、クエリプランナーが 2 テーブルの JOIN を自動的に並べ替え、最適なパフォーマンスが得られるよう小さいテーブルを右側に配置します。バージョン 25.9 では、これが 3 つ以上のテーブルを JOIN するクエリの JOIN 順序の最適化にも拡張されました。
 * クエリで direct JOIN、つまり以下に示す `LEFT ANY JOIN` が必要な場合は、可能であれば [Dictionaries](/ja/concepts/features/dictionaries/index) を使用することを推奨します。
 
+<div className="ch-image-sm">
+
 ![Left any join](/images/guides/joins-1.webp)
+
+</div>
 
 * INNER JOIN を行う場合は、`IN` 句を使ったサブクエリとして記述したほうが、より効率的なことがよくあります。次のクエリを見てください。これらは機能的には同等で、どちらも質問では ClickHouse に言及していないものの、`comments` では言及している `posts` の数を求めます。
 
@@ -138,7 +142,11 @@ ClickHouse は複数の [JOIN アルゴリズム](https://clickhouse.com/blog/cl
 
 <br />
 
+<div className="ch-image-lg">
+
 ![JOIN におけるメモリ使用量ごとの速度](/images/guides/joins-2.png)
+
+</div>
 
 <br />
 
@@ -148,7 +156,11 @@ ClickHouse は複数の [JOIN アルゴリズム](https://clickhouse.com/blog/cl
 
 <br />
 
+<div className="ch-image-lg">
+
 ![JOIN の機能](/images/guides/joins-3.webp)
+
+</div>
 
 <br />
 
@@ -164,7 +176,11 @@ ClickHouse は複数の [JOIN アルゴリズム](https://clickhouse.com/blog/cl
 
 <br />
 
+<div className="ch-image-lg">
+
 ![join flowchart](/images/guides/joins-4.webp)
+
+</div>
 
 <br />
 
@@ -190,7 +206,11 @@ Grace Hash Join は、この 3 つのメモリ容量に縛られない JOIN ア�
 
 <br />
 
+<div className="ch-image-lg">
+
 ![join のメモリ最適化の決定木](/images/guides/joins-5.webp)
+
+</div>
 
 <br />
 

@@ -125,7 +125,11 @@ keywords: ['clickstack', 'opentelemetry', '链路追踪', '可观测性', '遥�
 
     此外，还需要提供一个包含 API 摄取密钥的授权请求头。你可以在 HyperDX 应用中的 `Team Settings → API Keys` 下找到该密钥。
 
+    <div className="ch-image-lg">
+
     ![摄取密钥](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     对于语言 SDK，这既可以通过 `init` 函数设置，也可以通过 `OTEL_EXPORTER_OTLP_HEADERS` 环境变量设置，例如：
 

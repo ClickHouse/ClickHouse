@@ -18,15 +18,27 @@ Une rétention minimale de l’oplog de 24 heures est requise pour la réplicat
 
 1. Accédez à l’onglet `Overview` de votre cluster dans la console MongoDB Atlas, puis cliquez sur l’onglet `Configuration`.
 
+<div className="ch-image-lg">
+
 ![Accéder à la configuration du cluster](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp)
+
+</div>
 
 2. Cliquez sur `Additional Settings`, puis faites défiler la page jusqu’à `More Configuration Options`.
 
+<div className="ch-image-lg">
+
 ![Développer les paramètres supplémentaires](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp)
+
+</div>
 
 3. Cliquez sur `More Configuration Options` et définissez la fenêtre d’oplog minimale sur `72 hours` ou plus.
 
+<div className="ch-image-lg">
+
 ![Définir les heures de rétention de l’oplog](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp)
+
+</div>
 
 4. Cliquez sur `Review Changes` pour les vérifier, puis sur `Apply Changes` pour déployer les modifications.
 
@@ -38,7 +50,11 @@ Une fois connecté à la console MongoDB Atlas, cliquez sur `Database Access` da
 
 ClickPipes nécessite une authentification par mot de passe :
 
+<div className="ch-image-lg">
+
 ![Ajouter un utilisateur de base de données](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp)
+
+</div>
 
 ClickPipes nécessite un utilisateur disposant des rôles suivants :
 
@@ -47,11 +63,19 @@ ClickPipes nécessite un utilisateur disposant des rôles suivants :
 
 Vous les trouverez dans la section `Specific Privileges` :
 
+<div className="ch-image-lg">
+
 ![Configurer les rôles de l’utilisateur](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp)
+
+</div>
 
 Vous pouvez également préciser les clusters/instances auxquels vous souhaitez accorder l’accès à l’utilisateur ClickPipes :
 
+<div className="ch-image-lg">
+
 ![Restreindre l’accès au cluster/à l’instance](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp)
+
+</div>
 
 <div id="whats-next">
   ## Que faire ensuite ?

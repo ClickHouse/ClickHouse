@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+
 import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -35,19 +36,35 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
   <Step title={<> <code>DBCPConnectionPool</code> Controller Service를 추가하고 속성을 구성합니다</>} id="4-add-dbcpconnectionpool-controller-service-and-configure-its-properties">
     1. Apache NiFi에서 Controller Service를 구성하려면 &quot;gear&quot; 버튼을 클릭해 NiFi Flow Configuration 페이지로 이동하세요
 
+       <div className="ch-image-sm">
+
        ![gear 버튼이 강조 표시된 NiFi Flow Configuration 페이지](/images/integrations/data-ingestion/etl-tools/nifi_01.webp)
+
+       </div>
 
     2. Controller Services 탭을 선택한 뒤, 오른쪽 상단의 `+` 버튼을 클릭해 새 Controller Service를 추가하세요
 
+       <div className="ch-image-lg">
+
        ![추가 버튼이 강조 표시된 Controller Services 탭](/images/integrations/data-ingestion/etl-tools/nifi_02.webp)
+
+       </div>
 
     3. `DBCPConnectionPool`을 검색한 다음 &quot;Add&quot; 버튼을 클릭하세요
 
+       <div className="ch-image-lg">
+
        ![DBCPConnectionPool이 강조 표시된 Controller Service 선택 대화 상자](/images/integrations/data-ingestion/etl-tools/nifi_03.webp)
+
+       </div>
 
     4. 새로 추가한 `DBCPConnectionPool`은 기본적으로 Invalid 상태입니다. 구성을 시작하려면 &quot;gear&quot; 버튼을 클릭하세요
 
+       <div className="ch-image-lg">
+
        ![gear 버튼이 강조 표시된 Invalid 상태의 DBCPConnectionPool이 표시된 Controller Services 목록](/images/integrations/data-ingestion/etl-tools/nifi_04.webp)
+
+       </div>
 
     5. &quot;Properties&quot; 섹션에서 다음 값을 입력하세요
 
@@ -61,25 +78,45 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
 
     6. &quot;Settings&quot; 섹션에서 나중에 쉽게 식별할 수 있도록 Controller Service 이름을 &quot;ClickHouse JDBC&quot;로 변경하세요
 
+       <div className="ch-image-lg">
+
        ![속성이 입력된 DBCPConnectionPool 구성 대화 상자](/images/integrations/data-ingestion/etl-tools/nifi_05.webp)
+
+       </div>
 
     7. &quot;lightning&quot; 버튼을 클릭한 다음 &quot;Enable&quot; 버튼을 클릭해 `DBCPConnectionPool` Controller Service를 활성화하세요
 
+       <div className="ch-image-lg">
+
        ![lightning 버튼이 강조 표시된 Controller Services 목록](/images/integrations/data-ingestion/etl-tools/nifi_06.webp)
+
+       </div>
 
        <br />
 
+       <div className="ch-image-lg">
+
        ![Controller Service 활성화 확인 대화 상자](/images/integrations/data-ingestion/etl-tools/nifi_07.webp)
+
+       </div>
 
     8. Controller Services 탭에서 해당 Controller Service가 활성화되었는지 확인하세요
 
+       <div className="ch-image-lg">
+
        ![활성화된 ClickHouse JDBC 서비스가 표시된 Controller Services 목록](/images/integrations/data-ingestion/etl-tools/nifi_08.webp)
+
+       </div>
   </Step>
 
   <Step title={<><code>ExecuteSQL</code> 프로세서를 사용해 테이블에서 읽기</>} id="5-read-from-a-table-using-the-executesql-processor">
     1. 적절한 업스트림 및 다운스트림 프로세서와 함께 `ExecuteSQL` 프로세서를 추가합니다
 
+       <div className="ch-image-md">
+
        ![워크플로에 ExecuteSQL 프로세서가 표시된 NiFi 캔버스](/images/integrations/data-ingestion/etl-tools/nifi_09.webp)
+
+       </div>
 
     2. `ExecuteSQL` 프로세서의 &quot;Properties&quot; 섹션에서 다음 값을 입력합니다
 
@@ -90,15 +127,27 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
 
     3. `ExecuteSQL` 프로세서를 시작합니다
 
+       <div className="ch-image-lg">
+
        ![속성이 입력된 ExecuteSQL 프로세서 구성](/images/integrations/data-ingestion/etl-tools/nifi_10.webp)
+
+       </div>
 
     4. 쿼리가 성공적으로 처리되었는지 확인하려면 출력 큐에 있는 `FlowFile` 중 하나를 확인합니다
 
+       <div className="ch-image-lg">
+
        ![검사할 준비가 된 FlowFile이 표시된 큐 목록 대화상자](/images/integrations/data-ingestion/etl-tools/nifi_11.webp)
+
+       </div>
 
     5. 출력 `FlowFile`의 결과를 보려면 보기를 &quot;formatted&quot;로 전환합니다
 
+       <div className="ch-image-lg">
+
        ![formatted 보기에서 쿼리 결과를 표시하는 FlowFile 콘텐츠 뷰어](/images/integrations/data-ingestion/etl-tools/nifi_12.webp)
+
+       </div>
   </Step>
 
   <Step title={<><code>MergeRecord</code> 및 <code>PutDatabaseRecord</code> 프로세서를 사용하여 테이블에 쓰기</>} id="6-write-to-a-table-using-mergerecord-and-putdatabaserecord-processor">
@@ -117,11 +166,19 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
 
        입력
 
+       <div className="ch-image-sm">
+
        ![단일 레코드를 보여주는 MergeRecord 프로세서 입력](/images/integrations/data-ingestion/etl-tools/nifi_13.webp)
+
+       </div>
 
        출력
 
+       <div className="ch-image-sm">
+
        ![머지된 레코드 배열을 보여주는 MergeRecord 프로세서 출력](/images/integrations/data-ingestion/etl-tools/nifi_14.webp)
+
+       </div>
 
     4. `PutDatabaseRecord` 프로세서의 &quot;속성&quot; 섹션에서 다음 값을 입력합니다.
 
@@ -137,7 +194,11 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
 
     5. 각 삽입에 여러 행이 포함되는지 확인하려면 테이블의 행 수가 `MergeRecord`에서 정의한 &quot;Minimum Number of Records&quot; 값 이상씩 증가하는지 확인합니다.
 
+       <div className="ch-image-sm">
+
        ![대상 테이블의 행 수를 보여주는 쿼리 결과](/images/integrations/data-ingestion/etl-tools/nifi_15.webp)
+
+       </div>
 
     6. 축하합니다. Apache NiFi를 사용해 데이터를 ClickHouse에 성공적으로 로드했습니다!
   </Step>

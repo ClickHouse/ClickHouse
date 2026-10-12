@@ -125,7 +125,11 @@ keywords: ['clickstack', 'opentelemetry', '트레이스', '관측성', '텔레�
 
     또한 API 수집 키가 포함된 인증 헤더가 필요합니다. 해당 키는 HyperDX 앱의 `Team Settings → API Keys`에서 확인할 수 있습니다.
 
+    <div className="ch-image-lg">
+
     ![수집 키](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     언어 SDK의 경우, 이후 `init` 함수에서 설정하거나 `OTEL_EXPORTER_OTLP_HEADERS` 환경 변수를 통해 설정할 수 있습니다. 예:
 

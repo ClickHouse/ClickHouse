@@ -71,7 +71,11 @@ integration:
 
 في معالج إنشاء ClickPipe، فعّل **سجل المخططات** في خطوة اتصال Kafka واضبط **نوع السجل** على **AWS Glue**:
 
+<div className="ch-image-lg">
+
 ![لوحة سجل المخططات مع تحديد AWS Glue](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
+
+</div>
 
 | الحقل        | مطلوب | الوصف                                                                                                                    | مثال                                                       |
 | ------------ | ----- | ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------- |
@@ -121,7 +125,11 @@ integration:
   <Step title="الحصول على ARN لدور IAM لخدمة ClickHouse" id="obtain-clickhouse-service-iam-role-arn">
     افتح الخدمة، وحدد علامة التبويب **الإعدادات**، ثم مرر إلى قسم **معلومات أمان الشبكة**، وانسخ قيمة **معرّف دور الخدمة (IAM)**، وهي ARN بالصيغة `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. يُشار إلى هذه القيمة أدناه باسم `{ClickHouse_IAM_ARN}`. لكل خدمة ClickHouse منشورة على AWS دور خاص بها، لذا تختلف هذه القيمة من خدمة إلى أخرى.
 
+    <div className="ch-image-lg">
+
     ![معرّف دور الخدمة (IAM)](/images/cloud/security/secures3_arn.webp)
+
+    </div>
   </Step>
 
   <Step title="إنشاء دور IAM للسجل" id="create-registry-iam-role">

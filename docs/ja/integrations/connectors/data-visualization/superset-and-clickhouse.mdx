@@ -13,6 +13,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
+
 import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -25,7 +26,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 
 このガイドでは、ClickHouse データベースのデータを使って Superset でダッシュボードを作成します。ダッシュボードは次のようになります。
 
+<div className="ch-image-md">
+
 ![円グラフやテーブルなど複数の可視化で英国の不動産価格を表示する Superset ダッシュボード](/images/integrations/data-visualization/superset_12.webp)
+
+</div>
 
 <br />
 
@@ -59,13 +64,21 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
   <Step title="Superset を ClickHouse に接続する" id="3-connect-superset-to-clickhouse">
     1. Superset で、上部メニューから **Data** を選択し、続いてドロップダウンメニューから **Databases** を選択します。**+ Database** ボタンをクリックして、新しいデータベースを追加します。
 
+    <div className="ch-image-lg">
+
     ![Database メニューが表示され、+ Database ボタンが強調表示された Superset のインターフェイス](/images/integrations/data-visualization/superset_01.webp)
+
+    </div>
 
     <br />
 
     2. 最初のステップで、データベースの種類として **ClickHouse Connect** を選択します。
 
+    <div className="ch-image-sm">
+
     ![ClickHouse Connect オプションが選択された Superset のデータベース接続ウィザード](/images/integrations/data-visualization/superset_02.webp)
+
+    </div>
 
     <br />
 
@@ -75,7 +88,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
     * 先ほど収集した接続情報を入力します。
     * **DISPLAY NAME** を指定します。名前は任意ですが、複数の ClickHouse データベースに接続する場合は、わかりやすい名前にしてください。
 
+    <div className="ch-image-sm">
+
     ![ClickHouse 接続パラメーターが表示された Superset の接続設定フォーム](/images/integrations/data-visualization/superset_03.webp)
+
+    </div>
 
     <br />
 
@@ -87,7 +104,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 
     2. データセットを追加するボタンをクリックします。新しいデータベースをデータソースとして選択すると、そのデータベースで定義されているテーブルが表示されます。
 
+    <div className="ch-image-sm">
+
     ![ClickHouse データベースで利用可能なテーブルが表示された Superset のデータセット作成ダイアログ](/images/integrations/data-visualization/superset_04.webp)
+
+    </div>
 
     <br />
 
@@ -99,39 +120,67 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 
     1. まずはダッシュボードから始めます。Superset の上部メニューで **Dashboards** を選択します。右上のボタンをクリックして、新しいダッシュボードを追加します。以下のダッシュボード名は **UK property prices** です。
 
+    <div className="ch-image-md">
+
     ![チャートを追加できる状態の、UK property prices という名前の空の Superset ダッシュボード](/images/integrations/data-visualization/superset_05.webp)
+
+    </div>
 
     <br />
 
     2. 新しいチャートを作成するには、上部メニューから **Charts** を選択し、新しいチャートを追加するボタンをクリックします。多数のオプションが表示されます。次の例では、**CHOOSE A DATASET** ドロップダウンから **uk&#95;price&#95;paid** データセットを選び、**Pie Chart** チャートを使用しています。
 
+    <div className="ch-image-md">
+
     ![Pie Chart の可視化タイプが選択された Superset のチャート作成インターフェイス](/images/integrations/data-visualization/superset_06.webp)
+
+    </div>
 
     <br />
 
     3. Superset の円グラフでは **Dimension** と **Metric** が必要で、それ以外の設定は任意です。Dimension と Metric には任意のフィールドを選べます。この例では、ClickHouse のフィールド `district` を Dimension、`AVG(price)` を Metric としています。
 
+    <div className="ch-image-md">
+
     ![円グラフ用に district フィールドが選択された Dimension 設定](/images/integrations/data-visualization/superset_08.webp)
 
+    </div>
+
+    <div className="ch-image-md">
+
     ![円グラフ用の AVG(price) aggregate function が表示された Metric 設定](/images/integrations/data-visualization/superset_09.webp)
+
+    </div>
 
     <br />
 
     5. 円グラフではなくドーナツチャートにしたい場合は、**CUSTOMIZE** でそのほかのオプションとあわせて設定できます。
 
+    <div className="ch-image-sm">
+
     ![ドーナツチャートのオプションとそのほかの円グラフ設定が表示された Customize パネル](/images/integrations/data-visualization/superset_10.webp)
+
+    </div>
 
     <br />
 
     6. **SAVE** ボタンをクリックしてチャートを保存し、次に **ADD TO DASHBOARD** ドロップダウンで **UK property prices** を選択します。その後、**SAVE &amp; GO TO DASHBOARD** をクリックすると、チャートが保存され、ダッシュボードに追加されます。
 
+    <div className="ch-image-md">
+
     ![ダッシュボード選択用ドロップダウンと Save & Go to Dashboard ボタンが表示されたチャート保存ダイアログ](/images/integrations/data-visualization/superset_11.webp)
+
+    </div>
 
     <br />
 
     7. 以上です。ClickHouse のデータを基に Superset でダッシュボードを構築すれば、超高速なデータ分析の世界が大きく広がります。
 
+    <div className="ch-image-md">
+
     ![ClickHouse の英国不動産価格データを複数の可視化で表示した完成済みの Superset ダッシュボード](/images/integrations/data-visualization/superset_12.webp)
+
+    </div>
 
     <br />
   </Step>

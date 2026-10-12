@@ -110,7 +110,11 @@ ClickHouse 凭借出色的压缩能力 (对于日志最高可达 [170x](https://
     SELECT * FROM nginxdb.access_logs
     ```
 
+    <div className="ch-image-lg">
+
     ![以表格形式查看 ClickHouse 日志](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
+
+    </div>
   </Step>
 
   <Step title="解析日志" id="4-parse-the-logs">
@@ -212,7 +216,11 @@ ClickHouse 凭借出色的压缩能力 (对于日志最高可达 [170x](https://
     SELECT * FROM nginxdb.access_logs_view
     ```
 
+    <div className="ch-image-lg">
+
     ![以表格形式查看解析后的 ClickHouse 日志](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
+
+    </div>
 
     <Note>
       上面的课程将数据存储在两个表中，但你也可以把初始的 `nginxdb.access_logs` 表改为使用 [`Null`](/zh/reference/engines/table-engines/special/null) 表引擎。

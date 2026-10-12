@@ -64,7 +64,11 @@ impossibles, par exemple dans le cas d’une sous-requête complexe. Dans ce cas
 sont toutes deux triées sur disque si elles ne tiennent pas en mémoire, ce qui permet de
 joindre de grandes tables.
 
+<div className="ch-image-md">
+
 ![Algorithmes de jointure](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+
+</div>
 
 Depuis la version 20.3, ClickHouse prend en charge la valeur auto pour le paramètre `join_algorithm`.
 Cela indique à ClickHouse d’appliquer une approche adaptative des jointures, dans laquelle l’algorithme de hash join

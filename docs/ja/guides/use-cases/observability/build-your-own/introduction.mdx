@@ -15,7 +15,11 @@ doc_type: 'guide'
 
 ClickHouse 単体は、オブザーバビリティ向けのすぐに使えるソリューションではありません。しかし、比類のない圧縮率と超高速なクエリ応答時間を実現できる、オブザーバビリティデータ向けの非常に効率的なストレージエンジンとして活用できます。ClickHouse をオブザーバビリティソリューションの一部として利用するには、UI とデータ収集フレームワークの両方が必要です。現在は、オブザーバビリティシグナルの可視化には **Grafana**、データ収集には **OpenTelemetry** の利用を推奨しています (どちらも公式にサポートされているインテグレーションです) 。
 
+<div className="ch-image-md">
+
 ![シンプルなOTel](/images/use-cases/observability/observability-1.webp)
+
+</div>
 
 <br />
 
@@ -101,6 +105,10 @@ ClickHouse 単体は、オブザーバビリティ向けのすぐに使えるソ
 
 ほとんどのオブザーバビリティベンダーは、この情報をウォーターフォールとして可視化し、相対的なタイミングを長さに比例した横棒で示します。たとえば、Grafana では次のようになります。
 
+<div className="ch-image-lg">
+
 ![トレースの例](/images/use-cases/observability/observability-2.webp)
+
+</div>
 
 ログやトレースの概念をより深く理解したい場合は、[OpenTelemetry のドキュメント](https://opentelemetry.io/docs/concepts/)を強くお勧めします。

@@ -32,7 +32,11 @@ PARTITION BY toStartOfMonth(date)
 
 Whenever a set of rows is inserted into the table, instead of creating (at[ least](/reference/settings/session-settings/max-insert#max_insert_block_size)) one single data part containing all the inserted rows (as described [here](/concepts/core-concepts/parts)), ClickHouse creates one new data part for each unique partition key value among the inserted rows:
 
+<div className="ch-image-lg">
+
 ![Partitions](/images/bestpractices/partitions.webp)
+
+</div>
 
 The ClickHouse server first splits the rows from the example insert with 4 rows sketched in the diagram above by their partition key value `toStartOfMonth(date)`. Then, for each identified partition, the rows are processed as[ usual](/concepts/core-concepts/parts) by performing several sequential steps (① Sorting, ② Splitting into columns, ③ Compression, ④ Writing to Disk).
 
@@ -40,7 +44,11 @@ For a more detailed explanation of partitioning, we recommend [this guide](/conc
 
 With partitioning enabled, ClickHouse only [merges](/concepts/core-concepts/merges) data parts within, but not across partitions. We sketch that for our example table from above:
 
+<div className="ch-image-md">
+
 ![Partitions](/images/bestpractices/merges_with_partitions.webp)
+
+</div>
 
 ## Applications of partitioning {#applications-of-partitioning}
 Partitioning is a powerful tool for managing large datasets in ClickHouse, especially in observability and analytics use cases. It enables efficient data life cycle operations by allowing entire partitions, often aligned with time or business logic, to be dropped, moved, or archived in a single metadata operation. This is significantly faster and less resource-intensive than row-level delete or copy operations. Partitioning also integrates cleanly with ClickHouse features like TTL and tiered storage, making it possible to implement retention policies or hot/cold storage strategies without custom orchestration. For example, recent data can be kept on fast SSD-backed storage, while older partitions are automatically moved to cheaper object storage.

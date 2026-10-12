@@ -203,19 +203,39 @@ Une fois votre instance Prometheus intégrée à votre stack de monitoring Click
 1. **Ajouter Prometheus comme source de données dans Grafana**
    Accédez à « Data sources » dans la barre latérale de Grafana, cliquez sur « Add data source », puis sélectionnez « Prometheus ». Saisissez l’URL de votre instance Prometheus ainsi que les identifiants nécessaires à la connexion.
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 1](/images/cloud/reference/byoc-mixin-1.webp)
+
+</div>
+
+<div className="ch-image-lg ch-image-background-black">
 
 ![BYOC Mixin 2](/images/cloud/reference/byoc-mixin-2.webp)
 
+</div>
+
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 3](/images/cloud/reference/byoc-mixin-3.webp)
+
+</div>
 
 2. **Importer le tableau de bord ClickHouse**
    Dans Grafana, accédez à la section des tableaux de bord et choisissez « Import ». Vous pouvez soit téléverser le fichier JSON du tableau de bord, soit en coller directement le contenu. Récupérez le fichier JSON depuis le repository du mixin ClickHouse :
    [JSON du tableau de bord du Mix-in ClickHouse](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 4](/images/cloud/reference/byoc-mixin-4.webp)
+
+</div>
 
 3. **Explorer vos métriques**
    Une fois le tableau de bord importé et configuré avec votre source de données Prometheus, vous devriez voir les métriques en temps réel de vos services ClickHouse Cloud.
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 5](/images/cloud/reference/byoc-mixin-5.webp)
+
+</div>

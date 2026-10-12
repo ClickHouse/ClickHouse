@@ -17,13 +17,21 @@ keywords: ['واجهة برمجة تطبيقات', 'OpenAPI', 'واجهة برم
   <Step title="افتح صفحة مفاتيح واجهة برمجة تطبيقات">
     يمكنك استخدام علامة التبويب **مفاتيح واجهة برمجة تطبيقات** في القائمة اليسرى لإنشاء مفاتيح واجهة برمجة تطبيقات وإدارتها.
 
+    <div className="ch-image-sm">
+
     ![علامة التبويب مفاتيح واجهة برمجة تطبيقات](/images/cloud/manage/openapi1.webp)
+
+    </div>
   </Step>
 
   <Step title="ابدأ بإنشاء مفتاح واجهة برمجة تطبيقات">
     ستعرض صفحة **مفاتيح واجهة برمجة تطبيقات** في البداية مطالبةً بإنشاء أول مفتاح واجهة برمجة تطبيقات لك، كما هو موضح أدناه. بعد إنشاء مفتاحك الأول، يمكنك إنشاء مفاتيح جديدة باستخدام زر `New API Key` الذي يظهر في الزاوية العلوية اليسرى.
 
+    <div className="ch-image-md">
+
     ![صفحة مفاتيح واجهة برمجة تطبيقات](/images/cloud/manage/openapi2.webp)
+
+    </div>
   </Step>
 
   <Step title="كوّن مفتاح واجهة برمجة تطبيقات">
@@ -39,7 +47,11 @@ keywords: ['واجهة برمجة تطبيقات', 'OpenAPI', 'واجهة برم
       لاستخدام مفاتيح واجهة برمجة تطبيقات مع [Query API Endpoints](/ar/products/cloud/guides/sql-console/query-endpoints)، اضبط Organization Role على `Member` كحد أدنى، وامنح Service Role إمكانية الوصول إلى `Query Endpoints`.
     </Tip>
 
+    <div className="ch-image-md">
+
     ![نموذج إنشاء مفتاح واجهة برمجة تطبيقات](/images/cloud/manage/openapi3.png)
+
+    </div>
   </Step>
 
   <Step title="أضف عناوين IP المسموح بها">
@@ -47,7 +59,11 @@ keywords: ['واجهة برمجة تطبيقات', 'OpenAPI', 'واجهة برم
 
     تلتزم Query API Endpoints بقوائم السماح لعناوين IP على مستوى مفتاح واجهة برمجة تطبيقات. ونظرًا لأن الطلبات تُمرَّر عبر وكيل من داخل بنية ClickHouse التحتية، فلا تنطبق قوائم السماح لعناوين IP على مستوى الخدمة. راجع [IP Access Control](/ar/products/cloud/features/sql-console-features/query-endpoints#ip-access-control) لمزيد من التفاصيل.
 
+    <div className="ch-image-md">
+
     ![عناوين IP المسموح بها والمكوّنة لمفتاح واجهة برمجة تطبيقات](/images/cloud/guides/query-endpoints/specific-locations.webp)
+
+    </div>
 
     انقر على **Generate API Key** عند الانتهاء من تكوين المفتاح.
   </Step>
@@ -55,7 +71,11 @@ keywords: ['واجهة برمجة تطبيقات', 'OpenAPI', 'واجهة برم
   <Step title="احفظ بيانات اعتماد مفتاح واجهة برمجة تطبيقات">
     ستعرض الشاشة التالية معرّف المفتاح وسرّه. انسخ هاتين القيمتين واحفظهما في مكان آمن، مثل خزنة أسرار. لن تظهر هاتان القيمتان مرة أخرى بعد مغادرة هذه الشاشة.
 
+    <div className="ch-image-md">
+
     ![تفاصيل مفتاح واجهة برمجة تطبيقات](/images/cloud/manage/openapi4.webp)
+
+    </div>
   </Step>
 
   <Step title="صادِق طلبات واجهة برمجة تطبيقات">
@@ -76,7 +96,11 @@ keywords: ['واجهة برمجة تطبيقات', 'OpenAPI', 'واجهة برم
       يُعد حذف مفتاح واجهة برمجة تطبيقات إجراءً نهائيًا. وستفقد أي خدمات تستخدم هذا المفتاح إمكانية الوصول إلى ClickHouse Cloud فورًا.
     </Note>
 
+    <div className="ch-image-md">
+
     ![صفحة إدارة مفاتيح واجهة برمجة تطبيقات](/images/cloud/manage/openapi5.webp)
+
+    </div>
   </Step>
 </Steps>
 

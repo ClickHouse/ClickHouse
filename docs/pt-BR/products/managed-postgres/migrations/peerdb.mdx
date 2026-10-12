@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
 Este guia fornece instruções passo a passo sobre como migrar seu banco de dados PostgreSQL para o ClickHouse Managed Postgres usando o PeerDB.
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-peerdb-beta" />
@@ -42,7 +43,11 @@ Primeiro, precisamos criar peers para os bancos de dados de origem e de destino.
 
 Crie um peer para o seu banco de dados PostgreSQL de origem preenchendo os dados de conexão, como host, porta, nome do banco de dados, nome de usuário e senha. Depois de preencher esses dados, clique no botão `Create peer` para salvar o peer.
 
+<div className="ch-image-md">
+
 ![Criação do peer de origem](/images/managed-postgres/peerdb/source-peer.webp)
+
+</div>
 
 <div id="migration-peerdb-target-peer">
   ### Criação do peer de destino
@@ -50,11 +55,19 @@ Crie um peer para o seu banco de dados PostgreSQL de origem preenchendo os dados
 
 Da mesma forma, crie um peer para sua instância do ClickHouse Managed Postgres fornecendo os detalhes de conexão necessários. Você pode obter os [detalhes de conexão](/pt-BR/products/managed-postgres/connection) da sua instância no console do ClickHouse Cloud. Depois de preencher os detalhes, clique no botão `Create peer` para salvar o peer de destino.
 
+<div className="ch-image-md">
+
 ![Criação do peer de destino](/images/managed-postgres/peerdb/target-peer.webp)
+
+</div>
 
 Agora, você deverá ver os peers de origem e de destino listados na seção &quot;Peers&quot;.
 
+<div className="ch-image-md">
+
 ![Lista de peers](/images/managed-postgres/peerdb/peers.webp)
+
+</div>
 
 <div id="migration-peerdb-source-schema-dump">
   ### Obter o dump do esquema de origem
@@ -142,7 +155,11 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 Em seguida, precisamos criar um mirror para definir o processo de migração de dados entre os peers de origem e de destino. Na UI do PeerDB, vá até a seção &quot;Mirrors&quot; clicando em &quot;Mirrors&quot; na barra lateral. Para criar um novo mirror, clique no botão `+ New mirror`.
 
+<div className="ch-image-md">
+
 ![Criar mirror](/images/managed-postgres/peerdb/create-mirror.webp)
+
+</div>
 
 1. Dê ao seu mirror um nome que descreva a migração.
 2. Selecione os peers de origem e de destino que você criou anteriormente nos menus suspensos.
@@ -151,11 +168,19 @@ Em seguida, precisamos criar um mirror para definir o processo de migração de 
 * Soft delete esteja OFF.
 * Expanda `Advanced settings`. Certifique-se de que o **sistema de tipos do Postgres esteja habilitado** e de que as **colunas do PeerDB estejam desabilitadas**.
 
+<div className="ch-image-md">
+
 ![Configurações do mirror](/images/managed-postgres/peerdb/settings.webp)
+
+</div>
 
 4. Selecione as tabelas que você deseja migrar. Você pode escolher tabelas específicas ou selecionar todas as tabelas do banco de dados de origem.
 
+<div className="ch-image-md">
+
 ![Seletor de tabelas](/images/managed-postgres/peerdb/table-picker.webp)
+
+</div>
 
 <Info>
   **Selecionando tabelas**
@@ -167,7 +192,11 @@ Em seguida, precisamos criar um mirror para definir o processo de migração de 
 
 Você verá o mirror recém-criado na seção &quot;Mirrors&quot;.
 
+<div className="ch-image-md">
+
 ![Lista de mirrors](/images/managed-postgres/peerdb/mirrors.webp)
+
+</div>
 
 <div id="migration-peerdb-initial-load">
   ## Aguarde a carga inicial
@@ -175,7 +204,11 @@ Você verá o mirror recém-criado na seção &quot;Mirrors&quot;.
 
 Após criar o mirror, o PeerDB iniciará a carga inicial de dados do banco de dados de origem para o banco de dados de destino. Você pode clicar no mirror e, em seguida, na aba **Carga inicial** para acompanhar o progresso da migração inicial dos dados.
 
+<div className="ch-image-md">
+
 ![Progresso da carga inicial](/images/managed-postgres/peerdb/initial-load.webp)
+
+</div>
 
 Quando a carga inicial for concluída, você deverá ver um status indicando que a migração foi concluída.
 

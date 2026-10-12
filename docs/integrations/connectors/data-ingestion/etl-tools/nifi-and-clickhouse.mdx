@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+
 import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge/>
@@ -36,19 +37,35 @@ For a new setup, download the binary from https://nifi.apache.org/download.html 
 
 1. To configure a Controller Service in Apache NiFi, visit the NiFi Flow Configuration page by clicking on the "gear" button
 
+    <div className="ch-image-sm">
+
     ![NiFi Flow Configuration page with gear button highlighted](/images/integrations/data-ingestion/etl-tools/nifi_01.webp)
+
+    </div>
 
 2. Select the Controller Services tab and add a new Controller Service by clicking on the `+` button at the top right
 
+    <div className="ch-image-lg">
+
     ![Controller Services tab with add button highlighted](/images/integrations/data-ingestion/etl-tools/nifi_02.webp)
+
+    </div>
 
 3. Search for `DBCPConnectionPool` and click on the "Add" button
 
+    <div className="ch-image-lg">
+
     ![Controller Service selection dialog with DBCPConnectionPool highlighted](/images/integrations/data-ingestion/etl-tools/nifi_03.webp)
+
+    </div>
 
 4. The newly added `DBCPConnectionPool` will be in an Invalid state by default. Click on the "gear" button to start configuring
 
+    <div className="ch-image-lg">
+
     ![Controller Services list showing invalid DBCPConnectionPool with gear button highlighted](/images/integrations/data-ingestion/etl-tools/nifi_04.webp)
+
+    </div>
 
 5. Under the "Properties" section, input the following values
 
@@ -62,25 +79,45 @@ For a new setup, download the binary from https://nifi.apache.org/download.html 
 
 6. In the Settings section, change the name of the Controller Service to "ClickHouse JDBC" for easy reference
 
+    <div className="ch-image-lg">
+
     ![DBCPConnectionPool configuration dialog showing properties filled in](/images/integrations/data-ingestion/etl-tools/nifi_05.webp)
+
+    </div>
 
 7. Activate the `DBCPConnectionPool` Controller Service by clicking on the "lightning" button and then the "Enable" button
 
+    <div className="ch-image-lg">
+
     ![Controller Services list with lightning button highlighted](/images/integrations/data-ingestion/etl-tools/nifi_06.webp)
+
+    </div>
 
     <br/>
 
+    <div className="ch-image-lg">
+
     ![Enable Controller Service confirmation dialog](/images/integrations/data-ingestion/etl-tools/nifi_07.webp)
+
+    </div>
 
 8. Check the Controller Services tab and ensure that the Controller Service is enabled
 
+    <div className="ch-image-lg">
+
     ![Controller Services list showing enabled ClickHouse JDBC service](/images/integrations/data-ingestion/etl-tools/nifi_08.webp)
+
+    </div>
 </Step>
 <Step title={<>Read from a table using the <code>ExecuteSQL</code> processor</>} id="5-read-from-a-table-using-the-executesql-processor">
 
 1. Add an ​`​ExecuteSQL` processor, along with the appropriate upstream and downstream processors
 
+    <div className="ch-image-md">
+
     ![NiFi canvas showing ExecuteSQL processor in a workflow](/images/integrations/data-ingestion/etl-tools/nifi_09.webp)
+
+    </div>
 
 2. Under the "Properties" section of the ​`​ExecuteSQL` processor, input the following values
 
@@ -91,15 +128,27 @@ For a new setup, download the binary from https://nifi.apache.org/download.html 
 
 3. Start the `​​ExecuteSQL` processor
 
+    <div className="ch-image-lg">
+
     ![ExecuteSQL processor configuration with properties filled in](/images/integrations/data-ingestion/etl-tools/nifi_10.webp)
+
+    </div>
 
 4. To confirm that the query has been processed successfully, inspect one of the `FlowFile` in the output queue
 
+    <div className="ch-image-lg">
+
     ![List queue dialog showing flowfiles ready for inspection](/images/integrations/data-ingestion/etl-tools/nifi_11.webp)
+
+    </div>
 
 5. Switch view to "formatted" to view the result of the output `FlowFile`
 
+    <div className="ch-image-lg">
+
     ![FlowFile content viewer showing query results in formatted view](/images/integrations/data-ingestion/etl-tools/nifi_12.webp)
+
+    </div>
 </Step>
 <Step title={<>Write to a table using <code>MergeRecord</code> and <code>PutDatabaseRecord</code> processor</>} id="6-write-to-a-table-using-mergerecord-and-putdatabaserecord-processor">
 
@@ -117,10 +166,18 @@ For a new setup, download the binary from https://nifi.apache.org/download.html 
 3. To confirm that multiple records are merged into one, examine the input and output of the `MergeRecord` processor. Note that the output is an array of multiple input records
 
     Input
+    <div className="ch-image-sm">
+
     ![MergeRecord processor input showing single records](/images/integrations/data-ingestion/etl-tools/nifi_13.webp)
 
+    </div>
+
     Output
+    <div className="ch-image-sm">
+
     ![MergeRecord processor output showing merged array of records](/images/integrations/data-ingestion/etl-tools/nifi_14.webp)
+
+    </div>
 
 4. Under the "Properties" section of the `PutDatabaseRecord` processor, input the following values
 
@@ -136,7 +193,11 @@ For a new setup, download the binary from https://nifi.apache.org/download.html 
 
 4. To confirm that each insert contains multiple rows, check that the row count in the table is incrementing by at least the value of "Minimum Number of Records" defined in `MergeRecord`.
 
+    <div className="ch-image-sm">
+
     ![Query results showing row count in the destination table](/images/integrations/data-ingestion/etl-tools/nifi_15.webp)
+
+    </div>
 
 5. Congratulations - you have successfully loaded your data into ClickHouse using Apache NiFi !
 </Step>

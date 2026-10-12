@@ -203,19 +203,39 @@ scrape_configs:
 1. **إضافة Prometheus كمصدر بيانات في Grafana**
    انتقل إلى &quot;Data sources&quot; في الشريط الجانبي لـ Grafana، وانقر على &quot;Add data source&quot;، ثم اختر &quot;Prometheus&quot;. أدخل عنوان URL الخاص بمثيل Prometheus وأي بيانات اعتماد مطلوبة لإجراء الاتصال.
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 1](/images/cloud/reference/byoc-mixin-1.webp)
+
+</div>
+
+<div className="ch-image-lg ch-image-background-black">
 
 ![BYOC Mixin 2](/images/cloud/reference/byoc-mixin-2.webp)
 
+</div>
+
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 3](/images/cloud/reference/byoc-mixin-3.webp)
+
+</div>
 
 2. **استيراد لوحة معلومات ClickHouse**
    في Grafana، انتقل إلى قسم لوحات المعلومات واختر &quot;Import&quot;. يمكنك إما رفع ملف JSON الخاص بلوحة المعلومات أو لصق محتواه مباشرةً. يمكنك الحصول على ملف JSON من مستودع ClickHouse mixin:
    [ملف JSON للوحة معلومات ClickHouse Mix-in](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 4](/images/cloud/reference/byoc-mixin-4.webp)
+
+</div>
 
 3. **استعراض المقاييس**
    بمجرد استيراد لوحة المعلومات وتهيئتها باستخدام مصدر بيانات Prometheus لديك، ستتمكن من رؤية مقاييس في الوقت الفعلي من خدمات ClickHouse Cloud الخاصة بك.
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 5](/images/cloud/reference/byoc-mixin-5.webp)
+
+</div>

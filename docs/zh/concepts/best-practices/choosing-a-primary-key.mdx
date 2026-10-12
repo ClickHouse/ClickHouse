@@ -120,7 +120,11 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 下面的动画展示了如何为 Stack Overflow 的 posts 表创建优化后的稀疏主索引。索引针对的不是单独的行，而是行块：
 
+<div className="ch-image-lg">
+
 ![主键](/images/bestpractices/create_primary_key.webp)
+
+</div>
 
 如果在使用此排序键的表上重复执行相同的查询：
 
@@ -168,7 +172,11 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 此外，我们还用图示展示了稀疏索引如何剪枝掉所有不可能包含示例查询匹配结果的行块：
 
+<div className="ch-image-lg">
+
 ![主键](/images/bestpractices/primary_key.webp)
+
+</div>
 
 <Note>
   表中的所有列都会按指定排序键的值进行排序，无论这些列本身是否包含在该键中。例如，如果将 `CreationDate` 用作键，那么其他所有列中的值顺序都会与 `CreationDate` 列中的值顺序保持一致。也可以指定多个排序键——其排序语义与 `SELECT` 查询中的 `ORDER BY` 子句相同。

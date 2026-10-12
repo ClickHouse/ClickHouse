@@ -8,7 +8,11 @@ title: دليل الترحيل
 
 يُعد [Amazon Redshift](https://aws.amazon.com/redshift/) حلاً شائعًا لمستودعات البيانات السحابية، وهو جزء من عروض Amazon Web Services. يقدّم هذا الدليل أساليب مختلفة لترحيل البيانات من مثيل Redshift إلى ClickHouse. وسنستعرض ثلاثة خيارات:
 
+<div className="ch-image-md">
+
 ![خيارات ترحيل Redshift إلى ClickHouse](/images/integrations/data-ingestion/redshift/redshift-to-clickhouse.webp)
+
+</div>
 
 من منظور مثيل ClickHouse، يمكنك إما:
 
@@ -28,7 +32,11 @@ title: دليل الترحيل
 
 في سيناريو الإرسال، تتمثل الفكرة في الاستفادة من أداة أو خدمة خارجية (سواء كانت شيفرة مخصصة أو أداة [ETL/ELT](https://en.wikipedia.org/wiki/Extract,_transform,_load#ETL_vs._ELT)) لإرسال بياناتك إلى مثيل ClickHouse الخاص بك. على سبيل المثال، يمكنك استخدام برنامج مثل [Airbyte](https://www.airbyte.com/) لنقل البيانات بين مثيل Redshift الخاص بك (كمصدر) وClickHouse كوجهة ([راجع دليل التكامل الخاص بنا لـ Airbyte](/ar/integrations/connectors/data-ingestion/etl-tools/airbyte-and-clickhouse))
 
+<div className="ch-image-md">
+
 ![إرسال البيانات من Redshift إلى ClickHouse](/images/integrations/data-ingestion/redshift/push.webp)
+
+</div>
 
 <div id="pros">
   ### الإيجابيات
@@ -51,7 +59,11 @@ title: دليل الترحيل
 
 في سيناريو السحب، تعتمد الفكرة على استخدام ClickHouse JDBC Bridge للاتصال مباشرةً بعنقود Redshift من مثيل ClickHouse وتنفيذ استعلامات `INSERT INTO ... SELECT`:
 
+<div className="ch-image-md">
+
 ![السحب من Redshift إلى ClickHouse](/images/integrations/data-ingestion/redshift/pull.webp)
+
+</div>
 
 <div id="pros-1">
   ### المزايا
@@ -189,7 +201,11 @@ title: دليل الترحيل
 
 في هذا السيناريو، نُصدِّر البيانات إلى S3 بتنسيق PIVOT وسيط، ثم نحمّلها في خطوة ثانية من S3 إلى ClickHouse.
 
+<div className="ch-image-md">
+
 ![PIVOT من Redshift باستخدام S3](/images/integrations/data-ingestion/redshift/pivot.webp)
+
+</div>
 
 <div id="pros-1">
   ### المزايا
@@ -214,11 +230,19 @@ title: دليل الترحيل
   <Step title="تصدير البيانات إلى حاوية S3 باستخدام UNLOAD" id="export-data-into-an-s3-bucket-using-unload">
     باستخدام ميزة [UNLOAD](https://docs.aws.amazon.com/redshift/latest/dg/r_UNLOAD.html) في Redshift، صدِّر البيانات إلى حاوية S3 خاصة موجودة:
 
+    <div className="ch-image-md ch-image-background-white">
+
     ![UNLOAD من Redshift إلى S3](/images/integrations/data-ingestion/redshift/s3-1.webp)
+
+    </div>
 
     سيؤدي ذلك إلى إنشاء ملفات أجزاء تحتوي على البيانات الخام في S3
 
+    <div className="ch-image-md ch-image-background-white">
+
     ![البيانات في S3](/images/integrations/data-ingestion/redshift/s3-2.webp)
+
+    </div>
   </Step>
 
   <Step title="إنشاء الجدول في ClickHouse" id="create-the-table-in-clickhouse">

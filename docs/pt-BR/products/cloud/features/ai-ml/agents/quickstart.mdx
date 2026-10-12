@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 Crie um agente personalizado no Cloud Console e execute uma consulta em linguagem natural no seu serviço.
@@ -27,7 +28,11 @@ Crie um agente personalizado no Cloud Console e execute uma consulta em linguage
   <Step title="Inicie o ClickHouse Agents" id="launch-agents">
     No seu serviço Cloud, clique em **ClickHouse agents** na barra lateral esquerda para abrir a central dos agentes. Clique em **Launch ClickHouse agents** para abrir o Agent Builder.
 
+    <div className="ch-image-lg">
+
     ![Navegação do serviço Cloud com ClickHouse agents (Beta) selecionado, mostrando a central dos agentes com o botão Launch ClickHouse agents](/images/cloud/agent-builder/launch-ch-agents.webp)
+
+    </div>
   </Step>
 
   <Step title="Crie o agente" id="create-the-agent">
@@ -39,7 +44,11 @@ Crie um agente personalizado no Cloud Console e execute uma consulta em linguage
     * **Instructions** - o system prompt, que descreve a função do agente, as perguntas que ele deve responder e quaisquer regras de negócio que precise seguir.
     * **Model** - escolha um modelo na lista suspensa.
 
+    <div className="ch-image-lg">
+
     ![Painel do Agent Builder mostrando o menu suspenso Create New Agent, os campos do formulário (Name, Description, Category, Instructions, Model) e a seção Capabilities](/images/cloud/agent-builder/agent-builder.webp)
+
+    </div>
   </Step>
 
   <Step title="Adicione recursos e ferramentas" id="attach-tools">
@@ -47,15 +56,27 @@ Crie um agente personalizado no Cloud Console e execute uma consulta em linguage
 
     **Capabilities** no painel principal — recursos nativos como [Run Code](/pt-BR/products/cloud/features/ai-ml/agents/builder/code-interpreter), [Web Search](/pt-BR/products/cloud/features/ai-ml/agents/builder/web-search), File Context, Artifacts, [MCP Servers](/pt-BR/products/cloud/features/ai-ml/agents/builder/mcp-servers) e [Skills](/pt-BR/products/cloud/features/ai-ml/agents/builder/skills). Ative os que o agente precisar.
 
+    <div className="ch-image-sm">
+
     ![Seção Capabilities do painel do Agent Builder mostrando os controles de Run Code, Web Search, File Context, Artifacts, MCP Servers e Skills](/images/cloud/agent-builder/capabilities.webp)
+
+    </div>
 
     **Tools** no botão **Add Tools** na parte inferior do painel — integrações de terceiros como [image generation](/pt-BR/products/cloud/features/ai-ml/agents/builder/image-generation), [vision](/pt-BR/products/cloud/features/ai-ml/agents/builder/vision), APIs de busca e serviços externos.
 
+    <div className="ch-image-sm">
+
     ![Parte inferior do painel do Agent Builder com o botão Add Tools destacado](/images/cloud/agent-builder/tools-button.webp)
+
+    </div>
 
     Clique em **Add Tools** para navegar pelo catálogo:
 
+    <div className="ch-image-lg">
+
     ![Modal Agent Tools mostrando uma grade de integrações de terceiros, incluindo Google, OpenAI Image Tools, Wolfram, DALL-E-3, Tavily Search, Calculator e Stable Diffusion](/images/cloud/agent-builder/tools-modal.webp)
+
+    </div>
 
     [Subagents](/pt-BR/products/cloud/features/ai-ml/agents/builder/subagents) são configurados em **Advanced settings** — consulte a página de Subagents para mais detalhes.
 
@@ -65,7 +86,11 @@ Crie um agente personalizado no Cloud Console e execute uma consulta em linguage
   <Step title="Execute uma consulta" id="run-a-query">
     Salve o agente, abra uma nova conversa e selecione seu agente no seletor de agentes. Digite uma pergunta — por exemplo, *&quot;Quais são minhas 10 principais tabelas por contagem de linhas nesta semana?&quot;* — e o agente planeja, chama ferramentas conforme necessário e retorna uma resposta.
 
+    <div className="ch-image-lg">
+
     ![Conversa no chat mostrando a pergunta 'What are my top 10 tables by row count this week?' e a resposta do agente — uma tabela em Markdown classificando as 10 principais tabelas entre os serviços por contagem de linhas, com Key Observations abaixo](/images/cloud/agent-builder/chat-query.webp)
+
+    </div>
   </Step>
 </Steps>
 

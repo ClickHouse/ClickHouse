@@ -24,7 +24,11 @@ Análises voltadas ao cliente para qualquer plataforma. Criado para visualizaç�
 
 Neste guia, você vai conectar seus dados do ClickHouse ao Explo e visualizar os resultados. O gráfico ficará assim:
 
+<div className="ch-image-md">
+
 ![Explo Dashboard](/images/integrations/data-visualization/explo_15.webp)
+
+</div>
 
 <p />
 
@@ -44,27 +48,51 @@ Neste guia, você vai conectar seus dados do ClickHouse ao Explo e visualizar os
 
     2. Clique na aba **Dados** do Explo na barra lateral esquerda.
 
+    <div className="ch-image-sm">
+
     ![Aba Dados](/images/integrations/data-visualization/explo_01.webp)
+
+    </div>
 
     3. Clique em **Conectar fonte de dados** no canto superior direito.
 
+    <div className="ch-image-sm">
+
     ![Conectar fonte de dados](/images/integrations/data-visualization/explo_02.webp)
+
+    </div>
 
     4. Preencha as informações na página **Primeiros passos**
 
+    <div className="ch-image-md">
+
     ![Primeiros passos](/images/integrations/data-visualization/explo_03.webp)
+
+    </div>
 
     5. Selecione **ClickHouse**
 
+    <div className="ch-image-md">
+
     ![ClickHouse](/images/integrations/data-visualization/explo_04.webp)
+
+    </div>
 
     6. Insira suas **Credenciais do ClickHouse**.
 
+    <div className="ch-image-md">
+
     ![Credenciais](/images/integrations/data-visualization/explo_05.webp)
+
+    </div>
 
     7. Configure **Segurança**
 
+    <div className="ch-image-md">
+
     ![Segurança](/images/integrations/data-visualization/explo_06.webp)
+
+    </div>
 
     8. No ClickHouse, **adicione os IPs do Explo à lista de permissões**.
        `54.211.43.19, 52.55.98.121, 3.214.169.94 e 54.156.141.148`
@@ -73,15 +101,27 @@ Neste guia, você vai conectar seus dados do ClickHouse ao Explo e visualizar os
   <Step title="Crie um painel" id="3-create-a-dashboard">
     1. Vá para a aba **painel** na barra de navegação à esquerda.
 
+    <div className="ch-image-sm">
+
     ![painel](/images/integrations/data-visualization/explo_07.webp)
+
+    </div>
 
     2. Clique em **Criar painel** no canto superior direito e dê um nome ao seu painel. Pronto, você criou um painel!
 
+    <div className="ch-image-sm">
+
     ![Criar painel](/images/integrations/data-visualization/explo_08.webp)
+
+    </div>
 
     3. Agora você deverá ver uma tela semelhante a esta:
 
+    <div className="ch-image-md">
+
     ![Explo painel](/images/integrations/data-visualization/explo_09.webp)
+
+    </div>
   </Step>
 
   <Step title="Executar uma consulta SQL" id="4-run-a-sql-query">
@@ -89,33 +129,61 @@ Neste guia, você vai conectar seus dados do ClickHouse ao Explo e visualizar os
        `SELECT * FROM YOUR_TABLE_NAME
        LIMIT 100`
 
+    <div className="ch-image-md">
+
     ![Explo painel](/images/integrations/data-visualization/explo_10.webp)
+
+    </div>
 
     2. Agora clique em **Run** e vá para a aba de visualização para ver seus dados.
 
+    <div className="ch-image-md">
+
     ![Explo painel](/images/integrations/data-visualization/explo_11.webp)
+
+    </div>
   </Step>
 
   <Step title="Crie um gráfico" id="5-build-a-chart">
     1. No lado esquerdo, arraste o ícone de gráfico de barras para a tela.
 
+    <div className="ch-image-sm">
+
     ![Explo painel](/images/integrations/data-visualization/explo_16.webp)
+
+    </div>
 
     2. Selecione o conjunto de dados. Agora você deverá ver uma tela como a seguir:
 
+    <div className="ch-image-sm">
+
     ![Explo painel](/images/integrations/data-visualization/explo_12.webp)
+
+    </div>
 
     3. Preencha **county** no eixo X e **Price** na seção do eixo Y, assim:
 
+    <div className="ch-image-sm">
+
     ![Explo painel](/images/integrations/data-visualization/explo_13.webp)
+
+    </div>
 
     4. Agora, altere a agregação para **AVG**.
 
+    <div className="ch-image-sm">
+
     ![Explo painel](/images/integrations/data-visualization/explo_14.webp)
+
+    </div>
 
     5. Agora temos o preço médio dos imóveis por condado!
 
+    <div className="ch-image-md">
+
     ![Explo painel](/images/integrations/data-visualization/explo_15.webp)
+
+    </div>
   </Step>
 </Steps>
 

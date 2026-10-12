@@ -11,7 +11,11 @@ Cet article explique comment modifier l’invite de commande comme vous le souha
 
 L’invite de commande par défaut est le nom de votre ordinateur local suivi de `:) ` :
 
+<div className="ch-image-md">
+
 ![Invite de commande par défaut du client ClickHouse](/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp)
+
+</div>
 
 Voici les variables que vous pouvez utiliser dans une invite de commande : `{user}`, `{host}`
 
@@ -29,7 +33,11 @@ clickhouse --prompt 👉
 
 Cela ajoutera l’emoji en forme de doigt avant le smiley :
 
+<div className="ch-image-md">
+
 ![Invite du client ClickHouse avec un emoji en forme de doigt](/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp)
+
+</div>
 
 <div id="config-file---top-level">
   ## Fichier de configuration - niveau racine
@@ -47,7 +55,11 @@ Vous pouvez également fournir un préfixe d’invite dans un fichier `config.xm
 clickhouse
 ```
 
+<div className="ch-image-md">
+
 ![Invite du client ClickHouse avec fichier de configuration](/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp)
+
+</div>
 
 Nous pouvons utiliser un fichier de configuration portant n’importe quel nom et le passer avec l’option `-C` :
 
@@ -61,7 +73,11 @@ Nous pouvons utiliser un fichier de configuration portant n’importe quel nom e
 clickhouse -C christmas.xml
 ```
 
+<div className="ch-image-md">
+
 ![Invite de commande du client ClickHouse avec un emoji sapin de Noël](/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp)
+
+</div>
 
 Vous préférez vos fichiers de configuration en YAML ?
 Ça fonctionne aussi :
@@ -74,7 +90,11 @@ prompt: 🟡
 clickhouse -C christmas.yaml
 ```
 
+<div className="ch-image-md">
+
 ![Invite de commande du client ClickHouse avec un emoji de cercle jaune](/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp)
+
+</div>
 
 ## Fichier de configuration - connections_credentials {#config-file---connections_credentials}
 
@@ -110,7 +130,11 @@ Nous pouvons ensuite essayer de nous connecter à l’aide de la connexion `dev`
 clickhouse client -C connections.xml --connection dev
 ```
 
+<div className="ch-image-md">
+
 ![Invite de commande du client ClickHouse avec la connexion de développement](/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp)
+
+</div>
 
 Ou celle de `prod` :
 
@@ -118,7 +142,11 @@ Ou celle de `prod` :
 clickhouse client -C connections.xml --connection prod
 ```
 
+<div className="ch-image-md">
+
 ![Invite de commande du client ClickHouse avec connexion de production](/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp)
+
+</div>
 
 Et voici une version YAML :
 
@@ -145,7 +173,11 @@ Avec la connexion `dev` :
 clickhouse client -C connections.yaml --connection dev
 ```
 
+<div className="ch-image-md">
+
 ![Invite de commande du client ClickHouse avec une connexion de développement en YAML](/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp)
+
+</div>
 
 Et maintenant, `prod` :
 
@@ -153,4 +185,8 @@ Et maintenant, `prod` :
 clickhouse client -C connections.yaml --connection prod
 ```
 
+<div className="ch-image-md">
+
 ![Invite de commande du client ClickHouse avec une connexion de production définie en YAML](/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp)
+
+</div>

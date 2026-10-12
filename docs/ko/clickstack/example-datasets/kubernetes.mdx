@@ -199,7 +199,11 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
 
     복잡성 요구 사항을 충족하는 사용자 이름과 비밀번호를 지정하여 사용자를 생성하세요.
 
+    <div className="ch-image-lg">
+
     ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
   </Step>
 
   <Step title="수집 API key 가져오기" id="retrieve-ingestion-api-key">
@@ -207,7 +211,11 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
 
     [`Team Settings`](http://localhost:8080/team)로 이동한 다음 `API Keys` 섹션에서 `Ingestion API Key`를 복사하세요. 이 API key는 OpenTelemetry collector를 통한 데이터 수집을 안전하게 보호합니다.
 
+    <div className="ch-image-lg">
+
     ![API key 복사](/images/use-cases/observability/copy_api_key.webp)
+
+    </div>
   </Step>
 
   <Step title="API Key용 Kubernetes 시크릿 생성" id="create-api-key-kubernetes-secret">
@@ -231,7 +239,11 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
 
     이제 데모 서비스의 트레이스 및 로그 데이터가 HyperDX로 유입되기 시작합니다.
 
+    <div className="ch-image-lg">
+
     ![HyperDX Kubernetes 데이터](/images/use-cases/observability/hyperdx-kubernetes-data.webp)
+
+    </div>
   </Step>
 
   <Step title="OpenTelemetry Helm 저장소 추가" id="add-otel-helm-repo">
@@ -482,4 +494,8 @@ import DemoArchitecture from '/snippets/ko/_demo.mdx';
   </Step>
 </Steps>
 
+<div className="ch-image-lg">
+
 ![Kubernetes의 ClickHouse](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</div>

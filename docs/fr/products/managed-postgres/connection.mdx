@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
 
 <Tip>
@@ -22,11 +23,19 @@ import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 Pour connecter vos applications à ClickHouse Managed Postgres, accédez à la section **Connect** dans la barre latérale gauche de votre instance.
 
+<div className="ch-image-md">
+
 ![Cliquez sur Connect dans la barre latérale gauche pour afficher les informations de connexion](/images/managed-postgres/connect-button.webp)
+
+</div>
 
 Un clic sur **Connect** ouvre une fenêtre modale affichant vos identifiants et vos chaînes de connexion dans plusieurs formats.
 
+<div className="ch-image-md">
+
 ![Fenêtre modale de connexion affichant les identifiants et les formats de chaîne de connexion](/images/managed-postgres/connect-modal.webp)
+
+</div>
 
 La fenêtre modale de connexion affiche les informations suivantes :
 
@@ -95,7 +104,11 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 Pour les charges de travail de production, nous vous recommandons d’utiliser une connexion TLS vérifiée afin de garantir que vous communiquez avec le bon serveur. Pour ce faire, téléchargez le bundle de certificats CA depuis l’onglet **Settings** et ajoutez-le aux certificats de confiance de votre client de base de données.
 
+<div className="ch-image-md">
+
 ![Télécharger le certificat CA depuis l’onglet Settings](/images/managed-postgres/tls-ca-bundle.webp)
+
+</div>
 
 Le certificat CA est propre à votre instance ClickHouse Managed Postgres et ne fonctionnera pas avec d’autres instances.
 

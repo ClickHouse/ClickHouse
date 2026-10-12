@@ -16,7 +16,11 @@ Para os exemplos deste guia, usamos um subconjunto do conjunto de dados do Stack
 
 > As chaves primárias e os relacionamentos indicados não são aplicados por meio de restrições (Parquet é um formato de arquivo, não de tabela) e apenas indicam como os dados se relacionam e quais chaves exclusivas eles possuem.
 
+<div className="ch-image-lg">
+
 ![Esquema do Stack Overflow](/images/data-modeling/stackoverflow-schema.webp)
+
+</div>
 
 <br />
 
@@ -235,7 +239,11 @@ Usuários que vêm de bancos de dados OLTP frequentemente procuram o conceito eq
 
 Na escala em que o ClickHouse costuma ser usado, a eficiência de memória e disco é primordial. Os dados são gravados nas tabelas do ClickHouse em fragmentos chamados partes, e regras de mesclagem são aplicadas a essas partes em segundo plano. No ClickHouse, cada parte tem seu próprio índice primário. Quando as partes são mescladas, os índices primários da parte resultante também são mesclados. O índice primário de uma parte tem uma entrada de índice para cada grupo de linhas — essa técnica é chamada de indexação esparsa.
 
+<div className="ch-image-md">
+
 ![Indexação esparsa no ClickHouse](/images/data-modeling/schema-design-indices.webp)
+
+</div>
 
 A chave selecionada no ClickHouse determinará não apenas o índice, mas também a ordem em que os dados são gravados em disco. Por isso, ela pode afetar drasticamente os níveis de compressão, o que, por sua vez, pode impactar o desempenho das consultas. Uma chave de ordenação que faça com que os valores da maioria das colunas sejam gravados de forma contígua permitirá que o algoritmo de compressão selecionado (e os codecs) compacte os dados com mais eficiência.
 

@@ -9,6 +9,7 @@ doc_type: 'guide'
 
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
 import ConfigurableBackupsCLI from "/snippets/cloud/backups/_configurable_backups_cli.mdx";
 
 <Visibility for="agents">
@@ -24,13 +25,21 @@ import ConfigurableBackupsCLI from "/snippets/cloud/backups/_configurable_backup
 
 To configure the backup schedule for a service, go to the **Settings** tab in the console and click on **Change backup configuration**.
 
+<div className="ch-image-lg">
+
 ![Configure backup settings](/images/cloud/manage/backup-settings.webp)
+
+</div>
 
 This opens a tab to the right where you can choose values for retention, frequency, and start time. You will need to save the chosen settings for them to take effect.
 
 The backup frequency determines the worst-case age of the newest restore point (your RPO). Retention controls how long backup data is kept; it does not make the newest restore point more recent. For example, with a retention of 1 day and a frequency of every 48 hours, the newest restore point can be almost 48 hours old.
 
+<div className="ch-image-lg">
+
 ![Select backup retention and frequency](/images/cloud/manage/backup-configuration-form.webp)
+
+</div>
 
 <Note>
 Start time and frequency are mutually exclusive. Start time takes precedence.

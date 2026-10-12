@@ -24,7 +24,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Экран с примером конфигурации:
 
+<div className="ch-image-sm">
+
 ![Пример безопасной конфигурации для native-протокола](/images/integrations/data-visualization/grafana/config_common.webp)
+
+</div>
 
 Пример YAML-конфигурации для общих настроек:
 
@@ -56,7 +60,11 @@ secureJsonData:
 
 Если выбрать подключение по HTTP-протоколу, отобразятся дополнительные настройки.
 
+<div className="ch-image-md">
+
 ![Дополнительные параметры конфигурации HTTP](/images/integrations/data-visualization/grafana/config_http.webp)
+
+</div>
 
 <div id="http-path">
   #### HTTP-путь
@@ -104,7 +112,11 @@ secureJsonData:
 
 Эти настройки необязательны.
 
+<div className="ch-image-sm">
+
 ![Пример дополнительных настроек](/images/integrations/data-visualization/grafana/config_additional.webp)
+
+</div>
 
 Пример YAML:
 
@@ -139,7 +151,11 @@ OpenTelemetry (OTel) тесно интегрирован в плагин.
 
 Пример экрана конфигурации журналов:
 
+<div className="ch-image-sm">
+
 ![Конфигурация журналов](/images/integrations/data-visualization/grafana/config_logs.webp)
+
+</div>
 
 Пример YAML-конфигурации журналов:
 
@@ -177,7 +193,11 @@ jsonData:
 
 Пример экрана конфигурации трассировки:
 
+<div className="ch-image-sm">
+
 ![Конфигурация трассировки](/images/integrations/data-visualization/grafana/config_traces.webp)
+
+</div>
 
 Пример YAML-конфигурации трассировки:
 
@@ -280,11 +300,19 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 Затем эту таблицу можно настроить для использования в Grafana. Обратите внимание, что имя может быть любым и даже может быть задано в отдельной базе данных:
 
+<div className="ch-image-md">
+
 ![Пример конфигурации таблицы псевдонимов](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
+
+</div>
 
 Теперь Grafana будет видеть результаты таблицы псевдонимов вместо результатов `DESC example_table`:
 
+<div className="ch-image-md">
+
 ![Пример выборки из таблицы псевдонимов](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
+
+</div>
 
 Оба типа использования псевдонимов можно применять для сложных преобразований типов или извлечения полей JSON.
 

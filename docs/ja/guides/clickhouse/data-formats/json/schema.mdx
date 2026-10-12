@@ -987,19 +987,31 @@ FORMAT PrettyJSONEachRow
 
 ClickHouse は各 JSON パスを、真の列指向レイアウトにおけるサブカラムとして保存します。これにより、圧縮、SIMD による高速化処理、最小限のディスク I/O など、従来のカラムと同様の性能上の利点が得られます。JSON データ内のパスと型の組み合わせごとに、それぞれがディスク上の独立した column file になる可能性があります。
 
+<div className="ch-image-md">
+
 ![JSON パスごとのカラム](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
+
+</div>
 
 たとえば、2 つの JSON パスが異なる型で挿入された場合、ClickHouse は各[具体的な型の値を別々のサブカラムに保存します](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data)。これらのサブカラムには個別にアクセスできるため、不要な I/O を最小限に抑えられます。なお、複数の型を持つカラムをクエリした場合でも、その値は引き続き単一の列指向レスポンスとして返されます。
 
 さらに、offsets を利用することで、ClickHouse はこれらのサブカラムを疎ではなく高密度のまま維持し、存在しない JSON パスに対してデフォルト値を保存しません。この方法により圧縮率が最大化され、I/O もさらに削減されます。
 
+<div className="ch-image-md">
+
 ![JSON オフセット](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
+
+</div>
 
 ただし、カーディナリティが高い、または変化の大きい JSON 構造を持つケース、たとえばテレメトリー pipeline、logs、機械学習の feature store などでは、この挙動によって column file が爆発的に増える可能性があります。新しい一意の JSON パスが現れるたびに新たな column file が作成され、そのパス配下で型のバリアントが増えるたびに追加の column file も生成されます。これは読み取り性能の面では最適ですが、運用上の課題も生じます。具体的には、ファイルディスクリプタの枯渇、メモリ使用量の増加、多数の小さなファイルによる merges の低速化です。
 
 これを軽減するため、ClickHouse では overflow subcolumn という概念が導入されています。異なる JSON パスの数がしきい値を超えると、それ以降のパスは compact なエンコードフォーマットを使って 1 つの共有ファイルに保存されます。このファイルもクエリ可能ですが、専用のサブカラムと同じ性能特性の恩恵は受けられません。
 
+<div className="ch-image-md">
+
 ![共有 JSON カラム](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
+
+</div>
 
 このしきい値は、JSON type 宣言内の [`max_dynamic_paths`](/ja/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) parameter で制御されます。
 

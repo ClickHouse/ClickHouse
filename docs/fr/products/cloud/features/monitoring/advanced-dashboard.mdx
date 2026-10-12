@@ -28,7 +28,11 @@ Pour accéder au tableau de bord avancé, accédez à :
 * Panneau latéral gauche
   * `Monitoring` → `Advanced dashboard`
 
+<div className="ch-image-lg">
+
 ![Tableau de bord avancé](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</div>
 
 <div id="accessing-the-native-advanced-dashboard">
   ## Accéder au tableau de bord avancé natif
@@ -43,12 +47,20 @@ Vous pouvez accéder au tableau de bord avancé natif en allant dans :
 Cela ouvrira le tableau de bord avancé natif dans un nouvel onglet. Vous devrez vous
 authentifier pour accéder au tableau de bord.
 
+<div className="ch-image-lg">
+
 ![Tableau de bord avancé](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</div>
 
 Chaque visualisation est associée à une requête SQL qui l&#39;alimente. Vous pouvez
 modifier cette requête en cliquant sur l&#39;icône en forme de stylo.
 
+<div className="ch-image-lg">
+
 ![Tableau de bord avancé](/images/cloud/manage/monitoring/edit_visualization.webp)
+
+</div>
 
 <div id="out-of-box-visualizations">
   ## Visualisations prêtes à l’emploi
@@ -134,7 +146,11 @@ de fusion.
 Les métriques clés pour repérer des insertions non optimisées sont **Ligne inséré** et
 **Nombre maximal de part par partition**
 
+<div className="ch-image-lg">
+
 ![Insertions non regroupées](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
+
+</div>
 
 L’exemple ci-dessus montre deux pics de **Ligne inséré** et de **Nombre maximal de part par partition**
 entre 13h et 14h. Cela indique que nous ingérons les données à un rythme raisonnable.
@@ -159,7 +175,11 @@ que vous exécutez, cela peut être normal, mais il est utile de pouvoir les rep
 Vous trouverez ci-dessous un exemple où l&#39;utilisation du CPU atteint un pic sans modifier de manière significative le
 nombre de requêtes exécutées par seconde.
 
+<div className="ch-image-lg">
+
 ![Requête gourmande en ressources](/images/cloud/manage/monitoring/resource_intensive_query.webp)
+
+</div>
 
 <div id="bad-primary-key-design">
   ### Mauvaise conception de la clé primaire
@@ -175,7 +195,11 @@ est **Lignes sélectionnées par seconde**. Un pic soudain du nombre de lignes s
 indiquer à la fois une augmentation générale du débit global des requêtes, ainsi que des requêtes qui
 sélectionnent un grand nombre de lignes pour être exécutées.
 
+<div className="ch-image-lg">
+
 ![Requête gourmande en ressources](/images/cloud/manage/monitoring/selected_rows_sec.webp)
+
+</div>
 
 En utilisant l’horodatage comme filtre, vous pouvez trouver les requêtes exécutées au moment
 du pic dans la table `system.query_log`.

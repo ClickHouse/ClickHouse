@@ -8,6 +8,7 @@ keywords: ['clickstack', 'vector', '链路追踪', '可观测性', '遥测']
 ---
 
 import InstallingVector from '/snippets/zh/_installing_vector.mdx';
+
 import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
 
 [Vector](https://vector.dev) 是一个高性能、厂商中立的可观测性数据管道。它通常用于从各种来源收集、转换和路由日志与指标，并因其灵活性高、资源占用低而被广泛采用，尤其常用于日志摄取。
@@ -105,13 +106,21 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
       <Step title="前往 ClickStack UI" id="navigate-to-clickstack-ui">
         前往你的托管 ClickStack 服务，并从左侧菜单中选择 &quot;ClickStack&quot;。如果你已经完成引导流程，这将在新标签页中打开 ClickStack UI，并自动完成身份验证。如果尚未完成，你可以继续完成引导流程，并在选择 Vector 作为输入源后点击“Launch ClickStack”。
 
+        <div className="ch-image-lg">
+
         ![为 Vector 启动 ClickStack](/images/clickstack/launch-clickstack-vector.webp)
+
+        </div>
       </Step>
 
       <Step title="创建数据源" id="create-a-datasource-managed">
         创建一个日志数据源。如果当前还没有数据源，首次登录时系统会提示你创建一个。否则，请前往 Team Settings，添加一个新的数据源。
 
+        <div className="ch-image-lg">
+
         ![创建数据源 - vector](/images/clickstack/create-vector-datasource.webp)
+
+        </div>
 
         上述配置假定采用 Nginx 风格的 schema，并将 `time_local` 列用作时间戳。应尽可能使用在主键中声明的时间戳列。此列为必填项。
 
@@ -125,7 +134,11 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
       <Step title="探查数据" id="explore-the-data-managed">
         前往日志视图探查数据，并开始使用 ClickStack。
 
+        <div className="ch-image-lg">
+
         ![ClickStack 中的 Nginx 日志](/images/clickstack/nginx-logs-vector-search.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -137,7 +150,11 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
 
         首先创建一个数据库。可通过 [ClickHouse Web 用户界面](/zh/concepts/features/interfaces/http#web-ui) 访问 [http://localhost:8123/play](http://localhost:8123/play) 来完成。使用默认用户名和密码 `api:api`。
 
+        <div className="ch-image-lg">
+
         ![ClickStack Play UI](/images/clickstack/play-ui-clickstack.webp)
+
+        </div>
 
         在下面的示例中，我们使用 `logs`：
 
@@ -212,13 +229,21 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
       <Step title="前往 ClickStack UI" id="navigate-to-clickstack-ui-oss">
         访问 [http://localhost:8080](http://localhost:8080) 打开 ClickStack UI。如果你尚未完成引导设置，请先创建一个用户。
 
+        <div className="ch-image-lg">
+
         ![ClickStack 登录](/images/use-cases/observability/hyperdx-login.webp)
+
+        </div>
       </Step>
 
       <Step title="创建数据源" id="create-a-datasource-oss">
         前往 Team Settings，然后添加一个新的数据源。
 
+        <div className="ch-image-lg">
+
         ![创建数据源 - vector](/images/clickstack/create-vector-datasource-oss.webp)
+
+        </div>
 
         上述配置假定使用 Nginx 风格的 schema，并将 `time_local` 列用作 timestamp。在可能的情况下，这一列应当是在主键中声明的 timestamp 列。此列为必填项。
 
@@ -232,7 +257,11 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
       <Step title="探查数据" id="explore-the-data-oss">
         前往日志视图探查数据，并开始使用 ClickStack。
 
+        <div className="ch-image-lg">
+
         ![ClickStack 中的 Nginx 日志](/images/clickstack/nginx-logs-vector-search.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -353,13 +382,21 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
       <Step title="前往 ClickStack UI" id="navigate-to-clickstack-ui-nginx-managed">
         前往你的托管 ClickStack 服务，并在左侧菜单中选择 &quot;ClickStack&quot;。如果你已经完成引导流程，系统会在新标签页中打开 ClickStack UI，并自动完成身份验证。如果还没有，请继续完成引导流程，并在选择 Vector 作为输入源后，选择“启动 ClickStack”。
 
+        <div className="ch-image-lg">
+
         ![为 Vector 启动 ClickStack](/images/clickstack/launch-clickstack-vector.webp)
+
+        </div>
       </Step>
 
       <Step title="创建数据源" id="create-a-datasource-nginx-managed">
         创建一个日志数据源。如果还没有任何数据源，首次登录时系统会提示你创建一个。否则，请前往 Team Settings 并添加新的数据源。
 
+        <div className="ch-image-lg">
+
         ![创建数据源 - vector](/images/clickstack/create-vector-datasource.webp)
+
+        </div>
 
         该配置假定使用 Nginx schema，并将 `time_local` 列作为 timestamp。这是在主键中声明的 timestamp 列。此列是必填项。
 
@@ -392,7 +429,11 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
       <Step title="浏览数据" id="explore-the-data-nginx-managed">
         前往 `2025 年 10 月 20 日` 的搜索视图，查看数据并开始使用 ClickStack。
 
+        <div className="ch-image-lg">
+
         ![HyperDX UI](/images/clickstack/nginx-logs-vector-search.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -414,7 +455,11 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
 
         首先创建一个数据库。可通过 [ClickHouse Web 用户界面](/zh/concepts/features/interfaces/http#web-ui) 在 [http://localhost:8123/play](http://localhost:8123/play) 中完成。使用默认用户名和密码 `api:api`。
 
+        <div className="ch-image-lg">
+
         ![Play UI ClickStack](/images/clickstack/play-ui-clickstack.webp)
+
+        </div>
 
         创建数据库 `logs`：
 
@@ -509,7 +554,11 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
       <Step title="创建数据源" id="create-a-datasource-nginx-oss">
         通过 `Team -> Sources` 创建一个日志数据源
 
+        <div className="ch-image-lg">
+
         ![创建数据源 - vector](/images/clickstack/create-vector-datasource-oss.webp)
+
+        </div>
 
         该配置假定使用 Nginx schema，并将 `time_local` 列作为 timestamp 使用。这是主键中声明的 timestamp 列。该列是必填项。
 
@@ -542,13 +591,21 @@ import VectorSampleData from '/snippets/zh/_vector_sample_data.mdx';
       <Step title="前往 ClickStack UI" id="navigate-to-clickstack-ui-nginx-oss">
         访问 [http://localhost:8080](http://localhost:8080) 上的 ClickStack UI。如果你尚未完成引导配置，请先创建用户。
 
+        <div className="ch-image-lg">
+
         ![ClickStack 登录](/images/use-cases/observability/hyperdx-login.webp)
+
+        </div>
       </Step>
 
       <Step title="浏览数据" id="explore-the-data-nginx-oss">
         前往 `2025 年 10 月 20 日` 的搜索视图，查看数据并开始使用 ClickStack。
 
+        <div className="ch-image-lg">
+
         ![HyperDX UI](/images/clickstack/nginx-logs-vector-search.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>

@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
 O Query Insights captura a telemetria por instrução da sua
@@ -62,7 +63,11 @@ tem um padrão familiar — taxa de acerto do buffer na faixa dos 90% mais altos
 acompanhando o tráfego da aplicação, taxa de erros estável ou zerada e latências
 percentis acompanhando umas às outras de perto.
 
+<div className="ch-image-lg">
+
 ![Visão geral do Query Insights mostrando os seis cartões de estatísticas: consultas por segundo, percentis de latência da consulta, gráfico de rosca de detalhamento das operações, gráfico de área de linhas retornadas, gráfico de rosca da taxa de acerto do buffer em 95,2 por cento e gráfico de colunas de erros](/images/managed-postgres/monitoring/query-insights-overview.webp)
+
+</div>
 
 <div id="slow-patterns">
   ## Padrões lentos
@@ -73,7 +78,11 @@ investigação começa. Há uma linha para cada padrão de consulta normalizado,
 com os valores literais removidos para que execuções da mesma instrução
 se consolidem na mesma linha.
 
+<div className="ch-image-lg">
+
 ![Tabela de padrões de consultas lentas mostrando uma linha por consulta normalizada, com colunas de Banco de dados, Usuário, Operação, Chamadas, Erros, Latência média, P95, Latência máxima, Tempo total de execução, Linhas retornadas e Acerto no cache](/images/managed-postgres/monitoring/query-insights-patterns.webp)
+
+</div>
 
 <div id="sort">
   ### Ordene pelo que você suspeita
@@ -126,7 +135,11 @@ instrução executada, não uma linha por padrão. Use-o quando quiser o fluxo b
 eventos em vez de um agregado, por exemplo para conferir se uma correção
 foi aplicada ou para encontrar o momento exato em que um erro ocorreu.
 
+<div className="ch-image-lg">
+
 ![Tabela de Consultas recentes com menus suspensos de filtro para Database, User, Operation e Application, e colunas para Time, Operation, Query, Duration, Rows, Database, User e Blks read](/images/managed-postgres/monitoring/query-insights-recent-queries.webp)
+
+</div>
 
 As colunas padrão são Time, Operation, Query, Duration, Rows,
 Database, User e Blks read. Abra o seletor de **Colunas** para
@@ -158,9 +171,17 @@ O painel lateral tem um layout único com rolagem e cinco seções:
 * **Execuções recentes** — as execuções individuais do mesmo padrão,
   com contadores por execução.
 
+<div className="ch-image-md">
+
 ![Painel lateral de detalhes da consulta mostrando o bloco de código do Padrão de consulta e a grade de Uso agregado de recursos com treze cartões de estatísticas, incluindo total de chamadas, percentis de latência, tempo total de execução, linhas retornadas, taxa de acerto de cache, blocos lidos, blocos atendidos pelo cache, tempo de CPU, bytes de WAL e erros](/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp)
 
+</div>
+
+<div className="ch-image-md">
+
 ![Continuação do painel lateral de detalhes da consulta, mostrando a seção Contexto da consulta com banco de dados, usuário, operação e aplicação, e um cartão de Execuções recentes com timestamp, status OK, função do servidor, ID do host e contadores por execução para duração, linhas, acerto de cache, CPU, blocos compartilhados lidos e blocos compartilhados atendidos pelo cache](/images/managed-postgres/monitoring/query-insights-detail-recent.webp)
+
+</div>
 
 <div id="counters">
   ### Contadores por execução

@@ -39,13 +39,21 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
       <Step title="تفعيل الـ موصل وإنشاء اتصال" id="activate-the-connector">
         بعد الاشتراك، حدِّد إصدار Glue الذي يطابق متطلبات مهمتك. في قسم **Additional details**، ضمن **Usage instructions**، انقر على الرابط **Open Glue Studio - Add ClickHouse connector**. سيؤدي ذلك إلى فتح صفحة إنشاء اتصال في Glue مع تعبئة الحقول الأساسية مسبقًا. امنح الـ اتصال اسمًا ثم اضغط على create (ولا حاجة إلى إدخال تفاصيل الاتصال الخاصة بـ ClickHouse في هذه المرحلة).
 
+        <div className="ch-image-md">
+
         ![إرشادات الاستخدام في AWS Marketplace لـ موصل ClickHouse Glue](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
+
+        </div>
       </Step>
 
       <Step title="الاستخدام في مهمة Glue" id="use-in-glue-job">
         في مهمة Glue، حدِّد علامة التبويب `Job details`، ثم وسِّع نافذة `Advanced properties`. ضمن قسم `Connections`، حدِّد الـ اتصال الذي أنشأته للتو. يضيف الـ موصل تلقائيًا ملفات JAR المطلوبة إلى runtime الخاص بالمهمة.
 
+        <div className="ch-image-md">
+
         ![إعدادات اتصالات Glue Notebook](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
+
+        </div>
 
         <Note>
           تأكد من تحديد إصدار الـ موصل الذي يطابق تكوين مهمة Glue الخاصة بك:
@@ -72,7 +80,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
       <Step title="تكوين مسار JAR التابع">
         ضمن علامة التبويب `Job details`، مرِّر إلى الأسفل ووسِّع القائمة المنسدلة `Advanced properties`، ثم أدخل مسار ملفات JAR في `Dependent JARs path`:
 
+        <div className="ch-image-md">
+
         ![خيارات مسار JAR في Glue Notebook](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -153,7 +165,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
   <Tab title="المحرر المرئي">
     يمكنك استخدام موصل ClickHouse إما كمصدر أو كهدف في المحرر المرئي لـ Glue Studio. ما عليك سوى سحب مكوّن ClickHouse Spark Connector إلى لوحة العمل وربطه بخط أنابيب البيانات لديك.
 
+    <div className="ch-image-md">
+
     ![المحرر المرئي لـ Glue Studio مع موصل ClickHouse](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
+
+    </div>
   </Tab>
 
   <Tab title="سكالا">

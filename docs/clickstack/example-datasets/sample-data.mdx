@@ -19,13 +19,21 @@ The following guide assumes you have completed the [Getting Started Guide for Ma
 
 Select the service with Managed ClickStack from the main ClickHouse cloud landing page.
 
+<div className="ch-image-lg">
+
 ![Select Service](/images/clickstack/select_service.webp)
+
+</div>
 </Step>
 <Step title="Navigate to the ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui-managed">
 
 Select `ClickStack` from the left menu to navigate to the ClickStack UI, where you will be automatically authenticated.
 
+<div className="ch-image-lg">
+
 ![ClickStack UI](/images/use-cases/observability/hyperdx.webp)
+
+</div>
 </Step>
 <Step title="Download sample data" id="download-sample-data-managed">
 
@@ -64,7 +72,11 @@ This simulates OTLP log, trace, and metric sources sending data to the OTel coll
 
 Returning to the `Search` view, you should see that data has started to load (adjust the time frame to the `Last 1 hour` if the data doesn't render):
 
+<div className="ch-image-lg">
+
 ![HyperDX search](/images/use-cases/observability/hyperdx-10.webp)
+
+</div>
 
 Data loading will take a few minutes. Allow for the load to be completed before progressing to the next steps.
 </Step>
@@ -74,7 +86,11 @@ Suppose we have reports that our users are experiencing issues paying for goods.
 
 Select `Client Sessions` from the left menu.
 
+<div className="ch-image-lg">
+
 ![Sessions](/images/use-cases/observability/hyperdx-11.webp)
+
+</div>
 
 This view allows us to see front-end sessions for our e-commerce store. Sessions remain Anonymous until users check out and try to complete a purchase.
 
@@ -82,7 +98,11 @@ Note that some sessions with emails have an associated error, potentially confir
 
 Select a trace with a failure and associated email. The subsequent view allows us to replay the user's session and review their issue. Press play to watch the session.
 
+<div className="ch-image-lg">
+
 ![Session replay](/images/use-cases/observability/hyperdx-12.webp)
+
+</div>
 
 The replay shows the user navigating the site, adding items to their cart. Feel free to skip to later in the session where they attempt to complete a payment.
 
@@ -92,7 +112,11 @@ Any errors are annotated on the timeline in red.
 
 The user was unable to place the order, with no obvious error. Scroll to the bottom of the left panel, containing the network and console events from the user's browser. You will notice a 500 error was thrown on making a `/api/checkout` call. 
 
+<div className="ch-image-lg">
+
 ![Error in session](/images/use-cases/observability/hyperdx-13.webp)
+
+</div>
 
 Select this `500` error. Neither the `Overview` nor `Column Values` indicate the source of the issue, other than the fact the error is unexpected, causing an `Internal Error`.
 </Step>
@@ -100,19 +124,35 @@ Select this `500` error. Neither the `Overview` nor `Column Values` indicate the
 
 Navigate to the `Trace` tab to see the full distributed trace. 
 
+<div className="ch-image-lg">
+
 ![Session trace](/images/use-cases/observability/hyperdx-14.webp)
+
+</div>
 
 Scroll down the trace to see the origin of the error - the `checkout` service span. Select the `Payment` service span. 
 
+<div className="ch-image-lg">
+
 ![Span](/images/use-cases/observability/hyperdx-15.webp)
+
+</div>
 
 Select the tab `Column Values` and scroll down. We can see the issue is associated with a cache being full.
 
+<div className="ch-image-lg">
+
 ![Column values](/images/use-cases/observability/hyperdx-16.webp)
+
+</div>
 
 Scrolling up and returning to the trace, we can see logs are correlated with the span, thanks to our earlier configuration. These provide further context.
 
+<div className="ch-image-lg">
+
 ![Correlated log](/images/use-cases/observability/hyperdx-17.webp)
+
+</div>
 
 We've established that a cache is getting filled in the payment service, which is preventing payments from completing. 
 </Step>
@@ -122,7 +162,11 @@ For further details, we can return to the `Search`:
 
 Select `Logs` from the sources and apply a filter to the `payment` service.
 
+<div className="ch-image-lg">
+
 ![Logs](/images/use-cases/observability/hyperdx-18.webp)
+
+</div>
 
 We can see that while the issue is recent, the number of impacted payments is high. Furthermore, a cache related to the visa payments appears to be causing issues.
 </Step>
@@ -132,7 +176,11 @@ While an error has clearly been introduced in the code, we can use metrics to co
 
 Select `Metrics` as the data source. Complete the chart builder to plot the `Maximum` of `visa_validation_cache.size (Gauge)` and press the play button. The cache was clearly increasing before reaching a maximum size, after which errors were generated.
 
+<div className="ch-image-lg">
+
 ![Metrics](/images/use-cases/observability/hyperdx-19.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -146,13 +194,21 @@ The following example assumes you have started ClickStack Open Source using the 
 
 Visit [http://localhost:8080](http://localhost:8080) to access the ClickStack UI. 
 
+<div className="ch-image-lg">
+
 ![ClickStack UI](/images/use-cases/observability/hyperdx.webp)
+
+</div>
 </Step>
 <Step title="Copy ingestion API key" id="copy-ingestion-api-key">
 
 Navigate to [`Team Settings`](http://localhost:8080/team) and copy the `Ingestion API Key` from the `API Keys` section. This API key ensures data ingestion through the OpenTelemetry collector is secure.
 
+<div className="ch-image-lg">
+
 ![Copy API key](/images/use-cases/observability/copy_api_key.webp)
+
+</div>
 </Step>
 <Step title="Download sample data" id="download-sample-data">
 
@@ -199,7 +255,11 @@ This simulates OTLP log, trace, and metric sources sending data to the OTel coll
 
 Returning to the `Search` view, you should see that data has started to load (adjust the time frame to the `Last 1 hour` if the data doesn't render):
 
+<div className="ch-image-lg">
+
 ![HyperDX search](/images/use-cases/observability/hyperdx-10.webp)
+
+</div>
 
 Data loading will take a few minutes. Allow for the load to be completed before progressing to the next steps.
 </Step>
@@ -209,7 +269,11 @@ Suppose we have reports that our users are experiencing issues paying for goods.
 
 Select [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000&to=1747312920000&sessionSource=l1324572572) from the left menu.
 
+<div className="ch-image-lg">
+
 ![Sessions](/images/use-cases/observability/hyperdx-11.webp)
+
+</div>
 
 This view allows us to see front-end sessions for our e-commerce store. Sessions remain Anonymous until users check out and try to complete a purchase.
 
@@ -217,7 +281,11 @@ Note that some sessions with emails have an associated error, potentially confir
 
 Select a trace with a failure and associated email. The subsequent view allows us to replay the user's session and review their issue. Press play to watch the session.
 
+<div className="ch-image-lg">
+
 ![Session replay](/images/use-cases/observability/hyperdx-12.webp)
+
+</div>
 
 The replay shows the user navigating the site, adding items to their cart. Feel free to skip to later in the session where they attempt to complete a payment.
 
@@ -227,7 +295,11 @@ Any errors are annotated on the timeline in red.
 
 The user was unable to place the order, with no obvious error. Scroll to the bottom of the left panel, containing the network and console events from the user's browser. You will notice a 500 error was thrown on making a `/api/checkout` call. 
 
+<div className="ch-image-lg">
+
 ![Error in session](/images/use-cases/observability/hyperdx-13.webp)
+
+</div>
 
 Select this `500` error. Neither the `Overview` nor `Column Values` indicate the source of the issue, other than the fact the error is unexpected, causing an `Internal Error`.
 </Step>
@@ -235,19 +307,35 @@ Select this `500` error. Neither the `Overview` nor `Column Values` indicate the
 
 Navigate to the `Trace` tab to see the full distributed trace. 
 
+<div className="ch-image-lg">
+
 ![Session trace](/images/use-cases/observability/hyperdx-14.webp)
+
+</div>
 
 Scroll down the trace to see the origin of the error - the `checkout` service span. Select the `Payment` service span. 
 
+<div className="ch-image-lg">
+
 ![Span](/images/use-cases/observability/hyperdx-15.webp)
+
+</div>
 
 Select the tab `Column Values` and scroll down. We can see the issue is associated with a cache being full.
 
+<div className="ch-image-lg">
+
 ![Column values](/images/use-cases/observability/hyperdx-16.webp)
+
+</div>
 
 Scrolling up and returning to the trace, we can see logs are correlated with the span, thanks to our earlier configuration. These provide further context.
 
+<div className="ch-image-lg">
+
 ![Correlated log](/images/use-cases/observability/hyperdx-17.webp)
+
+</div>
 
 We've established that a cache is getting filled in the payment service, which is preventing payments from completing. 
 </Step>
@@ -257,7 +345,11 @@ For further details, we can return to the [`Search` view](http://localhost:8080/
 
 Select `Logs` from the sources and apply a filter to the `payment` service.
 
+<div className="ch-image-lg">
+
 ![Logs](/images/use-cases/observability/hyperdx-18.webp)
+
+</div>
 
 We can see that while the issue is recent, the number of impacted payments is high. Furthermore, a cache related to the visa payments appears to be causing issues.
 </Step>
@@ -267,7 +359,11 @@ While an error has clearly been introduced in the code, we can use metrics to co
 
 Select `Metrics` as the data source. Complete the chart builder to plot the `Maximum` of `visa_validation_cache.size (Gauge)` and press the play button. The cache was clearly increasing before reaching a maximum size, after which errors were generated.
 
+<div className="ch-image-lg">
+
 ![Metrics](/images/use-cases/observability/hyperdx-19.webp)
+
+</div>
 </Step>
 </Steps>
 

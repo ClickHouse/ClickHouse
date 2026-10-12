@@ -48,7 +48,11 @@ El tipo de consulta más flexible es la consulta de tabla. Sirve como opción ge
 | Límite       | Añade una sentencia [LIMIT](/es/reference/statements/select/limit) al final de la consulta. Si se establece en `0`, se omitirá. Algunas visualizaciones pueden requerir que se establezca en `0` para mostrar todos los datos. |
 | Filters      | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                                                  |
 
+<div className="ch-image-md">
+
 ![Ejemplo de consulta de tabla con agregación](/images/integrations/data-visualization/grafana/demo_table_query.webp)
+
+</div>
 
 Este tipo de consulta mostrará los datos en forma de tabla.
 
@@ -76,7 +80,11 @@ El tipo de consulta de logs admite [enlaces de datos](#data-links).
 | Filtros           | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                             |
 | Filtro de mensaje | Un campo de texto para filtrar logs cómodamente mediante `LIKE %value%`. Se excluye cuando el campo está vacío.                                                                                           |
 
+<div className="ch-image-md">
+
 ![Ejemplo de consulta de logs de OTel](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
+
+</div>
 
 <br />
 
@@ -84,7 +92,11 @@ Este tipo de consulta mostrará los datos en el panel de logs, junto con un pane
 
 Las columnas adicionales seleccionadas en la consulta pueden verse en la fila de log expandida:
 
+<div className="ch-image-md">
+
 ![Ejemplo de campos adicionales en la consulta de logs](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
+
+</div>
 
 ### Series temporales {#time-series}
 
@@ -116,7 +128,11 @@ Ambas vistas son prácticamente iguales, con estas diferencias principales:
 | Límite       | Añade una sentencia [LIMIT](/es/reference/statements/select/limit) al final de la consulta. Si se establece en `0`, se omitirá; esto se recomienda para algunos conjuntos de datos de series temporales a fin de mostrar la visualización completa. |
 | Filters      | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                                                                       |
 
+<div className="ch-image-md">
+
 ![Consulta de series temporales de ejemplo](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
+
+</div>
 
 Este tipo de consulta mostrará los datos en el panel de series temporales.
 
@@ -153,7 +169,11 @@ El tipo de consulta de trazas admite [enlaces de datos](#data-links).
 | Filtros                   | Una lista de filtros que se aplicarán en la cláusula `WHERE`.                                                                                                                                            |
 | Trace ID                  | El Trace ID por el que filtrar. Solo se usa en el modo Trace ID y al abrir un [enlace de datos](#data-links) de Trace ID.                                                                                |
 
+<div className="ch-image-md">
+
 ![Consulta de trazas OTel de ejemplo](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
+
+</div>
 
 Este tipo de consulta mostrará los datos con la vista de tabla para el modo Búsqueda de trazas y con el panel de trazas para el modo Trace ID.
 
@@ -169,7 +189,11 @@ Las [funciones macro](#macros) también se pueden usar en este modo.
 Puede alternar entre tipos de consulta para obtener la visualización que mejor se adapte a su consulta.
 Este cambio también surte efecto en la vista de dashboard, especialmente con datos de series temporales.
 
+<div className="ch-image-md">
+
 ![Ejemplo de consulta SQL sin formato](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
+
+</div>
 
 ## Enlaces de datos {#data-links}
 
@@ -180,13 +204,21 @@ Esta función se ha habilitado en el plugin de ClickHouse para enlazar una traza
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   Ejemplo de enlaces de trazas en una tabla
 
+  <div className="ch-image-sm">
+
   ![Enlaces de trazas en una tabla](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
+
+  </div>
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Ejemplo de enlaces de trazas en logs
 
+  <div className="ch-image-md">
+
   ![Enlaces de trazas en logs](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
+
+  </div>
 </div>
 
 <div id="how-to-make-a-data-link">
@@ -213,7 +245,11 @@ Es necesario tener valores predeterminados configurados tanto para [logs](/es/in
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Ejemplo de visualización de una traza (panel derecho) desde una consulta de logs (panel izquierdo)
 
+  <div className="ch-image-md">
+
   ![Ejemplo de enlaces de datos](/images/integrations/data-visualization/grafana/demo_data_links.webp)
+
+  </div>
 </div>
 
 <div id="macros">

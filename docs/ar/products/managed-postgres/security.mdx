@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
 صُمِّم ClickHouse Managed Postgres بميزات أمان على مستوى المؤسسات لحماية بياناتك وتلبية متطلبات الامتثال. تتناول هذه الصفحة أمان الشبكة، والتشفير، وسياسات الاحتفاظ بالنسخ الاحتياطية.
@@ -16,7 +17,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 تتحكم عوامل تصفية IP في عناوين IP المصدر المسموح لها بالاتصال بمثيل ClickHouse Managed Postgres لديك، مما يوفر تحكمًا في الوصول على مستوى الشبكة لحماية قاعدة بياناتك من الاتصالات غير المصرح بها.
 
+<div className="ch-image-md">
+
 ![تهيئة قائمة الوصول إلى IP](/images/managed-postgres/ip-filters.webp)
+
+</div>
 
 <div id="configuring-ip-filters">
   ### تكوين عوامل تصفية IP

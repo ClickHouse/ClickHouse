@@ -20,15 +20,27 @@ ClickPipes は Postgres 12 以降をサポートしています。
 
 1. **Server parameters** セクションをクリックします
 
+<div className="ch-image-lg">
+
 ![Azure Flexible Server for Postgres の Server Parameters](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp)
+
+</div>
 
 2. `wal_level` を `logical` に変更します
 
+<div className="ch-image-lg">
+
 ![Azure Flexible Server for Postgres で wal_level を logical に変更する](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp)
+
+</div>
 
 3. この変更を反映するにはサーバーの再起動が必要です。要求されたら再起動してください。
 
+<div className="ch-image-lg">
+
 ![wal_level の変更後にサーバーを再起動する](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp)
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## ClickPipes ユーザーの作成と権限の付与
@@ -84,7 +96,11 @@ ClickPipes は Postgres 12 以降をサポートしています。
 
 1. **Networking** タブに移動し、[ClickPipes の IP](/ja/integrations/clickpipes/networking/static-ips) を Azure Flexible Server Postgres のファイアウォールに追加します。SSH トンネリングを使用している場合は、Jump Server/Bastion に追加してください。
 
+<div className="ch-image-lg">
+
 ![Azure Flexible Server for Postgres で ClickPipes の IP をファイアウォールに追加](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp)
+
+</div>
 
 <div id="whats-next">
   ## 次のステップ

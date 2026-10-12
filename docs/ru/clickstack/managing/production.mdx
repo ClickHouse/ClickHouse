@@ -130,7 +130,11 @@ import ResourceEstimation from '/snippets/ru/_resource_estimation.mdx';
 
     Весь приём данных должен осуществляться через порты OTLP, предоставляемые дистрибутивом ClickStack коллектора OpenTelemetry (OTel). По умолчанию для этого требуется защищённый ключ API для приёма данных, генерируемый при запуске. Этот ключ необходим при отправке данных на порты OTel и доступен в интерфейсе HyperDX в разделе `Team Settings → API Keys`.
 
+    <div className="ch-image-lg">
+
     ![Ключи ингестии](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     Кроме того, рекомендуется включить TLS для конечных точек OTLP.
 

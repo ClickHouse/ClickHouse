@@ -256,11 +256,19 @@ docker compose logs -f otel-collector
 
 Open your service in the [ClickHouse Cloud console](https://console.clickhouse.cloud) and select **ClickStack** from the left menu.
 
+<div className="ch-image-lg">
+
 ![Launch ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+</div>
 
 In the **Search** view, switch the source to `Logs` and set the time range to **Last 15 minutes**. CloudWatch events should appear within a couple of poll intervals.
 
+<div className="ch-image-lg">
+
 ![ClickStack Search view with CloudWatch logs](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
+
+</div>
 
 Each event carries the source group and stream as resource attributes:
 
@@ -271,11 +279,19 @@ Each event carries the source group and stream as resource attributes:
 
 Modify the search to `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body` to include these attributes:
 
+<div className="ch-image-lg">
+
 ![ClickStack Search view with CloudWatch logs and attributes](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
+
+</div>
 
 Select a log entry to inspect is metadata:
 
+<div className="ch-image-lg">
+
 ![CloudWatch attributes in the log detail view](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
+
+</div>
 
 If nothing shows up:
 
@@ -290,11 +306,19 @@ A pre-built dashboard with log volume, severity breakdown, and error distributio
 
 <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Download `cloudwatch-logs-dashboard.json`</TrackedLink>, then in the ClickStack UI navigate to **Dashboards**, click **Import**.
 
+<div className="ch-image-lg">
+
 ![Import dashboard button](/images/clickstack/clickstack-import-dashboard.webp)
+
+</div>
 
 Upload the JSON file and click **Finish Import**.
 
+<div className="ch-image-lg">
+
 ![Finish import dialog](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
+
+</div>
 </Step>
 <Step title="Further reading" id="further-reading">
 

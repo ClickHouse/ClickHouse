@@ -17,7 +17,11 @@ Las versiones proceden de la telemetría que ya envía y se leen mediante una ex
 
 Los marcadores de versiones están desactivados de forma predeterminada. Abra el menú de desbordamiento de un dashboard y seleccione **Mostrar marcadores de versiones**.
 
+<div className="ch-image-sm">
+
 ![Menú de desbordamiento del dashboard con la opción Mostrar marcadores de versiones en la sección Vista, debajo de Mostrar anotaciones de alertas](/images/clickstack/dashboards/release-markers-menu.webp)
+
+</div>
 
 El interruptor añade `releaseMarkers=true` a la URL del dashboard, por lo que los enlaces que comparta se abrirán con los marcadores ya activados. Es un estado de visualización, no una configuración del dashboard: no se guarda con el dashboard y, al desactivarlo, el parámetro vuelve a eliminarse.
 
@@ -78,7 +82,11 @@ En el tercer caso, el servicio de un marcador no tiene ninguna línea con la que
 
 Pasa el cursor sobre la etiqueta de un marcador para ver todas las versiones en ese punto, cada una con el servicio que la publicó, su versión y la hora.
 
+<div className="ch-image-sm">
+
 ![Información emergente al pasar el cursor sobre un marcador de versión que indica el servicio frontend y la versión 2.0.2 con la hora en que apareció por primera vez, en un gráfico de dos servicios](/images/clickstack/dashboards/release-marker-tooltip.webp)
+
+</div>
 
 El color vincula un marcador con su serie, pero la leyenda de un gráfico muestra como máximo cuatro entradas antes de contraer el resto tras &quot;+N more&quot;, momento en el que no hay nada en pantalla con lo que relacionar el color. La información emergente indica directamente el servicio, por lo que funciona independientemente de cuántas series muestre el tile.
 

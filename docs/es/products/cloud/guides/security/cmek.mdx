@@ -160,4 +160,8 @@ Las copias de seguridad se cifran con la misma clave que el servicio asociado. C
 
 El cifrado de la base de datos aprovecha la [funcionalidad integrada de sistema de archivos virtual para el cifrado de datos de ClickHouse](/es/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) para cifrar y proteger sus datos. El algoritmo utilizado en esta funcionalidad es `AES_256_CTR` y se prevé que tenga una penalización de rendimiento del 5-15 % según la carga de trabajo:
 
+<div className="ch-image-lg">
+
 ![Penalización de rendimiento de CMEK](/images/_snippets/cmek-performance.webp)
+
+</div>

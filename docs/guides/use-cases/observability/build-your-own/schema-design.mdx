@@ -248,7 +248,11 @@ Materialized columns will, by default, not be returned in a `SELECT *`.  This is
 
 Materialized Views allow you to shift the cost of computation from query time to insert time. A ClickHouse materialized view is just a trigger that runs a query on blocks of data as they're inserted into a table. The results of this query are inserted into a second "target" table.
 
+<div className="ch-image-md">
+
 ![Materialized view](/images/use-cases/observability/observability-10.webp)
+
+</div>
 
 <Info>
 **Real-time updates**
@@ -403,7 +407,11 @@ FROM otel_logs
 
 This above is visualized below:
 
+<div className="ch-image-md">
+
 ![Otel MV](/images/use-cases/observability/observability-11.webp)
+
+</div>
 
 If we now restart the collector config used in ["Exporting to ClickHouse"](/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse) data will appear in `otel_logs_v2` in our desired format. Note the use of typed JSON extract functions.
 
@@ -623,7 +631,11 @@ Furthermore, timestamps, while benefiting from delta encoding with respect to co
 
 [Dictionaries](/reference/statements/create/dictionary) are a [key feature](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) of ClickHouse providing in-memory [key-value](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) representation of data from various internal and external [sources](/reference/statements/create/dictionary/sources/overview#dictionary-sources), optimized for super-low latency lookup queries.
 
+<div className="ch-image-md">
+
 ![Observability and dictionaries](/images/use-cases/observability/observability-12.webp)
+
+</div>
 
 This is handy in various scenarios, from enriching ingested data on the fly without slowing down the ingestion process and improving the performance of queries in general, with JOINs particularly benefiting.
 While joins are rarely required in Observability use cases, dictionaries can still be handy for enrichment purposes - at both insert and query time. We provide examples of both below.
@@ -1433,7 +1445,11 @@ In theory, this capability can be used to provide multiple ordering keys for a t
 Projections offer many of the same capabilities as materialized views, but should be used sparingly with the latter often preferred. You should understand the drawbacks and when they're appropriate. For example, while projections can be used for pre-computing aggregations we recommend users use Materialized views for this.
 </Info>
 
+<div className="ch-image-md">
+
 ![Observability and projections](/images/use-cases/observability/observability-13.webp)
+
+</div>
 
 Consider the following query, which filters our `otel_logs_v2` table by 500 error codes. This is likely a common access pattern for logging with users wanting to filter by error codes:
 

@@ -187,7 +187,11 @@ doc_type: 'guide'
 
 لاستخدام [مفاتيح الوصول](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) للمصادقة، اختر `Credentials` ضمن **Authentication method** عند إعداد اتصال ClickPipe. بعد ذلك، أدخِل معرّف مفتاح الوصول (مثل `AKIAIOSFODNN7EXAMPLE`) ومفتاح الوصول السري (مثل `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) في الحقلين `Access key` و`Secret key`، على الترتيب.
 
+<div className="ch-image-lg">
+
 ![بيانات اعتماد IAM لـ S3 ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp)
+
+</div>
 
 <div id="iam-role">
   #### IAM role
@@ -195,7 +199,11 @@ doc_type: 'guide'
 
 لاستخدام [الوصول المستند إلى الأدوار](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html) في المصادقة، اختر `IAM role` ضمن **Authentication method** عند إعداد اتصال ClickPipe.
 
+<div className="ch-image-lg">
+
 ![مصادقة IAM لـ S3 ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp)
+
+</div>
 
 اتّبع [هذا الدليل](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely) [لإنشاء دور](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role) بسياسة الثقة المطلوبة للوصول إلى S3. ثم أدخِل ARN لدور IAM ضمن `IAM role ARN`.
 
@@ -240,7 +248,11 @@ doc_type: 'guide'
 | `Parallel view processing`           | false             | ما إذا كان سيتم تمكين الدفع إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`               | true              | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عدة عُقد.                                                                                                 |
 
+<div className="ch-image-lg">
+
 ![الإعدادات المتقدمة لـ ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</div>
 
 <div id="scaling">
   ### التحجيم

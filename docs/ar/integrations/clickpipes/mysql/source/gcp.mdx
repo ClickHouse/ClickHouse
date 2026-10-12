@@ -24,7 +24,11 @@ integration:
 
 تحدد ميزة PITR ما إذا كان binary logging مفعّلًا أو معطّلًا لـ MySQL في Google Cloud. ويمكن ضبط ذلك من Cloud Console، من خلال تحرير مثيل Cloud SQL والتمرير إلى أسفل حتى القسم الموضّح أدناه.
 
+<div className="ch-image-lg">
+
 ![تمكين PITR في Cloud SQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-pitr.webp)
+
+</div>
 
 يُنصح بضبط هذه القيمة على مدة طويلة بما يكفي، بحسب حالة استخدام النسخ المتماثل.
 
@@ -36,11 +40,19 @@ integration:
 
 للقيام بذلك، انقر على زر `Edit` في الزاوية العلوية اليمنى من صفحة النظرة العامة على المثيل.
 
+<div className="ch-image-lg">
+
 ![زر Edit في GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-edit-button.webp)
+
+</div>
 
 بعد ذلك، مرّر إلى أسفل حتى قسم `Flags` وأضف العلامات المذكورة أعلاه.
 
+<div className="ch-image-lg">
+
 ![ضبط علامات binlog في GCP](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp)
+
+</div>
 
 <div id="configure-database-user-gcp">
   ## تكوين مستخدم لقاعدة البيانات
@@ -74,7 +86,11 @@ integration:
 إذا كنت تريد تقييد حركة المرور إلى مثيل Cloud SQL الخاص بك، فيُرجى إضافة [عناوين IP الثابتة لـ NAT الموثقة](/ar/integrations/clickpipes/networking/static-ips) إلى قائمة عناوين IP المسموح بها لمثيل Cloud SQL MySQL الخاص بك.
 يمكن إجراء ذلك إما بتعديل المثيل أو بالانتقال إلى علامة التبويب `Connections` في الشريط الجانبي في Cloud Console.
 
+<div className="ch-image-lg">
+
 ![إضافة عناوين IP إلى قائمة السماح في GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-ip.webp)
+
+</div>
 
 <div id="download-root-ca-certificate-gcp-mysql">
   ## تنزيل شهادة الجذر لـ CA واستخدامها
@@ -87,8 +103,16 @@ integration:
 3. انقر على علامة التبويب `Security`.
 4. في قسم `Manage server CA certificates`، انقر على الزر `DOWNLOAD CERTIFICATES` في الأسفل.
 
+<div className="ch-image-lg">
+
 ![تنزيل شهادة GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-cert.webp)
+
+</div>
 
 5. في واجهة ClickPipes، حمّل الشهادة التي نزّلتها عند إنشاء MySQL ClickPipe جديد.
 
+<div className="ch-image-lg">
+
 ![استخدام شهادة GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/rootca.webp)
+
+</div>

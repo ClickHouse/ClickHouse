@@ -130,7 +130,11 @@ import ResourceEstimation from '/snippets/ar/_resource_estimation.mdx';
 
     يجب أن تتم عملية الاستيعاب بالكامل عبر منافذ OTLP التي يكشفها توزيع ClickStack من مُجمِّع OpenTelemetry (OTel). يستلزم هذا افتراضيًا مفتاح API استيعاب آمنًا يُولَّد عند بدء التشغيل. يُعدّ هذا المفتاح ضروريًا عند إرسال البيانات إلى منافذ OTel، ويمكن العثور عليه في واجهة HyperDX UI ضمن `Team Settings → API Keys`.
 
+    <div className="ch-image-lg">
+
     ![مفاتيح استيعاب البيانات](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     بالإضافة إلى ذلك، يُوصى بتفعيل TLS لنقاط نهاية OTLP.
 

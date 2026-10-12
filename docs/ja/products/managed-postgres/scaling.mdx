@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
 ClickHouse Managed Postgres では、ワークロード要件に応じて柔軟にスケーリングできます。50 種類以上の NVMe 対応インスタンスタイプから選択でき、CPU、メモリ、ストレージをそれぞれ個別にスケーリングして、用途に応じてパフォーマンスとコストを最適化できます。
@@ -20,7 +21,11 @@ ClickHouse Managed Postgres では、さまざまなワークロード特性に�
 * すべてのインスタンスタイプで **NVMe ベースのストレージ** を採用し、一貫した高性能なディスク I/O を実現
 * **リソースの個別スケーリング**: ワークロードに応じて、CPU、メモリ、ストレージの適切なバランスを選択可能
 
+<div className="ch-image-md">
+
 ![インスタンスタイプ](/images/managed-postgres/instance-types.webp)
+
+</div>
 
 <div id="choosing-instance">
   ### 適切なインスタンスタイプの選択
@@ -42,7 +47,11 @@ ClickHouse Managed Postgres では、さまざまなワークロード特性に�
 
 インスタンスタイプを変更すると、ClickHouse Managed Postgres は垂直スケーリングを実行し、新しいインフラストラクチャをプロビジョニングしたうえで、ダウンタイムを最小限に抑えながらデータベースを移行します。
 
+<div className="ch-image-md">
+
 ![スケーリング設定](/images/managed-postgres/scaling-settings.webp)
+
+</div>
 
 <div id="scaling-process">
   ### スケーリングプロセス

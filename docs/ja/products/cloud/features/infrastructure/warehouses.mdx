@@ -20,7 +20,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 * サービスに接続するためのエンドポイント (または ClickHouse Cloud の UI コンソールから作成された複数のエンドポイント) 。ローカル接続やサードパーティアプリからの接続に使用します (例: `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
 * サービスがすべてのデータとメタデータの一部を保存するオブジェクトストレージ フォルダー:
 
+<div className="ch-image-md">
+
 ![ClickHouse Cloud 内の単一サービス](/images/cloud/reference/compute-compute-1.webp)
+
+</div>
 
 <br />
 
@@ -34,7 +38,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 
 また、コンピュート分離を使うことで、読み取り処理と書き込み処理を分離し、相互に干渉しないようにすることもできます。
 
+<div className="ch-image-md">
+
 ![ClickHouse Cloud におけるコンピュート分離](/images/cloud/reference/compute-compute-2.webp)
+
+</div>
 
 <br />
 
@@ -51,7 +59,11 @@ ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有す
 * プライマリ サービス `DWH Prod`
 * セカンダリ サービス `DWH Prod Subservice`
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![プライマリ サービスとセカンダリ サービスを含む ウェアハウス の例](/images/cloud/reference/compute-compute-8.webp)
+
+</div>
 
 <br />
 
@@ -76,7 +88,11 @@ ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有す
 つまり、Service 1 で作成されたすべてのデータベースユーザーは、同じ権限 (テーブルやビューなどに対する grants) で Service 2 も利用でき、その逆も同様です。
 各サービスで使用するエンドポイントは異なりますが、ユーザー名とパスワードはすべてのサービスで共通です。つまり、以下の図に示すように、**同じストレージを使用するサービス間ではユーザーが共有されます**。
 
+<div className="ch-image-md">
+
 ![同じデータを共有するサービス間でのユーザーアクセス](/images/cloud/reference/compute-compute-3.webp)
+
+</div>
 
 <br />
 
@@ -92,7 +108,11 @@ IP フィルタリング設定はサービスごとに個別に適用できる�
 
 以下の例では、Alice は ウェアハウス 内のサービス 2 へのアクセスを制限されています。
 
+<div className="ch-image-md">
+
 ![ネットワークアクセス制御の設定](/images/cloud/reference/compute-compute-4.webp)
+
+</div>
 
 <br />
 
@@ -119,7 +139,11 @@ IP フィルタリング設定はサービスごとに個別に適用できる�
 重要な読み取りワークロードを、書き込みやマージのオーバーヘッドから切り離すために、サービスを読み取り専用にしたい場合があります。
 これは 2 つ目のサービスと、それ以降に作成する追加サービスで設定できます。ただし、最初のサービスは常に読み書きサービスです。以下の図を参照してください。
 
+<div className="ch-image-lg">
+
 ![ウェアハウス内の読み書きサービスと読み取り専用サービス](/images/cloud/reference/compute-compute-5.webp)
+
+</div>
 
 <br />
 
@@ -210,7 +234,11 @@ SETTINGS distributed_ddl_task_timeout=0
 
 ウェアハウスを作成するには、既存のサービスとデータを共有する 2 つ目のサービスを作成する必要があります。これは、既存のサービスのいずれかにあるプラス記号をクリックして行えます。
 
+<div className="ch-image-md">
+
 ![ウェアハウス内で新しいサービスを作成](/images/cloud/reference/compute-compute-7.webp)
+
+</div>
 
 <br />
 

@@ -9,6 +9,7 @@ keywords: ['обсервабилити', 'мониторинг', 'облако',
 
 import ObservabilityIntegrations from '/snippets/ru/_observability_integration_options.mdx';
 import DirectIntegrations from '/snippets/ru/_direct_observability_integration_options.mdx';
+
 import CommunityMonitoring from '/snippets/ru/_community_monitoring.mdx';
 
 Это руководство предоставляет корпоративным командам, оценивающим ClickHouse Cloud, исчерпывающую информацию о возможностях мониторинга и обсервабилити для развертываний в продакшне. Корпоративные заказчики часто спрашивают о встроенных возможностях мониторинга, интеграции с существующими стеками обсервабилити, включая такие инструменты, как Datadog и AWS CloudWatch, а также о том, как мониторинг ClickHouse соотносится с самоуправляемыми развертываниями.
@@ -25,13 +26,21 @@ ClickHouse Cloud предоставляет комплексные возмож�
   Доступ к этим метрикам не отправляет запрос к базовому сервису и не выводит бездействующие сервисы из состояния простоя.
 </Note>
 
+<div className="ch-image-lg">
+
 ![Advanced dashboard](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</div>
 
 Пользователи, которые хотят расширить эти визуализации, могут использовать функцию dashboards в ClickHouse Cloud, выполняя запросы напрямую к системным таблицам.
 
 * **Native advanced dashboard**: альтернативный интерфейс панели мониторинга, доступный по ссылке &quot;You can still access the native advanced dashboard&quot; в разделе Monitoring. Он открывается в отдельной вкладке, требует аутентификации и предоставляет альтернативный интерфейс для мониторинга состояния системы и сервиса. Эта панель мониторинга поддерживает расширенную аналитику: вы можете изменять лежащие в ее основе SQL-запросы.
 
+<div className="ch-image-lg">
+
 ![Advanced dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</div>
 
 Обе панели мониторинга обеспечивают мгновенную видимость состояния сервиса и производительности без внешних зависимостей, что отличает их от внешних инструментов, ориентированных на отладку, таких как ClickStack.
 

@@ -13,7 +13,11 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 AI Notebooks are an interactive investigation tool in ClickStack that combines an AI agent with manual analysis. You can describe an issue in plain language, and the AI agent will query logs, traces, and metrics on your behalf — surfacing relevant data, charts, and summaries as a series of tiles. You can also add your own tiles (charts, tables, searches, and markdown notes) alongside the AI-generated output, building a complete record of an investigation.
 
+<div className="ch-image-lg">
+
 ![AI Notebook investigating a Visa cache full outage](/images/use-cases/observability/hyperdx-notebook-hero.webp)
+
+</div>
 
 <Info>
 **Managed ClickStack only**
@@ -40,7 +44,11 @@ A team admin must enable the Generative AI consent toggle before notebooks (and 
 2. Toggle **Generative AI** to on.
 3. Review and accept the consent dialog.
 
+<div className="ch-image-lg">
+
 ![Generative AI toggle in Team Settings](/images/use-cases/observability/hyperdx-notebook-ai-consent.webp)
+
+</div>
 
 ## Using AI Notebooks {#using-notebooks}
 
@@ -51,7 +59,11 @@ A team admin must enable the Generative AI consent toggle before notebooks (and 
 
 The notebook list page shows all notebooks you have access to. You can filter by name, tags, or toggle between **My Notebooks** and **All Notebooks**.
 
+<div className="ch-image-lg">
+
 ![Notebook list page](/images/use-cases/observability/hyperdx-notebook-list.webp)
+
+</div>
 
 ### Running an AI investigation {#running-investigation}
 
@@ -67,7 +79,11 @@ Each step appears as a tile in the notebook. **Thought process** tiles show the 
 
 While an investigation is running, you can click **Stop** to cancel it.
 
+<div className="ch-image-lg">
+
 ![Notebook with AI-generated tiles](/images/use-cases/observability/hyperdx-notebook-tiles.webp)
+
+</div>
 
 ### Branching an investigation {#branching}
 
@@ -79,11 +95,19 @@ To create a branch:
 2. In the dialog, enter a modified prompt that steers the investigation in the new direction.
 3. Click **Interrupt & Create Branch**. The AI starts a new investigation branch from that point.
 
+<div className="ch-image-md">
+
 ![Create New Branch dialog](/images/use-cases/observability/hyperdx-notebook-branch-modal.webp)
+
+</div>
 
 Once a tile has multiple branches, left and right arrow buttons appear on the tile header with a badge (e.g. **1/2**) indicating how many branches exist. Click the arrows to switch between branches.
 
+<div className="ch-image-lg">
+
 ![Branch navigation arrows and 1/2 badge on a tile](/images/use-cases/observability/hyperdx-notebook-branching.webp)
+
+</div>
 
 ### Adding manual tiles {#manual-tiles}
 
@@ -100,7 +124,11 @@ After adding a tile, it opens in inline edit mode where you can configure the da
 
 Manual tiles are added below the last visible tile in the current branch. You can resize tiles vertically by dragging their bottom edge.
 
+<div className="ch-image-lg">
+
 ![Manual tile buttons at the bottom of a notebook](/images/use-cases/observability/hyperdx-notebook-manual-tiles.webp)
+
+</div>
 
 <Note>
 If an AI investigation is currently running, adding or editing a manual tile will cancel the investigation. A confirmation dialog will appear before proceeding.
@@ -124,4 +152,8 @@ To configure this:
 
 This context is appended to the AI's system prompt for all notebook investigations across the team.
 
+<div className="ch-image-lg">
+
 ![Agent Settings panel for custom context](/images/use-cases/observability/hyperdx-notebook-agent-context.webp)
+
+</div>

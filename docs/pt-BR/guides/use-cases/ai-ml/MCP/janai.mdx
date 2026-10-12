@@ -23,14 +23,22 @@ doc_type: 'guide'
 
     Para habilitar o OpenAI, precisamos fornecer uma API key, como mostrado abaixo:
 
+    <div className="ch-image-md">
+
     ![Habilitar modelos OpenAI](/images/use-cases/AI_ML/MCP/0_janai_openai.webp)
+
+    </div>
   </Step>
 
   <Step title="Habilite os servidores MCP" id="enable-mcp-servers">
     No momento da redação deste guia, os servidores MCP são um recurso experimental no Jan.ai.
     Podemos habilitá-los ativando os recursos experimentais:
 
+    <div className="ch-image-md">
+
     ![Habilitar servidores MCP](/images/use-cases/AI_ML/MCP/1_janai_mcp_servers.webp)
+
+    </div>
 
     Depois de ativar essa opção, veremos `MCP servers` no menu à esquerda.
   </Step>
@@ -38,43 +46,79 @@ doc_type: 'guide'
   <Step title="Configure o servidor MCP do ClickHouse" id="configure-clickhouse-mcp-server">
     Se clicarmos no menu `MCP servers`, veremos uma lista de servidores MCP aos quais podemos nos conectar:
 
+    <div className="ch-image-md">
+
     ![Lista de servidores MCP](/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp)
+
+    </div>
 
     Todos esses servidores vêm desabilitados por padrão, mas podemos habilitá-los clicando no botão de alternância.
 
     Para instalar o servidor MCP do ClickHouse, precisamos clicar no ícone `+` e depois preencher o formulário com o seguinte:
 
+    <div className="ch-image-md">
+
     ![Adicionar servidor MCP](/images/use-cases/AI_ML/MCP/3_janai_add_mcp_server.webp)
+
+    </div>
 
     Depois de fazer isso, precisaremos ativar o ClickHouse Server, caso ele ainda não esteja ativado:
 
+    <div className="ch-image-md">
+
     ![Habilitar servidor MCP](/images/use-cases/AI_ML/MCP/4_janai_toggle.webp)
+
+    </div>
 
     As ferramentas do servidor MCP do ClickHouse agora ficarão visíveis na janela de chat:
 
+    <div className="ch-image-md">
+
     ![Ferramentas do servidor MCP do ClickHouse](/images/use-cases/AI_ML/MCP/5_jani_tools.webp)
+
+    </div>
   </Step>
 
   <Step title="Converse com o servidor MCP do ClickHouse usando o Jan.ai" id="chat-to-clickhouse-mcp-server">
     É hora de conversar sobre alguns dados armazenados no ClickHouse!
     Vamos fazer uma pergunta:
 
+    <div className="ch-image-md">
+
     ![Pergunta](/images/use-cases/AI_ML/MCP/6_janai_question.webp)
+
+    </div>
 
     O Jan.ai pedirá confirmação antes de chamar uma ferramenta:
 
+    <div className="ch-image-md">
+
     ![Confirmação da ferramenta](/images/use-cases/AI_ML/MCP/7_janai_tool_confirmation.webp)
+
+    </div>
 
     Em seguida, ele mostrará a lista de chamadas de ferramenta que foram feitas:
 
+    <div className="ch-image-md">
+
     ![Ferramentas chamadas](/images/use-cases/AI_ML/MCP/8_janai_tools_called.webp)
+
+    </div>
 
     Se clicarmos em uma chamada de ferramenta, poderemos ver os detalhes da chamada:
 
+    <div className="ch-image-md">
+
     ![Ferramentas chamadas expandidas](/images/use-cases/AI_ML/MCP/9_janai_tools_called_expanded.webp)
+
+    </div>
 
     E, logo abaixo, teremos o resultado:
 
+    <div className="ch-image-md">
+
     ![Resultado](/images/use-cases/AI_ML/MCP/10_janai_result.webp)
+
+    </div>
   </Step>
 </Steps>

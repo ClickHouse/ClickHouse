@@ -8,6 +8,7 @@ keywords: ['clickstack', 'service maps', 'topology', 'traces', 'dependencies', '
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 import { Video } from "/snippets/components/Video/Video.jsx";
 
 <BetaBadge/>
@@ -16,7 +17,11 @@ Service maps visualize how your services interact. ClickStack builds the graph b
 
 Click **Service Map** in the left navigation panel to open the full graph. Services appear once you're [ingesting trace data](/clickstack/ingesting-data/overview) with OpenTelemetry.
 
+<div className="ch-image-lg">
+
 ![Service map showing service nodes and request flow between them](/images/clickstack/service-maps/service-map-overview.webp)
+
+</div>
 
 ## Exploring the service map {#exploring-the-service-map}
 Each node represents a service, identified by the `service.name` resource attribute. Edges (dashed lines) connect services where a client span in one matches a server span in another. Node size reflects relative traffic volume, and red nodes indicate services with errors in the selected time range.
@@ -25,15 +30,27 @@ The toolbar above the map lets you filter and adjust the view.
 
 **Source selector** — filter the map to a specific trace source (e.g. "ClickPy Traces").
 
+<div className="ch-image-lg">
+
 ![Source selector highlighted in the service map toolbar](/images/clickstack/service-maps/source-selector.webp)
+
+</div>
 
 **Sampling slider** — adjust the sampling rate to balance performance and accuracy. Lower rates load faster on high-volume clusters.
 
+<div className="ch-image-lg">
+
 ![Sampling slider highlighted in the service map toolbar](/images/clickstack/service-maps/sampling.webp)
+
+</div>
 
 **Date range picker** — set the time window for the trace data used to build the map.
 
+<div className="ch-image-lg">
+
 ![Date range picker highlighted in the service map toolbar](/images/clickstack/service-maps/date-selector.webp)
+
+</div>
 
 Use the **+/-** buttons in the bottom-left corner of the map or scroll to zoom in and out.
 

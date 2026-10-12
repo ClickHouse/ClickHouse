@@ -93,11 +93,19 @@ Browser SDK は、プライバシーに配慮が必要なアプリケーショ�
 
 ClickStack UI (HyperDX) の左側のサイドバーから **Client Sessions** に移動します。このビューには、キャプチャされたすべてのブラウザーセッションが、継続時間とイベント数とともに一覧表示されます。
 
+<div className="ch-image-lg">
+
 ![セッションリプレイの検索ビュー](/images/clickstack/session-replay/replay-search-view.webp)
+
+</div>
 
 任意のセッションの再生ボタンをクリックすると、そのセッションをリプレイできます。リプレイ画面では、右側に再現されたユーザー体験が表示され、左側にはブラウザーイベント (ネットワークリクエスト、コンソールログ、エラー) のタイムラインが表示されます。
 
+<div className="ch-image-lg">
+
 ![セッションリプレイの再生](/images/clickstack/session-replay/session-replay.webp)
+
+</div>
 
 タイムラインに表示する詳細度は、**Highlighted** モードと **All Events** モードを切り替えて調整できます。エラーは赤色で示され、任意のイベントをクリックすると、リプレイはそのセッション内の該当時点に移動します。
 
@@ -119,7 +127,11 @@ ClickStack UI (HyperDX) の左側のサイドバーから **Client Sessions** �
 
 この相関は逆方向にも機能します。**Search** ビューでトレースを表示している際にそのトレースをクリックして詳細を開き、**Session replay** タブを選択すると、そのトレース発生時にユーザーが実際にどのような操作をしていたかを確認できます。これは、エラーやリクエスト遅延を調査する際に特に有用です。バックエンド側の問題から調査を始めて、すぐにユーザー視点の状況を確認できます。
 
+<div className="ch-image-lg">
+
 ![Session replay のトレースビュー](/images/clickstack/session-replay/trace-to-replay.webp)
+
+</div>
 
 <div id="data-storage">
   ## セッションデータの保存方法

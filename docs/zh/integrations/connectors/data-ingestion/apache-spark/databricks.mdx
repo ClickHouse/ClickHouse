@@ -51,9 +51,17 @@ ClickHouse Spark connector 可与 Databricks 无缝集成。本指南介绍 Data
    * 选择 **DBFS** 或 **Workspace** → 导航到已上传的 JAR 文件
    * 点击 **Install**
 
+<div className="ch-image-lg">
+
 ![Databricks Libraries 选项卡](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![从工作区卷安装库](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
+
+</div>
 
 4. 重启集群以加载该库
 
@@ -88,7 +96,11 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
+<div className="ch-image-lg">
+
 ![Databricks Maven 库配置](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
+
+</div>
 
 3. 点击 **Install**，然后重启集群以加载该库
 

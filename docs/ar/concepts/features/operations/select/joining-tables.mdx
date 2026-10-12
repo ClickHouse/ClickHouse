@@ -12,7 +12,11 @@ doc_type: 'guide'
 * اعتبارًا من ClickHouse 24.12، يعيد مُخطِّط الاستعلام تلقائيًا ترتيب عمليات الربط بين جدولين بحيث يضع الجدول الأصغر على الجانب الأيمن لتحقيق أفضل أداء. وفي الإصدار 25.9، تم توسيع ذلك لتحسين ترتيب عمليات الربط في الاستعلامات التي تربط بين ثلاثة جداول أو أكثر.
 * إذا كان استعلامك يتطلب direct JOIN، أي `LEFT ANY JOIN`، كما هو موضح أدناه، فنوصي باستخدام [Dictionaries](/ar/concepts/features/dictionaries/index) حيثما أمكن.
 
+<div className="ch-image-sm">
+
 ![Left any join](/images/guides/joins-1.webp)
+
+</div>
 
 * إذا كنت تُجري عمليات ربط داخلية، فغالبًا ما يكون من الأفضل كتابتها على هيئة استعلامات فرعية باستخدام العبارة `IN`. انظر إلى الاستعلامات التالية، وهي متكافئة وظيفيًا. فكلاهما يعثر على عدد `posts` التي لا تذكر ClickHouse في السؤال، لكنها تذكره في `comments`.
 
@@ -138,7 +142,11 @@ Peak memory usage: 250.66 MiB.
 
 <br />
 
+<div className="ch-image-lg">
+
 ![السرعة بحسب الذاكرة لعمليات JOIN](/images/guides/joins-2.png)
+
+</div>
 
 <br />
 
@@ -148,7 +156,11 @@ Peak memory usage: 250.66 MiB.
 
 <br />
 
+<div className="ch-image-lg">
+
 ![ميزات JOIN](/images/guides/joins-3.webp)
+
+</div>
 
 <br />
 
@@ -164,7 +176,11 @@ Peak memory usage: 250.66 MiB.
 
 <br />
 
+<div className="ch-image-lg">
+
 ![مخطط انسيابي لـ JOIN](/images/guides/joins-4.webp)
+
+</div>
 
 <br />
 
@@ -190,7 +206,11 @@ Peak memory usage: 250.66 MiB.
 
 <br />
 
+<div className="ch-image-lg">
+
 ![شجرة قرار لتحسين الذاكرة في JOIN](/images/guides/joins-5.webp)
+
+</div>
 
 <br />
 

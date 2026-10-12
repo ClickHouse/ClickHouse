@@ -22,7 +22,11 @@ Comme le receiver s’intègre à un pipeline de collecteur classique, vous pouv
 * **Faciliter une migration**, en passant à ClickStack tout en conservant votre couche de collection actuelle et en adoptant progressivement l’instrumentation OpenTelemetry.
 * **Exécuter les deux stacks en parallèle** à long terme, en utilisant chaque plateforme pour ce qu’elle fait le mieux.
 
+<div className="ch-image-lg">
+
 ![Migration d’agents Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
+
+</div>
 
 <div id="why-run-clickstack-alongside-datadog">
   ## Pourquoi exécuter ClickStack aux côtés de Datadog
@@ -46,17 +50,29 @@ Une télémétrie exhaustive est particulièrement précieuse pour les investiga
 
 Dans un déploiement OpenTelemetry classique, les données de télémétrie sont envoyées à un collecteur OpenTelemetry avant d’atteindre un backend. Le collecteur reçoit les données des collecteurs en mode agent ainsi que des [OpenTelemetry SDKs](/fr/clickstack/ingesting-data/sdks/index) qui instrumentent les applications, applique les filtres ou transformations nécessaires, regroupe les événements par lots, puis les exporte vers la destination cible.
 
+<div className="ch-image-lg">
+
 ![Pipeline OTel simple](/images/use-cases/observability/simple_otel_pipeline.png)
+
+</div>
 
 Le [receiver Datadog](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver) ajoute une source d’entrée supplémentaire à cette architecture. Il expose un endpoint compatible avec les protocoles utilisés par les agents et SDK Datadog, et convertit les payloads Datadog entrants dans le modèle de données OpenTelemetry. Ils suivent ensuite le pipeline ordinaire du collecteur, comme n’importe quelle autre télémétrie.
 
 Les agents Datadog existants sont simplement reconfigurés pour envoyer les logs et les traces vers le receiver exécuté sur un collecteur ClickStack. Les applications conservent leurs SDK Datadog existants, et les agents déjà déployés dans votre infrastructure restent en place.
 
+<div className="ch-image-lg">
+
 ![Datadog vers OpenTelemetry](/images/use-cases/observability/datadog_to_otel.png)
+
+</div>
 
 Comme un pipeline de collecteur peut utiliser plusieurs exporters, la même télémétrie peut être envoyée à Datadog et à ClickStack en même temps. C’est ce qui rend possible une évaluation côte à côte et un fonctionnement en parallèle à long terme : vous comparez les deux plateformes à partir de données identiques, puis vous décidez ensuite, indépendamment, de migrer ou non.
 
+<div className="ch-image-lg">
+
 ![Migration des agents Datadog](/images/use-cases/observability/migrating_datadog_agents.png)
+
+</div>
 
 <div id="what-the-receiver-handles">
   ## Ce que le receiver prend en charge
@@ -200,7 +216,11 @@ Une fois activé, vous configurez votre agent Datadog pour qu’il pointe vers l
       <Step title="Copier votre clé API d’ingestion" id="copy-ingestion-key-oss">
         Dans l’interface ClickStack (HyperDX), sélectionnez votre utilisateur dans le coin inférieur gauche, accédez à **Team Settings &gt; API Keys**, puis copiez l’**Ingestion API Key**.
 
+        <div className="ch-image-lg">
+
         ![Clé d’ingestion ClickStack](/images/use-cases/observability/hyperdx_ingestion_key.png)
+
+        </div>
       </Step>
 
       <Step title="Configurer l’agent Datadog" id="configure-datadog-agent-oss">
@@ -274,7 +294,11 @@ L’exemple suivant s’appuie sur une application exemple pour illustrer le par
 
     Suivez les [instructions du README](https://github.com/ClickHouse/hn-news-analyzer/tree/datadog-instrumentation) pour lancer l’application.
 
+    <div className="ch-image-lg">
+
     ![L’application HackerNews Analyzer exécutée localement](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </div>
   </Step>
 
   <Step title="Lancer ClickStack avec le receiver activé" id="launch-clickstack-example">
@@ -313,11 +337,23 @@ L’exemple suivant s’appuie sur une application exemple pour illustrer le par
   <Step title="Explorer votre télémétrie dans ClickStack" id="explore-telemetry">
     Ouvrez l’interface HyperDX à l’adresse [http://localhost:8080](http://localhost:8080), puis explorez les traces, logs et métriques collectés par l’agent Datadog.
 
+    <div className="ch-image-lg">
+
     ![Traces Datadog dans ClickStack 2](/images/use-cases/observability/datadog_clickstack_demo_2.png)
+
+    </div>
+
+    <div className="ch-image-lg">
 
     ![Traces Datadog dans ClickStack 1](/images/use-cases/observability/datadog_clickstack_demo_1.png)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Traces Datadog dans ClickStack 3](/images/use-cases/observability/datadog_clickstack_demo_3.png)
+
+    </div>
   </Step>
 </Steps>
 

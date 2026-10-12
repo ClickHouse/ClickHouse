@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
 ClickHouse Managed Postgres is built with enterprise-grade security features to protect your data and meet compliance requirements. This page covers network security, encryption, and backup retention policies.
@@ -16,7 +17,11 @@ ClickHouse Managed Postgres is built with enterprise-grade security features to 
 
 IP filters control which source IP addresses are permitted to connect to your ClickHouse Managed Postgres instance, providing network-level access control to protect your database from unauthorized connections.
 
+<div className="ch-image-md">
+
 ![IP Access List configuration](/images/managed-postgres/ip-filters.webp)
+
+</div>
 
 ### Configuring IP filters {#configuring-ip-filters}
 

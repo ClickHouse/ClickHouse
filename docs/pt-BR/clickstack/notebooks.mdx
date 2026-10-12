@@ -13,7 +13,11 @@ import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
 
 AI Notebooks são uma ferramenta interativa de investigação no ClickStack que combina um agente de IA com análise manual. Você pode descrever um problema em linguagem natural, e o agente de IA fará consultas a logs, traces e métricas por você, exibindo dados, gráficos e resumos relevantes como uma série de tiles. Você também pode adicionar seus próprios tiles (gráficos, tabelas, pesquisas e notas em Markdown) junto com a saída gerada pela IA, criando um registro completo de uma investigação.
 
+<div className="ch-image-lg">
+
 ![AI Notebook investigando uma indisponibilidade total da Visa causada por cache cheio](/images/use-cases/observability/hyperdx-notebook-hero.webp)
+
+</div>
 
 <Info>
   **Somente no Managed ClickStack**
@@ -44,7 +48,11 @@ Um administrador da equipe deve ativar a opção de consentimento do Generative 
 2. Ative **Generative AI**.
 3. Revise e aceite a caixa de diálogo de consentimento.
 
+<div className="ch-image-lg">
+
 ![Opção de Generative AI em Team Settings](/images/use-cases/observability/hyperdx-notebook-ai-consent.webp)
+
+</div>
 
 <div id="using-notebooks">
   ## Como usar o AI Notebooks
@@ -59,7 +67,11 @@ Um administrador da equipe deve ativar a opção de consentimento do Generative 
 
 A página de lista de notebooks mostra todos os notebooks aos quais você tem acesso. Você pode filtrar por nome, tags ou alternar entre **My Notebooks** e **All Notebooks**.
 
+<div className="ch-image-lg">
+
 ![Página de lista de notebooks](/images/use-cases/observability/hyperdx-notebook-list.webp)
+
+</div>
 
 <div id="running-investigation">
   ### Executando uma investigação com IA
@@ -77,7 +89,11 @@ Cada etapa aparece como um tile no notebook. Os tiles de **Thought process** mos
 
 Enquanto a investigação estiver em execução, você pode clicar em **Stop** para cancelá-la.
 
+<div className="ch-image-lg">
+
 ![Notebook com tiles gerados por IA](/images/use-cases/observability/hyperdx-notebook-tiles.webp)
+
+</div>
 
 <div id="branching">
   ### Criando uma ramificação na investigação
@@ -91,11 +107,19 @@ Para criar uma ramificação:
 2. Na caixa de diálogo, insira um prompt modificado que direcione a investigação para esse novo caminho.
 3. Clique em **Interrupt &amp; Create Branch**. A IA inicia uma nova ramificação da investigação a partir desse ponto.
 
+<div className="ch-image-md">
+
 ![Caixa de diálogo Create New Branch](/images/use-cases/observability/hyperdx-notebook-branch-modal.webp)
+
+</div>
 
 Quando um tile tem várias ramificações, botões de seta para a esquerda e para a direita aparecem no cabeçalho do tile, com um indicador (por exemplo, **1/2**) mostrando quantas ramificações existem. Clique nas setas para alternar entre as ramificações.
 
+<div className="ch-image-lg">
+
 ![Setas de navegação entre ramificações e indicador 1/2 em um tile](/images/use-cases/observability/hyperdx-notebook-branching.webp)
+
+</div>
 
 <div id="manual-tiles">
   ### Adicionando tiles manuais
@@ -114,7 +138,11 @@ Depois de adicionar um tile, ele é aberto no modo de edição embutida, em que 
 
 Os tiles manuais são adicionados abaixo do último tile visível na ramificação atual. Você pode redimensioná-los verticalmente arrastando a borda inferior.
 
+<div className="ch-image-lg">
+
 ![Botões de tiles manuais na parte inferior de um notebook](/images/use-cases/observability/hyperdx-notebook-manual-tiles.webp)
+
+</div>
 
 <Note>
   Se uma investigação de IA estiver em execução, adicionar ou editar um tile manual cancelará a investigação. Uma caixa de diálogo de confirmação será exibida antes de continuar.
@@ -142,4 +170,8 @@ Para configurar isso:
 
 Esse contexto é acrescentado ao system prompt da IA em todas as investigações de notebook da equipe.
 
+<div className="ch-image-lg">
+
 ![Painel de Agent Settings para contexto personalizado](/images/use-cases/observability/hyperdx-notebook-agent-context.webp)
+
+</div>

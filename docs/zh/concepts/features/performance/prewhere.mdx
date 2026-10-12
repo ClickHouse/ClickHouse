@@ -17,7 +17,11 @@ keywords: ['prewhere', '查询优化', '性能', '过滤', '最佳实践']
 
 我们先说明在不使用 PREWHERE 的情况下，[uk&#95;price&#95;paid&#95;simple](/zh/concepts/core-concepts/parts) 表上的查询是如何处理的：
 
+<div className="ch-image-md">
+
 ![未使用 PREWHERE 优化的查询处理](/images/guides/best-practices/prewhere_01.webp)
+
+</div>
 
 <br />
 
@@ -43,7 +47,11 @@ keywords: ['prewhere', '查询优化', '性能', '过滤', '最佳实践']
 
 前三个处理步骤与前面相同：
 
+<div className="ch-image-md">
+
 ![使用 PREWHERE 优化的查询处理过程](/images/guides/best-practices/prewhere_02.webp)
+
+</div>
 
 <br />
 
@@ -64,7 +72,11 @@ ClickHouse 会先 ① 读取 `town` 列中选定的粒度，并检查其中哪�
 
 在本例中，所有选定的粒度都匹配，因此 ② 接下来会选择下一个过滤列 `date` 中与之按位置对齐的对应粒度进行处理：
 
+<div className="ch-image-md">
+
 ![步骤 1：按 town 过滤](/images/guides/best-practices/prewhere_03.webp)
+
+</div>
 
 <br />
 
@@ -75,7 +87,11 @@ ClickHouse 会先 ① 读取 `town` 列中选定的粒度，并检查其中哪�
 
 在这种情况下，3 个粒度中有 2 个包含匹配的行，因此 ② 只会选择它们在下一个过滤列 `price` 中按位置对齐的粒度继续处理：
 
+<div className="ch-image-md">
+
 ![步骤 2：按 date 过滤](/images/guides/best-practices/prewhere_04.webp)
+
+</div>
 
 <br />
 
@@ -86,7 +102,11 @@ ClickHouse 会先 ① 读取 `town` 列中选定的粒度，并检查其中哪�
 
 两个粒度中只有一个包含匹配的行，因此 ② 只需要加载 `SELECT` 列 `street` 中与其按位置对齐的粒度，以便进一步处理：
 
+<div className="ch-image-md">
+
 ![步骤 2：按 price 过滤](/images/guides/best-practices/prewhere_05.webp)
+
+</div>
 
 <br />
 

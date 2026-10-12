@@ -16,7 +16,11 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
 
 [marimo](https://marimo.io/) é um notebook reativo de código aberto para Python com SQL integrado. Quando você executa uma célula ou interage com um elemento da UI, o marimo executa automaticamente as células afetadas (ou as marca como desatualizadas), mantendo o código e os resultados consistentes e evitando bugs antes mesmo que aconteçam. Todo notebook do marimo é armazenado como Python puro, executável como script e implantável como aplicativo.
 
+<div className="ch-image-md">
+
 ![Conectar ao ClickHouse](/images/integrations/sql-clients/marimo/clickhouse-connect.webp)
+
+</div>
 
 <Steps>
   <Step title="Instalar o marimo com suporte a SQL" id="install-marimo-sql">
@@ -31,21 +35,37 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
   <Step title="Conectando ao ClickHouse." id="connect-to-clickhouse">
     Navegue até o painel de fontes de dados no lado esquerdo do editor do marimo e clique em &#39;Add database&#39;.
 
+    <div className="ch-image-sm">
+
     ![Adicionar um novo banco de dados](/images/integrations/sql-clients/marimo/panel-arrow.webp)
+
+    </div>
 
     Você será solicitado a preencher os detalhes do banco de dados.
 
+    <div className="ch-image-md">
+
     ![Preencher os detalhes do banco de dados](/images/integrations/sql-clients/marimo/add-db-details.webp)
+
+    </div>
 
     Em seguida, você terá uma célula que pode ser executada para estabelecer uma conexão.
 
+    <div className="ch-image-md">
+
     ![Executar a célula para se conectar ao ClickHouse](/images/integrations/sql-clients/marimo/run-cell.webp)
+
+    </div>
   </Step>
 
   <Step title="Executar SQL" id="run-sql">
     Depois de configurar uma conexão, você pode criar uma nova célula SQL e escolher o mecanismo do ClickHouse.
 
+    <div className="ch-image-md">
+
     ![Escolha o mecanismo SQL](/images/integrations/sql-clients/marimo/choose-sql-engine.webp)
+
+    </div>
 
     Para este guia, usaremos o dataset New York Taxi.
 
@@ -103,16 +123,28 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
     SELECT * FROM trips LIMIT 1000;
     ```
 
+    <div className="ch-image-lg">
+
     ![Resultados em um DataFrame](/images/integrations/sql-clients/marimo/results.webp)
+
+    </div>
 
     Agora, você pode ver os resultados em um DataFrame. Quero visualizar as corridas mais caras a partir de um determinado local de embarque. O marimo fornece vários componentes de UI para ajudar nisso. Vou usar uma lista suspensa para selecionar o local e o Altair para criar os gráficos.
 
+    <div className="ch-image-lg">
+
     ![Combinação de lista suspensa, tabela e gráfico](/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp)
+
+    </div>
 
     O modelo de execução reativa do marimo também se estende às consultas SQL, então alterações no SQL acionam automaticamente os cálculos subsequentes das células dependentes (ou, opcionalmente, marcam células como desatualizadas no caso de cálculos mais caros). Por isso, o gráfico e a tabela mudam quando a consulta é atualizada.
 
     Você também pode alternar para o App View para ter uma interface limpa para explorar seus dados.
 
+    <div className="ch-image-md">
+
     ![Executar App View](/images/integrations/sql-clients/marimo/run-app-view.webp)
+
+    </div>
   </Step>
 </Steps>

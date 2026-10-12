@@ -18,15 +18,27 @@ integration:
 
 1. MongoDB Atlas 콘솔에서 클러스터의 `Overview` 탭으로 이동한 다음 `Configuration` 탭을 클릭합니다.
 
+<div className="ch-image-lg">
+
 ![클러스터 구성으로 이동](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp)
+
+</div>
 
 2. `Additional Settings`를 클릭하고 아래로 스크롤하여 `More Configuration Options`로 이동합니다.
 
+<div className="ch-image-lg">
+
 ![추가 설정 확장](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp)
+
+</div>
 
 3. `More Configuration Options`를 클릭하고 최소 oplog 보존 기간을 `72 hours` 이상으로 설정합니다.
 
+<div className="ch-image-lg">
+
 ![oplog 보존 시간 설정](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp)
+
+</div>
 
 4. `Review Changes`를 클릭해 변경 사항을 검토한 다음 `Apply Changes`를 클릭해 변경 사항을 배포합니다.
 
@@ -38,7 +50,11 @@ MongoDB Atlas 콘솔에 로그인한 후 왼쪽 탐색 모음의 Security 탭에
 
 ClickPipes는 비밀번호 인증이 필요합니다:
 
+<div className="ch-image-lg">
+
 ![데이터베이스 사용자 추가](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp)
+
+</div>
 
 ClickPipes에는 다음 역할이 있는 사용자가 필요합니다:
 
@@ -47,11 +63,19 @@ ClickPipes에는 다음 역할이 있는 사용자가 필요합니다:
 
 이 역할은 `Specific Privileges` 섹션에서 찾을 수 있습니다:
 
+<div className="ch-image-lg">
+
 ![사용자 역할 구성](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp)
+
+</div>
 
 추가로 ClickPipes 사용자에게 액세스를 부여할 클러스터/인스턴스를 지정할 수 있습니다:
 
+<div className="ch-image-lg">
+
 ![클러스터/인스턴스 액세스 제한](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp)
+
+</div>
 
 <div id="whats-next">
   ## 다음 단계

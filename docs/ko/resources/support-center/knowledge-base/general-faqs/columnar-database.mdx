@@ -30,10 +30,18 @@ keywords: ['컬럼형 데이터베이스']
 
 **기존의 행 지향 방식**
 
+<div className="ch-image-md">
+
 ![기존의 행 지향 데이터베이스 저장 방식의 그림](/images/row-oriented.webp)
+
+</div>
 
 **컬럼형**
 
+<div className="ch-image-md">
+
 ![컬럼형 데이터베이스 저장 방식의 그림](/images/column-oriented.webp)
+
+</div>
 
 컬럼형 데이터베이스는 분석 애플리케이션에 가장 적합한 선택지입니다. 필요에 대비해 테이블에 많은 컬럼을 추가해 두더라도, 읽기 쿼리를 실행할 때 사용하지 않는 컬럼 때문에 비용을 치를 필요가 없기 때문입니다(기존의 OLTP 데이터베이스는 데이터가 컬럼이 아니라 행 단위로 저장되므로 쿼리 실행 중 모든 데이터를 읽습니다). 컬럼 지향 데이터베이스는 빅데이터 처리와 데이터 웨어하우징을 위해 설계되었습니다. 처리량을 높이기 위해 저비용 하드웨어로 구성된 분산 클러스터로 네이티브하게 확장되는 경우가 많습니다. ClickHouse는 [분산](/ko/reference/engines/table-engines/special/distributed) 테이블과 [복제된](/ko/reference/engines/table-engines/mergetree-family/replication) 테이블을 조합해 이를 구현합니다.

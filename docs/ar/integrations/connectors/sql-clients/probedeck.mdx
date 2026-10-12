@@ -73,7 +73,11 @@ ProbeDeck هو عميل لنظامَي iOS وiPadOS للتحقق من سلامة
     يستخدم ClickHouse Cloud مفاتيح على مستوى المؤسسة من صفحة **API Keys** لواجهة برمجة تطبيقات Cloud
     ونقاط نهاية واجهة برمجة تطبيقات الاستعلام. ولا يستخدم مسار اتصال SQL في ProbeDeck هذه المفاتيح.
 
+    <div className="ch-image-sm">
+
     ![نموذج اتصال ProbeDeck مُهيأ لاستخدام HTTPS على المنفذ 8443 مع اسم مستخدم ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
+
+    </div>
   </Step>
 </Steps>
 
@@ -150,11 +154,19 @@ CA خاصة، يعرض ProbeDeck بصمة SHA-256 والجهة المُصدِر�
 | مقاييس الذاكرة والخادم                                              | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | المعدلات السابقة للاستعلامات والأقراص                               | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
+<div className="ch-image-sm">
+
 ![لوحة معلومات ProbeDeck للمراقبة تعرض الاستعلامات قيد التشغيل والنسخ المتماثل والأقراص والأجزاء والطفرات وعمليات الدمج ومعدل الاستعلامات والذاكرة](/images/integrations/sql-clients/probedeck-dashboard.png)
+
+</div>
 
 انقر على **الاستعلامات قيد التشغيل** لفرز الاستعلامات النشطة حسب الوقت المنقضي، وفحص الذاكرة والصفوف المقروءة.
 
+<div className="ch-image-sm">
+
 ![قائمة الاستعلامات قيد التشغيل في ProbeDeck مرتبة حسب الوقت المنقضي](/images/integrations/sql-clients/probedeck-running-queries.png)
+
+</div>
 
 <div id="query-the-uk-property-price-dataset">
   ## الاستعلام عن مجموعة بيانات UK Property Price

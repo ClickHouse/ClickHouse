@@ -102,7 +102,11 @@ Au lieu de traiter 100 millions de lignes représentant 800 mégaoctets, Click
 Sous une forme plus visuelle, voici comment les 4096 lignes dont `my_value` vaut 125 ont été lues et sélectionnées, et comment les lignes suivantes
 ont été ignorées sans être lues sur le disque :
 
+<div className="ch-image-md">
+
 ![Saut simple](/images/guides/best-practices/simple_skip.webp)
+
+</div>
 
 Vous pouvez obtenir des informations détaillées sur l’utilisation des index de saut en activant la trace lors de l’exécution des requêtes. Depuis
 clickhouse-client, définissez `send_logs_level` :
@@ -221,7 +225,11 @@ Les index de saut ne sont pas intuitifs, surtout pour les personnes habituées a
 
 Considérez la distribution des données suivante :
 
+<div className="ch-image-md">
+
 ![Skip inefficace](/images/guides/best-practices/bad_skip.webp)
+
+</div>
 
 Supposons que la clé primaire / ORDER BY soit `timestamp` et qu’il existe un index sur `visitor_id`. Considérez la requête suivante :
 

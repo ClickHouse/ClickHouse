@@ -9,6 +9,7 @@ keywords: ['Confluent HTTP Sink 连接器', 'HTTP Sink ClickHouse', 'Kafka HTTP 
 ---
 
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
 HTTP Sink 连接器与数据类型无关，因此既不需要 Kafka schema，也支持 ClickHouse 特有的数据类型，例如 Map 和 Array。这种额外的灵活性也会使配置稍微更复杂一些。
 
 下面介绍一种简单的安装方式：从单个 Kafka topic 拉取消息，并将行插入 ClickHouse 表中。
@@ -59,7 +60,11 @@ HTTP Sink 连接器与数据类型无关，因此既不需要 Kafka schema，也
   <Step title="配置 HTTP Sink" id="4-configure-http-sink">
     创建一个 Kafka topic 和一个 HTTP Sink 连接器实例：
 
+    <div className="ch-image-sm">
+
     ![展示如何创建 HTTP Sink 连接器的 Confluent Cloud 界面](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
+
+    </div>
 
     <br />
 
@@ -76,7 +81,11 @@ HTTP Sink 连接器与数据类型无关，因此既不需要 Kafka schema，也
       这个 HTTP Url 很容易出错。请确保转义准确无误，以避免问题。
     </Note>
 
+    <div className="ch-image-lg">
+
     ![展示 HTTP Sink 连接器身份验证设置的 Confluent Cloud 界面](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
+
+    </div>
 
     <br />
 
@@ -90,13 +99,21 @@ HTTP Sink 连接器与数据类型无关，因此既不需要 Kafka schema，也
         * `Retry on HTTP codes` - 400-500，但应按需调整；例如，如果你在 ClickHouse 前面使用了 HTTP proxy，这个设置可能需要变更。
         * `Maximum Reties` - 默认值 (10) 比较合适，但也可根据需要调整，以获得更稳健的重试行为。
 
+    <div className="ch-image-sm">
+
     ![展示 HTTP Sink 连接器高级配置选项的 Confluent Cloud 界面](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
+
+    </div>
   </Step>
 
   <Step title="测试连通性" id="5-testing-the-connectivity">
     在你的 HTTP Sink 所配置的 topic 中创建一条消息
 
+    <div className="ch-image-md">
+
     ![展示如何在 Kafka topic 中创建测试消息的 Confluent Cloud 界面](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
+
+    </div>
 
     <br />
 

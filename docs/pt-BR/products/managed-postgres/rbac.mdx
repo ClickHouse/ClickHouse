@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
 
 O ClickHouse Cloud oferece suporte ao Controle de Acesso Baseado em Funções (RBAC) para serviços do ClickHouse Managed Postgres. Você pode criar funções personalizadas com permissões específicas e atribuí-las aos membros da organização para controlar quem pode visualizar ou gerenciar seus serviços Postgres.
@@ -35,16 +36,28 @@ A criação de um novo serviço Postgres exige a permissão existente **Organiza
 
 1. Clique no nome da sua organização na barra lateral esquerda e selecione **Usuários e funções**.
 
+<div className="ch-image-md">
+
 ![Menu Usuários e funções](/images/managed-postgres/rbac/usersandroles.webp)
+
+</div>
 
 2. Vá para a guia **Funções** e clique em **Criar função**.
 3. Insira um nome para a função, clique em **+ Allow** e selecione **Serviço Postgres** na lista de entidades.
 
+<div className="ch-image-md">
+
 ![Selecionando a entidade Serviço Postgres](/images/managed-postgres/rbac/postgresentity.webp)
+
+</div>
 
 4. Escolha o serviço Postgres ao qual a função se aplicará e selecione as permissões a serem concedidas.
 
+<div className="ch-image-md">
+
 ![Configurando permissões do Postgres em uma função](/images/managed-postgres/rbac/newpostgresperms.webp)
+
+</div>
 
 5. Clique em **Criar função** para salvar.
 

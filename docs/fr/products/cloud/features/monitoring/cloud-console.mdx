@@ -66,7 +66,11 @@ Les graphiques affichent les flux de données entrants et sortants de ClickHouse
 
 Ce tableau de bord est une version modifiée du [tableau de bord d’observabilité avancé intégré](/fr/products/cloud/features/monitoring/advanced-dashboard), où chaque série représente les métriques par réplique. Ce tableau de bord peut être utile pour surveiller et résoudre les problèmes spécifiques à ClickHouse.
 
+<div className="ch-image-lg">
+
 ![Tableau de bord avancé dans ClickHouse Cloud](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</div>
 
 <Note>
   ClickHouse Cloud collecte et stocke les métriques affichées sur ce tableau de bord à partir des tables système afin qu’elles puissent être consultées même lorsqu’un service est mis en veille. L’accès à ces métriques n’exécute pas de query sur le service sous-jacent et ne réactive pas les services mis en veille.
@@ -113,7 +117,11 @@ La fonctionnalité **Query Insights** rend le journal des requêtes intégré de
 
 Après avoir sélectionné un service, l’élément de navigation **Monitoring** dans la barre latérale gauche se développe pour révéler un sous-élément **Query insights** :
 
+<div className="ch-image-md">
+
 ![Vue d’ensemble de l’UI de Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
+
+</div>
 
 <div id="top-level-metrics">
   ### Métriques principales
@@ -121,7 +129,11 @@ Après avoir sélectionné un service, l’élément de navigation **Monitoring*
 
 Les encadrés statistiques en haut représentent les métriques de base des requêtes sur la période sélectionnée. En dessous, des graphiques de séries temporelles montrent le volume de requêtes, la latence et le taux d’erreur, ventilés par type de requête (select, insert, other). Le graphique de latence peut être ajusté pour afficher les latences p50, p90 et p99 :
 
+<div className="ch-image-md">
+
 ![Graphique de latence de Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
+
+</div>
 
 <div id="recent-queries">
   ### Requêtes récentes
@@ -129,7 +141,11 @@ Les encadrés statistiques en haut représentent les métriques de base des requ
 
 Un tableau affiche les entrées du journal des requêtes regroupées par hash de requête normalisée et par utilisateur sur la plage temporelle sélectionnée. Les requêtes récentes peuvent être filtrées et triées selon n’importe quel champ disponible, et le tableau peut être configuré pour afficher ou masquer des champs supplémentaires, tels que les tables et les latences p90 et p99 :
 
+<div className="ch-image-md">
+
 ![Tableau des requêtes récentes de Query Insights](/images/cloud/sqlconsole/insights_recent.webp)
+
+</div>
 
 <div id="query-drill-down">
   ### Analyse détaillée des requêtes
@@ -137,11 +153,19 @@ Un tableau affiche les entrées du journal des requêtes regroupées par hash de
 
 La sélection d’une requête dans le tableau **Recent queries** ouvre un panneau latéral contenant des métriques et des informations propres à la requête sélectionnée :
 
+<div className="ch-image-md">
+
 ![Analyse détaillée d’une requête dans l’UI Query Insights](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</div>
 
 Toutes les métriques de l’onglet **Query info** sont des métriques agrégées, mais il est également possible d’afficher les métriques de chaque exécution en sélectionnant l’onglet **Query history** :
 
+<div className="ch-image-sm">
+
 ![Informations sur la requête dans l’UI Query Insights](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</div>
 
 Depuis ce panneau, les éléments `Settings` et `Profile Events` de chaque exécution de requête peuvent être développés pour afficher des informations supplémentaires.
 

@@ -32,7 +32,11 @@ PARTITION BY toStartOfMonth(date)
 
 行のセットがテーブルに挿入されるたびに、挿入されたすべての行を含む単一の データパーツ を (少なく[とも](/ja/reference/settings/session-settings/max-insert#max_insert_block_size)) 1つ作成するのではなく ([こちら](/ja/concepts/core-concepts/parts)で説明しているとおり) 、ClickHouse は、挿入された行の一意なパーティションキーの値ごとに、新しい データパーツ を1つ作成します。
 
+<div className="ch-image-lg">
+
 ![パーティション](/images/bestpractices/partitions.webp)
+
+</div>
 
 まず、ClickHouse server は、上の図に示した4行の挿入例の行を、パーティションキーの値 `toStartOfMonth(date)` ごとに分割します。次に、特定された各パーティションについて、行は通常どおり[処理されます](/ja/concepts/core-concepts/parts)。この処理では、いくつかの連続したステップ (① ソート、② カラムへの分割、③ 圧縮、④ ディスクへの書き込み) が実行されます。
 
@@ -40,7 +44,11 @@ PARTITION BY toStartOfMonth(date)
 
 パーティション化を有効にすると、ClickHouse はパーティションをまたいでではなく、パーティション内でのみ データパーツ を[マージ](/ja/concepts/core-concepts/merges)します。これを上記の例のテーブルで示すと、次のようになります。
 
+<div className="ch-image-md">
+
 ![パーティション](/images/bestpractices/merges_with_partitions.webp)
+
+</div>
 
 <div id="applications-of-partitioning">
   ## パーティション化の用途

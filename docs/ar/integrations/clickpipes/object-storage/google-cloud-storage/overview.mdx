@@ -155,7 +155,11 @@ doc_type: 'guide'
 
 لاستخدام [HMAC keys](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) للمصادقة، اختر `Credentials` ضمن **طريقة المصادقة** عند إعداد ClickPipe connection. ثم أدخِل مفتاح الوصول (على سبيل المثال، `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) والمفتاح السري (على سبيل المثال، `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) في حقلي `Access key` و`Secret key`، على التوالي.
 
+<div className="ch-image-lg">
+
 ![بيانات اعتماد HMAC لـ GCS ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp)
+
+</div>
 
 اتبع [هذا الدليل](/ar/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret) لإنشاء حساب خدمة باستخدام مفتاح HMAC.
 
@@ -193,7 +197,11 @@ doc_type: 'guide'
 | `Parallel view processing`           | false         | ما إذا كان سيتم تمكين الدفع إلى العروض المرفقة [بالتوازي بدلًا من التسلسل](/ar/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`               | true          | ما إذا كانت الملفات ستُعالَج بالتوازي عبر عقد متعددة.                                                                                                  |
 
+<div className="ch-image-lg">
+
 ![الإعدادات المتقدمة لـ ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</div>
 
 <div id="scaling">
   ### التحجيم

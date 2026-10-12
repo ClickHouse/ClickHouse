@@ -49,6 +49,10 @@ greatest(toUInt64OrZero(toString(expr)), 1)
 
 Например, если ваш процессор tail-sampling OpenTelemetry записывает это значение в `SpanAttributes['SampleRate']`:
 
+<div className="ch-image-lg">
+
 ![Поле Sample Rate Expression в настройках источника ClickStack](/images/clickstack/trace-sampling-source-settings.webp)
+
+</div>
 
 После настройки все графики, панели мониторинга, оповещения и панели мониторинга сервисов автоматически применяют агрегации с учетом коэффициента выборки. Изменять отдельные запросы не нужно.

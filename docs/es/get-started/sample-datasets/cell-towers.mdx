@@ -232,7 +232,11 @@ Para este tutorial, necesitará:
     Escriba &quot;Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables&quot; y pulse enviar.
     En una de las ejecuciones, el agente llevó a cabo los siguientes pasos:
 
+    <div className="ch-image-lg">
+
     ![Chat de ClickHouse Agent que muestra los pasos seguidos para crear una cuadrícula de densidad de torres de telefonía móvil de Alemania](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
+
+    </div>
 
     * Buscó el código móvil de país (Mobile Country Code) de Alemania en `mcc_country_dict` y obtuvo el MCC `262`.
     * Contó las torres con `mcc = 262` situadas dentro del polígono de `germany` mediante `pointInPolygon`, lo que dio como resultado 2.588.635 torres. Esta cifra es ligeramente inferior al recuento anterior porque el filtro adicional por `mcc` excluye las torres que, aun estando dentro del polígono, están registradas en otro país.
@@ -241,7 +245,11 @@ Para este tutorial, necesitará:
 
     Abra el archivo generado para ver el resultado. Los clústeres brillantes corresponden a las principales áreas metropolitanas: Berlín, Hamburgo, Múnich y Fráncfort.
 
+    <div className="ch-image-md">
+
     ![Mapa de calor de la densidad de torres de telefonía móvil en Alemania en una cuadrícula de 0,1 grados con una escala de color logarítmica](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
+
+    </div>
   </Step>
 </Steps>
 

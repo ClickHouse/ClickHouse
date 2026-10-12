@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
 import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
 <Visibility for="agents">
@@ -39,11 +40,19 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
     새로운 ClickHouse Managed Postgres 서비스를 생성하려면 Cloud Console의 서비스 목록에서 **New service** 버튼을 클릭하십시오. 이후 데이터베이스 유형으로 Postgres를 선택할 수 있습니다.
 
+    <div className="ch-image-md">
+
     ![ClickHouse Managed Postgres 서비스 생성](/images/managed-postgres/create-service.webp)
+
+    </div>
 
     데이터베이스 인스턴스의 이름을 입력하고 **Create service**를 클릭합니다. 개요(Overview) 페이지로 이동합니다.
 
+    <div className="ch-image-md">
+
     ![ClickHouse Managed Postgres 개요](/images/managed-postgres/overview.webp)
+
+    </div>
 
     ClickHouse 관리형 Postgres 인스턴스는 3~5분 내에 프로비저닝되어 사용 가능한 상태가 됩니다.
 
@@ -51,7 +60,11 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
     왼쪽 사이드바에서 [**Connect** 버튼](/ko/products/managed-postgres/connection)을 확인할 수 있습니다. 이 버튼을 클릭하면 접속 정보와 다양한 포맷의 연결 문자열(connection string)을 확인할 수 있습니다.
 
+    <div className="ch-image-md">
+
     ![ClickHouse Managed Postgres 연결 창](/images/managed-postgres/connect-modal.webp)
+
+    </div>
 
     `psql` 연결 문자열을 복사하여 데이터베이스에 연결하세요. DBeaver와 같은 Postgres 호환 클라이언트나 애플리케이션 라이브러리도 사용할 수 있습니다.
 
@@ -243,7 +256,11 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
     이제 Postgres에 테이블과 데이터가 준비되었으니, 분석을 위해 테이블을 ClickHouse로 복제해 보겠습니다. 사이드바에서 **Sync to ClickHouse**를 클릭한 다음, **Replicate data in ClickHouse**를 클릭하십시오.
 
+    <div className="ch-image-md">
+
     ![ClickHouse Managed Postgres 통합이 비어 있습니다](/images/managed-postgres/integration-landing.webp)
+
+    </div>
 
     다음 양식에서 통합의 이름을 입력하고 데이터를 복제할 기존 ClickHouse 인스턴스를 선택할 수 있습니다. ClickHouse 인스턴스가 아직 없는 경우, 이 양식에서 직접 생성할 수 있습니다.
 
@@ -253,7 +270,11 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
       계속하기 전에 선택한 ClickHouse 서비스가 Running 상태인지 확인하세요.
     </Info>
 
+    <div className="ch-image-md">
+
     ![ClickHouse Managed Postgres 통합 양식](/images/managed-postgres/postgres-analytics-form.webp)
+
+    </div>
 
     **다음**을 클릭하면 테이블 선택기로 이동합니다. 여기서 필요한 작업은 다음과 같습니다:
 
@@ -261,7 +282,11 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
     * **public** 스키마를 펼친 다음, 앞서 생성한 users 테이블과 events 테이블을 선택합니다.
     * **Replicate data to ClickHouse**를 클릭합니다.
 
+    <div className="ch-image-md">
+
     ![ClickHouse Managed Postgres 테이블 선택기](/images/managed-postgres/table-picker.webp)
+
+    </div>
 
     복제 프로세스가 시작되며 통합 개요 페이지로 이동합니다. 첫 번째 통합인 경우 초기 인프라를 설정하는 데 2~3분이 소요될 수 있습니다. 그동안 새로운 **pg&#95;clickhouse** 확장 기능을 살펴보겠습니다.
 
@@ -284,7 +309,11 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
     `<clickhouse_cloud_host>`를 ClickHouse 호스트명으로, `<database_name>`을 복제 설정 시 선택한 데이터베이스 이름으로 대체하십시오. 호스트명은 사이드바에서 **Connect**를 클릭하여 ClickHouse 서비스에서 확인할 수 있습니다.
 
+    <div className="ch-image-md">
+
     ![ClickHouse 호스트 가져오기](/images/managed-postgres/get-clickhouse-host.webp)
+
+    </div>
 
     <Note>
       ClickHouse Cloud 콘솔에서 SQL을 실행하는 경우, 콘솔 관리자 사용자에게 외부 서버에 대한 액세스 권한을 부여하십시오:
@@ -320,11 +349,19 @@ import QuickstartCLI from "/snippets/ko/managed-postgres/_quickstart_cli.mdx";
 
     통합 페이지로 돌아가 확인해 보세요. 초기 복제가 완료된 것을 확인할 수 있습니다. 통합 이름을 클릭하면 세부 정보를 볼 수 있습니다.
 
+    <div className="ch-image-md">
+
     ![ClickHouse Managed Postgres 분석 목록](/images/managed-postgres/analytics-list.webp)
+
+    </div>
 
     서비스 이름을 클릭하여 ClickHouse 콘솔을 열고 복제된 테이블을 확인하십시오.
 
+    <div className="ch-image-md">
+
     ![ClickHouse의 ClickHouse Managed Postgres 복제 테이블](/images/managed-postgres/replicated-tables.webp)
+
+    </div>
 
 ### Postgres와 ClickHouse 성능 비교
 

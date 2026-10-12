@@ -16,7 +16,11 @@ Para los ejemplos de esta guía, usamos un subconjunto del Stack Overflow datase
 
 > Las claves primarias y las relaciones indicadas no se aplican mediante restricciones (Parquet es un formato de archivo, no de tabla) y solo muestran cómo se relacionan los datos y qué claves únicas tienen.
 
+<div className="ch-image-lg">
+
 ![Esquema de Stack Overflow](/images/data-modeling/stackoverflow-schema.webp)
+
+</div>
 
 <br />
 
@@ -235,7 +239,11 @@ Los usuarios que vienen de bases de datos OLTP suelen buscar el concepto equival
 
 A la escala a la que suele usarse ClickHouse, la eficiencia en el uso de memoria y disco es fundamental. Los datos se escriben en las tablas de ClickHouse en fragmentos conocidos como partes, y se aplican reglas para fusionar esas partes en segundo plano. En ClickHouse, cada parte tiene su propio índice primario. Cuando se fusionan las partes, también se fusionan los índices primarios de la parte resultante. El índice primario de una parte tiene una entrada de índice por cada grupo de filas; esta técnica se denomina indexación dispersa.
 
+<div className="ch-image-md">
+
 ![Indexación dispersa en ClickHouse](/images/data-modeling/schema-design-indices.webp)
+
+</div>
 
 La clave seleccionada en ClickHouse determinará no solo el índice, sino también el orden en que los datos se escriben en disco. Por ello, puede influir drásticamente en los niveles de compresión, lo que a su vez puede afectar al rendimiento de las consultas. Una clave de ordenación que haga que los valores de la mayoría de las columnas se escriban de forma contigua permitirá que el algoritmo de compresión seleccionado (y los códecs) comprima los datos de manera más eficaz.
 

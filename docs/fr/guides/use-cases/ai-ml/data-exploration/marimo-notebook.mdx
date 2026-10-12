@@ -42,15 +42,27 @@ Pour ajouter ce jeu de données à un service ClickHouse Cloud existant, connect
 
 Dans le menu de gauche, cliquez sur `Data sources`. Cliquez ensuite sur `Predefined sample data` :
 
+<div className="ch-image-md">
+
 ![Ajouter un exemple de jeu de données](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</div>
 
 Sélectionnez `Get started` dans la carte UK property price paid data (4GB) :
 
+<div className="ch-image-md">
+
 ![Sélectionner le jeu de données UK price paid](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</div>
 
 Cliquez ensuite sur `Import dataset` :
 
+<div className="ch-image-md">
+
 ![Importer le jeu de données UK price paid](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</div>
 
 ClickHouse créera automatiquement la table `pp_complete` dans la base de données `default` et la remplira avec 28,92 millions de lignes de données de prix.
 
@@ -91,7 +103,11 @@ marimo edit clickhouse_exploration.py
 
 Une nouvelle fenêtre du navigateur devrait s’ouvrir avec l’interface Marimo sur localhost:2718 :
 
+<div className="ch-image-md">
+
 ![interface Marimo](/images/use-cases/AI_ML/Marimo/4.webp)
+
+</div>
 
 Les notebooks Marimo sont stockés sous forme de fichiers Python pur, ce qui facilite leur gestion avec un système de contrôle de version et leur partage avec d’autres utilisateurs.
 
@@ -122,7 +138,11 @@ result
 
 Vous devriez voir le résultat s’afficher sous la cellule que vous venez d’exécuter :
 
+<div className="ch-image-md">
+
 ![Marimo Hello World](/images/use-cases/AI_ML/Marimo/5.webp)
+
+</div>
 
 <div id="exploring-the-data">
   ## Explorer les données
@@ -204,7 +224,11 @@ fig
 
 Sans surprise, les prix de l’immobilier à Londres ont fortement augmenté au fil du temps.
 
+<div className="ch-image-md">
+
 ![Visualisation de données Marimo](/images/use-cases/AI_ML/Marimo/6.webp)
+
+</div>
 
 L’un des points forts de Marimo est son modèle d’exécution réactif. Créons un widget interactif pour sélectionner différentes villes de manière dynamique.
 
@@ -265,7 +289,11 @@ fig_reactive
 
 Désormais, lorsque vous sélectionnez une ville dans la liste déroulante, le graphique se met à jour automatiquement :
 
+<div className="ch-image-md">
+
 ![Graphique dynamique Marimo](/images/use-cases/AI_ML/Marimo/7.webp)
+
+</div>
 
 <div id="exploring-price-distributions">
   ### Explorer les distributions de prix avec des boîtes à moustaches interactives
@@ -341,7 +369,11 @@ Si vous cliquez sur le bouton d’options en haut à droite de la cellule, vous 
 le code.
 Lorsque vous déplacez le curseur, le graphique se met automatiquement à jour grâce à l’exécution réactive de Marimo :
 
+<div className="ch-image-md">
+
 ![Graphique dynamique de Marimo](/images/use-cases/AI_ML/Marimo/8.webp)
+
+</div>
 
 <div id="summary">
   ## Résumé

@@ -53,7 +53,11 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
 
     2. `ClickHouse`를 선택한 다음 ClickHouse 호스트와 포트, 사용자 이름, 비밀번호를 입력해 설정하고 &quot;Test Connection&quot;을 클릭합니다.
 
+       <div className="ch-image-lg">
+
        ![ClickHouse를 대상으로 추가](/images/integrations/data-ingestion/etl-tools/bp_ck_1.webp)
+
+       </div>
 
     3. 하단의 &quot;Add DataSource&quot;를 클릭하면 ClickHouse 인스턴스가 추가됩니다.
   </Step>
@@ -69,7 +73,11 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
 
     2. `MySQL`를 선택한 다음 MySQL 호스트와 포트, 사용자 이름, 비밀번호를 입력하여 설정을 완료하고 &quot;Test Connection&quot;을 클릭하십시오.
 
+       <div className="ch-image-lg">
+
        ![MySQL을 소스로 추가하기](/images/integrations/data-ingestion/etl-tools/bp_ck_2.webp)
+
+       </div>
 
     3. 하단의 &quot;Add DataSource&quot;를 클릭하면 MySQL 인스턴스가 추가됩니다.
   </Step>
@@ -78,19 +86,39 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
     1. BladePipe에서 &quot;DataJob&quot; &gt; &quot;Create DataJob&quot;을 클릭합니다.
 
     2. 추가한 MySQL 및 ClickHouse 인스턴스를 선택한 다음 &quot;Test Connection&quot;을 클릭하여 BladePipe가 해당 인스턴스에 연결되어 있는지 확인합니다. 그런 다음 옮길 데이터베이스를 선택합니다.
+       <div className="ch-image-lg">
+
        ![소스 및 대상 선택](/images/integrations/data-ingestion/etl-tools/bp_ck_3.webp)
 
+       </div>
+
     3. DataJob Type에서 &quot;Incremental&quot;을 선택하고, &quot;Full Data&quot; 옵션도 함께 선택합니다.
+       <div className="ch-image-lg">
+
        ![동기화 유형 선택](/images/integrations/data-ingestion/etl-tools/bp_ck_4.webp)
 
+       </div>
+
     4. 복제할 테이블을 선택합니다.
+       <div className="ch-image-lg">
+
        ![테이블 선택](/images/integrations/data-ingestion/etl-tools/bp_ck_5.webp)
 
+       </div>
+
     5. 복제할 컬럼을 선택합니다.
+       <div className="ch-image-lg">
+
        ![컬럼 선택](/images/integrations/data-ingestion/etl-tools/bp_ck_6.webp)
 
+       </div>
+
     6. DataJob 생성을 확인하면 DataJob이 자동으로 실행됩니다.
+       <div className="ch-image-lg">
+
        ![DataJob 실행 중](/images/integrations/data-ingestion/etl-tools/bp_ck_8.webp)
+
+       </div>
   </Step>
 
   <Step title="데이터 검증" id="5-verify-the-data">
@@ -103,6 +131,10 @@ ClickHouse는 BladePipe에서 제공하는 사전 구축된 connector 중 하나
     </Note>
 
     2. <a href="https://doc.bladepipe.com/operation/job_manage/create_job/create_period_verification_correction_job" target="_blank">검증용 DataJob</a>을 생성합니다. 검증용 DataJob이 완료되면 결과를 검토하여 ClickHouse의 데이터가 MySQL의 데이터와 동일한지 확인하십시오.
+       <div className="ch-image-lg">
+
        ![데이터 검증](/images/integrations/data-ingestion/etl-tools/bp_ck_9.webp)
+
+       </div>
   </Step>
 </Steps>

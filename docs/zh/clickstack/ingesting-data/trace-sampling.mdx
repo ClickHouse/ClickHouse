@@ -49,6 +49,10 @@ greatest(toUInt64OrZero(toString(expr)), 1)
 
 例如，如果你的 OpenTelemetry 尾部采样处理器将该采样率写入 `SpanAttributes['SampleRate']`：
 
+<div className="ch-image-lg">
+
 ![ClickStack Source Settings 中的 Sample Rate Expression 字段](/images/clickstack/trace-sampling-source-settings.webp)
+
+</div>
 
 配置完成后，所有图表、仪表盘、告警和服务仪表盘面板都会自动应用按采样率加权的聚合。无需修改单个查询。

@@ -7,6 +7,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 تمنح جلسة الدعم ClickHouse وصولًا مؤقتًا لأغراض التشخيص عبر ClickHouse Connector. تغطي هذه الصفحة ماهية الجلسة، وكيفية تفعيلها وإيقافها، وما يمكن لمهندسي دعم ClickHouse فعله أثناءها، وكيفية تدقيقها.
@@ -17,7 +18,11 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 
 تحكم الجلسات عمليات التشخيص فقط. أما أوامر دورة الحياة للخدمات في الوضع Managed فتنتقل عبر القناة المنفصلة الخاصة بالمنفّذ، وهي قناة لا تفتحها جلسة الدعم ولا تتحكم بها؛ راجع [الخدمات المُدارة](/ar/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector support session trust flow](/images/cloud/reference/byoc-connector-session-trust.svg)
+
+</div>
 
 يمكنك التحكم بالجلسات عبر واجهتين:
 

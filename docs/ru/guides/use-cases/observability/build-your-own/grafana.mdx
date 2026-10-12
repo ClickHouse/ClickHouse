@@ -28,7 +28,11 @@ V4 плагина делает журналы и трассировки полн
 
 Конфигурация Traces немного сложнее (полный список [здесь](/ru/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)). Эти обязательные столбцы нужны, чтобы абстрагировать последующие запросы, формирующие полный профиль трассировки. Эти запросы предполагают, что данные структурированы аналогично OTel, поэтому пользователям, которые существенно отклоняются от стандартной схемы, потребуется использовать представления, чтобы воспользоваться этой возможностью.
 
+<div className="ch-image-sm">
+
 ![Конфигурация коннектора](/images/use-cases/observability/observability-15.webp)
+
+</div>
 
 После настройки вы можете перейти в [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) и начать поиск журналов и трассировок.
 
@@ -42,7 +46,11 @@ V4 плагина делает журналы и трассировки полн
 SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
 ```
 
+<div className="ch-image-lg">
+
 ![Настройка журналов коннектора](/images/use-cases/observability/observability-16.webp)
+
+</div>
 
 Конструктор запросов позволяет легко изменять запрос без необходимости писать SQL. В конструкторе запросов также можно настраивать фильтрацию, в том числе искать журналы по ключевым словам. Если нужно составлять более сложные запросы, можно переключиться в редактор SQL. Если запрос возвращает нужные столбцы и в качестве Query Type выбрано `logs`, результаты будут отображаться как журналы. Столбцы, необходимые для отображения журналов, перечислены [здесь](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format).
 
@@ -52,7 +60,11 @@ SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as t
 
 Если в журналах есть trace ID, вы можете перейти к трассировке, связанной с конкретной строкой журнала.
 
+<div className="ch-image-lg">
+
 ![От журналов к трассировкам](/images/use-cases/observability/observability-17.webp)
+
+</div>
 
 <div id="traces">
   ## Трассировки
@@ -75,7 +87,11 @@ WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
 
 Этот запрос возвращает имена столбцов, которые ожидает Grafana, и отображает таблицу трассировок, как показано ниже. Фильтровать по длительности или другим столбцам можно без написания SQL.
 
+<div className="ch-image-lg">
+
 ![Трассировки](/images/use-cases/observability/observability-18.webp)
+
+</div>
 
 Если вам нужны более сложные запросы, вы можете переключиться в `редактор SQL`.
 
@@ -113,7 +129,11 @@ LIMIT 1000
   Обратите внимание, что приведённый выше запрос использует materialized view `otel_traces_trace_id_ts` для поиска по ID трассировки. Подробнее см. в разделе [Ускорение запросов — использование materialized views для быстрого поиска](/ru/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups).
 </Note>
 
+<div className="ch-image-lg">
+
 ![Сведения о трассировке](/images/use-cases/observability/observability-19.webp)
+
+</div>
 
 <div id="traces-to-logs">
   ### От трассировок к журналам
@@ -129,7 +149,11 @@ WHERE ( traceID = '<trace_id>' )
 ORDER BY timestamp ASC LIMIT 1000
 ```
 
+<div className="ch-image-lg">
+
 ![Переход от трассировок к журналам](/images/use-cases/observability/observability-20.webp)
+
+</div>
 
 <div id="dashboards">
   ## Панели мониторинга
@@ -139,7 +163,11 @@ ORDER BY timestamp ASC LIMIT 1000
 
 Плагин включает несколько готовых панелей мониторинга, в том числе пример «Simple ClickHouse OTel dashboarding» для данных логирования и трассировки, соответствующих спецификации OTel. Для этого необходимо использовать стандартные имена столбцов OTel; установить эту панель можно из конфигурации источника данных.
 
+<div className="ch-image-lg">
+
 ![Панели мониторинга](/images/use-cases/observability/observability-21.webp)
+
+</div>
 
 Ниже приведены несколько простых советов по созданию визуализаций.
 
@@ -162,7 +190,11 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
+<div className="ch-image-lg">
+
 ![Временные ряды](/images/use-cases/observability/observability-22.webp)
+
+</div>
 
 <div id="multi-line-charts">
   ### Многолинейные графики
@@ -189,7 +221,11 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
+<div className="ch-image-lg">
+
 ![Диаграммы с несколькими линиями](/images/use-cases/observability/observability-23.webp)
+
+</div>
 
 <div id="visualizing-geo-data">
   ### Визуализация геоданных
@@ -215,4 +251,8 @@ FROM coords
 GROUP BY hash
 ```
 
+<div className="ch-image-lg">
+
 ![Визуализация геоданных](/images/use-cases/observability/observability-24.webp)
+
+</div>

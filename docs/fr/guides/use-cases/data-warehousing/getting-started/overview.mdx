@@ -39,7 +39,11 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![Requête Iceberg](/images/datalake/iceberg-query-direct.webp)
+
+    </div>
 
     ClickHouse lit directement les métadonnées Iceberg depuis S3 et détermine automatiquement le schéma. La même approche fonctionne pour [`deltaLake()`](/fr/reference/functions/table-functions/deltalake), [`hudi()`](/fr/reference/functions/table-functions/hudi) et [`paimon()`](/fr/reference/functions/table-functions/paimon).
 
@@ -66,7 +70,11 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![Requête Iceberg](/images/datalake/iceberg-query-engine.webp)
+
+    </div>
 
     Le moteur de table prend en charge la mise en cache des données, la mise en cache des métadonnées, l’évolution du schéma et le time travel. Consultez le guide [Interroger directement](/fr/guides/use-cases/data-warehousing/getting-started/querying-directly) pour en savoir plus sur les fonctionnalités du moteur de table, ainsi que la [matrice de compatibilité](/fr/guides/use-cases/data-warehousing/support-matrix) pour une comparaison complète des fonctionnalités.
   </Step>
@@ -158,7 +166,11 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
 
     Cette requête parcourt l’intégralité du jeu de données dans S3, car Iceberg ne tient pas compte du filtre `counterid` — prévoyez plusieurs secondes d’exécution.
 
+    <div className="ch-image-lg">
+
     ![Requête Iceberg](/images/datalake/iceberg-query.webp)
+
+    </div>
 
     Créez maintenant une table MergeTree et chargez les données :
 
@@ -192,7 +204,11 @@ ClickHouse propose trois façons de lire des formats de table ouverts : les fon
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![Requête ClickHouse](/images/datalake/clickhouse-query.webp)
+
+    </div>
 
     Comme `counterid` est la première colonne de la clé `ORDER BY`, l’index primaire sparse de ClickHouse saute directement aux granules pertinentes et ne lit que les lignes correspondant à `counterid = 38`, au lieu de parcourir l’ensemble des 100 millions de lignes. Le résultat est un gain de vitesse spectaculaire.
 

@@ -72,7 +72,11 @@ Algumas seções de monitoramento dependem de tabelas de log opcionais ou de tab
     O ClickHouse Cloud usa chaves no nível da organização, disponíveis na página **API Keys**, para a Cloud API e os
     endpoints da Query API. O fluxo de conexão SQL do ProbeDeck não usa essas chaves.
 
+    <div className="ch-image-sm">
+
     ![Formulário de conexão do ProbeDeck configurado para HTTPS na porta 8443 com um nome de usuário do ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
+
+    </div>
   </Step>
 </Steps>
 
@@ -147,11 +151,19 @@ Abra a conexão salva e selecione **Monitor**. O dashboard resume as seguintes f
 | Métricas de memória e do servidor                              | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | Taxas históricas de consultas e de disco                       | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
+<div className="ch-image-sm">
+
 ![Dashboard de monitoramento do ProbeDeck mostrando consultas em execução, replicação, disks, partes, mutações, merges, taxa de consultas e memória](/images/integrations/sql-clients/probedeck-dashboard.png)
+
+</div>
 
 Clique em **consultas em execução** para ordenar as consultas ativas por tempo decorrido e verificar o uso de memória e as linhas lidas.
 
+<div className="ch-image-sm">
+
 ![Lista de consultas em execução do ProbeDeck ordenada por tempo decorrido](/images/integrations/sql-clients/probedeck-running-queries.png)
+
+</div>
 
 <div id="query-the-uk-property-price-dataset">
   ## Consulte o conjunto de dados de preços de imóveis do Reino Unido

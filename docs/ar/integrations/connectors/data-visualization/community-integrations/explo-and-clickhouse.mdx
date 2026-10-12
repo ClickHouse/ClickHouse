@@ -24,7 +24,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
 في هذا الدليل، ستربط بياناتك من ClickHouse بـ Explo وتعرض النتائج بصريًا. سيبدو المخطط كما يلي:
 
+<div className="ch-image-md">
+
 ![لوحة معلومات Explo](/images/integrations/data-visualization/explo_15.webp)
+
+</div>
 
 <p />
 
@@ -44,27 +48,51 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
     2. انقر على علامة تبويب **Data** في الشريط الجانبي الأيسر.
 
+    <div className="ch-image-sm">
+
     ![علامة تبويب Data](/images/integrations/data-visualization/explo_01.webp)
+
+    </div>
 
     3. انقر على **Connect Data Source** في أعلى الجهة اليمنى.
 
+    <div className="ch-image-sm">
+
     ![Connect Data Source](/images/integrations/data-visualization/explo_02.webp)
+
+    </div>
 
     4. املأ المعلومات في صفحة **Getting Started**
 
+    <div className="ch-image-md">
+
     ![Getting Started](/images/integrations/data-visualization/explo_03.webp)
+
+    </div>
 
     5. اختر **ClickHouse**
 
+    <div className="ch-image-md">
+
     ![ClickHouse](/images/integrations/data-visualization/explo_04.webp)
+
+    </div>
 
     6. أدخِل **بيانات اعتماد ClickHouse**.
 
+    <div className="ch-image-md">
+
     ![بيانات الاعتماد](/images/integrations/data-visualization/explo_05.webp)
+
+    </div>
 
     7. اضبط **Security**
 
+    <div className="ch-image-md">
+
     ![Security](/images/integrations/data-visualization/explo_06.webp)
+
+    </div>
 
     8. ضمن ClickHouse، **أضِف عناوين IP الخاصة بـ Explo إلى القائمة المسموح بها**.
        `54.211.43.19, 52.55.98.121, 3.214.169.94, و 54.156.141.148`
@@ -73,15 +101,27 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
   <Step title="إنشاء لوحة معلومات" id="3-create-a-dashboard">
     1. انتقل إلى علامة تبويب **لوحة معلومات** في شريط التنقل الجانبي الأيسر.
 
+    <div className="ch-image-sm">
+
     ![لوحة معلومات](/images/integrations/data-visualization/explo_07.webp)
+
+    </div>
 
     2. انقر على **Create لوحة معلومات** في الزاوية العلوية اليمنى، ثم سمِّ لوحة المعلومات. لقد أنشأت الآن لوحة معلومات!
 
+    <div className="ch-image-sm">
+
     ![Create لوحة معلومات](/images/integrations/data-visualization/explo_08.webp)
+
+    </div>
 
     3. ينبغي أن ترى الآن شاشة مشابهة لهذه:
 
+    <div className="ch-image-md">
+
     ![Explo لوحة معلومات](/images/integrations/data-visualization/explo_09.webp)
+
+    </div>
   </Step>
 
   <Step title="تشغيل استعلام SQL" id="4-run-a-sql-query">
@@ -89,33 +129,61 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
        `SELECT * FROM YOUR_TABLE_NAME
        LIMIT 100`
 
+    <div className="ch-image-md">
+
     ![Explo لوحة معلومات](/images/integrations/data-visualization/explo_10.webp)
+
+    </div>
 
     2. انقر الآن على **Run** ثم انتقل إلى علامة تبويب **preview** لرؤية بياناتك.
 
+    <div className="ch-image-md">
+
     ![Explo لوحة معلومات](/images/integrations/data-visualization/explo_11.webp)
+
+    </div>
   </Step>
 
   <Step title="إنشاء مخطط" id="5-build-a-chart">
     1. من الجهة اليسرى، اسحب أيقونة المخطط الشريطي إلى الشاشة.
 
+    <div className="ch-image-sm">
+
     ![Explo لوحة معلومات](/images/integrations/data-visualization/explo_16.webp)
+
+    </div>
 
     2. اختر مجموعة البيانات. ينبغي أن ترى الآن شاشة مشابهة لما يلي:
 
+    <div className="ch-image-sm">
+
     ![Explo لوحة معلومات](/images/integrations/data-visualization/explo_12.webp)
+
+    </div>
 
     3. املأ **county** في المحور X و**Price** في قسم المحور Y كما يلي:
 
+    <div className="ch-image-sm">
+
     ![Explo لوحة معلومات](/images/integrations/data-visualization/explo_13.webp)
+
+    </div>
 
     4. الآن، غيّر التجميع إلى **AVG**.
 
+    <div className="ch-image-sm">
+
     ![Explo لوحة معلومات](/images/integrations/data-visualization/explo_14.webp)
+
+    </div>
 
     5. أصبح لدينا الآن متوسط أسعار المنازل موزعًا حسب السعر!
 
+    <div className="ch-image-md">
+
     ![Explo لوحة معلومات](/images/integrations/data-visualization/explo_15.webp)
+
+    </div>
   </Step>
 </Steps>
 

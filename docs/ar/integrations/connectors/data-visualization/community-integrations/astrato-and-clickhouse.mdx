@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -38,21 +39,37 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
   ​
 * انقر على زر **اتصال بيانات جديد** في أعلى يمين الشاشة.
 
+<div className="ch-image-sm">
+
 ![اتصال بيانات Astrato](/images/integrations/data-visualization/astrato_1_dataconnection.webp)
+
+</div>
 
 * حدِّد **ClickHouse**.
 
+<div className="ch-image-sm">
+
 ![اتصال بيانات Astrato بـ ClickHouse](/images/integrations/data-visualization/astrato_2a_clickhouse_connection.webp)
+
+</div>
 
 * أكمل الحقول المطلوبة في مربع حوار الاتصال
 
+<div className="ch-image-sm">
+
 ![الحقول المطلوبة للاتصال بـ ClickHouse في Astrato](/images/integrations/data-visualization/astrato_2b_clickhouse_connection.webp)
+
+</div>
 
 * انقر على **اختبار الاتصال**. إذا نجح الاتصال، فأعطِ اتصال البيانات **اسمًا** ثم انقر على **التالي.**
 
 * عيِّن **وصول المستخدم** لاتصال البيانات، ثم انقر على **اتصال.**
 
+<div className="ch-image-md">
+
 ![وصول المستخدم للاتصال بـ ClickHouse في Astrato](/images/integrations/data-visualization/astrato_3_user_access.webp)
+
+</div>
 
 * يتم إنشاء الاتصال، كما يتم إنشاء عرض بيانات.
 
@@ -66,17 +83,29 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
 في محرر عرض البيانات، سترى جميع الجداول والمخططات لديك في ClickHouse، فحدّد بعضها للبدء.
 
+<div className="ch-image-lg">
+
 ![Astrato الاتصال بـ ClickHouse ووصول المستخدم](/images/integrations/data-visualization/astrato_4a_clickhouse_data_view.webp)
+
+</div>
 
 الآن بعد أن حدّدت بياناتك، انتقل إلى تعريف **عرض البيانات**. انقر على Define في أعلى يمين صفحة الويب.
 
 هنا يمكنك إجراء joins للبيانات، وكذلك **إنشاء أبعاد ومقاييس خاضعة للحوكمة**، وهو ما يعد مثاليًا لتعزيز الاتساق في منطق الأعمال عبر مختلف الفرق.
 
+<div className="ch-image-lg">
+
 ![Astrato الاتصال بـ ClickHouse ووصول المستخدم](/images/integrations/data-visualization/astrato_4b_clickhouse_data_view_joins.webp)
+
+</div>
 
 **يقترح Astrato joins بذكاء** باستخدام بياناتك الوصفية، بما في ذلك الاستفادة من المفاتيح في ClickHouse. وتسهّل عليك joins المقترحة البدء بالاعتماد على بيانات ClickHouse المحكمة لديك، من دون إعادة اختراع العجلة. كما نعرض لك أيضًا **جودة join** بحيث يتاح لك خيار مراجعة جميع الاقتراحات بالتفصيل في Astrato.
 
+<div className="ch-image-lg">
+
 ![Astrato الاتصال بـ ClickHouse ووصول المستخدم](/images/integrations/data-visualization/astrato_4c_clickhouse_completed_data_view.webp)
+
+</div>
 
 <div id="creating-a-dashboard">
   ## إنشاء لوحة معلومات
@@ -89,7 +118,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 3. أضف الأبعاد
 4. أضف المقاييس
 
+<div className="ch-image-lg">
+
 ![اتصال Astrato بـ ClickHouse - وصول المستخدم](/images/integrations/data-visualization/astrato_5a_clickhouse_build_chart.webp)
+
+</div>
 
 <div id="view-generated-sql-supporting-each-visualization">
   ### عرض SQL المُولَّد الذي يدعم كل تصور
@@ -97,7 +130,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
 تُعد الشفافية والدقة في صميم Astrato. نضمن أن تكون كل استعلامات SQL المُولَّدة مرئية، مما يمنحك تحكمًا كاملًا. تتم كل عمليات المعالجة مباشرةً داخل ClickHouse، للاستفادة من سرعته مع الحفاظ في الوقت نفسه على أمان قوي وحوكمة فعّالة.
 
+<div className="ch-image-lg">
+
 ![Astrato: الاتصال بـ ClickHouse ووصول المستخدم](/images/integrations/data-visualization/astrato_5b_clickhouse_view_sql.webp)
+
+</div>
 
 <div id="example-completed-dashboard">
   ### مثال على لوحة معلومات مكتملة
@@ -105,4 +142,8 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 
 أصبحت الآن على بُعد خطوات من إنشاء لوحة معلومات كاملة وجذابة أو تطبيق بيانات. للاطلاع على المزيد مما أنشأناه، توجّه إلى معرضنا التجريبي على موقعنا الإلكتروني. https://astrato.io/gallery
 
+<div className="ch-image-lg">
+
 ![اتصال Astrato بـ ClickHouse ووصول المستخدم](/images/integrations/data-visualization/astrato_5c_clickhouse_complete_dashboard.webp)
+
+</div>

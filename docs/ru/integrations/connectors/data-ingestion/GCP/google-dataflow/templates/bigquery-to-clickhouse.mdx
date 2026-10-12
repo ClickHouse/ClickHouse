@@ -97,11 +97,23 @@ Template BigQuery to ClickHouse можно запустить через Google 
     Войдите в Google Cloud Console и найдите DataFlow.
 
     1. Нажмите кнопку `CREATE JOB FROM TEMPLATE`
+       <div className="ch-image-lg">
+
        ![консоль DataFlow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+
+       </div>
     2. Когда откроется форма Template, введите имя задачи и выберите нужный регион.
+       <div className="ch-image-lg">
+
        ![начальная форма Template DataFlow](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
+
+       </div>
     3. В поле `DataFlow Template` введите `ClickHouse` или `BigQuery`, затем выберите Template `BigQuery to ClickHouse`
+       <div className="ch-image-lg">
+
        ![выбор Template BigQuery to ClickHouse](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
+
+       </div>
     4. После выбора форма развернётся, и вы сможете указать дополнительные сведения:
        * JDBC URL сервера ClickHouse в следующем формате: `jdbc:clickhouse://host:port/schema`.
        * Имя пользователя ClickHouse.
@@ -114,7 +126,11 @@ Template BigQuery to ClickHouse можно запустить через Google 
       Чтобы добавить его, прокрутите страницу вниз до параметра `Password for ClickHouse Endpoint`.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![расширенная форма Template BigQuery to ClickHouse](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
+
+    </div>
 
     5. Настройте и добавьте все конфигурации, относящиеся к BigQuery/ClickHouseIO, как подробно описано в
        разделе [Параметры Template](#template-parameters)
@@ -172,7 +188,11 @@ Template BigQuery to ClickHouse можно запустить через Google 
 Перейдите на [вкладку Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) в Google Cloud Console, чтобы
 отслеживать состояние задачи. Там вы увидите сведения о задаче, включая ход выполнения и возможные ошибки:
 
+<div className="ch-image-lg">
+
 ![Консоль Dataflow с выполняющейся задачей BigQuery в ClickHouse](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
+
+</div>
 
 <div id="troubleshooting">
   ## Устранение неполадок

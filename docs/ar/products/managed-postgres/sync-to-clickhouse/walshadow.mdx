@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
 <PrivatePreviewBadge />
 
 `WalShadow` هو محرك نسخ متماثل أصلي (native) لـ ClickHouse Managed Postgres يقرأ مباشرةً من سجل الكتابة المسبقة (WAL) في PostgreSQL. وهو مُحسَّن لتقليل زمن الاستجابة ولأحمال العمل عالية الإنتاجية، إذ يحقق تأخّر نسخ متماثل أقل من ثانية واحدة من Postgres إلى ClickHouse. ويجري تطويره بشكل مفتوح المصدر على [ClickHouse/walshadow](https://github.com/ClickHouse/walshadow).
@@ -16,7 +17,11 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 عند توفّر `WalShadow` لخدمتك، تظهر لافتة **Private Preview** في صفحة **Overview**. انقر على **Configure WalShadow** للبدء.
 
+<div className="ch-image-md">
+
 ![صفحة نظرة عامة على خدمة Postgres تعرض لافتة المعاينة الخاصة لـ WalShadow مع روابط معرفة المزيد وتهيئة WalShadow](/images/managed-postgres/walshadow/overview-banner.webp)
+
+</div>
 
 <Note>
   قبل المتابعة، تأكد من أن خدمة Postgres لديك قابلة للوصول من ClickHouse. يتصل `WalShadow` بخدمة ClickHouse الوجهة مباشرةً، لذا ستحتاج إلى مستخدم ClickHouse وكلمة مرور يمتلكان صلاحية إنشاء قواعد البيانات والجداول.
@@ -24,13 +29,21 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
 
 لإعداد النسخ المتماثل، انقر على **Sync to ClickHouse** في الشريط الجانبي لمثيل Postgres لديك، ثم انقر على **Replicate data in ClickHouse**.
 
+<div className="ch-image-md">
+
 ![صفحة الوصول الخاصة بـ Sync to ClickHouse تعرض طريقتَي النسخ المتماثل ClickPipes وWalShadow](/images/managed-postgres/walshadow/sync-landing.webp)
+
+</div>
 
 <Steps>
   <Step title="اختيار محرك النسخ المتماثل" id="select-replication-engine">
     اختر **WalShadow** كمحرك للنسخ المتماثل، ثم انقر على **Next**.
 
+    <div className="ch-image-md">
+
     ![خطوة اختيار محرك النسخ المتماثل تعرض خياري ClickPipes وWalShadow مع تحديد WalShadow](/images/managed-postgres/walshadow/select-engine.webp)
+
+    </div>
   </Step>
 
   <Step title="تهيئة خدمة النسخ المتماثل" id="configure-replication-service">
@@ -43,7 +56,11 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
       * **Initial load only**: استيراد لمرة واحدة للبيانات الموجودة دون أي تحديثات مستمرة
       * **CDC only**: تخطي الاستيراد الأولي والاكتفاء بالتقاط التغييرات الجديدة من هذه النقطة فصاعدًا
 
+    <div className="ch-image-md">
+
     ![خطوة تهيئة خدمة النسخ المتماثل تعرض خيارات خدمة ClickHouse وقاعدة بيانات Postgres وطريقة النسخ المتماثل](/images/managed-postgres/walshadow/configure-service.webp)
+
+    </div>
 
     انقر على **Next** للمتابعة.
   </Step>
@@ -55,7 +72,11 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
     * **Tables**: وسّع كل schema واختر جداول فردية، أو فعّل **Select all tables**. ويمكنك لكل جدول تخصيص **Destination table name** وضبط **Column settings**.
     * **مستخدم ClickHouse** و**ClickHouse password**: يتصل `WalShadow` بـ خدمة ClickHouse الهدف مباشرةً، لذا يحتاج إلى credentials تمتلك permission لإنشاء قاعدة البيانات الهدف والجداول.
 
+    <div className="ch-image-md">
+
     ![خطوة اختيار الجداول تعرض تحديد الـ schema والجداول وأسماء الجداول الهدف وcredentials الخاصة بـ ClickHouse](/images/managed-postgres/walshadow/select-tables.webp)
+
+    </div>
 
     انقر على **Replicate data to ClickHouse** لبدء النسخ المتماثل.
   </Step>
@@ -63,7 +84,11 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
   <Step title="مراقبة WalShadow" id="monitor-walshadow">
     بعد بدء النسخ المتماثل، يظهر `WalShadow` في صفحة **Sync to ClickHouse**. وتكون حالته **Creating** ريثما يجري تجهيز خط أنابيب بيانات وإعداد الـ initial load.
 
+    <div className="ch-image-md">
+
     ![صفحة Sync to ClickHouse تعرض WalShadow في حالة Creating](/images/managed-postgres/walshadow/walshadow-creating.webp)
+
+    </div>
 
     وبمجرد اكتمال التجهيز، تتغير الحالة إلى **Running**، وتعرض الصفحة metrics حية للنسخ المتماثل:
 
@@ -75,7 +100,11 @@ import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge
     * **Uptime**: المدة التي ظل فيها خط أنابيب بيانات قيد التشغيل
     * **Last updated**: وقت آخر تحديث للـ metrics
 
+    <div className="ch-image-md">
+
     ![صفحة Sync to ClickHouse تعرض WalShadow في حالة Running مع metrics الصفوف المتزامنة والتأخر ومدة التشغيل](/images/managed-postgres/walshadow/walshadow-running.webp)
+
+    </div>
   </Step>
 </Steps>
 

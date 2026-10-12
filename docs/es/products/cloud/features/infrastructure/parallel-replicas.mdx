@@ -29,7 +29,11 @@ en el segmento especificado, o bien puede enviarse a la tabla distribuida, y en 
 caso, cada segmento ejecutará las consultas indicadas. El servidor en el que se consultó la tabla distribuida
 agregará los datos y responderá al Client:
 
+<div className="ch-image-md">
+
 ![arquitectura segmentada](/images/deployment-guides/parallel-replicas-1.webp)
+
+</div>
 
 La figura anterior muestra lo que sucede cuando un Client consulta una tabla distribuida:
 
@@ -70,7 +74,11 @@ de almacenamiento prácticamente infinita, la necesidad de usar segmentos pasa a
 
 La siguiente figura muestra la arquitectura de ClickHouse Cloud:
 
+<div className="ch-image-md">
+
 ![arquitectura sin segmentos](/images/deployment-guides/parallel-replicas-2.webp)
+
+</div>
 
 Esta arquitectura nos permite añadir y eliminar réplicas casi
 instantáneamente, lo que garantiza una escalabilidad muy alta del clúster. El clúster de ClickHouse
@@ -97,7 +105,11 @@ como unidad de trabajo.
 
 Ahora, veamos cómo funciona en la práctica con ayuda de la siguiente figura:
 
+<div className="ch-image-md">
+
 ![Réplicas paralelas](/images/deployment-guides/parallel-replicas-3.webp)
+
+</div>
 
 Con réplicas paralelas:
 
@@ -160,7 +172,11 @@ En las siguientes secciones veremos cómo se superan estos factores.
 Para abordar (1) y (2) de la lista anterior, introdujimos el concepto de
 anuncio. Veamos cómo funciona en la siguiente figura:
 
+<div className="ch-image-md">
+
 ![Anuncios](/images/deployment-guides/parallel-replicas-4.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -204,7 +220,11 @@ un anuncio con todas las partes.
 
 La figura siguiente muestra cómo funciona la coordinación dinámica:
 
+<div className="ch-image-md">
+
 ![Coordinación dinámica - parte 1](/images/deployment-guides/parallel-replicas-5.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -217,7 +237,11 @@ La figura siguiente muestra cómo funciona la coordinación dinámica:
   </li>
 </ol>
 
+<div className="ch-image-md">
+
 ![Coordinación dinámica - parte 2](/images/deployment-guides/parallel-replicas-6.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -230,7 +254,11 @@ La figura siguiente muestra cómo funciona la coordinación dinámica:
   </li>
 </ol>
 
+<div className="ch-image-md">
+
 ![Coordinación dinámica - parte 3](/images/deployment-guides/parallel-replicas-7.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -504,7 +532,11 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
+<div className="ch-image-lg">
+
 ![EXPLAIN sin parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
+
+</div>
 
 Y ahora, con réplica paralela:
 
@@ -519,4 +551,8 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
+<div className="ch-image-lg">
+
 ![EXPLAIN con parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)
+
+</div>

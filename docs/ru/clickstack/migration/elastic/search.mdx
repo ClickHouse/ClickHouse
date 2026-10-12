@@ -17,11 +17,19 @@ ClickHouse не только поддерживает полноценный SQL
 
 Для простого анализа журналов и трассировок интерфейс ClickStack (HyperDX) предоставляет [синтаксис в стиле Lucene](/ru/clickstack/features/search) для интуитивной текстовой фильтрации по запросам вида поле-значение, диапазонам, подстановочным шаблонам и другим конструкциям. Это сопоставимо с [синтаксисом Lucene](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) в Elasticsearch и элементами [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql).
 
+<div className="ch-image-lg">
+
 ![Поиск](/images/use-cases/observability/hyperdx-search.webp)
+
+</div>
 
 Интерфейс поиска поддерживает этот знакомый синтаксис, но за кулисами преобразует его в эффективные SQL-условия `WHERE`, что делает работу привычной для пользователей Kibana и при этом позволяет при необходимости использовать всю мощь SQL. Это позволяет задействовать весь набор [функций поиска по строкам](/ru/reference/functions/regular-functions/string-search-functions), [функций сходства](/ru/reference/functions/regular-functions/string-functions#stringJaccardIndex) и [функций даты и времени](/ru/reference/functions/regular-functions/date-time-functions) в ClickHouse.
 
+<div className="ch-image-lg">
+
 ![SQL](/images/use-cases/observability/hyperdx-sql.webp)
+
+</div>
 
 Ниже мы сравним языки запросов Lucene в ClickStack и Elasticsearch.
 

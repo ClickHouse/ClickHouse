@@ -50,7 +50,11 @@ The OpenTelemetry Collector sends data to ClickStack's OTLP endpoint, which requ
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
 
+<div className="ch-image-lg">
+
 ![ClickStack API Key](/images/clickstack/api-key.webp)
+
+</div>
 
 Save this as an environment variable:
 ```bash
@@ -278,7 +282,11 @@ Once the collector is running:
 3. Wait 1-2 minutes for logs to appear (based on your poll interval)
 4. Search for logs from your CloudWatch log groups
 
+<div className="ch-image-lg">
+
 ![Log Search View](/images/clickstack/cloudwatch/log-search-view.webp)
+
+</div>
 
 Look for these key attributes in the logs:
 - `ResourceAttributes['aws.region']`: Your AWS region (e.g., "us-east-1")
@@ -286,7 +294,11 @@ Look for these key attributes in the logs:
 - `ResourceAttributes['cloudwatch.log.stream']`: The log stream name
 - `Body`: The actual log message content
 
+<div className="ch-image-lg">
+
 ![Error Log Column Values](/images/clickstack/cloudwatch/error-log-column-values.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -339,7 +351,11 @@ Once imported:
 
 You should see logs from multiple CloudWatch log groups.
 
+<div className="ch-image-lg">
+
 ![Demo search view](/images/clickstack/cloudwatch/demo-search-view.webp)
+
+</div>
 
 <Info>
 **Timezone Display**
@@ -363,17 +379,29 @@ To help you monitor CloudWatch logs with ClickStack, we provide a pre-built dash
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
+<div className="ch-image-lg">
+
 ![Import dashboard button](/images/clickstack/import-dashboard.webp)
+
+</div>
 
 3. Upload the `cloudwatch-logs-dashboard.json` file and click **Finish Import**
 
+<div className="ch-image-lg">
+
 ![Finish import dialog](/images/clickstack/cloudwatch/finish-import.webp)
+
+</div>
 </Step>
 <Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 
+<div className="ch-image-lg">
+
 ![CloudWatch Logs dashboard](/images/clickstack/cloudwatch/logs-dashboard.webp)
+
+</div>
 
 <Note>
 For the demo dataset, set the time range to **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.

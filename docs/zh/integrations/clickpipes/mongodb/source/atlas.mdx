@@ -18,15 +18,27 @@ integration:
 
 1. 前往 MongoDB Atlas 控制台中集群的 `Overview` 选项卡，然后点击 `Configuration` 选项卡。
 
+<div className="ch-image-lg">
+
 ![导航到集群配置](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp)
+
+</div>
 
 2. 点击 `Additional Settings`，然后向下滚动到 `More Configuration Options`。
 
+<div className="ch-image-lg">
+
 ![展开其他设置](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp)
+
+</div>
 
 3. 点击 `More Configuration Options`，并将最小 oplog 窗口设置为 `72 hours` 或更长。
 
+<div className="ch-image-lg">
+
 ![设置 oplog 保留小时数](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp)
+
+</div>
 
 4. 点击 `Review Changes` 进行检查，然后点击 `Apply Changes` 应用更改。
 
@@ -38,7 +50,11 @@ integration:
 
 ClickPipes 需要使用密码身份验证：
 
+<div className="ch-image-lg">
+
 ![添加数据库用户](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp)
+
+</div>
 
 ClickPipes 需要一个具有以下角色的用户：
 
@@ -47,11 +63,19 @@ ClickPipes 需要一个具有以下角色的用户：
 
 你可以在 `Specific Privileges` 部分找到这些角色：
 
+<div className="ch-image-lg">
+
 ![配置用户角色](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp)
+
+</div>
 
 你还可以进一步指定要授予 ClickPipes 用户访问权限的集群/实例：
 
+<div className="ch-image-lg">
+
 ![限制集群/实例访问](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp)
+
+</div>
 
 <div id="whats-next">
   ## 下一步是什么？

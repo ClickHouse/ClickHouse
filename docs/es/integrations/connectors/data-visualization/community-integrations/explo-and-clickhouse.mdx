@@ -24,7 +24,11 @@ Analítica orientada al cliente para cualquier plataforma. Diseñada para ofrece
 
 En esta guía conectarás tus datos de ClickHouse a Explo y visualizarás los resultados. El gráfico se verá así:
 
+<div className="ch-image-md">
+
 ![Explo Dashboard](/images/integrations/data-visualization/explo_15.webp)
+
+</div>
 
 <p />
 
@@ -44,27 +48,51 @@ En esta guía conectarás tus datos de ClickHouse a Explo y visualizarás los re
 
     2. Haz clic en la pestaña **Datos** de Explo en la barra lateral izquierda.
 
+    <div className="ch-image-sm">
+
     ![Pestaña Datos](/images/integrations/data-visualization/explo_01.webp)
+
+    </div>
 
     3. Haz clic en **Conectar fuente de datos** en la parte superior derecha.
 
+    <div className="ch-image-sm">
+
     ![Conectar fuente de datos](/images/integrations/data-visualization/explo_02.webp)
+
+    </div>
 
     4. Completa la información en la página **Primeros pasos**
 
+    <div className="ch-image-md">
+
     ![Primeros pasos](/images/integrations/data-visualization/explo_03.webp)
+
+    </div>
 
     5. Selecciona **ClickHouse**
 
+    <div className="ch-image-md">
+
     ![ClickHouse](/images/integrations/data-visualization/explo_04.webp)
+
+    </div>
 
     6. Introduce tus **credenciales de ClickHouse**.
 
+    <div className="ch-image-md">
+
     ![Credenciales](/images/integrations/data-visualization/explo_05.webp)
+
+    </div>
 
     7. Configura **Seguridad**
 
+    <div className="ch-image-md">
+
     ![Seguridad](/images/integrations/data-visualization/explo_06.webp)
+
+    </div>
 
     8. En ClickHouse, **incluye las IP de Explo en la lista de permitidos**.
        `54.211.43.19, 52.55.98.121, 3.214.169.94 y 54.156.141.148`
@@ -73,15 +101,27 @@ En esta guía conectarás tus datos de ClickHouse a Explo y visualizarás los re
   <Step title="Crear un dashboard" id="3-create-a-dashboard">
     1. Ve a la pestaña **Dashboard** en la barra de navegación izquierda.
 
+    <div className="ch-image-sm">
+
     ![Dashboard](/images/integrations/data-visualization/explo_07.webp)
+
+    </div>
 
     2. Haz clic en **Create Dashboard** en la esquina superior derecha y asigna un nombre a tu dashboard. ¡Ya has creado un dashboard!
 
+    <div className="ch-image-sm">
+
     ![Create Dashboard](/images/integrations/data-visualization/explo_08.webp)
+
+    </div>
 
     3. Ahora deberías ver una pantalla similar a esta:
 
+    <div className="ch-image-md">
+
     ![Explo Dashboard](/images/integrations/data-visualization/explo_09.webp)
+
+    </div>
   </Step>
 
   <Step title="Ejecutar una consulta SQL" id="4-run-a-sql-query">
@@ -89,33 +129,61 @@ En esta guía conectarás tus datos de ClickHouse a Explo y visualizarás los re
        `SELECT * FROM YOUR_TABLE_NAME
        LIMIT 100`
 
+    <div className="ch-image-md">
+
     ![Explo Dashboard](/images/integrations/data-visualization/explo_10.webp)
+
+    </div>
 
     2. Ahora haz clic en Run y ve a la pestaña de vista previa para ver tus datos.
 
+    <div className="ch-image-md">
+
     ![Explo Dashboard](/images/integrations/data-visualization/explo_11.webp)
+
+    </div>
   </Step>
 
   <Step title="Crear un gráfico" id="5-build-a-chart">
     1. Desde el lado izquierdo, arrastra el icono del gráfico de barras a la pantalla.
 
+    <div className="ch-image-sm">
+
     ![Explo Dashboard](/images/integrations/data-visualization/explo_16.webp)
+
+    </div>
 
     2. Selecciona el conjunto de datos. Ahora deberías ver una pantalla como la siguiente:
 
+    <div className="ch-image-sm">
+
     ![Explo Dashboard](/images/integrations/data-visualization/explo_12.webp)
+
+    </div>
 
     3. Completa **county** en el eje X y **Price** en la sección del eje Y, así:
 
+    <div className="ch-image-sm">
+
     ![Explo Dashboard](/images/integrations/data-visualization/explo_13.webp)
+
+    </div>
 
     4. Ahora, cambia la agregación a **AVG**.
 
+    <div className="ch-image-sm">
+
     ![Explo Dashboard](/images/integrations/data-visualization/explo_14.webp)
+
+    </div>
 
     5. Ahora tenemos el precio medio de las viviendas desglosado por condado.
 
+    <div className="ch-image-md">
+
     ![Explo Dashboard](/images/integrations/data-visualization/explo_15.webp)
+
+    </div>
   </Step>
 </Steps>
 

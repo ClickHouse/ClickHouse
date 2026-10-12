@@ -64,7 +64,11 @@ impossíveis, por exemplo, em uma subconsulta complexa. Nesse caso, tanto o lado
 são ordenados em disco se não couberem na memória, permitindo que tabelas grandes sejam
 unidas.
 
+<div className="ch-image-md">
+
 ![Algoritmos de junção](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+
+</div>
 
 Desde a versão 20.3, o ClickHouse oferece suporte ao valor auto para a configuração `join_algorithm`.
 Isso instrui o ClickHouse a aplicar uma abordagem adaptativa de junção, em que o hash join

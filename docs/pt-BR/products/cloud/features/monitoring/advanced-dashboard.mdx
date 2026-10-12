@@ -27,7 +27,11 @@ O dashboard avançado pode ser acessado navegando até:
 * Painel lateral esquerdo
   * `Monitoring` → `Advanced dashboard`
 
+<div className="ch-image-lg">
+
 ![Advanced dashboard](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</div>
 
 <div id="accessing-the-native-advanced-dashboard">
   ## Acessando o dashboard avançado nativo
@@ -42,12 +46,20 @@ O dashboard avançado nativo pode ser acessado navegando até:
 Isso abrirá o dashboard avançado nativo em uma nova guia. Você precisará se
 autenticar para acessar o dashboard.
 
+<div className="ch-image-lg">
+
 ![Advanced dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</div>
 
 Cada visualização tem uma consulta SQL associada que a preenche. Você pode
 editar essa consulta clicando no ícone de caneta.
 
+<div className="ch-image-lg">
+
 ![Advanced dashboard](/images/cloud/manage/monitoring/edit_visualization.webp)
+
+</div>
 
 <div id="out-of-box-visualizations">
   ## Visualizações prontas para uso
@@ -133,7 +145,11 @@ de mesclagem.
 As principais métricas para identificar inserções não otimizadas são **Inserted Rows/sec** e
 **Max Parts for Partition**
 
+<div className="ch-image-lg">
+
 ![Inserções sem batch](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
+
+</div>
 
 O exemplo acima mostra dois picos em **Inserted Rows/sec** e **Max Parts for Partition**
 entre 13h e 14h. Isso indica que estamos fazendo a ingestão de dados em uma velocidade adequada.
@@ -158,7 +174,11 @@ que você executa, isso pode ser esperado, mas é útil identificá-las no dashb
 Abaixo está um exemplo de pico no uso de CPU sem uma mudança significativa no
 número de consultas executadas por segundo.
 
+<div className="ch-image-lg">
+
 ![Consulta intensiva em recursos](/images/cloud/manage/monitoring/resource_intensive_query.webp)
+
+</div>
 
 <div id="bad-primary-key-design">
   ### Design inadequado da chave primária
@@ -174,7 +194,11 @@ Uma das métricas que você pode acompanhar para identificar possíveis melhoria
 indicar tanto um aumento geral no throughput de consultas quanto a execução de consultas que
 selecionam um grande número de linhas.
 
+<div className="ch-image-lg">
+
 ![Consulta intensiva em recursos](/images/cloud/manage/monitoring/selected_rows_sec.webp)
+
+</div>
 
 Usando o timestamp como filtro, você pode encontrar as consultas executadas no momento
 do pico na tabela `system.query_log`.

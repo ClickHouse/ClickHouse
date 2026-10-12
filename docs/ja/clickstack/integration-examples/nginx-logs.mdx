@@ -166,9 +166,17 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
 
     以下のように表示されれば正常です。
 
+    <div className="ch-image-lg">
+
     ![ログビュー](/images/clickstack/nginx-logs-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![ログビュー](/images/clickstack/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -256,9 +264,17 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
       HyperDX はタイムスタンプをブラウザーのローカルタイムゾーンで表示します。デモデータの対象期間は UTC の 2025-10-20 11:00:00 - 2025-10-21 11:00:00 です。時間範囲を広めに設定しているため、どの地域からでもデモログを確認できます。ログが表示されたら、より見やすく可視化するために、範囲を 24 時間に絞ることができます。
     </Info>
 
+    <div className="ch-image-lg">
+
     ![ログビュー](/images/clickstack/nginx-logs-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![ログビュー](/images/clickstack/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -277,11 +293,19 @@ ClickStack で nginx の監視をすぐに開始できるよう、Nginx ログ�
     1. HyperDX を開き、Dashboards セクションに移動します。
     2. 右上の三点メニューから「Import Dashboard」をクリックします。
 
+    <div className="ch-image-lg">
+
     ![ダッシュボードのインポート](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. nginx-logs-dashboard.json ファイルをアップロードし、「finish import」をクリックします。
 
+    <div className="ch-image-lg">
+
     ![インポートの完了](/images/clickstack/finish-nginx-logs-import.webp)
+
+    </div>
   </Step>
 
   <Step title="事前設定済みの可視化を含むダッシュボードが作成されます" id="created-dashboard">
@@ -289,7 +313,11 @@ ClickStack で nginx の監視をすぐに開始できるよう、Nginx ログ�
       デモデータセットでは、時間範囲を **2025-10-20 11:00:00 - 2025-10-21 11:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が指定されていません。
     </Note>
 
+    <div className="ch-image-lg">
+
     ![ダッシュボードの例](/images/clickstack/nginx-logs-dashboard.webp)
+
+    </div>
   </Step>
 </Steps>
 

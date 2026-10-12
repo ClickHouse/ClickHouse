@@ -12,6 +12,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
 import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -56,7 +57,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 2. من القائمة الجانبية اليسرى، انقر على **More** ضمن قسم **To a Server**. ابحث عن **ClickHouse by ClickHouse** في قائمة الموصّلات المتاحة:
 
+<div className="ch-image-md">
+
 ![شاشة الاتصال في Tableau تعرض قائمة اختيار الموصّل مع تمييز خيار ClickHouse by ClickHouse](/images/integrations/data-visualization/tableau_connecttoserver.webp)
+
+</div>
 
 <br />
 
@@ -67,14 +72,22 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 3. انقر على **ClickHouse by ClickHouse** وستظهر النافذة التالية:
 
+<div className="ch-image-md">
+
 ![نافذة تثبيت موصّل Tableau تعرض تفاصيل موصّل ClickHouse JDBC وزر التثبيت](/images/integrations/data-visualization/tableau_connector_details.webp)
+
+</div>
 
 <br />
 
 4. انقر على **Install and Restart Tableau**. ثم أعد تشغيل التطبيق.
 5. بعد إعادة التشغيل، سيظهر الاسم الكامل للموصّل: `ClickHouse JDBC by ClickHouse, Inc.`. وعند النقر عليه، ستظهر النافذة التالية:
 
+<div className="ch-image-md">
+
 ![نافذة اتصال ClickHouse في Tableau تعرض حقول الخادم والمنفذ وقاعدة البيانات واسم المستخدم وكلمة المرور](/images/integrations/data-visualization/tableau_connector_dialog.webp)
+
+</div>
 
 <br />
 
@@ -102,13 +115,21 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 7. انقر على زر **Sign In** ويُفترض أن ترى مصنف Tableau جديدًا:
 
+<div className="ch-image-md">
+
 ![مصنف Tableau جديد يعرض شاشة الاتصال الأولية مع خيارات اختيار قاعدة البيانات](/images/integrations/data-visualization/tableau_newworkbook.webp)
+
+</div>
 
 <br />
 
 8. اختر **TPCD** من القائمة المنسدلة **Schema** ويُفترض أن ترى قائمة الجداول في **TPCD**:
 
+<div className="ch-image-md">
+
 ![اختيار المخطط في Tableau يعرض جداول قاعدة بيانات TPCD بما في ذلك CUSTOMER وLINEITEM وNATION وORDERS وغيرها](/images/integrations/data-visualization/tableau_tpcdschema.webp)
+
+</div>
 
 <br />
 
@@ -122,7 +143,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 1. اسحب جدول **CUSTOMER** إلى المصنف. لاحظ أن الأعمدة تظهر، لكن جدول البيانات فارغ:
 
+<div className="ch-image-md">
+
 ![مصنف Tableau مع سحب جدول CUSTOMER إلى اللوحة وعرض رؤوس الأعمدة من دون بيانات](/images/integrations/data-visualization/tableau_workbook1.webp)
+
+</div>
 
 <br />
 
@@ -130,14 +155,22 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 3. اسحب جدول **ORDERS** إلى المصنف، ثم عيّن **Custkey** كحقل العلاقة بين الجدولين:
 
+<div className="ch-image-md">
+
 ![محرر العلاقات في Tableau يعرض الربط بين جدولي CUSTOMER وORDERS باستخدام الحقل Custkey](/images/integrations/data-visualization/tableau_workbook2.webp)
+
+</div>
 
 <br />
 
 4. أصبح لديك الآن الجدولان **ORDERS** و**LINEITEM** مرتبطين ببعضهما بعضًا ضمن مصدر البيانات، لذا يمكنك استخدام
    هذه العلاقة للإجابة عن أسئلة حول البيانات. حدِّد علامة التبويب **Sheet 1** في أسفل المصنف.
 
+<div className="ch-image-md">
+
 ![ورقة عمل Tableau تعرض الأبعاد والمقاييس من جداول ClickHouse المتاحة للتحليل](/images/integrations/data-visualization/tableau_workbook3.webp)
+
+</div>
 
 <br />
 
@@ -145,7 +178,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
    **Columns** (الحقل الأفقي)، ثم اسحب **Quantity** من **LINEITEM** إلى **Rows**. سينشئ Tableau
    المخطط الخطي التالي:
 
+<div className="ch-image-sm">
+
 ![مخطط خطي في Tableau يعرض الكمية المطلوبة حسب السنة من بيانات ClickHouse](/images/integrations/data-visualization/tableau_workbook4.webp)
+
+</div>
 
 <br />
 
@@ -161,21 +198,33 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 ينبغي أن ترى ما يلي:
 
+<div className="ch-image-sm">
+
 ![عرض جدولي متقاطع في Tableau مع الأرباع السنوية كأعمدة ووسائل الشحن كصفوف](/images/integrations/data-visualization/tableau_workbook5.webp)
+
+</div>
 
 <br />
 
 7. قيم **Abc** تملأ المساحة فقط إلى أن تسحب مقياسًا إلى الجدول. اسحب **Totalprice** من *
    *ORDERS** إلى الجدول. لاحظ أن العملية الحسابية الافتراضية هي **SUM** لـ **Totalprices**:
 
+<div className="ch-image-md">
+
 ![جدول متقاطع في Tableau يعرض مجموع السعر الإجمالي حسب الربع السنوي ووسيلة الشحن](/images/integrations/data-visualization/tableau_workbook6.webp)
+
+</div>
 
 <br />
 
 8. انقر على **SUM** وغيّر **Measure** إلى **Average**. ومن القائمة المنسدلة نفسها، حدِّد **Format** وغيّر
    **Numbers** إلى **Currency (Standard)**:
 
+<div className="ch-image-md">
+
 ![جدول متقاطع في Tableau يعرض متوسط سعر الطلب حسب الربع السنوي ووسيلة الشحن مع تنسيق العملة](/images/integrations/data-visualization/tableau_workbook7.webp)
+
+</div>
 
 <br />
 

@@ -7,6 +7,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 ## Componentes {#components}
@@ -19,7 +20,11 @@ El ClickHouse Connector ejecuta tres demonios, todos integrados en el binary `cl
 
 En Kubernetes, el gráfico de Helm `clicklink-connector` despliega los demonios en un espacio de nombres que usted elija (`clicklink` de forma predeterminada). El executor es una Implementación de una sola réplica que conserva su estado de comandos en un volume persistente. En una Linux VM, los demonios se ejecutan como las systemd units `clicklink-scraper`, `clicklink-troubleshooter` y `clicklink-executor` bajo un usuario de sistema `clicklink` sin privilegios.
 
+<div className="ch-image-lg">
+
 ![Arquitectura del ClickHouse Connector](/images/cloud/reference/byoc-connector-architecture.svg)
+
+</div>
 
 ## Conexiones {#connections}
 
@@ -55,7 +60,11 @@ El connector verifica el server certificate de tu endpoint contra el system trus
 
 ## Flujo de datos {#data-flow}
 
+<div className="ch-image-lg">
+
 ![Flujo de datos de ClickHouse Connector](/images/cloud/reference/byoc-connector-data-flow.svg)
+
+</div>
 
 ### Qué sale de su entorno {#what-leaves}
 

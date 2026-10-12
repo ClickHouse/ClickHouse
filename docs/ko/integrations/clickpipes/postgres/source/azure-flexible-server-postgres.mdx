@@ -20,15 +20,27 @@ ClickPipes는 Postgres 버전 12 이상을 지원합니다.
 
 1. **Server parameters** 섹션을 클릭합니다.
 
+<div className="ch-image-lg">
+
 ![Azure Flexible Server for Postgres의 Server parameters](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp)
+
+</div>
 
 2. `wal_level`을 `logical`로 변경합니다.
 
+<div className="ch-image-lg">
+
 ![Azure Flexible Server for Postgres에서 wal_level을 logical로 변경](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp)
+
+</div>
 
 3. 이 변경 사항을 적용하려면 서버를 다시 시작해야 합니다. 다시 시작하라는 메시지가 표시되면 서버를 다시 시작하십시오.
 
+<div className="ch-image-lg">
+
 ![wal_level 변경 후 서버 다시 시작](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp)
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## ClickPipes 사용자 생성 및 권한 부여
@@ -84,7 +96,11 @@ ClickPipes는 Postgres 버전 12 이상을 지원합니다.
 
 1. **Networking** 탭으로 이동한 다음 [ClickPipes IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 Azure Flexible Server Postgres의 방화벽에 추가하거나, SSH 터널링을 사용하는 경우 점프 서버/배스천의 방화벽에 추가하십시오.
 
+<div className="ch-image-lg">
+
 ![Azure Flexible Server for Postgres의 방화벽에 ClickPipes IP 주소 추가](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp)
+
+</div>
 
 <div id="whats-next">
   ## 다음 단계

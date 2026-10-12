@@ -11,7 +11,11 @@ import AddARemoteSystem from '/snippets/zh/_add_remote_ip_access_list_detail.mdx
 
 import CompatibilityNote from '/snippets/zh/compatibility.mdx';
 
+<div className="ch-image-lg">
+
 ![迁移自管理 ClickHouse](/images/integrations/migration/self-managed-01.webp)
+
+</div>
 
 本指南介绍如何将自管理 ClickHouse 服务器迁移到 ClickHouse Cloud，以及如何在 ClickHouse Cloud 服务之间进行迁移。
 [`remoteSecure`](/zh/reference/functions/table-functions/remote) 函数可在 `SELECT` 和 `INSERT` 查询中使用，以访问远程 ClickHouse 服务器，从而让表迁移变得像编写一条嵌入了 `SELECT` 的 `INSERT INTO` 查询一样简单。
@@ -20,7 +24,11 @@ import CompatibilityNote from '/snippets/zh/compatibility.mdx';
   ## 从自管理 ClickHouse 迁移到 ClickHouse Cloud
 </div>
 
+<div className="ch-image-lg">
+
 ![迁移自管理 ClickHouse](/images/integrations/migration/self-managed-02.webp)
+
+</div>
 
 无论您的源表是否进行了分片和/或复制，在 ClickHouse Cloud 中，您只需创建目标表 (可以省略该表的 Engine 参数，系统会自动选择 `SharedMergeTree` 作为表引擎) ，
 而 ClickHouse Cloud 会自动处理纵向和横向扩缩容。
@@ -94,7 +102,11 @@ CREATE TABLE db.table ...
 
 * 使用 `remoteSecure` 函数从自管理端拉取数据
 
+<div className="ch-image-lg">
+
 ![迁移自管理 ClickHouse](/images/integrations/migration/self-managed-03.webp)
+
+</div>
 
 ```sql
 INSERT INTO db.table SELECT * FROM
@@ -107,7 +119,11 @@ remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
 
 * 使用 `remoteSecure` 函数将数据推送到 ClickHouse Cloud 服务
 
+<div className="ch-image-lg">
+
 ![迁移自管理 ClickHouse](/images/integrations/migration/self-managed-04.webp)
+
+</div>
 
 <Tip>
   **将远程系统添加到你的 ClickHouse Cloud 服务 IP Access List**
@@ -127,7 +143,11 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
   ## 在 ClickHouse Cloud 服务之间迁移
 </div>
 
+<div className="ch-image-lg">
+
 ![迁移自管理 ClickHouse](/images/integrations/migration/self-managed-05.webp)
+
+</div>
 
 下面是一些在 ClickHouse Cloud 服务之间迁移数据的常见场景：
 
@@ -136,7 +156,11 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
 
 在本示例中，有两个 ClickHouse Cloud 服务，分别称为 *source* (源端) 和 *destination* (目标端) 。数据将从 source 拉取到 destination。虽然你也可以选择推送方式，但这里演示的是拉取方式，因为它使用只读用户。
 
+<div className="ch-image-lg">
+
 ![迁移自管理 ClickHouse](/images/integrations/migration/self-managed-06.webp)
+
+</div>
 
 迁移分为以下几个步骤：
 

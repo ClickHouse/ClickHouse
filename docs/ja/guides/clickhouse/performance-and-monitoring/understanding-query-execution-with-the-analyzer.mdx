@@ -27,7 +27,11 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 ClickHouse にデータが入ったので、いくつかのクエリを実行し、その実行の仕組みを見ていきましょう。クエリの実行はいくつもの段階に分解されます。クエリ実行の各段階は、対応する `EXPLAIN` クエリを使って分析し、トラブルシュートできます。これらの段階は以下の図にまとめられています。
 
+<div className="ch-image-md">
+
 ![EXPLAINクエリのステップ](/images/guides/developer/analyzer1.webp)
+
+</div>
 
 クエリ実行時に各要素がどのように機能するのかを見ていきましょう。いくつかのクエリを取り上げ、`EXPLAIN` ステートメントを使って確認します。
 
@@ -356,7 +360,11 @@ digraph
 
 この出力をコピーして[こちら](https://dreampuf.github.io/GraphvizOnline)に貼り付けると、以下のグラフが生成されます。
 
+<div className="ch-image-md">
+
 ![グラフ出力](/images/guides/developer/analyzer3.webp)
+
+</div>
 
 白い長方形はパイプラインノードを、灰色の長方形はクエリプランのステップを表し、`x` に続く数字は使用されている入力/出力の数を示します。コンパクト形式での表示が不要な場合は、`compact=0` を追加してください：
 
@@ -396,7 +404,11 @@ digraph
 }
 ```
 
+<div className="ch-image-md">
+
 ![コンパクトなグラフの出力](/images/guides/developer/analyzer4.webp)
+
+</div>
 
 ClickHouse はなぜ複数のスレッドでテーブルを読み込まないのでしょうか。テーブルにさらにデータを追加してみましょう：
 
@@ -455,7 +467,11 @@ digraph
 }
 ```
 
+<div className="ch-image-md">
+
 ![並列グラフの出力](/images/guides/developer/analyzer5.webp)
+
+</div>
 
 つまり、データ量が十分でなかったため、エグゼキュータは処理を並列化しないと判断しました。さらに行を追加すると、グラフに示されているように、エグゼキュータは複数のスレッドを使用するようになりました。
 

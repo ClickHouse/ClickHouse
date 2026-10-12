@@ -45,15 +45,27 @@ ClickPipes для баз данных имеют архитектуру, сос�
 Вы можете задать интервал синхронизации и размер pull-батча при создании ClickPipe или изменить эти параметры в уже существующем.
 При создании ClickPipe эти параметры отображаются на втором шаге мастера создания, как показано ниже:
 
+<div className="ch-image-md">
+
 ![Создание параметров синхронизации](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
+
+</div>
 
 Чтобы изменить параметры существующего ClickPipe, перейдите на вкладку **Settings** этого пайпа, приостановите пайп, а затем нажмите **Configure** здесь:
 
+<div className="ch-image-md">
+
 ![Кнопка редактирования синхронизации](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
+
+</div>
 
 Откроется выдвижная панель с параметрами синхронизации, где можно изменить интервал синхронизации и размер pull-батча:
 
+<div className="ch-image-md">
+
 ![Редактирование параметров синхронизации](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
+
+</div>
 
 <div id="monitoring">
   ### Мониторинг работы управления синхронизацией
@@ -61,4 +73,8 @@ ClickPipes для баз данных имеют архитектуру, сос�
 
 В таблице **CDC Syncs** на вкладке **Metrics** в ClickPipe можно увидеть, сколько времени занимает каждый батч. Обратите внимание: в эту продолжительность входит время отправки, а также время ожидания ClickPipe, если новые строки не поступают.
 
+<div className="ch-image-md">
+
 ![Таблица CDC Syncs](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)
+
+</div>

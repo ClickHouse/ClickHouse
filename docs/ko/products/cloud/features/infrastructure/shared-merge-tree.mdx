@@ -19,11 +19,19 @@ SharedMergeTree 테이블 엔진 계열은 ClickHouse Cloud의 기반입니다. 
 
 SharedMergeTree의 중요한 개선점 중 하나는 ReplicatedMergeTree에 비해 컴퓨트와 스토리지를 더 철저히 분리한다는 것입니다. 아래에서 ReplicatedMergeTree가 컴퓨트와 스토리지를 어떻게 분리하는지 확인할 수 있습니다:
 
+<div className="ch-image-md">
+
 ![ReplicatedMergeTree 다이어그램](/images/cloud/reference/shared-merge-tree-1.png)
+
+</div>
 
 보시다시피 ReplicatedMergeTree에 저장된 데이터는 객체 스토리지에 있지만, 메타데이터는 여전히 각 clickhouse-server에 저장됩니다. 이는 모든 복제 작업에서 메타데이터도 모든 레플리카에 복제되어야 함을 의미합니다.
 
+<div className="ch-image-md">
+
 ![메타데이터가 포함된 ReplicatedMergeTree 다이어그램](/images/cloud/reference/shared-merge-tree-2.png)
+
+</div>
 
 ReplicatedMergeTree와 달리 SharedMergeTree는 레플리카끼리 통신할 필요가 없습니다. 대신 모든 통신은 공유 스토리지와 clickhouse-keeper를 통해 이루어집니다. SharedMergeTree는 비동기 리더리스 복제를 구현하며, coordination 및 메타데이터 저장을 위해 clickhouse-keeper를 사용합니다. 즉, 서비스가 확장 또는 축소될 때 메타데이터를 복제할 필요가 없습니다. 그 결과 복제, 뮤테이션, 머지, 확장 작업이 더 빨라집니다. SharedMergeTree는 각 테이블에 대해 수백 개의 레플리카를 지원하므로, 세그먼트 없이도 동적으로 확장할 수 있습니다. ClickHouse Cloud에서는 하나의 쿼리에 더 많은 컴퓨트 리소스를 활용하기 위해 분산 쿼리 실행 방식을 사용합니다.
 

@@ -19,7 +19,11 @@ This document covers the ClickHouse Cloud API. For database API endpoints, pleas
 
 You can use the **API Keys** tab on the left menu to create and manage your API keys.
 
+<div className="ch-image-sm">
+
 ![API Keys tab](/images/cloud/manage/openapi1.webp)
+
+</div>
 
 </Step>
 
@@ -27,7 +31,11 @@ You can use the **API Keys** tab on the left menu to create and manage your API 
 
 The **API Keys** page will initially display a prompt to create your first API key as shown below. After your first key is created, you can create new keys using the `New API Key` button that appears in the top right corner.
 
+<div className="ch-image-md">
+
 ![API Keys page](/images/cloud/manage/openapi2.webp)
+
+</div>
 
 </Step>
 
@@ -45,7 +53,11 @@ Permissions align with ClickHouse Cloud [predefined roles](/products/cloud/refer
 To use API keys with [Query API Endpoints](/products/cloud/guides/sql-console/query-endpoints), set Organization Role to `Member` (minimum) and grant Service Role access to `Query Endpoints`.
 </Tip>
 
+<div className="ch-image-md">
+
 ![Create API key form](/images/cloud/manage/openapi3.png)
+
+</div>
 
 </Step>
 
@@ -55,7 +67,11 @@ To restrict which clients can use the API key, in the **Allow access to this API
 
 Query API endpoints respect API key-level IP allowlists. Because requests are proxied from within ClickHouse's infrastructure, service-level IP allowlists do not apply. See [IP Access Control](/products/cloud/features/sql-console-features/query-endpoints#ip-access-control) for details.
 
+<div className="ch-image-md">
+
 ![Allowed IP addresses configured for an API key](/images/cloud/guides/query-endpoints/specific-locations.webp)
+
+</div>
 
 Click **Generate API Key** when you have finished configuring the key.
 
@@ -65,7 +81,11 @@ Click **Generate API Key** when you have finished configuring the key.
 
 The next screen will display your Key ID and Key secret. Copy these values and put them somewhere safe, such as a vault. The values won't be displayed after you leave this screen.
 
+<div className="ch-image-md">
+
 ![API key details](/images/cloud/manage/openapi4.webp)
+
+</div>
 
 </Step>
 
@@ -90,7 +110,11 @@ Returning to the **API Keys** page, you will see the key name, last four charact
 Deleting an API key is a permanent action. Any services using the key will immediately lose access to ClickHouse Cloud.
 </Note>
 
+<div className="ch-image-md">
+
 ![API Keys management page](/images/cloud/manage/openapi5.webp)
+
+</div>
 
 </Step>
 

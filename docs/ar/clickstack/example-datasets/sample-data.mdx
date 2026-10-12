@@ -17,13 +17,21 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
       <Step title="اختر الخدمة" id="select-your-service-managed">
         اختر الخدمة التي تحمل علامة Managed ClickStack من صفحة ClickHouse Cloud الرئيسية.
 
+        <div className="ch-image-lg">
+
         ![اختيار الخدمة](/images/clickstack/select_service.webp)
+
+        </div>
       </Step>
 
       <Step title="انتقل إلى ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui-managed">
         اختر `ClickStack` من القائمة اليسرى للانتقال إلى ClickStack UI، حيث سيتم تسجيل دخولك تلقائيًا.
 
+        <div className="ch-image-lg">
+
         ![ClickStack UI](/images/use-cases/observability/hyperdx.webp)
+
+        </div>
       </Step>
 
       <Step title="تنزيل بيانات تجريبية" id="download-sample-data-managed">
@@ -63,7 +71,11 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
 
         بالعودة إلى عرض `Search`، ينبغي أن ترى أن تحميل البيانات قد بدأ (اضبط النطاق الزمني على `Last 1 hour` إذا لم تظهر البيانات):
 
+        <div className="ch-image-lg">
+
         ![بحث HyperDX](/images/use-cases/observability/hyperdx-10.webp)
+
+        </div>
 
         سيستغرق تحميل البيانات بضع دقائق. انتظر حتى يكتمل التحميل قبل الانتقال إلى الخطوات التالية.
       </Step>
@@ -73,7 +85,11 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
 
         حدّد `Client Sessions` من القائمة اليسرى.
 
+        <div className="ch-image-lg">
+
         ![الجلسات](/images/use-cases/observability/hyperdx-11.webp)
+
+        </div>
 
         يتيح لنا هذا العرض رؤية جلسات الواجهة الأمامية لمتجرنا الإلكتروني. وتظل الجلسات مجهولة الهوية إلى أن يبدأ المستخدمون إتمام الشراء ويحاولوا إكمال الدفع.
 
@@ -81,7 +97,11 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
 
         حدّد trace يتضمّن حالة فشل وبريدًا إلكترونيًا مرتبطًا. يتيح لنا العرض التالي إعادة تشغيل جلسة المستخدم ومراجعة مشكلته. اضغط على play لمشاهدة الجلسة.
 
+        <div className="ch-image-lg">
+
         ![إعادة تشغيل الجلسة](/images/use-cases/observability/hyperdx-12.webp)
+
+        </div>
 
         تُظهر الإعادة المستخدم وهو يتنقّل في الموقع ويضيف عناصر إلى سلّة التسوق. لا تتردد في الانتقال إلى جزء لاحق من الجلسة حيث يحاول إكمال عملية الدفع.
 
@@ -91,7 +111,11 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
 
         لم يتمكن المستخدم من إتمام الطلب من دون ظهور خطأ واضح. مرّر إلى أسفل اللوحة اليسرى التي تحتوي على أحداث الشبكة ووحدة التحكّم من متصفح المستخدم. ستلاحظ ظهور خطأ 500 عند إجراء استدعاء `/api/checkout`.
 
+        <div className="ch-image-lg">
+
         ![خطأ في الجلسة](/images/use-cases/observability/hyperdx-13.webp)
+
+        </div>
 
         حدّد هذا الخطأ `500`. لا يشير كلٌّ من `Overview` و`Column Values` إلى مصدر المشكلة، سوى أن الخطأ غير متوقَّع، ما يؤدي إلى `Internal Error`.
       </Step>
@@ -99,19 +123,35 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
       <Step title="استكشاف التتبعات" id="explore-traces-managed">
         انتقل إلى علامة التبويب `Trace` لرؤية التتبّع الموزّع بالكامل.
 
+        <div className="ch-image-lg">
+
         ![تتبّع الجلسة](/images/use-cases/observability/hyperdx-14.webp)
+
+        </div>
 
         مرّر إلى أسفل التتبّع لرؤية مصدر الخطأ، وهو span خدمة `checkout`. حدِّد span خدمة `Payment`.
 
+        <div className="ch-image-lg">
+
         ![Span](/images/use-cases/observability/hyperdx-15.webp)
+
+        </div>
 
         حدِّد علامة التبويب `Column Values` ومرّر إلى الأسفل. يمكننا أن نرى أن المشكلة مرتبطة بامتلاء الذاكرة المؤقتة.
 
+        <div className="ch-image-lg">
+
         ![قيم الأعمدة](/images/use-cases/observability/hyperdx-16.webp)
+
+        </div>
 
         عند التمرير للأعلى والعودة إلى التتبّع، يمكننا أن نرى أن السجلات مرتبطة بـ span، وذلك بفضل الإعداد الذي أجريناه سابقًا. وهذا يوفّر سياقًا إضافيًا.
 
+        <div className="ch-image-lg">
+
         ![سجل مرتبط](/images/use-cases/observability/hyperdx-17.webp)
+
+        </div>
 
         لقد تبيّن لنا أن الذاكرة المؤقتة تمتلئ في خدمة الدفع، مما يمنع اكتمال عمليات الدفع.
       </Step>
@@ -121,7 +161,11 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
 
         حدِّد `Logs` من المصادر وطبِّق عامل تصفية على خدمة `payment`.
 
+        <div className="ch-image-lg">
+
         ![السجلات](/images/use-cases/observability/hyperdx-18.webp)
+
+        </div>
 
         يمكننا أن نرى أنه رغم أن المشكلة حديثة، فإن عدد المدفوعات المتأثرة مرتفع. علاوة على ذلك، يبدو أن ذاكرة تخزين مؤقت مرتبطة بمدفوعات Visa هي سبب هذه المشكلات.
       </Step>
@@ -131,7 +175,11 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
 
         حدّد `Metrics` كمصدر للبيانات. أكمل أداة إنشاء المخططات لرسم `Maximum` لـ `visa_validation_cache.size (Gauge)`، ثم اضغط زر `play`. من الواضح أن ذاكرة التخزين المؤقت كانت تزداد قبل أن تصل إلى حجمها الأقصى، وبعد ذلك بدأت الأخطاء بالظهور.
 
+        <div className="ch-image-lg">
+
         ![المقاييس](/images/use-cases/observability/hyperdx-19.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -143,13 +191,21 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
       <Step title="انتقل إلى ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui">
         زُر [http://localhost:8080](http://localhost:8080) للوصول إلى واجهة ClickStack.
 
+        <div className="ch-image-lg">
+
         ![ClickStack UI](/images/use-cases/observability/hyperdx.webp)
+
+        </div>
       </Step>
 
       <Step title="انسخ مفتاح API للإدخال" id="copy-ingestion-api-key">
         انتقل إلى [`إعدادات الفريق`](http://localhost:8080/team) وانسخ `Ingestion API Key` من قسم `API Keys`. يضمن مفتاح API هذا تأمين إدخال البيانات عبر مجمّع OpenTelemetry.
 
+        <div className="ch-image-lg">
+
         ![انسخ مفتاح API](/images/use-cases/observability/copy_api_key.webp)
+
+        </div>
       </Step>
 
       <Step title="تنزيل بيانات تجريبية" id="download-sample-data">
@@ -196,7 +252,11 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
 
         بالعودة إلى عرض `Search`، ينبغي أن ترى أن تحميل البيانات قد بدأ (اضبط النطاق الزمني على `Last 1 hour` إذا لم تظهر البيانات):
 
+        <div className="ch-image-lg">
+
         ![بحث HyperDX](/images/use-cases/observability/hyperdx-10.webp)
+
+        </div>
 
         سيستغرق تحميل البيانات بضع دقائق. انتظر حتى يكتمل التحميل قبل الانتقال إلى الخطوات التالية.
       </Step>
@@ -206,7 +266,11 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
 
         حدِّد [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000\&to=1747312920000\&sessionSource=l1324572572) من القائمة اليمنى.
 
+        <div className="ch-image-lg">
+
         ![الجلسات](/images/use-cases/observability/hyperdx-11.webp)
+
+        </div>
 
         يتيح لنا هذا العرض الاطلاع على جلسات الواجهة الأمامية لمتجرنا الإلكتروني. وتبقى الجلسات مجهولة الهوية إلى أن يبدأ المستخدمون إتمام الشراء ويحاولوا إكمال عملية دفع.
 
@@ -214,7 +278,11 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
 
         حدِّد trace يتضمن فشلًا وعنوان بريد إلكتروني مرتبطًا. يتيح لنا العرض التالي إعادة تشغيل جلسة المستخدم ومراجعة مشكلته. اضغط على play لمشاهدة الجلسة.
 
+        <div className="ch-image-lg">
+
         ![إعادة تشغيل الجلسة](/images/use-cases/observability/hyperdx-12.webp)
+
+        </div>
 
         تُظهر الإعادة المستخدم وهو يتنقل في الموقع ويضيف عناصر إلى سلته. يمكنك الانتقال إلى جزء لاحق من الجلسة حيث يحاول إكمال عملية الدفع.
 
@@ -224,7 +292,11 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
 
         لم يتمكن المستخدم من إتمام الطلب، من دون ظهور خطأ واضح. مرّر إلى أسفل اللوحة اليسرى التي تعرض أحداث الشبكة ووحدة التحكم من متصفح المستخدم. ستلاحظ أنه تم طرح خطأ 500 عند إجراء استدعاء `/api/checkout`.
 
+        <div className="ch-image-lg">
+
         ![خطأ في الجلسة](/images/use-cases/observability/hyperdx-13.webp)
+
+        </div>
 
         حدِّد هذا الخطأ `500`. لا يوضح كلٌّ من `Overview` و`Column Values` مصدر المشكلة، باستثناء أن الخطأ غير متوقع، مما يؤدي إلى `Internal Error`.
       </Step>
@@ -232,19 +304,35 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
       <Step title="استكشاف التتبعات" id="explore-traces">
         انتقل إلى علامة التبويب `Trace` لرؤية التتبّع الموزّع بالكامل.
 
+        <div className="ch-image-lg">
+
         ![تتبّع الجلسة](/images/use-cases/observability/hyperdx-14.webp)
+
+        </div>
 
         مرّر إلى أسفل التتبّع لرؤية مصدر الخطأ، وهو span خدمة `checkout`. حدِّد span خدمة `Payment`.
 
+        <div className="ch-image-lg">
+
         ![Span](/images/use-cases/observability/hyperdx-15.webp)
+
+        </div>
 
         حدِّد علامة التبويب `Column Values` ومرّر إلى الأسفل. يمكننا أن نرى أن المشكلة مرتبطة بامتلاء الذاكرة المؤقتة.
 
+        <div className="ch-image-lg">
+
         ![قيم الأعمدة](/images/use-cases/observability/hyperdx-16.webp)
+
+        </div>
 
         عند التمرير للأعلى والعودة إلى التتبّع، يمكننا أن نرى أن السجلات مرتبطة بـ span، وذلك بفضل الإعداد الذي أجريناه سابقًا. وهذا يوفّر سياقًا إضافيًا.
 
+        <div className="ch-image-lg">
+
         ![سجل مرتبط](/images/use-cases/observability/hyperdx-17.webp)
+
+        </div>
 
         لقد تبيّن لنا أن الذاكرة المؤقتة تمتلئ في خدمة الدفع، مما يمنع اكتمال عمليات الدفع.
       </Step>
@@ -254,7 +342,11 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
 
         حدِّد `Logs` من المصادر، ثم طبّق عامل تصفية على خدمة `payment`.
 
+        <div className="ch-image-lg">
+
         ![السجلات](/images/use-cases/observability/hyperdx-18.webp)
+
+        </div>
 
         يمكننا أن نرى أنه رغم حداثة المشكلة، فإن عدد عمليات الدفع المتأثرة كبير. علاوةً على ذلك، يبدو أن ذاكرة تخزين مؤقت مرتبطة بمدفوعات Visa تتسبب في هذه المشكلات.
       </Step>
@@ -264,7 +356,11 @@ keywords: ['clickstack', 'بيانات نموذجية', 'مجموعة بيانا
 
         حدّد `Metrics` كمصدر للبيانات. أكمل أداة إنشاء المخططات لرسم `Maximum` لـ `visa_validation_cache.size (Gauge)`، ثم اضغط زر `play`. من الواضح أن ذاكرة التخزين المؤقت كانت تزداد قبل أن تصل إلى حجمها الأقصى، وبعد ذلك بدأت الأخطاء بالظهور.
 
+        <div className="ch-image-lg">
+
         ![المقاييس](/images/use-cases/observability/hyperdx-19.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>

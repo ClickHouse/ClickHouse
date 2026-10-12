@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 — это персональное хранилище, к которому агент может обращаться в разных диалогах. Оно состоит из нескольких записей, каждая из которых представляет собой пару ключ-значение: предпочитаемый вами
@@ -28,7 +29,11 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Откройте панель Memory с помощью значка **Memories** (мозг) в левой навигации. На панели отображаются сохранённые записи памяти, а также элементы управления для создания, редактирования, удаления и фильтрации записей.
 
+<div className="ch-image-sm">
+
 ![Панель Memories, где в левой навигации выделен значок мозга, показаны поле фильтра, кнопка Add, флажок Use memory, запись памяти с элементами управления редактированием и удалением, а также кнопка Admin Settings](/images/cloud/agent-builder/memory/memories.webp)
+
+</div>
 
 Memory доступна только вашему пользователю. Агенты других пользователей никогда не увидят ваши записи, а ваши агенты — их записи.
 
@@ -38,7 +43,11 @@ Memory доступна только вашему пользователю. Аг
 
 Нажмите кнопку **+** в верхней части панели, чтобы открыть диалог **Create Memory**. Введите **Key** (только строчные буквы и символы подчеркивания) и **Value**, затем нажмите **Create**.
 
+<div className="ch-image-sm">
+
 ![Панель Memory с выделенной кнопкой + для Create Memory](/images/cloud/agent-builder/memory/create.webp)
+
+</div>
 
 <div id="filter-memories">
   ### Фильтрация записей
@@ -46,7 +55,11 @@ Memory доступна только вашему пользователю. Аг
 
 Используйте поле **Filter memories** в верхней части панели, чтобы найти запись по ключу.
 
+<div className="ch-image-sm">
+
 ![Панель Memory с выделенным полем Filter memories и введённым значением 'demo'](/images/cloud/agent-builder/memory/filter.webp)
+
+</div>
 
 <div id="edit-memory">
   ### Изменение записи Memory
@@ -54,7 +67,11 @@ Memory доступна только вашему пользователю. Аг
 
 Нажмите значок карандаша рядом с записью Memory, чтобы открыть диалоговое окно **Редактирование Memory**. Измените ключ или значение и нажмите **Сохранить**.
 
+<div className="ch-image-sm">
+
 ![Запись Memory с выделенным значком карандаша «Редактирование Memory»](/images/cloud/agent-builder/memory/edit.webp)
+
+</div>
 
 <div id="delete-memory">
   ### Удалить запись Memory
@@ -62,7 +79,11 @@ Memory доступна только вашему пользователю. Аг
 
 Нажмите на значок корзины рядом с записью Memory, чтобы удалить её.
 
+<div className="ch-image-sm">
+
 ![Запись Memory с выделенным значком корзины для удаления](/images/cloud/agent-builder/memory/delete.webp)
+
+</div>
 
 <div id="toggle-memory">
   ## Включение и выключение памяти
@@ -72,7 +93,11 @@ Memory доступна только вашему пользователю. Аг
 
 Когда память выключена, агент не читает данные из хранилища памяти и не записывает их туда.
 
+<div className="ch-image-sm">
+
 ![Панель памяти с выделенным в верхней части флажком «Use memory»](/images/cloud/agent-builder/memory/toggle.webp)
+
+</div>
 
 <div id="memory-best-practices">
   ## Рекомендации по использованию Memory

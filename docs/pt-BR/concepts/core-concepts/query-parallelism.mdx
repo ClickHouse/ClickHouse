@@ -19,7 +19,11 @@ Usamos uma consulta de agregação no conjunto de dados [uk&#95;price&#95;paid&#
 
 Quando o ClickHouse ① executa uma consulta de agregação com um filtro na chave primária da tabela, ele ② carrega o índice primário em memória para ③ identificar quais grânulos precisam ser processados e quais podem ser ignorados com segurança:
 
+<div className="ch-image-md">
+
 ![Análise do índice](/images/guides/best-practices/query-parallelism_01.webp)
+
+</div>
 
 <div id="distributing-work-across-processing-lanes">
   ### Distribuindo o trabalho entre lanes de processamento
@@ -27,7 +31,11 @@ Quando o ClickHouse ① executa uma consulta de agregação com um filtro na cha
 
 Os dados selecionados são então distribuídos [dinamicamente](#load-balancing-across-processing-lanes) entre `n` [lanes de processamento](/pt-BR/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) paralelas, que transmitem e processam os dados [bloco](/pt-BR/resources/develop-contribute/introduction/architecture#block) a bloco até o resultado final:
 
+<div className="ch-image-md">
+
 ![4 lanes de processamento paralelas](/images/guides/best-practices/query-parallelism_02.webp)
+
+</div>
 
 <br />
 
@@ -37,7 +45,11 @@ O número de `n` lanes de processamento paralelas é controlado pela configuraç
 
 Em uma máquina com `8` núcleos, a taxa de processamento de consultas praticamente dobraria (mas o uso de memória também aumentaria na mesma proporção), já que mais lanes processam dados em paralelo:
 
+<div className="ch-image-md">
+
 ![8 lanes de processamento paralelas](/images/guides/best-practices/query-parallelism_03.webp)
+
+</div>
 
 <br />
 
@@ -51,7 +63,11 @@ Uma distribuição eficiente das lanes é fundamental para maximizar a utilizaç
 
 Quando os dados da tabela são distribuídos entre vários servidores em [shards](/pt-BR/guides/oss/deployment-and-scaling/shards), cada servidor processa seu shard em paralelo. Em cada servidor, os dados locais são tratados usando lanes de processamento em paralelo, exatamente como descrito acima:
 
+<div className="ch-image-md">
+
 ![Lanes distribuídas](/images/guides/best-practices/query-parallelism_04.webp)
+
+</div>
 
 <br />
 
@@ -125,7 +141,11 @@ Observação: leia o plano de operadores acima de baixo para cima. Cada linha re
 
 A [interface web embutida](/pt-BR/concepts/features/interfaces/http) do ClickHouse (disponível no endpoint `/play`) pode exibir o plano físico acima como uma visualização gráfica. Neste exemplo, definimos `max_threads` como `4` para manter a visualização compacta, mostrando apenas 4 lanes de processamento paralelas:
 
+<div className="ch-image-lg">
+
 ![Pipeline da consulta](/images/guides/best-practices/query-parallelism_05.webp)
+
+</div>
 
 Observação: leia a visualização da esquerda para a direita. Cada linha representa uma lane de processamento paralela que transmite dados bloco por bloco, aplicando transformações como filtragem, agregação e estágios finais de processamento. Neste exemplo, é possível ver quatro lanes paralelas correspondentes à configuração `max_threads = 4`.
 

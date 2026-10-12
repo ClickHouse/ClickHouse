@@ -172,14 +172,26 @@ ClickHouse Managed Postgres を使用している場合は、`pg_clickhouse` を
 テーブルのインポート先となる Postgres データベースと宛先スキーマを選択します。**Connect** をクリックして foreign
 server を作成し、スキーマをインポートします。
 
+<div className="ch-image-lg">
+
 ![ClickHouse Cloud コンソールの taxi データベース用 pg_clickhouse セットアップフォーム](/images/managed-postgres/pg_clickhouse_flyout/taxi_console.webp)
+
+</div>
 
 セットアップが完了すると、コンソールに確認メッセージが表示され、foreign
 server がサーバーリストに表示されます。
 
+<div className="ch-image-lg">
+
 ![ClickHouse Cloud コンソールの taxi データベース用 pg_clickhouse セットアップ完了画面](/images/managed-postgres/pg_clickhouse_flyout/taxi_complete.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![taxi pg_clickhouse 接続を示す foreign server リスト](/images/managed-postgres/pg_clickhouse_flyout/taxi_list.webp)
+
+</div>
 
 これで Postgres の **SQL console** を開き、インポートしたテーブルをクエリできます。
 

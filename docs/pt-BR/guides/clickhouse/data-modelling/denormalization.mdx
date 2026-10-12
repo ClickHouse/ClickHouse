@@ -16,7 +16,11 @@ Desnormalizar dados envolve reverter intencionalmente o processo de normalizaç�
 
 Esse processo reduz a necessidade de junções complexas no momento da consulta e pode acelerar significativamente as operações de leitura, tornando-o ideal para aplicações com alta demanda de leitura e consultas complexas. No entanto, ele pode aumentar a complexidade das operações de gravação e da manutenção, já que qualquer alteração nos dados duplicados precisa ser propagada para todas as instâncias a fim de manter a consistência.
 
+<div className="ch-image-lg">
+
 ![Desnormalização no ClickHouse](/images/data-modeling/denormalization-diagram.webp)
+
+</div>
 
 <br />
 
@@ -145,7 +149,11 @@ O ponto principal aqui é que estatísticas agregadas de votos para cada post se
 
 Agora vamos considerar `Users` e `Badges`:
 
+<div className="ch-image-lg">
+
 ![Esquema de Users e Insígnias](/images/data-modeling/denormalization-schema.webp)
+
+</div>
 
 <p />
 

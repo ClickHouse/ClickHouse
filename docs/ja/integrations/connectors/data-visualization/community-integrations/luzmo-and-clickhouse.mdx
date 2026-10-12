@@ -19,11 +19,19 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
   <Step title="ClickHouse 接続を設定する" id="1-setup-a-clickhouse-connection">
     ClickHouse に接続するには、**Connections page** に移動し、**New Connection** を選択してから、New Connection モーダルで ClickHouse を選択します。
 
+    <div className="ch-image-md">
+
     ![ClickHouse が選択された Create a New Connection ダイアログを表示する Luzmo インターフェイス](/images/integrations/data-visualization/luzmo_01.webp)
+
+    </div>
 
     **host**、**username**、**password** の入力が求められます。
 
+    <div className="ch-image-md">
+
     ![ClickHouse の host、username、password のフィールドが表示された Luzmo の接続設定フォーム](/images/integrations/data-visualization/luzmo_02.webp)
+
+    </div>
 
     * **Host**: これは、ClickHouse データベースが公開されているホストです。データを安全に転送するため、ここでは `https` のみ使用できます。host URL は次の形式を想定しています: `https://url-to-clickhouse-db:port/database`
       デフォルトでは、プラグインは &#39;default&#39; データベースの 443 ポートに接続します。&#39;/&#39; の後にデータベースを指定すると、接続先のデータベースを設定できます。
@@ -40,7 +48,11 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 
     これで、データセットを使って美しい (埋め込み) ダッシュボードを作成したり、顧客からの質問に答えられる AI データアナリスト ([Luzmo IQ](https://luzmo.com/iq)) を活用したりできます。
 
+    <div className="ch-image-md">
+
     ![ClickHouse のデータの複数の可視化を表示する Luzmo ダッシュボードの例](/images/integrations/data-visualization/luzmo_03.webp)
+
+    </div>
   </Step>
 </Steps>
 

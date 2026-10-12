@@ -126,7 +126,11 @@ export OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
 
 In addition, an authorization header containing the API ingestion key is required. You can find the key in the HyperDX app under `Team Settings → API Keys`.
 
+<div className="ch-image-lg">
+
 ![Ingestion keys](/images/use-cases/observability/ingestion-keys.webp)
+
+</div>
 
 For language SDKs, this can then either be set by an `init` function or via an`OTEL_EXPORTER_OTLP_HEADERS` environment variable e.g.:
 

@@ -45,7 +45,11 @@ Click on your organization name in the lower left corner and select Organization
 
 Click the toggle next to `Enable SAML single sign-on`. Leave this screen open as you will refer back to it several times during the setup process.
 
+<div className="ch-image-lg">
+
 ![Start SAML setup](/images/cloud/security/saml-self-serve-1.webp)
+
+</div>
 </Step>
 <Step title="Create an application in your identity provider" id="create-idp-application">
 
@@ -60,19 +64,31 @@ Create an application within your identity provider and copy the values on the `
 ClickHouse doesn't support identity provider initiated sign-in. To make it easy for your users to access ClickHouse Cloud, set up a bookmark for your users using this sign-in URL format: `https://console.clickhouse.cloud/?connection={orgId}` where the `{orgID}` is your organization ID on the Organization details page.
 </Tip>
 
+<div className="ch-image-lg">
+
 ![Create identity provider application](/images/cloud/security/saml-self-serve-2.webp)
+
+</div>
 </Step>
 <Step title="Add the metadata URL to your SAML configuration" id="add-metadata-url">
 
 Obtain the `Metadata URL` from your SAML provider. Return to ClickHouse Cloud, click `Next: Provide metadata URL` and paste the URL in the text box.
 
+<div className="ch-image-lg">
+
 ![Add metadata URL](/images/cloud/security/saml-self-serve-3.webp)
+
+</div>
 </Step>
 <Step title="Get domain verification code" id="get-domain-verification-code">
 
 Click `Next: Verify your domains`. Enter your domain in the text box and click `Check domain`. The system will generate a random verification code for you to add to a TXT record with your DNS provider.
 
+<div className="ch-image-lg">
+
 ![Add domain to verify](/images/cloud/security/saml-self-serve-4.webp)
+
+</div>
 </Step>
 <Step title="Verify your domain" id="verify-your-domain">
 
@@ -82,7 +98,11 @@ Create a TXT record with your DNS provider. Copy the `TXT record name` to the TX
 It may take several minutes for the DNS record to update and be verified. You may leave the setup page and return later to complete the process without restarting. The verification value is valid for 48 hours from when it is first generated.
 </Note>
 
+<div className="ch-image-lg">
+
 ![Verify your domain](/images/cloud/security/saml-self-serve-5.webp)
+
+</div>
 </Step>
 <Step title="Update default role and session timeout" id="update-defaults">
 
@@ -183,7 +203,11 @@ You will configure one SAML app in Google for each organization and must provide
 
 1. Go to your Google Admin console (admin.google.com).
 
+   <div className="ch-image-md">
+
    ![Google SAML App](/images/cloud/security/saml-google-app.webp)
+
+   </div>
 
 2. Click **Apps**, then **Web and mobile apps** on the left.
 3. Click **Add app** from the top menu, then select **Add custom SAML app**.
@@ -225,7 +249,11 @@ You will set up one application integration with a separate sign-on URL for each
 4. Click **Create your own application** on the top menu.
 5. Enter a name and select **Integrate any other application you don't find in the gallery (Non-gallery)**, then click **Create**.
 
+   <div className="ch-image-md">
+
    ![Azure Non-Gallery App](/images/cloud/security/saml-azure-app.webp)
+
+   </div>
 
 6. Click **Users and groups** on the left and assign users.
 7. Click **Single sign-on** on the left.
@@ -248,7 +276,11 @@ You will set up one application integration with a separate sign-on URL for each
     | (A) email                            | Basic         | user.mail        |
     | (U) /identity/claims/name            | Omitted       | user.mail        |
 
+    <div className="ch-image-md">
+
     ![Attributes and Claims](/images/cloud/security/saml-azure-claims.webp)
+
+    </div>
 
 11. Copy the metadata URL and return to [Add the metadata URL to your SAML configuration](#add-metadata-url) to continue the process.
 

@@ -857,7 +857,11 @@ SELECT * FROM s3_table1;
 6. No console da AWS, navegue até os buckets e selecione o novo bucket e a pasta.
    Você deverá ver algo como o seguinte:
 
+<div className="ch-image-lg">
+
 ![Visualização do bucket do S3 no console da AWS mostrando arquivos de dados do ClickHouse armazenados no S3](/images/integrations/data-ingestion/s3/s3-j.webp)
+
+</div>
 
 <div id="s3-multi-region">
   ## Replicando um único shard entre duas regiões da AWS usando armazenamento de objetos S3
@@ -1296,9 +1300,17 @@ Estes testes vão verificar se os dados estão sendo replicados entre os dois se
 
   Verifique os dados no S3 em cada bucket do S3 (os totais não são mostrados, mas ambos os buckets têm aproximadamente 36 MiB armazenados após as inserções):
 
+<div className="ch-image-lg">
+
 ![Tamanho dos dados no primeiro bucket do S3 mostrando métricas de uso de armazenamento](/images/integrations/data-ingestion/s3/bucket1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Tamanho dos dados no segundo bucket do S3 mostrando métricas de uso de armazenamento](/images/integrations/data-ingestion/s3/bucket2.webp)
+
+</div>
 
 <div id="s3express">
   ## S3Express

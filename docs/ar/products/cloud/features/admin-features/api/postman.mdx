@@ -16,7 +16,11 @@ keywords: ['واجهة برمجة تطبيقات', 'Postman', 'واجهة برم
 
 * تتوفر حسابات مجانية على [https://www.postman.com](https://www.postman.com).
 
+<div className="ch-image-md">
+
 ![موقع Postman](/images/cloud/manage/postman/postman1.webp)
+
+</div>
 
 <div id="create-a-workspace">
   ### أنشئ مساحة عمل
@@ -24,7 +28,11 @@ keywords: ['واجهة برمجة تطبيقات', 'Postman', 'واجهة برم
 
 * سمِّ مساحة العمل وحدِّد مستوى الظهور.
 
+<div className="ch-image-md">
+
 ![إنشاء مساحة عمل](/images/cloud/manage/postman/postman2.webp)
+
+</div>
 
 <div id="create-a-collection">
   ### إنشاء مجموعة
@@ -32,17 +40,29 @@ keywords: ['واجهة برمجة تطبيقات', 'Postman', 'واجهة برم
 
 * أسفل &quot;Explore&quot; في القائمة أعلى اليسار، انقر على &quot;Import&quot;:
 
+<div className="ch-image-md">
+
 ![Explore > Import](/images/cloud/manage/postman/postman3.webp)
+
+</div>
 
 * ستظهر نافذة منبثقة:
 
+<div className="ch-image-md">
+
 ![إدخال عنوان URL لواجهة برمجة التطبيقات](/images/cloud/manage/postman/postman4.webp)
+
+</div>
 
 * أدخل عنوان واجهة برمجة التطبيقات: &quot;https://api.clickhouse.cloud/v1&quot; ثم اضغط على &#39;Enter&#39;:
 
 * حدِّد &quot;Postman Collection&quot; بالنقر على زر &quot;Import&quot;:
 
+<div className="ch-image-md">
+
 ![Collection > Import](/images/cloud/manage/postman/postman6.webp)
+
+</div>
 
 <div id="interface-with-the-clickhouse-cloud-api-spec">
   ### التعامل مع مواصفة واجهة برمجة تطبيقات ClickHouse Cloud
@@ -50,11 +70,19 @@ keywords: ['واجهة برمجة تطبيقات', 'Postman', 'واجهة برم
 
 * ستظهر الآن &quot;مواصفة واجهة برمجة تطبيقات ClickHouse Cloud&quot; ضمن &quot;Collections&quot; (شريط التنقل الأيسر).
 
+<div className="ch-image-md">
+
 ![استيراد واجهة برمجة تطبيقاتك](/images/cloud/manage/postman/postman7.webp)
+
+</div>
 
 * انقر على &quot;مواصفة واجهة برمجة تطبيقات ClickHouse Cloud&quot;. ومن الجزء الأوسط، اختر علامة التبويب &#39;Authorization&#39;:
 
+<div className="ch-image-md">
+
 ![اكتمل الاستيراد](/images/cloud/manage/postman/postman8.webp)
+
+</div>
 
 <div id="set-authorization">
   ### إعداد التفويض
@@ -62,11 +90,19 @@ keywords: ['واجهة برمجة تطبيقات', 'Postman', 'واجهة برم
 
 * استخدم القائمة المنسدلة لتحديد &quot;Basic Auth&quot;:
 
+<div className="ch-image-md">
+
 ![المصادقة الأساسية](/images/cloud/manage/postman/postman9.webp)
+
+</div>
 
 * أدخل اسم المستخدم وكلمة المرور اللذين تلقيتهما عند إعداد مفاتيح واجهة برمجة تطبيقات ClickHouse Cloud:
 
+<div className="ch-image-md">
+
 ![بيانات الاعتماد](/images/cloud/manage/postman/postman10.webp)
+
+</div>
 
 <div id="enable-variables">
   ### تفعيل المتغيرات
@@ -81,7 +117,11 @@ keywords: ['واجهة برمجة تطبيقات', 'Postman', 'واجهة برم
 * ضمن &quot;مجموعة&quot;، انقر على علامة التبويب &quot;Variable&quot; في الجزء الأوسط (سيكون عنوان URL الأساسي قد تم تعيينه عبر استيراد واجهة برمجة التطبيقات السابق):
 * أسفل `baseURL`، انقر على الحقل الفارغ &quot;Add new value&quot;، ثم أدخِل معرّف المؤسسة ومعرّف الخدمة:
 
+<div className="ch-image-md">
+
 ![معرّف المؤسسة ومعرّف الخدمة](/images/cloud/manage/postman/postman11.webp)
+
+</div>
 
 <div id="test-the-clickhouse-cloud-api-functionalities">
   ## اختبر وظائف واجهة برمجة تطبيقات ClickHouse Cloud
@@ -94,11 +134,19 @@ keywords: ['واجهة برمجة تطبيقات', 'Postman', 'واجهة برم
 * ضمن &quot;OpenAPI spec for ClickHouse Cloud&quot;، وسّع المجلد &gt; V1 &gt; organizations
 * انقر على &quot;GET list of available organizations&quot; ثم اضغط الزر الأزرق &quot;Send&quot; على اليمين:
 
+<div className="ch-image-md">
+
 ![اختبار استرجاع organizations](/images/cloud/manage/postman/postman12.webp)
+
+</div>
 
 * ينبغي أن تعرض النتائج المُعادة تفاصيل مؤسستك الخاصة بك مع &quot;status&quot;: 200. (إذا تلقيت &quot;status&quot; 400 من دون أي معلومات عن مؤسسة، فهذا يعني أن الإعداد غير صحيح).
 
+<div className="ch-image-md">
+
 ![الحالة](/images/cloud/manage/postman/postman13.webp)
+
+</div>
 
 <div id="test-get-organizational-details">
   ### اختبار &quot;GET organizational details&quot;
@@ -107,15 +155,27 @@ keywords: ['واجهة برمجة تطبيقات', 'Postman', 'واجهة برم
 * ضمن المجلد `organizationid`، انتقل إلى &quot;GET organizational details&quot;:
 * في قائمة الإطار الأوسط ضمن Params، تكون قيمة `organizationid` مطلوبة.
 
+<div className="ch-image-md">
+
 ![اختبار استرجاع تفاصيل المؤسسة](/images/cloud/manage/postman/postman14.webp)
+
+</div>
 
 * عدّل هذه القيمة إلى `orgid` بين أقواس معقوفة `{{orgid}}` (بعد ضبط هذه القيمة مسبقًا، ستظهر قائمة تتضمن القيمة):
 
+<div className="ch-image-md">
+
 ![إرسال الاختبار](/images/cloud/manage/postman/postman15.webp)
+
+</div>
 
 * بعد الضغط على زر &quot;Save&quot;، اضغط على الزر الأزرق &quot;Send&quot; في أعلى يمين الشاشة.
 
+<div className="ch-image-md">
+
 ![القيمة المُعادة](/images/cloud/manage/postman/postman16.webp)
+
+</div>
 
 * يجب أن تعرض النتائج المُعادة تفاصيل مؤسستك مع &quot;status&quot;: 200. (إذا تلقيت &quot;status&quot; 400 من دون أي معلومات عن المؤسسة، فهذا يعني أن الإعداد غير صحيح).
 
@@ -127,6 +187,10 @@ keywords: ['واجهة برمجة تطبيقات', 'Postman', 'واجهة برم
 * عدّل القيم الخاصة بـ `organizationid` و`serviceid` باستخدام `{{orgid}}` و`{{serviceid}}` على التوالي.
 * اضغط على &quot;Save&quot; ثم على الزر الأزرق &quot;Send&quot; الموجود على اليمين.
 
+<div className="ch-image-md">
+
 ![قائمة الخدمات](/images/cloud/manage/postman/postman17.webp)
+
+</div>
 
 * يجب أن تعرض النتائج المُعادة قائمة بخدماتك وتفاصيلها مع &quot;status&quot;: 200. (إذا تلقيت &quot;status&quot; 400 من دون معلومات عن الخدمات، فهذا يعني أن إعدادك غير صحيح).

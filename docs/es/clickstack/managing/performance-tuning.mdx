@@ -10,6 +10,7 @@ keywords: ['clickstack', 'observabilidad', 'logs', 'rendimiento', 'optimización
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
 import OtelLogsSchema from '/snippets/es/clickstack/_schema_otel_logs.mdx';
+
 import OtelTracesSchema from '/snippets/es/clickstack/_schema_otel_traces.mdx';
 
 <div id="introduction">
@@ -113,7 +114,11 @@ Considere el esquema predeterminado de ClickStack para las trazas, donde los met
 
 Un usuario puede filtrar trazas mediante la sintaxis de Lucene, p. ej., `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`:
 
+<div className="ch-image-lg">
+
 ![Filtrado de trazas](/images/clickstack/performance_guide/trace_filtering.webp)
+
+</div>
 
 Esto genera un predicado SQL similar a:
 
@@ -137,7 +142,11 @@ A partir de ahora, los datos **nuevos** almacenarán el nombre del pod de Kubern
 
 Ahora los usuarios pueden consultar los nombres de los pods de Kubernetes de forma eficiente con sintaxis Lucene; por ejemplo, `PodName:"checkout-675775c4cc-f2p9c"`
 
+<div className="ch-image-lg">
+
 ![Filtrado de trazas v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
+
+</div>
 
 En los datos recién insertados, esto evita por completo el acceso al Map y reduce significativamente la E/S.
 
@@ -766,7 +775,11 @@ A continuación se usa el mismo ejemplo de introducir `SeverityText` como primer
   <Step title="Actualizar la UI de ClickStack para leer desde la tabla Merge" id="update-clickstack-ui-to-read-from-merge-tree">
     Configura la UI de ClickStack para usar `otel_logs_merge` como tabla de la fuente de datos de logs.
 
+    <div className="ch-image-lg">
+
     ![Seleccionar tabla Merge](/images/clickstack/performance_guide/select_merge_table.webp)
+
+    </div>
 
     En este punto, las escrituras continúan en `otel_logs` con la clave primaria original, mientras que las lecturas usan la tabla Merge. No hay cambios visibles para los usuarios ni impacto en la ingestión.
   </Step>

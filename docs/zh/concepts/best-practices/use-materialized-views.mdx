@@ -14,11 +14,19 @@ ClickHouse 支持两种类型的materialized view：[**增量**](/zh/concepts/fe
 
 **增量materialized view**会实时更新。每当新数据写入源表时，ClickHouse 都会自动将materialized view的查询应用到新的数据块，并将结果写入单独的目标表。随着时间推移，ClickHouse 会合并这些部分结果，从而生成完整且最新的视图。这种方式非常高效，因为它将计算开销转移到写入时，而且只处理新数据。因此，针对目标表的 `SELECT` 查询会更快、开销也更低。增量视图支持所有聚合函数，并且具备良好的扩展性——即使数据规模达到 PB 级也是如此——因为每次查询处理的都只是当前写入数据集中的一小部分最新数据。
 
+<div className="ch-image-lg">
+
 ![Materialized View](/images/bestpractices/incremental_materialized_view.webp)
+
+</div>
 
 相比之下，**可刷新materialized view**是按计划更新的。这类视图会定期重新执行完整查询，并覆盖目标表中的结果。这与 Postgres 等传统 OLTP 数据库中的materialized view类似。
 
+<div className="ch-image-lg">
+
 ![Refreshable materialized view diagram](/images/bestpractices/refreshable_materialized_view.webp)
+
+</div>
 
 增量materialized view 与可刷新materialized view 之间如何选择，很大程度上取决于查询本身的性质、数据变化的频率，以及视图更新是否必须在每一行写入时立即反映出来，还是可以接受按周期刷新。理解这些权衡，是在 ClickHouse 中设计高性能、可扩展的materialized view的关键。
 

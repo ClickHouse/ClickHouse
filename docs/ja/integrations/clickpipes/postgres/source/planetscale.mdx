@@ -38,7 +38,11 @@ ClickPipes は Postgres バージョン 12 以降をサポートしています�
 
    デフォルトでは、出力は `logical` になっているはずです。そうでない場合は、PlanetScaleコンソールにログインし、`Cluster configuration->Parameters` に移動して `Write-ahead log` までスクロールし、設定を変更してください。
 
+<div className="ch-image-md">
+
 ![PlanetScaleコンソールでwal_levelを調整](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp)
+
+</div>
 
 <Warning>
   PlanetScaleコンソールでこの設定を変更すると、再起動が発生します。
@@ -46,7 +50,11 @@ ClickPipes は Postgres バージョン 12 以降をサポートしています�
 
 2. また、設定 `max_slot_wal_keep_size` はデフォルトの4GBから増やすことを推奨します。これも PlanetScaleコンソールで `Cluster configuration->Parameters` に移動し、`Write-ahead log` までスクロールして設定します。新しい値の決め方については、[こちら](/ja/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings)を参照してください。
 
+<div className="ch-image-md">
+
 ![PlanetScaleコンソールでmax_slot_wal_keep_sizeを調整](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp)
+
+</div>
 
 <div id="creating-a-user-with-permissions-and-publication">
   ## 権限と publication を持つユーザーの作成

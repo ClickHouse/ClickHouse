@@ -38,7 +38,11 @@ integration:
 
    يجب أن تكون القيمة الناتجة `logical` افتراضيًا. وإذا لم تكن كذلك، فيُرجى تسجيل الدخول إلى Console الخاصة بـ PlanetScale والانتقال إلى `Cluster configuration->Parameters` ثم التمرير لأسفل إلى `Write-ahead log` لتغييرها.
 
+<div className="ch-image-md">
+
 ![ضبط wal_level في Console الخاصة بـ PlanetScale](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp)
+
+</div>
 
 <Warning>
   سيؤدي تغيير هذا الإعداد في Console الخاصة بـ PlanetScale إلى إعادة التشغيل.
@@ -46,7 +50,11 @@ integration:
 
 2. بالإضافة إلى ذلك، يُوصى بزيادة الإعداد `max_slot_wal_keep_size` من قيمته الافتراضية البالغة 4GB. ويتم ذلك أيضًا عبر Console الخاصة بـ PlanetScale بالانتقال إلى `Cluster configuration->Parameters` ثم التمرير لأسفل إلى `Write-ahead log`. للمساعدة في تحديد القيمة الجديدة، يُرجى الاطلاع [هنا](/ar/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings).
 
+<div className="ch-image-md">
+
 ![ضبط max_slot_wal_keep_size في Console الخاصة بـ PlanetScale](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp)
+
+</div>
 
 <div id="creating-a-user-with-permissions-and-publication">
   ## إنشاء مستخدم مع أذونات وpublication

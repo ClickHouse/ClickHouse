@@ -11,6 +11,7 @@ integration:
 ---
 
 import MySQLCloudSetup from '/snippets/zh/_clickhouse_mysql_cloud_setup.mdx';
+
 import MySQLOnPremiseSetup from '/snippets/zh/_clickhouse_mysql_on_premise_setup.mdx';
 
 import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
@@ -37,38 +38,62 @@ Looker Studio 可以通过 MySQL 接口，使用官方的 Google MySQL 数据源
 
 首先，使用你的 Google 账号登录 [Looker Studio](https://lookerstudio.google.com)，然后创建一个新的数据源：
 
+<div className="ch-image-md">
+
 ![在 Looker Studio 界面中创建新的数据源](/images/integrations/data-visualization/looker_studio_01.webp)
+
+</div>
 
 <br />
 
 搜索 Google 提供的官方 MySQL 连接器 (名称就是 **MySQL**) ：
 
+<div className="ch-image-md">
+
 ![在 Looker Studio 连接器列表中搜索 MySQL 连接器](/images/integrations/data-visualization/looker_studio_02.webp)
+
+</div>
 
 <br />
 
 填写连接信息。请注意，MySQL 接口的端口默认是 9004，
 具体端口也可能因服务器配置而不同。
 
+<div className="ch-image-md">
+
 ![在 Looker Studio 中填写 ClickHouse MySQL 连接信息](/images/integrations/data-visualization/looker_studio_03.webp)
+
+</div>
 
 <br />
 
 现在，你有两种从 ClickHouse 拉取数据的方式。首先，可以使用 Table Browser 功能：
 
+<div className="ch-image-md">
+
 ![在 Looker Studio 中使用 Table Browser 选择 ClickHouse 表](/images/integrations/data-visualization/looker_studio_04.webp)
+
+</div>
 
 <br />
 
 或者，你也可以指定自定义 SQL 查询来拉取数据：
 
+<div className="ch-image-md">
+
 ![在 Looker Studio 中使用自定义 SQL 查询从 ClickHouse 拉取数据](/images/integrations/data-visualization/looker_studio_05.webp)
+
+</div>
 
 <br />
 
 最后，你应该可以看到自动识别出的表结构，并在需要时调整数据类型。
 
+<div className="ch-image-md">
+
 ![在 Looker Studio 中查看自动识别出的 ClickHouse 表结构](/images/integrations/data-visualization/looker_studio_06.webp)
+
+</div>
 
 <br />
 
@@ -80,13 +105,21 @@ Looker Studio 可以通过 MySQL 接口，使用官方的 Google MySQL 数据源
 
 使用 ClickHouse Cloud 时，您需要先启用 MySQL 接口。您可以在连接对话框的 “MySQL” 选项卡中启用它。
 
+<div className="ch-image-md">
+
 ![在 ClickHouse Cloud 设置中启用 MySQL 接口](/images/integrations/data-visualization/looker_studio_enable_mysql.webp)
+
+</div>
 
 <br />
 
 在 Looker Studio UI 中，选择 “Enable SSL” 选项。ClickHouse Cloud 的 SSL 证书由 [Let&#39;s Encrypt](https://letsencrypt.org/certificates/) 签发。您可以在[这里](https://letsencrypt.org/certs/isrgrootx1.pem)下载该根证书。
 
+<div className="ch-image-md">
+
 ![带有 ClickHouse Cloud SSL 设置的 Looker Studio 连接配置](/images/integrations/data-visualization/looker_studio_mysql_cloud.webp)
+
+</div>
 
 <br />
 

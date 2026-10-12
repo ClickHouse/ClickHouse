@@ -300,15 +300,27 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
   <Step title="Vérifier dans l’interface ClickStack" id="confirm-in-ui">
     Ouvrez votre service dans la [console ClickHouse Cloud](https://console.clickhouse.cloud) et sélectionnez **ClickStack** dans le menu de gauche.
 
+    <div className="ch-image-lg">
+
     ![Lancer ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+    </div>
 
     Dans la vue **Search**, sélectionnez `Logs` comme source et définissez l’intervalle de temps sur **Last 15 minutes**. Les logs des conteneurs de tout le cluster devraient apparaître en quelques secondes, enrichis d’attributs comme `k8s.namespace.name`, `k8s.pod.name` et `k8s.node.name`.
 
+    <div className="ch-image-lg">
+
     ![Vue Search de ClickStack avec les logs Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+
+    </div>
 
     Pour voir les métriques et événements d’infrastructure dans leur contexte, ouvrez le tableau de bord **Kubernetes** intégré en accédant à **Dashboards** -&gt; **Kubernetes**. Les onglets `Pods`, `Nodes` et `Namespaces` devraient tous contenir des données.
 
+    <div className="ch-image-lg">
+
     ![Tableau de bord Kubernetes de ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+
+    </div>
 
     Si rien ne s’affiche :
 

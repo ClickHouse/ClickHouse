@@ -7,6 +7,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 ## Components {#components}
@@ -19,7 +20,11 @@ The ClickHouse Connector runs three daemons, all built into the `clicklink` bina
 
 On Kubernetes, the `clicklink-connector` Helm chart deploys the daemons in a namespace you choose (default `clicklink`). The executor is a single-replica Deployment that keeps its command state on a persistent volume. On a Linux VM, the daemons run as the `clicklink-scraper`, `clicklink-troubleshooter`, and `clicklink-executor` systemd units under an unprivileged `clicklink` system user.
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector architecture](/images/cloud/reference/byoc-connector-architecture.svg)
+
+</div>
 
 ## Connections {#connections}
 
@@ -55,7 +60,11 @@ The connector verifies your endpoint's server certificate against the system tru
 
 ## Data flow {#data-flow}
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector data flow](/images/cloud/reference/byoc-connector-data-flow.svg)
+
+</div>
 
 ### What leaves your environment {#what-leaves}
 

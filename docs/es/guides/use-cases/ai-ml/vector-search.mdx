@@ -45,7 +45,11 @@ ClickHouse admite la [búsqueda vectorial por fuerza bruta](/es/reference/engine
 Veamos un ejemplo sencillo para entender cómo funciona la búsqueda vectorial.
 Consideremos embeddings (representaciones vectoriales) de palabras:
 
+<div className="ch-image-md">
+
 ![Visualización de embeddings de frutas y animales](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
+
+</div>
 
 Crea la siguiente table con algunos embeddings de ejemplo:
 
@@ -116,7 +120,11 @@ Tienes dos opciones:
   ### Hierarchical Navigable Small World (HNSW)
 </div>
 
+<div className="ch-image-md">
+
 ![Estructura por capas de HNSW](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
+
+</div>
 
 HNSW se construye a partir de múltiples capas de nodos (vectores). Cada nodo se asigna aleatoriamente a una o más capas, y la probabilidad de aparecer en capas superiores disminuye exponencialmente.
 
@@ -152,7 +160,11 @@ Gracias a este diseño por capas, HNSW alcanza una complejidad de búsqueda loga
 QBit es una nueva estructura de datos que puede almacenar valores `BFloat16`, `Float32` y `Float64` aprovechando la forma en que se representan los números de coma flotante: como bits.
 En lugar de almacenar cada número completo, QBit divide los valores en **planos de bits**: el primer bit de cada valor, el segundo, el tercero, y así sucesivamente.
 
+<div className="ch-image-md">
+
 ![Concepto de planos de bits de QBit](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
+
+</div>
 
 Este enfoque resuelve la principal limitación de la cuantización tradicional. No hace falta almacenar datos duplicados ni arriesgarse a que los valores pierdan significado. Además, evita los cuellos de botella de RAM de HNSW, ya que QBit trabaja directamente con los datos almacenados en lugar de mantener un índice en memoria.
 
@@ -193,7 +205,11 @@ INSERT INTO fruit_animal VALUES
 ('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
+<div className="ch-image-md">
+
 ![Transposición de la estructura de datos de QBit](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
+
+</div>
 
 Cuando los datos se insertan en una columna QBit, se transponen de modo que todos los primeros bits queden alineados, todos los segundos bits queden alineados, y así sucesivamente. A esto lo llamamos **grupos**.
 
@@ -235,13 +251,21 @@ El tercer parámetro (16) especifica el nivel de precisión, en bits.
   ### Optimización de E/S
 </div>
 
+<div className="ch-image-md">
+
 ![Optimización de E/S de QBit](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
+
+</div>
 
 Antes de poder calcular distancias, es necesario leer del disco los datos requeridos y luego destransponerlos (es decir, volver de la representación de bits agrupados a vectores completos). Como QBit almacena los valores transpuestos por bits según el nivel de precisión, ClickHouse puede leer solo los planos de bits más altos necesarios para reconstruir números con la precisión deseada.
 
 En la consulta anterior, usamos un nivel de precisión de 16. Como un Float64 tiene 64 bits, solo leemos los primeros 16 planos de bits, **omitiendo el 75 % de los datos**.
 
+<div className="ch-image-md">
+
 ![Reconstrucción de QBit](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
+
+</div>
 
 Después de la lectura, reconstruimos solo la parte más significativa de cada número a partir de los planos de bits cargados, dejando en cero los bits no leídos.
 
@@ -249,7 +273,11 @@ Después de la lectura, reconstruimos solo la parte más significativa de cada n
   ### Optimización del cálculo
 </div>
 
+<div className="ch-image-md">
+
 ![Comparación de conversión a un tipo menor](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
+
+</div>
 
 Cabe preguntarse si convertir a un tipo menor, como Float32 o BFloat16, podría eliminar esta parte no utilizada. Funciona, pero las conversiones explícitas resultan costosas cuando se aplican a cada fila.
 

@@ -26,14 +26,22 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
     먼저 DynamoDB 테이블에서 Kinesis 스트림을 활성화하여 변경 사항을 실시간으로 캡처해야 합니다. 데이터가 누락되지 않도록 스냅샷을 생성하기 전에 이 작업을 수행하는 것이 좋습니다.
     AWS 가이드는 [여기](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html)에서 확인하십시오.
 
+    <div className="ch-image-lg">
+
     ![DynamoDB Kinesis 스트림](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
+
+    </div>
   </Step>
 
   <Step title="스냅샷 생성" id="2-create-the-snapshot">
     다음으로 DynamoDB 테이블의 스냅샷을 생성합니다. 이는 AWS에서 S3로 내보내기를 통해 수행할 수 있습니다. AWS 가이드는 [여기](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html)에서 확인할 수 있습니다.
     **DynamoDB JSON 포맷으로 &quot;Full export&quot;를 수행해야 합니다.**
 
+    <div className="ch-image-md">
+
     ![DynamoDB S3 내보내기](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
+
+    </div>
   </Step>
 
   <Step title="ClickHouse에 스냅샷 로드하기" id="3-load-the-snapshot-into-clickhouse">
@@ -126,7 +134,11 @@ import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupporte
       * `ApproximateCreationDateTime`: `version`
       * 아래와 같이 다른 필드를 해당 대상 컬럼에 매핑합니다
 
+    <div className="ch-image-md">
+
     ![DynamoDB 컬럼 매핑](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
+
+    </div>
   </Step>
 
   <Step title="정리(선택 사항)" id="5-cleanup-optional">

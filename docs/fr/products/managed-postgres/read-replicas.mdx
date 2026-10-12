@@ -8,17 +8,26 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
 Les répliques de lecture vous permettent de créer une ou plusieurs copies de votre base de données ClickHouse Managed Postgres primaire. Ces répliques suivent en continu votre base de données primaire grâce à la réplication native de PostgreSQL, afin de rester synchronisées avec les changements.
 
 Pour gérer les répliques de lecture, cliquez sur l’icône de modification de votre warehouse :
 
+<div className="ch-image-md">
+
 ![Vue du warehouse avec l’icône de modification](/images/managed-postgres/warehouse-view.webp)
+
+</div>
 
 La boîte de dialogue du warehouse s’ouvre alors, où vous pouvez voir les services existants et créer de nouvelles répliques de lecture :
 
+<div className="ch-image-md">
+
 ![Boîte de dialogue de gestion des répliques de lecture](/images/managed-postgres/read-replica-dialog.webp)
+
+</div>
 
 ## Gérer les répliques de lecture {#managing-read-replicas}
 
@@ -26,11 +35,19 @@ La page **Répliques de lecture** propose deux vues, accessibles via les contrô
 
 La vue **Flux** affiche la topologie de réplication : votre instance primaire en haut, avec des flèches pointant vers chaque réplique attachée, ce qui permet de voir d’un coup d’œil le niveau de service, la région et le statut :
 
+<div className="ch-image-lg">
+
 ![Vue Flux des répliques de lecture montrant la topologie de l’instance primaire et des répliques](/images/managed-postgres/read-replicas-flow.webp)
+
+</div>
 
 La vue **Tableau** répertorie chaque réplique avec son nom de service, son fournisseur cloud et sa région, le statut du service, l’heure de création, ainsi qu’une action **Détacher le service** :
 
+<div className="ch-image-lg">
+
 ![Vue Tableau des répliques de lecture](/images/managed-postgres/read-replicas-table.webp)
+
+</div>
 
 Pour créer une nouvelle réplique, cliquez sur **Créer une réplique de lecture** en haut à droite, dans l’une ou l’autre vue.
 

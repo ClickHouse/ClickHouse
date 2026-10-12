@@ -32,7 +32,11 @@ PARTITION BY toStartOfMonth(date)
 
 Cada vez que se inserta un conjunto de filas en la tabla, en lugar de crear (al[ menos](/es/reference/settings/session-settings/max-insert#max_insert_block_size)) una única parte de datos que contenga todas las filas insertadas (como se describe [aquí](/es/concepts/core-concepts/parts)), ClickHouse crea una nueva parte de datos por cada valor único de la clave de particionamiento entre las filas insertadas:
 
+<div className="ch-image-lg">
+
 ![Particiones](/images/bestpractices/partitions.webp)
+
+</div>
 
 El servidor de ClickHouse primero divide las filas de la inserción de ejemplo de 4 filas representada en el diagrama anterior según el valor de su clave de particionamiento `toStartOfMonth(date)`. Luego, para cada partición identificada, las filas se procesan como[ de costumbre](/es/concepts/core-concepts/parts) mediante varios pasos secuenciales (① Ordenación, ② División en columnas, ③ Compresión, ④ Escritura en disco).
 
@@ -40,7 +44,11 @@ Para obtener una explicación más detallada del particionamiento, recomendamos 
 
 Con el particionamiento habilitado, ClickHouse solo [fusiona](/es/concepts/core-concepts/merges) partes de datos dentro de las particiones, pero no entre ellas. Lo ilustramos con nuestra tabla de ejemplo anterior:
 
+<div className="ch-image-md">
+
 ![Particiones](/images/bestpractices/merges_with_partitions.webp)
+
+</div>
 
 <div id="applications-of-partitioning">
   ## Aplicaciones del particionamiento

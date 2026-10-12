@@ -101,20 +101,40 @@ and move to the next one using your existing service.
 
 1. Log in to the [Microsoft Azure Portal](https://portal.azure.com/) and click
    **Create a resource**.
+   <div className="ch-image-lg">
+
    ![Azure Portal Home Page](/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp)
+
+   </div>
 
 2. In the Categories pane on the left, select **Analytics**, then click on
    **Data Factory** in the list of popular services.
+   <div className="ch-image-lg">
+
    ![Azure Portal New Resource](/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp)
+
+   </div>
 
 3. Select your subscription and resource group, enter a name for the new Data
    Factory instance, choose the region and leave the version as V2.
+   <div className="ch-image-lg">
+
    ![Azure Portal New Data Factory](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp)
 
+   </div>
+
 3. Click **Review + Create**, then click **Create** to launch the deployment.
+   <div className="ch-image-lg">
+
    ![Azure Portal New Data Factory Confirm](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp)
 
+   </div>
+
+   <div className="ch-image-lg">
+
    ![Azure Portal New Data Factory Success](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp)
+
+   </div>
 
 Once the deployment completes successfully, you can start using your new Azure
 Data Factory instance.
@@ -122,34 +142,62 @@ Data Factory instance.
 ## Creating a new REST-Based linked service {#-creating-new-rest-based-linked-service}
 
 1. Log in to the Microsoft Azure Portal and open your Data Factory instance.
+   <div className="ch-image-lg">
+
    ![Azure Portal Home Page with Data Factory](/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp)
 
+   </div>
+
 2. On the Data Factory overview page, click **Launch Studio**.
+   <div className="ch-image-lg">
+
    ![Azure Portal Data Factory Page](/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp)
+
+   </div>
 
 3. In the left-hand menu, select **Manage**, then go to **Linked services**,
    and click **+ New** to create a new linked service.
+   <div className="ch-image-lg">
+
    ![Azure Data Factory New Linked Service Button](/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp)
+
+   </div>
 
 4. In the **New linked service search bar**, type **REST**, select **REST**, and click **Continue**
    to create [a REST connector](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)
    instance.
+   <div className="ch-image-lg">
+
    ![Azure Data Factory New Linked Service Search](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp)
+
+   </div>
 
 5. In the linked service configuration pane enter a name for your new service,
    click the **Base URL** field, then click **Add dynamic content** (this link only
    appears when the field is selected).
+   <div className="ch-image-lg">
+
    ![New Lined Service Pane](/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp)
+
+   </div>
 
 6. In the dynamic content pane you can create a parameterized URL, which
    allows you to define the query later when creating datasets for different
    tables — this makes the linked service reusable.
+   <div className="ch-image-lg">
+
    ![New Linked ServiceBase Url Empty](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp)
+
+   </div>
 
 7. Click the **"+"** next to the filter input and add a new parameter, name it
    `pQuery`, set the type to String, and set the default value to `SELECT 1`.
    Click **Save**.
+   <div className="ch-image-lg">
+
    ![New Linked Service Parameters](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp)
+
+   </div>
 
 8. In the expression field, enter the following and click **OK**. Replace
    `your-clickhouse-url.com` with the actual address of your ClickHouse
@@ -157,16 +205,28 @@ Data Factory instance.
    ```text
    @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
    ```
+   <div className="ch-image-lg">
+
    ![New Linked Service Expression Field Filled](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp)
+
+   </div>
 
 9. Back in the main form select Basic authentication, enter the username and
    password used to connect to your ClickHouse HTTP interface, click **Test
    connection**. If everything is configured correctly, you'll see a success
    message.
+   <div className="ch-image-lg">
+
    ![New Linked Service Check Connection](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp)
 
+   </div>
+
 10. Click **Create** to finalize the setup.
+    <div className="ch-image-lg">
+
     ![Linked Services List](/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp)
+
+    </div>
 
 You should now see your newly registered REST-based linked service in the list.
 
@@ -197,19 +257,31 @@ Data](/get-started/sample-datasets/environmental-sensors).
 
 2. In Azure Data Factory Studio, select Author in the left-hand pane. Hover
    over the Dataset item, click the three-dot icon, and choose New dataset.
+   <div className="ch-image-lg">
+
    ![New Dataset Item](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp)
+
+   </div>
 
 3. In the search bar, type **REST**, select **REST**, and click **Continue**.
    Enter a name for your dataset and select the **linked service** you created
    in the previous step. Click **OK** to create the dataset.
+   <div className="ch-image-lg">
+
    ![New Dataset Page](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp)
+
+   </div>
 
 4. You should now see your newly created dataset listed under the Datasets
    section in the Factory Resources pane on the left. Select the dataset to
    open its properties. You'll see the `pQuery` parameter that was defined in the
    linked service. Click the **Value** text field. Then click **Add dynamic**
    content.
+   <div className="ch-image-lg">
+
    ![New Dataset Properties](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp)
+
+   </div>
 
 5. In the pane that opens, paste the following query:
    ```sql
@@ -228,12 +300,20 @@ Data](/get-started/sample-datasets/environmental-sensors).
    must be written as `''best_effort''`.
 </Danger>
 
+   <div className="ch-image-lg">
+
    ![New Dataset Query](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp)
+
+   </div>
 
 6. Click OK to save the expression. Click Test connection. If everything is
    configured correctly, you'll see a Connection successful message. Click Publish
    all at the top of the page to save your changes.
+   <div className="ch-image-lg">
+
    ![New Dataset Connection Successful](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp)
+
+   </div>
 
 ### Setting up an example dataset {#setting-up-an-example-dataset}
 
@@ -262,14 +342,26 @@ Now that we've configured both the input and output datasets, we can set up a
 1. Open **Azure Data Factory Studio**, go to the **Author tab**. In the
    **Factory Resources** pane, hover over **Pipeline**, click the three-dot
    icon, and select **New pipeline**.
+   <div className="ch-image-lg">
+
    ![ADF New Pipeline Item](/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp)
+
+   </div>
 
 2. In the **Activities** pane, expand the **Move and transform** section and
    drag the **Copy data** activity onto the canvas.
+   <div className="ch-image-lg">
+
    ![New Copy DataItem](/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp)
 
+   </div>
+
 3. Select the **Source** tab, and choose the source dataset you created earlier.
+   <div className="ch-image-lg">
+
    ![Copy Data Source](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp)
+
+   </div>
 
 4. Go to the **Sink** tab and select the ClickHouse dataset created for your
    sensors table. Set **Request method** to POST. Ensure **HTTP compression
@@ -285,12 +377,20 @@ Now that we've configured both the input and output datasets, we can set up a
    [Selecting an Insert Strategy / Batch inserts if synchronous](/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous)
    for more details.
 </Info>
+   <div className="ch-image-lg">
+
    ![Copy Data Sink Select Post](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp)
+
+   </div>
 
 5. Click **Debug** at the top of the canvas to run the pipeline. After a short
    wait, the activity will be queued and executed. If everything is configured
    correctly, the task should finish with a **Success** status.
+   <div className="ch-image-lg">
+
    ![Copy Data Debug Success](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp)
+
+   </div>
 
 6. Once complete, click **Publish all** to save your pipeline and dataset changes.
 

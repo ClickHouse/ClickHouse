@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
 ClickHouse Managed Postgres provides flexible scaling options to match your workload requirements. With 50+ NVMe-backed instance types to choose from, you can independently scale CPU, memory, and storage to optimize performance and cost for your specific use case.
@@ -20,7 +21,11 @@ ClickHouse Managed Postgres offers a wide range of instance types, each optimize
 - **NVMe-backed storage** on all instance types for consistent, high-performance disk I/O
 - **Independent resource scaling**: Choose the right balance of CPU, memory, and storage based on your workload
 
+<div className="ch-image-md">
+
 ![Instance types](/images/managed-postgres/instance-types.webp)
+
+</div>
 
 ### Choosing the right instance type {#choosing-instance}
 
@@ -40,7 +45,11 @@ For safety reasons, you may not be able to switch to instance types whose storag
 
 When you change instance types, ClickHouse Managed Postgres performs a vertical scaling operation that provisions new infrastructure and migrates your database with minimal downtime.
 
+<div className="ch-image-md">
+
 ![Scaling Settings](/images/managed-postgres/scaling-settings.webp)
+
+</div>
 
 ### Scaling process {#scaling-process}
 

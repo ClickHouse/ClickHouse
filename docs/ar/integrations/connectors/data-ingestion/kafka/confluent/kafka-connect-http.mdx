@@ -9,6 +9,7 @@ keywords: ['Confluent HTTP Sink Connector', 'HTTP Sink ClickHouse', 'موصل Ka
 ---
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
 إن موصل HTTP Sink لا يعتمد على نوع بيانات محدد، لذا لا يحتاج إلى مخطط Kafka، كما يدعم أنواع بيانات خاصة بـ ClickHouse مثل Maps وArrays. وتأتي هذه المرونة الإضافية مقابل زيادة طفيفة في تعقيد الإعداد.
 
 فيما يلي نشرح عملية تثبيت بسيطة، مع سحب الرسائل من topic واحد في Kafka وإدراج صفوف في جدول ClickHouse.
@@ -59,7 +60,11 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
   <Step title="تكوين HTTP Sink" id="4-configure-http-sink">
     أنشئ Kafka topic ومثيلاً من موصل HTTP Sink:
 
+    <div className="ch-image-sm">
+
     ![واجهة Confluent Cloud تعرض كيفية إنشاء موصل HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
+
+    </div>
 
     <br />
 
@@ -76,7 +81,11 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
       هذا `HTTP Url` عرضة لوقوع الأخطاء. تأكد من أن التحويلات الهروبية دقيقة لتجنب المشكلات.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![واجهة Confluent Cloud تعرض إعدادات المصادقة لموصل HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
+
+    </div>
 
     <br />
 
@@ -90,13 +99,21 @@ import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
         * `Retry on HTTP codes` - 400-500، ولكن عدّله حسب الحاجة. على سبيل المثال، قد يتغير ذلك إذا كان لديك HTTP proxy أمام ClickHouse.
         * `Maximum Reties` - القيمة الافتراضية (10) مناسبة، لكن لا تتردد في تعديلها للحصول على retries أكثر موثوقية.
 
+    <div className="ch-image-sm">
+
     ![واجهة Confluent Cloud تعرض خيارات التكوين المتقدمة لموصل HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
+
+    </div>
   </Step>
 
   <Step title="اختبار الاتصال" id="5-testing-the-connectivity">
     أنشئ رسالة في topic الذي أعددته لـ HTTP Sink
 
+    <div className="ch-image-md">
+
     ![واجهة Confluent Cloud تعرض كيفية إنشاء رسالة اختبار في Kafka topic](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
+
+    </div>
 
     <br />
 

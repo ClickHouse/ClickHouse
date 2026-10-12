@@ -32,7 +32,11 @@ Você pode [consultar esta tabela](https://sql.clickhouse.com/?query=U0VMRUNUICo
 
 Uma parte de dados é criada sempre que um conjunto de linhas é inserido na tabela. O diagrama a seguir mostra isso:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/part.webp)
+
+</div>
 
 <br />
 
@@ -66,7 +70,11 @@ As partes de dados são autocontidas e incluem todos os metadados necessários p
 
 Para gerenciar o número de partes por tabela, uma tarefa de [mesclagem em segundo plano](/pt-BR/concepts/core-concepts/merges) combina periodicamente partes menores em partes maiores até que elas atinjam um tamanho [configurável](/pt-BR/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) comprimido (normalmente ~150 GB). As partes mescladas são marcadas como inativas e excluídas após um intervalo de tempo [configurável](/pt-BR/reference/settings/merge-tree-settings/other#old_parts_lifetime). Com o tempo, esse processo cria uma estrutura hierárquica de partes mescladas, por isso ela é chamada de tabela MergeTree:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/merges.webp)
+
+</div>
 
 <br />
 

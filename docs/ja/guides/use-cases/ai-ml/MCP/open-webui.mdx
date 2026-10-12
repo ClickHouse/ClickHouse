@@ -45,47 +45,87 @@ doc_type: 'guide'
 
     [http://localhost:8000/docs](http://localhost:8000/docs) にアクセスすると、作成されたエンドポイントの一覧を確認できます。
 
+    <div className="ch-image-md">
+
     ![Open API エンドポイント](/images/use-cases/AI_ML/MCP/0_endpoints.webp)
+
+    </div>
 
     これらのエンドポイントを Open WebUI で使用するには、設定画面に移動します。
 
+    <div className="ch-image-md">
+
     ![Open WebUI の設定](/images/use-cases/AI_ML/MCP/1_settings.webp)
+
+    </div>
 
     `Tools` をクリックします。
 
+    <div className="ch-image-md">
+
     ![Open WebUI のツール](/images/use-cases/AI_ML/MCP/2_tools_page.webp)
+
+    </div>
 
     ツール URL として [http://localhost:8000](http://localhost:8000) を追加します。
 
+    <div className="ch-image-md">
+
     ![Open WebUI のツール](/images/use-cases/AI_ML/MCP/3_add_tool.webp)
+
+    </div>
 
     これが完了すると、チャットバーのツールアイコンの横に `1` が表示されます。
 
+    <div className="ch-image-md">
+
     ![利用可能な Open WebUI のツール](/images/use-cases/AI_ML/MCP/4_tools_available.webp)
+
+    </div>
 
     ツールアイコンをクリックすると、利用可能なツールの一覧を表示できます。
 
+    <div className="ch-image-md">
+
     ![Open WebUI のツール一覧](/images/use-cases/AI_ML/MCP/5_list_of_tools.webp)
+
+    </div>
   </Step>
 
   <Step title="OpenAI を設定" id="configure-openai">
     Open WebUI はデフォルトで Ollama モデルに対応していますが、OpenAI 互換のエンドポイントも追加できます。
     これらは設定メニューから構成しますが、今回は `Connections` タブをクリックする必要があります。
 
+    <div className="ch-image-md">
+
     ![Open WebUI の接続](/images/use-cases/AI_ML/MCP/6_connections.webp)
+
+    </div>
 
     エンドポイントと OpenAI キーを追加します。
 
+    <div className="ch-image-md">
+
     ![Open WebUI - 接続として OpenAI を追加](/images/use-cases/AI_ML/MCP/7_add_connection.webp)
+
+    </div>
 
     すると、OpenAI モデルが上部メニューから利用できるようになります。
 
+    <div className="ch-image-md">
+
     ![Open WebUI - モデル](/images/use-cases/AI_ML/MCP/8_openai_models_more.webp)
+
+    </div>
   </Step>
 
   <Step title="Open WebUI で ClickHouse MCPサーバーとチャット" id="chat-to-clickhouse-mcp-server">
     その後、会話を開始すると、必要に応じて Open WebUI が MCPサーバーを呼び出します。
 
+    <div className="ch-image-md">
+
     ![Open WebUI - ClickHouse MCPサーバーとチャット](/images/use-cases/AI_ML/MCP/9_conversation.webp)
+
+    </div>
   </Step>
 </Steps>

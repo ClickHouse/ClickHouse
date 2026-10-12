@@ -9,6 +9,7 @@ keywords: ['Conector HTTP Sink da Confluent', 'HTTP Sink ClickHouse', 'conector 
 ---
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
+
 O conector HTTP Sink é agnóstico quanto a tipos de dados e, portanto, não requer um esquema do Kafka, além de oferecer suporte a tipos de dados específicos do ClickHouse, como Map e Array. Essa flexibilidade adicional traz um pequeno aumento na complexidade da configuração.
 
 Abaixo, descrevemos uma instalação simples, extraindo mensagens de um único tópico do Kafka e inserindo linhas em uma tabela do ClickHouse.
@@ -59,7 +60,11 @@ Abaixo, descrevemos uma instalação simples, extraindo mensagens de um único t
   <Step title="Configure o HTTP Sink" id="4-configure-http-sink">
     Crie um tópico do Kafka e uma instância do conector HTTP Sink:
 
+    <div className="ch-image-sm">
+
     ![Interface do Confluent Cloud mostrando como criar um conector HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
+
+    </div>
 
     <br />
 
@@ -76,7 +81,11 @@ Abaixo, descrevemos uma instalação simples, extraindo mensagens de um único t
       Esta `HTTP Url` é propensa a erros. Certifique-se de escapar tudo corretamente para evitar problemas.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![Interface do Confluent Cloud mostrando as configurações de autenticação do conector HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
+
+    </div>
 
     <br />
 
@@ -90,13 +99,21 @@ Abaixo, descrevemos uma instalação simples, extraindo mensagens de um único t
         * `Retry on HTTP codes` - 400-500, mas ajuste conforme necessário; por exemplo, isso pode mudar se você tiver um proxy HTTP na frente do ClickHouse.
         * `Maximum Reties` - o padrão (10) é adequado, mas fique à vontade para ajustar se quiser tentativas de repetição mais robustas.
 
+    <div className="ch-image-sm">
+
     ![Interface do Confluent Cloud mostrando opções avançadas de configuração do conector HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
+
+    </div>
   </Step>
 
   <Step title="Testando a conectividade" id="5-testing-the-connectivity">
     Crie uma mensagem em um tópico configurado pelo seu HTTP Sink
 
+    <div className="ch-image-md">
+
     ![Interface do Confluent Cloud mostrando como criar uma mensagem de teste em um tópico do Kafka](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
+
+    </div>
 
     <br />
 

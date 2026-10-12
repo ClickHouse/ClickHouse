@@ -45,15 +45,27 @@ integration:
 يمكنك تعيين فاصل المزامنة وحجم دفعة السحب عند إنشاء ClickPipe أو تعديل ClickPipe موجود.
 وعند إنشاء ClickPipe، ستظهر هذه الإعدادات في الخطوة الثانية من معالج الإنشاء، كما هو موضح أدناه:
 
+<div className="ch-image-md">
+
 ![إنشاء إعدادات المزامنة](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
+
+</div>
 
 وعند تعديل ClickPipe موجود، يمكنك الانتقال إلى علامة تبويب **الإعدادات** الخاصة بالمسار، ثم إيقاف المسار مؤقتًا والنقر على **تهيئة** هنا:
 
+<div className="ch-image-md">
+
 ![زر تعديل المزامنة](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
+
+</div>
 
 سيؤدي ذلك إلى فتح لوحة جانبية تتضمن إعدادات المزامنة، حيث يمكنك تغيير فاصل المزامنة وحجم دفعة السحب:
 
+<div className="ch-image-md">
+
 ![تعديل إعدادات المزامنة](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
+
+</div>
 
 <div id="monitoring">
   ### مراقبة سلوك التحكم بالمزامنة
@@ -61,4 +73,8 @@ integration:
 
 يمكنك معرفة المدة التي تستغرقها كل دفعة في جدول **CDC Syncs** ضمن علامة التبويب **Metrics** في ClickPipe. لاحظ أن المدة هنا تشمل أيضًا وقت الدفع، وإذا لم ترد أي صفوف، فسينتظر ClickPipe، كما يُحتسب وقت الانتظار ضمن هذه المدة أيضًا.
 
+<div className="ch-image-md">
+
 ![جدول CDC Syncs](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)
+
+</div>

@@ -12,6 +12,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
+
 import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -56,7 +57,11 @@ en Tableau que se conecte a la base de datos **TPCD** de ClickHouse.
 
 2. En el menú de la izquierda, haz clic en **More** en la sección **To a Server**. Busca **ClickHouse by ClickHouse** en la lista de conectores disponibles:
 
+<div className="ch-image-md">
+
 ![Pantalla de conexión de Tableau que muestra el menú de selección de conectores con la opción ClickHouse by ClickHouse resaltada](/images/integrations/data-visualization/tableau_connecttoserver.webp)
+
+</div>
 
 <br />
 
@@ -67,14 +72,22 @@ en Tableau que se conecte a la base de datos **TPCD** de ClickHouse.
 
 3. Haz clic en **ClickHouse by ClickHouse** y aparecerá el siguiente cuadro de diálogo:
 
+<div className="ch-image-md">
+
 ![Cuadro de diálogo de instalación del conector de Tableau que muestra los detalles del conector ClickHouse JDBC y el botón de instalación](/images/integrations/data-visualization/tableau_connector_details.webp)
+
+</div>
 
 <br />
 
 4. Haz clic en **Install and Restart Tableau**. Reinicia la aplicación.
 5. Después de reiniciar, el conector tendrá su nombre completo: `ClickHouse JDBC by ClickHouse, Inc.`. Al hacer clic en él, aparecerá el siguiente cuadro de diálogo:
 
+<div className="ch-image-md">
+
 ![Cuadro de diálogo de conexión de ClickHouse en Tableau que muestra campos para server, port, database, username y password](/images/integrations/data-visualization/tableau_connector_dialog.webp)
+
+</div>
 
 <br />
 
@@ -102,13 +115,21 @@ en Tableau que se conecte a la base de datos **TPCD** de ClickHouse.
 
 7. Haz clic en el botón **Sign In** y deberías ver un nuevo libro de trabajo de Tableau:
 
+<div className="ch-image-md">
+
 ![Nuevo libro de trabajo de Tableau que muestra la pantalla de conexión inicial con opciones de selección de base de datos](/images/integrations/data-visualization/tableau_newworkbook.webp)
+
+</div>
 
 <br />
 
 8. Selecciona **TPCD** en el desplegable **Schema** y deberías ver la lista de tablas en **TPCD**:
 
+<div className="ch-image-md">
+
 ![Selección de schema en Tableau que muestra las tablas de la base de datos TPCD, incluidas CUSTOMER, LINEITEM, NATION, ORDERS y otras](/images/integrations/data-visualization/tableau_tpcdschema.webp)
+
+</div>
 
 <br />
 
@@ -122,7 +143,11 @@ Ahora que tenemos un origen de datos de ClickHouse configurado en Tableau, vamos
 
 1. Arrastra la tabla **CUSTOMER** al libro de trabajo. Observa que aparecen las columnas, pero la tabla de datos está vacía:
 
+<div className="ch-image-md">
+
 ![Libro de trabajo de Tableau con la tabla CUSTOMER arrastrada al lienzo, mostrando encabezados de columnas pero sin datos](/images/integrations/data-visualization/tableau_workbook1.webp)
+
+</div>
 
 <br />
 
@@ -130,14 +155,22 @@ Ahora que tenemos un origen de datos de ClickHouse configurado en Tableau, vamos
 
 3. Arrastra la tabla **ORDERS** al libro de trabajo y, a continuación, establece **Custkey** como el campo de relación entre las dos tablas:
 
+<div className="ch-image-md">
+
 ![Editor de relaciones de Tableau que muestra la conexión entre las tablas CUSTOMER y ORDERS mediante el campo Custkey](/images/integrations/data-visualization/tableau_workbook2.webp)
+
+</div>
 
 <br />
 
 4. Ahora tienes las tablas **ORDERS** y **LINEITEM** asociadas entre sí como origen de datos, así que puedes usar
    esta relación para responder preguntas sobre los datos. Selecciona la pestaña **Sheet 1** en la parte inferior del libro de trabajo.
 
+<div className="ch-image-md">
+
 ![Hoja de trabajo de Tableau que muestra las dimensiones y medidas de las tablas de ClickHouse disponibles para el análisis](/images/integrations/data-visualization/tableau_workbook3.webp)
+
+</div>
 
 <br />
 
@@ -145,7 +178,11 @@ Ahora que tenemos un origen de datos de ClickHouse configurado en Tableau, vamos
    sección **Columns** (el campo horizontal) y, a continuación, arrastra **Quantity** de **LINEITEM** a **Rows**. Tableau
    generará el siguiente gráfico de líneas:
 
+<div className="ch-image-sm">
+
 ![Gráfico de líneas de Tableau que muestra la cantidad pedida por año a partir de datos de ClickHouse](/images/integrations/data-visualization/tableau_workbook4.webp)
+
+</div>
 
 <br />
 
@@ -161,21 +198,33 @@ notarás que no hay mucha variación en los pedidos simulados de los datos TCPD.
 
 Deberías ver lo siguiente:
 
+<div className="ch-image-sm">
+
 ![Vista de tabla cruzada de Tableau con trimestres como columnas y modos de envío como filas](/images/integrations/data-visualization/tableau_workbook5.webp)
+
+</div>
 
 <br />
 
 7. Los valores **Abc** solo están ocupando espacio hasta que arrastres una métrica a la tabla. Arrastra **Totalprice** de *
    *ORDERS** a la tabla. Observa que el cálculo predeterminado es **SUM** de **Totalprices**:
 
+<div className="ch-image-md">
+
 ![Tabla cruzada de Tableau que muestra la suma del precio total por trimestre y modo de envío](/images/integrations/data-visualization/tableau_workbook6.webp)
+
+</div>
 
 <br />
 
 8. Haz clic en **SUM** y cambia **Measure** a **Average**. En el mismo menú desplegable, selecciona **Format** y cambia
    **Numbers** a **Currency (Standard)**:
 
+<div className="ch-image-md">
+
 ![Tabla cruzada de Tableau que muestra el precio medio de los pedidos por trimestre y modo de envío con formato de moneda](/images/integrations/data-visualization/tableau_workbook7.webp)
+
+</div>
 
 <br />
 

@@ -187,7 +187,11 @@ S3 ClickPipe 支持公有和私有存储桶。**不支持** [Requester Pays](htt
 
 要使用[访问密钥](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html)进行身份验证，请在设置 ClickPipe 连接时，在 **Authentication method** 下选择 `Credentials`。然后，分别在 `Access key` 和 `Secret key` 中填写访问密钥 ID (例如 `AKIAIOSFODNN7EXAMPLE`) 和秘密访问密钥 (例如 `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) 。
 
+<div className="ch-image-lg">
+
 ![S3 ClickPipes 的 IAM 凭证](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp)
+
+</div>
 
 <div id="iam-role">
   #### IAM role
@@ -195,7 +199,11 @@ S3 ClickPipe 支持公有和私有存储桶。**不支持** [Requester Pays](htt
 
 如需使用[基于角色的访问](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)进行身份验证，请在设置 ClickPipe 连接时，在 **Authentication method** 下选择 `IAM role`。
 
+<div className="ch-image-lg">
+
 ![S3 ClickPipes 的 IAM 身份验证](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp)
+
+</div>
 
 请按照[本指南](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely)[创建角色](/zh/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)，并为其配置 S3 访问所需的信任策略。然后，在 `IAM role ARN` 中填写 IAM role ARN。
 
@@ -240,7 +248,11 @@ ClickPipes 提供了合理的默认设置，能够满足大多数使用场景的
 | `Parallel view processing`           | false   | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings/parallel#parallel_view_processing)的方式推送到已附加的视图。                         |
 | `Use cluster function`               | true    | 是否在多个节点上并行处理文件。                                                                                                            |
 
+<div className="ch-image-lg">
+
 ![ClickPipes 高级设置](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</div>
 
 <div id="scaling">
   ### 扩缩容

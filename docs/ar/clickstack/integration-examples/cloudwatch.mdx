@@ -56,7 +56,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     3. انتقل إلى **إعدادات الفريق → مفاتيح API**
     4. انسخ **مفتاح API للاستيعاب** الخاص بك
 
+    <div className="ch-image-lg">
+
     ![مفتاح API لـ ClickStack](/images/clickstack/api-key.webp)
+
+    </div>
 
     احفظ هذا في متغير بيئة:
 
@@ -292,7 +296,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     3. انتظر دقيقة إلى دقيقتين حتى تظهر السجلات (بحسب فترة الاستطلاع لديك)
     4. ابحث عن السجلات القادمة من مجموعات سجلات CloudWatch الخاصة بك
 
+    <div className="ch-image-lg">
+
     ![عرض البحث في السجلات](/images/clickstack/cloudwatch/log-search-view.webp)
+
+    </div>
 
     ابحث عن هذه السمات الأساسية في السجلات:
 
@@ -301,7 +309,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * `ResourceAttributes['cloudwatch.log.stream']`: اسم دفق السجل
     * `Body`: المحتوى الفعلي لرسالة السجل
 
+    <div className="ch-image-lg">
+
     ![قيم عمود سجل الخطأ](/images/clickstack/cloudwatch/error-log-column-values.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -356,7 +368,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
     من المفترض أن ترى سجلات من عدة مجموعات سجلات CloudWatch.
 
+    <div className="ch-image-lg">
+
     ![عرض البحث التجريبي](/images/clickstack/cloudwatch/demo-search-view.webp)
+
+    </div>
 
     <Info>
       **عرض المنطقة الزمنية**
@@ -381,17 +397,29 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
     2. انقر على **استيراد لوحة المعلومات** في الزاوية العلوية اليمنى من قائمة النقاط الثلاث
 
+    <div className="ch-image-lg">
+
     ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. ارفع الملف `cloudwatch-logs-dashboard.json` ثم انقر على **إنهاء الاستيراد**
 
+    <div className="ch-image-lg">
+
     ![مربع حوار إنهاء الاستيراد](/images/clickstack/cloudwatch/finish-import.webp)
+
+    </div>
   </Step>
 
   <Step title="اعرض لوحة المعلومات" id="created-dashboard">
     ستُنشأ لوحة المعلومات مع ضبط جميع التصورات مسبقًا:
 
+    <div className="ch-image-lg">
+
     ![لوحة معلومات CloudWatch Logs](/images/clickstack/cloudwatch/logs-dashboard.webp)
+
+    </div>
 
     <Note>
       بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (مع تعديله بحسب منطقتك الزمنية المحلية). لن تتضمن لوحة المعلومات المستوردة نطاقًا زمنيًا محددًا افتراضيًا.

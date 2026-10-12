@@ -58,7 +58,11 @@ ClickHouse Cloud предоставляет оптимальные настро�
 1. создайте пользовательскую роль `CREATE ROLE my_clickpipes_role SETTINGS ...`. Подробнее см. в разделе о синтаксисе [CREATE ROLE](/ru/reference/statements/create/role).
 2. добавьте пользовательскую роль пользователю ClickPipes на этапе `Details and Settings` при создании ClickPipes.
 
+<div className="ch-image-lg">
+
 ![Назначение пользовательской роли](/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp)
+
+</div>
 
 <div id="clickpipes-advanced-settings">
   ## Настройка расширенных настроек ClickPipes
@@ -83,7 +87,11 @@ ClickPipes предлагает разумные настройки по умо�
 | `Parallel view processing`           | false                 | Включает отправку в присоединённые представления [параллельно, а не последовательно](/ru/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`               | true                  | Определяет, следует ли обрабатывать файлы параллельно на нескольких узлах.                                                                                    |
 
+<div className="ch-image-lg">
+
 ![Расширенные настройки ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</div>
 
 <div id="clickpipes-advanced-settings-streaming">
   ### ClickPipes для стриминга

@@ -55,7 +55,11 @@ impossible, e.g. a complex subquery. In this case, both the right and left side
 are sorted on disk if they do not fit in memory, allowing large tables to be
 joined.
 
+<div className="ch-image-md">
+
 ![Joins algorithms](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+
+</div>
 
 Since 20.3, ClickHouse has supported an auto value for the `join_algorithm` setting.
 This instructs ClickHouse to apply an adaptive join approach, where the hash-join

@@ -29,7 +29,11 @@ ClickHouse обрабатывает запросы чрезвычайно быс
 каждый сегмент выполнит данный запрос. Сервер, на котором был выполнен запрос к distributed
 таблице, агрегирует данные и вернет ответ клиенту:
 
+<div className="ch-image-md">
+
 ![архитектура с сегментированием](/images/deployment-guides/parallel-replicas-1.webp)
+
+</div>
 
 На рисунке выше показано, что происходит, когда клиент выполняет запрос к distributed таблице:
 
@@ -70,7 +74,11 @@ ClickHouse обрабатывает запросы чрезвычайно быс
 
 На рисунке ниже показана архитектура ClickHouse Cloud:
 
+<div className="ch-image-md">
+
 ![архитектура без сегментирования](/images/deployment-guides/parallel-replicas-2.webp)
+
+</div>
 
 Эта архитектура позволяет почти мгновенно добавлять и удалять реплики,
 обеспечивая очень высокую масштабируемость кластера. Кластер ClickHouse
@@ -98,7 +106,11 @@ Keeper (показан справа) обеспечивает единый ис�
 
 Теперь посмотрим, как это работает на практике, с помощью схемы ниже:
 
+<div className="ch-image-md">
+
 ![Параллельные реплики](/images/deployment-guides/parallel-replicas-3.webp)
+
+</div>
 
 С параллельными репликами:
 
@@ -161,7 +173,11 @@ Keeper (показан справа) обеспечивает единый ис�
 Чтобы решить проблемы (1) и (2) из приведенного выше списка, мы ввели понятие
 уведомления. Давайте посмотрим, как это работает, на схеме ниже:
 
+<div className="ch-image-md">
+
 ![Уведомления](/images/deployment-guides/parallel-replicas-4.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -205,7 +221,11 @@ Keeper (показан справа) обеспечивает единый ис�
 
 На рисунке ниже показано, как работает динамическая координация:
 
+<div className="ch-image-md">
+
 ![Динамическая координация — часть 1](/images/deployment-guides/parallel-replicas-5.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -218,7 +238,11 @@ Keeper (показан справа) обеспечивает единый ис�
   </li>
 </ol>
 
+<div className="ch-image-md">
+
 ![Динамическая координация — часть 2](/images/deployment-guides/parallel-replicas-6.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -231,7 +255,11 @@ Keeper (показан справа) обеспечивает единый ис�
   </li>
 </ol>
 
+<div className="ch-image-md">
+
 ![Динамическая координация — часть 3](/images/deployment-guides/parallel-replicas-7.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -505,7 +533,11 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
+<div className="ch-image-lg">
+
 ![EXPLAIN без parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
+
+</div>
 
 А теперь — с параллельной репликой:
 
@@ -520,4 +552,8 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
+<div className="ch-image-lg">
+
 ![EXPLAIN с parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)
+
+</div>

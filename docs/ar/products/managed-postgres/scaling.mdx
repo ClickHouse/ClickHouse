@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
 يوفّر ClickHouse Managed Postgres خيارات مرنة للتحجيم بما يتوافق مع متطلبات أعباء العمل لديك. ومع توفّر أكثر من 50 نوعًا من المثيلات المعتمدة على NVMe للاختيار من بينها، يمكنك تحجيم CPU والذاكرة والتخزين بشكل مستقل لتحسين الأداء والتكلفة بما يناسب حالة الاستخدام الخاصة بك.
@@ -20,7 +21,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 * **تخزين مدعوم بـ NVMe** في جميع أنواع المثيلات لضمان عمليات إدخال/إخراج على القرص متسقة وعالية الأداء
 * **التحجيم المستقل للموارد**: اختر التوازن المناسب بين CPU والذاكرة والتخزين وفقًا لعبء العمل لديك
 
+<div className="ch-image-md">
+
 ![أنواع المثيلات](/images/managed-postgres/instance-types.webp)
+
+</div>
 
 <div id="choosing-instance">
   ### اختيار نوع المثيل المناسب
@@ -44,7 +49,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 عند تغيير أنواع المثيلات، يُجري ClickHouse Managed Postgres عملية التحجيم الرأسي توفّر بنية تحتية جديدة وتنقل قاعدة بياناتك بأقل قدر ممكن من التعطل.
 
+<div className="ch-image-md">
+
 ![إعدادات التحجيم](/images/managed-postgres/scaling-settings.webp)
+
+</div>
 
 <div id="scaling-process">
   ### عملية التحجيم

@@ -18,19 +18,31 @@ Kafka ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以
   <Step title="前往数据源" id="1-load-sql-console">
     在左侧菜单中选择 `Data Sources` 按钮，然后点击 &quot;Set up a ClickPipe&quot;。
 
+    <div className="ch-image-md">
+
     ![选择导入项](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </div>
   </Step>
 
   <Step title="选择数据源" id="2-select-data-source">
     从列表中选择你的 Kafka 数据源。
 
+    <div className="ch-image-md">
+
     ![选择数据源类型](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
+
+    </div>
   </Step>
 
   <Step title="配置数据源" id="3-configure-data-source">
     填写表单，为 ClickPipe 填写名称、描述 (可选) 、凭证以及其他连接信息。
 
+    <div className="ch-image-md">
+
     ![填写连接信息](/images/integrations/data-ingestion/clickpipes/cp_step2.webp)
+
+    </div>
   </Step>
 
   <Step title="配置 Schema Registry (可选)" id="4-configure-your-schema-registry">
@@ -53,7 +65,11 @@ Kafka ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以
        * **SSH Port**：堡垒机上的 SSH 端口 (默认 `22`) 。
        * **SSH User**：用于在堡垒机上进行身份验证的用户名。
 
+    <div className="ch-image-md">
+
     ![SSH 隧道配置](/images/integrations/data-ingestion/clickpipes/cp_ssh_tunnel.webp)
+
+    </div>
 
     3. 若要使用基于密钥的身份验证，请点击“Revoke and regenerate key pair”生成新的密钥对，并将生成的公钥复制到 SSH 服务器上的 `~/.ssh/authorized_keys` 中。
     4. 点击“Verify Connection”验证连接。
@@ -68,17 +84,29 @@ Kafka ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以
 
     随后，UI 将显示该 topic 中的一个示例文档。
 
+    <div className="ch-image-md">
+
     ![设置 topic](/images/integrations/data-ingestion/clickpipes/cp_step3.webp)
+
+    </div>
   </Step>
 
   <Step title="配置目标端表" id="8-configure-your-destination-table">
     在下一步中，您可以选择将数据摄取到新的 ClickHouse 表中，或使用现有表。按照界面上的说明修改表名、schema 和设置。您可以在顶部的样本表中实时预览这些更改。
 
+    <div className="ch-image-md">
+
     ![设置表、schema 和设置](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+
+    </div>
 
     您还可以使用提供的控件自定义高级设置
 
+    <div className="ch-image-md">
+
     ![设置高级设置控件](/images/integrations/data-ingestion/clickpipes/cp_table_settings.webp)
+
+    </div>
   </Step>
 
   <Step title="配置权限" id="9-configure-permissions">
@@ -87,12 +115,20 @@ Kafka ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以
     * `Full access`：对集群拥有完全访问权限。如果你在目标表上使用 materialized view 或字典，这可能会很有帮助。
     * `Only destination table`：仅拥有对目标表的 `INSERT` 权限。
 
+    <div className="ch-image-md">
+
     ![权限](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+
+    </div>
   </Step>
 
   <Step title="完成设置" id="10-complete-setup">
     点击 &quot;Create ClickPipe&quot; 后，系统将创建并运行您的 ClickPipe。随后，它会显示在“数据源”部分。
 
+    <div className="ch-image-md">
+
     ![查看概览](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+
+    </div>
   </Step>
 </Steps>

@@ -196,7 +196,11 @@ Navigate [http://localhost:8080](http://localhost:8080) to access the HyperDX UI
 
 Create a user, providing a username and password that meets the complexity requirements.
 
+<div className="ch-image-lg">
+
 ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
+
+</div>
 </Step>
 <Step title="Retrieve ingestion API key" id="retrieve-ingestion-api-key">
 
@@ -204,7 +208,11 @@ Ingestion to the OTel collector deployed by the ClickStack collector is secured 
 
 Navigate to [`Team Settings`](http://localhost:8080/team) and copy the `Ingestion API Key` from the `API Keys` section. This API key ensures data ingestion through the OpenTelemetry collector is secure.
 
+<div className="ch-image-lg">
+
 ![Copy API key](/images/use-cases/observability/copy_api_key.webp)
+
+</div>
 </Step>
 <Step title="Create API Key Kubernetes Secret" id="create-api-key-kubernetes-secret">
 
@@ -228,7 +236,11 @@ kubectl rollout restart deployment -n otel-demo -l app.kubernetes.io/part-of=ope
 
 Trace and log data from demo services should now begin to flow into HyperDX.
 
+<div className="ch-image-lg">
+
 ![HyperDX Kubernetes Data](/images/use-cases/observability/hyperdx-kubernetes-data.webp)
+
+</div>
 </Step>
 <Step title="Add the OpenTelemetry Helm repo" id="add-otel-helm-repo">
 
@@ -478,4 +490,8 @@ Each of the tabs, Pods, Nodes, and Namespaces, should be populated with data.
 </Step>
 </Steps>
 
+<div className="ch-image-lg">
+
 ![ClickHouse kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</div>

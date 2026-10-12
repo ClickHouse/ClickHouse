@@ -72,18 +72,30 @@ keywords: ['agentic data stack', 'docker compose', '设置', 'LibreChat', 'MCP',
   <Step title="选择模型">
     系统默认已选中一个模型。如果你想更改，请打开模型选择器并选择要使用的模型。
 
+    <div className="ch-image-md">
+
     ![左上角的 LibreChat 模型选择器，显示默认模型，并带有“Select a model”提示](/images/agentic-data-stack/select-model.webp)
+
+    </div>
 
     如果你在设置过程中没有设置提供商 key，请在 UI 中添加一个。
 
     <Accordion title="在 UI 中设置提供商 key">
       打开模型选择器，然后点击对应提供商旁边的 **Set API Key**。
 
+      <div className="ch-image-md">
+
       ![LibreChat 模型选择器，其中 Anthropic 提供商旁边显示 Set API Key 按钮](/images/agentic-data-stack/set-api-key.webp)
+
+      </div>
 
       在对话框中粘贴你的 key，然后点击 **Submit**。你可以设置过期时间，也可以让该 key 永不过期。
 
+      <div className="ch-image-md">
+
       ![用于 Anthropic 的 Set API Key 对话框，其中包含过期时间下拉菜单、Key 字段，以及 Submit 和 Revoke 按钮](/images/agentic-data-stack/set-api-key-modal.webp)
+
+      </div>
     </Accordion>
   </Step>
 
@@ -94,7 +106,11 @@ keywords: ['agentic data stack', 'docker compose', '设置', 'LibreChat', 'MCP',
 
     {/* TODO: guide users (or link out to the Remote MCP docs at /cloud/features/ai-ml/remote-mcp) on connecting ClickHouse-Cloud — it requires an OAuth flow, unlike the bundled local server. */}
 
+    <div className="ch-image-md">
+
     ![LibreChat 输入框中已打开的 MCP Servers 菜单，显示带有绿色已连接圆点的 ClickHouse-Local 和 ClickHouse-Cloud](/images/agentic-data-stack/select-clickhouse-local.webp)
+
+    </div>
   </Step>
 
   <Step title="提出你的第一个问题">
@@ -104,7 +120,11 @@ keywords: ['agentic data stack', 'docker compose', '设置', 'LibreChat', 'MCP',
 
     agent 会使用 MCP 服务器的工具列出数据库和表，对 ClickHouse 执行只读查询，并根据结果生成答案。你无需编写 SQL。
 
+    <div className="ch-image-md">
+
     ![LibreChat 通过调用 ClickHouse-Local MCP 工具回答示例问题，并列出可用的数据库和表](/images/agentic-data-stack/prompt-chat.webp)
+
+    </div>
   </Step>
 </Steps>
 

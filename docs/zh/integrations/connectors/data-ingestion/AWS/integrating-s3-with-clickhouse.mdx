@@ -857,7 +857,11 @@ SELECT * FROM s3_table1;
 6. 在 AWS 控制台中，进入存储桶列表，选择新建的存储桶和相应文件夹。
    你应该会看到类似下面这样的内容：
 
+<div className="ch-image-lg">
+
 ![AWS 控制台中的 S3 存储桶视图，显示存储在 S3 中的 ClickHouse 数据文件](/images/integrations/data-ingestion/s3/s3-j.webp)
+
+</div>
 
 <div id="s3-multi-region">
   ## 使用 S3 对象存储在两个 AWS 区域之间复制单个分片
@@ -1296,9 +1300,17 @@ sudo service clickhouse-server start
 
   检查每个 S3 存储桶中的数据 (这里未显示总量，但插入后两个存储桶中都大约存储了 36 MiB)：
 
+<div className="ch-image-lg">
+
 ![第一个 S3 存储桶中的数据大小，显示存储使用指标](/images/integrations/data-ingestion/s3/bucket1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![第二个 S3 存储桶中的数据大小，显示存储使用指标](/images/integrations/data-ingestion/s3/bucket2.webp)
+
+</div>
 
 <div id="s3express">
   ## S3Express

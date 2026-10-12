@@ -21,7 +21,11 @@ Customer-facing analytics for any platform. Designed for beautiful visualization
 ## Goal {#goal}
 
 In this guide you will connect your data from ClickHouse to Explo and visualize the results.  The chart will look like this:
+<div className="ch-image-md">
+
 ![Explo Dashboard](/images/integrations/data-visualization/explo_15.webp)
+
+</div>
 
 <p/>
 
@@ -42,27 +46,51 @@ If you don't have a dataset to work with you can add one of the examples.  This 
 
 2. Click on the Explo **data** tab on the left hand sidebar.
 
+<div className="ch-image-sm">
+
 ![Data Tab](/images/integrations/data-visualization/explo_01.webp)
+
+</div>
 
 3. Click **Connect Data Source** in the upper right hand side.
 
+<div className="ch-image-sm">
+
 ![Connect Data Source](/images/integrations/data-visualization/explo_02.webp)
+
+</div>
 
 4. Fill out the information on the **Getting Started** page
 
+<div className="ch-image-md">
+
 ![Getting Started](/images/integrations/data-visualization/explo_03.webp)
+
+</div>
 
 5. Select **ClickHouse**
 
+<div className="ch-image-md">
+
 ![ClickHouse](/images/integrations/data-visualization/explo_04.webp)
+
+</div>
 
 6. Enter your **ClickHouse Credentials**.
 
+<div className="ch-image-md">
+
 ![Credentials](/images/integrations/data-visualization/explo_05.webp)
+
+</div>
 
 7. Configure **Security**
 
+<div className="ch-image-md">
+
 ![Security](/images/integrations/data-visualization/explo_06.webp)
+
+</div>
 
 8. Within ClickHouse, **Whitelist the Explo IPs**.
 `
@@ -74,15 +102,27 @@ If you don't have a dataset to work with you can add one of the examples.  This 
 
 1. Navigate to **Dashboard** tab on the left side nav bar.
 
+<div className="ch-image-sm">
+
 ![Dashboard](/images/integrations/data-visualization/explo_07.webp)
+
+</div>
 
 2. Click **Create Dashboard** in the upper right corner and name your dashboard. You've now created a dashboard!
 
+<div className="ch-image-sm">
+
 ![Create Dashboard](/images/integrations/data-visualization/explo_08.webp)
+
+</div>
 
 3. You should now see a screen that is similar to this:
 
+<div className="ch-image-md">
+
 ![Explo Dashboard](/images/integrations/data-visualization/explo_09.webp)
+
+</div>
 
 </Step>
 <Step title="Run a SQL query" id="4-run-a-sql-query">
@@ -93,34 +133,62 @@ SELECT * FROM YOUR_TABLE_NAME
 LIMIT 100
 `
 
+<div className="ch-image-md">
+
 ![Explo Dashboard](/images/integrations/data-visualization/explo_10.webp)
+
+</div>
 
 2. Now click run and go to the preview tab to see your data.
 
+<div className="ch-image-md">
+
 ![Explo Dashboard](/images/integrations/data-visualization/explo_11.webp)
+
+</div>
 
 </Step>
 <Step title="Build a Chart" id="5-build-a-chart">
 
 1. From the left hand side, drag the bar chart icon onto the screen.
 
+<div className="ch-image-sm">
+
 ![Explo Dashboard](/images/integrations/data-visualization/explo_16.webp)
+
+</div>
 
 2. Select the dataset. You should now see a screen like the following:
 
+<div className="ch-image-sm">
+
 ![Explo Dashboard](/images/integrations/data-visualization/explo_12.webp)
+
+</div>
 
 3. Fill out the **county** in the X Axis and **Price** in the Y Axis Section like so:
 
+<div className="ch-image-sm">
+
 ![Explo Dashboard](/images/integrations/data-visualization/explo_13.webp)
+
+</div>
 
 4. Now, change the aggregation to **AVG**.
 
+<div className="ch-image-sm">
+
 ![Explo Dashboard](/images/integrations/data-visualization/explo_14.webp)
+
+</div>
 
 5. We now have average price of homes broken down by price!
 
+<div className="ch-image-md">
+
 ![Explo Dashboard](/images/integrations/data-visualization/explo_15.webp)
+
+</div>
 
 </Step>
 </Steps>

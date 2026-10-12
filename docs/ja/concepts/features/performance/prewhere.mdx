@@ -17,7 +17,11 @@ keywords: ['prewhere', 'クエリ最適化', 'パフォーマンス', 'フィル
 
 まず、PREWHERE を使わない場合に、[uk&#95;price&#95;paid&#95;simple](/ja/concepts/core-concepts/parts) テーブルに対するクエリがどのように処理されるかを見てみましょう。
 
+<div className="ch-image-md">
+
 ![PREWHERE 最適化なしのクエリ処理](/images/guides/best-practices/prewhere_01.webp)
+
+</div>
 
 <br />
 
@@ -43,7 +47,11 @@ keywords: ['prewhere', 'クエリ最適化', 'パフォーマンス', 'フィル
 
 最初の 3 つの処理ステップは前と同じです。
 
+<div className="ch-image-md">
+
 ![PREWHERE 最適化によるクエリ処理](/images/guides/best-practices/prewhere_02.webp)
+
+</div>
 
 <br />
 
@@ -64,7 +72,11 @@ ClickHouse は PREWHERE 処理を開始し、① `town` カラムから選択さ
 
 この例では、選択されたすべてのグラニュールが一致するため、② 次のフィルタカラム `date` について、対応する位置のグラニュールが処理対象として選択されます。
 
+<div className="ch-image-md">
+
 ![ステップ 1: town によるフィルタリング](/images/guides/best-practices/prewhere_03.webp)
+
+</div>
 
 <br />
 
@@ -75,7 +87,11 @@ ClickHouse は PREWHERE 処理を開始し、① `town` カラムから選択さ
 
 この場合、3 つのグラニュールのうち 2 つに一致する行が含まれているため、② 次のフィルタカラム `price` については、対応する位置のグラニュールだけが後続処理の対象として選択されます。
 
+<div className="ch-image-md">
+
 ![ステップ 2: date によるフィルタリング](/images/guides/best-practices/prewhere_04.webp)
+
+</div>
 
 <br />
 
@@ -86,7 +102,11 @@ ClickHouse は PREWHERE 処理を開始し、① `town` カラムから選択さ
 
 2 つのグラニュールのうち、一致する行を含むのは 1 つだけなので、② `SELECT` カラム `street` については、対応する位置のグラニュールだけを後続処理のために読み込めば十分です。
 
+<div className="ch-image-md">
+
 ![ステップ 2: price によるフィルタリング](/images/guides/best-practices/prewhere_05.webp)
+
+</div>
 
 <br />
 

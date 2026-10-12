@@ -383,7 +383,11 @@ WHERE trip_distance < 6.3
 <AxesSubplot: title={'center': "'trip_distance' from 'short-trips'"}, xlabel='trip_distance', ylabel='Count'>
 ```
 
+<div className="ch-image-md">
+
 ![مُدرَّج تكراري يوضح توزيع مسافات الرحلات ضمن 10 فئات من مجموعة بيانات الرحلات القصيرة](/images/integrations/sql-clients/jupysql-plot-1.webp)
+
+</div>
 
 ```python
 ax = %sqlplot histogram --table short-trips --column trip_distance --bins 50 --with short-trips
@@ -392,4 +396,8 @@ ax.set_title("Trip distance from trips < 6.3")
 _ = ax.set_xlabel("Trip distance")
 ```
 
+<div className="ch-image-md">
+
 ![مُدرَّج تكراري يوضح توزيع مسافات الرحلات باستخدام 50 فئة مع شبكة، بعنوان 'Trip distance from trips < 6.3'](/images/integrations/sql-clients/jupysql-plot-2.webp)
+
+</div>

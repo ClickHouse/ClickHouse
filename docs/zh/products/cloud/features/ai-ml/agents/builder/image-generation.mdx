@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 图像生成功能让agent能够根据文本提示词生成新图像，或编辑用户上传的图像。agent会根据用户的请求和可用上下文，在生成与编辑之间进行选择。
@@ -18,7 +19,11 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 图像生成功能可通过智能体构建器中的 **Add Tools** 模态框添加 (而不是在 **Capabilities** 部分中添加) 。点击智能体构建器面板底部的 **Add Tools**，然后添加一种图像模型工具，例如 **OpenAI Image Tools**、**DALL-E-3** 或 **Stable Diffusion**。agent 会根据请求选择合适的工具，你也可以在说明中限制其使用。
 
+<div className="ch-image-md">
+
 ![Agent Tools 模态框，显示图像模型集成，包括 OpenAI Image Tools、DALL-E-3 和 Stable Diffusion，以及其他第三方工具](/images/cloud/agent-builder/tools-modal.webp)
+
+</div>
 
 <div id="generation">
   ## 生成

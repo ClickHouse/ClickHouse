@@ -13,7 +13,11 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 AIノートブックは、AIエージェントと手動による分析を組み合わせた、ClickStack の対話型調査ツールです。問題を平易な言葉で説明すると、AIエージェントが代わってログ、トレース、メトリクスをクエリし、関連するデータ、チャート、要約を一連のタイルとして表示します。AI が生成した出力に加えて、独自のタイル (チャート、テーブル、検索、Markdown ノート) を追加することもでき、調査の完全な記録を作成できます。
 
+<div className="ch-image-lg">
+
 ![Visa cache full 障害を調査している AIノートブック](/images/use-cases/observability/hyperdx-notebook-hero.webp)
+
+</div>
 
 <Info>
   **Managed ClickStack のみ**
@@ -44,7 +48,11 @@ AIノートブックを使用する前に、次の点を確認してください
 2. **Generative AI** をオンにします。
 3. 同意ダイアログを確認し、同意します。
 
+<div className="ch-image-lg">
+
 ![Team Settings の Generative AI トグル](/images/use-cases/observability/hyperdx-notebook-ai-consent.webp)
+
+</div>
 
 <div id="using-notebooks">
   ## AIノートブックを使う
@@ -59,7 +67,11 @@ AIノートブックを使用する前に、次の点を確認してください
 
 ノートブック一覧ページには、自分がアクセスできるすべてのノートブックが表示されます。名前やタグで絞り込んだり、**My Notebooks** と **All Notebooks** を切り替えたりできます。
 
+<div className="ch-image-lg">
+
 ![ノートブック一覧ページ](/images/use-cases/observability/hyperdx-notebook-list.webp)
+
+</div>
 
 <div id="running-investigation">
   ### AI調査の実行
@@ -77,7 +89,11 @@ AIノートブックを使用する前に、次の点を確認してください
 
 調査の実行中は、**Stop** をクリックしてキャンセルできます。
 
+<div className="ch-image-lg">
+
 ![AI が生成したタイルを含むノートブック](/images/use-cases/observability/hyperdx-notebook-tiles.webp)
+
+</div>
 
 <div id="branching">
   ### 調査を分岐する
@@ -91,11 +107,19 @@ AI が調査を進める中で、興味深い内容が現れた途中のステ�
 2. ダイアログで、調査を新しい方向に導くよう修正したプロンプトを入力します。
 3. **Interrupt &amp; Create Branch** をクリックします。AI はその時点から新しい調査のブランチを開始します。
 
+<div className="ch-image-md">
+
 ![Create New Branch ダイアログ](/images/use-cases/observability/hyperdx-notebook-branch-modal.webp)
+
+</div>
 
 1 つのタイルに複数のブランチがある場合、タイルヘッダーに左右の矢印ボタンと、ブランチの数を示すバッジ (例: **1/2**) が表示されます。矢印をクリックしてブランチを切り替えます。
 
+<div className="ch-image-lg">
+
 ![タイル上のブランチナビゲーション矢印と 1/2 バッジ](/images/use-cases/observability/hyperdx-notebook-branching.webp)
+
+</div>
 
 <div id="manual-tiles">
   ### 手動タイルの追加
@@ -114,7 +138,11 @@ AI が生成したタイルに加えて、ノートブックの下部にある�
 
 手動タイルは、現在のブランチで最後に表示されているタイルの下に追加されます。タイルの下端をドラッグすると、縦方向にサイズを変更できます。
 
+<div className="ch-image-lg">
+
 ![ノートブックの下部にある手動タイルのボタン](/images/use-cases/observability/hyperdx-notebook-manual-tiles.webp)
+
+</div>
 
 <Note>
   AI による調査が現在実行中の場合、手動タイルを追加または編集すると、その調査はキャンセルされます。続行前に確認ダイアログが表示されます。
@@ -142,4 +170,8 @@ AI が生成したタイルに加えて、ノートブックの下部にある�
 
 このコンテキストは、チーム全体のすべてのノートブック調査で、AI のシステムプロンプトに追加されます。
 
+<div className="ch-image-lg">
+
 ![カスタムコンテキスト用のAgent Settingsパネル](/images/use-cases/observability/hyperdx-notebook-agent-context.webp)
+
+</div>

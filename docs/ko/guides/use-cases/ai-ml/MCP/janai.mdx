@@ -23,14 +23,22 @@ doc_type: 'guide'
 
     OpenAI를 활성화하려면 아래와 같이 API Key를 입력해야 합니다:
 
+    <div className="ch-image-md">
+
     ![OpenAI 모델 활성화](/images/use-cases/AI_ML/MCP/0_janai_openai.webp)
+
+    </div>
   </Step>
 
   <Step title="MCP 서버 활성화" id="enable-mcp-servers">
     이 문서를 작성하는 시점 기준으로 Jan.ai에서 MCP 서버는 실험적 기능입니다.
     실험적 기능 토글을 켜서 활성화할 수 있습니다:
 
+    <div className="ch-image-md">
+
     ![MCP 서버 활성화](/images/use-cases/AI_ML/MCP/1_janai_mcp_servers.webp)
+
+    </div>
 
     이 토글을 켜면 왼쪽 메뉴에 `MCP 서버`가 표시됩니다.
   </Step>
@@ -38,43 +46,79 @@ doc_type: 'guide'
   <Step title="ClickHouse MCP 서버 구성" id="configure-clickhouse-mcp-server">
     `MCP 서버` 메뉴를 클릭하면 연결할 수 있는 MCP 서버 목록이 표시됩니다:
 
+    <div className="ch-image-md">
+
     ![MCP 서버 목록](/images/use-cases/AI_ML/MCP/2_janai_mcp_servers_list.webp)
+
+    </div>
 
     이 서버들은 기본적으로 모두 비활성화되어 있지만, 토글을 클릭해 활성화할 수 있습니다.
 
     ClickHouse MCP 서버를 설치하려면 `+` 아이콘을 클릭한 다음 아래와 같이 양식을 입력합니다:
 
+    <div className="ch-image-md">
+
     ![MCP 서버 추가](/images/use-cases/AI_ML/MCP/3_janai_add_mcp_server.webp)
+
+    </div>
 
     입력을 마친 후 아직 켜져 있지 않다면 ClickHouse Server 토글을 켭니다:
 
+    <div className="ch-image-md">
+
     ![MCP 서버 활성화](/images/use-cases/AI_ML/MCP/4_janai_toggle.webp)
+
+    </div>
 
     이제 채팅 창에서 ClickHouse MCP 서버의 도구를 확인할 수 있습니다:
 
+    <div className="ch-image-md">
+
     ![ClickHouse MCP 서버 도구](/images/use-cases/AI_ML/MCP/5_jani_tools.webp)
+
+    </div>
   </Step>
 
   <Step title="Jan.ai로 ClickHouse MCP 서버와 대화하기" id="chat-to-clickhouse-mcp-server">
     이제 ClickHouse에 저장된 데이터에 관해 대화해 보겠습니다.
     질문을 입력합니다:
 
+    <div className="ch-image-md">
+
     ![질문](/images/use-cases/AI_ML/MCP/6_janai_question.webp)
+
+    </div>
 
     Jan.ai는 도구를 호출하기 전에 확인을 요청합니다:
 
+    <div className="ch-image-md">
+
     ![도구 확인](/images/use-cases/AI_ML/MCP/7_janai_tool_confirmation.webp)
+
+    </div>
 
     그런 다음 수행된 도구 호출 목록이 표시됩니다:
 
+    <div className="ch-image-md">
+
     ![호출된 도구](/images/use-cases/AI_ML/MCP/8_janai_tools_called.webp)
+
+    </div>
 
     도구 호출을 클릭하면 호출 세부 정보를 확인할 수 있습니다:
 
+    <div className="ch-image-md">
+
     ![확장된 도구 호출](/images/use-cases/AI_ML/MCP/9_janai_tools_called_expanded.webp)
+
+    </div>
 
     그 아래에는 결과가 표시됩니다:
 
+    <div className="ch-image-md">
+
     ![결과](/images/use-cases/AI_ML/MCP/10_janai_result.webp)
+
+    </div>
   </Step>
 </Steps>

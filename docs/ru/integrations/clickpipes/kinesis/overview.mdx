@@ -22,37 +22,69 @@ Kinesis ClickPipes можно развертывать и настраивать
 
 1. Откройте SQL Console для вашего сервиса ClickHouse Cloud.
 
+<div className="ch-image-lg">
+
 ![Сервис ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. В левом меню нажмите кнопку `Data Sources`, затем — &quot;Set up a ClickPipe&quot;
 
+<div className="ch-image-lg">
+
 ![Выбор импорта](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. Выберите источник данных.
 
+<div className="ch-image-lg">
+
 ![Выбор типа источника данных](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
+
+</div>
 
 4. Заполните форму: укажите имя ClickPipe, описание (необязательно), роль IAM или учётные данные, а также другие сведения о подключении.
 
+<div className="ch-image-lg">
+
 ![Заполнение сведений о подключении](/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp)
+
+</div>
 
 5. Выберите поток Kinesis, **Data format** и начальное смещение. Для `Protobuf` загрузите файл `.proto` или сериализованный `FileDescriptorSet` (максимум 768 КиБ). Schema registry не требуется.
 
    В интерфейсе отображаются примеры данных из выбранного потока. Параметр **Use Kinesis Enhanced Fan-Out** включён по умолчанию. Подробнее см. в [документации Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html).
 
+<div className="ch-image-lg">
+
 ![Настройка формата данных и топика](/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp)
+
+</div>
 
 6. На следующем шаге можно выбрать, куда выполнять приём данных: в новую таблицу ClickHouse или в существующую. Следуйте инструкциям на экране, чтобы изменить имя таблицы, схему и настройки. Вверху страницы доступен предварительный просмотр изменений в образце таблицы в реальном времени.
 
+<div className="ch-image-lg">
+
 ![Настройка таблицы, схемы и параметров](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+
+</div>
 
 Вы также можете изменить расширенные настройки с помощью доступных элементов управления
 
+<div className="ch-image-lg">
+
 ![Настройка дополнительных параметров](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
+
+</div>
 
 7. Либо можно настроить приём данных в существующую таблицу ClickHouse. В этом случае интерфейс позволит сопоставить поля источника с полями ClickHouse в выбранной целевой таблице.
 
+<div className="ch-image-lg">
+
 ![Использование существующей таблицы](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
+
+</div>
 
 8. Наконец, вы можете настроить разрешения для внутреннего пользователя ClickPipes.
 
@@ -61,21 +93,41 @@ Kinesis ClickPipes можно развертывать и настраивать
 * `Full access`: полный доступ к кластеру. Это может быть полезно, если вы используете materialized view или словарь вместе с целевой таблицей.
   * `Only destination table`: только разрешения `INSERT` для целевой таблицы.
 
+<div className="ch-image-lg">
+
 ![Разрешения](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+
+</div>
 
 9. Нажмите &quot;Complete Setup&quot;, чтобы система зарегистрировала ClickPipe, после чего он появится в сводной таблице.
 
+<div className="ch-image-sm">
+
 ![Уведомление об успешной настройке](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![Уведомление об удалении](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
 
+</div>
+
 В сводной таблице есть элементы управления для просмотра примеров данных из источника или из целевой таблицы в ClickHouse
+
+<div className="ch-image-lg">
 
 ![Просмотр пункта назначения](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
 
+</div>
+
 А также элементы управления для удаления ClickPipe и просмотра сводки задания приёма.
 
+<div className="ch-image-lg">
+
 ![Просмотр обзора](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+
+</div>
 
 10. **Поздравляем!** Вы успешно настроили свой первый ClickPipe. Если это стриминговый ClickPipe, он будет непрерывно работать и выполнять ингестию данных в реальном времени из удалённого источника. В противном случае он обработает батч и завершит работу.
 

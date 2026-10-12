@@ -48,7 +48,11 @@ O restante deste guia aborda a configuração única.
   <Step title="Ative o logon único SAML" id="enable-saml-sso">
     Clique no botão de alternância ao lado de `Enable SAML single sign-on`. Deixe esta tela aberta, pois você precisará consultá-la várias vezes durante o processo de configuração.
 
+    <div className="ch-image-lg">
+
     ![Iniciar a configuração do SAML](/images/cloud/security/saml-self-serve-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Crie um aplicativo no seu provedor de identidade" id="create-idp-application">
@@ -63,19 +67,31 @@ O restante deste guia aborda a configuração única.
       O ClickHouse não oferece suporte a login iniciado pelo provedor de identidade. Para facilitar o acesso dos seus usuários ao ClickHouse Cloud, crie um favorito para eles usando este formato de URL de login: `https://console.clickhouse.cloud/?connection={orgId}`, em que `{orgId}` é o Organization ID na página de detalhes da organização.
     </Tip>
 
+    <div className="ch-image-lg">
+
     ![Criar aplicativo no provedor de identidade](/images/cloud/security/saml-self-serve-2.webp)
+
+    </div>
   </Step>
 
   <Step title="Adicione a URL de metadados à sua configuração SAML" id="add-metadata-url">
     Obtenha a `Metadata URL` do seu provedor SAML. Volte ao ClickHouse Cloud, clique em `Next: Provide metadata URL` e cole a URL na caixa de texto.
 
+    <div className="ch-image-lg">
+
     ![Adicionar URL de metadados](/images/cloud/security/saml-self-serve-3.webp)
+
+    </div>
   </Step>
 
   <Step title="Obtenha o código de verificação do domínio" id="get-domain-verification-code">
     Clique em `Next: Verify your domains`. Insira seu domínio na caixa de texto e clique em `Check domain`. O sistema gerará um código de verificação aleatório para adicionar a um registro TXT no seu provedor de DNS.
 
+    <div className="ch-image-lg">
+
     ![Adicionar domínio para verificar](/images/cloud/security/saml-self-serve-4.webp)
+
+    </div>
   </Step>
 
   <Step title="Verifique seu domínio" id="verify-your-domain">
@@ -85,7 +101,11 @@ O restante deste guia aborda a configuração única.
       Pode levar alguns minutos para que o registro DNS seja atualizado e validado. Você pode sair da página de configuração e voltar mais tarde para concluir o processo sem precisar recomeçar. O valor de verificação é válido por 48 horas a partir do momento em que é gerado pela primeira vez.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![Verifique seu domínio](/images/cloud/security/saml-self-serve-5.webp)
+
+    </div>
   </Step>
 
   <Step title="Atualizar a função padrão e o tempo limite da sessão" id="update-defaults">
@@ -195,7 +215,11 @@ O restante deste guia aborda a configuração única.
 
     1. Acesse o console do Google Admin (admin.google.com).
 
+       <div className="ch-image-md">
+
        ![App SAML do Google](/images/cloud/security/saml-google-app.webp)
+
+       </div>
 
     2. Clique em **Apps** e, em seguida, em **Web and mobile apps** à esquerda.
 
@@ -249,7 +273,11 @@ O restante deste guia aborda a configuração única.
 
     5. Insira um nome e selecione **Integrate any other application you don&#39;t find in the gallery (Non-gallery)**; em seguida, clique em **Create**.
 
+       <div className="ch-image-md">
+
        ![Aplicativo do Azure fora da galeria](/images/cloud/security/saml-azure-app.webp)
+
+       </div>
 
     6. Clique em **Users and groups** à esquerda e atribua os usuários.
 
@@ -275,7 +303,11 @@ O restante deste guia aborda a configuração única.
         | (A) email                            | Basic         | user.mail        |
         | (U) /identity/claims/name            | Omitted       | user.mail        |
 
+        <div className="ch-image-md">
+
         ![Atributos e declarações](/images/cloud/security/saml-azure-claims.webp)
+
+        </div>
 
     11. Copie a metadata URL e volte para [Adicionar a metadata URL à sua configuração SAML](#add-metadata-url) para continuar o processo.
   </Tab>

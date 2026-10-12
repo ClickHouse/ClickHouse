@@ -11,6 +11,7 @@ integration:
 ---
 
 import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
 Консоль SQL — самый быстрый и простой способ просматривать базы данных в ClickHouse Cloud и выполнять к ним запросы. С помощью консоли SQL вы можете:
 
 * Подключаться к сервисам ClickHouse Cloud
@@ -28,11 +29,19 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Обзор таблиц в вашем экземпляре ClickHouse можно найти на левой боковой панели. Чтобы просмотреть таблицы в конкретной базе данных, используйте селектор базы данных в верхней части левой панели
 
+<div className="ch-image-lg">
+
 ![Список таблиц и информация о схеме с таблицами базы данных на левой боковой панели](/images/cloud/sqlconsole/table-list-and-schema.webp)
+
+</div>
 
 Таблицы в списке также можно развернуть, чтобы просмотреть столбцы и типы данных
 
+<div className="ch-image-lg">
+
 ![Развернутая таблица с именами столбцов и типами данных](/images/cloud/sqlconsole/view-columns.webp)
+
+</div>
 
 <div id="exploring-table-data">
   ### Просмотр данных таблицы
@@ -40,7 +49,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Нажмите на таблицу в списке, чтобы открыть её в новой вкладке. В режиме просмотра таблицы данные можно легко просматривать, выделять и копировать. Обратите внимание: при копировании в табличные приложения, такие как Microsoft Excel и Google Sheets, структура и форматирование сохраняются. Переключаться между страницами данных таблицы (по 30 строк на страницу) можно с помощью навигации в нижнем колонтитуле.
 
+<div className="ch-image-lg">
+
 ![Режим просмотра таблицы с данными, которые можно выделять и копировать](/images/cloud/sqlconsole/abc.webp)
+
+</div>
 
 <div id="inspecting-cell-data">
   ### Просмотр данных в ячейке
@@ -48,7 +61,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Инструмент Cell Inspector можно использовать для просмотра больших объёмов данных, содержащихся в одной ячейке. Чтобы открыть его, щёлкните правой кнопкой мыши по ячейке и выберите «Inspect Cell». Содержимое инспектора ячейки можно скопировать, нажав значок копирования в правом верхнем углу.
 
+<div className="ch-image-lg">
+
 ![Диалог Cell Inspector, показывающий содержимое выбранной ячейки](/images/cloud/sqlconsole/inspecting-cell-content.webp)
+
+</div>
 
 <div id="filtering-and-sorting-tables">
   ## Фильтрация и сортировка таблиц
@@ -60,7 +77,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Чтобы отсортировать таблицу в консоли SQL, откройте таблицу и нажмите кнопку &#39;Sort&#39; на панели инструментов. Откроется меню, в котором можно настроить сортировку. Вы можете выбрать столбец, по которому нужно сортировать, и задать порядок сортировки (по возрастанию или по убыванию). Нажмите &#39;Apply&#39; или клавишу Enter, чтобы отсортировать таблицу
 
+<div className="ch-image-lg">
+
 ![Диалоговое окно Sort с настройкой сортировки по убыванию для столбца](/images/cloud/sqlconsole/sort-descending-on-column.webp)
+
+</div>
 
 Консоль SQL также позволяет добавить для таблицы несколько сортировок. Снова нажмите кнопку &#39;Sort&#39;, чтобы добавить еще одну сортировку. Обратите внимание: сортировки применяются в том порядке, в котором они отображаются на панели сортировки (сверху вниз). Чтобы удалить сортировку, просто нажмите кнопку &#39;x&#39; рядом с ней.
 
@@ -70,11 +91,19 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Чтобы отфильтровать таблицу в Консоли SQL, откройте таблицу и нажмите кнопку &#39;Filter&#39;. Как и при сортировке, эта кнопка открывает меню, в котором можно настроить фильтр. Вы можете выбрать столбец, по которому нужно фильтровать, и указать необходимые критерии. Консоль SQL автоматически показывает варианты фильтрации, соответствующие типу данных в столбце.
 
+<div className="ch-image-lg">
+
 ![Диалог фильтрации с настройкой фильтра для столбца radio со значением GSM](/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp)
+
+</div>
 
 Когда фильтр вас устроит, нажмите &#39;Apply&#39;, чтобы применить его к данным. Как показано ниже, вы также можете добавить дополнительные фильтры.
 
+<div className="ch-image-lg">
+
 ![Диалог, показывающий, как добавить дополнительный фильтр для диапазона со значением больше 2000](/images/cloud/sqlconsole/add-more-filters.webp)
+
+</div>
 
 Как и при сортировке, нажмите кнопку &#39;x&#39; рядом с фильтром, чтобы удалить его.
 
@@ -84,7 +113,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Консоль SQL позволяет одновременно фильтровать и сортировать таблицу. Для этого добавьте все нужные фильтры и параметры сортировки, как описано выше, и нажмите кнопку «Применить».
 
+<div className="ch-image-lg">
+
 ![Интерфейс с одновременно применёнными фильтрацией и сортировкой](/images/cloud/sqlconsole/filtering-and-sorting-together.webp)
+
+</div>
 
 <div id="creating-a-query-from-filters-and-sorts">
   ### Создание запроса из фильтров и сортировок
@@ -92,7 +125,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Консоль SQL может одним щелчком преобразовать выбранные сортировки и фильтры в запросы. Просто задайте нужные параметры сортировки и фильтрации и нажмите кнопку &#39;Create Query&#39; на панели инструментов. После нажатия &#39;Create Query&#39; откроется новая вкладка запроса, уже заполненная SQL-командой, соответствующей данным в текущем представлении таблицы.
 
+<div className="ch-image-lg">
+
 ![Интерфейс с кнопкой «Create Query», которая генерирует SQL на основе фильтров и сортировок](/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp)
+
+</div>
 
 <Note>
   Для использования возможности &#39;Create Query&#39; фильтры и сортировки не обязательны.
@@ -113,7 +150,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 * Нажмите кнопку &#39;+&#39; на панели вкладок
 * Выберите кнопку &#39;New Query&#39; в списке запросов на левой боковой панели
 
+<div className="ch-image-lg">
+
 ![Интерфейс, показывающий, как создать новый запрос с помощью кнопки + или кнопки New Query](/images/cloud/sqlconsole/creating-a-query.webp)
+
+</div>
 
 <div id="running-a-query">
   ### Запуск запроса
@@ -129,17 +170,29 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Чтобы выполнить выбранные команды, выделите нужную команду или последовательность команд и нажмите кнопку &#39;Run&#39; (или используйте сочетание клавиш `cmd / ctrl + enter`). Если текст выделен, вы также можете выбрать &#39;Run selected&#39; в контекстном меню редактора SQL (оно открывается щелчком правой кнопкой мыши в любом месте редактора).
 
+<div className="ch-image-lg">
+
 ![Интерфейс, показывающий, как выполнить выбранную часть SQL-запроса](/images/cloud/sqlconsole/run-selected-query.webp)
+
+</div>
 
 Выполнить команду в текущей позиции курсора можно двумя способами:
 
 * Выберите &#39;At Cursor&#39; в меню дополнительных параметров запуска (или используйте соответствующее сочетание клавиш `cmd / ctrl + shift + enter`
 
+<div className="ch-image-lg">
+
 ![Параметр Run at cursor в меню дополнительных параметров запуска](/images/cloud/sqlconsole/run-at-cursor-2.webp)
+
+</div>
 
 * Выберите &#39;Run at cursor&#39; в контекстном меню редактора SQL
 
+<div className="ch-image-lg">
+
 ![Параметр Run at cursor в контекстном меню редактора SQL](/images/cloud/sqlconsole/run-at-cursor.webp)
+
+</div>
 
 <Note>
   При выполнении команда в позиции курсора кратковременно подсвечивается желтым.
@@ -151,7 +204,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Пока запрос выполняется, кнопка &#39;Run&#39; на панели инструментов редактора запросов заменяется кнопкой &#39;Cancel&#39;. Просто нажмите эту кнопку или клавишу `Esc`, чтобы отменить запрос. Примечание: все результаты, которые уже были получены, сохранятся после отмены.
 
+<div className="ch-image-lg">
+
 ![Кнопка Cancel, которая появляется во время выполнения запроса](/images/cloud/sqlconsole/cancel-a-query.webp)
+
+</div>
 
 <div id="saving-a-query">
   ### Сохранение запроса
@@ -159,11 +216,19 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Если имя запроса ещё не задано, он будет называться «Untitled Query». Нажмите на название запроса, чтобы изменить его. При переименовании запрос будет сохранён.
 
+<div className="ch-image-lg">
+
 ![Интерфейс, показывающий, как переименовать запрос «Untitled Query»](/images/cloud/sqlconsole/give-a-query-a-name.webp)
+
+</div>
 
 Вы также можете сохранить запрос с помощью кнопки сохранения или сочетания клавиш `cmd / ctrl + s`.
 
+<div className="ch-image-lg">
+
 ![Кнопка сохранения на панели инструментов редактора запросов](/images/cloud/sqlconsole/save-the-query.webp)
+
+</div>
 
 <div id="using-genai-to-manage-queries">
   ## Использование GenAI для работы с запросами
@@ -314,11 +379,19 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 После выполнения запроса вы можете быстро выполнить поиск по возвращённому результирующему набору с помощью поля поиска на панели результатов. Эта возможность помогает предварительно оценить результаты применения дополнительного условия `WHERE` или просто проверить, что нужные данные входят в результирующий набор. После ввода значения в поле поиска панель результатов обновится и покажет записи, содержащие значение, соответствующее введённому запросу. В этом примере мы найдём все вхождения `breakfast` в таблице `hackernews` среди комментариев, содержащих `ClickHouse` (регистронезависимо):
 
+<div className="ch-image-lg">
+
 ![Поиск по данным Hacker News](/images/cloud/sqlconsole/search-hn.webp)
+
+</div>
 
 Примечание: будет возвращена любая запись, в любом поле которой есть совпадение с введённым значением. Например, третья запись на снимке экрана выше не содержит &#39;breakfast&#39; в поле `by`, но содержит его в поле `text`:
 
+<div className="ch-image-lg">
+
 ![Совпадение в теле](/images/cloud/sqlconsole/match-in-body.webp)
+
+</div>
 
 <div id="adjusting-pagination-settings">
   ### Настройка параметров пагинации
@@ -326,11 +399,19 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 По умолчанию панель результатов запроса отображает все записи на одной странице. Для более крупных результирующих наборов удобнее разбивать результаты на страницы. Это можно сделать с помощью селектора пагинации в правом нижнем углу панели результатов:
 
+<div className="ch-image-lg">
+
 ![Параметры пагинации](/images/cloud/sqlconsole/pagination.webp)
+
+</div>
 
 При выборе размера страницы пагинация сразу применяется к результирующему набору, а элементы навигации появляются в центре нижнего колонтитула панели результатов
 
+<div className="ch-image-lg">
+
 ![Навигация по страницам](/images/cloud/sqlconsole/pagination-nav.webp)
+
+</div>
 
 <div id="exporting-query-result-data">
   ### Экспорт данных результата запроса
@@ -338,7 +419,11 @@ import { ExperimentalBadge } from "/snippets/ru/components/ExperimentalBadge/Exp
 
 Результаты запроса можно легко экспортировать в формат CSV прямо из Консоли SQL. Для этого откройте меню `•••` в правой части панели инструментов панели результатов и выберите «Скачать как CSV».
 
+<div className="ch-image-lg">
+
 ![Скачать как CSV](/images/cloud/sqlconsole/download-as-csv.webp)
+
+</div>
 
 <div id="visualizing-query-data">
   ## Визуализация данных запроса
@@ -360,7 +445,11 @@ ORDER BY
    1 ASC
 ```
 
+<div className="ch-image-lg">
+
 ![Табличные результаты запроса](/images/cloud/sqlconsole/tabular-query-results.webp)
+
+</div>
 
 Без визуализации эти результаты трудно понять. Давайте представим их в виде диаграммы.
 
@@ -370,15 +459,27 @@ ORDER BY
 
 Чтобы приступить к созданию визуализации, выберите на панели инструментов панели результатов запроса опцию &#39;Chart&#39;. Откроется панель конфигурации диаграммы:
 
+<div className="ch-image-lg">
+
 ![Переключение от запроса к диаграмме](/images/cloud/sqlconsole/switch-from-query-to-chart.webp)
+
+</div>
 
 Начнем с простой столбчатой диаграммы, которая показывает `trip_total` по `week`. Для этого перетащим поле `week` на ось x, а поле `trip_total` — на ось y:
 
+<div className="ch-image-lg">
+
 ![Общее количество поездок по неделям](/images/cloud/sqlconsole/trip-total-by-week.webp)
+
+</div>
 
 Большинство типов диаграмм поддерживают несколько полей на числовых осях. Для примера перетащим поле `fare_total` на ось y:
 
+<div className="ch-image-lg">
+
 ![Столбчатая диаграмма](/images/cloud/sqlconsole/bar-chart.webp)
+
+</div>
 
 <div id="customizing-charts">
   ### Настройка диаграмм
@@ -386,11 +487,19 @@ ORDER BY
 
 Консоль SQL поддерживает десять типов диаграмм, которые можно выбрать в селекторе типа диаграммы на панели конфигурации диаграммы. Например, мы можем легко изменить предыдущий тип диаграммы с Bar на Area:
 
+<div className="ch-image-lg">
+
 ![Изменение диаграммы с Bar на Area](/images/cloud/sqlconsole/change-from-bar-to-area.webp)
+
+</div>
 
 Заголовки диаграмм соответствуют имени запроса, который предоставляет данные. Если изменить имя запроса, заголовок диаграммы также обновится:
 
+<div className="ch-image-lg">
+
 ![Обновление имени запроса](/images/cloud/sqlconsole/update-query-name.webp)
+
+</div>
 
 Ряд более продвинутых параметров диаграммы также можно настроить в разделе &#39;Advanced&#39; на панели конфигурации диаграммы. Для начала изменим следующие настройки:
 
@@ -400,11 +509,19 @@ ORDER BY
 
 Наша диаграмма будет обновлена соответствующим образом:
 
+<div className="ch-image-lg">
+
 ![Обновление подзаголовка и т. д.](/images/cloud/sqlconsole/update-subtitle-etc.webp)
+
+</div>
 
 В некоторых случаях может потребоваться настроить шкалы осей для каждого поля отдельно. Это также можно сделать в разделе &#39;Advanced&#39; на панели конфигурации диаграммы, указав минимальное и максимальное значения для диапазона оси. Например, приведенная выше диаграмма выглядит хорошо, но, чтобы продемонстрировать корреляцию между нашими полями `trip_total` и `fare_total`, диапазоны осей нужно немного скорректировать:
 
+<div className="ch-image-lg">
+
 ![Настройка шкалы оси](/images/cloud/sqlconsole/adjust-axis-scale.webp)
+
+</div>
 
 <div id="sharing-queries">
   ## Общий доступ к запросам
@@ -414,16 +531,36 @@ ORDER BY
 
 Чтобы поделиться запросом, нажмите кнопку &#39;Share&#39; на панели инструментов запроса.
 
+<div className="ch-image-lg">
+
 ![Кнопка Share на панели инструментов запроса](/images/cloud/sqlconsole/sql-console-share.webp)
+
+</div>
 
 Откроется диалоговое окно, в котором можно открыть доступ к запросу для всех участников команды. Если у вас несколько команд, вы можете выбрать, с какой из них поделиться запросом.
 
+<div className="ch-image-lg">
+
 ![Диалоговое окно для изменения доступа к запросу с общим доступом](/images/cloud/sqlconsole/sql-console-edit-access.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![Интерфейс для добавления команды к запросу с общим доступом](/images/cloud/sqlconsole/sql-console-add-team.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Интерфейс для изменения доступа участника к запросу с общим доступом](/images/cloud/sqlconsole/sql-console-edit-member.webp)
+
+</div>
 
 В некоторых случаях может потребоваться отдельно настроить масштаб осей для каждого поля. Это также можно сделать в разделе &#39;Advanced&#39; на панели конфигурации диаграммы, указав минимальное и максимальное значения для диапазона оси. Например, приведённая выше диаграмма выглядит хорошо, но, чтобы продемонстрировать корреляцию между полями `trip_total` и `fare_total`, диапазоны осей нужно немного скорректировать:
 
+<div className="ch-image-lg">
+
 ![Раздел Shared with me в списке запросов](/images/cloud/sqlconsole/sql-console-access-queries.webp)
+
+</div>

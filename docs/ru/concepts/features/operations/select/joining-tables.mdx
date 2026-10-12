@@ -12,7 +12,11 @@ doc_type: 'guide'
 * Начиная с ClickHouse 24.12, планировщик запросов автоматически переставляет JOIN двух таблиц так, чтобы меньшая таблица находилась справа для оптимальной производительности. В версии 25.9 эта возможность была расширена и теперь оптимизирует порядок JOIN в запросах с тремя и более таблицами.
 * Если вашему запросу нужен direct JOIN, то есть `LEFT ANY JOIN`, как показано ниже, мы рекомендуем по возможности использовать [Dictionaries](/ru/concepts/features/dictionaries/index).
 
+<div className="ch-image-sm">
+
 ![LEFT ANY JOIN](/images/guides/joins-1.webp)
+
+</div>
 
 * При выполнении inner JOIN часто эффективнее записывать их как подзапросы с использованием предложения `IN`. Рассмотрим следующие запросы, которые функционально эквивалентны. Оба находят количество `posts`, где ClickHouse не упоминается в вопросе, но упоминается в `comments`.
 
@@ -138,7 +142,11 @@ ClickHouse поддерживает ряд [алгоритмов JOIN](https://c
 
 <br />
 
+<div className="ch-image-lg">
+
 ![зависимость скорости JOIN от использования памяти](/images/guides/joins-2.png)
+
+</div>
 
 <br />
 
@@ -148,7 +156,11 @@ ClickHouse поддерживает ряд [алгоритмов JOIN](https://c
 
 <br />
 
+<div className="ch-image-lg">
+
 ![возможности JOIN](/images/guides/joins-3.webp)
+
+</div>
 
 <br />
 
@@ -164,7 +176,11 @@ ClickHouse поддерживает ряд [алгоритмов JOIN](https://c
 
 <br />
 
+<div className="ch-image-lg">
+
 ![блок-схема JOIN](/images/guides/joins-4.webp)
+
+</div>
 
 <br />
 
@@ -190,7 +206,11 @@ Grace hash JOIN — самый гибкий из трёх алгоритмов J
 
 <br />
 
+<div className="ch-image-lg">
+
 ![Дерево решений для оптимизации использования памяти JOIN](/images/guides/joins-5.webp)
+
+</div>
 
 <br />
 

@@ -9,6 +9,7 @@ doc_type: 'guide'
 ---
 
 import AsyncInserts from '/snippets/ko/_async_inserts.mdx';
+
 import BulkInserts from '/snippets/ko/_bulk_inserts.mdx';
 
 효율적인 데이터 수집은 고성능 ClickHouse 배포의 기반입니다. 적절한 삽입 전략을 선택하면 처리량, 비용, 안정성에 큰 차이가 생길 수 있습니다. 이 섹션에서는 워크로드에 맞는 결정을 내릴 수 있도록 모범 사례, 장단점, 구성 옵션을 설명합니다.
@@ -31,7 +32,11 @@ import BulkInserts from '/snippets/ko/_bulk_inserts.mdx';
 
 아래에서 ClickHouse의 MergeTree 삽입 메커니즘을 간략히 살펴보겠습니다:
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![삽입 프로세스](/images/bestpractices/insert_process.webp)
+
+</div>
 
 <div id="client-side-steps">
   #### 클라이언트 측 단계

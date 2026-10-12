@@ -8,6 +8,7 @@ doc_type: '参考'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 提示词库用于保存并复用那些你经常反复输入的自然语言提示词。你可以把它看作聊天输入框中的代码片段——当同样的分析问题或格式要求在不同会话中反复出现时，它就很有用。
@@ -25,7 +26,11 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 然后点击右下角的 **创建提示词**。
 
+<div className="ch-image-lg">
+
 ![提示词 面板中，左侧的 + 按钮被高亮显示，右侧打开了“创建提示词”表单，显示了“提示词名称”“文本”“分类”“特殊变量”“描述”和“命令”字段，以及“创建提示词”按钮](/images/cloud/agent-builder/prompts/create-prompt.webp)
+
+</div>
 
 <div id="use-a-prompt">
   ## 使用提示词
@@ -33,11 +38,19 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 在提示词面板中，打开某个提示词卡片上的 **...** 菜单，然后选择 **Preview**：
 
+<div className="ch-image-lg">
+
 ![提示词面板中选中了一个提示词，右侧显示其详细信息，菜单中显示 Preview 和 Edit 选项](/images/cloud/agent-builder/prompts/preview.webp)
+
+</div>
 
 预览中会显示提示词文本，以及作者和日期。点击 **Use Prompt** 可将正文插入输入框。如果提示词包含变量，请先填写。
 
+<div className="ch-image-md">
+
 ![提示词预览模态框，显示提示词标题、作者、日期、正文文本以及 Use Prompt 按钮](/images/cloud/agent-builder/prompts/use-prompt-modal.webp)
+
+</div>
 
 <div id="share-prompts">
   ## 共享提示词

@@ -120,7 +120,11 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 A animação a seguir mostra como um índice primário esparso otimizado é criado para a tabela Posts do Stack Overflow. Em vez de indexar linhas individuais, o índice é aplicado a blocos de linhas:
 
+<div className="ch-image-lg">
+
 ![Chave primária](/images/bestpractices/create_primary_key.webp)
+
+</div>
 
 Se a mesma consulta for repetida em uma tabela com esta chave de ordenação:
 
@@ -168,7 +172,11 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 Além disso, visualizamos como o índice esparso descarta todos os blocos de linhas que não podem conter correspondências para nossa consulta de exemplo:
 
+<div className="ch-image-lg">
+
 ![Chave primária](/images/bestpractices/primary_key.webp)
+
+</div>
 
 <Note>
   Todas as colunas de uma tabela serão ordenadas com base no valor da chave de ordenação especificada, independentemente de estarem incluídas na própria chave. Por exemplo, se `CreationDate` for usada como chave, a ordem dos valores em todas as outras colunas corresponderá à ordem dos valores na coluna `CreationDate`. É possível especificar várias chaves de ordenação — nesse caso, a ordenação seguirá a mesma semântica de uma cláusula `ORDER BY` em uma consulta `SELECT`.

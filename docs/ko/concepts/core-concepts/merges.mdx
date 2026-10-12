@@ -24,7 +24,11 @@ ClickHouse는 [스토리지 계층(storage layer)](https://www.vldb.org/pvldb/vo
 
 다음 다이어그램은 이 백그라운드 병합 과정을 개략적으로 보여줍니다:
 
+<div className="ch-image-lg">
+
 ![파트 병합](/images/managing-data/core-concepts/merges_01.webp)
+
+</div>
 
 <br />
 
@@ -67,7 +71,11 @@ ORDER BY name ASC;
 
 ClickHouse 24.10에서는 새로운 [병합 대시보드](https://presentations.clickhouse.com/2024-release-24.10/index.html#17)가 기본 제공 [모니터링 대시보드](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards)에 추가되었습니다. OSS와 Cloud 모두에서 `/merges` HTTP handler를 통해 사용할 수 있으며, 이를 이용해 예시 테이블의 모든 파트 병합을 시각화할 수 있습니다:
 
+<div className="ch-image-lg">
+
 ![파트 병합](/images/managing-data/core-concepts/merges-dashboard.webp)
+
+</div>
 
 <br />
 
@@ -85,7 +93,11 @@ ClickHouse 24.10에서는 새로운 [병합 대시보드](https://presentations.
 
 단일 ClickHouse 서버는 여러 개의 백그라운드 [병합 스레드](/ko/reference/settings/server-settings/settings/background#background_pool_size)를 사용해 동시에 파트 병합을 수행합니다:
 
+<div className="ch-image-lg">
+
 ![파트 병합](/images/managing-data/core-concepts/merges_02.webp)
+
+</div>
 
 <br />
 
@@ -119,7 +131,11 @@ ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merge
 
 아래 다이어그램은 ClickHouse에서 단일 백그라운드 [병합 스레드](/ko/concepts/core-concepts/merges#concurrent-merges)가 파트를 어떻게 머지하는지 보여줍니다(기본적으로 [수직 머지](/ko/concepts/core-concepts/merges#memory-optimized-merges)는 사용하지 않음):
 
+<div className="ch-image-lg">
+
 ![파트 병합](/images/managing-data/core-concepts/merges_03.webp)
+
+</div>
 
 <br />
 
@@ -155,7 +171,11 @@ ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merge
 
 아래 다이어그램은 표준 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 테이블에서 파트가 어떻게 머지되는지 보여줍니다:
 
+<div className="ch-image-lg">
+
 ![파트 병합](/images/managing-data/core-concepts/merges_04.webp)
+
+</div>
 
 <br />
 
@@ -169,7 +189,11 @@ ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merge
 
 [ReplacingMergeTree](/ko/reference/engines/table-engines/mergetree-family/replacingmergetree) 테이블의 파트 병합은 [표준 병합](/ko/concepts/core-concepts/merges#standard-merges)과 유사하게 동작하지만, 각 행의 최신 버전만 유지되고 이전 버전은 삭제됩니다:
 
+<div className="ch-image-lg">
+
 ![파트 병합](/images/managing-data/core-concepts/merges_05.webp)
+
+</div>
 
 <br />
 
@@ -187,7 +211,11 @@ ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merge
 
 [SummingMergeTree](/ko/reference/engines/table-engines/mergetree-family/summingmergetree) 테이블의 파트가 머지되는 동안 숫자 데이터는 자동으로 합산됩니다:
 
+<div className="ch-image-lg">
+
 ![파트 병합](/images/managing-data/core-concepts/merges_06.webp)
+
+</div>
 
 <br />
 
@@ -201,7 +229,11 @@ ClickHouse는 [이전 예시](/ko/concepts/core-concepts/merges#concurrent-merge
 
 위의 `SummingMergeTree` 테이블 예시는 [AggregatingMergeTree](/ko/reference/engines/table-engines/mergetree-family/aggregatingmergetree) 테이블의 특수한 변형으로, 파트 병합 중 [90+](/ko/reference/functions/aggregate-functions/reference-index)개의 집계 함수를 적용해 [자동 증분 데이터 변환](https://www.youtube.com/watch?v=QDAJTKZT8y4)을 수행할 수 있습니다:
 
+<div className="ch-image-lg">
+
 ![파트 병합](/images/managing-data/core-concepts/merges_07.webp)
+
+</div>
 
 <br />
 

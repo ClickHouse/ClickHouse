@@ -12,6 +12,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
 import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -55,7 +56,11 @@ ClickHouse 提供官方 Tableau 连接器，并已在
 
 2. 在左侧菜单中，点击 **To a Server** 部分下的 **More**。在可用连接器列表中搜索 **ClickHouse by ClickHouse**：
 
+<div className="ch-image-md">
+
 ![显示连接器选择菜单且高亮 ClickHouse by ClickHouse 选项的 Tableau 连接界面](/images/integrations/data-visualization/tableau_connecttoserver.webp)
+
+</div>
 
 <br />
 
@@ -66,14 +71,22 @@ ClickHouse 提供官方 Tableau 连接器，并已在
 
 3. 点击 **ClickHouse by ClickHouse**，随后会弹出以下对话框：
 
+<div className="ch-image-md">
+
 ![显示 ClickHouse JDBC 连接器详细信息和安装按钮的 Tableau 连接器安装对话框](/images/integrations/data-visualization/tableau_connector_details.webp)
+
+</div>
 
 <br />
 
 4. 点击 **Install and Restart Tableau**。重启应用程序。
 5. 重启后，该连接器将显示其完整名称：`ClickHouse JDBC by ClickHouse, Inc.`。点击它后，会弹出以下对话框：
 
+<div className="ch-image-md">
+
 ![Tableau 中的 ClickHouse 连接对话框，显示 server、port、database、username 和 password 字段](/images/integrations/data-visualization/tableau_connector_dialog.webp)
+
+</div>
 
 <br />
 
@@ -101,13 +114,21 @@ ClickHouse 提供官方 Tableau 连接器，并已在
 
 7. 点击 **Sign In** 按钮后，你应该会看到一个新的 Tableau 工作簿：
 
+<div className="ch-image-md">
+
 ![显示初始连接界面和数据库选择选项的新 Tableau 工作簿](/images/integrations/data-visualization/tableau_newworkbook.webp)
+
+</div>
 
 <br />
 
 8. 从 **Schema** 下拉菜单中选择 **TPCD**，你应该会看到 **TPCD** 中的表列表：
 
+<div className="ch-image-md">
+
 ![Tableau schema 选择界面，显示 TPCD 数据库中的表，包括 CUSTOMER、LINEITEM、NATION、ORDERS 等](/images/integrations/data-visualization/tableau_tpcdschema.webp)
+
+</div>
 
 <br />
 
@@ -121,7 +142,11 @@ ClickHouse 提供官方 Tableau 连接器，并已在
 
 1. 将 **CUSTOMER** 表拖到工作簿中。注意，列已经显示出来了，但数据表还是空的：
 
+<div className="ch-image-md">
+
 ![将 CUSTOMER 表拖到画布后的 Tableau 工作簿，显示列标题但没有数据](/images/integrations/data-visualization/tableau_workbook1.webp)
+
+</div>
 
 <br />
 
@@ -129,14 +154,22 @@ ClickHouse 提供官方 Tableau 连接器，并已在
 
 3. 将 **ORDERS** 表拖入工作簿，然后将 **Custkey** 设置为这两个表之间的关联字段：
 
+<div className="ch-image-md">
+
 ![Tableau 关系编辑器，显示使用 Custkey 字段连接 CUSTOMER 和 ORDERS 表](/images/integrations/data-visualization/tableau_workbook2.webp)
+
+</div>
 
 <br />
 
 4. 现在，**ORDERS** 和 **LINEITEM** 表已经作为你的数据源关联起来了，因此你可以利用
    这种关系来回答与数据相关的问题。选择工作簿底部的 **Sheet 1** 选项卡。
 
+<div className="ch-image-md">
+
 ![Tableau 工作表，显示可用于分析的 ClickHouse 表中的维度和度量](/images/integrations/data-visualization/tableau_workbook3.webp)
+
+</div>
 
 <br />
 
@@ -144,7 +177,11 @@ ClickHouse 提供官方 Tableau 连接器，并已在
    **Columns** 区域 (横向字段) ，然后将 **LINEITEM** 中的 **Quantity** 拖到 **Rows**。Tableau 会
    生成如下折线图：
 
+<div className="ch-image-sm">
+
 ![Tableau 折线图，显示 ClickHouse 数据中按年份统计的订购数量](/images/integrations/data-visualization/tableau_workbook4.webp)
+
+</div>
 
 <br />
 
@@ -160,21 +197,33 @@ ClickHouse 提供官方 Tableau 连接器，并已在
 
 你应该会看到如下内容：
 
+<div className="ch-image-sm">
+
 ![Tableau 交叉表视图，以季度为列、运输方式为行](/images/integrations/data-visualization/tableau_workbook5.webp)
+
+</div>
 
 <br />
 
 7. **Abc** 值只是用来暂时填补空白区域，直到你将某个指标拖到表中。将 **Totalprice** 从 *
    *ORDERS** 拖到表上。注意，默认计算方式是对 **Totalprices** 执行 **SUM**：
 
+<div className="ch-image-md">
+
 ![Tableau 交叉表，显示按季度和运输方式统计的总订单金额之和](/images/integrations/data-visualization/tableau_workbook6.webp)
+
+</div>
 
 <br />
 
 8. 点击 **SUM**，将 **Measure** 改为 **Average**。在同一个下拉菜单中，选择 **Format**，然后将
    **Numbers** 改为 **Currency (Standard)**：
 
+<div className="ch-image-md">
+
 ![Tableau 交叉表，显示按季度和运输方式统计的平均订单金额，并采用货币格式](/images/integrations/data-visualization/tableau_workbook7.webp)
+
+</div>
 
 <br />
 

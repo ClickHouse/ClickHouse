@@ -11,6 +11,7 @@ integration:
 ---
 
 import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
 SQL console is the fastest and easiest way to explore and query your databases in ClickHouse Cloud. You can use the SQL console to:
 
 - Connect to your ClickHouse Cloud Services
@@ -24,23 +25,39 @@ SQL console is the fastest and easiest way to explore and query your databases i
 
 An overview of tables contained in your ClickHouse instance can be found in the left sidebar area. Use the database selector at the top of the left bar to view the tables in a specific database
 
+<div className="ch-image-lg">
+
 ![Table list and schema view showing database tables in the left sidebar](/images/cloud/sqlconsole/table-list-and-schema.webp)
+
+</div>
 
 Tables in the list can also be expanded to view columns and types
 
+<div className="ch-image-lg">
+
 ![View of expanded table showing column names and data types](/images/cloud/sqlconsole/view-columns.webp)
+
+</div>
 
 ### Exploring table data {#exploring-table-data}
 
 Click on a table in the list to open it in a new tab. In the Table View, data can be easily viewed, selected, and copied. Note that structure and formatting are preserved when copy-pasting to spreadsheet applications such as Microsoft Excel and Google Sheets. You can flip between pages of table data (paginated in 30-row increments) using the navigation in the footer.
 
+<div className="ch-image-lg">
+
 ![Table view showing data that can be selected and copied](/images/cloud/sqlconsole/abc.webp)
+
+</div>
 
 ### Inspecting cell data {#inspecting-cell-data}
 
 The Cell Inspector tool can be used to view large amounts of data contained within a single cell. To open it, right-click on a cell and select 'Inspect Cell'. The contents of the cell inspector can be copied by clicking the copy icon in the top right corner of the inspector contents.
 
+<div className="ch-image-lg">
+
 ![Cell inspector dialog showing the content of a selected cell](/images/cloud/sqlconsole/inspecting-cell-content.webp)
+
+</div>
 
 ## Filtering and sorting tables {#filtering-and-sorting-tables}
 
@@ -48,7 +65,11 @@ The Cell Inspector tool can be used to view large amounts of data contained with
 
 To sort a table in the SQL console, open a table and select the 'Sort' button in the toolbar. This button will open a menu that will allow you to configure your sort. You can choose a column by which to sort and configure the ordering of the sort (ascending or descending). Select 'Apply' or press Enter to sort your table
 
+<div className="ch-image-lg">
+
 ![Sort dialog showing configuration for descending sort on a column](/images/cloud/sqlconsole/sort-descending-on-column.webp)
+
+</div>
 
 The SQL console also allows you to add multiple sorts to a table. Click the 'Sort' button again to add another sort. Note: sorts are applied in the order that they appear in the sort pane (top to bottom). To remove a sort, simply click the 'x' button next to the sort.
 
@@ -56,11 +77,19 @@ The SQL console also allows you to add multiple sorts to a table. Click the 'Sor
 
 To filter a table in the SQL console, open a table and select the 'Filter' button. Just like sorting, this button will open a menu that will allow you to configure your filter. You can choose a column by which to filter and select the necessary criteria. The SQL console intelligently displays filter options that correspond to the type of data contained in the column.
 
+<div className="ch-image-lg">
+
 ![Filter dialog showing configuration to filter radio column equal to GSM](/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp)
+
+</div>
 
 When you're happy with your filter, you can select 'Apply' to filter your data. You can also add additional filters as shown below.
 
+<div className="ch-image-lg">
+
 ![Dialog showing how to add an additional filter on range greater than 2000](/images/cloud/sqlconsole/add-more-filters.webp)
+
+</div>
 
 Similar to the sort functionality, click the 'x' button next to a filter to remove it.
 
@@ -68,13 +97,21 @@ Similar to the sort functionality, click the 'x' button next to a filter to remo
 
 The SQL console allows you to filter and sort a table at the same time. To do this, add all desired filters and sorts using the steps described above and click the 'Apply' button.
 
+<div className="ch-image-lg">
+
 ![Interface showing both filtering and sorting applied simultaneously](/images/cloud/sqlconsole/filtering-and-sorting-together.webp)
+
+</div>
 
 ### Creating a query from filters and sorts {#creating-a-query-from-filters-and-sorts}
 
 The SQL console can convert your sorts and filters directly into queries with one click. Simply select the 'Create Query' button from the toolbar with the sort and filter parameters of your choosing. After clicking 'Create query', a new query tab will open pre-populated with the SQL command corresponding to the data contained in your table view.
 
+<div className="ch-image-lg">
+
 ![Interface showing the Create Query button that generates SQL from filters and sorts](/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp)
+
+</div>
 
 <Note>
 Filters and sorts aren't mandatory when using the 'Create Query' feature.
@@ -91,7 +128,11 @@ There are two ways to create a new query in the SQL console.
 - Click the '+' button in the tab bar
 - Select the 'New Query' button from the left sidebar query list
 
+<div className="ch-image-lg">
+
 ![Interface showing how to create a new query using the + button or New Query button](/images/cloud/sqlconsole/creating-a-query.webp)
+
+</div>
 
 ### Running a query {#running-a-query}
 
@@ -105,17 +146,29 @@ By default, clicking the run button will run all commands contained in the SQL E
 
 To run selected commands, highlight the desired command or sequence of commands and click the 'Run' button (or use the `cmd / ctrl + enter` shortcut). You can also select 'Run selected' from the SQL Editor context menu (opened by right-clicking anywhere within the editor) when a selection is present.
 
+<div className="ch-image-lg">
+
 ![Interface showing how to run a selected portion of SQL query](/images/cloud/sqlconsole/run-selected-query.webp)
+
+</div>
 
 Running the command at the current cursor position can be achieved in two ways:
 
 - Select 'At Cursor' from the extended run options menu (or use the corresponding `cmd / ctrl + shift + enter` keyboard shortcut
 
+<div className="ch-image-lg">
+
 ![Run at cursor option in the extended run options menu](/images/cloud/sqlconsole/run-at-cursor-2.webp)
+
+</div>
 
 - Selecting 'Run at cursor' from the SQL Editor context menu
 
+<div className="ch-image-lg">
+
 ![Run at cursor option in the SQL Editor context menu](/images/cloud/sqlconsole/run-at-cursor.webp)
+
+</div>
 
 <Note>
 The command present at the cursor position will flash yellow on execution.
@@ -125,17 +178,29 @@ The command present at the cursor position will flash yellow on execution.
 
 While a query is running, the 'Run' button in the Query Editor toolbar will be replaced with a 'Cancel' button. Simply click this button or press `Esc` to cancel the query. Note: Any results that have already been returned will persist after cancellation.
 
+<div className="ch-image-lg">
+
 ![Cancel button that appears during query execution](/images/cloud/sqlconsole/cancel-a-query.webp)
+
+</div>
 
 ### Saving a query {#saving-a-query}
 
 If not previously named, your query should be called 'Untitled Query'. Click on the query name to change it. Renaming a query will cause the query to be saved.
 
+<div className="ch-image-lg">
+
 ![Interface showing how to rename a query from Untitled Query](/images/cloud/sqlconsole/give-a-query-a-name.webp)
+
+</div>
 
 You can also use the save button or `cmd / ctrl + s` keyboard shortcut to save a query.
 
+<div className="ch-image-lg">
+
 ![Save button in the query editor toolbar](/images/cloud/sqlconsole/save-the-query.webp)
+
+</div>
 
 ## Using GenAI to manage queries {#using-genai-to-manage-queries}
 
@@ -267,27 +332,47 @@ Keep in mind that GenAI is an experimental feature. Use caution when running Gen
 
 After a query is executed, you can quickly search through the returned result set using the search input in the result pane. This feature assists in previewing the results of an additional `WHERE` clause or simply checking to ensure that specific data is included in the result set. After inputting a value into the search input, the result pane will update and return records containing an entry that matches the inputted value. In this example, we'll look for all instances of `breakfast` in the `hackernews` table for comments that contain `ClickHouse` (case-insensitive):
 
+<div className="ch-image-lg">
+
 ![Search Hacker News Data](/images/cloud/sqlconsole/search-hn.webp)
+
+</div>
 
 Note: Any field matching the inputted value will be returned. For example, the third record in the above screenshot doesn't match 'breakfast' in the `by` field, but the `text` field does:
 
+<div className="ch-image-lg">
+
 ![Match in body](/images/cloud/sqlconsole/match-in-body.webp)
+
+</div>
 
 ### Adjusting pagination settings {#adjusting-pagination-settings}
 
 By default, the query result pane will display every result record on a single page. For larger result sets, it may be preferable to paginate results for easier viewing. This can be accomplished using the pagination selector in the bottom right corner of the result pane:
 
+<div className="ch-image-lg">
+
 ![Pagination options](/images/cloud/sqlconsole/pagination.webp)
+
+</div>
 
 Selecting a page size will immediately apply pagination to the result set and navigation options will appear in the middle of the result pane footer
 
+<div className="ch-image-lg">
+
 ![Pagination navigation](/images/cloud/sqlconsole/pagination-nav.webp)
+
+</div>
 
 ### Exporting query result data {#exporting-query-result-data}
 
 Query result sets can be easily exported to CSV format directly from the SQL console. To do so, open the `•••` menu on the right side of the result pane toolbar and select 'Download as CSV'.
 
+<div className="ch-image-lg">
+
 ![Download as CSV](/images/cloud/sqlconsole/download-as-csv.webp)
+
+</div>
 
 ## Visualizing query data {#visualizing-query-data}
 
@@ -307,7 +392,11 @@ ORDER BY
    1 ASC
 ```
 
+<div className="ch-image-lg">
+
 ![Tabular query results](/images/cloud/sqlconsole/tabular-query-results.webp)
+
+</div>
 
 Without visualization, these results are difficult to interpret. Let's turn them into a chart.
 
@@ -315,25 +404,45 @@ Without visualization, these results are difficult to interpret. Let's turn them
 
 To begin building your visualization, select the 'Chart' option from the query result pane toolbar. A chart configuration pane will appear:
 
+<div className="ch-image-lg">
+
 ![Switch from query to chart](/images/cloud/sqlconsole/switch-from-query-to-chart.webp)
+
+</div>
 
 We'll start by creating a simple bar chart tracking `trip_total` by `week`. To accomplish this, we'll drag the `week` field to the x-axis and the `trip_total` field to the y-axis:
 
+<div className="ch-image-lg">
+
 ![Trip total by week](/images/cloud/sqlconsole/trip-total-by-week.webp)
+
+</div>
 
 Most chart types support multiple fields on numeric axes. To demonstrate, we'll drag the fare_total field onto the y-axis:
 
+<div className="ch-image-lg">
+
 ![Bar chart](/images/cloud/sqlconsole/bar-chart.webp)
+
+</div>
 
 ### Customizing charts {#customizing-charts}
 
 The SQL console supports ten chart types that can be selected from the chart type selector in the chart configuration pane. For example, we can easily change the previous chart type from Bar to an Area:
 
+<div className="ch-image-lg">
+
 ![Change from Bar chart to Area](/images/cloud/sqlconsole/change-from-bar-to-area.webp)
+
+</div>
 
 Chart titles match the name of the query supplying the data. Updating the name of the query will cause the Chart title to update as well:
 
+<div className="ch-image-lg">
+
 ![Update query name](/images/cloud/sqlconsole/update-query-name.webp)
+
+</div>
 
 A number of more advanced chart characteristics can also be adjusted in the 'Advanced' section of the chart configuration pane. To begin, we'll adjust the following settings:
 
@@ -343,11 +452,19 @@ A number of more advanced chart characteristics can also be adjusted in the 'Adv
 
 Our chart will be updated accordingly:
 
+<div className="ch-image-lg">
+
 ![Update subtitle etc.](/images/cloud/sqlconsole/update-subtitle-etc.webp)
+
+</div>
 
 In some scenarios, it may be necessary to adjust the axis scales for each field independently. This can also be accomplished in the 'Advanced' section of the chart configuration pane by specifying min and max values for an axis range. As an example, the above chart looks good, but in order to demonstrate the correlation between our `trip_total` and `fare_total` fields, the axis ranges need some adjustment:
 
+<div className="ch-image-lg">
+
 ![Adjust axis scale](/images/cloud/sqlconsole/adjust-axis-scale.webp)
+
+</div>
 
 ## Sharing queries {#sharing-queries}
 
@@ -355,16 +472,36 @@ The SQL console enables you to share queries with your team. When a query is sha
 
 To share a query, click the 'Share' button in the query toolbar.
 
+<div className="ch-image-lg">
+
 ![Share button in the query toolbar](/images/cloud/sqlconsole/sql-console-share.webp)
+
+</div>
 
 A dialog will open, allowing you to share the query with all members of a team. If you have multiple teams, you can select which team to share the query with.
 
+<div className="ch-image-lg">
+
 ![Dialog for editing access to a shared query](/images/cloud/sqlconsole/sql-console-edit-access.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![Interface for adding a team to a shared query](/images/cloud/sqlconsole/sql-console-add-team.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Interface for editing member access to a shared query](/images/cloud/sqlconsole/sql-console-edit-member.webp)
+
+</div>
 
 In some scenarios, it may be necessary to adjust the axis scales for each field independently. This can also be accomplished in the 'Advanced' section of the chart configuration pane by specifying min and max values for an axis range. As an example, the above chart looks good, but in order to demonstrate the correlation between our `trip_total` and `fare_total` fields, the axis ranges need some adjustment:
 
+<div className="ch-image-lg">
+
 ![Shared with me section in the query list](/images/cloud/sqlconsole/sql-console-access-queries.webp)
+
+</div>

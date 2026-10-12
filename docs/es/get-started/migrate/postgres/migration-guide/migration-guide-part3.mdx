@@ -30,9 +30,17 @@ Para entender por qué no es adecuado usar su clave primaria de OLTP en ClickHou
 
 Para obtener más información, recomendamos esta [guía detallada](/es/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
+<div className="ch-image-lg">
+
 ![Índice B-Tree de PostgreSQL](/images/migrations/postgres-b-tree.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Índice disperso de PostgreSQL](/images/migrations/postgres-sparse-index.webp)
+
+</div>
 
 La clave seleccionada en ClickHouse determinará no solo el índice, sino también el orden en que los datos se escriben en disco. Por ello, puede afectar drásticamente los niveles de compresión, lo que a su vez puede influir en el rendimiento de las consultas. Una clave de ordenación que haga que los valores de la mayoría de las columnas se escriban en un orden contiguo permitirá que el algoritmo de compresión seleccionado (y los codecs) comprima los datos de forma más eficaz.
 
@@ -54,7 +62,11 @@ Si vienes de Postgres, te resultará familiar el concepto de particionamiento de
 
 En ClickHouse, el particionamiento se especifica en una tabla cuando se define inicialmente mediante la cláusula `PARTITION BY`. Esta cláusula puede contener una expresión SQL sobre cualquier columna, cuyo resultado definirá a qué partición se envía una fila.
 
+<div className="ch-image-md">
+
 ![Particiones de PostgreSQL a particiones de ClickHouse](/images/migrations/postgres-partitions.webp)
+
+</div>
 
 Las partes de datos se asocian lógicamente con cada partición en disco y pueden consultarse de forma aislada. En el ejemplo siguiente, particionamos la tabla `posts` por año usando la expresión `toYear(CreationDate)`. A medida que se insertan filas en ClickHouse, esta expresión se evaluará para cada fila y se dirigirá a la partición resultante si existe (si la fila es la primera de un año, se creará la partición).
 
@@ -272,7 +284,11 @@ a medida que se insertan los datos. Además, las consultas pueden enviarse simpl
 tabla, donde las proyecciones se aprovechan, cuando es posible, para acelerar el tiempo
 de respuesta.
 
+<div className="ch-image-md">
+
 ![Proyecciones de PostgreSQL en ClickHouse](/images/migrations/postgres-projections.webp)
+
+</div>
 
 Esto contrasta con las vistas materializadas, donde el usuario tiene que seleccionar la
 tabla de destino optimizada adecuada o reescribir su consulta, según los filtros.

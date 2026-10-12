@@ -118,7 +118,11 @@ O Telflo oferece:
 
     Trace conexões dos receivers, passando pelos processors, até o exporter, um pipeline por sinal. A linha de status informa **config valid** ou o número de erros a corrigir, e a aba **YAML** exibe a configuração gerada.
 
+    <div className="ch-image-lg">
+
     ![Um pipeline do coletor no editor Telflo com o exportador do ClickHouse configurado](/images/clickstack/telflo/telflo-configuration.webp)
+
+    </div>
 
     Antes de colocar qualquer coisa em produção, você pode enviar telemetria de amostra pela configuração e verificar o resultado obtido na outra ponta. Consulte [testes no Telflo](https://docs.telflo.com/docs/testing/overview). Como alternativa, você pode descrever o que pretende fazer e o assistente de IA do Telflo, aberto pelo botão **AI** na barra de ferramentas, monta, valida e testa a configuração para você. Seu próprio agente pode fazer o mesmo por meio da [CLI do Telflo](https://docs.telflo.com/docs/cli/).
   </Step>
@@ -135,7 +139,11 @@ O Telflo oferece:
 
     Para aplicar uma alteração, publique uma nova version e atribua-a ao grupo; para reverter, atribua uma version implantada anteriormente.
 
+    <div className="ch-image-lg">
+
     ![Uma fleet do Telflo com todos os collectors sincronizados após um rollout](/images/clickstack/telflo/telflo-fleet.webp)
+
+    </div>
   </Step>
 
   <Step title="Verifique a telemetria" id="verify-telemetry">

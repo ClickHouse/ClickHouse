@@ -199,7 +199,11 @@ import DemoArchitecture from '/snippets/zh/_demo.mdx';
 
     创建用户，并提供符合复杂度要求的用户名和密码。
 
+    <div className="ch-image-lg">
+
     ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
   </Step>
 
   <Step title="获取摄取 API key" id="retrieve-ingestion-api-key">
@@ -207,7 +211,11 @@ import DemoArchitecture from '/snippets/zh/_demo.mdx';
 
     前往 [`Team Settings`](http://localhost:8080/team)，然后在 `API Keys` 部分复制 `Ingestion API Key`。此 API key 可确保通过 OpenTelemetry collector 进行的数据摄取安全无虞。
 
+    <div className="ch-image-lg">
+
     ![复制 API key](/images/use-cases/observability/copy_api_key.webp)
+
+    </div>
   </Step>
 
   <Step title="创建 API key Kubernetes Secret" id="create-api-key-kubernetes-secret">
@@ -231,7 +239,11 @@ import DemoArchitecture from '/snippets/zh/_demo.mdx';
 
     来自演示服务的 trace 和日志数据现在应该已开始流入 HyperDX。
 
+    <div className="ch-image-lg">
+
     ![HyperDX Kubernetes 数据](/images/use-cases/observability/hyperdx-kubernetes-data.webp)
+
+    </div>
   </Step>
 
   <Step title="添加 OpenTelemetry Helm 仓库" id="add-otel-helm-repo">
@@ -482,4 +494,8 @@ import DemoArchitecture from '/snippets/zh/_demo.mdx';
   </Step>
 </Steps>
 
+<div className="ch-image-lg">
+
 ![Kubernetes 上的 ClickHouse](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</div>

@@ -74,7 +74,11 @@ PostgreSQL использует MVCC (Multi-Version Concurrency Control) для 
 
 При асинхронных вставках данные сначала попадают в буфер, а затем позже записываются в хранилище базы данных в 3 этапа, как показано на схеме ниже:
 
+<div className="ch-image-md">
+
 ![Вставки Postgres](/images/guides/postgres-inserts.webp)
+
+</div>
 
 Когда асинхронные вставки включены, ClickHouse:
 

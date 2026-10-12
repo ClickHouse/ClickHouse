@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 import ChangingTLSSettings from '/snippets/zh/clickpipes/_changing_tls_settings.mdx';
 import PostgresClickPipeCli from '/snippets/zh/clickpipes/_postgres_clickpipe_cli.mdx';
+
 import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.mdx';
 
 <Visibility for="agents">
@@ -64,15 +65,27 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
     1. 在 ClickHouse Cloud 控制台中，进入你的 ClickHouse Cloud 服务。
 
+    <div className="ch-image-lg">
+
     ![ClickPipes 服务](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+    </div>
 
     2. 在左侧菜单中选择 `Data Sources` 按钮，然后点击 &quot;Set up a ClickPipe&quot;
 
+    <div className="ch-image-lg">
+
     ![选择导入](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </div>
 
     3. 选择 `Postgres CDC` 卡片
 
+       <div className="ch-image-lg">
+
        ![选择 Postgres](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
+
+       </div>
 
 ### 添加源 Postgres 数据库连接
 
@@ -83,7 +96,11 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
       更多信息请参阅[本页顶部](#prerequisites)链接的源 Postgres 设置指南。
     </Info>
 
+    <div className="ch-image-lg">
+
     ![填写连接信息](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
+
+    </div>
 
 #### &#x20;(可选) 设置 AWS Private Link
 
@@ -102,7 +119,11 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
     2. 填写 SSH 连接信息。
 
+       <div className="ch-image-lg">
+
        ![SSH 隧道](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+       </div>
 
     3. 若要使用基于密钥的身份验证，请点击 &quot;Revoke and generate key pair&quot; 生成新的密钥对，并将生成的公钥复制到 SSH 服务器的 `~/.ssh/authorized_keys` 中。
 
@@ -118,7 +139,11 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
     5. 请务必从下拉列表中选择你在前置条件步骤中创建的 replication slot。
 
+       <div className="ch-image-lg">
+
        ![选择 replication slot](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
+
+       </div>
 
 #### 高级设置
 
@@ -134,7 +159,11 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
     6. 在这里你可以为 ClickPipe 选择目标数据库。你可以选择已有的数据库，也可以新建一个数据库。
 
+       <div className="ch-image-lg">
+
        ![选择目标数据库](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
+
+       </div>
 
     7. 你可以选择要从源 Postgres 数据库复制的表。在选择表时，你还可以为目标端 ClickHouse 数据库中的表重命名，并排除特定的列。
 
@@ -148,7 +177,11 @@ import SettingPartitionBy from '/snippets/zh/clickpipes/_target_ch_partition_by.
 
     9. 在权限下拉列表中选择 &quot;Full access&quot; 角色，然后点击 &quot;Complete Setup&quot;。
 
+       <div className="ch-image-lg">
+
        ![查看权限](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+       </div>
 
 ## 后续步骤
 

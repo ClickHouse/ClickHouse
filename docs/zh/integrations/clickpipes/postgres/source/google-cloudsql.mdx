@@ -28,13 +28,25 @@ Postgres 12 及更高版本
 
 1. 在 Overview 页面上点击 **Edit** 按钮。
 
+<div className="ch-image-lg">
+
 ![Cloud SQL Postgres 中的 Edit 按钮](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
+
+</div>
 
 2. 进入 Flags，将 `cloudsql.logical_decoding` 设置为 on。此更改需要重启 Postgres 服务器。
 
+<div className="ch-image-lg">
+
 ![将 cloudsql.logical_decoding 设置为 on](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![重启服务器](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## 创建 ClickPipes 用户并授予权限
@@ -96,17 +108,33 @@ Postgres 12 及更高版本
 
 1. 前往 **Connections** 部分
 
+<div className="ch-image-lg">
+
 ![Cloud SQL 中的 Connections 部分](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
+
+</div>
 
 2. 前往 **Networking** 子部分
 
+<div className="ch-image-lg">
+
 ![Cloud SQL 中的 Networking 子部分](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
+
+</div>
 
 3. 添加 [ClickPipes 的公网 IP](/zh/integrations/clickpipes/networking/static-ips)
 
+<div className="ch-image-lg">
+
 ![将 ClickPipes 网络添加到防火墙](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![已将 ClickPipes 网络添加到防火墙](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
+
+</div>
 
 <div id="whats-next">
   ## 下一步是什么？

@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
 يوفّر هذا الدليل إرشادات خطوة بخطوة لترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام PeerDB.
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-peerdb-beta" />
@@ -42,7 +43,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 أنشئ نظيرًا لقاعدة بيانات PostgreSQL المصدر لديك عبر إدخال تفاصيل الاتصال، مثل المضيف والمنفذ واسم قاعدة البيانات واسم المستخدم وكلمة المرور. بعد إدخال التفاصيل، انقر على الزر `Create peer` لحفظ النظير.
 
+<div className="ch-image-md">
+
 ![إنشاء النظير المصدر](/images/managed-postgres/peerdb/source-peer.webp)
+
+</div>
 
 <div id="migration-peerdb-target-peer">
   ### إنشاء نظير الهدف
@@ -50,11 +55,19 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 وبالمثل، أنشئ نظير لمثيل ClickHouse Managed Postgres الخاص بك من خلال إدخال تفاصيل الاتصال المطلوبة. يمكنك الحصول على [تفاصيل الاتصال](/ar/products/managed-postgres/connection) الخاصة بمثيلك من ClickHouse Cloud console. بعد إدخال التفاصيل، انقر على الزر `Create peer` لحفظ نظير الهدف.
 
+<div className="ch-image-md">
+
 ![إنشاء نظير الهدف](/images/managed-postgres/peerdb/target-peer.webp)
+
+</div>
 
 الآن، ينبغي أن ترى كلاً من نظير المصدر ونظير الهدف مدرجَين في قسم &quot;Peers&quot;.
 
+<div className="ch-image-md">
+
 ![قائمة نظراء](/images/managed-postgres/peerdb/peers.webp)
+
+</div>
 
 <div id="migration-peerdb-source-schema-dump">
   ### الحصول على تفريغ مخطط قاعدة البيانات المصدر
@@ -142,7 +155,11 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 بعد ذلك، نحتاج إلى إنشاء مرآة لتحديد عملية ترحيل البيانات بين النظير المصدر والنظير الهدف. في واجهة PeerDB، انتقل إلى قسم &quot;Mirrors&quot; بالنقر على &quot;Mirrors&quot; في الشريط الجانبي. ولإنشاء مرآة جديدة، انقر على الزر `+ New mirror`.
 
+<div className="ch-image-md">
+
 ![إنشاء مرآة](/images/managed-postgres/peerdb/create-mirror.webp)
+
+</div>
 
 1. امنح المرآة اسمًا يعبّر عن عملية الترحيل.
 2. اختر النظير المصدر والنظير الهدف اللذين أنشأتهما سابقًا من القوائم المنسدلة.
@@ -151,11 +168,19 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 * أن يكون Soft delete مضبوطًا على OFF.
 * وسّع `Advanced settings`. وتأكد من أن **نظام أنواع Postgres مُمكّن** وأن **أعمدة PeerDB معطّلة**.
 
+<div className="ch-image-md">
+
 ![إعدادات المرآة](/images/managed-postgres/peerdb/settings.webp)
+
+</div>
 
 4. اختر الجداول التي تريد ترحيلها. يمكنك اختيار جداول محددة أو تحديد جميع الجداول من قاعدة البيانات المصدر.
 
+<div className="ch-image-md">
+
 ![منتقي الجداول](/images/managed-postgres/peerdb/table-picker.webp)
+
+</div>
 
 <Info>
   **اختيار الجداول**
@@ -167,7 +192,11 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 يجب أن تظهر المرآة التي أنشأتها للتو في قسم &quot;Mirrors&quot;.
 
+<div className="ch-image-md">
+
 ![قائمة المرايا](/images/managed-postgres/peerdb/mirrors.webp)
+
+</div>
 
 <div id="migration-peerdb-initial-load">
   ## انتظر اكتمال التحميل الأولي
@@ -175,7 +204,11 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 بعد إنشاء الـ مرآة، سيبدأ PeerDB التحميل الأولي للبيانات من المصدر إلى قاعدة البيانات الهدف. يمكنك النقر على الـ مرآة ثم الانتقال إلى علامة التبويب **التحميل الأولي** لمتابعة تقدّم ترحيل البيانات الأولي.
 
+<div className="ch-image-md">
+
 ![تقدّم التحميل الأولي](/images/managed-postgres/peerdb/initial-load.webp)
+
+</div>
 
 بمجرد اكتمال التحميل الأولي، يفترض أن ترى حالة تشير إلى اكتمال الترحيل.
 

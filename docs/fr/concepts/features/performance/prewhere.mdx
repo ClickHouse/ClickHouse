@@ -17,7 +17,11 @@ Ce guide explique le fonctionnement de PREWHERE, comment mesurer son impact et c
 
 Nous allons commencer par illustrer comment une requête sur la table [uk&#95;price&#95;paid&#95;simple](/fr/concepts/core-concepts/parts) est traitée sans utiliser PREWHERE :
 
+<div className="ch-image-md">
+
 ![Traitement des requêtes sans optimisation PREWHERE](/images/guides/best-practices/prewhere_01.webp)
+
+</div>
 
 <br />
 
@@ -43,7 +47,11 @@ Les animations suivantes montrent comment la requête ci-dessus est traitée lor
 
 Les trois premières étapes du traitement sont les mêmes que précédemment :
 
+<div className="ch-image-md">
+
 ![Traitement de la requête avec l’optimisation PREWHERE](/images/guides/best-practices/prewhere_02.webp)
+
+</div>
 
 <br />
 
@@ -64,7 +72,11 @@ ClickHouse commence le traitement PREWHERE en ① lisant les granules sélection
 
 Dans notre exemple, tous les granules sélectionnés correspondent, donc ② les granules correspondants, alignés positionnellement, de la colonne du filtre suivant — `date` — sont alors sélectionnés pour traitement :
 
+<div className="ch-image-md">
+
 ![Étape 1 : Filtrage par ville](/images/guides/best-practices/prewhere_03.webp)
+
+</div>
 
 <br />
 
@@ -75,7 +87,11 @@ Ensuite, ClickHouse ① lit les granules sélectionnés de la colonne `date` pou
 
 Dans ce cas, deux granules sur trois contiennent des lignes correspondantes, donc ② seuls leurs granules, alignés positionnellement, de la colonne du filtre suivant — `price` — sont sélectionnés pour la suite du traitement :
 
+<div className="ch-image-md">
+
 ![Étape 2 : Filtrage par date](/images/guides/best-practices/prewhere_04.webp)
+
+</div>
 
 <br />
 
@@ -86,7 +102,11 @@ Enfin, ClickHouse ① lit les deux granules sélectionnés de la colonne `price`
 
 Un seul des deux granules contient des lignes correspondantes, donc ② seul son granule, aligné positionnellement, de la colonne du `SELECT` — `street` — doit être chargé pour la suite du traitement :
 
+<div className="ch-image-md">
+
 ![Étape 2 : Filtrage par prix](/images/guides/best-practices/prewhere_05.webp)
+
+</div>
 
 <br />
 

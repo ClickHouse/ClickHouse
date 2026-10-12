@@ -51,9 +51,17 @@ Toutefois, si vous désactivez Unity Catalog en créant un cluster avec le mode 
    * Sélectionnez **DBFS** ou **Workspace** → Accédez au fichier JAR téléversé
    * Cliquez sur **Install**
 
+<div className="ch-image-lg">
+
 ![Onglet Databricks Libraries](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Installation de la bibliothèque depuis le volume du workspace](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
+
+</div>
 
 4. Redémarrez le cluster pour charger la bibliothèque
 
@@ -88,7 +96,11 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
+<div className="ch-image-lg">
+
 ![Configuration des bibliothèques Maven dans Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
+
+</div>
 
 3. Cliquez sur **Install** puis redémarrez le cluster pour charger la bibliothèque
 

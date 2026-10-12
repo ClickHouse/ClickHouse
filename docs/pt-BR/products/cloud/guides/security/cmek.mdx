@@ -160,4 +160,8 @@ Os backups são criptografados com a mesma chave do serviço associado. Ao resta
 
 A criptografia do banco de dados usa o [recurso integrado Virtual File System for Data Encryption](/pt-BR/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system) do ClickHouse para criptografar e proteger seus dados. O algoritmo usado nesse recurso é `AES_256_CTR`, que deve causar uma perda de desempenho de 5-15%, dependendo da carga de trabalho:
 
+<div className="ch-image-lg">
+
 ![Penalidade de desempenho do CMEK](/images/_snippets/cmek-performance.webp)
+
+</div>

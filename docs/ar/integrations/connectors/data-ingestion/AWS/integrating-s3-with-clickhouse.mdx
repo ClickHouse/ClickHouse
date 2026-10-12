@@ -857,7 +857,11 @@ SELECT * FROM s3_table1;
 6. في وحدة تحكم AWS، انتقل إلى الحاويات وحدد الحاوية الجديدة والمجلد.
    ينبغي أن ترى شيئًا مشابهًا لما يلي:
 
+<div className="ch-image-lg">
+
 ![عرض حاوية S3 في وحدة تحكم AWS يوضح ملفات بيانات ClickHouse المخزنة في S3](/images/integrations/data-ingestion/s3/s3-j.webp)
+
+</div>
 
 <div id="s3-multi-region">
   ## تكرار شظية واحدة عبر منطقتين في AWS باستخدام تخزين الكائنات في S3
@@ -1296,9 +1300,17 @@ sudo service clickhouse-server start
 
   تحقّق من بيانات S3 في كل حاوية S3 (لا تظهر القيم الإجمالية، لكن كلتا الحاويتين تحتويان على نحو 36 MiB من البيانات المخزَّنة بعد عمليات الإدراج):
 
+<div className="ch-image-lg">
+
 ![حجم البيانات في حاوية S3 الأولى مع إظهار مقاييس استخدام التخزين](/images/integrations/data-ingestion/s3/bucket1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![حجم البيانات في حاوية S3 الثانية مع إظهار مقاييس استخدام التخزين](/images/integrations/data-ingestion/s3/bucket2.webp)
+
+</div>
 
 <div id="s3express">
   ## S3Express

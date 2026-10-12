@@ -20,11 +20,19 @@ import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintain
 
 To make a connection to ClickHouse, navigate to the **Connections page**, select **New Connection**, then select the ClickHouse from the New Connection modal.
 
+<div className="ch-image-md">
+
 ![Luzmo interface showing the Create a New Connection dialog with ClickHouse selected](/images/integrations/data-visualization/luzmo_01.webp)
+
+</div>
 
 You'll be asked to provide a **host**, **username** and **password**:
 
+<div className="ch-image-md">
+
 ![Luzmo connection configuration form showing fields for ClickHouse host, username and password](/images/integrations/data-visualization/luzmo_02.webp)
+
+</div>
 
 *   **Host**: this is the host where your ClickHouse database is exposed. Note that only `https` is allowed here in order to securely transfer data over the wire. The structure of the host url expects: `https://url-to-clickhouse-db:port/database`
     By default, the plugin will connect to the 'default' database and the 443 port. By providing a database after the '/' you can configure which database to connect to.
@@ -42,7 +50,11 @@ To find out how to add datasets using our API, please refer to [this example in 
 
 You can now use your datasets to build beautiful (embedded) dashboards, or even power an AI Data Analyst ([Luzmo IQ](https://luzmo.com/iq)) that can answer your clients' questions.
 
+<div className="ch-image-md">
+
 ![Luzmo dashboard example showing multiple visualizations of data from ClickHouse](/images/integrations/data-visualization/luzmo_03.webp)
+
+</div>
 
 </Step>
 </Steps>

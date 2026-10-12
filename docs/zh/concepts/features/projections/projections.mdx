@@ -48,7 +48,11 @@ ClickHouse 会自动对主键进行采样，并选择一个能够
 生成相同正确结果、但需要读取数据量最少的表，
 如下图所示：
 
+<div className="ch-image-md">
+
 ![ClickHouse 中的投影](/images/data-modeling/projections_1.webp)
+
+</div>
 
 <div id="smarter_storage_with_part_offset">
   ### 使用 `_part_offset` 实现更智能的存储
@@ -306,7 +310,11 @@ SETTINGS mutations_sync = 1
 下图直观展示了主表 `uk_price_paid_with_projections`
 及其两个投影：
 
+<div className="ch-image-md">
+
 ![主表 uk_price_paid_with_projections 及其两个投影的可视化](/images/data-modeling/projections_2.webp)
+
+</div>
 
 如果我们现在再次运行该查询，列出伦敦成交价最高的三个房产所在的郡，
 就会看到查询性能有所提升：

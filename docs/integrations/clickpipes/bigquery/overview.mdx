@@ -57,7 +57,11 @@ CDC is **not supported** in Private Preview, but will be supported in the future
 
 ClickPipes authenticates to your Google Cloud project using a [service account key](https://docs.cloud.google.com/iam/docs/keys-create-delete). We recommend creating a dedicated service account with the minimum required set of [permissions](#permissions) to allow ClickPipes to export data from BigQuery, load it into the staging GCS bucket, and read it into ClickHouse.
 
+<div className="ch-image-lg">
+
 ![Creating a service account key with BigQuery and Cloud Storage permissions](/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp)
+
+</div>
 
 ### Permissions {#permissions}
 

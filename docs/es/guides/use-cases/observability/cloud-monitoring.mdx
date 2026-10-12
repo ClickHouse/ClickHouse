@@ -9,6 +9,7 @@ keywords: ['observabilidad', 'monitorización', 'nube', 'métricas', 'estado del
 
 import ObservabilityIntegrations from '/snippets/es/_observability_integration_options.mdx';
 import DirectIntegrations from '/snippets/es/_direct_observability_integration_options.mdx';
+
 import CommunityMonitoring from '/snippets/es/_community_monitoring.mdx';
 
 Esta guía proporciona a los equipos empresariales que evalúan ClickHouse Cloud información exhaustiva sobre las capacidades de monitorización y observabilidad para implementaciones de producción. Los clientes empresariales suelen preguntar por las funciones de monitorización listas para usar, la integración con las pilas de observabilidad existentes, incluidas herramientas como Datadog y AWS CloudWatch, y cómo se compara la monitorización de ClickHouse con las implementaciones autogestionadas.
@@ -25,13 +26,21 @@ ClickHouse Cloud proporciona una supervisión integral mediante interfaces de da
   Acceder a estas métricas no ejecuta ninguna consulta en el servicio subyacente ni reactivará servicios inactivos.
 </Note>
 
+<div className="ch-image-lg">
+
 ![dashboard avanzado](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</div>
 
 Los usuarios que deseen ampliar estas visualizaciones pueden usar la funcionalidad de dashboards de ClickHouse Cloud y consultar directamente las tablas del sistema.
 
 * **Dashboard avanzado nativo**: Una interfaz de dashboard alternativa accesible a través de &quot;You can still access the native advanced dashboard&quot; dentro de la sección monitorización. Se abre en una pestaña independiente con autenticación y proporciona una UI alternativa para supervisar el estado del sistema y del servicio. Este dashboard permite análisis avanzados, ya que puede modificar las consultas SQL subyacentes.
 
+<div className="ch-image-lg">
+
 ![dashboard avanzado](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</div>
 
 Ambos dashboards ofrecen visibilidad inmediata del estado y del rendimiento del servicio sin dependencias externas, lo que los diferencia de herramientas externas centradas en la depuración como ClickStack.
 

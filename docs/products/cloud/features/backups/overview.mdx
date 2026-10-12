@@ -23,7 +23,11 @@ In the screenshot below, the solid line squares show full backups and the dotted
 
 On Day 1, a full backup is taken to start the backup chain. On Day 2, an incremental backup is taken, and both full and incremental backups are available to restore from. By Day 7, we have one full backup and six incremental backups in the chain, all visible and available to restore from. On Day 8, we take a new full backup, and on Day 9, once we have two backups in the new chain, the previous chain is discarded.
 
+<div className="ch-image-lg">
+
 ![Backup chain example in ClickHouse Cloud](/images/cloud/manage/backup-chain.webp)
+
+</div>
 
 ### Default backup policy {#default-backup-policy}
 

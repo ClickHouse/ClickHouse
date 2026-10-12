@@ -27,7 +27,11 @@ Cloud.
 * Левая боковая панель
   * `Monitoring` → `Advanced dashboard`
 
+<div className="ch-image-lg">
+
 ![Расширенная панель мониторинга](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</div>
 
 <div id="accessing-the-native-advanced-dashboard">
   ## Доступ к встроенной расширенной панели мониторинга
@@ -42,12 +46,20 @@ Cloud.
 После этого встроенная расширенная панель мониторинга откроется в новой вкладке. Для доступа к панели мониторинга потребуется
 пройти аутентификацию.
 
+<div className="ch-image-lg">
+
 ![Advanced dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</div>
 
 С каждой визуализацией связан SQL-запрос, который её заполняет. Вы можете
 изменить этот запрос, нажав на значок пера.
 
+<div className="ch-image-lg">
+
 ![Advanced dashboard](/images/cloud/manage/monitoring/edit_visualization.webp)
+
+</div>
 
 <div id="out-of-box-visualizations">
   ## Готовые визуализации
@@ -135,7 +147,11 @@ ClickHouse Cloud хранит данные в Объектном хранили�
 Ключевые метрики для выявления неоптимальной вставки — это **Вставленных строк/с** и
 **Макс. частей в партиции**
 
+<div className="ch-image-lg">
+
 ![Вставки без батчей](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
+
+</div>
 
 Пример выше показывает два всплеска **Вставленных строк/с** и **Макс. частей в партиции**
 между 13h и 14h. Это указывает на то, что данные поступают с разумной скоростью.
@@ -160,7 +176,11 @@ CPU или памяти. Однако важно отслеживать таки
 Ниже приведен пример пикового использования CPU без существенного изменения
 количества выполняемых запросов в секунду.
 
+<div className="ch-image-lg">
+
 ![Ресурсоемкий запрос](/images/cloud/manage/monitoring/resource_intensive_query.webp)
+
+</div>
 
 <div id="bad-primary-key-design">
   ### Неудачный выбор первичного ключа
@@ -176,7 +196,11 @@ CPU или памяти. Однако важно отслеживать таки
 указывать как на общий рост пропускной способности запросов, так и на запросы,
 для выполнения которых выбирается большое количество строк.
 
+<div className="ch-image-lg">
+
 ![Ресурсоемкий запрос](/images/cloud/manage/monitoring/selected_rows_sec.webp)
+
+</div>
 
 Используя временную метку в качестве фильтра, вы можете найти запросы, выполненные во время
 пика, в таблице `system.query_log`.

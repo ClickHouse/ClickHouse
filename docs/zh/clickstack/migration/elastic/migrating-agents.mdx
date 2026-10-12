@@ -60,7 +60,11 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
 
 下面我们将展示这两种架构。
 
+<div className="ch-image-lg">
+
 ![迁移 agents](/images/use-cases/observability/clickstack-migrating-agents.webp)
+
+</div>
 
 在下面的示例中，我们给出了将 Vector 配置为通过 Lumberjack 协议从 Filebeat 接收日志事件的初始步骤。我们还提供了用于将入站 ECS 事件映射到 OTel 规范的 VRL，然后再通过 OTLP 将其发送到 ClickStack OpenTelemetry collector。从 Kafka 消费事件的用户可以将 Vector 的 Logstash source 替换为 [Kafka source](https://vector.dev/docs/reference/configuration/sources/kafka/)，其余步骤保持不变。
 
@@ -249,7 +253,11 @@ Beats agent 使用 [Elastic Common Schema (ECS)](https://www.elastic.co/docs/ref
 
     此处的 `YOUR_INGESTION_API_KEY` 由 ClickStack 生成。您可以在 ClickStack UI (HyperDX) 的 `Team Settings → API Keys` 中找到该密钥。
 
+    <div className="ch-image-lg">
+
     ![摄取密钥](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     完整的最终配置如下所示：
 
@@ -337,11 +345,19 @@ Elastic Agent 将不同的 Elastic Beats 整合为一个软件包。它可与 [E
 
     要在 Kibana 中进行集中配置，可以[向 Fleet 添加一个 Output](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings)。
 
+    <div className="ch-image-md">
+
     ![添加 Logstash 输出](/images/use-cases/observability/add-logstash-output.webp)
+
+    </div>
 
     然后即可在 [agent policy](https://www.elastic.co/docs/reference/fleet/agent-policy) 中使用此 Output。这意味着，所有使用该策略的 agent 都会自动将其数据发送到 Vector。
 
+    <div className="ch-image-md">
+
     ![Agent 设置](/images/use-cases/observability/agent-output-settings.webp)
+
+    </div>
 
     由于这需要配置基于 TLS 的安全通信，我们建议参考指南[“为 Logstash 输出配置 SSL/TLS”](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)。按照该指南操作时，可将用户的 Vector 实例视为充当 Logstash 角色。
 
@@ -396,7 +412,11 @@ exporters:
 
 此处的 `YOUR_INGESTION_API_KEY` 由 ClickStack 生成。您可以在 ClickStack UI 的 `Team Settings → API Keys` 中找到该密钥。
 
+<div className="ch-image-lg">
+
 ![摄取密钥](/images/use-cases/observability/ingestion-keys.webp)
+
+</div>
 
 如果 Vector 已配置为使用双向 TLS，并且证书和私钥是按照指南[“为 Logstash 输出配置 SSL/TLS”](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)中的步骤生成的，则还需要相应配置 `otlp` 导出器，例如：
 

@@ -142,7 +142,11 @@ Be sure to review this document, and specifically the above sections, to fully u
 Sign in to your Google Cloud Console and search for Dataflow.
 
 1. Press the `CREATE JOB FROM TEMPLATE` button.
+   <div className="ch-image-lg">
+
    ![Dataflow console](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+
+   </div>
 2. Once the template form is open, enter a job name and select the desired region.
 
    {/* PLACEHOLDER: add screenshot of the Pub/Sub to ClickHouse template initial form (job name + region) */}
@@ -165,7 +169,11 @@ Sign in to your Google Cloud Console and search for Dataflow.
 
 Navigate to the [Dataflow Jobs tab](https://console.cloud.google.com/dataflow/jobs) in your Google Cloud Console to monitor the status of the job. You'll find the job details, including progress and any errors:
 
+<div className="ch-image-lg">
+
 ![Dataflow console showing a running Pub/Sub to ClickHouse job](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
+
+</div>
 
 The template also emits the following custom metrics under the `PubSubToClickHouse` namespace, viewable from the Dataflow job page:
 

@@ -15,7 +15,11 @@ keywords: ['التحقق من المطوّر', 'macOS']
 
 عند محاولة تشغيل أي أمر `clickhouse`، قد يظهر لك هذا الخطأ:
 
+<div className="ch-image-md">
+
 ![مربع حوار خطأ التحقق من المطوّر في MacOS](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
+
+</div>
 
 لتجاوز خطأ التحقق هذا، تحتاج إلى إزالة التطبيق من منطقة الحجر في MacOS، إما بالعثور على الإعداد المناسب في نافذة إعدادات النظام، أو باستخدام الطرفية، أو بإعادة تثبيت ClickHouse.
 
@@ -29,13 +33,21 @@ keywords: ['التحقق من المطوّر', 'macOS']
 
 2. انتقل إلى **الخصوصية والأمان**:
 
+   <div className="ch-image-md">
+
    ![العرض الافتراضي لإعدادات الخصوصية والأمان في macOS](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
+
+   </div>
 
 3. مرّر إلى أسفل النافذة حتى تجد رسالة تفيد بأن *&quot;clickhouse-macos-aarch64&quot;* تم حظره من الاستخدام لأنه ليس من مطوّر معروف.
 
 4. انقر على **Allow Anyway**.
 
+   <div className="ch-image-md">
+
    ![إعدادات الخصوصية والأمان في macOS مع ظهور زر السماح على أي حال](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
+
+   </div>
 
 5. أدخل كلمة مرور مستخدم macOS الخاصة بك.
 

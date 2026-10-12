@@ -94,7 +94,11 @@ ClickHouse старается группировать ваши сервисы, 
 
 В консоли ClickHouse Cloud откройте сервис, к которому нужно подключиться через PrivateLink, затем перейдите в меню **Settings**.
 
+<div className="ch-image-md">
+
 ![Частные конечные точки](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+</div>
 
 Запишите `Service name` и `DNS name`, затем [перейдите к следующему шагу](#create-aws-endpoint).
 
@@ -160,7 +164,11 @@ jq .result
 
 Выберите **Endpoint services that use NLBs and GWLBs** и в поле **Service Name** укажите `Service name`<sup>консоль</sup> или `endpointServiceId`<sup>API</sup>, полученные на шаге [получения значения «Service name» для конечной точки ](#obtain-endpoint-service-info). Нажмите **Verify service**:
 
+<div className="ch-image-md">
+
 ![Настройки конечной точки AWS PrivateLink](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+</div>
 
 <Note>
   Для межрегионального подключения установите флажок **Cross region endpoint** и укажите регион сервиса, в котором запущен ваш сервис ClickHouse.
@@ -170,7 +178,11 @@ jq .result
 
 Затем выберите VPC и подсети:
 
+<div className="ch-image-md">
+
 ![Выбор VPC и подсетей](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+</div>
 
 При необходимости назначьте группы безопасности и теги:
 
@@ -180,7 +192,11 @@ jq .result
 
 После создания конечной точки VPC запишите значение `Endpoint ID`; оно понадобится вам на следующем шаге.
 
+<div className="ch-image-md">
+
 ![Endpoint ID конечной точки VPC](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+</div>
 
 <div id="option-2-aws-cloudformation">
   #### Вариант 2: AWS CloudFormation
@@ -256,7 +272,11 @@ resource "aws_vpc_endpoint" "this" {
   Если вы хотите разрешить доступ через существующее подключение PrivateLink, используйте раскрывающееся меню существующей конечной точки.
 </Note>
 
+<div className="ch-image-md">
+
 ![Фильтр частных конечных точек](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+</div>
 
 Чтобы удалить конечную точку, перейдите в консоль ClickHouse Cloud, найдите сервис, затем откройте **Settings** этого сервиса и найдите конечную точку, которую хотите удалить. Удалите ее из списка конечных точек.
 
@@ -333,7 +353,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
 
 В консоли ClickHouse Cloud перейдите в раздел **Настройки**. Нажмите кнопку **Set up private endpoint**. На открывшейся выдвижной панели скопируйте **DNS-имя**.
 
+<div className="ch-image-md">
+
 ![DNS-имя частной конечной точки](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+</div>
 
 <div id="option-2-api-3">
   ##### Вариант 2: API

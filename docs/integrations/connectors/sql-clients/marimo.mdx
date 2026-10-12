@@ -16,7 +16,11 @@ import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintain
 
 [marimo](https://marimo.io/) is an open-source reactive notebook for Python with SQL built-in. When you run a cell or interact with a UI element, marimo automatically runs affected cells (or marks them as stale), keeping code and outputs consistent and preventing bugs before they happen. Every marimo notebook is stored as pure Python, executable as a script, and deployable as an app.
 
+<div className="ch-image-md">
+
 ![Connect to ClickHouse](/images/integrations/sql-clients/marimo/clickhouse-connect.webp)
+
+</div>
 
 <Steps>
 <Step title="Install marimo with SQL support" id="install-marimo-sql">
@@ -32,22 +36,38 @@ This should open up a web browser running on localhost.
 
 Navigate to the datasources panel on the left side of the marimo editor and click on 'Add database'.
 
+<div className="ch-image-sm">
+
 ![Add a new database](/images/integrations/sql-clients/marimo/panel-arrow.webp)
+
+</div>
 
 You will be prompted to fill in the database details.
 
+<div className="ch-image-md">
+
 ![Fill in the database details](/images/integrations/sql-clients/marimo/add-db-details.webp)
+
+</div>
 
 You will then have a cell that can be run to establish a connection.
 
+<div className="ch-image-md">
+
 ![Run the cell to connect to ClickHouse](/images/integrations/sql-clients/marimo/run-cell.webp)
+
+</div>
 
 </Step>
 <Step title="Run SQL" id="run-sql">
 
 Once you have set up a connection, you can create a new SQL cell and choose the clickhouse engine. 
 
+<div className="ch-image-md">
+
 ![Choose SQL engine](/images/integrations/sql-clients/marimo/choose-sql-engine.webp)
+
+</div>
 
 For this guide, we will use the New York Taxi dataset.
 
@@ -105,16 +125,28 @@ FROM gcs(
 SELECT * FROM trips LIMIT 1000;
 ```
 
+<div className="ch-image-lg">
+
 ![Results in a dataframe](/images/integrations/sql-clients/marimo/results.webp)
+
+</div>
 
 Now, you're able to view the results in a dataframe. I would like to visualize the most expensive drop-offs from a given pickup location. marimo provides several UI components to help you. I will use a dropdown to select the location and altair for charting.
 
+<div className="ch-image-lg">
+
 ![Combination of dropdown, table and chart](/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp)
+
+</div>
 
 marimo's reactive execution model extends into SQL queries, so changes to your SQL will automatically trigger downstream computations for dependent cells (or optionally mark cells as stale for expensive computations). Hence the chart and table changes when the query is updated.
 
 You can also toggle App View to have a clean interface for exploring your data.
 
+<div className="ch-image-md">
+
 ![Run app view](/images/integrations/sql-clients/marimo/run-app-view.webp)
+
+</div>
 </Step>
 </Steps>

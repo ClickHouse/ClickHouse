@@ -45,7 +45,11 @@ ClickHouse は、[総当たりベクトル検索](/ja/reference/engines/table-en
 ベクトル検索の仕組みを理解するために、簡単な例を見てみましょう。
 単語の埋め込み (ベクトル表現) を考えてみます。
 
+<div className="ch-image-md">
+
 ![果物と動物の埋め込みの可視化](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
+
+</div>
 
 以下のように、いくつかのサンプル埋め込みを含むテーブルを作成します。
 
@@ -116,7 +120,11 @@ ClickHouse のベクトル化クエリ実行エンジンでは、1 回の演算�
   ### Hierarchical Navigable Small World (HNSW)
 </div>
 
+<div className="ch-image-md">
+
 ![HNSWのレイヤー構造](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
+
+</div>
 
 HNSW は、複数のノード (ベクトル) からなる階層構造で構築されます。各ノードはランダムに 1 つ以上の層へ割り当てられ、上位の層に現れる確率は指数関数的に低くなります。
 
@@ -152,7 +160,11 @@ HNSW は、複数のノード (ベクトル) からなる階層構造で構築�
 QBit は、浮動小数点数がビット列として表現される仕組みを利用して、`BFloat16`、`Float32`、`Float64` の値を格納できる新しいデータ構造です。
 各数値を丸ごと格納するのではなく、QBit は値を**ビットプレーン**に分割します。つまり、1 番目のビットをまとめたもの、2 番目のビットをまとめたもの、3 番目のビットをまとめたもの、という形です。
 
+<div className="ch-image-md">
+
 ![QBit のビットプレーンの概念](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
+
+</div>
 
 この手法により、従来の量子化における主な制約を解消できます。重複データを保存する必要がなく、値が意味を失うリスクもありません。また、QBit はインメモリ索引を維持するのではなく、保存されたデータを直接処理するため、HNSW の RAM ボトルネックも回避できます。
 
@@ -193,7 +205,11 @@ INSERT INTO fruit_animal VALUES
 ('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
+<div className="ch-image-md">
+
 ![QBit データ構造の転置](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
+
+</div>
 
 データが QBit カラムに挿入されると、すべての1番目のビット、すべての2番目のビット、というように同じ位置のビット同士が並ぶように転置されます。これらを**グループ**と呼びます。
 
@@ -235,13 +251,21 @@ ORDER BY distance;
   ### I/O 最適化
 </div>
 
+<div className="ch-image-md">
+
 ![QBit I/O 最適化](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
+
+</div>
 
 距離を計算するには、その前に必要なデータをディスクから読み込み、さらにアン転置 (グループ化されたビット表現を完全なベクトルに戻す処理) を行う必要があります。QBit は値を精度レベルごとにビット転置して保存するため、ClickHouse は目的の精度で数値を復元するのに必要な上位ビットプレーンだけを読み取れます。
 
 上記のクエリでは、精度レベル 16 を使用しています。Float64 は 64 ビットなので、先頭の 16 個のビットプレーンだけを読み込み、**データの 75% をスキップ**できます。
 
+<div className="ch-image-md">
+
 ![QBit の再構築](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
+
+</div>
 
 読み込み後は、読み込んだビットプレーンから各数値の上位部分だけを復元し、読み込まれていないビットは 0 のままにします。
 
@@ -249,7 +273,11 @@ ORDER BY distance;
   ### 計算の最適化
 </div>
 
+<div className="ch-image-md">
+
 ![ダウンキャストの比較](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
+
+</div>
 
 Float32 や BFloat16 のような、より小さな型にキャストすれば、この未使用部分をなくせるのではないかと思うかもしれません。実際それは可能ですが、すべての行に明示的なキャストを適用するとコストが高くなります。
 

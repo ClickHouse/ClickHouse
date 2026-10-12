@@ -13,7 +13,11 @@ ClickHouse 中的字典提供了一种以内存中的[键值](https://en.wikiped
 * 提升查询性能，尤其是在配合 `JOIN` 使用时
 * 在不拖慢摄取过程的情况下，实时富化摄取的数据
 
+<div className="ch-image-lg">
+
 ![ClickHouse 中字典的使用场景](/images/dictionary/dictionary-use-cases.webp)
+
+</div>
 
 <div id="speeding-up-joins-using-a-dictionary">
   ## 使用字典加速 JOIN
@@ -21,7 +25,11 @@ ClickHouse 中的字典提供了一种以内存中的[键值](https://en.wikiped
 
 字典可用于加速一种特定类型的 `JOIN`：[`LEFT ANY` 类型](/zh/reference/statements/select/join#supported-types-of-join)。在这种情况下，连接键需要与底层键值存储的键属性相匹配。
 
+<div className="ch-image-sm">
+
 ![将字典与 LEFT ANY JOIN 结合使用](/images/dictionary/dictionary-left-any-join.webp)
+
+</div>
 
 如果满足这一条件，ClickHouse 就可以利用字典执行 [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join)。这是 ClickHouse 最快的 JOIN 算法，适用于右侧表所使用的底层[表引擎](/zh/reference/engines/table-engines/index)支持低延迟键值请求的场景。ClickHouse 有三种表引擎具备这一能力：[Join](/zh/reference/engines/table-engines/special/join) (本质上是一个预先计算好的哈希表) 、[EmbeddedRocksDB](/zh/reference/engines/table-engines/integrations/embedded-rocksdb) 和 [Dictionary](/zh/reference/engines/table-engines/special/dictionary)。这里我们将介绍基于字典的方法，不过这三种引擎的实现机制是相同的。
 

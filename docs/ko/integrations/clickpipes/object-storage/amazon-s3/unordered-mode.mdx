@@ -42,11 +42,19 @@ doc_type: 'guide'
       <Tab title="EventBridge 사용">
         **a.** S3 버킷 속성에서 **Event notifications &gt; Amazon EventBridge**로 이동한 다음, EventBridge로 알림을 전송하도록 활성화합니다. **Save changes**를 클릭합니다.
 
+        <div className="ch-image-lg">
+
         ![S3 버킷 속성에서 Amazon EventBridge 알림 활성화](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp)
+
+        </div>
 
         **b.** AWS Console에서 **Amazon EventBridge &gt; Rules &gt; Create rule**로 이동합니다. 규칙 이름(예: `S3ObjectCreated`)을 지정하고 **default** 이벤트 버스를 선택한 다음 **다음**을 클릭합니다. **Build event pattern** 단계에서 이벤트 소스로 **AWS events or EventBridge partner events**를 선택한 후, 아래 이벤트 패턴을 수동으로 입력합니다. 이때 `<bucket-name>`은 버킷 이름으로 바꾸십시오.
 
+        <div className="ch-image-lg">
+
         ![EventBridge 규칙 이름 및 이벤트 버스 정의](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp)
+
+        </div>
 
         ```json
         {
@@ -64,9 +72,17 @@ doc_type: 'guide'
 
         **c.** **Select target(s)** 단계에서 대상 유형으로 **AWS service**를 선택하고 **SQS queue**를 선택합니다. 이전 단계에서 생성한 큐를 선택합니다. EventBridge가 필요한 IAM role을 자동 생성할 수 있도록 &#42;&#42;Use execution role (recommended)&#42;&#42;은 체크된 상태로 그대로 둔 다음, **다음**을 클릭하고 마법사를 완료합니다.
 
+        <div className="ch-image-lg">
+
         ![EventBridge 규칙 대상으로 SQS 큐 설정](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp)
 
+        </div>
+
+        <div className="ch-image-lg">
+
         ![EventBridge 규칙이 성공적으로 생성됨](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp)
+
+        </div>
 
         **d.** EventBridge가 이 큐로 메시지를 전송할 수 있도록 SQS 큐 액세스 정책을 편집합니다. `<sqs-queue-arn>` 및 `<eventbridge-rule-arn>`을 적절한 값으로 바꾸십시오:
 

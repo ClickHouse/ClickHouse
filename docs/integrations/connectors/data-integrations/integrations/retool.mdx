@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+
 import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge/>
@@ -24,28 +25,48 @@ import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx
 
 Login to your Retool account and navigate to the _Resources_ tab. Choose "Create New" -> "Resource":
 
+<div className="ch-image-lg">
+
 ![Creating a new resource](/images/integrations/tools/data-integration/retool/retool_01.webp)
+
+</div>
 <br/>
 
 Select "JDBC" from the list of available connectors:
 
+<div className="ch-image-lg">
+
 ![Choosing JDBC connector](/images/integrations/tools/data-integration/retool/retool_02.webp)
+
+</div>
 <br/>
 
 In the setup wizard, make sure you select `com.clickhouse.jdbc.ClickHouseDriver` as the "Driver name":
 
+<div className="ch-image-lg">
+
 ![Selecting the right driver](/images/integrations/tools/data-integration/retool/retool_03.webp)
+
+</div>
 <br/>
 
 Fill in your ClickHouse credentials in the following format: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
 If your instance requires SSL or you're using ClickHouse Cloud, add `&ssl=true` to the connection string, so it looks like `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
 
+<div className="ch-image-lg">
+
 ![Specifying your credentials](/images/integrations/tools/data-integration/retool/retool_04.webp)
+
+</div>
 <br/>
 
 After that, test your connection:
 
+<div className="ch-image-lg">
+
 ![Testing your connection](/images/integrations/tools/data-integration/retool/retool_05.webp)
+
+</div>
 <br/>
 
 Now, you should be able to proceed to your app using your ClickHouse resource.

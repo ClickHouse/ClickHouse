@@ -45,7 +45,11 @@ ClickHouse prend en charge la [recherche vectorielle brute-force](/fr/reference/
 Examinons un exemple simple pour comprendre le fonctionnement de la recherche vectorielle.
 Considérons les embeddings (représentations vectorielles) de mots :
 
+<div className="ch-image-md">
+
 ![Visualisation des embeddings de fruits et d'animaux](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
+
+</div>
 
 Créez la table ci-dessous avec quelques exemples d’embeddings :
 
@@ -116,7 +120,11 @@ Vous avez deux options :
   ### Hierarchical Navigable Small World (HNSW)
 </div>
 
+<div className="ch-image-md">
+
 ![Structure en couches de HNSW](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
+
+</div>
 
 HNSW est constitué de plusieurs couches de nœuds (vecteurs). Chaque nœud est attribué aléatoirement à une ou plusieurs couches, avec une probabilité d’apparaître dans les couches supérieures qui décroît de façon exponentielle.
 
@@ -152,7 +160,11 @@ Grâce à cette structure en couches, HNSW atteint une complexité de recherche 
 QBit est une nouvelle structure de données capable de stocker des valeurs `BFloat16`, `Float32` et `Float64` en tirant parti de la manière dont les nombres à virgule flottante sont représentés : sous forme de bits.
 Au lieu de stocker chaque nombre dans son intégralité, QBit répartit les valeurs en **plans de bits** : tous les premiers bits, tous les deuxièmes bits, tous les troisièmes bits, et ainsi de suite.
 
+<div className="ch-image-md">
+
 ![Concept des plans de bits de QBit](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
+
+</div>
 
 Cette approche résout la principale limite de la quantification traditionnelle. Il n’est pas nécessaire de stocker des données dupliquées ni de risquer de rendre les valeurs dénuées de sens. Elle évite également les goulots d’étranglement liés à la RAM de HNSW, puisque QBit fonctionne directement sur les données stockées au lieu de maintenir un index en mémoire.
 
@@ -193,7 +205,11 @@ INSERT INTO fruit_animal VALUES
 ('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
+<div className="ch-image-md">
+
 ![Transposition de la structure de données QBit](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
+
+</div>
 
 Lorsque des données sont insérées dans une colonne QBit, elles sont transposées de manière à ce que tous les premiers bits soient alignés ensemble, puis tous les deuxièmes bits, et ainsi de suite. On appelle cela des **groupes**.
 
@@ -235,13 +251,21 @@ Le troisième paramètre (16) indique le niveau de précision en bits.
   ### Optimisation des E/S
 </div>
 
+<div className="ch-image-md">
+
 ![Optimisation des E/S de QBit](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
+
+</div>
 
 Avant de pouvoir calculer les distances, les données nécessaires doivent être lues depuis le disque, puis détransposées (reconverties de la représentation groupée des bits en vecteurs complets). Comme QBit stocke les valeurs transposées au niveau des bits par niveau de précision, ClickHouse peut ne lire que les plans de bits de poids fort nécessaires pour reconstruire les nombres jusqu’à la précision souhaitée.
 
 Dans la requête ci-dessus, nous utilisons un niveau de précision de 16. Comme un Float64 comporte 64 bits, nous ne lisons que les 16 premiers plans de bits, **en évitant la lecture de 75 % des données**.
 
+<div className="ch-image-md">
+
 ![Reconstruction de QBit](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
+
+</div>
 
 Après la lecture, nous ne reconstruisons que la partie de poids fort de chaque nombre à partir des plans de bits chargés, en laissant les bits non lus à zéro.
 
@@ -249,7 +273,11 @@ Après la lecture, nous ne reconstruisons que la partie de poids fort de chaque 
   ### Optimisation des calculs
 </div>
 
+<div className="ch-image-md">
+
 ![Comparaison du downcasting](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
+
+</div>
 
 On peut se demander si une conversion vers un type plus petit, comme Float32 ou BFloat16, pourrait éliminer cette partie inutilisée. C’est possible, mais les conversions explicites coûtent cher lorsqu’elles sont appliquées à chaque ligne.
 

@@ -17,13 +17,21 @@ ClickHouse Cloud fornece uma API que usa OpenAPI e permite gerenciar programatic
   <Step title="Abra a página API Keys">
     Você pode usar a aba **API Keys** no menu à esquerda para criar e gerenciar suas chaves de API.
 
+    <div className="ch-image-sm">
+
     ![Aba API Keys](/images/cloud/manage/openapi1.webp)
+
+    </div>
   </Step>
 
   <Step title="Comece a criar uma chave de API">
     A página **API Keys** exibirá inicialmente uma solicitação para criar sua primeira chave de API, como mostrado abaixo. Depois que a primeira chave for criada, você poderá criar novas chaves usando o botão `New API Key`, que aparece no canto superior direito.
 
+    <div className="ch-image-md">
+
     ![Página API Keys](/images/cloud/manage/openapi2.webp)
+
+    </div>
   </Step>
 
   <Step title="Configure a chave de API">
@@ -39,7 +47,11 @@ ClickHouse Cloud fornece uma API que usa OpenAPI e permite gerenciar programatic
       Para usar chaves de API com [Query API Endpoints](/pt-BR/products/cloud/guides/sql-console/query-endpoints), defina Organization Role como `Member` (no mínimo) e conceda à Service Role acesso a `Query Endpoints`.
     </Tip>
 
+    <div className="ch-image-md">
+
     ![Formulário de criação de chave de API](/images/cloud/manage/openapi3.png)
+
+    </div>
   </Step>
 
   <Step title="Adicione endereços IP permitidos">
@@ -47,7 +59,11 @@ ClickHouse Cloud fornece uma API que usa OpenAPI e permite gerenciar programatic
 
     Os Query API endpoints respeitam allowlists de IP no nível da chave de API. Como as requisições são encaminhadas por proxy de dentro da infraestrutura do ClickHouse, allowlists de IP no nível do serviço não se aplicam. Consulte [IP Access Control](/pt-BR/products/cloud/features/sql-console-features/query-endpoints#ip-access-control) para mais detalhes.
 
+    <div className="ch-image-md">
+
     ![Endereços IP permitidos configurados para uma chave de API](/images/cloud/guides/query-endpoints/specific-locations.webp)
+
+    </div>
 
     Clique em **Generate API Key** quando terminar de configurar a chave.
   </Step>
@@ -55,7 +71,11 @@ ClickHouse Cloud fornece uma API que usa OpenAPI e permite gerenciar programatic
   <Step title="Salve as credenciais da chave de API">
     A próxima tela exibirá seu Key ID e Key secret. Copie esses valores e guarde-os em um local seguro, como um cofre. Eles não serão exibidos novamente depois que você sair desta tela.
 
+    <div className="ch-image-md">
+
     ![Detalhes da chave de API](/images/cloud/manage/openapi4.webp)
+
+    </div>
   </Step>
 
   <Step title="Autentique requisições de API">
@@ -76,7 +96,11 @@ ClickHouse Cloud fornece uma API que usa OpenAPI e permite gerenciar programatic
       Excluir uma chave de API é uma ação permanente. Todos os serviços que usam essa chave perderão imediatamente o acesso ao ClickHouse Cloud.
     </Note>
 
+    <div className="ch-image-md">
+
     ![Página de gerenciamento de API Keys](/images/cloud/manage/openapi5.webp)
+
+    </div>
   </Step>
 </Steps>
 

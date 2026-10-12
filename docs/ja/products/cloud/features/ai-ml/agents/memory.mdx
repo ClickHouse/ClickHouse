@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 エージェントが会話をまたいで参照できる、ユーザーごとの保存領域です。複数のエントリで構成されており、それぞれが秘密鍵・値の組になっています。たとえば、希望する
@@ -28,7 +29,11 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 左側のナビゲーションにある **Memories** (脳の) アイコンから Memory パネルを開きます。このパネルには保存されている Memory が一覧表示され、エントリの作成、編集、削除、絞り込みを行えます。
 
+<div className="ch-image-sm">
+
 ![左側のナビゲーションで脳のアイコンが強調表示され、フィルター入力欄、Add ボタン、Use memory チェックボックス、編集および削除の操作が付いた Memory エントリ、Admin Settings ボタンが表示されている Memories パネル](/images/cloud/agent-builder/memory/memories.webp)
+
+</div>
 
 Memory はユーザーごとに非公開です。他のユーザーのエージェントがあなたのエントリを見ることはなく、あなたのエージェントがそのユーザーのエントリを見ることもありません。
 
@@ -38,7 +43,11 @@ Memory はユーザーごとに非公開です。他のユーザーのエージ�
 
 パネル上部の **+** ボタンをクリックして **Create Memory** ダイアログを開きます。**秘密鍵** (使用できるのは小文字とアンダースコアのみ) と **値** を入力し、**Create** をクリックします。
 
+<div className="ch-image-sm">
+
 ![Create Memory の + ボタンが強調表示された Memory パネル](/images/cloud/agent-builder/memory/create.webp)
+
+</div>
 
 <div id="filter-memories">
   ### Memory を絞り込む
@@ -46,7 +55,7 @@ Memory はユーザーごとに非公開です。他のユーザーのエージ�
 
 パネル上部の **Memory を絞り込む** 入力欄を使うと、秘密鍵でエントリを検索できます。
 
-![「Memory を絞り込む」入力欄が強調表示され、「demo」と入力された Memory パネル](/images/cloud/agent-builder/memory/filter.webp)"
+<span className="ch-image-sm">![「Memory を絞り込む」入力欄が強調表示され、「demo」と入力された Memory パネル](/images/cloud/agent-builder/memory/filter.webp)</span>"
 
 <div id="edit-memory">
   ### Memory を編集する
@@ -54,7 +63,7 @@ Memory はユーザーごとに非公開です。他のユーザーのエージ�
 
 Memory の鉛筆アイコンをクリックして **Edit Memory** ダイアログを開きます。秘密鍵または値を調整し、**Save** をクリックします。
 
-![Edit Memory の鉛筆アイコンが強調表示された Memory エントリ](/images/cloud/agent-builder/memory/edit.webp)"
+<span className="ch-image-sm">![Edit Memory の鉛筆アイコンが強調表示された Memory エントリ](/images/cloud/agent-builder/memory/edit.webp)</span>"
 
 <div id="delete-memory">
   ### Memory を削除する
@@ -62,7 +71,7 @@ Memory の鉛筆アイコンをクリックして **Edit Memory** ダイアロ�
 
 削除するには、Memory のごみ箱アイコンをクリックします。
 
-![削除用のごみ箱アイコンが強調表示された Memory エントリ](/images/cloud/agent-builder/memory/delete.webp)"
+<span className="ch-image-sm">![削除用のごみ箱アイコンが強調表示された Memory エントリ](/images/cloud/agent-builder/memory/delete.webp)</span>"
 
 <div id="toggle-memory">
   ## Memory の切り替え
@@ -72,7 +81,11 @@ Memory パネル上部にある **Use memory** チェックボックスで、Mem
 
 Memory がオフのとき、エージェントは Memory ストアの読み取りも書き込みも行いません。
 
+<div className="ch-image-sm">
+
 ![上部の Use memory チェックボックスが強調表示された Memory パネル](/images/cloud/agent-builder/memory/toggle.webp)
+
+</div>
 
 <div id="memory-best-practices">
   ## Memory のベストプラクティス

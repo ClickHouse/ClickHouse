@@ -26,14 +26,22 @@ Los datos se ingestarán en un `ReplacingMergeTree`. Este motor de tabla se usa 
     Primero, querrá habilitar un Kinesis Stream en su tabla de DynamoDB para capturar los cambios en tiempo real. Queremos hacerlo antes de crear la instantánea para evitar perder datos.
     Puede consultar la guía de AWS [aquí](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
 
+    <div className="ch-image-lg">
+
     ![DynamoDB Kinesis Stream](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
+
+    </div>
   </Step>
 
   <Step title="Crear la instantánea" id="2-create-the-snapshot">
     A continuación, crearemos una instantánea de la tabla de DynamoDB. Esto puede hacerse mediante una exportación de AWS a S3. Consulte la guía de AWS disponible [aquí](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html).
     **Deberá realizar una &quot;exportación completa&quot; en el formato JSON de DynamoDB.**
 
+    <div className="ch-image-md">
+
     ![Exportación de DynamoDB a S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
+
+    </div>
   </Step>
 
   <Step title="Cargar la instantánea en ClickHouse" id="3-load-the-snapshot-into-clickhouse">
@@ -126,7 +134,11 @@ Los datos se ingestarán en un `ReplacingMergeTree`. Este motor de tabla se usa 
       * `ApproximateCreationDateTime`: `version`
       * Asigne los demás campos a las columnas de destino correspondientes, como se muestra a continuación
 
+    <div className="ch-image-md">
+
     ![DynamoDB: asignación de columnas](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
+
+    </div>
   </Step>
 
   <Step title="Limpieza (opcional)" id="5-cleanup-optional">

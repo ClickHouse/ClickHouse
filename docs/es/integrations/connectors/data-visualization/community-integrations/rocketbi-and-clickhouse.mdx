@@ -17,7 +17,11 @@ import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaint
 En esta guía, instalarás Rocket.BI y crearás un dashboard sencillo.
 Este es el dashboard:
 
+<div className="ch-image-md">
+
 ![Dashboard de Rocket BI que muestra métricas de ventas con gráficos y KPI](/images/integrations/data-visualization/rocketbi_01.webp)
+
+</div>
 
 <br />
 
@@ -52,7 +56,11 @@ En Dashboard, encontrarás tus informes. Para empezar a visualizar, haz clic en 
 
 Puedes crear **dashboards ilimitados** y **gráficos ilimitados** en un dashboard.
 
+<div className="ch-image-md">
+
 ![Animación que muestra el proceso de creación de un nuevo gráfico en Rocket BI](/images/integrations/data-visualization/rocketbi_02.webp)
+
+</div>
 
 <br />
 
@@ -68,13 +76,21 @@ Consulta el tutorial en alta resolución en YouTube: [https://www.youtube.com/wa
 
 En el filtro Tab, selecciona los campos de métricas que quieras usar. Asegúrate de revisar la configuración de agregación.
 
+<div className="ch-image-md">
+
 ![Panel de configuración del control de métricas de Rocket BI que muestra los campos seleccionados y la configuración de agregación](/images/integrations/data-visualization/rocketbi_03.webp)
+
+</div>
 
 <br />
 
 Renombra los filtros y guarda el control en el dashboard
 
+<div className="ch-image-md">
+
 ![Control de métricas con filtros renombrados, listo para guardar en el dashboard](/images/integrations/data-visualization/rocketbi_04.webp)
+
+</div>
 
 <div id="create-a-date-type-control">
   #### Crea un control de tipo fecha
@@ -82,19 +98,31 @@ Renombra los filtros y guarda el control en el dashboard
 
 Elige un campo de fecha como columna de fecha principal:
 
+<div className="ch-image-md">
+
 ![Interfaz de selección de campos de fecha en Rocket BI que muestra las columnas de fecha disponibles](/images/integrations/data-visualization/rocketbi_05.webp)
+
+</div>
 
 <br />
 
 Agrega variantes duplicadas con distintos rangos de búsqueda. Por ejemplo, Año, Mensual, Diario o Día de la semana.
 
+<div className="ch-image-md">
+
 ![Configuración del rango de fechas que muestra distintas opciones de periodo de tiempo, como año, mes y día](/images/integrations/data-visualization/rocketbi_06.webp)
+
+</div>
 
 <br />
 
 Renombra los filtros y guarda el control en el dashboard
 
+<div className="ch-image-md">
+
 ![Control de rango de fechas con los filtros renombrados, listo para guardarse en el dashboard](/images/integrations/data-visualization/rocketbi_07.webp)
+
+</div>
 
 <div id="now-let-build-the-charts">
   ### Ahora, creemos los gráficos
@@ -106,25 +134,41 @@ Renombra los filtros y guarda el control en el dashboard
 
 Elige Adding new chart y luego selecciona gráfico circular
 
+<div className="ch-image-md">
+
 ![Panel de selección del tipo de gráfico con la opción de gráfico circular resaltada](/images/integrations/data-visualization/rocketbi_08.webp)
+
+</div>
 
 <br />
 
 Primero, arrastra y suelta la columna &quot;Region&quot; del Dataset en el campo Legend
 
+<div className="ch-image-md">
+
 ![Interfaz de arrastrar y soltar que muestra la columna Region agregándose al campo de leyenda](/images/integrations/data-visualization/rocketbi_09.webp)
+
+</div>
 
 <br />
 
 Luego, cambia a la pestaña Chart Control
 
+<div className="ch-image-md">
+
 ![Interfaz de la pestaña Chart Control que muestra opciones de configuración de visualización](/images/integrations/data-visualization/rocketbi_10.webp)
+
+</div>
 
 <br />
 
 Arrastra y suelta Metrics Control en el campo Value
 
+<div className="ch-image-md">
+
 ![Metrics Control agregándose al campo de valor del gráfico circular](/images/integrations/data-visualization/rocketbi_11.webp)
+
+</div>
 
 <br />
 
@@ -132,19 +176,31 @@ Arrastra y suelta Metrics Control en el campo Value
 
 Ve a Chart Setting para personalizarlo más
 
+<div className="ch-image-md">
+
 ![Panel de configuración del gráfico que muestra opciones de personalización para el gráfico circular](/images/integrations/data-visualization/rocketbi_12.webp)
+
+</div>
 
 <br />
 
 Por ejemplo, cambia Data label a Percentage
 
+<div className="ch-image-md">
+
 ![La configuración de la etiqueta de datos se cambia para mostrar porcentajes en el gráfico circular](/images/integrations/data-visualization/rocketbi_13.webp)
+
+</div>
 
 <br />
 
 Guarda y agrega el gráfico al dashboard
 
+<div className="ch-image-md">
+
 ![Vista del dashboard que muestra el gráfico circular recién agregado con otros controles](/images/integrations/data-visualization/rocketbi_14.webp)
+
+</div>
 
 <div id="use-date-control-in-a-time-series-chart">
   #### Usa el control de fecha en un gráfico de series temporales
@@ -152,25 +208,41 @@ Guarda y agrega el gráfico al dashboard
 
 Usemos un gráfico de columnas apiladas
 
+<div className="ch-image-md">
+
 ![Interfaz de creación de un gráfico de columnas apiladas con datos de series temporales](/images/integrations/data-visualization/rocketbi_15.webp)
+
+</div>
 
 <br />
 
 En Chart Control, usa control de métricas como eje Y y rango de fechas como eje X
 
+<div className="ch-image-md">
+
 ![Configuración de Chart Control que muestra métricas en el eje Y y rango de fechas en el eje X](/images/integrations/data-visualization/rocketbi_16.webp)
+
+</div>
 
 <br />
 
 Agrega la columna Region a Breakdown
 
+<div className="ch-image-md">
+
 ![La columna Region se agrega como dimensión de desglose en el gráfico de columnas apiladas](/images/integrations/data-visualization/rocketbi_17.webp)
+
+</div>
 
 <br />
 
 Agrega un Number Chart como KPI y mejora el dashboard
 
+<div className="ch-image-md">
+
 ![Dashboard completo con gráficos numéricos de KPI, gráfico circular y visualización de series temporales](/images/integrations/data-visualization/rocketbi_18.webp)
+
+</div>
 
 <br />
 

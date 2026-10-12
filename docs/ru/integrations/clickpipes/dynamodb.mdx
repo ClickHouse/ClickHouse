@@ -26,14 +26,22 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
     Сначала включите поток Kinesis для вашей таблицы DynamoDB, чтобы фиксировать изменения в реальном времени. Это нужно сделать до создания снимка, чтобы не пропустить данные.
     Руководство AWS находится [здесь](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
 
+    <div className="ch-image-lg">
+
     ![Поток Kinesis DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
+
+    </div>
   </Step>
 
   <Step title="Создайте снимок" id="2-create-the-snapshot">
     Далее мы создадим снимок таблицы DynamoDB. Это можно сделать, экспортировав данные из AWS в S3. Руководство AWS находится [здесь](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html).
     **Вам нужно выбрать &quot;Full export&quot; в формате DynamoDB JSON.**
 
+    <div className="ch-image-md">
+
     ![Экспорт DynamoDB в S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
+
+    </div>
   </Step>
 
   <Step title="Загрузите снимок в ClickHouse" id="3-load-the-snapshot-into-clickhouse">
@@ -126,7 +134,11 @@ import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupporte
       * `ApproximateCreationDateTime`: `version`
       * Сопоставьте другие поля с соответствующими столбцами целевой таблицы, как показано ниже
 
+    <div className="ch-image-md">
+
     ![DynamoDB Map Columns](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
+
+    </div>
   </Step>
 
   <Step title="Очистка (необязательно)" id="5-cleanup-optional">

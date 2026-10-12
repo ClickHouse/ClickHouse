@@ -37,7 +37,11 @@ Suivez les étapes ci-dessous dans votre compte AWS :
 
     * a. Récupérez l’ARN depuis la page des paramètres du ClickHouse Cloud service, dans la section Network security information, qui ressemble à ceci :
 
+    <div className="ch-image-lg">
+
     ![ARN AWS S3](/images/cloud/manage/backups/arn.webp)
+
+    </div>
 
     * b. Pour ce rôle, créez la stratégie d’approbation comme suit :
 
@@ -110,13 +114,21 @@ Suivez les étapes ci-dessous dans la console ClickHouse Cloud pour configurer l
   <Step title="Modifier la sauvegarde externe" id="configure-external-bucket">
     Sur la page Settings, cliquez sur Set up external backup :
 
+    <div className="ch-image-lg">
+
     ![Modifier la sauvegarde externe](/images/cloud/manage/backups/change_external_backup.webp)
+
+    </div>
   </Step>
 
   <Step title="Configurer l’ARN du rôle AWS IAM et les détails du bucket S3" id="configure-aws-iam-role-arn-and-s3-bucket-details">
     Sur l’écran suivant, indiquez l’ARN du rôle AWS IAM que vous venez de créer ainsi que l’URL du bucket S3 au format suivant :
 
+    <div className="ch-image-lg">
+
     ![Configurer l’ARN du rôle AWS IAM et les détails du bucket S3](/images/cloud/manage/backups/configure_arn_s3_details.webp)
+
+    </div>
   </Step>
 
   <Step title="Enregistrer les modifications" id="save-changes">
@@ -135,7 +147,11 @@ Suivez les étapes ci-dessous dans la console ClickHouse Cloud pour configurer l
     La page Backups affichera ces sauvegardes stockées dans votre bucket dans un tableau distinct
     comme illustré ci-dessous :
 
+    <div className="ch-image-lg">
+
     ![Afficher les sauvegardes stockées dans votre bucket](/images/cloud/manage/backups/view_backups.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -158,7 +174,11 @@ Suivez les étapes ci-dessous pour restaurer des sauvegardes depuis AWS :
   <Step title="Obtenir la commande SQL utilisée pour restaurer la sauvegarde" id="obtain-sql-command-to-restore-backup">
     Cliquez sur le lien « access or restore a backup » au-dessus de la liste des sauvegardes dans l’UI pour obtenir la commande SQL permettant de restaurer la sauvegarde. La commande ressemblera à ceci :
 
+    <div className="ch-image-md">
+
     ![Obtenir la commande SQL utilisée pour restaurer la sauvegarde](/images/cloud/manage/backups/backup_command.webp)
+
+    </div>
 
     <Warning>
       **Déplacer des sauvegardes vers un autre emplacement**
@@ -230,13 +250,21 @@ Suivez les étapes ci-dessous dans la console ClickHouse Cloud pour configurer l
   <Step title="Modifier la sauvegarde externe" id="gcp-configure-external-bucket">
     Sur la page `Settings`, cliquez sur `Change external backup`
 
+    <div className="ch-image-lg">
+
     ![Modifier la sauvegarde externe](/images/cloud/manage/backups/change_external_backup.webp)
+
+    </div>
   </Step>
 
   <Step title="Configurer la clé HMAC et le Secret GCP" id="gcp-configure-gcp-hmac-key-and-secret">
     Dans la boîte de dialogue, indiquez le path du bucket GCP, la clé HMAC et le Secret créés dans la section précédente.
 
+    <div className="ch-image-md">
+
     ![Configurer la clé HMAC et le Secret GCP](/images/cloud/manage/backups/gcp_configure.webp)
+
+    </div>
   </Step>
 
   <Step title="Enregistrer le bucket externe" id="gcp-save-external-bucket">
@@ -254,7 +282,11 @@ Suivez les étapes ci-dessous dans la console ClickHouse Cloud pour configurer l
   <Step title="Afficher les sauvegardes stockées dans votre bucket" id="gcp-view-backups-stored-in-your-bucket">
     La page Backups doit afficher les sauvegardes présentes dans votre bucket dans un tableau distinct, comme illustré ci-dessous :
 
+    <div className="ch-image-lg">
+
     ![Afficher les sauvegardes stockées dans votre bucket](/images/cloud/manage/backups/gcp_stored_backups.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -270,7 +302,11 @@ Suivez les étapes ci-dessous pour restaurer des sauvegardes depuis GCP :
   <Step title="Obtenir la commande SQL utilisée pour restaurer la sauvegarde" id="gcp-obtain-sql-command-to-restore-backup">
     Cliquez sur le lien `access or restore a backup` au-dessus de la liste des sauvegardes dans l’UI pour obtenir la commande SQL permettant de restaurer la sauvegarde. La commande doit ressembler à ceci, et vous pouvez sélectionner la sauvegarde appropriée dans la liste déroulante pour obtenir la commande de restauration correspondant à cette sauvegarde. Vous devrez ajouter votre clé d’accès secrète à la commande :
 
+    <div className="ch-image-md">
+
     ![Obtenir la commande SQL utilisée pour restaurer la sauvegarde](/images/cloud/manage/backups/gcp_restore_command.webp)
+
+    </div>
 
     <Warning>
       **Déplacer des sauvegardes vers un autre emplacement**
@@ -327,14 +363,22 @@ Suivez les étapes ci-dessous dans la console ClickHouse Cloud pour configurer l
   <Step title="Modifier la sauvegarde externe" id="azure-configure-external-bucket">
     Sur la page `Settings`, cliquez sur `Change external backup`.
 
+    <div className="ch-image-lg">
+
     ![Modifier la sauvegarde externe](/images/cloud/manage/backups/change_external_backup.webp)
+
+    </div>
   </Step>
 
   <Step title="Fournir la chaîne de connexion et le nom du conteneur pour votre compte de stockage Azure" id="azure-provide-connection-string-and-container-name-azure">
     À l’écran suivant, indiquez la chaîne de connexion et le nom du conteneur de votre
     compte de stockage Azure créé dans la section précédente :
 
+    <div className="ch-image-md">
+
     ![Fournir la chaîne de connexion et le nom du conteneur pour votre compte de stockage Azure](/images/cloud/manage/backups/azure_connection_details.webp)
+
+    </div>
   </Step>
 
   <Step title="Enregistrer le bucket externe" id="azure-save-external-bucket">
@@ -353,7 +397,11 @@ Suivez les étapes ci-dessous dans la console ClickHouse Cloud pour configurer l
     La page `Backups` devrait afficher ces sauvegardes dans votre bucket dans un tableau séparé,
     comme indiqué ci-dessous :
 
+    <div className="ch-image-md">
+
     ![Afficher les sauvegardes stockées dans votre bucket](/images/cloud/manage/backups/view_backups_azure.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -372,7 +420,11 @@ Pour restaurer des sauvegardes à partir d’Azure, suivez les étapes ci-dessou
     et vous pouvez sélectionner la sauvegarde appropriée dans la liste déroulante pour obtenir la
     commande de restauration correspondant à cette sauvegarde. Vous devrez ajouter à la commande la chaîne de connexion de votre compte de stockage Azure.
 
+    <div className="ch-image-md">
+
     ![Restaurer des sauvegardes dans Azure](/images/cloud/manage/backups/restore_backups_azure.webp)
+
+    </div>
 
     <Warning>
       **Déplacer des sauvegardes vers un autre emplacement**

@@ -34,7 +34,11 @@ export const ExclusiveGroup = ({ name, children }) => {
 * **Время на преобразование и подготовку**: Сколько времени требуется, чтобы очистить данные, обогатить их, выполнить JOIN, предварительную агрегацию или обновить структуры, обслуживающие запросы (materialized views, rollups, индексы)?
 * **Время на выполнение запроса**: Сколько времени требуется, чтобы построить план и выполнить чтение после того, как данные стали доступны?
 
+<div className="ch-image-lg">
+
 ![Real-time аналитика: время на приём, преобразование и выполнение запроса](/images/use-cases/rta-considerations.webp)
+
+</div>
 
 <div id="clickhouse-rta">
   ## Как ClickHouse обеспечивает Real-time аналитику
@@ -42,7 +46,11 @@ export const ExclusiveGroup = ({ name, children }) => {
 
 <Columns cols={2}>
   <div>
+    <div className="ch-image-lg">
+
     ![Как ClickHouse обеспечивает Real-time аналитику](/images/use-cases/real-time-analytics-architecture.webp)
+
+    </div>
   </div>
 
   <ExclusiveGroup name="rta-arch">

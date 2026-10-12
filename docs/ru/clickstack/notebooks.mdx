@@ -13,7 +13,11 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 ИИ-блокноты — это интерактивный инструмент для расследования в ClickStack, который сочетает ИИ-агента с ручным анализом. Вы можете описать проблему простым языком, и ИИ-агент от вашего имени выполнит запросы к журналам, трассировкам и метрикам, показывая релевантные данные, диаграммы и сводки в виде набора плиток. Вы также можете добавлять собственные плитки (диаграммы, таблицы, поисковые запросы и заметки в markdown) наряду с результатами, сгенерированными ИИ, формируя полную историю расследования.
 
+<div className="ch-image-lg">
+
 ![ИИ-блокнот расследует сбой Visa из-за переполнения кэша](/images/use-cases/observability/hyperdx-notebook-hero.webp)
+
+</div>
 
 <Info>
   **Только в Управляемом ClickStack**
@@ -44,7 +48,11 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 2. Включите **Generative AI**.
 3. Ознакомьтесь с диалоговым окном согласия и примите его.
 
+<div className="ch-image-lg">
+
 ![Переключатель Generative AI в Team Settings](/images/use-cases/observability/hyperdx-notebook-ai-consent.webp)
+
+</div>
 
 <div id="using-notebooks">
   ## Работа с ИИ-блокнотами
@@ -59,7 +67,11 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 На странице со списком блокнотов отображаются все блокноты, к которым у вас есть доступ. Вы можете отфильтровать их по имени, тегам или переключаться между **My Notebooks** и **All Notebooks**.
 
+<div className="ch-image-lg">
+
 ![Страница со списком блокнотов](/images/use-cases/observability/hyperdx-notebook-list.webp)
+
+</div>
 
 <div id="running-investigation">
   ### Запуск AI-расследования
@@ -77,7 +89,11 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Пока расследование выполняется, вы можете нажать **Stop**, чтобы остановить его.
 
+<div className="ch-image-lg">
+
 ![Блокнот с плитками, созданными ИИ](/images/use-cases/observability/hyperdx-notebook-tiles.webp)
+
+</div>
 
 <div id="branching">
   ### Ветвление расследования
@@ -91,11 +107,19 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 2. В диалоговом окне введите изменённый промпт, который направит расследование в новую сторону.
 3. Нажмите **Interrupt &amp; Create Branch**. ИИ начнёт новую ветвь расследования с этой точки.
 
+<div className="ch-image-md">
+
 ![Диалоговое окно Create New Branch](/images/use-cases/observability/hyperdx-notebook-branch-modal.webp)
+
+</div>
 
 Когда у плитки появляется несколько ветвей, в её заголовке отображаются кнопки со стрелками влево и вправо, а также бейдж (например, **1/2**), показывающий, сколько ветвей доступно. Нажимайте стрелки, чтобы переключаться между ветвями.
 
+<div className="ch-image-lg">
+
 ![Стрелки навигации по ветвям и бейдж 1/2 на плитке](/images/use-cases/observability/hyperdx-notebook-branching.webp)
+
+</div>
 
 <div id="manual-tiles">
   ### Добавление ручных плиток
@@ -114,7 +138,11 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Ручные плитки добавляются ниже последней видимой плитки в текущей ветке. Высоту плиток можно изменять, перетаскивая их нижний край.
 
+<div className="ch-image-lg">
+
 ![Кнопки ручных плиток в нижней части блокнота](/images/use-cases/observability/hyperdx-notebook-manual-tiles.webp)
+
+</div>
 
 <Note>
   Если в данный момент выполняется AI-расследование, добавление или редактирование ручной плитки отменит его. Перед продолжением появится диалог подтверждения.
@@ -142,4 +170,8 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Этот контекст добавляется в системный промпт AI для всех расследований в Notebooks в рамках команды.
 
+<div className="ch-image-lg">
+
 ![Панель настроек агента для добавления контекста](/images/use-cases/observability/hyperdx-notebook-agent-context.webp)
+
+</div>

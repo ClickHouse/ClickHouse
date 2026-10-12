@@ -125,7 +125,11 @@ Los usuarios envían datos a este collector desde [SDKs de distintos lenguajes](
 
     Además, se requiere un header de autorización que contenga la clave de ingestión de API. Puedes encontrar la clave en la aplicación HyperDX, en `Team Settings → API Keys`.
 
+    <div className="ch-image-lg">
+
     ![Claves de ingestión](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     En los SDKs de lenguaje, esto puede configurarse mediante una función `init` o a través de la variable de entorno `OTEL_EXPORTER_OTLP_HEADERS`, por ejemplo:
 

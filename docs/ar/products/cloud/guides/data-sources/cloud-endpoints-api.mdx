@@ -50,8 +50,16 @@ keywords: ['ClickHouse Cloud', 'عناوين IP الثابتة', 'نقاط نه�
 
 على سبيل المثال، يجب أن تكون لدى مثيل AWS RDS الذي يعمل في `us-east-2` ويحتاج إلى الاتصال بخدمة ClickHouse Cloud قواعد مجموعة الأمان الواردة التالية:
 
+<div className="ch-image-lg">
+
 ![قواعد مجموعة الأمان في AWS](/images/_snippets/aws-rds-mysql.webp)
+
+</div>
 
 وبالنسبة إلى خدمة ClickHouse Cloud نفسها التي تعمل في `us-east-2`، ولكنها هذه المرة متصلة بـ MySQL على GCP، فيجب أن تبدو `Authorized networks` كما يلي:
 
+<div className="ch-image-md">
+
 ![GCP Authorized networks](/images/_snippets/gcp-authorized-network.webp)
+
+</div>

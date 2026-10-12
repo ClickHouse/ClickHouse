@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+
 import { CommunityMaintainedBadge } from "/snippets/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge/>
@@ -34,21 +35,37 @@ When setting up your data connection, you'll need to know:
 ​
 - Click on the **New Data Connection** button in the top right side of the screen.
 
+<div className="ch-image-sm">
+
 ![Astrato Data Connection](/images/integrations/data-visualization/astrato_1_dataconnection.webp)
+
+</div>
 
 - Select **ClickHouse**.
 
+<div className="ch-image-sm">
+
 ![Astrato ClickHouse Data Connection](/images/integrations/data-visualization/astrato_2a_clickhouse_connection.webp)
+
+</div>
 
 - Complete the required fields in the connection dialogue box
 
+<div className="ch-image-sm">
+
 ![Astrato connect to ClickHouse required fields](/images/integrations/data-visualization/astrato_2b_clickhouse_connection.webp)
+
+</div>
 
 - Click **Test Connection**. If the connection is successful, give the data connection a **name** and click **Next.**
 
 - Set the **user access** to the data connection and click **connect.**
 
+<div className="ch-image-md">
+
 ![Astrato connect to ClickHouse User Access](/images/integrations/data-visualization/astrato_3_user_access.webp)
+
+</div>
 
 -   A connection is created and a dataview is created.
 
@@ -60,17 +77,29 @@ if a duplicate is created, a timestamp is added to the data source name.
 
 In our Data View editor, you will see all of your Tables and Schemas in ClickHouse, select some to get started.
 
+<div className="ch-image-lg">
+
 ![Astrato connect to ClickHouse User Access](/images/integrations/data-visualization/astrato_4a_clickhouse_data_view.webp)
+
+</div>
 
 Now that you have your data selected, go to define the **data view**. Click define on the top right of the webpage.
 
 In here, you're able to join data, as well as, **create governed dimensions and measures** - ideal for driving consistency in business logic across various teams.
 
+<div className="ch-image-lg">
+
 ![Astrato connect to ClickHouse User Access](/images/integrations/data-visualization/astrato_4b_clickhouse_data_view_joins.webp)
+
+</div>
 
 **Astrato intelligently suggests joins** using your meta data, including leveraging the keys in ClickHouse. Our suggested joins make it easy for you to gets started, working from your well-governed ClickHouse data, without reinventing the wheel. We also show you **join quality** so that you have the option to review all suggestions, in detail, from Astrato.
 
+<div className="ch-image-lg">
+
 ![Astrato connect to ClickHouse User Access](/images/integrations/data-visualization/astrato_4c_clickhouse_completed_data_view.webp)
+
+</div>
 
 ## Creating a dashboard {#creating-a-dashboard}
 
@@ -80,16 +109,28 @@ In just a few steps, you can build your first chart in Astrato.
 3. Add dimensions
 4. Add measures
 
+<div className="ch-image-lg">
+
 ![Astrato connect to ClickHouse User Access](/images/integrations/data-visualization/astrato_5a_clickhouse_build_chart.webp)
+
+</div>
 
 ### View generated SQL supporting each visualization {#view-generated-sql-supporting-each-visualization}
 
 Transparency and accuracy are at the heart of Astrato. We ensure that every query generated is visible, letting you keep full control. All compute happens directly in ClickHouse, taking advantage of its speed while maintaining robust security and governance.
 
+<div className="ch-image-lg">
+
 ![Astrato connect to ClickHouse User Access](/images/integrations/data-visualization/astrato_5b_clickhouse_view_sql.webp)
+
+</div>
 
 ### Example completed dashboard {#example-completed-dashboard}
 
 A beautiful complete dashboard or data app isn't far away now. To see more of what we've built, head to our demo gallery on our website. https://astrato.io/gallery
 
+<div className="ch-image-lg">
+
 ![Astrato connect to ClickHouse User Access](/images/integrations/data-visualization/astrato_5c_clickhouse_complete_dashboard.webp)
+
+</div>

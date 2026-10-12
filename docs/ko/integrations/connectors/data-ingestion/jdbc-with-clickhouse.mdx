@@ -17,7 +17,11 @@ doc_type: 'guide'
 
 **개요:** <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a>를 [JDBC 테이블 함수](/ko/reference/functions/table-functions/jdbc) 또는 [JDBC 테이블 엔진](/ko/reference/engines/table-engines/integrations/jdbc)과 함께 사용하면, <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">JDBC 드라이버</a>를 사용할 수 있는 모든 외부 데이터 소스의 데이터에 ClickHouse가 액세스할 수 있습니다:
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![ClickHouse JDBC Bridge 아키텍처 다이어그램](/images/integrations/data-ingestion/dbms/jdbc-01.webp)
+
+</div>
 
 외부 데이터 소스에 네이티브로 제공되는 내장 [integration 엔진](/ko/reference/engines/table-engines/integrations/index), 테이블 함수 또는 외부 딕셔너리가 없더라도, 해당 데이터 소스용 JDBC 드라이버가 있다면 유용하게 사용할 수 있습니다.
 
@@ -45,7 +49,11 @@ ClickHouse JDBC Bridge는 읽기와 쓰기 모두에 사용할 수 있습니다.
 
 ClickHouse JDBC Bridge를 사용하는 가장 쉬운 방법은 ClickHouse가 실행 중인 동일한 호스트에 이를 설치하고 실행하는 것입니다:
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![로컬에 배포된 ClickHouse JDBC Bridge 다이어그램](/images/integrations/data-ingestion/dbms/jdbc-02.webp)
+
+</div>
 
 먼저 ClickHouse가 실행 중인 머신의 Unix 셸에 연결한 후, 나중에 ClickHouse JDBC Bridge를 설치할 로컬 폴더를 생성합니다(폴더 이름과 위치는 원하는 대로 지정해도 됩니다):
 
@@ -147,7 +155,11 @@ MySQL에 연결하기 위해 이름이 지정된 데이터 소스를 생성합�
 
 분산 ClickHouse 클러스터(ClickHouse 호스트가 2개 이상인 클러스터)에서는 ClickHouse JDBC Bridge를 별도의 전용 호스트에 외부로 설치하여 실행하는 것이 적절합니다.
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![ClickHouse JDBC Bridge 외부 배포 다이어그램](/images/integrations/data-ingestion/dbms/jdbc-03.webp)
+
+</div>
 
 이 방식의 장점은 각 ClickHouse 호스트가 JDBC Bridge에 액세스할 수 있다는 점입니다. 그렇지 않으면 Bridge를 통해 외부 데이터 소스에 액세스해야 하는 각 ClickHouse 인스턴스마다 JDBC Bridge를 로컬에 설치해야 합니다.
 

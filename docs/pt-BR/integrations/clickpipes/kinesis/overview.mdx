@@ -22,37 +22,69 @@ Você já se familiarizou com a [introdução ao ClickPipes](/pt-BR/integrations
 
 1. Acesse o SQL Console do seu serviço do ClickHouse Cloud.
 
+<div className="ch-image-lg">
+
 ![Serviço ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. Selecione o botão `Data Sources` no menu à esquerda e clique em &quot;Set up a ClickPipe&quot;
 
+<div className="ch-image-lg">
+
 ![Selecionar importações](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. Selecione sua fonte de dados.
 
+<div className="ch-image-lg">
+
 ![Selecionar tipo de origem de dados](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
+
+</div>
 
 4. Preencha o formulário informando um nome para o ClickPipe, uma descrição (opcional), sua função do IAM ou credenciais e outros detalhes da conexão.
 
+<div className="ch-image-lg">
+
 ![Preencher detalhes da conexão](/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp)
+
+</div>
 
 5. Selecione o stream do Kinesis, o **Data format** e o offset inicial. Para `Protobuf`, envie um arquivo `.proto` ou um `FileDescriptorSet` serializado (máximo de 768 KiB). Não é necessário schema registry.
 
    A UI exibe dados de exemplo do stream selecionado. A opção **Use Kinesis Enhanced Fan-Out** está ativada por padrão. Consulte a [documentação do Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) para mais detalhes.
 
+<div className="ch-image-lg">
+
 ![Definir formato de dados e tópico](/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp)
+
+</div>
 
 6. Na próxima etapa, você pode escolher se deseja fazer a ingestão de dados em uma nova tabela do ClickHouse ou reutilizar uma já existente. Siga as instruções na tela para modificar o nome da tabela, o esquema e as configurações. Você pode ver uma prévia em tempo real das alterações na tabela de exemplo na parte superior.
 
+<div className="ch-image-lg">
+
 ![Definir tabela, esquema e configurações](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+
+</div>
 
 Você também pode personalizar as configurações avançadas usando os controles fornecidos
 
+<div className="ch-image-lg">
+
 ![Definir controles avançados](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
+
+</div>
 
 7. Como alternativa, você pode optar por fazer a ingestão dos seus dados em uma tabela existente do ClickHouse. Nesse caso, a UI permitirá mapear campos da origem para os campos do ClickHouse na tabela de destino selecionada.
 
+<div className="ch-image-lg">
+
 ![Usar uma tabela existente](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
+
+</div>
 
 8. Por fim, você pode configurar permissões para o usuário interno do ClickPipes.
 
@@ -61,21 +93,41 @@ Você também pode personalizar as configurações avançadas usando os controle
 * `Full access`: com acesso total ao cluster. Isso pode ser útil se você usar visão materializada ou Dicionário com a tabela de destino.
   * `Only destination table`: apenas com permissões de `INSERT` na tabela de destino.
 
+<div className="ch-image-lg">
+
 ![Permissões](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+
+</div>
 
 9. Ao clicar em &quot;Complete Setup&quot;, o sistema registrará seu ClickPipe, e você poderá vê-lo listado na tabela de resumo.
 
+<div className="ch-image-sm">
+
 ![Aviso de sucesso](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![Aviso de remoção](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
 
+</div>
+
 A tabela de resumo fornece controles para exibir dados de exemplo da origem ou da tabela de destino no ClickHouse
+
+<div className="ch-image-lg">
 
 ![Ver destino](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
 
+</div>
+
 Além disso, há controles para remover o ClickPipe e exibir um resumo do trabalho de ingestão.
 
+<div className="ch-image-lg">
+
 ![Ver visão geral](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+
+</div>
 
 10. **Parabéns!** Você configurou com sucesso seu primeiro ClickPipe. Se este for um ClickPipe de streaming, ele ficará em execução contínua, fazendo ingestão de dados em tempo real da sua fonte de dados remota. Caso contrário, ele fará a ingestão do lote e será concluído.
 

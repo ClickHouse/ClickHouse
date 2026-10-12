@@ -41,17 +41,33 @@ postgres=> SHOW rds.logical_replication ;
 1. أنشئ مجموعة معلمات جديدة لإصدار Aurora PostgreSQL لديك بالإعداد المطلوب:
    * اضبط `rds.logical_replication` على 1
 
+<div className="ch-image-lg">
+
 ![مكان العثور على مجموعات المعلمات في Aurora](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![تغيير rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
 
+</div>
+
 2. طبّق مجموعة المعلمات الجديدة على عنقود Aurora PostgreSQL لديك
+
+<div className="ch-image-lg">
 
 ![تعديل Aurora PostgreSQL باستخدام مجموعة معلمات جديدة](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
 
+</div>
+
 3. أعد تشغيل عنقود Aurora لتطبيق التغييرات
 
+<div className="ch-image-lg">
+
 ![إعادة تشغيل Aurora PostgreSQL](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+
+</div>
 
 <div id="configure-database-user">
   ## إعداد مستخدم قاعدة البيانات
@@ -119,9 +135,17 @@ postgres=> SHOW rds.logical_replication ;
 
 إذا كنت تريد تقييد حركة المرور الواردة إلى عنقود Aurora، فيُرجى إضافة [عناوين IP الثابتة لـ NAT الواردة في الوثائق](/ar/integrations/clickpipes/networking/static-ips) إلى `Inbound rules` في مجموعة الأمان الخاصة بـ Aurora.
 
+<div className="ch-image-lg">
+
 ![أين يمكنك العثور على مجموعة الأمان في Aurora PostgreSQL؟](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![حرّر قواعد Inbound لمجموعة الأمان أعلاه](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### الوصول الخاص عبر AWS PrivateLink

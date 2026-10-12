@@ -52,7 +52,11 @@ Chrome](/ar/reference/system-tables/trace_log#chrome-event-trace-format) لتص�
 [Perfetto](https://ui.perfetto.dev). لاحظ query&#95;id و cpu&#95;id و stacktrace في
 كل إدخال.
 
+<div className="ch-image-md">
+
 ![الترتيب الزمني](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
+
+</div>
 
 <div id="profiling-a-native-application-using-xray">
   ## تنميط تطبيق أصلي باستخدام XRay
@@ -162,19 +166,31 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
   #### الترتيب حسب الزمن
 </div>
 
+<div className="ch-image-md">
+
 ![الترتيب حسب الزمن](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
+
+</div>
 
 <div id="left-heavy">
   #### مرجّح إلى اليسار
 </div>
 
+<div className="ch-image-md">
+
 ![مرجّح-إلى-اليسار](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
+
+</div>
 
 <div id="sandwitch">
   #### ساندويتش
 </div>
 
+<div className="ch-image-md">
+
 ![ساندويتش](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
+
+</div>
 
 <div id="check-out-the-docs">
   ## اطّلع على الوثائق

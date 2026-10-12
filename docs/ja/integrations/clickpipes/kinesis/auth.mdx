@@ -27,7 +27,11 @@ integration:
 
 セキュアな Kinesis アクセスの設定に入る前に、まずその仕組みを理解しておくことが重要です。以下では、ClickPipes が顧客の AWS アカウント内のロールを引き受けることで、Amazon Kinesis ストリームにアクセスする方法の概要を説明します。
 
+<div className="ch-image-lg">
+
 ![セキュアな Kinesis](/images/integrations/data-ingestion/clickpipes/securekinesis.jpg)
+
+</div>
 
 この方法を使用すると、顧客は各ストリームのアクセスポリシーを個別に変更しなくても、Kinesis データストリームへのすべてのアクセスを 1 か所 (引き受けるロールの IAM ポリシー) で管理できます。
 
@@ -45,7 +49,11 @@ integration:
 * 4. ページ下部にある **Network security information** セクションまでスクロールします
 * 5. 以下のように、そのサービスに対応する **サービスロール ID (IAM)** の値をコピーします。
 
+<div className="ch-image-lg">
+
 ![Secure S3 ARN](/images/cloud/security/secures3_arn.webp)
+
+</div>
 
 <div id="setting-up-iam-assume-role">
   ### IAM AssumeRole の設定

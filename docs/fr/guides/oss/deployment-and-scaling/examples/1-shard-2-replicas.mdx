@@ -15,13 +15,18 @@ import KeeperConfigExplanation from '/snippets/fr/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/fr/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/fr/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/fr/_working_example.mdx';
+
 import CloudTip from '/snippets/fr/_cloud_tip.mdx';
 
 > Dans cet exemple, vous allez apprendre à mettre en place un cluster ClickHouse simple avec réplication des données. Cinq serveurs sont configurés. Deux servent à héberger des copies des données. Les trois autres servent à coordonner la réplication des données.
 
 L’architecture du cluster que vous allez mettre en place est présentée ci-dessous :
 
+<div className="ch-image-md">
+
 ![Schéma d’architecture pour 1 shard et 2 répliques avec ReplicatedMergeTree](/images/deployment-guides/replication-sharding-examples/replication.webp)
+
+</div>
 
 <DedicatedKeeperServers />
 

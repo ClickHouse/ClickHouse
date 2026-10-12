@@ -45,7 +45,11 @@ PARTITION BY toStartOfMonth(date);
 
 Каждый раз, когда в таблицу вставляется набор строк, ClickHouse вместо создания (как минимум [одной](/ru/reference/settings/session-settings/max-insert#max_insert_block_size)) одной-единственной части данных, содержащей все вставленные строки (как описано [здесь](/ru/concepts/core-concepts/parts)), создает по одной новой части данных для каждого уникального значения ключа партиционирования среди вставленных строк:
 
+<div className="ch-image-lg">
+
 ![ОБРАБОТКА INSERT](/images/managing-data/core-concepts/partitions.webp)
+
+</div>
 
 <br />
 
@@ -60,7 +64,11 @@ PARTITION BY toStartOfMonth(date);
 
 При включенном партиционировании ClickHouse выполняет [слияния](/ru/concepts/core-concepts/merges) частей данных только в пределах одной партиции, но не между разными партициями. Покажем это на примере таблицы выше:
 
+<div className="ch-image-lg">
+
 ![PART MERGES](/images/managing-data/core-concepts/merges_with_partitions.webp)
+
+</div>
 
 <br />
 
@@ -157,7 +165,11 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 
 ClickHouse обрабатывает этот запрос, применяя последовательность методов отсеивания данных, чтобы не обрабатывать нерелевантные данные:
 
+<div className="ch-image-lg">
+
 ![PART MERGES 2](/images/managing-data/core-concepts/partition-pruning.webp)
+
+</div>
 
 <br />
 

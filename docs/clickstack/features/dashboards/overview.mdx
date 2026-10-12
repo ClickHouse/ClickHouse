@@ -34,7 +34,11 @@ For the examples below, we use the remote dataset available at [sql.clickhouse.c
 
 Select `Chart Explorer` from the left menu.
 
+<div className="ch-image-lg">
+
 ![Chart Explorer](/images/use-cases/observability/clickstack-visualization-1.webp)
+
+</div>
 </Step>
 <Step title="Create visualization" id="create-visualization">
 
@@ -48,17 +52,29 @@ Select the `Line/Bar` visualization type from the top menu, followed by the `Tra
 - Group By: `ServiceName`  
 - Alias: `Average Time`
 
+<div className="ch-image-lg">
+
 ![Simple visualization](/images/use-cases/observability/clickstack-visualization-2.webp)
+
+</div>
 
 Note that you can filter events using either a SQL `WHERE` clause or Lucene syntax and set the time frame over which events should be visualized. Multiple series are also supported.
 
 For example, filter by the service `frontend` by adding the filter `ServiceName:"frontend"`. Add a second series for the count of events over time with the alias `Count` by clicking `Add Series`.
 
+<div className="ch-image-lg">
+
 ![Simple visualization 2](/images/use-cases/observability/clickstack-visualization-3.webp)
+
+</div>
 
 To build a series similar to an existing one, you can duplicate it instead of starting from scratch. Click the copy icon (`Duplicate series`) on a series row to insert a copy directly below. The copy keeps the source series' settings, such as the metric, column, and filter. You then change only the fields that differ (for example the aggregation) and give the copy its own alias. Duplicating is available wherever multiple series are supported. It is hidden for visualization types that allow only one series, such as `Number`, `Pie`, and `Heatmap`.
 
+<div className="ch-image-lg">
+
 ![The Duplicate series copy icon and its tooltip on a chart series row](/images/use-cases/observability/clickstack-duplicate-series.webp)
+
+</div>
 
 <Note>
 Visualizations can be created from any data source — metrics, traces, or logs. ClickStack treats all of these as wide events. Any **numeric column** can be charted over time, and **string**, **date**, or **numeric** columns can be used for groupings.
@@ -81,7 +97,11 @@ We create a dashboard with two visualizations below using the log and trace data
 
 Select `Dashboards` from the left menu. Then click `New Dashboard` to create a temporary or saved dashboard.
 
+<div className="ch-image-lg">
+
 ![Create Dashboard](/images/use-cases/observability/hyperdx-dashboard-1.webp)
+
+</div>
 </Step>
 <Step title="Create a visualization – average request time by service" id="create-a-tile">
 
@@ -98,11 +118,19 @@ Select the `Line/Bar` visualization type from the top menu, followed by the `Tra
 
 Click the **play** button before clicking `Save`.
 
+<div className="ch-image-lg">
+
 ![Create Dashboard Visualization](/images/use-cases/observability/hyperdx-dashboard-2.webp)
+
+</div>
 
 Resize the visualization to occupy the full width of the dashboard.
 
+<div className="ch-image-lg">
+
 ![Dashboard with visuals](/images/use-cases/observability/hyperdx-dashboard-3.webp)
+
+</div>
 </Step>
 <Step title="Create a visualization – events over time by service" id="create-a-tile-2">
 
@@ -118,11 +146,19 @@ Select the `Line/Bar` visualization type from the top menu, followed by the `Log
 
 Click the **play** button before clicking `Save`.
 
+<div className="ch-image-lg">
+
 ![Dashboard Visualization 2](/images/use-cases/observability/hyperdx-dashboard-4.webp)
+
+</div>
 
 Resize the visualization to occupy the full width of the dashboard.
 
+<div className="ch-image-lg">
+
 ![Dashboard with visuals 2](/images/use-cases/observability/hyperdx-dashboard-5.webp)
+
+</div>
 </Step>
 <Step title="Add a heatmap tile for span duration" id="create-a-tile-heatmap">
 
@@ -147,11 +183,19 @@ To customize the heatmap further, click **Display Settings** to open a drawer fo
 
 Click `Run` to preview the chart, then `Save`.
 
+<div className="ch-image-lg">
+
 ![Heatmap tile editor with span duration defaults pre-filled, ServiceName payment filter, and Display Settings button](/images/clickstack/dashboards/heatmap-tile-editor.webp)
+
+</div>
 
 The saved tile renders as a heatmap on the dashboard. Hover any cell to see the bucket bounds and event count.
 
+<div className="ch-image-lg">
+
 ![Heatmap dashboard tile showing payment service span duration distribution over 24 hours](/images/clickstack/dashboards/heatmap-tile-rendered.webp)
+
+</div>
 
 <Tip>
 **Two ClickHouse queries per heatmap**
@@ -163,7 +207,11 @@ The heatmap runs as two sequential queries: a small **bounds query** that resolv
 
 Click any cell on a rendered heatmap tile to open a **View in Event Deltas** action.
 
+<div className="ch-image-lg">
+
 ![Heatmap cell click revealing the View in Event Deltas action](/images/clickstack/dashboards/heatmap-tile-drilldown.webp)
+
+</div>
 
 Selecting it opens the [Event Deltas](/clickstack/features/event-deltas) view with the tile's data source, `Where` clause, and time range carried over. From there you can examine the same distribution interactively, slice by attribute to see what makes the slow spans different from the fast ones, and inspect the individual spans behind any cell, without rebuilding the query by hand.
 </Step>
@@ -171,13 +219,21 @@ Selecting it opens the [Event Deltas](/clickstack/features/event-deltas) view wi
 
 Lucene or SQL filters, along with the time range, can be applied at the dashboard level and will automatically propagate to all visualizations.
 
+<div className="ch-image-lg">
+
 ![Dashboard with filtering](/images/use-cases/observability/hyperdx-dashboard-filter.webp)
+
+</div>
 
 To demonstrate, apply the Lucene filter `ServiceName:"frontend"` to the dashboard and modify the time window to cover the Last 3 hours. Note how the visualizations now reflect data only from the `frontend` service.
 
 The dashboard will be auto-saved. To set the dashboard name, select the title and modify it before clicking `Save Name`. 
 
+<div className="ch-image-lg">
+
 ![Dashboard save](/images/use-cases/observability/hyperdx-dashboard-save.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -185,7 +241,11 @@ The dashboard will be auto-saved. To set the dashboard name, select the title an
 
 To remove, edit, or duplicate a visualization, hover over it and use the corresponding action buttons.
 
+<div className="ch-image-lg">
+
 ![Dashboard edit](/images/use-cases/observability/hyperdx-dashboard-edit.webp)
+
+</div>
 
 ### Tile display settings {#tile-display-settings}
 
@@ -232,7 +292,11 @@ Number tiles can show a **background chart**: a trend sparkline drawn behind the
 
 With a number tile selected, open **Display Settings** and set **Background chart** to **Line** or **Area** (or **None** to turn it off). The sparkline is derived from a time-bucketed version of the tile's query, so no extra configuration is needed. It inherits the tile color by default; set a **Background color** to override it with a specific palette color.
 
+<div className="ch-image-lg">
+
 ![Display Settings drawer for a number tile, with Background chart set to Area](/images/clickstack/dashboards/number-tile-background-chart.webp)
+
+</div>
 
 Background charts apply to query-builder number tiles. Raw SQL number tiles return a single value with no time dimension to bucket, so the option appears but is disabled for them.
 
@@ -240,7 +304,11 @@ Table tiles can stripe their rows with **Alternate Row Background**, which tints
 
 With a table tile selected, open **Display Settings** and turn on **Alternate Row Background**. Striping is purely visual, so it works on both query-builder and raw SQL table tiles.
 
+<div className="ch-image-lg">
+
 ![Display Settings drawer for a table tile, with Alternate Row Background turned on](/images/clickstack/dashboards/table-tile-display-settings.webp)
+
+</div>
 
 Table tiles also keep a separator between the header row and the data as you scroll, so the column headers stay distinct.
 
@@ -288,7 +356,11 @@ Dashboards are accessible on the dashboards page. They are organized by tag, wit
 
 Dashboards can be favorited for easy access on the sidebar and at the top of the listing page. Favorites are individual to each user.
 
+<div className="ch-image-lg">
+
 ![Dashboard search](/images/use-cases/observability/hyperdx-dashboard-search.webp)
+
+</div>
 
 ## Dashboards - tagging {#tagging}
 <Tagging />
@@ -297,7 +369,11 @@ Dashboards can be favorited for easy access on the sidebar and at the top of the
 
 In addition to the [free-text filters](#filter-dashboards) available on all dashboards, saved dashboards support custom dropdown filters populated by data queried from ClickHouse. These provide reusable, point-and-click filter controls so that dashboard viewers can filter without writing expressions manually.
 
+<div className="ch-image-lg">
+
 ![Services dropdown filter showing available service names](/images/clickstack/dashboards/filter-dropdown.webp)
+
+</div>
 
 Each filter allows the viewer to choose one or more values, and does one or both of the following with them:
 
@@ -313,7 +389,11 @@ The following steps demonstrate adding a filter to the dashboard created in the 
 
 Open a saved dashboard and select **Edit Filters and Variables** from the toolbar.
 
+<div className="ch-image-lg">
+
 ![Edit Filters button in the dashboard toolbar](/images/clickstack/dashboards/edit-filters.webp)
+
+</div>
 </Step>
 <Step title="Add a new filter" id="add-new-filter">
 
@@ -321,25 +401,41 @@ Click **Add new filter**. Configure the filter by providing a **Display Name**, 
 
 For example, to add a service filter for trace data, use `ServiceName` as the filter expression with the `Traces` data source. The "Dropdown values filter" is optional, and provides a way to restrict which values appear in the dropdown.
 
+<div className="ch-image-md">
+
 ![Add filter dialog with Display Name, Data source, and Filter expression fields](/images/clickstack/dashboards/add-filter.webp)
+
+</div>
 
 The same dialog also controls whether the filter [broadcasts](#broadcast-filters) its value and whether it is [available as a variable](#dashboard-variables), both described below.
 
 The Filters modal shows all configured filters for the dashboard. From here you can edit or delete existing filters, or add additional ones.
 
+<div className="ch-image-md">
+
 ![Filters modal showing a configured Services filter](/images/clickstack/dashboards/saved-filters.webp)
+
+</div>
 </Step>
 <Step title="Use the filter" id="use-filter">
 
 Close the Filters modal. The new dropdown filter appears below the search bar. Click it to see the available values, then select one to filter all visualizations on the dashboard.
 
+<div className="ch-image-lg">
+
 ![Dashboard filtered to the frontend service](/images/clickstack/dashboards/filtered-dashboard.webp)
+
+</div>
 </Step>
 <Step title="(Optional) Save filter values as default" id="save-default-filters">
 
 To persist a filter selection as the dashboard default, choose **Save Query & Filters as Default** from the dashboard menu. The dashboard will always open with the selected filters applied. To reset, select **Remove Default Query & Filters** from the same menu.
 
+<div className="ch-image-lg">
+
 ![Dashboard menu showing Save Query and Filters as Default option](/images/clickstack/dashboards/save-filter-values.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -423,7 +519,11 @@ Dashboard tiles support drilldown to the Search page. Click on a data point in a
 - **View All Events** — navigates to the Search page showing all events from the selected time window.
 - **Filter by group** — navigates to the Search page filtered to a specific series.
 
+<div className="ch-image-lg">
+
 ![Drilldown context menu showing View All Events and Filter by group options](/images/clickstack/dashboards/drilldown.webp)
+
+</div>
 
 This is useful for investigating specific spikes or anomalies spotted in a dashboard — you can quickly pivot from an aggregated view to the underlying individual events.
 
@@ -435,7 +535,11 @@ HyperDX is deployed with out-of-the-box dashboards.
 
 This dashboard provides visualizations for monitoring ClickHouse. To navigate to this dashboard, select it from the left menu.
 
+<div className="ch-image-lg">
+
 ![ClickHouse dashboard](/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp)
+
+</div>
 
 This dashboard uses tabs to separate monitoring of **Selects**, **Inserts**, and **ClickHouse Infrastructure**.
 
@@ -461,7 +565,11 @@ Service names are auto-detected from the trace data, with a series of prebuilt v
 
 Visualizations can be filtered using Lucene or SQL syntax, and the time window can be adjusted for focused analysis.
 
+<div className="ch-image-lg">
+
 ![ClickHouse services](/images/use-cases/observability/hyperdx-dashboard-services.webp)
+
+</div>
 
 ### Kubernetes dashboard {#kubernetes-dashboard}
 
@@ -469,4 +577,8 @@ This dashboard allows you to explore Kubernetes events collected via OpenTelemet
 
 Kubernetes data is organized across three tabs for easy navigation: Pods, Nodes, and Namespaces.
 
+<div className="ch-image-lg">
+
 ![ClickHouse kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</div>

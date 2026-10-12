@@ -30,7 +30,11 @@ En la analítica agéntica, el modelo fundamenta sus respuestas ejecutando consu
   ## Cómo encajan los componentes del stack
 </div>
 
+<div className="ch-image-md">
+
 ![Arquitectura de Agentic Data Stack: los usuarios interactúan con LibreChat, que se conecta a un LLM, a ClickHouse a través del servidor MCP y a Langfuse para la trazabilidad](/images/agentic-data-stack/01-architecture.webp)
+
+</div>
 
 Un usuario hace una pregunta en LibreChat. El modelo prepara una respuesta y, a través del servidor MCP, invoca herramientas para explorar y consultar ClickHouse. Los resultados vuelven, y el agente elabora una respuesta. Langfuse, basado en OpenTelemetry, registra cada ejecución desde el prompt hasta la llamada a la herramienta y la respuesta, permite evaluar los resultados automáticamente o mediante revisión humana, y hace un seguimiento de la calidad, el costo y la latencia.
 

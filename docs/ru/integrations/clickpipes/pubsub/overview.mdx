@@ -28,19 +28,35 @@ Pub/Sub ClickPipes можно развертывать и управлять и�
 
 1. Откройте SQL-консоль для вашего сервиса ClickHouse Cloud.
 
+<div className="ch-image-lg">
+
 ![Сервис ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. Нажмите кнопку `Data Sources` в левом меню, затем — &quot;Set up a ClickPipe&quot;
 
+<div className="ch-image-lg">
+
 ![Выбор импортов](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. Выберите **GCP Pub/Sub** в качестве источника данных.
 
+<div className="ch-image-lg">
+
 ![Выбор GCP Pub/Sub в качестве источника данных](/images/integrations/data-ingestion/clickpipes/cp_step1_pubsub.webp)
+
+</div>
 
 4. Заполните форму: укажите имя ClickPipe, ваш **GCP Project ID** и **JSON‑файл сервисного аккаунта** для сервисного аккаунта, которому выдан доступ к Pub/Sub. Project ID должен содержать 6–30 символов, может включать строчные буквы, цифры и дефисы, должен начинаться с буквы и не может заканчиваться дефисом.
 
+<div className="ch-image-lg">
+
 ![Заполнение сведений о подключении](/images/integrations/data-ingestion/clickpipes/cp_step2_pubsub.webp)
+
+</div>
 
 5. Выберите **Pub/Sub topic**, из которого нужно получать данные. После успешной проверки учётных данных раскрывающийся список автоматически заполняется топиками из вашего проекта GCP (в алфавитном порядке).
 
@@ -49,19 +65,35 @@ Pub/Sub ClickPipes можно развертывать и управлять и�
    * **Filter expression (необязательно).** Фильтр [фильтр подписки](https://cloud.google.com/pubsub/docs/subscription-message-filter) Pub/Sub по атрибутам сообщений — например, `attributes.type = "telemetry"`. Фильтры применяются только к атрибутам сообщений, а не к полезной нагрузке, и не могут быть изменены после создания пайпа (для изменения фильтра пайп нужно пересоздать).
    * В интерфейсе будет показан пример сообщения из выбранного топика, а также переключатель **Flatten object**, с помощью которого можно предварительно посмотреть, как вложенный JSON будет развёрнут на стороне назначения.
 
+<div className="ch-image-lg">
+
 ![Настройка топика Pub/Sub, формата и начального смещения](/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp)
+
+</div>
 
 6. На следующем шаге вы можете выбрать, хотите ли вы загружать данные в новую таблицу ClickHouse или использовать существующую. Следуйте инструкциям на экране, чтобы изменить имя таблицы, схему и настройки. Вверху страницы отображается предварительный просмотр изменений в образце таблицы в реальном времени.
 
+<div className="ch-image-lg">
+
 ![Настройка таблицы, схемы и параметров](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+
+</div>
 
 Вы также можете настроить дополнительные параметры с помощью доступных элементов управления
 
+<div className="ch-image-lg">
+
 ![Настройка дополнительных элементов управления](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
+
+</div>
 
 7. Кроме того, вы можете загрузить данные в существующую таблицу ClickHouse. В этом случае интерфейс позволит сопоставить поля источника с полями ClickHouse в выбранной целевой таблице.
 
+<div className="ch-image-lg">
+
 ![Использование существующей таблицы](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
+
+</div>
 
 8. Наконец, вы можете настроить разрешения для внутреннего пользователя ClickPipes.
 
@@ -70,21 +102,41 @@ Pub/Sub ClickPipes можно развертывать и управлять и�
 * `Full access`: полный доступ к кластеру. Это может быть полезно, если вы используете materialized view или словарь с целевой таблицей.
   * `Only destination table`: только разрешения `INSERT` для целевой таблицы.
 
+<div className="ch-image-lg">
+
 ![Разрешения](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+
+</div>
 
 9. Нажмите &quot;Complete Setup&quot;, чтобы система зарегистрировала ваш ClickPipe, после чего он появится в сводной таблице.
 
+<div className="ch-image-sm">
+
 ![Уведомление об успешной настройке](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![Уведомление об удалении](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
 
+</div>
+
 В сводной таблице доступны элементы управления для просмотра примеров данных из источника или из целевой таблицы в ClickHouse
+
+<div className="ch-image-lg">
 
 ![Просмотр целевой таблицы](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
 
+</div>
+
 А также элементы управления для удаления ClickPipe и просмотра сводки задачи ингестии.
 
+<div className="ch-image-lg">
+
 ![Просмотр сводки](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+
+</div>
 
 10. **Поздравляем!** Вы успешно настроили свой первый Pub/Sub ClickPipe. Он будет непрерывно работать, выполняя ингестию данных в реальном времени из вашего топика Pub/Sub в ваш сервис ClickHouse Cloud.
 

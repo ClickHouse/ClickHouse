@@ -7,13 +7,18 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 This page is the security reference for the ClickHouse Connector: its identities, connections, exact privileges, structural limits, and how every action is attributed. For how the pieces fit together, see [architecture](/products/bring-your-own-cloud/connector/architecture).
 
 ## Identities {#identities}
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector identity model](/images/cloud/reference/byoc-connector-identity-model.svg)
+
+</div>
 
 - **The connector's mTLS client certificate**, with your organization ID as its common name, authenticates every daemon to your connector endpoint. `clicklink clctl instances create` uses the same certificate and HMAC key when it calls the endpoint.
 - **`pcm_scraper` and `pcm_troubleshooter`** are the read-only ClickHouse users the scraper and troubleshooter connect as. The executor has no ClickHouse user.

@@ -7,13 +7,18 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 Эта страница — справочник по безопасности коннектора ClickHouse: его identities, соединения, точный перечень привилегий, структурные ограничения, а также то, как атрибутируется каждое действие. О том, как эти элементы связаны между собой, см. [architecture](/ru/products/bring-your-own-cloud/connector/architecture).
 
 ## Identities {#identities}
 
+<div className="ch-image-lg">
+
 ![Модель идентичностей коннектора ClickHouse](/images/cloud/reference/byoc-connector-identity-model.svg)
+
+</div>
 
 * **Клиентский сертификат mTLS коннектора**, в котором в качестве common name указан ваш Organization ID, аутентифицирует каждый демон на вашей конечной точке коннектора. Команда `clicklink clctl instances create` использует тот же сертификат и HMAC key при обращении к конечной точке.
 * **`pcm_scraper` и `pcm_troubleshooter`** — это ClickHouse users только для чтения, под которыми подключаются scraper и средство диагностики. У исполнителя нет ClickHouse user.

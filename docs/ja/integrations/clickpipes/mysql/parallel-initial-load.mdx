@@ -25,7 +25,11 @@ integration:
 
 機能フラグを有効にすると、ClickPipe のテーブルピッカーに以下の設定が表示されます (ClickPipe の作成時と編集時の両方) :
 
+<div className="ch-image-md">
+
 ![パーティションキー カラム](/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp)
+
+</div>
 
 MySQL ClickPipe では、ソーステーブルを論理的にパーティション分割するために、そのテーブル上のカラムを使用します。このカラムを **パーティションキー カラム** と呼びます。これはソーステーブルをパーティションに分割するために使われ、各パーティションは ClickPipe によって並列に処理されます。
 
@@ -39,7 +43,11 @@ MySQL ClickPipe では、ソーステーブルを論理的にパーティショ�
 
 以下の設定を見ていきましょう。
 
+<div className="ch-image-md">
+
 ![スナップショットパラメータ](/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp)
+
+</div>
 
 <div id="numrows-mysql-snapshot">
   #### スナップショット時のパーティションあたりの行数

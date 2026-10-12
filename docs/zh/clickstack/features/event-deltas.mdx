@@ -13,7 +13,11 @@ Event deltas 将延迟热力图与自动 属性 分析结合起来，让你无�
 * **比较模式**：在热力图上拖出一个矩形，将其中的 spans (Selection) 与其余所有 spans (Background) 进行比较。适合用于定位偏差。
 * **迭代式下钻**：点击任意条形即可按该值进行过滤 (或排除) 。热力图会基于过滤后的 span 集合重新渲染，因此你可以不断缩小范围，直到原因一目了然。
 
+<div className="ch-image-lg">
+
 ![payment service 上的 Event deltas 概览：亮带在窗口中部向上攀升，且在窗口帧内未恢复](/images/clickstack/event-deltas/overview.webp)
+
+</div>
 
 在上面的截图中，热力图右侧边缘大约停留在 10 ms，而不是回到整个上午一直维持的 1 ms 基线。性能劣化仍在持续，因此我们是在事件处理中途捕捉到这一现象的。
 
@@ -74,7 +78,11 @@ Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patt
 
 当热力图显示延迟随时间线逐渐升高时 (慢带变厚、亮带上移，或某个清晰的拐点将健康时段与退化时段分开) ，从开始上升的拐点拖出一个矩形，一直拉到窗口右边缘。为了让对比更清晰，应将矩形底边放在健康基线上，而不是坐标轴底部：这样就能只圈定退化窗口中那些确实比正常更慢的 span，而不会把恰好落在同一时间范围内、但其实仍然健康的快速 span 也一并带进来。
 
+<div className="ch-image-lg">
+
 ![payment service 上的比较模式，矩形从上升拐点画到右边缘，底边落在 1 ms 基线上](/images/clickstack/event-deltas/before-after.webp)
+
+</div>
 
 热力图下方的属性条按差异幅度从大到小排序。在这个示例中，顶行图表呈现出最强的信号：`SpanKind`、`SpanName` 和 `ScopeName` 都显示出明显的橙绿分化，对应较慢的 Selection 和健康的 Background。结合来看，它们勾勒出了拐点处究竟发生了什么变化。
 
@@ -86,7 +94,11 @@ Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patt
 
 当热力图在耗时轴上清楚地显示出两组明显分离的延迟分布时，拖出一个覆盖整个时间范围、但只框住上方清晰分离带的宽矩形。较慢的那组会成为 Selection；较快的大部分则成为 Background。
 
+<div className="ch-image-lg">
+
 ![frontend-proxy 上的慢与快对比，矩形仅覆盖清晰分离的上方带状区域，并与密集主体明显分开](/images/clickstack/event-deltas/slow-vs-fast.webp)
+
+</div>
 
 将矩形紧紧框住上方带状区域，并让它与下方密集主体之间保留清晰可见的水平间隔。如果矩形画得过松、渗入较快的那组，差异就会被冲淡。
 
@@ -104,7 +116,11 @@ Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patt
 * **排除**：移除具有该值的 span
 * **复制**：将该值复制到剪贴板
 
+<div className="ch-image-lg">
+
 ![点击 ScopeVersion 条形上的弹出菜单，显示 Selection 与 Background 的百分比，以及过滤、排除、复制操作](/images/clickstack/event-deltas/drill-down.webp)
+
+</div>
 
 应用过滤或排除后，热力图中的选择会被清除，热力图会基于新的数据集重新渲染，分布模式也会继续针对这个过滤后的集合进行分析。注意观察热力图的变化：成功的过滤会明显去掉慢速带、让双峰分裂收敛，或抹平向上漂移。然后重复这一过程：找出下一个可疑值，进行过滤，查看新的热力图，再查看新的分布。通常经过几轮迭代，就能将回归问题缩小到一两个属性上。
 
@@ -120,7 +136,11 @@ Event deltas 是一种独立的分析模式，与 **结果表** 和 **Event Patt
 
 热力图右上角的齿轮图标会打开 **显示设置** 抽屉面板。
 
+<div className="ch-image-lg">
+
 ![包含标度、值和计数字段的显示设置抽屉面板](/images/clickstack/event-deltas/settings-drawer.webp)
+
+</div>
 
 | 参数     | 默认值              | 说明                                                                      |
 | ------ | ---------------- | ----------------------------------------------------------------------- |

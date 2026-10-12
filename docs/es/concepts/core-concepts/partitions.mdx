@@ -45,7 +45,11 @@ Puedes [consultar esta tabla](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJP
 
 Siempre que se inserta un conjunto de filas en la tabla, en lugar de crear (como [mínimo](/es/reference/settings/session-settings/max-insert#max_insert_block_size)) una sola parte de datos que contenga todas las filas insertadas (como se describe [aquí](/es/concepts/core-concepts/parts)), ClickHouse crea una nueva parte de datos para cada valor único de la clave de partición presente en las filas insertadas:
 
+<div className="ch-image-lg">
+
 ![PROCESAMIENTO DE INSERCIÓN](/images/managing-data/core-concepts/partitions.webp)
+
+</div>
 
 <br />
 
@@ -60,7 +64,11 @@ Ten en cuenta que, con el particionamiento habilitado, ClickHouse crea automáti
 
 Con el particionamiento habilitado, ClickHouse solo [fusiona](/es/concepts/core-concepts/merges) partes de datos dentro de una misma partición, pero no entre particiones. Lo mostramos en la tabla de ejemplo anterior:
 
+<div className="ch-image-lg">
+
 ![FUSIONES DE PARTES](/images/managing-data/core-concepts/merges_with_partitions.webp)
+
+</div>
 
 <br />
 
@@ -157,7 +165,11 @@ La consulta se ejecuta sobre la tabla de ejemplo anterior y [calcula](https://sq
 
 ClickHouse procesa esa consulta aplicando una secuencia de técnicas de poda para evitar evaluar datos irrelevantes:
 
+<div className="ch-image-lg">
+
 ![FUSIONES DE PARTES 2](/images/managing-data/core-concepts/partition-pruning.webp)
+
+</div>
 
 <br />
 

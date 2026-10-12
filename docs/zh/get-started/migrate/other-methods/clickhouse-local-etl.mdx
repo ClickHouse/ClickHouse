@@ -9,7 +9,11 @@ doc_type: 'guide'
 
 import AddARemoteSystem from '/snippets/zh/_add_remote_ip_access_list_detail.mdx';
 
+<div className="ch-image-lg">
+
 ![迁移自管理 ClickHouse](/images/integrations/migration/ch-local-01.webp)
+
+</div>
 
 您可以使用 ClickHouse，更准确地说，是使用 [`clickhouse-local`](/zh/concepts/features/tools-and-utilities/clickhouse-local)
 作为 ETL 工具，将数据从当前的数据库系统迁移到 ClickHouse Cloud，前提是当前数据库系统具备以下之一：
@@ -25,7 +29,11 @@ ClickHouse 为 [MySQL](/zh/reference/engines/table-engines/integrations/mysql)�
   ## 什么是 clickhouse-local?
 </div>
 
+<div className="ch-image-lg">
+
 ![迁移自管理 ClickHouse](/images/integrations/migration/ch-local-02.webp)
+
+</div>
 
 通常，ClickHouse 以集群形式运行，即多个 ClickHouse 数据库引擎实例以分布式方式运行在不同的服务器上。
 
@@ -93,7 +101,11 @@ ClickHouse 为 [MySQL](/zh/reference/engines/table-engines/integrations/mysql)�
 我们将使用 [integration 表引擎](/zh/reference/engines/table-engines/integrations/mysql) (由 [mysql 表函数](/zh/reference/functions/table-functions/mysql) 即时创建) 从源 MySQL 数据库读取数据，并使用 [remoteSecure 表函数](/zh/reference/functions/table-functions/remote)
 将数据写入您的 ClickHouse Cloud 服务中的目标端表。
 
+<div className="ch-image-lg">
+
 ![迁移自管理 ClickHouse](/images/integrations/migration/ch-local-03.webp)
+
+</div>
 
 <div id="on-the-destination-clickhouse-cloud-service">
   ### 在目标端 ClickHouse Cloud 服务上：

@@ -38,29 +38,53 @@ DBeaver est disponible en plusieurs éditions. Dans ce guide, [DBeaver Community
   <Step title="Ajouter une base de données" id="3-add-a-database">
     * Utilisez soit le menu **Database &gt; New Database Connection**, soit l’icône **New Database Connection** dans le **Database Navigator** pour ouvrir la boîte de dialogue **Connect to a database** :
 
+    <div className="ch-image-md">
+
     ![Ajouter une nouvelle base de données](/images/integrations/sql-clients/dbeaver-add-database.webp)
+
+    </div>
 
     * Sélectionnez **Analytical**, puis **ClickHouse** :
 
     * Construisez l’URL JDBC. Dans l’onglet **Main**, définissez le Host, le Port, le Username, le Password et la Database :
 
+    <div className="ch-image-md">
+
     ![Définir le hostname, le port, l’utilisateur, le mot de passe et le nom de la base de données](/images/integrations/sql-clients/dbeaver-host-port.webp)
+
+    </div>
 
     * Par défaut, la propriété **SSL &gt; Use SSL** n’est pas activée. Si vous vous connectez à ClickHouse Cloud ou à un server nécessitant SSL sur le port HTTP, activez **SSL &gt; Use SSL** :
 
+    <div className="ch-image-md">
+
     ![Activer SSL si nécessaire](/images/integrations/sql-clients/dbeaver-use-ssl.webp)
+
+    </div>
 
     * Testez la connexion :
 
+    <div className="ch-image-md">
+
     ![Tester la connexion](/images/integrations/sql-clients/dbeaver-test-connection.webp)
+
+    </div>
 
     Si DBeaver détecte que le pilote ClickHouse n’est pas installé, il vous proposera de le télécharger :
 
+    <div className="ch-image-md">
+
     ![Télécharger le pilote ClickHouse](/images/integrations/sql-clients/dbeaver-download-driver.webp)
+
+    </div>
 
     * Après avoir téléchargé le pilote, **Test**ez de nouveau la connexion :
 
+    <div className="ch-image-md">
+
     ![Tester la connexion](/images/integrations/sql-clients/dbeaver-test-connection.webp)
+
+    </div>
   </Step>
 
   <Step title="Interroger ClickHouse" id="4-query-clickhouse">
@@ -68,11 +92,19 @@ DBeaver est disponible en plusieurs éditions. Dans ce guide, [DBeaver Community
 
     * Faites un clic droit sur votre connexion et choisissez **SQL Editor &gt; Open SQL Script** pour ouvrir un éditeur de requêtes :
 
+    <div className="ch-image-md">
+
     ![Ouvrir l’éditeur SQL](/images/integrations/sql-clients/dbeaver-sql-editor.webp)
+
+    </div>
 
     * Exemple de requête sur `system.query_log` :
 
+    <div className="ch-image-md">
+
     ![Un exemple de requête](/images/integrations/sql-clients/dbeaver-query-log-select.webp)
+
+    </div>
   </Step>
 </Steps>
 

@@ -25,7 +25,11 @@ integration:
 
 После включения feature flag вы увидите приведённую ниже настройку в средстве выбора таблицы ClickPipe (как при создании, так и при редактировании ClickPipe):
 
+<div className="ch-image-md">
+
 ![Столбец ключа партиционирования](/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp)
+
+</div>
 
 ClickPipe для MySQL использует столбец в исходной таблице, чтобы логически разбивать исходные таблицы на партиции. Этот столбец называется **столбцом ключа партиционирования**. Он используется для разделения исходной таблицы на партиции, которые затем ClickPipe может обрабатывать параллельно.
 
@@ -39,7 +43,11 @@ ClickPipe для MySQL использует столбец в исходной �
 
 Рассмотрим следующие настройки:
 
+<div className="ch-image-md">
+
 ![Параметры снимка](/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp)
+
+</div>
 
 <div id="numrows-mysql-snapshot">
   #### Количество строк на партицию в снимке

@@ -21,7 +21,11 @@ doc_type: 'reference'
       Чтобы предоставлять сервисы через [Private Service Connect](/ru/cloud/reference/byoc/onboarding/network-gcp#setup-psc), в этой VPC также требуется отдельная подсеть с назначением `PRIVATE_SERVICE_CONNECT`. Вы можете создать ее сейчас или позже, до включения private link.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![Сведения о подсети BYOC в GCP с основным и вторичным диапазонами IPv4 и включенным Private Google Access](/images/cloud/reference/byoc-gcp-subnet.webp)
+
+    </div>
   </Step>
 
   <Step title="Обеспечьте сетевую связность" id="ensure-network-connectivity">
@@ -51,7 +55,11 @@ doc_type: 'reference'
     5. Если ваша VPC находится в host-проекте Shared VPC, укажите **Shared VPC host project ID**. Оставьте поле пустым, если VPC находится в том же проекте, что и инфраструктура. См. раздел [Shared VPC из host-проекта](#shared-vpc-host-project) ниже.
     6. Нажмите **Set up Infrastructure**, чтобы начать подготовку.
 
+    <div className="ch-image-lg">
+
     ![Интерфейс настройки ClickHouse Cloud BYOC с выбранным Use existing VPC для GCP, где показаны поля VPC network name, subnet name, secondary range names и Shared VPC host project ID](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
+
+    </div>
   </Step>
 </Steps>
 

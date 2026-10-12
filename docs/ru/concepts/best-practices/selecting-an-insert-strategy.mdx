@@ -9,6 +9,7 @@ doc_type: 'guide'
 ---
 
 import AsyncInserts from '/snippets/ru/_async_inserts.mdx';
+
 import BulkInserts from '/snippets/ru/_bulk_inserts.mdx';
 
 Эффективная ингестия данных — основа высокопроизводительных развертываний ClickHouse. Выбор подходящей стратегии вставки может существенно повлиять на пропускную способность, стоимость и надёжность. В этом разделе рассматриваются лучшие практики, компромиссы и параметры конфигурации, которые помогут вам выбрать оптимальный вариант для вашей рабочей нагрузки.
@@ -31,7 +32,11 @@ import BulkInserts from '/snippets/ru/_bulk_inserts.mdx';
 
 Ниже мы кратко рассмотрим механизм вставки в MergeTree в ClickHouse:
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![Процессы вставки](/images/bestpractices/insert_process.webp)
+
+</div>
 
 <div id="client-side-steps">
   #### Шаги на стороне клиента

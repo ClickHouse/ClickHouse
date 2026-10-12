@@ -26,14 +26,22 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
     أولاً، ستحتاج إلى تمكين Kinesis Stream على جدول DynamoDB لديك لالتقاط التغييرات في الوقت الفعلي. نريد القيام بذلك قبل إنشاء اللقطة حتى لا نفقد أي بيانات.
     اطّلع على دليل AWS [هنا](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
 
+    <div className="ch-image-lg">
+
     ![DynamoDB Kinesis Stream](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
+
+    </div>
   </Step>
 
   <Step title="أنشئ اللقطة" id="2-create-the-snapshot">
     بعد ذلك، سننشئ لقطة من جدول DynamoDB. ويمكن إجراء ذلك عبر تصدير من AWS إلى S3. يمكنك العثور على دليل AWS [هنا](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html).
     **ستحتاج إلى إجراء &quot;تصدير كامل&quot; بتنسيق DynamoDB JSON.**
 
+    <div className="ch-image-md">
+
     ![تصدير DynamoDB إلى S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
+
+    </div>
   </Step>
 
   <Step title="حمّل بيانات اللقطة إلى ClickHouse" id="3-load-the-snapshot-into-clickhouse">
@@ -126,7 +134,11 @@ import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupporte
       * `ApproximateCreationDateTime`: `version`
       * اربط الحقول الأخرى بأعمدة الوجهة المناسبة كما هو موضح أدناه
 
+    <div className="ch-image-md">
+
     ![ربط أعمدة DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
+
+    </div>
   </Step>
 
   <Step title="التنظيف (اختياري)" id="5-cleanup-optional">

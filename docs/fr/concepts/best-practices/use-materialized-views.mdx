@@ -14,11 +14,19 @@ ClickHouse prend en charge deux types de vues matérialisées : [**incrémental
 
 Les **vues matérialisées incrémentales** sont mises à jour en temps réel. À mesure que de nouvelles données sont insérées dans la table source, ClickHouse applique automatiquement la requête de la vue matérialisée au nouveau bloc de données et écrit les résultats dans une table cible distincte. Au fil du temps, ClickHouse fusionne ces résultats partiels pour produire une vue complète et à jour. Cette approche est très efficace, car elle reporte le coût de calcul au moment de l’insertion et ne traite que les nouvelles données. Par conséquent, les requêtes `SELECT` sur la table cible sont rapides et légères. Les vues incrémentales prennent en charge toutes les fonctions d’agrégation et passent bien à l’échelle — jusqu’à des pétaoctets de données — car chaque requête s’exécute sur un petit sous-ensemble récent du jeu de données en cours d’insertion.
 
+<div className="ch-image-lg">
+
 ![Vues matérialisées](/images/bestpractices/incremental_materialized_view.webp)
+
+</div>
 
 Les **vues matérialisées actualisables**, en revanche, sont mises à jour selon une planification. Ces vues réexécutent périodiquement leur requête complète et remplacent le résultat dans la table cible. Cela ressemble au fonctionnement des vues matérialisées dans les bases de données OLTP traditionnelles comme Postgres.
 
+<div className="ch-image-lg">
+
 ![Schéma d’une vue matérialisée actualisable](/images/bestpractices/refreshable_materialized_view.webp)
+
+</div>
 
 Le choix entre les vues matérialisées incrémentales et actualisables dépend en grande partie de la nature de la requête, de la fréquence à laquelle les données changent et du fait que les mises à jour de la vue doivent refléter chaque ligne au moment de son insertion, ou si une actualisation périodique est acceptable. Comprendre ces compromis est essentiel pour concevoir des vues matérialisées performantes et évolutives dans ClickHouse.
 

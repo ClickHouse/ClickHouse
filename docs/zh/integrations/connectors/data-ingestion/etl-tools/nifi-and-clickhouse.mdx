@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
 import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -35,19 +36,35 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
   <Step title={<>添加 <code>DBCPConnectionPool</code> Controller Service 并配置其属性</>} id="4-add-dbcpconnectionpool-controller-service-and-configure-its-properties">
     1. 要在 Apache NiFi 中配置 Controller Service，请点击“齿轮”按钮，进入 NiFi Flow Configuration 页面
 
+       <div className="ch-image-sm">
+
        ![突出显示齿轮按钮的 NiFi Flow Configuration 页面](/images/integrations/data-ingestion/etl-tools/nifi_01.webp)
+
+       </div>
 
     2. 选择 Controller Services 选项卡，然后点击右上角的 `+` 按钮，添加新的 Controller Service
 
+       <div className="ch-image-lg">
+
        ![突出显示添加按钮的 Controller Services 选项卡](/images/integrations/data-ingestion/etl-tools/nifi_02.webp)
+
+       </div>
 
     3. 搜索 `DBCPConnectionPool`，然后点击“Add”按钮
 
+       <div className="ch-image-lg">
+
        ![突出显示 DBCPConnectionPool 的 Controller Service 选择对话框](/images/integrations/data-ingestion/etl-tools/nifi_03.webp)
+
+       </div>
 
     4. 新添加的 `DBCPConnectionPool` 默认处于 Invalid 状态。点击“齿轮”按钮开始配置
 
+       <div className="ch-image-lg">
+
        ![显示处于 Invalid 状态的 DBCPConnectionPool 且突出显示齿轮按钮的 Controller Services 列表](/images/integrations/data-ingestion/etl-tools/nifi_04.webp)
+
+       </div>
 
     5. 在“Properties”部分中，输入以下值
 
@@ -61,25 +78,45 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
 
     6. 在 Settings 部分中，将 Controller Service 的名称改为“ClickHouse JDBC”，以便后续识别
 
+       <div className="ch-image-lg">
+
        ![显示已填写属性的 DBCPConnectionPool 配置对话框](/images/integrations/data-ingestion/etl-tools/nifi_05.webp)
+
+       </div>
 
     7. 点击“lightning”按钮，然后点击“Enable”按钮，启用 `DBCPConnectionPool` Controller Service
 
+       <div className="ch-image-lg">
+
        ![突出显示 lightning 按钮的 Controller Services 列表](/images/integrations/data-ingestion/etl-tools/nifi_06.webp)
+
+       </div>
 
        <br />
 
+       <div className="ch-image-lg">
+
        ![启用 Controller Service 的确认对话框](/images/integrations/data-ingestion/etl-tools/nifi_07.webp)
+
+       </div>
 
     8. 检查 Controller Services 选项卡，确认该 Controller Service 已启用
 
+       <div className="ch-image-lg">
+
        ![显示已启用 ClickHouse JDBC 服务的 Controller Services 列表](/images/integrations/data-ingestion/etl-tools/nifi_08.webp)
+
+       </div>
   </Step>
 
   <Step title={<>使用 <code>ExecuteSQL</code> 处理器从表中读取数据</>} id="5-read-from-a-table-using-the-executesql-processor">
     1. 添加 `ExecuteSQL` 处理器，以及相应的上游和下游处理器
 
+       <div className="ch-image-md">
+
        ![NiFi 画布，显示工作流中的 ExecuteSQL 处理器](/images/integrations/data-ingestion/etl-tools/nifi_09.webp)
+
+       </div>
 
     2. 在 `ExecuteSQL` 处理器的 &quot;Properties&quot; 部分中，填写以下值
 
@@ -90,15 +127,27 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
 
     3. 启动 `ExecuteSQL` 处理器
 
+       <div className="ch-image-lg">
+
        ![已填写属性的 ExecuteSQL 处理器配置](/images/integrations/data-ingestion/etl-tools/nifi_10.webp)
+
+       </div>
 
     4. 要确认查询已成功处理，请检查输出队列中的一个 `FlowFile`
 
+       <div className="ch-image-lg">
+
        ![队列列表对话框，显示可供检查的 FlowFile](/images/integrations/data-ingestion/etl-tools/nifi_11.webp)
+
+       </div>
 
     5. 将视图切换为 &quot;formatted&quot;，查看输出 `FlowFile` 的结果
 
+       <div className="ch-image-lg">
+
        ![FlowFile 内容查看器，以 formatted 视图显示查询结果](/images/integrations/data-ingestion/etl-tools/nifi_12.webp)
+
+       </div>
   </Step>
 
   <Step title={<>使用 <code>MergeRecord</code> 和 <code>PutDatabaseRecord</code> 处理器向表中写入数据</>} id="6-write-to-a-table-using-mergerecord-and-putdatabaserecord-processor">
@@ -117,11 +166,19 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
 
        输入
 
+       <div className="ch-image-sm">
+
        ![显示单条记录的 MergeRecord 处理器输入](/images/integrations/data-ingestion/etl-tools/nifi_13.webp)
+
+       </div>
 
        输出
 
+       <div className="ch-image-sm">
+
        ![显示合并后记录数组的 MergeRecord 处理器输出](/images/integrations/data-ingestion/etl-tools/nifi_14.webp)
+
+       </div>
 
     4. 在 `PutDatabaseRecord` 处理器的 &quot;Properties&quot; 部分中，填入以下值
 
@@ -137,7 +194,11 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
 
     5. 要确认每次 insert 都包含多行，请检查表中的行数是否每次至少按 `MergeRecord` 中定义的 &quot;Minimum Number of Records&quot; 的值递增。
 
+       <div className="ch-image-sm">
+
        ![显示目标端表中行数的查询结果](/images/integrations/data-ingestion/etl-tools/nifi_15.webp)
+
+       </div>
 
     6. 恭喜——你已成功使用 Apache NiFi 将数据加载到 ClickHouse 中！
   </Step>

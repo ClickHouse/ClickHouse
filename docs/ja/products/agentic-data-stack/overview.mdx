@@ -30,7 +30,11 @@ ClickHouse でエージェント型アナリティクスを実行する最も簡
   ## スタック全体の構成
 </div>
 
+<div className="ch-image-md">
+
 ![Agentic Data Stack のアーキテクチャ: ユーザーは LibreChat を通じて操作し、LibreChat は LLM、MCPサーバー経由の ClickHouse、そしてトレーシング用の Langfuse に接続する](/images/agentic-data-stack/01-architecture.webp)
+
+</div>
 
 ユーザーは LibreChat で質問します。モデルは応答を組み立てるための計画を立て、MCPサーバーを介してツールを呼び出し、ClickHouse を調べたりクエリを実行したりします。結果が返ると、エージェントが回答を作成します。OpenTelemetry を基盤とする Langfuse は、プロンプトからツール呼び出し、応答に至るまで各実行を記録し、自動または人によるレビューで出力を評価できるようにするとともに、品質、コスト、レイテンシを追跡します。
 

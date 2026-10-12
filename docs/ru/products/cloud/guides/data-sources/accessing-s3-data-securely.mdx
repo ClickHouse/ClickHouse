@@ -10,7 +10,11 @@ doc_type: 'guide'
 В этом руководстве показано, как клиенты ClickHouse Cloud могут использовать ролевой доступ для аутентификации в Amazon Simple Storage Service (S3) и безопасного доступа к своим данным.
 Прежде чем переходить к настройке безопасного доступа к S3, важно понять, как это работает. Ниже приведен обзор того, как сервисы ClickHouse могут получать доступ к приватным S3 бакетам, принимая на себя роль в аккаунте AWS клиента.
 
+<div className="ch-image-lg">
+
 ![Обзор безопасного доступа к S3 с ClickHouse](/images/cloud/security/secures3.webp)
+
+</div>
 
 <br />
 
@@ -31,7 +35,11 @@ doc_type: 'guide'
 
 5. Скопируйте значение **Service role ID (IAM)** для сервиса, как показано ниже.
 
+<div className="ch-image-lg">
+
 ![Получение ARN роли IAM сервиса ClickHouse](/images/cloud/security/secures3_arn.webp)
+
+</div>
 
 <div id="setting-up-iam-assume-role">
   ## Настройка IAM Assume Role
@@ -79,7 +87,11 @@ IAM Assume Role можно настроить одним из двух спос�
 
 10. Скопируйте значение **RoleArn** для этой интеграции — оно потребуется для доступа к вашему S3 бакету.
 
+<div className="ch-image-lg">
+
 ![Вывод стека CloudFormation с IAM Role ARN](/images/cloud/security/secures3_output.webp)
+
+</div>
 
 <div id="option-2-manually-create-iam-role">
   ### Создайте роль IAM вручную

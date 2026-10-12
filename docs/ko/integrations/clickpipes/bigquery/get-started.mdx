@@ -22,11 +22,19 @@ import IntroClickPipe from '/snippets/ko/_intro.mdx';
   <Step title="데이터 소스 선택" id="1-select-the-data-source">
     **1.** ClickHouse Cloud에서 기본 탐색 메뉴의 **Data sources**를 선택한 다음 **Create ClickPipe**를 클릭합니다.
 
+    <div className="ch-image-lg">
+
     ![가져오기 선택](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </div>
 
     **2.** **BigQuery** 타일을 클릭합니다.
 
+    <div className="ch-image-lg">
+
     ![BigQuery 타일 선택](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
+
+    </div>
   </Step>
 
   <Step title="ClickPipe 연결 설정" id="2-setup-your-clickpipe-connection">
@@ -34,7 +42,11 @@ import IntroClickPipe from '/snippets/ko/_intro.mdx';
 
     **1.** ClickPipes용으로 생성한 서비스 계정의 `.json` 키를 업로드합니다. 해당 서비스 계정에 필요한 최소 [권한](/ko/integrations/clickpipes/bigquery/overview#permissions)이 있는지 확인합니다.
 
+    <div className="ch-image-lg">
+
     ![서비스 계정 키 업로드](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
+
+    </div>
 
     **2.** **Replication method**를 선택합니다. 비공개 프리뷰에서는 [**초기 적재만**](/ko/integrations/clickpipes/bigquery/overview#initial-load) 지원됩니다.
 
@@ -52,7 +64,11 @@ import IntroClickPipe from '/snippets/ko/_intro.mdx';
 
     **2.** 복제할 테이블과 필요에 따라 컬럼을 선택합니다. 제공한 서비스 계정이 액세스할 수 있는 데이터셋만 표시됩니다.
 
+    <div className="ch-image-lg">
+
     ![권한](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp)
+
+    </div>
 
     **3.** 선택한 각 테이블에 대해 **Advanced settings** &gt; **Use a custom sorting key**에서 사용자 지정 정렬 키를 반드시 정의합니다. 향후에는 업스트림 데이터베이스의 기존 클러스터링 키 또는 파티셔닝 키를 기준으로 정렬 키가 자동으로 추론됩니다.
 
@@ -60,7 +76,11 @@ import IntroClickPipe from '/snippets/ko/_intro.mdx';
       ClickHouse에서 쿼리 성능을 최적화하려면 복제된 테이블에 [정렬 키](/ko/concepts/best-practices/choosing-a-primary-key)를 **반드시** 정의해야 합니다. 그렇지 않으면 정렬 키가 `tuple()`로 설정되며, 이는 프라이머리 인덱스가 생성되지 않는다는 뜻입니다. 그러면 ClickHouse는 해당 테이블의 모든 쿼리에 대해 전체 테이블 스캔을 수행합니다.
     </Warning>
 
+    <div className="ch-image-lg">
+
     ![권한](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp)
+
+    </div>
   </Step>
 
   <Step title="권한 구성" id="6-configure-permissions">
@@ -75,6 +95,10 @@ import IntroClickPipe from '/snippets/ko/_intro.mdx';
   <Step title="설정 완료" id="7-complete-setup">
     설정을 완료하려면 **Create ClickPipe**를 클릭합니다. 그러면 개요 페이지로 이동하며, 여기서 초기 적재 진행 상황을 확인하고 클릭하여 BigQuery ClickPipes의 세부 정보를 볼 수 있습니다.
 
+    <div className="ch-image-lg">
+
     ![권한](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
+
+    </div>
   </Step>
 </Steps>

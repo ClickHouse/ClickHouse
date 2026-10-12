@@ -39,7 +39,11 @@ ClickHouse 提供三种读取开放表格式的方式：表函数、表引擎，
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![Iceberg 查询](/images/datalake/iceberg-query-direct.webp)
+
+    </div>
 
     ClickHouse 直接从 S3 读取 Iceberg 元数据，并自动推断 schema。同样的方法也适用于 [`deltaLake()`](/zh/reference/functions/table-functions/deltalake)、[`hudi()`](/zh/reference/functions/table-functions/hudi) 和 [`paimon()`](/zh/reference/functions/table-functions/paimon)。
 
@@ -66,7 +70,11 @@ ClickHouse 提供三种读取开放表格式的方式：表函数、表引擎，
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![Iceberg 查询](/images/datalake/iceberg-query-engine.webp)
+
+    </div>
 
     该表引擎支持数据缓存、元数据缓存、schema 演化和时间旅行。有关表引擎功能的详细信息，请参阅[直接查询](/zh/guides/use-cases/data-warehousing/getting-started/querying-directly)指南；如需查看完整的功能比较，请参阅[支持矩阵](/zh/guides/use-cases/data-warehousing/support-matrix)。
   </Step>
@@ -158,7 +166,11 @@ ClickHouse 提供三种读取开放表格式的方式：表函数、表引擎，
 
     此查询会扫描 S3 中的整个数据集，因为 Iceberg 无法识别 `counterid` 过滤条件——预计需要几秒钟。
 
+    <div className="ch-image-lg">
+
     ![Iceberg 查询](/images/datalake/iceberg-query.webp)
+
+    </div>
 
     现在创建一个 MergeTree 表并加载数据：
 
@@ -192,7 +204,11 @@ ClickHouse 提供三种读取开放表格式的方式：表函数、表引擎，
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![ClickHouse 查询](/images/datalake/clickhouse-query.webp)
+
+    </div>
 
     由于 `counterid` 是 `ORDER BY` 键中的第一列，ClickHouse 的稀疏主索引可以直接跳到相关粒度——只读取 `counterid = 38` 对应的行，而不必扫描全部 1 亿行。因此，查询速度会大幅提升。
 

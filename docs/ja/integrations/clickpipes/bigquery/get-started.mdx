@@ -22,11 +22,19 @@ import IntroClickPipe from '/snippets/ja/_intro.mdx';
   <Step title="データソースを選択する" id="1-select-the-data-source">
     **1.** ClickHouse Cloud で、メインナビゲーションメニューから **Data sources** を選択し、**Create ClickPipe** をクリックします。
 
+    <div className="ch-image-lg">
+
     ![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </div>
 
     **2.** **BigQuery** タイルをクリックします。
 
+    <div className="ch-image-lg">
+
     ![BigQuery タイルを選択](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
+
+    </div>
   </Step>
 
   <Step title="ClickPipe 接続を設定する" id="2-setup-your-clickpipe-connection">
@@ -34,7 +42,11 @@ import IntroClickPipe from '/snippets/ja/_intro.mdx';
 
     **1.** ClickPipes 用に作成したサービス アカウントの `.json` 秘密鍵をアップロードします。サービス アカウントに、必要最小限の [permissions](/ja/integrations/clickpipes/bigquery/overview#permissions) が付与されていることを確認してください。
 
+    <div className="ch-image-lg">
+
     ![サービスアカウントの秘密鍵をアップロード](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
+
+    </div>
 
     **2.** **Replication method** を選択します。プライベートプレビューでは、サポートされているオプションは [**Initial load only**](/ja/integrations/clickpipes/bigquery/overview#initial-load) のみです。
 
@@ -52,7 +64,11 @@ import IntroClickPipe from '/snippets/ja/_intro.mdx';
 
     **2.** レプリケートするテーブルと、必要に応じてカラムを選択します。一覧には、指定したサービス アカウントがアクセスできるデータセットのみが表示されます。
 
+    <div className="ch-image-lg">
+
     ![権限](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp)
+
+    </div>
 
     **3.** 選択した各テーブルについて、**Advanced settings** &gt; **Use a custom sorting key** で必ずカスタムソートキーを定義してください。将来的には、ソートキーはアップストリームのデータベースにある既存のクラスタリングキーまたはパーティション化キーに基づいて自動的に推定されるようになります。
 
@@ -60,7 +76,11 @@ import IntroClickPipe from '/snippets/ja/_intro.mdx';
       ClickHouse でクエリ性能を最適化するには、レプリケートテーブルに [ソートキー](/ja/concepts/best-practices/choosing-a-primary-key) を必ず定義する必要があります。そうしない場合、ソートキー は `tuple()` に設定されます。これはプライマリインデックスが作成されないことを意味し、ClickHouse はそのテーブルに対するすべてのクエリでフルテーブルスキャンを実行します。
     </Warning>
 
+    <div className="ch-image-lg">
+
     ![権限](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp)
+
+    </div>
   </Step>
 
   <Step title="権限を設定する" id="6-configure-permissions">
@@ -75,6 +95,10 @@ import IntroClickPipe from '/snippets/ja/_intro.mdx';
   <Step title="設定を完了する" id="7-complete-setup">
     **Create ClickPipe** をクリックして設定を完了します。概要ページにリダイレクトされ、そこで初期ロードの進行状況を確認したり、BigQuery ClickPipes の詳細をクリックして表示したりできます。
 
+    <div className="ch-image-lg">
+
     ![権限](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
+
+    </div>
   </Step>
 </Steps>

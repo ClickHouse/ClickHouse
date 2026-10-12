@@ -44,7 +44,11 @@ doc_type: 'reference'
 | وضع                 | byte    | وضع الضغط                                                                                        |
 | compressed&#95;data | binary  | كتلة بيانات مضغوطة                                                                               |
 
+<div className="ch-image-md">
+
 ![مخطط يوضح بنية كتلة الضغط في ClickHouse](/images/data-compression/ch_compression_block.webp)
+
+</div>
 
 الترويسة هي (raw&#95;size + data&#95;size + وضع)، والحجم الخام هو len(header + compressed&#95;data).
 

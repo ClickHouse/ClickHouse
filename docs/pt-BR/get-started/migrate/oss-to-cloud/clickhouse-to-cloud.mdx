@@ -11,7 +11,11 @@ import AddARemoteSystem from '/snippets/pt-BR/_add_remote_ip_access_list_detail.
 
 import CompatibilityNote from '/snippets/pt-BR/compatibility.mdx';
 
+<div className="ch-image-lg">
+
 ![Migrando ClickHouse autogerenciado](/images/integrations/migration/self-managed-01.webp)
+
+</div>
 
 Este guia mostra como migrar de um servidor ClickHouse autogerenciado para o ClickHouse Cloud, além de como migrar entre serviços do ClickHouse Cloud.
 A função [`remoteSecure`](/pt-BR/reference/functions/table-functions/remote) é usada em consultas `SELECT` e `INSERT` para permitir o acesso a servidores remotos do ClickHouse, o que torna a migração de tabelas tão simples quanto escrever uma consulta `INSERT INTO` com um `SELECT` embutido.
@@ -20,7 +24,11 @@ A função [`remoteSecure`](/pt-BR/reference/functions/table-functions/remote) �
   ## Migrando de ClickHouse autogerenciado para ClickHouse Cloud
 </div>
 
+<div className="ch-image-lg">
+
 ![Migrando ClickHouse autogerenciado](/images/integrations/migration/self-managed-02.webp)
+
+</div>
 
 Independentemente de a tabela de origem estar em shards e/ou ser replicada, no ClickHouse Cloud você só precisa criar uma tabela de destino (pode omitir o parâmetro `Engine` dessa tabela; `SharedMergeTree` será selecionado automaticamente como o mecanismo da tabela),
 e o ClickHouse Cloud cuidará automaticamente do escalonamento vertical e horizontal.
@@ -94,7 +102,11 @@ CREATE TABLE db.table ...
 
 * Use a função `remoteSecure` para extrair os dados a partir da origem autogerenciada
 
+<div className="ch-image-lg">
+
 ![Migrando o ClickHouse autogerenciado](/images/integrations/migration/self-managed-03.webp)
+
+</div>
 
 ```sql
 INSERT INTO db.table SELECT * FROM
@@ -107,7 +119,11 @@ remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
 
 * Use a função `remoteSecure` para enviar os dados para o serviço ClickHouse Cloud
 
+<div className="ch-image-lg">
+
 ![Migrando o ClickHouse autogerenciado](/images/integrations/migration/self-managed-04.webp)
+
+</div>
 
 <Tip>
   **Adicione o sistema remoto à lista de acesso por IP do seu serviço ClickHouse Cloud**
@@ -127,7 +143,11 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
   ## Migração entre serviços do ClickHouse Cloud
 </div>
 
+<div className="ch-image-lg">
+
 ![Migração de ClickHouse autogerenciado](/images/integrations/migration/self-managed-05.webp)
+
+</div>
 
 Alguns casos de uso para migrar dados entre serviços do ClickHouse Cloud:
 
@@ -136,7 +156,11 @@ Alguns casos de uso para migrar dados entre serviços do ClickHouse Cloud:
 
 Neste exemplo, há dois serviços do ClickHouse Cloud, que serão chamados de *origem* e *destino*. Os dados serão extraídos da origem para o destino. Embora você também possa optar por enviar, a extração é mostrada porque usa um usuário somente leitura.
 
+<div className="ch-image-lg">
+
 ![Migração de ClickHouse autogerenciado](/images/integrations/migration/self-managed-06.webp)
+
+</div>
 
 Há algumas etapas na migração:
 

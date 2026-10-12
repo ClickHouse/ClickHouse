@@ -37,7 +37,11 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
 
 bitdrift conserve la télémétrie mobile en périphérie jusqu’à ce qu’elle soit demandée, afin que les équipes puissent récupérer la session complète non échantillonnée ayant conduit à un crash ou à un problème de performances, plutôt que de travailler à partir d’un ensemble fixe de signaux prééchantillonnés. La plateforme bitdrift Capture est disponible sous forme de SaaS hébergé par bitdrift ou en déploiement dans votre propre Cloud (ou bucket), au sein de votre compte AWS.
 
+<div className="ch-image-lg">
+
 ![Un tableau de bord bitdrift User Journey affichant les parcours menant à un ANR](/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png)
+
+</div>
 
 *Un tableau de bord bitdrift User Journey affichant les parcours empruntés par les utilisateurs jusqu’à un ANR.*
 
@@ -83,7 +87,11 @@ Pour connaître les détails propres à chaque plateforme pour chacune de ces é
 
 Une fois la configuration effectuée, les lignes de log de la chronologie bitdrift et les vues de span affichent un lien **View Trace** qui transmet l’ID de trace capturé à l’UI ClickStack (HyperDX).
 
+<div className="ch-image-lg">
+
 ![Une trace bitdrift renvoyant vers une trace distribuée dans l’UI ClickStack](/images/clickstack/bitdrift/bitdrift-view-trace.jpg)
+
+</div>
 
 *Suivi d’un lien View Trace depuis une session bitdrift vers une trace distribuée dans l’UI ClickStack (HyperDX).*
 

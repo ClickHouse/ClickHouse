@@ -276,19 +276,35 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
 
 1. 打开 ClickHouse Cloud 服务的 SQL 控制台。
 
+<div className="ch-image-md">
+
 ![ClickPipes 服务](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. 在左侧菜单中选择 `Data Sources` 按钮，然后点击“设置 ClickPipe”。
 
+<div className="ch-image-lg">
+
 ![选择导入](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. 选择 Kafka 或 Postgres 作为数据源。
 
+<div className="ch-image-lg">
+
 ![选择数据源](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
+
+</div>
 
 4. 选择 `Reverse private endpoint` 选项。
 
+<div className="ch-image-lg">
+
 ![选择反向专用终结点](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
+
+</div>
 
 5. 选择现有的任一反向专用终结点，或创建新的终结点。
 
@@ -299,11 +315,19 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
   对于同一区域访问，建议创建 VPC 资源。
 </Info>
 
+<div className="ch-image-lg">
+
 ![选择反向专用终结点](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
+
+</div>
 
 6. 为所选端点类型提供必需参数。
 
+<div className="ch-image-lg">
+
 ![选择反向专用终结点](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
+
+</div>
 
 * 对于 VPC 资源，请提供配置共享 ARN 和配置 ID。
   * 对于 MSK multi-VPC，请提供集群 ARN，以及已创建端点使用的身份验证方法。
@@ -316,7 +340,11 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
    终结点就绪后，页面将自动刷新。
    对于 VPC endpoint service，您可能需要在 AWS 控制台中接受连接请求。
 
+<div className="ch-image-lg">
+
 ![选择反向专用终结点](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
+
+</div>
 
 8. 终结点就绪后，您可以使用 DNS name 连接到数据源。
 
@@ -338,11 +366,19 @@ PrivateLink 服务已提供私有 DNS name，则无需使用自定义名称。
 
 1. 在侧边栏中找到并点击 `Settings` 按钮。
 
+   <div className="ch-image-lg">
+
    ![ClickHouse Cloud 设置](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
+
+   </div>
 
 2. 在 `ClickPipe reverse private endpoints` 部分中，点击 `Reverse private endpoints`。
 
+   <div className="ch-image-md">
+
    ![ClickHouse Cloud 设置](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
+
+   </div>
 
    弹出面板中会显示反向专用终结点的详细信息。
 

@@ -111,7 +111,11 @@ skip_unknown_fields = true
 SELECT * FROM nginxdb.access_logs
 ```
 
+<div className="ch-image-lg">
+
 ![View ClickHouse logs in table format](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
+
+</div>
 </Step>
 <Step title="Parse the Logs" id="4-parse-the-logs">
 
@@ -214,7 +218,11 @@ You should see the access logs nicely parsed into columns:
 SELECT * FROM nginxdb.access_logs_view
 ```
 
+<div className="ch-image-lg">
+
 ![View parsed ClickHouse logs in table format](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
+
+</div>
 
 <Note>
 The lesson above stored the data in two tables, but you could change the initial `nginxdb.access_logs` table to use the [`Null`](/reference/engines/table-engines/special/null) table engine.

@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
 このガイドでは、`pg_dump` および `pg_restore` ユーティリティを使用して PostgreSQL データベースを ClickHouse Managed Postgres に移行する方法を、順を追って説明します。
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pg_dump-pg_restore-beta" />
@@ -25,7 +26,11 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 以降の手順では、ソースデータベースとしてサンプルの RDS Postgres データベースを使用します。次のような構成です。
 
+<div className="ch-image-lg">
+
 ![ソース PostgreSQL データベースのセットアップ](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</div>
 
 今回扱う構成は次のとおりです。
 
@@ -60,7 +65,11 @@ pg_dump \
 
 このコマンドを実行すると、次のようになります。
 
+<div className="ch-image-lg">
+
 ![pg_dump コマンドの実行](/images/managed-postgres/pg_dump_restore/dump-command.webp)
+
+</div>
 
 <div id="migration-pgdump-pg-restore-restore">
   ## ダンプを ClickHouse Managed Postgres に移行する
@@ -74,7 +83,11 @@ pg_dump \
 
 まず、ClickHouse Managed Postgres インスタンスを用意しておいてください。できれば、ソースと同じリージョンに配置することをおすすめします。[こちら](/ja/products/managed-postgres/quickstart#create-postgres-database)のクイックガイドを参照してください。このガイドでは、次の構成を立ち上げます。
 
+<div className="ch-image-md">
+
 ![ClickHouse Managed Postgres インスタンスを作成](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</div>
 
 <div id="migration-pgdump-pg-restore-restore-dump">
   ### ダンプを復元する
@@ -98,7 +111,11 @@ ClickHouse Managed Postgres インスタンスの接続文字列は、ClickHouse
 
 この例では、次のようになります。
 
+<div className="ch-image-lg">
+
 ![pg_restore コマンドの実行](/images/managed-postgres/pg_dump_restore/restore-command.webp)
+
+</div>
 
 <div id="migration-pgdump-pg-restore-verify">
   ## 移行を確認する
@@ -107,7 +124,11 @@ ClickHouse Managed Postgres インスタンスの接続文字列は、ClickHouse
 復元プロセスが完了したら、ClickHouse Managed Postgres インスタンスに接続し、すべてのデータとオブジェクトが正常に移行されたことを確認できます。接続してクエリを実行するには、任意の PostgreSQL クライアントを使用できます。
 移行後の ClickHouse Managed Postgres のセットアップは次のようになります。
 
+<div className="ch-image-lg">
+
 ![移行先の ClickHouse Managed Postgres データベースのセットアップ](/images/managed-postgres/pg_dump_restore/target-setup.webp)
+
+</div>
 
 すべてのテーブル、索引、ビュー、シーケンスがそのまま維持されており、データ件数も一致していることがわかります。
 

@@ -15,7 +15,11 @@ doc_type: 'guide'
 
 بعد تحديد خدمة، من المفترض أن يتوسّع عنصر التنقّل **Monitoring** في الشريط الجانبي الأيسر ليعرض عنصرًا فرعيًا جديدًا باسم **Query insights**. ويؤدي النقر على هذا الخيار إلى فتح صفحة Query insights الجديدة:
 
+<div className="ch-image-md">
+
 ![نظرة عامة على واجهة مستخدم Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
+
+</div>
 
 <div id="top-level-metrics">
   ## المقاييس عالية المستوى
@@ -23,7 +27,11 @@ doc_type: 'guide'
 
 تعرض مربعات الإحصاءات في الأعلى بعض المقاييس الأساسية عالية المستوى للاستعلامات خلال الفترة الزمنية المحددة. وتحتها، تظهر ثلاثة مخططات زمنية تمثل حجم الاستعلامات وزمن الاستجابة ومعدل الأخطاء، مقسّمة حسب نوع الاستعلام (select وinsert وغيرها) ضمن النافذة الزمنية المحددة. ويمكن أيضًا ضبط مخطط زمن الاستجابة لعرض قيم p50 وp90 وp99:
 
+<div className="ch-image-md">
+
 ![مخطط زمن الاستجابة في واجهة Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
+
+</div>
 
 <div id="recent-queries">
   ## الاستعلامات الأخيرة
@@ -31,7 +39,11 @@ doc_type: 'guide'
 
 أسفل المقاييس عالية المستوى، يعرض جدول إدخالات سجل الاستعلامات (مجمّعة حسب قيمة تجزئة الاستعلام المُطبَّع والمستخدم) ضمن النافذة الزمنية المحددة:
 
+<div className="ch-image-md">
+
 ![واجهة Query Insights لجدول Recent queries](/images/cloud/sqlconsole/insights_recent.webp)
+
+</div>
 
 يمكن تصفية الاستعلامات الأخيرة وفرزها حسب أي حقل متاح. ويمكن أيضًا تهيئة الجدول لإظهار حقول إضافية أو إخفائها، مثل الجداول وزمن الاستجابة p90 وp99.
 
@@ -41,11 +53,19 @@ doc_type: 'guide'
 
 سيؤدي اختيار استعلام من جدول استعلامات أخيرة إلى فتح لوحة جانبية تحتوي على مقاييس ومعلومات خاصة بالاستعلام المحدد:
 
+<div className="ch-image-md">
+
 ![واجهة Query Insights للتعمّق في الاستعلام](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</div>
 
 كما نرى من اللوحة الجانبية، جرى تشغيل هذا الاستعلام أكثر من 3000 مرة خلال آخر 24 ساعة. جميع المقاييس في علامة التبويب **Query info** هي مقاييس مُجمّعة، ولكن يمكننا أيضًا عرض مقاييس عمليات التشغيل الفردية باختيار علامة التبويب **Query history**:
 
+<div className="ch-image-sm">
+
 ![واجهة Query Insights لمعلومات الاستعلام](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</div>
 
 <br />
 

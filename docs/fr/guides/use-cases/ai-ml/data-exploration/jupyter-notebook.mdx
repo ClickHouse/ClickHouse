@@ -37,15 +37,27 @@ Pour ajouter ce jeu de données à un service ClickHouse Cloud existant, connect
 
 Dans le menu de gauche, cliquez sur `Data sources`. Cliquez ensuite sur `Predefined sample data` :
 
+<div className="ch-image-md">
+
 ![Ajouter un exemple de jeu de données](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</div>
 
 Sélectionnez `Get started` sur la carte des données de prix de l’immobilier au Royaume-Uni (4GB) :
 
+<div className="ch-image-md">
+
 ![Sélectionner le jeu de données des prix de l’immobilier au Royaume-Uni](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</div>
 
 Cliquez ensuite sur `Import dataset` :
 
+<div className="ch-image-md">
+
 ![Importer le jeu de données des prix de l’immobilier au Royaume-Uni](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</div>
 
 ClickHouse créera automatiquement la table `pp_complete` dans la base de données `default` et la remplira avec 28,92 millions de lignes de données sur les prix.
 
@@ -78,12 +90,20 @@ jupyter notebook
 Une nouvelle fenêtre de navigateur devrait s’ouvrir avec l’interface Jupyter sur `localhost:8888`.
 Cliquez sur `File` &gt; `New` &gt; `Notebook` pour créer un nouveau notebook.
 
+<div className="ch-image-md">
+
 ![Créer un nouveau notebook](/images/use-cases/AI_ML/jupyter/4.webp)
+
+</div>
 
 Vous serez invité à sélectionner un noyau.
 Sélectionnez n’importe quel noyau Python disponible ; dans cet exemple, nous choisirons `ipykernel` :
 
+<div className="ch-image-md">
+
 ![Sélectionner un noyau](/images/use-cases/AI_ML/jupyter/5.webp)
+
+</div>
 
 Dans une cellule vide, vous pouvez saisir la commande suivante pour installer chDB, que nous utiliserons pour nous connecter à notre instance ClickHouse Cloud distante :
 
@@ -163,7 +183,11 @@ Le résultat est ensuite stocké sous forme de DataFrame dans une variable appel
 
 `df.head` affiche uniquement les premières lignes des données renvoyées :
 
+<div className="ch-image-md">
+
 ![aperçu du dataframe](/images/use-cases/AI_ML/jupyter/6.webp)
+
+</div>
 
 Exécutez la commande suivante dans une nouvelle cellule pour vérifier les types des colonnes :
 
@@ -200,7 +224,11 @@ plt.tight_layout()
 plt.show()
 ```
 
+<div className="ch-image-md">
+
 ![aperçu du DataFrame](/images/use-cases/AI_ML/jupyter/7.webp)
+
+</div>
 
 Sans surprise, les prix de l’immobilier à Londres ont considérablement augmenté au fil du temps.
 
@@ -256,7 +284,11 @@ df_2.head()
   ```
 </Accordion>
 
+<div className="ch-image-md">
+
 ![aperçu du DataFrame](/images/use-cases/AI_ML/jupyter/8.webp)
+
+</div>
 
 Bien qu’il manque des données à partir de 2020, nous pouvons représenter les deux jeux de données sur un même graphique pour les années 1995 à 2019.
 Dans une nouvelle cellule, exécutez la commande suivante :
@@ -302,7 +334,11 @@ plt.tight_layout()
 plt.show()
 ```
 
+<div className="ch-image-md">
+
 ![Graphique du jeu de données distant et du jeu de données local](/images/use-cases/AI_ML/jupyter/9.webp)
+
+</div>
 
 D’après le graphique, on voit que les ventes ont démarré autour de 160 000 en 1995 et ont rapidement progressé, pour culminer à environ 540 000 en 1999.
 Ensuite, les volumes ont fortement reculé jusqu’au milieu des années 2000, chutant brutalement pendant la crise financière de 2007-2008 pour retomber à environ 140 000.

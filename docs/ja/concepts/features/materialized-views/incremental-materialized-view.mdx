@@ -19,7 +19,11 @@ Materialized Views の主な目的は、ターゲットテーブルに挿入さ�
 
 ClickHouse の materialized view は、基になるテーブルにデータが流入するとリアルタイムで更新され、継続的に更新される索引のように機能します。これは、Materialized Views が通常、更新が必要なクエリの静的なスナップショットである他のデータベースとは対照的です (ClickHouse の[リフレッシュ可能なマテリアライズドビュー](/ja/reference/statements/create/view#refreshable-materialized-view)に似ています) 。
 
+<div className="ch-image-md">
+
 ![materialized view の図](/images/materialized-view/materialized-view-diagram.webp)
+
+</div>
 
 <div id="example">
   ## 例

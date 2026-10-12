@@ -13,7 +13,11 @@ doc_type: 'reference'
 
 يوضح المخطط أدناه كيفية ترابط مؤسسات ClickHouse Cloud والحسابات السحابية والبنية التحتية لـ BYOC.
 
+<div className="ch-image-lg">
+
 ![التسلسل الهرمي لمؤسسة BYOC](/images/cloud/reference/byoc-organization-hierarchy.svg)
+
+</div>
 
 * **مؤسسة ClickHouse Cloud:** الكيان الأعلى في ClickHouse Cloud، وهو المسؤول عن إدارة المستخدمين والفوترة وخدمات ClickHouse غير التابعة لـ BYOC. ويمكن للمستخدمين داخل المؤسسة الوصول إلى كلٍّ من خدمات Cloud القياسية وخدمات BYOC.
 * **مؤسسة ClickHouse BYOC:** مؤسسة منفصلة مخصّصة لإدارة عمليات نشر BYOC. وهي تشارك المستخدمين مع مؤسسة Cloud، لكنها ترتبط بحساب سحابي واحد أو أكثر تُنشر فيه البنية التحتية لـ BYOC.
@@ -41,7 +45,11 @@ doc_type: 'reference'
 
 <br />
 
+<div className="ch-image-lg">
+
 ![بنية BYOC: يدير مستوى التحكم في ClickHouse داخل ClickHouse VPC طبقة بيانات Kubernetes داخل الحساب السحابي للعميل؛ وتبقى بيانات ClickHouse والنسخ الاحتياطية والسجلات وبيانات المراقبة داخل حساب العميل، ولا يُصدَّر سوى قدر محدود من بيانات القياس عن بُعد التشغيلية.](/images/cloud/reference/byoc-architecture.svg)
+
+</div>
 
 <br />
 

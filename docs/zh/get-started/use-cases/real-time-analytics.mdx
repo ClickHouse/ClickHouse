@@ -34,7 +34,11 @@ export const ExclusiveGroup = ({ name, children }) => {
 * **转换和准备时间**：清洗、增强、连接、预聚合，或更新查询实际访问的服务结构 (materialized views、rollup、索引) 需要多久？
 * **查询时间**：数据可用后，完成查询规划和执行读取需要多久？
 
+<div className="ch-image-lg">
+
 ![实时分析：摄取、转换和查询所需时间](/images/use-cases/rta-considerations.webp)
+
+</div>
 
 <div id="clickhouse-rta">
   ## ClickHouse 如何支撑实时分析
@@ -42,7 +46,11 @@ export const ExclusiveGroup = ({ name, children }) => {
 
 <Columns cols={2}>
   <div>
+    <div className="ch-image-lg">
+
     ![ClickHouse 如何支撑实时分析](/images/use-cases/real-time-analytics-architecture.webp)
+
+    </div>
   </div>
 
   <ExclusiveGroup name="rta-arch">

@@ -138,7 +138,11 @@ By default, this file is created in the current working directory from which you
 Use the hosted trace visualizer at [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/).
 Load the `trace.json` file from the previous step to visualize the trace.
 
+<div className="ch-image-md">
+
 ![ClickHouse trace visualizer example](/images/knowledgebase/trace-visualizer-example.png)
+
+</div>
 </Step>
 <Step title="Using Grafana to visualize traces" id="using-grafana">
 We recommend Grafana for visualizing and exploring trace data using the official ClickHouse plugin.
@@ -166,10 +170,18 @@ WHERE trace_id = '68a14b27-a61f-596d-3746-2b03d2530e42' ORDER BY startTime ASC
 
 Make sure to set `Query type` to `Traces`:
 
+<div className="ch-image-md">
+
 ![ClickHouse trace visualization in Grafana](/images/knowledgebase/trace-visualization-grafana.png)
+
+</div>
 
 Click "Run Query" and inspect the trace diagram:
 
+<div className="ch-image-md">
+
 ![ClickHouse trace visualization in Grafana](/images/knowledgebase/trace-visualization-diagram.png)
+
+</div>
 </Step>
 </Steps>

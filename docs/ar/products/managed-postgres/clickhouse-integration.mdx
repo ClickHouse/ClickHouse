@@ -8,13 +8,18 @@ doc_type: 'دليل'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
 يأتي كل مثيل من ClickHouse Managed Postgres مزوّدًا بإمكانات CDC مدمجة للنسخ إلى أي من خدمات ClickHouse لديك. يتيح لك ذلك نقل بعض البيانات أو كلها من مثيل Postgres الخاص بك إلى ClickHouse، بحيث تنعكس التغييرات التي تطرأ على البيانات في Postgres على ClickHouse بشكل مستمر وبصورة شبه آنية. ويعتمد ذلك داخليًا على [ClickPipes](/ar/integrations/clickpipes/home).
 
 للوصول إلى ذلك، انقر على **المزامنة إلى ClickHouse** في الشريط الجانبي لمثيل Postgres الخاص بك.
 
+<div className="ch-image-md">
+
 ![الصفحة الرئيسية لـ تكامل ClickHouse التي تعرض خيار التكامل في الشريط الجانبي](/images/managed-postgres/clickhouse-integration-intro.webp)
+
+</div>
 
 <Note>
   قبل المتابعة، تأكد من أن خدمة Postgres الخاصة بك متاحة لخدمة ClickPipes. ينبغي أن يكون هذا هو الإعداد الافتراضي، ولكن إذا كنت قد قيّدت الوصول عبر IP، فقد تحتاج إلى السماح لبعض عناوين IP المصدر الواردة في [هذه](/ar/integrations/clickpipes/networking/static-ips) القائمة، وذلك بحسب المنطقة التي توجد فيها **خدمة ClickHouse** الخاصة بك.
@@ -34,7 +39,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
       * **التحميل الأولي فقط**: لقطة لمرة واحدة للبيانات الحالية بدون تحديثات مستمرة
       * **CDC فقط**: تخطَّ اللقطة الأولية والتقط فقط التغييرات الجديدة من الآن فصاعدًا
 
+    <div className="ch-image-md">
+
     ![إعداد خدمة النسخ المتماثل الذي يعرض اسم التكامل وخدمة الوجهة وخيارات طريقة النسخ المتماثل](/images/managed-postgres/replication-service-step.webp)
+
+    </div>
 
     انقر **التالي** للمتابعة.
   </Step>
@@ -48,7 +57,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
     * **عدد الصفوف لكل partition في اللقطة**: عدد الصفوف لكل partition أثناء اللقطة الأولية (الافتراضي: 100000)
     * **عدد الجداول في اللقطة بالتوازي**: عدد الجداول التي تؤخذ لها لقطات بالتزامن (الافتراضي: 1)
 
+    <div className="ch-image-md">
+
     ![خطوة إعدادات النسخ المتماثل التي تعرض فاصل المزامنة والخيوط المتوازية وحجم دفعة السحب وخيارات إعداد اللقطة](/images/managed-postgres/integration-replication-settings.webp)
+
+    </div>
 
     انقر **التالي** للمتابعة.
   </Step>
@@ -63,7 +76,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
     وسّع المخططات وحدد الجداول الفردية المطلوب نسخها متماثلًا. يمكنك أيضًا تخصيص أسماء جداول الوجهة وإعدادات الأعمدة.
 
+    <div className="ch-image-md">
+
     ![خطوة اختيار الجداول التي تعرض تحديد قاعدة البيانات وخيارات النسخ المتماثل ومحدد الجداول المجمّعة حسب schema](/images/managed-postgres/select-tables-step.webp)
+
+    </div>
 
     انقر **Replicate data to ClickHouse** لبدء النسخ المتماثل.
   </Step>
@@ -71,7 +88,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   <Step title="راقب ClickPipe الخاص بك" id="monitor-clickpipe">
     بمجرد بدء ClickPipe، ستراه مُدرجًا في القائمة نفسها. قد تستغرق اللقطة الأولية لجميع البيانات بعض الوقت، حسب حجم جداولك.
 
+    <div className="ch-image-md">
+
     ![قائمة تكامل ClickHouse تعرض ClickPipe قيد التشغيل مع خدمة الوجهة الخاصة به وحالته](/images/managed-postgres/integration-running.webp)
+
+    </div>
 
     انقر على اسم التكامل لعرض الحالة التفصيلية ومراقبة التقدم وعرض الأخطاء وإدارة ClickPipe. راجع [Lifecycle of a Postgres ClickPipe](/ar/integrations/clickpipes/postgres/lifecycle) لفهم الحالات المختلفة التي قد يكون ClickPipe الخاص بك فيها.
   </Step>

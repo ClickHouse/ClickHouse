@@ -30,7 +30,11 @@ keywords: ['agentic data stack', 'agentic analytics', 'ClickHouse', 'MCP', 'Libr
   ## كيف تتكامل مكوّنات Agentic Data Stack
 </div>
 
+<div className="ch-image-md">
+
 ![بنية Agentic Data Stack: يتفاعل المستخدمون مع LibreChat، الذي يتصل بنموذج لغوي كبير، وبـ ClickHouse عبر خادم MCP، وبـ Langfuse لأغراض التتبّع](/images/agentic-data-stack/01-architecture.webp)
+
+</div>
 
 يطرح المستخدم سؤالًا في LibreChat. يضع النموذج خطةً للاستجابة، ومن خلال خادم MCP في ClickHouse يستدعي أدوات لاستكشاف ClickHouse وتنفيذ استعلامات عليه. ثم تعود النتائج، ويصوغ الوكيل الإجابة. ويسجّل Langfuse، المبني على OpenTelemetry، كل تشغيل بدءًا من الموجّه مرورًا باستدعاء الأداة ووصولًا إلى الاستجابة، ويتيح لك تقييم المخرجات تلقائيًا أو عبر مراجعة بشرية، كما يتتبّع الجودة والتكلفة وزمن الاستجابة.
 

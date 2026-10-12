@@ -24,7 +24,11 @@ integration:
 
 Функция PITR определяет, включено ли бинарное логирование для MySQL в Google Cloud. Это можно настроить в консоли Cloud: откройте экземпляр Cloud SQL и прокрутите страницу вниз до показанного ниже раздела.
 
+<div className="ch-image-lg">
+
 ![Включение PITR в Cloud SQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-pitr.webp)
+
+</div>
 
 Рекомендуется задать достаточно большое значение в зависимости от сценария репликации.
 
@@ -36,11 +40,19 @@ integration:
 
 Для этого нажмите кнопку `Edit` в правом верхнем углу страницы обзора экземпляра.
 
+<div className="ch-image-lg">
+
 ![Кнопка Edit в GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-edit-button.webp)
+
+</div>
 
 Затем прокрутите вниз до раздела `Flags` и добавьте указанные выше флаги.
 
+<div className="ch-image-lg">
+
 ![Настройка флагов binlog в GCP](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp)
+
+</div>
 
 <div id="configure-database-user-gcp">
   ## Настройте пользователя базы данных
@@ -74,7 +86,11 @@ integration:
 Если вы хотите ограничить доступ к своему экземпляру Cloud SQL, добавьте [указанные в документации статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в список разрешённых IP-адресов экземпляра Cloud SQL MySQL.
 Это можно сделать, либо отредактировав экземпляр, либо перейдя на вкладку `Connections` на боковой панели в консоли Cloud.
 
+<div className="ch-image-lg">
+
 ![Разрешённые IP-адреса в GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-ip.webp)
+
+</div>
 
 <div id="download-root-ca-certificate-gcp-mysql">
   ## Скачайте и используйте корневой CA‑сертификат
@@ -87,8 +103,16 @@ integration:
 3. Откройте вкладку `Security`.
 4. В разделе `Manage server CA certificates` нажмите расположенную внизу кнопку `DOWNLOAD CERTIFICATES`.
 
+<div className="ch-image-lg">
+
 ![Загрузка сертификата GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-cert.webp)
+
+</div>
 
 5. В интерфейсе ClickPipes загрузите скачанный сертификат при создании нового ClickPipe для MySQL.
 
+<div className="ch-image-lg">
+
 ![Использование сертификата GCP MySQL](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/rootca.webp)
+
+</div>

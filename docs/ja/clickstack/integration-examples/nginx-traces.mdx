@@ -156,7 +156,11 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
   <Step title="HyperDX でトレースを確認する" id="verifying-traces">
     設定が完了したら、HyperDX にログインしてトレースが流れていることを確認します。次のような表示になるはずです。トレースが表示されない場合は、時間範囲を調整してみてください。
 
+    <div className="ch-image-lg">
+
     ![トレースを表示](/images/clickstack/nginx-traces-search-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -244,7 +248,11 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
       HyperDX は タイムスタンプ をブラウザーのローカル タイムゾーン で表示します。デモデータの期間は **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** です。広めの時間範囲を設定しているため、どの地域からでもデモトレースを確認できます。トレースが表示されたら、より見やすく可視化するために範囲を 24 時間に絞ることができます。
     </Info>
 
+    <div className="ch-image-lg">
+
     ![トレースを表示](/images/clickstack/nginx-traces-search-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -263,11 +271,19 @@ ClickStack でトレースの監視をすぐに始められるように、トレ
     1. HyperDX を開き、Dashboards セクションに移動します。
     2. 右上の三点メニューから &quot;Import Dashboard&quot; をクリックします。
 
+    <div className="ch-image-lg">
+
     ![ダッシュボードのインポート](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. nginx-trace-dashboard.json ファイルをアップロードし、インポートを完了します。
 
+    <div className="ch-image-lg">
+
     ![インポートの完了](/images/clickstack/finish-nginx-traces-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="すべての可視化が事前設定された状態でダッシュボードが作成されます。" id="created-dashboard">
@@ -275,7 +291,11 @@ ClickStack でトレースの監視をすぐに始められるように、トレ
       デモデータセットでは、時間範囲を **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が設定されていません。
     </Note>
 
+    <div className="ch-image-lg">
+
     ![ダッシュボードの例](/images/clickstack/nginx-traces-dashboard.webp)
+
+    </div>
   </Step>
 </Steps>
 

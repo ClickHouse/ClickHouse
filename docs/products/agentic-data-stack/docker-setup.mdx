@@ -68,18 +68,30 @@ Sign in to LibreChat with the admin credentials from your `.env` file.
 <Step title="Select a model">
 A model is selected by default. If you want to change it, open the model selector and choose the one you want to use.
 
+<div className="ch-image-md">
+
 ![The LibreChat model selector in the top-left corner, showing the default model with a Select a model tooltip](/images/agentic-data-stack/select-model.webp)
+
+</div>
 
 If you didn't set a provider key during setup, add one in the UI.
 
 <Accordion title="Set a provider key in the UI">
 Open the model selector and click **Set API Key** next to the provider.
 
+<div className="ch-image-md">
+
 ![LibreChat model selector with the Set API Key button next to the Anthropic provider](/images/agentic-data-stack/set-api-key.webp)
+
+</div>
 
 Paste your key in the dialog and click **Submit**. You can set an expiration, or keep the key from expiring.
 
+<div className="ch-image-md">
+
 ![The Set API Key for Anthropic dialog with an expiration dropdown, a Key field, and Submit and Revoke buttons](/images/agentic-data-stack/set-api-key-modal.webp)
+
+</div>
 </Accordion>
 </Step>
 
@@ -90,7 +102,11 @@ Select **ClickHouse-Cloud** instead to use a ClickHouse Cloud service.
 
 {/* TODO: guide users (or link out to the Remote MCP docs at /cloud/features/ai-ml/remote-mcp) on connecting ClickHouse-Cloud — it requires an OAuth flow, unlike the bundled local server. */}
 
+<div className="ch-image-md">
+
 ![The MCP Servers menu open in the LibreChat composer, showing ClickHouse-Local with a green connected dot and ClickHouse-Cloud](/images/agentic-data-stack/select-clickhouse-local.webp)
+
+</div>
 </Step>
 
 <Step title="Ask your first question">
@@ -100,7 +116,11 @@ For example:
 
 The agent uses the MCP server's tools to list databases and tables, run read-only queries against ClickHouse, and build an answer from the results. You don't need to write SQL.
 
+<div className="ch-image-md">
+
 ![LibreChat answering the example question by calling the ClickHouse-Local MCP tools and listing the available databases and tables](/images/agentic-data-stack/prompt-chat.webp)
+
+</div>
 </Step>
 </Steps>
 

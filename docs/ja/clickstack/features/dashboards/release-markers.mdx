@@ -17,7 +17,11 @@ keywords: ['clickstack', 'dashboards', 'リリースマーカー', 'デプロイ
 
 リリースマーカーはデフォルトでオフです。ダッシュボードのオーバーフローメニューを開き、**リリースマーカーを表示**を選択します。
 
+<div className="ch-image-sm">
+
 ![ダッシュボードのオーバーフローメニュー。View セクション内の「Show alert annotations」の下に「Show release markers」項目がある](/images/clickstack/dashboards/release-markers-menu.webp)
+
+</div>
 
 このトグルにより、ダッシュボードの URL に `releaseMarkers=true` が追加されます。そのため、共有したリンクを開くと、マーカーはすでにオンになっています。これはダッシュボードの設定ではなく表示状態です。ダッシュボードとともに保存されることはなく、オフにするとパラメータも削除されます。
 
@@ -78,7 +82,11 @@ coalesce(
 
 マーカーのラベルにカーソルを合わせると、その時点にあるすべてのリリースが一覧表示され、各リリースの提供元サービス、バージョン、時刻を確認できます。
 
+<div className="ch-image-sm">
+
 ![2 つのサービスを示すチャート上で、サービス frontend、バージョン 2.0.2、そのバージョンが初めて表示された時刻を示すリリースマーカーのホバーツールチップ](/images/clickstack/dashboards/release-marker-tooltip.webp)
+
+</div>
 
 色はマーカーとその系列を対応付けますが、チャートの凡例には最大 4 件しか表示されず、残りは &quot;+N more&quot; にまとめられます。その場合、画面上では色を照合できません。ツールチップにはサービス名が直接表示されるため、タイルに表示される系列数にかかわらず確認できます。
 

@@ -30,29 +30,49 @@ import UploadCsvCLI from "/snippets/es/cloud/migration/_upload_csv_cli.mdx";
       <Step title="Subir un archivo" id="upload-file">
         En la página principal de Cloud, selecciona tu servicio como se muestra a continuación:
 
+        <div className="ch-image-lg">
+
         ![upload_file_02](/images/cloud/migrate/csv_01.webp)
+
+        </div>
 
         Si tu servicio está inactivo, tendrás que activarlo.
 
         Selecciona `Data sources` en la pestaña de la izquierda, como se muestra a continuación:
 
+        <div className="ch-image-lg">
+
         ![upload_file_03](/images/cloud/migrate/csv_02.webp)
+
+        </div>
 
         A continuación, selecciona `Upload a file` en la parte derecha de la página de fuentes de datos:
 
+        <div className="ch-image-lg">
+
         ![upload_file_04](/images/cloud/migrate/csv_03.webp)
+
+        </div>
 
         Se abrirá un cuadro de diálogo para que puedas seleccionar el archivo que deseas
         usar para insertar datos en una tabla de tu servicio de Cloud.
 
+        <div className="ch-image-lg">
+
         ![upload_file_05](/images/cloud/migrate/csv_04.webp)
+
+        </div>
       </Step>
 
       <Step title="Configurar la tabla" id="configure-table">
         Una vez cargado el archivo, podrás configurar la tabla en la que quieres
         insertar los datos. Se muestra una vista previa de la tabla con las tres primeras filas.
 
+        <div className="ch-image-lg">
+
         ![upload_file_08](/images/cloud/migrate/csv_08.webp)
+
+        </div>
 
         Ahora puedes seleccionar una tabla de destino. Las opciones son:
 
@@ -64,7 +84,11 @@ import UploadCsvCLI from "/snippets/es/cloud/migration/_upload_csv_cli.mdx";
         Puedes especificar en qué base de datos deseas cargar los datos y, en el caso de
         una tabla nueva, el nombre de la tabla que se creará. También podrás seleccionar la clave de ordenación:
 
+        <div className="ch-image-lg">
+
         ![upload_file_05](/images/cloud/migrate/csv_05.webp)
+
+        </div>
 
         Las columnas leídas del archivo se muestran como `Source field` y, para cada campo,
         puedes cambiar:
@@ -73,7 +97,11 @@ import UploadCsvCLI from "/snippets/es/cloud/migration/_upload_csv_cli.mdx";
         * el valor predeterminado
         * si la columna debe ser [Nullable](/es/reference/data-types/nullable) o no
 
+        <div className="ch-image-lg">
+
         ![upload_file_06](/images/cloud/migrate/csv_06.webp)
+
+        </div>
 
         <Info>
           **Excluir campos**
@@ -93,21 +121,33 @@ import UploadCsvCLI from "/snippets/es/cloud/migration/_upload_csv_cli.mdx";
         Puedes especificar una expresión de clave de partición y una expresión
         de clave primaria.
 
+        <div className="ch-image-lg">
+
         ![upload_file_07](/images/cloud/migrate/csv_07.webp)
+
+        </div>
 
         Haz clic en `Import to ClickHouse` (mostrado arriba) para importar los datos. La importación se pondrá en cola, como
         indica la insignia de estado `queued` en la columna `Status`, como se muestra a continuación. También puedes hacer clic en
         `Open as query` (mostrado arriba) para abrir la consulta de inserción en la consola SQL. La consulta insertará
         el archivo que se cargó en un bucket de S3 mediante la table function `URL`.
 
+        <div className="ch-image-lg">
+
         ![upload_file_09](/images/cloud/migrate/csv_09.webp)
+
+        </div>
 
         Si el trabajo falla, verás una insignia de estado `failed` en la columna `Status` de
         la pestaña `Data upload history`. Puedes hacer clic en `View Details` para obtener más información
         sobre por qué falló la carga. Es posible que debas modificar la configuración de la tabla o depurar
         los datos según el mensaje de error de la inserción fallida.
 
+        <div className="ch-image-lg">
+
         ![upload_file_11](/images/cloud/migrate/csv_10.webp)
+
+        </div>
       </Step>
     </Steps>
   </View>

@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
 
 <Tip>
@@ -22,11 +23,19 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
 Чтобы подключить приложения к ClickHouse Managed Postgres, перейдите в представление **Connect** на левой боковой панели вашего экземпляра.
 
+<div className="ch-image-md">
+
 ![Нажмите Connect на левой боковой панели, чтобы просмотреть сведения о подключении](/images/managed-postgres/connect-button.webp)
+
+</div>
 
 При нажатии **Connect** открывается модальное окно, в котором отображаются ваши учетные данные и строки подключения в нескольких форматах.
 
+<div className="ch-image-md">
+
 ![Модальное окно подключения с учетными данными и форматами строк подключения](/images/managed-postgres/connect-modal.webp)
+
+</div>
 
 В модальном окне подключения отображается следующая информация:
 
@@ -95,7 +104,11 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 Для рабочих нагрузок в продакшне рекомендуем использовать проверенное TLS‑соединение, чтобы убедиться, что вы подключаетесь к нужному серверу. Для этого скачайте комплект CA‑сертификатов на вкладке **Settings** и добавьте его в список доверенных сертификатов клиента базы данных.
 
+<div className="ch-image-md">
+
 ![Скачайте CA‑сертификат на вкладке Settings](/images/managed-postgres/tls-ca-bundle.webp)
+
+</div>
 
 CA‑сертификат уникален для вашего экземпляра ClickHouse Managed Postgres и не будет работать с другими экземплярами.
 

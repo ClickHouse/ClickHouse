@@ -24,7 +24,11 @@ import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupp
 
 示例配置界面：
 
+<div className="ch-image-sm">
+
 ![安全原生配置示例](/images/integrations/data-visualization/grafana/config_common.webp)
+
+</div>
 
 通用设置的 YAML 配置示例：
 
@@ -58,7 +62,11 @@ secureJsonData:
 
 如果选择通过 HTTP 协议连接，则会显示更多设置选项。
 
+<div className="ch-image-md">
+
 ![额外的 HTTP 配置选项](/images/integrations/data-visualization/grafana/config_http.webp)
+
+</div>
 
 <div id="http-path">
   #### HTTP 路径
@@ -106,7 +114,11 @@ secureJsonData:
 
 这些附加设置为可选项。
 
+<div className="ch-image-sm">
+
 ![附加设置示例](/images/integrations/data-visualization/grafana/config_additional.webp)
+
+</div>
 
 示例 YAML：
 
@@ -141,7 +153,11 @@ OpenTelemetry 数据可通过我们的 [exporter 插件](https://github.com/open
 
 日志配置界面示例：
 
+<div className="ch-image-sm">
+
 ![日志配置](/images/integrations/data-visualization/grafana/config_logs.webp)
+
+</div>
 
 日志配置 YAML 示例：
 
@@ -179,7 +195,11 @@ jsonData:
 
 链路追踪配置界面示例：
 
+<div className="ch-image-sm">
+
 ![链路追踪配置](/images/integrations/data-visualization/grafana/config_traces.webp)
+
+</div>
 
 链路追踪配置 YAML 示例：
 
@@ -282,11 +302,19 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 然后，我们就可以将此表配置为供 Grafana 使用。请注意，这个名称可以随意指定，甚至可以在单独的数据库中定义：
 
+<div className="ch-image-md">
+
 ![别名表配置示例](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
+
+</div>
 
 现在，Grafana 看到的将是别名表的结果，而不是 `DESC example_table` 的结果：
 
+<div className="ch-image-md">
+
 ![别名表查询示例](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
+
+</div>
 
 这两种别名方式都可用于执行复杂的类型转换或提取 JSON 字段。
 

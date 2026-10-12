@@ -7,13 +7,18 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 このページは ClickHouse Connector のセキュリティリファレンスです。アイデンティティ、接続、正確な権限、構造上の制限、そして各操作がどのように帰属されるかについて説明します。各要素がどのように組み合わさるかについては、[アーキテクチャ](/ja/products/bring-your-own-cloud/connector/architecture) を参照してください。
 
 ## アイデンティティ {#identities}
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector identity model](/images/cloud/reference/byoc-connector-identity-model.svg)
+
+</div>
 
 * **コネクタの mTLS クライアント証明書**は、組織 ID をコモンネームとして持ち、すべてのデーモンをコネクタエンドポイントに対して認証します。`clicklink clctl instances create` も、エンドポイントを呼び出す際に同じ証明書と HMAC キーを使用します。
 * **`pcm_scraper` と `pcm_troubleshooter`** は、scraper と troubleshooter が接続する際に使用する読み取り専用の ClickHouse ユーザーです。executor には ClickHouse ユーザーがありません。

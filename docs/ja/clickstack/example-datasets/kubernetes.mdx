@@ -199,7 +199,11 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
 
     複雑さの要件を満たすユーザー名とパスワードを指定して、ユーザーを作成します。
 
+    <div className="ch-image-lg">
+
     ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
   </Step>
 
   <Step title="インジェスト API key を取得する" id="retrieve-ingestion-api-key">
@@ -207,7 +211,11 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
 
     [`Team Settings`](http://localhost:8080/team) に移動し、`API Keys` セクションから `Ingestion API Key` をコピーします。この API key により、OpenTelemetry collector 経由のデータインジェストの安全性が確保されます。
 
+    <div className="ch-image-lg">
+
     ![API key をコピー](/images/use-cases/observability/copy_api_key.webp)
+
+    </div>
   </Step>
 
   <Step title="API key 用の Kubernetes Secret を作成する" id="create-api-key-kubernetes-secret">
@@ -231,7 +239,11 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
 
     デモサービスからのトレースおよびログデータが、HyperDX に流れ始めるはずです。
 
+    <div className="ch-image-lg">
+
     ![HyperDX Kubernetes データ](/images/use-cases/observability/hyperdx-kubernetes-data.webp)
+
+    </div>
   </Step>
 
   <Step title="OpenTelemetry Helm リポジトリを追加する" id="add-otel-helm-repo">
@@ -482,4 +494,8 @@ import DemoArchitecture from '/snippets/ja/_demo.mdx';
   </Step>
 </Steps>
 
+<div className="ch-image-lg">
+
 ![Kubernetes 上の ClickHouse](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</div>

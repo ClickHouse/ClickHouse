@@ -72,18 +72,30 @@ keywords: ['agentic data stack', 'docker compose', 'setup', 'LibreChat', 'MCP', 
   <Step title="اختر نموذجًا">
     يكون هناك نموذج محدد افتراضيًا. وإذا أردت تغييره، فافتح محدِّد النماذج واختر النموذج الذي تريد استخدامه.
 
+    <div className="ch-image-md">
+
     ![محدِّد النماذج في LibreChat في الزاوية العلوية اليسرى، ويعرض النموذج الافتراضي مع تلميح Select a model](/images/agentic-data-stack/select-model.webp)
+
+    </div>
 
     إذا لم تُعيّن مفتاح مزوّد أثناء الإعداد، فأضف واحدًا في واجهة المستخدم.
 
     <Accordion title="عيّن مفتاح مزوّد في واجهة المستخدم">
       افتح محدِّد النماذج وانقر على **Set API Key** بجانب المزوّد.
 
+      <div className="ch-image-md">
+
       ![محدِّد نماذج LibreChat مع زر Set API Key بجانب مزوّد Anthropic](/images/agentic-data-stack/set-api-key.webp)
+
+      </div>
 
       ألصق مفتاحك في مربع الحوار وانقر على **Submit**. يمكنك تعيين تاريخ انتهاء، أو الإبقاء على المفتاح بدون انتهاء.
 
+      <div className="ch-image-md">
+
       ![مربع الحوار Set API Key for Anthropic مع قائمة منسدلة لتاريخ الانتهاء، وحقل Key، وزري Submit وRevoke](/images/agentic-data-stack/set-api-key-modal.webp)
+
+      </div>
     </Accordion>
   </Step>
 
@@ -94,7 +106,11 @@ keywords: ['agentic data stack', 'docker compose', 'setup', 'LibreChat', 'MCP', 
 
     {/* TODO: أرشد المستخدمين (أو أضف رابطًا إلى توثيق Remote MCP على /cloud/features/ai-ml/remote-mcp) بشأن توصيل ClickHouse-Cloud — إذ يتطلب OAuth flow، بخلاف الخادم المحلي المضمّن. */}
 
+    <div className="ch-image-md">
+
     ![قائمة MCP Servers مفتوحة في منطقة الكتابة في LibreChat، وتعرض ClickHouse-Local مع نقطة اتصال خضراء وClickHouse-Cloud](/images/agentic-data-stack/select-clickhouse-local.webp)
+
+    </div>
   </Step>
 
   <Step title="اطرح سؤالك الأول">
@@ -104,7 +120,11 @@ keywords: ['agentic data stack', 'docker compose', 'setup', 'LibreChat', 'MCP', 
 
     يستخدم الوكيل أدوات خادم MCP لسرد قواعد البيانات والجداول، وتشغيل استعلامات read-only على ClickHouse، وبناء إجابة من النتائج. ولا تحتاج إلى كتابة SQL.
 
+    <div className="ch-image-md">
+
     ![LibreChat يجيب عن السؤال المثال عبر استدعاء أدوات ClickHouse-Local MCP وسرد قواعد البيانات والجداول المتاحة](/images/agentic-data-stack/prompt-chat.webp)
+
+    </div>
   </Step>
 </Steps>
 

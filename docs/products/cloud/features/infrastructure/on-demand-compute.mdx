@@ -9,6 +9,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
 <PrivatePreviewBadge/>
 
 <Note>
@@ -250,7 +251,11 @@ Nothing about how you reach ClickHouse changes. Clients still connect to your se
 
 While a worker is leased to your service, the platform permits network traffic between that worker and your service, and blocks everything else. The restriction is applied at the network layer rather than in the query engine, so it does not depend on the query, its settings, or the plan the optimizer produces.
 
+<div className="ch-image-lg">
+
 ![Network isolation explanation diagram](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
+
+</div>
 
 - **Only your service can reach your workers.** The path exists for the worker's current lease, and for that one service.
 - **Unassigned workers are unreachable.** A worker waiting in the pool has no network path to or from any service until it is leased.

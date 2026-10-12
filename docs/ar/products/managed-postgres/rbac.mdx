@@ -8,6 +8,7 @@ doc_type: 'مرجع'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
 
 يدعم ClickHouse Cloud التحكم في الوصول المستند إلى الأدوار (RBAC) لخدمات ClickHouse Managed Postgres. يمكنك إنشاء أدوار مخصّصة بأذونات محددة وتعيينها لأعضاء المؤسسة للتحكم في من يمكنه عرض خدمات Postgres أو إدارتها.
@@ -35,16 +36,28 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 1. انقر على اسم المؤسسة في الشريط الجانبي الأيسر، ثم اختر **Users and roles**.
 
+<div className="ch-image-md">
+
 ![قائمة Users and roles](/images/managed-postgres/rbac/usersandroles.webp)
+
+</div>
 
 2. انتقل إلى علامة التبويب **Roles** وانقر على **Create role**.
 3. أدخل اسمًا للدور، ثم انقر على **+ Allow** واختر **خدمة Postgres** من قائمة الكيانات.
 
+<div className="ch-image-md">
+
 ![اختيار الكيان خدمة Postgres](/images/managed-postgres/rbac/postgresentity.webp)
+
+</div>
 
 4. اختر خدمة Postgres التي تريد قصر الدور عليها، ثم حدِّد الأذونات المطلوب منحها.
 
+<div className="ch-image-md">
+
 ![تهيئة أذونات Postgres للدور](/images/managed-postgres/rbac/newpostgresperms.webp)
+
+</div>
 
 5. انقر على **Create role** للحفظ.
 

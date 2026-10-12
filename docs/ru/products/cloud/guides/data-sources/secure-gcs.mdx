@@ -43,11 +43,19 @@ ClickHouse Cloud подключается к GCS с помощью HMAC-ключ
   <Step title="Создайте сервисный аккаунт Google Cloud" id="create-gcs-account">
     1. В консоли Google Cloud перейдите в IAM &amp; Admin → Service Accounts
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp)
+
+    </div>
 
     2. В левом меню выберите `Service accounts`, затем нажмите `Create service account`:
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/create_service_account.webp)
+
+    </div>
 
     Введите имя и описание для сервисного аккаунта, например:
 
@@ -58,11 +66,19 @@ ClickHouse Cloud подключается к GCS с помощью HMAC-ключ
 
     Нажмите `Create and continue`
 
+    <div className="ch-image-sm">
+
     ![](/images/cloud/guides/accessing-data/GCS/create_and_continue.webp)
+
+    </div>
 
     Назначьте сервисному аккаунту роль `Storage Object User`:
 
+    <div className="ch-image-sm">
+
     ![](/images/cloud/guides/accessing-data/GCS/storage_object_user.webp)
+
+    </div>
 
     Эта роль предоставляет доступ к объектам GCS на чтение и запись
 
@@ -75,7 +91,11 @@ ClickHouse Cloud подключается к GCS с помощью HMAC-ключ
 
     Сохраните адрес электронной почты сервисного аккаунта:
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp)
+
+    </div>
   </Step>
 
   <Step title="Предоставьте сервисному аккаунту доступ к бакету" id="grant-bucket-access-to-service-account">
@@ -114,19 +134,31 @@ ClickHouse Cloud подключается к GCS с помощью HMAC-ключ
   <Step title="Сгенерируйте HMAC-ключи для сервисного аккаунта" id="generate-hmac-keys-for-service-account">
     Перейдите в `Cloud Storage` → `Settings` → `Interoperability`:
 
+    <div className="ch-image-sm">
+
     ![](/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp)
+
+    </div>
 
     Если раздела &quot;Access keys&quot; нет, нажмите `Enable interoperability access`
 
     В разделе &quot;Access keys for service accounts&quot; нажмите `Create a key for a service account`:
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp)
+
+    </div>
 
     Выберите сервисный аккаунт, который вы создали ранее (например, clickhouse-gcs-access@your-project.iam.gserviceaccount.com)
 
     Нажмите `Create key`:
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/create_a_key.webp)
+
+    </div>
 
     На экране отобразится HMAC-ключ.
     Сразу сохраните и Access Key, и Secret — позже секретный ключ посмотреть уже не получится.
@@ -182,7 +214,11 @@ ClickHouse Cloud подключается к GCS с помощью HMAC-ключ
     1. Выберите `Credentials` в разделе `Authentication method` при настройке ClickPipe
     2. Укажите учетные данные HMAC, полученные на предыдущих шагах
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp)
+
+    </div>
 
     <Note>
       Аутентификация через сервисный аккаунт пока не поддерживается — необходимо использовать ключи HMAC

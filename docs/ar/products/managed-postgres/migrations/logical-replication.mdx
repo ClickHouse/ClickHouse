@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
 يوفّر هذا الدليل إرشادات خطوة بخطوة لترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام ميزة النسخ المتماثل المنطقي المدمجة في Postgres.
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.logical-replication-beta" />
@@ -49,7 +50,11 @@ dig +short <your-managed-postgres-hostname>
 
 تأكد من أن قاعدة البيانات المصدر لديك مُعدّة على هذا النحو:
 
+<div className="ch-image-md">
+
 ![إعداد النسخ المتماثل في PostgreSQL لقاعدة البيانات المصدر](/images/managed-postgres/logical_replication/source-setup.webp)
+
+</div>
 
 <div id="migration-logical-replication-schema-dump">
   ## تفريغ يقتصر على المخطط لقاعدة البيانات المصدر
@@ -74,7 +79,11 @@ pg_dump \
 
 في حالتنا، لدينا جدولان: `events` و`users`. يحتوي `events` على مليون صف، ويحتوي `users` على ألف صف.
 
+<div className="ch-image-lg">
+
 ![إعداد جداول PostgreSQL المصدر](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</div>
 
 <div id="migration-pgdump-pg-restore-create-pg">
   ### أنشئ مثيل ClickHouse Managed Postgres
@@ -82,7 +91,11 @@ pg_dump \
 
 أولًا، تأكد من إعداد مثيل ClickHouse Managed Postgres، ويُفضَّل أن يكون في المنطقة نفسها التي يوجد فيها المصدر. يمكنك اتباع الدليل السريع [هنا](/ar/products/managed-postgres/quickstart#create-postgres-database). إليك ما سنُنشئه في هذا الدليل:
 
+<div className="ch-image-md">
+
 ![إنشاء مثيل ClickHouse Managed Postgres](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</div>
 
 <div id="migration-logical-replication-restore-schema">
   ## استعادة المخطط إلى ClickHouse Managed Postgres
@@ -105,7 +118,11 @@ pg_restore \
 
 في حالتنا، بعد تشغيل هذا الأمر، أصبح لدينا جدولان، وكلاهما فارغ:
 
+<div className="ch-image-lg">
+
 ![الإعداد الأولي لقاعدة بيانات ClickHouse Managed Postgres المستهدفة](/images/managed-postgres/logical_replication/target-initial-setup.webp)
+
+</div>
 
 <div id="migration-logical-replication-setup-replication">
   ## إعداد النسخ المتماثل المنطقي
@@ -143,7 +160,11 @@ PUBLICATION <pub_name_you_entered_above>;
 
 في حالتنا، بعد إعداد الاشتراك، بدأت البيانات بالتدفق:
 
+<div className="ch-image-lg">
+
 ![نتيجة الترحيل بعد النسخ المتماثل المنطقي](/images/managed-postgres/logical_replication/migration-result.webp)
+
+</div>
 
 ستُنسخ الآن الصفوف الجديدة التي يتم إدراجها في قاعدة البيانات المصدر إلى قاعدة بيانات ClickHouse Managed Postgres الهدف بشكل شبه آني.
 

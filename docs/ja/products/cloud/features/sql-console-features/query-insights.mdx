@@ -15,7 +15,11 @@ doc_type: 'guide'
 
 サービスを選択すると、左側のサイドバーにある **監視** ナビゲーション項目が展開され、新たに **クエリインサイト** サブ項目が表示されます。この項目をクリックすると、クエリインサイトのページが開きます。
 
+<div className="ch-image-md">
+
 ![クエリインサイトUIの概要](/images/cloud/sqlconsole/insights_overview.webp)
+
+</div>
 
 <div id="top-level-metrics">
   ## 上部の主要メトリクス
@@ -23,7 +27,11 @@ doc_type: 'guide'
 
 上部の統計ボックスには、選択した期間における基本的な主要クエリメトリクスが表示されます。その下には、選択した時間範囲におけるクエリ量、レイテンシ、エラー率を、クエリの種類 (select、insert、other) ごとに分類して示す 3 つの時系列チャートが表示されます。レイテンシチャートはさらに調整でき、p50、p90、p99 のレイテンシを表示できます。
 
+<div className="ch-image-md">
+
 ![クエリインサイト UI のレイテンシチャート](/images/cloud/sqlconsole/insights_latency.webp)
+
+</div>
 
 <div id="recent-queries">
   ## 最近のクエリ
@@ -31,7 +39,11 @@ doc_type: 'guide'
 
 上部の主要メトリクスの下には、選択した時間枠内のクエリログのエントリを表示するテーブルがあります (正規化クエリハッシュとユーザーごとにグループ化) 。
 
+<div className="ch-image-md">
+
 ![クエリインサイト UI の最近のクエリテーブル](/images/cloud/sqlconsole/insights_recent.webp)
+
+</div>
 
 最近のクエリは、利用可能な任意のフィールドでフィルタリングやソートを行えます。また、テーブル、p90、p99 レイテンシなどの追加フィールドの表示/非表示も設定できます。
 
@@ -41,11 +53,19 @@ doc_type: 'guide'
 
 最近のクエリ テーブルでクエリを選択すると、選択したクエリに固有のメトリクスと情報を含むフライアウトが開きます。
 
+<div className="ch-image-md">
+
 ![Query Insights UI クエリのドリルダウン](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</div>
 
 フライアウトを見ると、このクエリは直近 24 時間で 3,000 回以上実行されていることがわかります。**Query info** タブのメトリクスはすべて集計メトリクスですが、**Query history** タブを選択すると、個々の実行ごとのメトリクスも確認できます。
 
+<div className="ch-image-sm">
+
 ![Query Insights UI クエリ情報](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</div>
 
 <br />
 

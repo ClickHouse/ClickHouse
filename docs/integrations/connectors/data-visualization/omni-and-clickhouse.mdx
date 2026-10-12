@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
+
 import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge/>
@@ -27,12 +28,20 @@ Omni can connect to ClickHouse Cloud or on-premise deployment via the official C
 
 Navigate to Admin -> Connections and click the "Add Connection" button in the top right corner.
 
+<div className="ch-image-lg">
+
 ![Omni admin interface showing the Add Connection button in the Connections section](/images/integrations/data-visualization/omni_01.webp)
+
+</div>
 <br/>
 
 Select `ClickHouse`. Enter your credentials in the form.
 
+<div className="ch-image-lg">
+
 ![Omni connection configuration interface for ClickHouse showing credential form fields](/images/integrations/data-visualization/omni_02.webp)
+
+</div>
 <br/>
 
 Now you should can query and visualize data from ClickHouse in Omni.

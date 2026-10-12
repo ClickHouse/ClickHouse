@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
+
 import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -28,7 +29,11 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
 在本指南中，你将了解 **Lightdash** 如何连接到 **ClickHouse**，以探索 dbt **模型**并构建交互式仪表盘。
 下方示例展示了一个由 ClickHouse 数据驱动的已完成仪表盘。
 
+<div className="ch-image-md">
+
 ![Lightdash 仪表盘示例](/images/integrations/data-visualization/lightdash_02.webp)
+
+</div>
 
 <Steps>
   <Step title="收集连接信息" id="connection-data-required">
@@ -55,7 +60,11 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
 
     例如：
 
+    <div className="ch-image-md">
+
     ![lightdash-clickhouse 项目的 profiles.yml 配置示例](/images/integrations/data-visualization/lightdash_01.webp)
+
+    </div>
 
     <br />
   </Step>
@@ -87,7 +96,11 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
   <Step title="在 Lightdash 中定义指标和维度" id="defining-metrics-and-dimensions-in-lightdash">
     在 Lightdash 中，所有**指标**和**维度**都直接定义在 dbt 模型的 `.yml` 文件中。这样可以让你的业务逻辑纳入版本控制、保持一致，并且完全透明。
 
+    <div className="ch-image-md">
+
     ![.yml 文件中定义指标的示例](/images/integrations/data-visualization/lightdash_03.webp)
+
+    </div>
 
     <br />
 
@@ -113,7 +126,11 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
     4. **Results** — 查看从 ClickHouse 数据库返回的原始数据
     5. **SQL** — 查看结果背后生成的 SQL 查询
 
+    <div className="ch-image-lg">
+
     ![显示维度、过滤器、图表、结果和 SQL 的 Lightdash Explore 视图](/images/integrations/data-visualization/lightdash_04.webp)
+
+    </div>
 
     在这里，你可以通过交互方式构建和调整查询——拖放字段、添加过滤器，并在表格、柱状图或时间序列等可视化类型之间切换。
 
@@ -137,7 +154,11 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
     3. 在图表构建器中创建可视化
     4. 保存后，它将显示在仪表盘底部
 
+    <div className="ch-image-lg">
+
     ![在 Lightdash 仪表盘中创建和组织图表](/images/integrations/data-visualization/lightdash_05.webp)
+
+    </div>
 
     在此了解有关创建和组织仪表盘的更多信息：
     [构建仪表盘 → Lightdash Docs](https://docs.lightdash.com/get-started/exploring-data/dashboards?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
@@ -151,7 +172,11 @@ Lightdash 是面向现代数据团队打造的**AI 优先 BI 平台**，将 dbt 
 
     它基于你在 dbt 中使用的同一语义层，这意味着每个答案都受到治理、可解释且响应迅速——而这一切都由 ClickHouse 提供支持。
 
+    <div className="ch-image-lg">
+
     ![Lightdash Ask AI 界面，显示由 dbt 指标驱动的自然语言查询](/images/integrations/data-visualization/lightdash_06.webp)
+
+    </div>
 
     <Tip>
       在此了解更多有关 AI 智能体的信息：[AI 智能体 → Lightdash 文档](https://docs.lightdash.com/guides/ai-agents?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)

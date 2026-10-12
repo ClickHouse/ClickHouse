@@ -39,7 +39,11 @@ Prepare uma nova conta da AWS, um projeto do GCP ou uma assinatura do Azure na s
 
 <Steps>
   <Step title="Escolha um provedor de Cloud" id="choose-cloud-provider">
+    <div className="ch-image-lg ch-image-background-black">
+
     ![BYOC: escolher CSP](/images/cloud/reference/byoc-onboarding-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Configuração da conta, do projeto ou da assinatura" id="account-setup">
@@ -49,7 +53,11 @@ Prepare uma nova conta da AWS, um projeto do GCP ou uma assinatura do Azure na s
       **Aplique os artefatos de onboarding exatamente como fornecidos.** Não altere nada no template do CloudFormation ou no módulo do Terraform — incluindo renomear recursos ou adicionar parâmetros como `PermissionsBoundary` — sem a aprovação explícita do ClickHouse. A automação do ClickHouse depende dos recursos exatos criados por esses artefatos; as personalizações compatíveis são expostas como parâmetros. Em particular, na AWS, a IAM role deve manter o nome padrão `ClickHouseManagementRole` — sem prefixo ou sufixo —, a menos que o ClickHouse tenha concordado explicitamente com outro nome de antemão. Tecnicamente, o módulo do Terraform expõe uma entrada `role_name`, mas a automação do ClickHouse precisa ser configurada para corresponder a ela. Portanto, alterá-la sem coordenação — ou renomear a role no template do CloudFormation, que não tem esse parâmetro — resulta em uma stack aplicada com êxito, mas com falha no provisionamento da infraestrutura, pois o ClickHouse não consegue assumir a role esperada.
     </Warning>
 
+    <div className="ch-image-lg ch-image-background-black">
+
     ![Inicializar conta BYOC](/images/cloud/reference/byoc-onboarding-2.webp)
+
+    </div>
 
     <Note>
       Os buckets de armazenamento, a VPC/VNet, o cluster do Kubernetes e os recursos de compute necessários para executar o ClickHouse não estão incluídos nesta configuração inicial. Eles serão provisionados no próximo passo.
@@ -98,7 +106,11 @@ Prepare uma nova conta da AWS, um projeto do GCP ou uma assinatura do Azure na s
 
     * **Zonas de disponibilidade**: Se você planeja usar peering de VPC, alinhar as zonas de disponibilidade entre as contas de origem e BYOC pode ajudar a reduzir os custos de tráfego entre AZs. Por exemplo, na AWS, os sufixos de zona de disponibilidade (`a`, `b`, `c`) podem representar IDs de zonas físicas diferentes entre contas. Consulte o [guia da AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) para mais detalhes.
 
+    <div className="ch-image-lg ch-image-background-black">
+
     ![Configure a infraestrutura de BYOC](/images/cloud/reference/byoc-onboarding-3.webp)
+
+    </div>
 
 #### Validação prévia
 
@@ -114,7 +126,11 @@ Prepare uma nova conta da AWS, um projeto do GCP ou uma assinatura do Azure na s
 
     Quando as verificações falham, cada uma é listada com a ação correspondente e o motivo da falha (por exemplo, `iam:CreateRole · explicitDeny`). Expanda **Show passed checks** para revisar tudo o que foi bem-sucedido.
 
+    <div className="ch-image-lg ch-image-background-black">
+
     ![Validação prévia do BYOC reportando falhas nas verificações de configuração da Cloud](/images/cloud/reference/byoc-onboarding-preflight-failed.png)
+
+    </div>
 
     Para resolver as falhas, execute novamente a stack mais recente do CloudFormation ou do Terraform do ClickHouse — ou conceda as actions reportadas à identidade de gerenciamento (IAM role / service account / principal de serviço) — e então escolha uma destas opções:
 
@@ -140,7 +156,11 @@ Prepare uma nova conta da AWS, um projeto do GCP ou uma assinatura do Azure na s
 
 Depois que sua infraestrutura BYOC for provisionada, você poderá lançar seu primeiro serviço do ClickHouse. Abra o console do ClickHouse Cloud, selecione seu ambiente BYOC e siga as instruções para criar um novo serviço.
 
+<div className="ch-image-md">
+
 ![BYOC criar um novo serviço](/images/cloud/reference/byoc-new-service-1.webp)
+
+</div>
 
 Durante a criação do serviço, você configurará as seguintes opções:
 

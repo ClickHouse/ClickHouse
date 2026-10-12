@@ -160,4 +160,8 @@ TDE необходимо включить при создании сервиса
 
 Для шифрования на уровне базы данных и защиты данных используется встроенная в ClickHouse [возможность Virtual File System for Data Encryption](/ru/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system). В этой возможности используется алгоритм `AES_256_CTR`; ожидаемое снижение производительности составляет 5–15% в зависимости от рабочей нагрузки:
 
+<div className="ch-image-lg">
+
 ![Снижение производительности CMEK](/images/_snippets/cmek-performance.webp)
+
+</div>

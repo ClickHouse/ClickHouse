@@ -25,11 +25,19 @@ Les tiers **Scale** et **Enterprise** prennent également en charge les services
 
 Pour mettre à l’échelle horizontalement un cluster, envoyez une requête `PATCH` via l’API afin d’ajuster le nombre de répliques. Les captures d’écran ci-dessous montrent un appel à l’API pour faire passer un cluster de `3` répliques à `6` répliques, ainsi que la réponse correspondante.
 
+<div className="ch-image-lg">
+
 ![Requête PATCH de mise à l’échelle](/images/cloud/manage/scaling-patch-request.webp)
+
+</div>
 
 *Requête `PATCH` pour mettre à jour `numReplicas`*
 
+<div className="ch-image-md">
+
 ![Réponse PATCH de mise à l’échelle](/images/cloud/manage/scaling-patch-response.webp)
+
+</div>
 
 *Réponse à la requête `PATCH`*
 
@@ -39,10 +47,18 @@ Si vous envoyez une nouvelle demande de mise à l’échelle, ou plusieurs deman
 
 Pour mettre un service à l’échelle horizontalement depuis l’UI, vous pouvez ajuster le nombre de répliques du service sur la page **Settings**.
 
+<div className="ch-image-md">
+
 ![Paramètres de configuration de la mise à l’échelle](/images/cloud/manage/scaling-configure.webp)
+
+</div>
 
 *Paramètres de mise à l’échelle du service dans la ClickHouse Cloud console*
 
 Une fois le service mis à l’échelle, le tableau de bord des métriques dans la console Cloud doit afficher l’allocation correcte du service. La capture d’écran ci-dessous montre le cluster mis à l’échelle jusqu’à une mémoire totale de `96 GiB`, soit `6` répliques, chacun avec une allocation mémoire de `16 GiB`.
 
+<div className="ch-image-md">
+
 ![Allocation mémoire de la mise à l’échelle](/images/cloud/manage/scaling-memory-allocation.webp)
+
+</div>

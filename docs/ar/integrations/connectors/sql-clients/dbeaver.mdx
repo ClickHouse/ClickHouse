@@ -38,29 +38,53 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
   <Step title="إضافة قاعدة بيانات" id="3-add-a-database">
     * استخدم إمّا القائمة **Database &gt; New Database Connection** أو أيقونة **New Database Connection** في **Database Navigator** لفتح مربع الحوار **Connect to a database**:
 
+    <div className="ch-image-md">
+
     ![إضافة قاعدة بيانات جديدة](/images/integrations/sql-clients/dbeaver-add-database.webp)
+
+    </div>
 
     * حدِّد **Analytical** ثم **ClickHouse**:
 
     * أنشئ **JDBC URL**. في علامة التبويب **Main**، اضبط **Host** و**Port** و**Username** و**Password** و**Database**:
 
+    <div className="ch-image-md">
+
     ![تعيين اسم المضيف والمنفذ والمستخدم وكلمة المرور واسم قاعدة البيانات](/images/integrations/sql-clients/dbeaver-host-port.webp)
+
+    </div>
 
     * افتراضيًا، تكون الخاصية **SSL &gt; Use SSL** غير مفعّلة. إذا كنت تتصل بـ ClickHouse Cloud أو بخادم يتطلب SSL على منفذ HTTP، فقم بتمكين **SSL &gt; Use SSL**:
 
+    <div className="ch-image-md">
+
     ![فعّل SSL إذا لزم الأمر](/images/integrations/sql-clients/dbeaver-use-ssl.webp)
+
+    </div>
 
     * اختبر الاتصال:
 
+    <div className="ch-image-md">
+
     ![اختبر الاتصال](/images/integrations/sql-clients/dbeaver-test-connection.webp)
+
+    </div>
 
     إذا اكتشف DBeaver أن برنامج تشغيل ClickHouse غير مثبّت لديك، فسيعرض عليك تنزيله:
 
+    <div className="ch-image-md">
+
     ![تنزيل برنامج تشغيل ClickHouse](/images/integrations/sql-clients/dbeaver-download-driver.webp)
+
+    </div>
 
     * بعد تنزيل برنامج التشغيل، اختبر الاتصال مرة أخرى بالنقر على **Test**:
 
+    <div className="ch-image-md">
+
     ![اختبر الاتصال](/images/integrations/sql-clients/dbeaver-test-connection.webp)
+
+    </div>
   </Step>
 
   <Step title="نفّذ استعلامًا على ClickHouse" id="4-query-clickhouse">
@@ -68,11 +92,19 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
     * انقر بزر الماوس الأيمن على اتصالك واختر **SQL Editor &gt; Open SQL Script** لفتح محرر استعلامات:
 
+    <div className="ch-image-md">
+
     ![افتح محرر SQL](/images/integrations/sql-clients/dbeaver-sql-editor.webp)
+
+    </div>
 
     * مثال على استعلام لـ `system.query_log`:
 
+    <div className="ch-image-md">
+
     ![استعلام نموذجي](/images/integrations/sql-clients/dbeaver-query-log-select.webp)
+
+    </div>
   </Step>
 </Steps>
 

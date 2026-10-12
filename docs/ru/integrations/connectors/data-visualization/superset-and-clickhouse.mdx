@@ -13,6 +13,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
+
 import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -25,7 +26,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 В этом руководстве вы создадите панель мониторинга в Superset на основе данных из базы данных ClickHouse. Панель мониторинга будет выглядеть так:
 
+<div className="ch-image-md">
+
 ![Панель мониторинга Superset с ценами на недвижимость в Великобритании и несколькими визуализациями, включая круговые диаграммы и таблицы](/images/integrations/data-visualization/superset_12.webp)
+
+</div>
 
 <br />
 
@@ -59,13 +64,21 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
   <Step title="Подключить Superset к ClickHouse" id="3-connect-superset-to-clickhouse">
     1. В Superset выберите **Data** в верхнем меню, а затем **Databases** в выпадающем списке. Добавьте новую базу данных, нажав кнопку **+ Database**:
 
+    <div className="ch-image-lg">
+
     ![Интерфейс Superset с меню Database и выделенной кнопкой + Database](/images/integrations/data-visualization/superset_01.webp)
+
+    </div>
 
     <br />
 
     2. На первом шаге выберите **ClickHouse Connect** в качестве типа базы данных:
 
+    <div className="ch-image-sm">
+
     ![Мастер подключения базы данных Superset с выбранным вариантом ClickHouse Connect](/images/integrations/data-visualization/superset_02.webp)
+
+    </div>
 
     <br />
 
@@ -75,7 +88,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
     * Введите данные подключения, которые вы собрали ранее
     * Укажите **DISPLAY NAME**: это может быть любое имя на ваш выбор. Если вы будете подключаться к нескольким базам данных ClickHouse, сделайте его более понятным.
 
+    <div className="ch-image-sm">
+
     ![Форма конфигурации подключения Superset с параметрами подключения ClickHouse](/images/integrations/data-visualization/superset_03.webp)
+
+    </div>
 
     <br />
 
@@ -87,7 +104,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
     2. Нажмите кнопку добавления датасета. Выберите новую базу данных как источник данных, и вы увидите таблицы, созданные в этой базе данных:
 
+    <div className="ch-image-sm">
+
     ![Диалог создания датасета в Superset с доступными таблицами из базы данных ClickHouse](/images/integrations/data-visualization/superset_04.webp)
+
+    </div>
 
     <br />
 
@@ -99,39 +120,67 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
     1. Начните с панели мониторинга. В верхнем меню Superset выберите **Dashboards**. Нажмите кнопку в правом верхнем углу, чтобы добавить новую панель мониторинга. На следующем примере панель мониторинга называется **UK property prices**:
 
+    <div className="ch-image-md">
+
     ![Пустая панель мониторинга Superset с именем UK property prices, готовая к добавлению диаграмм](/images/integrations/data-visualization/superset_05.webp)
+
+    </div>
 
     <br />
 
     2. Чтобы создать новую диаграмму, выберите **Charts** в верхнем меню и нажмите кнопку добавления новой диаграммы. Вам будет доступно множество вариантов. В следующем примере показана диаграмма **Pie Chart**, использующая датасет **uk&#95;price&#95;paid** из выпадающего списка **CHOOSE A DATASET**:
 
+    <div className="ch-image-md">
+
     ![Интерфейс создания диаграммы в Superset с выбранным типом визуализации Pie Chart](/images/integrations/data-visualization/superset_06.webp)
+
+    </div>
 
     <br />
 
     3. Для круговых диаграмм в Superset требуются **Dimension** и **Metric**, остальные настройки необязательны. Вы можете выбрать свои поля для размерности и метрики; в этом примере в качестве размерности используется поле ClickHouse `district`, а в качестве метрики — `AVG(price)`.
 
+    <div className="ch-image-md">
+
     ![Конфигурация Dimension с выбранным полем district для круговой диаграммы](/images/integrations/data-visualization/superset_08.webp)
 
+    </div>
+
+    <div className="ch-image-md">
+
     ![Конфигурация Metric с агрегатной функцией AVG(price) для круговой диаграммы](/images/integrations/data-visualization/superset_09.webp)
+
+    </div>
 
     <br />
 
     5. Если вы предпочитаете кольцевые диаграммы круговым, этот и другие параметры можно задать в разделе **CUSTOMIZE**:
 
+    <div className="ch-image-sm">
+
     ![Панель Customize с параметром кольцевой диаграммы и другими настройками круговой диаграммы](/images/integrations/data-visualization/superset_10.webp)
+
+    </div>
 
     <br />
 
     6. Нажмите кнопку **SAVE**, чтобы сохранить диаграмму, затем выберите **UK property prices** в выпадающем списке **ADD TO DASHBOARD**, после чего нажмите **SAVE &amp; GO TO DASHBOARD** — диаграмма будет сохранена и добавлена на панель мониторинга:
 
+    <div className="ch-image-md">
+
     ![Диалог сохранения диаграммы с выпадающим списком выбора панели мониторинга и кнопкой Save & Go to Dashboard](/images/integrations/data-visualization/superset_11.webp)
+
+    </div>
 
     <br />
 
     7. Вот и всё. Создание панелей мониторинга в Superset на основе данных из ClickHouse открывает целый мир невероятно быстрой аналитики данных!
 
+    <div className="ch-image-md">
+
     ![Готовая панель мониторинга Superset с несколькими визуализациями данных о ценах на недвижимость в Великобритании из ClickHouse](/images/integrations/data-visualization/superset_12.webp)
+
+    </div>
 
     <br />
   </Step>

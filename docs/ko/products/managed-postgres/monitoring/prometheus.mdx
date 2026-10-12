@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
@@ -120,7 +121,11 @@ scrape_configs:
 사용량, 상태별 연결, 트랜잭션 및 롤백 비율, Tuple 활동, I/O, 데이터베이스별 스토리지,
 그리고 교착 상태를 표시합니다.
 
+<div className="ch-image-md">
+
 ![ClickHouse Managed Postgres 서비스의 Grafana 대시보드](/images/managed-postgres/monitoring/grafana-dashboard.webp)
+
+</div>
 
 <div id="import-dashboard">
   ### 대시보드 가져오기

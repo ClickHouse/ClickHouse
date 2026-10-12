@@ -35,11 +35,19 @@ Quando um usuário tem acesso ao Cloud, ele aparece na página **Team Settings**
 
 <Tabs>
   <Tab title="Usuários e funções do Cloud">
+    <div className="ch-image-lg">
+
     ![Página de usuários e funções do ClickHouse Cloud](/images/clickstack/rbac/team-page-cloud.webp)
+
+    </div>
   </Tab>
 
   <Tab title="Team Settings do ClickStack">
+    <div className="ch-image-lg">
+
     ![Página Team Settings do ClickStack mostrando os membros da equipe e suas funções](/images/clickstack/rbac/team-page-clickstack.webp)
+
+    </div>
   </Tab>
 </Tabs>
 
@@ -82,7 +90,11 @@ Você pode definir uma função padrão para novos usuários em [Políticas de s
   <Step title="Navegue até Team Settings" id="step-navigate">
     Abra **Team Settings** e role até **RBAC Roles**.
 
+    <div className="ch-image-lg">
+
     ![RBAC Roles](/images/clickstack/rbac/rbac-section.webp)
+
+    </div>
   </Step>
 
   <Step title="Adicione uma nova função" id="step-add-role">
@@ -92,7 +104,11 @@ Você pode definir uma função padrão para novos usuários em [Políticas de s
   <Step title="Configure as permissões e salve" id="step-configure">
     Defina as permissões da função e, em seguida, clique em **Create Role**.
 
+    <div className="ch-image-md">
+
     ![modal Add Role](/images/clickstack/rbac/add-role-modal.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -149,7 +165,11 @@ Cada tipo de recurso tem um **Modo de controle de acesso**:
 
 Para alternar entre os modos, clique na seta para expandir um tipo de recurso no editor da função e, em seguida, alterne o **Modo de controle de acesso**.
 
+<div className="ch-image-md">
+
 ![Modos de Acesso padrão vs. Controles granulares no editor da função](/images/clickstack/rbac/default-vs-fine-grained.webp)
+
+</div>
 
 <div id="configuring-access-rules">
   #### Configurando regras de acesso
@@ -157,7 +177,11 @@ Para alternar entre os modos, clique na seta para expandir um tipo de recurso no
 
 Cada regra de acesso consiste em uma **condição** e um **nível de acesso**. As condições correspondem aos recursos com base em suas propriedades:
 
+<div className="ch-image-md">
+
 ![Dica da condição: corresponda recursos por Nome ou Tag (mostrado no título) ou por ID (encontrado na URL)](/images/clickstack/rbac/condition-tip.webp)
+
+</div>
 
 | Campo da condição | Operadores       | O que corresponde                                                                                                                                                   | Exemplo                                                                                             |
 | ----------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -167,11 +191,19 @@ Cada regra de acesso consiste em uma **condição** e um **nível de acesso**. A
 
 A captura de tela a seguir mostra o ID do dashboard destacado na barra de URL e uma tag &quot;TESTING&quot; visível no painel de tags (canto superior direito).
 
+<div className="ch-image-lg">
+
 ![Dashboard mostrando o ID do recurso na barra de URL e uma tag no canto superior direito](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
+
+</div>
 
 Você pode adicionar várias regras por tipo de recurso. Cada regra é verificada de forma independente usando lógica OR — um recurso fica acessível se corresponder a **qualquer** regra. Recursos que não correspondem a nenhuma regra não ficam acessíveis.
 
+<div className="ch-image-md">
+
 ![Dica das regras de acesso com lógica OR](/images/clickstack/rbac/access-rules-tip.webp)
+
+</div>
 
 **Exemplo**: Para conceder a uma função acesso somente leitura a dashboards de teste, expanda Dashboards, mude para Fine-Grained Controls e adicione duas regras:
 
@@ -180,7 +212,11 @@ Você pode adicionar várias regras por tipo de recurso. Cada regra é verificad
 
 Um dashboard que corresponda a qualquer uma das regras fica acessível.
 
+<div className="ch-image-md">
+
 ![Duas regras de acesso granular unidas por OR: Name contains testing com acesso Read e Tag is testing com acesso Read](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
+
+</div>
 
 <div id="security-policies">
   ## Políticas de segurança
@@ -192,4 +228,8 @@ A seção **Security Policies** em **Team Settings** oferece controles adicionai
 
 **Generative AI** permite ativar ou desativar recursos baseados em LLM (como a geração de consultas em linguagem natural) viabilizados pela Anthropic ou pelo Amazon Bedrock. Quando desativada, nenhum dado é enviado a provedores de IA.
 
+<div className="ch-image-lg">
+
 ![Políticas de segurança](/images/clickstack/rbac/security-policies.webp)
+
+</div>

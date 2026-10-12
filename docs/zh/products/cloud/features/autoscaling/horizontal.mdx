@@ -27,11 +27,19 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 要对集群进行水平扩缩容，请通过 API 发送 `PATCH` 请求来调整副本数量。下方截图展示了一个 API 调用：将一个 `3` 副本集群横向扩容到 `6` 个副本，以及对应的响应。
 
+<div className="ch-image-lg">
+
 ![扩缩容 PATCH 请求](/images/cloud/manage/scaling-patch-request.webp)
+
+</div>
 
 *用于更新 `numReplicas` 的 `PATCH` 请求*
 
+<div className="ch-image-md">
+
 ![扩缩容 PATCH 响应](/images/cloud/manage/scaling-patch-response.webp)
+
+</div>
 
 *`PATCH` 请求的响应*
 
@@ -41,10 +49,18 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 要通过 UI 对服务进行水平扩缩容，可以在 **Settings** 页面调整该服务的副本数量。
 
+<div className="ch-image-md">
+
 ![扩缩容配置](/images/cloud/manage/scaling-configure.webp)
+
+</div>
 
 *ClickHouse Cloud 控制台中的服务扩缩容设置*
 
 服务完成扩缩容后，ClickHouse Cloud 控制台中的指标仪表板应显示分配给该服务的正确资源。下方截图显示，该集群已扩展到总内存 `96 GiB`，即 `6` 个副本，每个副本分配 `16 GiB` 内存。
 
+<div className="ch-image-md">
+
 ![扩缩容内存分配](/images/cloud/manage/scaling-memory-allocation.webp)
+
+</div>

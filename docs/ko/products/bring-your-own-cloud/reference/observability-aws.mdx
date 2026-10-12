@@ -203,19 +203,39 @@ Prometheus 인스턴스가 ClickHouse 모니터링 스택에 통합되면, 다�
 1. **Grafana에서 Prometheus를 데이터 소스로 추가**
    Grafana 사이드바에서 &quot;Data sources&quot;로 이동한 다음 &quot;Add data source&quot;를 클릭하고 &quot;Prometheus&quot;를 선택하십시오. 연결에 필요한 Prometheus 인스턴스 URL과 자격 증명을 입력하십시오.
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 1](/images/cloud/reference/byoc-mixin-1.webp)
+
+</div>
+
+<div className="ch-image-lg ch-image-background-black">
 
 ![BYOC Mixin 2](/images/cloud/reference/byoc-mixin-2.webp)
 
+</div>
+
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 3](/images/cloud/reference/byoc-mixin-3.webp)
+
+</div>
 
 2. **ClickHouse 대시보드 가져오기**
    Grafana에서 대시보드 영역으로 이동한 다음 &quot;Import&quot;를 선택하십시오. 대시보드 JSON 파일을 업로드하거나 파일 내용을 직접 붙여넣을 수 있습니다. JSON 파일은 ClickHouse mixin 리포지토리에서 가져올 수 있습니다.
    [ClickHouse Mix-in Dashboard JSON](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 4](/images/cloud/reference/byoc-mixin-4.webp)
+
+</div>
 
 3. **메트릭 살펴보기**
    대시보드를 가져와 Prometheus 데이터 소스로 구성하면 ClickHouse Cloud 서비스의 실시간 메트릭을 확인할 수 있습니다.
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![BYOC Mixin 5](/images/cloud/reference/byoc-mixin-5.webp)
+
+</div>

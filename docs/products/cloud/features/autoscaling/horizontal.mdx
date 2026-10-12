@@ -25,11 +25,19 @@ For the replica limits that apply to your service, see [Usage limits](/cloud/bes
 
 To horizontally scale a cluster, issue a `PATCH` request via the API to adjust the number of replicas. The screenshots below show an API call to scale out a `3` replica cluster to `6` replicas, and the corresponding response.
 
+<div className="ch-image-lg">
+
 ![Scaling PATCH request](/images/cloud/manage/scaling-patch-request.webp)
+
+</div>
 
 *`PATCH` request to update `numReplicas`*
 
+<div className="ch-image-md">
+
 ![Scaling PATCH response](/images/cloud/manage/scaling-patch-response.webp)
+
+</div>
 
 *Response from `PATCH` request*
 
@@ -39,10 +47,18 @@ If you issue a new scaling request or multiple requests in succession, while one
 
 To scale a service horizontally from the UI, you can adjust the number of replicas for the service on the **Settings** page.
 
+<div className="ch-image-md">
+
 ![Scaling configuration settings](/images/cloud/manage/scaling-configure.webp)
+
+</div>
 
 *Service scaling settings from the ClickHouse Cloud console*
 
 Once the service has scaled, the metrics dashboard in the cloud console should show the correct allocation to the service. The screenshot below shows the cluster having scaled to total memory of `96 GiB`, which is `6` replicas, each with `16 GiB` memory allocation.
 
+<div className="ch-image-md">
+
 ![Scaling memory allocation](/images/cloud/manage/scaling-memory-allocation.webp)
+
+</div>

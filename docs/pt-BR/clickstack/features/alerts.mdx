@@ -35,7 +35,11 @@ Para que um alerta seja criado para uma busca, ela precisa estar salva. Você po
   <Step title="Abra a caixa de diálogo de criação de alerta" id="open-dialog">
     Comece inserindo uma [busca](/pt-BR/clickstack/features/search) e clicando no botão `Alerts` no canto superior direito da página `Busca`.
 
+    <div className="ch-image-lg">
+
     ![Visualização de alertas de busca](/images/use-cases/observability/alerts_search_view.webp)
+
+    </div>
   </Step>
 
   <Step title="Crie o alerta" id="create-the-alert">
@@ -48,13 +52,21 @@ Para que um alerta seja criado para uma busca, ela precisa estar salva. Você po
 
     Antes de salvar, o ClickStack exibe a condição de limiar para que você possa confirmar que ela se comportará como esperado.
 
+    <div className="ch-image-lg">
+
     ![Alertas de busca](/images/use-cases/observability/search_alert.webp)
+
+    </div>
   </Step>
 </Steps>
 
 Observe que vários alertas podem ser adicionados a uma busca. Se o processo acima for repetido, você verá os alertas atuais como abas na parte superior da caixa de diálogo de edição de alerta, com cada alerta identificado por um número.
 
+<div className="ch-image-md">
+
 ![Vários alertas](/images/use-cases/observability/multiple_search_alerts.webp)
+
+</div>
 
 <div id="dashboard-alerts">
   ### 2. Alertas de gráficos no dashboard
@@ -78,19 +90,31 @@ Os alertas podem ser criados durante o processo de criação do gráfico, ao adi
   <Step title="Abra a caixa de diálogo de edição do gráfico" id="open-chart-dialog">
     Abra o menu de configuração do gráfico e selecione o botão de alerta. Isso abrirá a caixa de diálogo de edição do gráfico.
 
+    <div className="ch-image-lg">
+
     ![Editar alerta do gráfico](/images/use-cases/observability/edit_chart_alert.webp)
+
+    </div>
   </Step>
 
   <Step title="Adicione o alerta" id="add-chart-alert">
     Selecione **Add Alert**.
 
+    <div className="ch-image-lg">
+
     ![Adicionar alerta ao gráfico](/images/use-cases/observability/add_chart_alert.webp)
+
+    </div>
   </Step>
 
   <Step title="Defina as condições do alerta" id="define-alert-conditions">
     Defina a condição (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), o limiar, a duração e o webhook. A duração aqui também determinará com que frequência o alerta será disparado.
 
+    <div className="ch-image-lg">
+
     ![Criar alerta para gráfico](/images/use-cases/observability/create_chart_alert.webp)
+
+    </div>
 
     Você pode adicionar um novo webhook diretamente nesta tela. Consulte [Adicionando um webhook](#add-webhook) para mais detalhes.
   </Step>
@@ -106,11 +130,19 @@ Um webhook pode ser criado para diferentes tipos de serviço, incluindo Slack e 
 
 Por exemplo, considere abaixo a criação de um alerta para um gráfico. Antes de especificar o webhook, o usuário pode selecionar `Add New Webhook`.
 
+<div className="ch-image-lg">
+
 ![Adicionar novo webhook](/images/use-cases/observability/add_new_webhook.webp)
+
+</div>
 
 Isso abre a caixa de diálogo de criação de webhook, na qual você pode criar um novo webhook:
 
+<div className="ch-image-md">
+
 ![Criação de webhook](/images/use-cases/observability/add_webhook_dialog.webp)
+
+</div>
 
 É necessário informar um nome para o webhook, enquanto as descrições são opcionais. As demais configurações que precisam ser preenchidas dependem do tipo de serviço.
 
@@ -158,11 +190,19 @@ Dependendo do tipo de serviço, você precisará fornecer informações diferent
 
 Os alertas podem ser gerenciados centralmente pelo painel de alertas no lado esquerdo do HyperDX.
 
+<div className="ch-image-lg">
+
 ![Gerenciar alertas](/images/use-cases/observability/manage_alerts.webp)
+
+</div>
 
 Nesta visualização, você pode ver todos os alertas que foram criados e que estão ativos no momento no ClickStack.
 
+<div className="ch-image-lg">
+
 ![Visualização de alertas](/images/use-cases/observability/alerts_view.webp)
+
+</div>
 
 Esta visualização também exibe o histórico de avaliação dos alertas. Os alertas são avaliados em um intervalo recorrente (definido pelo período/duração configurado durante a criação do alerta). Durante cada avaliação, o HyperDX consulta seus dados para verificar se a condição do alerta foi atendida:
 
@@ -182,7 +222,11 @@ Clicar em um alerta leva você ao gráfico ou à Busca ao qual ele está associa
 Para remover um alerta, abra a caixa de diálogo de edição da busca ou do gráfico associado e selecione **Remove Alert**.
 No exemplo abaixo, o botão `Remove Alert` removerá o alerta do gráfico.
 
+<div className="ch-image-lg">
+
 ![Remover alerta do gráfico](/images/use-cases/observability/remove_chart_alert.webp)
+
+</div>
 
 <div id="sql-based-alerts">
   ## Alertas de gráfico baseados em SQL
@@ -216,7 +260,11 @@ Para criar um alerta em um gráfico baseado em SQL:
 
     Escolha **linha**, **barra empilhada** ou **número** como tipo de exibição.
 
+    <div className="ch-image-lg">
+
     ![Criar gráfico SQL](/images/use-cases/observability/open_sql_chart_mode.webp)
+
+    </div>
   </Step>
 
   <Step title="Adicione o alerta" id="add-sql-alert">
@@ -227,7 +275,11 @@ Para criar um alerta em um gráfico baseado em SQL:
     * **Intervalo**: com que frequência o alerta é avaliado (1m, 5m, 15m, 30m, 1h, 6h, 12h ou 1d). Isso também define a janela de tempo de cada avaliação.
     * **Webhook**: o canal de notificação usado quando o alerta é disparado. Consulte [Como adicionar um webhook](#add-webhook).
 
+    <div className="ch-image-lg">
+
     ![Editar alerta do gráfico](/images/use-cases/observability/add_raw_sql_alert.webp)
+
+    </div>
 
     <Warning>
       **Intervalo de tempo do alerta**

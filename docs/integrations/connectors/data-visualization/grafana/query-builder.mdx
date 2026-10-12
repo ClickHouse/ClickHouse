@@ -45,7 +45,11 @@ The most flexible query type is the table query. This is a catch-all for the oth
 | Limit | Appends a [LIMIT](/reference/statements/select/limit) statement to the end of the query. If set to `0` then it will be excluded. Some visualizations might need this set to `0` to show all the data. |
 | Filters | A list of filters to be applied in the `WHERE` clause. |
 
+<div className="ch-image-md">
+
 ![Example aggregate table query](/images/integrations/data-visualization/grafana/demo_table_query.webp)
+
+</div>
 
 This query type will render the data as a table.
 
@@ -73,13 +77,21 @@ The logs query type supports [data links](#data-links).
 | Filters | A list of filters to be applied in the `WHERE` clause. |
 | Message Filter | A text input for conveniently filtering logs using a `LIKE %value%`. Excluded when input is empty. |
 
+<div className="ch-image-md">
+
 ![Example OTel logs query](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
+
+</div>
 
 <br/>
 This query type will render the data in the logs panel along with a logs histogram panel at the top.
 
 Extra columns that are selected in the query can be viewed in the expanded log row:
+<div className="ch-image-md">
+
 ![Example of extra fields on logs query](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
+
+</div>
 
 ### Time series {#time-series}
 
@@ -110,7 +122,11 @@ Try removing the `LIMIT` clause by setting it to `0` (if your dataset allows).
 | Limit | Appends a [LIMIT](/reference/statements/select/limit) statement to the end of the query. If set to `0` then it will be excluded, this is recommended for some time series datasets in order to show the full visualization. |
 | Filters | A list of filters to be applied in the `WHERE` clause. |
 
+<div className="ch-image-md">
+
 ![Example time series query](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
+
+</div>
 
 This query type will render the data with the time series panel.
 
@@ -147,7 +163,11 @@ The trace query type supports [data links](#data-links).
 | Filters | A list of filters to be applied in the `WHERE` clause. |
 | Trace ID | The Trace ID to filter by. Only used in Trace ID mode, and when opening a trace ID [data link](#data-links). |
 
+<div className="ch-image-md">
+
 ![Example OTel trace query](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
+
+</div>
 
 This query type will render the data with the table view for Trace Search mode, and the trace panel for Trace ID mode.
 
@@ -163,7 +183,11 @@ The SQL editor can be opened by selecting "SQL Editor" at the top of the query e
 You can switch between query types to get a visualization that best fits your query.
 This switch also has an effect even in dashboard view, notably with time series data.
 
+<div className="ch-image-md">
+
 ![Example raw SQL query](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
+
+</div>
 
 ## Data links {#data-links}
 
@@ -173,12 +197,20 @@ This feature has been enabled within the ClickHouse plugin for linking a trace t
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   Example of trace links in a table
+  <div className="ch-image-sm">
+
   ![Trace links in table](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
+
+  </div>
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Example of trace links in logs
+  <div className="ch-image-md">
+
   ![Trace links in logs](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
+
+  </div>
 </div>
 
 ### How to make a data link {#how-to-make-a-data-link}
@@ -202,7 +234,11 @@ Having defaults configured for both [logs](/integrations/connectors/data-visuali
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Example of viewing a trace (right panel) from a logs query (left panel)
+  <div className="ch-image-md">
+
   ![Example of data links linking](/images/integrations/data-visualization/grafana/demo_data_links.webp)
+
+  </div>
 </div>
 
 ## Macros {#macros}

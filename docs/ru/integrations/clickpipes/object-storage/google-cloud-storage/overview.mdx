@@ -155,7 +155,11 @@ ClickPipe для GCS поддерживает публичные и приват
 
 Чтобы использовать [HMAC-ключи](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) для аутентификации, при настройке подключения ClickPipe выберите `Credentials` в разделе **метод аутентификации**. Затем укажите ключ доступа (например, `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) и секретный ключ (например, `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) в полях `Access key` и `Secret key` соответственно.
 
+<div className="ch-image-lg">
+
 ![Учетные данные HMAC для GCS ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp)
+
+</div>
 
 Следуйте [этому руководству](/ru/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret), чтобы создать сервисный аккаунт с HMAC-ключом.
 
@@ -193,7 +197,11 @@ ClickPipes предоставляет разумные значения по у�
 | `Parallel view processing`           | false                 | Нужно ли включать отправку в присоединённые представления [параллельно, а не последовательно](/ru/reference/settings/session-settings/parallel#parallel_view_processing).     |
 | `Use cluster function`               | true                  | Нужно ли обрабатывать файлы параллельно на нескольких узлах.                                                                                                                  |
 
+<div className="ch-image-lg">
+
 ![Расширенные настройки ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</div>
 
 <div id="scaling">
   ### Масштабирование

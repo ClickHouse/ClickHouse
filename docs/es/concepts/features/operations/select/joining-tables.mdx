@@ -12,7 +12,11 @@ ClickHouse ofrece [compatibilidad completa con `JOIN`](https://clickhouse.com/bl
 * A partir de ClickHouse 24.12, el planificador de consultas reordena automáticamente los joins entre dos tablas para situar la tabla más pequeña en el lado derecho y así obtener un rendimiento óptimo. En la versión 25.9, esto se amplió para optimizar el orden de join en consultas que combinan tres o más tablas.
 * Si tu consulta requiere un direct join, es decir, un `LEFT ANY JOIN`, como se muestra a continuación, recomendamos usar [Dictionaries](/es/concepts/features/dictionaries/index) siempre que sea posible.
 
+<div className="ch-image-sm">
+
 ![LEFT ANY JOIN](/images/guides/joins-1.webp)
+
+</div>
 
 * Si realizas inner joins, a menudo resulta más eficiente escribirlos como subconsultas con la cláusula `IN`. Considera las siguientes consultas, que son funcionalmente equivalentes. Ambas encuentran el número de `posts` que no mencionan ClickHouse en la pregunta, pero sí en los `comments`.
 
@@ -138,7 +142,11 @@ ClickHouse admite varios [algoritmos de JOIN](https://clickhouse.com/blog/clickh
 
 <br />
 
+<div className="ch-image-lg">
+
 ![velocidad según la memoria para joins](/images/guides/joins-2.png)
+
+</div>
 
 <br />
 
@@ -148,7 +156,11 @@ A continuación se muestran los tipos de `JOIN` admitidos por cada algoritmo de 
 
 <br />
 
+<div className="ch-image-lg">
+
 ![características de join](/images/guides/joins-3.webp)
+
+</div>
 
 <br />
 
@@ -164,7 +176,11 @@ Si su métrica de optimización principal es el rendimiento y busca ejecutar el 
 
 <br />
 
+<div className="ch-image-lg">
+
 ![diagrama de flujo de join](/images/guides/joins-4.webp)
+
+</div>
 
 <br />
 
@@ -190,7 +206,11 @@ Si quiere optimizar un join para reducir al mínimo el uso de memoria, en lugar 
 
 <br />
 
+<div className="ch-image-lg">
+
 ![Árbol de decisión para optimizar el uso de memoria en joins](/images/guides/joins-5.webp)
+
+</div>
 
 <br />
 

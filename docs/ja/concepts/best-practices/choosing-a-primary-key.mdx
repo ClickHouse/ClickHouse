@@ -120,7 +120,11 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 次のアニメーションは、Stack Overflow の Posts テーブルに対して最適化されたスパースプライマリインデックスがどのように作成されるかを示しています。個々の行に索引を作成するのではなく、この索引は行のブロックを対象とします。
 
+<div className="ch-image-lg">
+
 ![主キー](/images/bestpractices/create_primary_key.webp)
+
+</div>
 
 同じクエリを、このソートキーを持つテーブルに対して繰り返すと、次のようになります。
 
@@ -168,7 +172,11 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 さらに、スパースインデックスが、サンプルクエリに一致する可能性のないすべての行ブロックをどのように枝刈りするかを可視化します。
 
+<div className="ch-image-lg">
+
 ![主キー](/images/bestpractices/primary_key.webp)
+
+</div>
 
 <Note>
   テーブル内のすべてのカラムは、キー自体に含まれているかどうかにかかわらず、指定されたソートキーの値に基づいてソートされます。たとえば、`CreationDate` をキーとして使用した場合、他のすべてのカラムの値の並び順は `CreationDate` カラムの値の並び順に対応します。複数のソートキーを指定することもでき、その場合は `SELECT` クエリの `ORDER BY` 句と同じ意味で並べ替えられます。

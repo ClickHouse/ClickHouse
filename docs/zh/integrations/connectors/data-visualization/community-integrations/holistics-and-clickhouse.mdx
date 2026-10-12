@@ -53,7 +53,11 @@ GRANT SELECT ON system.* TO holistics_user;
 
     你可以在 ClickHouse Cloud 控制台中点击 **Connect** 按钮，然后选择 **HTTPS** 来查看这些连接信息。
 
+    <div className="ch-image-md">
+
     ![ClickHouse Cloud 控制台中 Connect 按钮的位置](/images/integrations/data-visualization/holistics_01.webp)
+
+    </div>
   </Step>
 
   <Step title="配置网络访问" id="step-2-configure-network-access">
@@ -61,7 +65,11 @@ GRANT SELECT ON system.* TO holistics_user;
 
     1. **Direct Connection (推荐) ：** 在你的防火墙或 ClickHouse Cloud IP Access List 中将 Holistics 的 IP 地址加入白名单。你可以在 [IP Whitelisting guide](https://docs.holistics.io/docs/connect/ip-whitelisting) 中查看 IP 列表。
 
+       <div className="ch-image-md">
+
        ![ClickHouse Cloud 中 IP 白名单配置示例](/images/integrations/data-visualization/holistics_02.webp)
+
+       </div>
 
     2. **Reverse SSH Tunnel：** 如果你的数据库位于私有网络 (VPC) 中且无法对公网开放，请使用 [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel)。
   </Step>
@@ -69,11 +77,19 @@ GRANT SELECT ON system.* TO holistics_user;
   <Step title="在 Holistics 中添加数据源" id="step-3-add-data-source-in-holistics">
     1. 在 Holistics 中，前往 **Settings → 数据源**。
 
+       <div className="ch-image-md">
+
        ![在 Holistics 设置中前往 数据源](/images/integrations/data-visualization/holistics_03.webp)
+
+       </div>
 
     2. 点击 **New Data Source**，然后选择 **ClickHouse**。
 
+       <div className="ch-image-md">
+
        ![从新建数据源列表中选择 ClickHouse](/images/integrations/data-visualization/holistics_04.webp)
+
+       </div>
 
     3. 使用步骤 1 中收集的信息填写表单。
 
@@ -84,11 +100,19 @@ GRANT SELECT ON system.* TO holistics_user;
        | **Require SSL**   | 如果使用 8443 端口，请切换为 **ON** (ClickHouse Cloud 必需) 。 |
        | **Database Name** | `default` (或你的特定 DB)                             |
 
+       <div className="ch-image-md">
+
        ![在 Holistics 中填写 ClickHouse 连接信息](/images/integrations/data-visualization/holistics_05.webp)
+
+       </div>
 
     4. 点击 **Test Connection**。
 
+       <div className="ch-image-md">
+
        ![Holistics 中成功通过 ClickHouse 连接测试](/images/integrations/data-visualization/holistics_06.webp)
+
+       </div>
 
        * **Success：** 点击 **Save**。
        * **Failure：** 检查你的用户名和密码，并确认已将 [Holistics IP 地址加入白名单](https://docs.holistics.io/docs/connect/ip-whitelisting)。

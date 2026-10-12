@@ -16,7 +16,11 @@ keywords: ['api', 'postman', 'rest api', 'Cloud 管理', '集成']
 
 * 可在 [https://www.postman.com](https://www.postman.com) 注册免费账户。
 
+<div className="ch-image-md">
+
 ![Postman 网站](/images/cloud/manage/postman/postman1.webp)
+
+</div>
 
 <div id="create-a-workspace">
   ### 创建工作区
@@ -24,7 +28,11 @@ keywords: ['api', 'postman', 'rest api', 'Cloud 管理', '集成']
 
 * 给工作区命名并设置可见性级别。
 
+<div className="ch-image-md">
+
 ![创建工作区](/images/cloud/manage/postman/postman2.webp)
+
+</div>
 
 <div id="create-a-collection">
   ### 创建集合
@@ -32,17 +40,29 @@ keywords: ['api', 'postman', 'rest api', 'Cloud 管理', '集成']
 
 * 在左上角菜单中，点击 &quot;Explore&quot; 下方的 &quot;Import&quot;：
 
+<div className="ch-image-md">
+
 ![Explore > 导入](/images/cloud/manage/postman/postman3.webp)
+
+</div>
 
 * 此时会弹出一个模态窗口：
 
+<div className="ch-image-md">
+
 ![API URL 输入项](/images/cloud/manage/postman/postman4.webp)
+
+</div>
 
 * 输入 API 地址：&quot;https://api.clickhouse.cloud/v1&quot;，然后按下 &#39;Enter&#39;：
 
 * 点击 &quot;Import&quot; 按钮，选择 &quot;Postman Collection&quot;：
 
+<div className="ch-image-md">
+
 ![集合 > 导入](/images/cloud/manage/postman/postman6.webp)
+
+</div>
 
 <div id="interface-with-the-clickhouse-cloud-api-spec">
   ### 使用 ClickHouse Cloud API 规范
@@ -50,11 +70,19 @@ keywords: ['api', 'postman', 'rest api', 'Cloud 管理', '集成']
 
 * “ClickHouse Cloud 的 API 规范”现在会显示在“集合” (左侧导航) 中。
 
+<div className="ch-image-md">
+
 ![导入 API](/images/cloud/manage/postman/postman7.webp)
+
+</div>
 
 * 点击“ClickHouse Cloud 的 API 规范”。然后在中间面板中选择“Authorization”选项卡：
 
+<div className="ch-image-md">
+
 ![导入完成](/images/cloud/manage/postman/postman8.webp)
+
+</div>
 
 <div id="set-authorization">
   ### 设置授权
@@ -62,11 +90,19 @@ keywords: ['api', 'postman', 'rest api', 'Cloud 管理', '集成']
 
 * 在下拉菜单中选择“Basic Auth”：
 
+<div className="ch-image-md">
+
 ![Basic Auth](/images/cloud/manage/postman/postman9.webp)
+
+</div>
 
 * 输入您在设置 ClickHouse Cloud API keys 时收到的用户名和密码：
 
+<div className="ch-image-md">
+
 ![凭据](/images/cloud/manage/postman/postman10.webp)
+
+</div>
 
 <div id="enable-variables">
   ### 启用变量
@@ -81,7 +117,11 @@ keywords: ['api', 'postman', 'rest api', 'Cloud 管理', '集成']
 * 在“集合”中，点击中间窗格里的“变量”选项卡 (Base URL 已在之前导入 API 时设置) ：
 * 在 `baseURL` 下方，点击空白字段“Add new value”，然后填入你的 Organization ID 和 Service ID：
 
+<div className="ch-image-md">
+
 ![Organization ID 和 Service ID](/images/cloud/manage/postman/postman11.webp)
+
+</div>
 
 <div id="test-the-clickhouse-cloud-api-functionalities">
   ## 测试 ClickHouse Cloud API 的各项功能
@@ -94,11 +134,19 @@ keywords: ['api', 'postman', 'rest api', 'Cloud 管理', '集成']
 * 在“ClickHouse Cloud 的 OpenAPI 规范”下，展开 &gt; V1 &gt; organizations 文件夹
 * 点击“GET 可用组织列表”，然后点击右侧蓝色的“Send”按钮：
 
+<div className="ch-image-md">
+
 ![测试获取组织信息](/images/cloud/manage/postman/postman12.webp)
+
+</div>
 
 * 返回结果应显示你的组织详细信息，且 `"status": 200`。 (如果你收到 `"status": 400`，但没有任何组织信息，则说明配置不正确。) 
 
+<div className="ch-image-md">
+
 ![状态](/images/cloud/manage/postman/postman13.webp)
+
+</div>
 
 <div id="test-get-organizational-details">
   ### 测试“GET organizational details”
@@ -107,15 +155,27 @@ keywords: ['api', 'postman', 'rest api', 'Cloud 管理', '集成']
 * 在 `organizationid` 文件夹下，找到“GET organizational details”：
 * 在中间窗格菜单的 Params 下，需要填写 `organizationid`。
 
+<div className="ch-image-md">
+
 ![测试获取组织详细信息](/images/cloud/manage/postman/postman14.webp)
+
+</div>
 
 * 将此值改为花括号中的 `orgid`：`{{orgid}}` (如果你之前已设置过该值，会出现一个包含该值的菜单) ：
 
+<div className="ch-image-md">
+
 ![提交测试](/images/cloud/manage/postman/postman15.webp)
+
+</div>
 
 * 点击“Save”按钮后，再点击屏幕右上角蓝色的“Send”按钮。
 
+<div className="ch-image-md">
+
 ![返回值](/images/cloud/manage/postman/postman16.webp)
+
+</div>
 
 * 返回结果应包含你的组织详细信息，且 &quot;status&quot;: 200。 (如果返回的是 &quot;status&quot; 400，且没有组织信息，则说明你的配置不正确。)
 
@@ -127,6 +187,10 @@ keywords: ['api', 'postman', 'rest api', 'Cloud 管理', '集成']
 * 分别将 `organizationid` 和 `serviceid` 的值编辑为 `{{orgid}}` 和 `{{serviceid}}`。
 * 点击“Save”，然后点击右侧蓝色的“Send”按钮。
 
+<div className="ch-image-md">
+
 ![服务列表](/images/cloud/manage/postman/postman17.webp)
+
+</div>
 
 * 返回结果应显示你的服务列表及其详细信息，且 `"status": 200`。 (如果你收到 `"status"` 400，且没有任何服务信息，则说明你的配置不正确) 。

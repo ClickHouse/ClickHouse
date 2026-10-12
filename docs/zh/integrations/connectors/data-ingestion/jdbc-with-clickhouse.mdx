@@ -17,7 +17,11 @@ doc_type: 'guide'
 
 **概述：** <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a> 配合 [jdbc 表函数](/zh/reference/functions/table-functions/jdbc) 或 [JDBC 表引擎](/zh/reference/engines/table-engines/integrations/jdbc)，可让 ClickHouse 访问任何提供了 <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">JDBC 驱动</a> 的外部数据源中的数据：
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![ClickHouse JDBC Bridge 架构图](/images/integrations/data-ingestion/dbms/jdbc-01.webp)
+
+</div>
 
 当某个外部数据源没有可用的原生内置[集成引擎](/zh/reference/engines/table-engines/integrations/index)、表函数或外部字典，但该数据源有 JDBC 驱动时，这种方式就很方便。
 
@@ -43,7 +47,7 @@ doc_type: 'guide'
   ## 在本地安装 ClickHouse JDBC Bridge
 </div>
 
-使用 ClickHouse JDBC Bridge 最简单的方式，就是将其安装并运行在与 ClickHouse 相同的主机上：![ClickHouse JDBC Bridge 本地部署示意图](/images/integrations/data-ingestion/dbms/jdbc-02.webp)
+使用 ClickHouse JDBC Bridge 最简单的方式，就是将其安装并运行在与 ClickHouse 相同的主机上：<span className="ch-image-lg ch-image-background-white">![ClickHouse JDBC Bridge 本地部署示意图](/images/integrations/data-ingestion/dbms/jdbc-02.webp)</span>
 
 首先，连接到运行 ClickHouse 的机器上的 Unix shell，并创建一个本地文件夹，稍后我们会将 ClickHouse JDBC Bridge 安装到该文件夹中 (文件夹名称和存放位置都可以自行决定) ：
 
@@ -145,7 +149,11 @@ ClickHouse 现在既可以通过 [jdbc 表函数](/zh/reference/functions/table-
 
 对于分布式 ClickHouse 集群 (即包含多个 ClickHouse 主机的集群) ，将 ClickHouse JDBC Bridge 安装并运行在独立主机上是更合理的做法：
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![ClickHouse JDBC Bridge 外部部署示意图](/images/integrations/data-ingestion/dbms/jdbc-03.webp)
+
+</div>
 
 这样做的好处是，每个 ClickHouse 主机都可以访问 JDBC Bridge。否则，每个需要通过 Bridge 访问外部数据源的 ClickHouse 实例都必须在本地安装 JDBC Bridge。
 

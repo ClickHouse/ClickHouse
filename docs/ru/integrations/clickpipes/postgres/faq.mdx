@@ -431,7 +431,11 @@ CREATE PUBLICATION <pub_name> FOR TABLES IN SCHEMA <schema_name> WITH (publish =
 
 Да. Для ClickPipe Postgres с режимом репликации CDC или Snapshot + CDC можно включить создание слота репликации с включённым failover, переведя переключатель ниже в разделе `Advanced Settings` при создании ClickPipe. Обратите внимание: для использования этой возможности требуется Postgres версии 17 или выше.
 
+<div className="ch-image-md">
+
 ![](/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp)
+
+</div>
 
 Если источник настроен соответствующим образом, слот сохраняется после переключения на read replica Postgres, обеспечивая непрерывную репликацию данных. Подробнее [здесь](https://www.postgresql.org/docs/current/logical-replication-failover.html).
 

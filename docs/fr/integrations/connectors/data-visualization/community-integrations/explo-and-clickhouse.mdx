@@ -24,7 +24,11 @@ Des analyses orientées client pour n’importe quelle plateforme. Conçu pour d
 
 Dans ce guide, vous allez connecter vos données depuis ClickHouse à Explo et visualiser les résultats. Le graphique se présentera ainsi :
 
+<div className="ch-image-md">
+
 ![Tableau de bord Explo](/images/integrations/data-visualization/explo_15.webp)
+
+</div>
 
 <p />
 
@@ -44,27 +48,51 @@ Dans ce guide, vous allez connecter vos données depuis ClickHouse à Explo et v
 
     2. Cliquez sur l&#39;onglet **Données** d&#39;Explo dans la barre latérale gauche.
 
+    <div className="ch-image-sm">
+
     ![Onglet Données](/images/integrations/data-visualization/explo_01.webp)
+
+    </div>
 
     3. Cliquez sur **Connecter une source de données** en haut à droite.
 
+    <div className="ch-image-sm">
+
     ![Connecter une source de données](/images/integrations/data-visualization/explo_02.webp)
+
+    </div>
 
     4. Renseignez les informations sur la page **Premiers pas**
 
+    <div className="ch-image-md">
+
     ![Premiers pas](/images/integrations/data-visualization/explo_03.webp)
+
+    </div>
 
     5. Sélectionnez **ClickHouse**
 
+    <div className="ch-image-md">
+
     ![ClickHouse](/images/integrations/data-visualization/explo_04.webp)
+
+    </div>
 
     6. Saisissez vos **identifiants ClickHouse**.
 
+    <div className="ch-image-md">
+
     ![Identifiants](/images/integrations/data-visualization/explo_05.webp)
+
+    </div>
 
     7. Configurez **Sécurité**
 
+    <div className="ch-image-md">
+
     ![Sécurité](/images/integrations/data-visualization/explo_06.webp)
+
+    </div>
 
     8. Dans ClickHouse, autorisez les IP d&#39;Explo.
        `54.211.43.19, 52.55.98.121, 3.214.169.94, et 54.156.141.148`
@@ -73,15 +101,27 @@ Dans ce guide, vous allez connecter vos données depuis ClickHouse à Explo et v
   <Step title="Créer un tableau de bord" id="3-create-a-dashboard">
     1. Accédez à l&#39;onglet **Tableau de bord** dans la barre de navigation de gauche.
 
+    <div className="ch-image-sm">
+
     ![Tableau de bord](/images/integrations/data-visualization/explo_07.webp)
+
+    </div>
 
     2. Cliquez sur **Créer un tableau de bord** dans le coin supérieur droit et donnez un nom à votre tableau de bord. Vous avez maintenant créé un tableau de bord !
 
+    <div className="ch-image-sm">
+
     ![Créer un tableau de bord](/images/integrations/data-visualization/explo_08.webp)
+
+    </div>
 
     3. Vous devriez maintenant voir un écran similaire à celui-ci :
 
+    <div className="ch-image-md">
+
     ![Tableau de bord Explo](/images/integrations/data-visualization/explo_09.webp)
+
+    </div>
   </Step>
 
   <Step title="Exécuter une requête SQL" id="4-run-a-sql-query">
@@ -89,33 +129,61 @@ Dans ce guide, vous allez connecter vos données depuis ClickHouse à Explo et v
        `SELECT * FROM YOUR_TABLE_NAME
        LIMIT 100`
 
+    <div className="ch-image-md">
+
     ![Tableau de bord Explo](/images/integrations/data-visualization/explo_10.webp)
+
+    </div>
 
     2. Cliquez maintenant sur **Run**, puis accédez à l&#39;onglet d&#39;aperçu pour voir vos données.
 
+    <div className="ch-image-md">
+
     ![Tableau de bord Explo](/images/integrations/data-visualization/explo_11.webp)
+
+    </div>
   </Step>
 
   <Step title="Créer un graphique" id="5-build-a-chart">
     1. Depuis la gauche, faites glisser l&#39;icône du graphique en barres sur l&#39;écran.
 
+    <div className="ch-image-sm">
+
     ![Tableau de bord Explo](/images/integrations/data-visualization/explo_16.webp)
+
+    </div>
 
     2. Sélectionnez le jeu de données. Vous devriez maintenant voir un écran comme celui-ci :
 
+    <div className="ch-image-sm">
+
     ![Tableau de bord Explo](/images/integrations/data-visualization/explo_12.webp)
+
+    </div>
 
     3. Renseignez **county** sur l&#39;axe X et **Price** dans la section de l&#39;axe Y, comme suit :
 
+    <div className="ch-image-sm">
+
     ![Tableau de bord Explo](/images/integrations/data-visualization/explo_13.webp)
+
+    </div>
 
     4. Remplacez ensuite l&#39;agrégation par **AVG**.
 
+    <div className="ch-image-sm">
+
     ![Tableau de bord Explo](/images/integrations/data-visualization/explo_14.webp)
+
+    </div>
 
     5. Vous obtenez maintenant le prix moyen des logements par comté !
 
+    <div className="ch-image-md">
+
     ![Tableau de bord Explo](/images/integrations/data-visualization/explo_15.webp)
+
+    </div>
   </Step>
 </Steps>
 

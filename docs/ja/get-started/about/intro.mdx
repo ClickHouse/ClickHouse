@@ -49,7 +49,11 @@ LIMIT 8;
 
 [ClickHouse SQL Playground でこのクエリを実行](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true)できます。このクエリは、存在する100以上の[カラムのうちごく一部だけを選択して絞り込み](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true)、結果を数ミリ秒で返します。
 
+<div className="ch-image-lg">
+
 ![カラム指向データベースでのクエリ例](/images/column-oriented-example-query.webp)
+
+</div>
 
 上の図の統計セクションを見るとわかるように、このクエリは1億行を92ミリ秒で処理しました。これは、スループットにすると1秒あたり10億行超、または1秒あたり7 GB弱のデータ転送に相当します。
 
@@ -57,14 +61,22 @@ LIMIT 8;
 
 行指向データベースでは、上記のクエリが既存のカラムのうち数個しか処理しない場合でも、システムは他のカラムのデータもディスクからメモリに読み込む必要があります。これは、データがディスク上で[ブロック](https://en.wikipedia.org/wiki/Block_\(data_storage\))と呼ばれる単位 (通常は 4 KB や 8 KB などの固定サイズ) で格納されているためです。ブロックは、ディスクからメモリに読み込まれるデータの最小単位です。アプリケーションまたはデータベースがデータを要求すると、オペレーティングシステムのディスクI/Oサブシステムが必要なブロックをディスクから読み取ります。ブロックの一部だけが必要な場合でも、ブロック全体がメモリに読み込まれます (これはディスクおよびファイルシステムの設計によるものです) 。
 
+<div className="ch-image-lg">
+
 ![行指向データベースの構造](/images/row-oriented.webp)
+
+</div>
 
 **カラム指向DBMS**
 
 各カラムの値はディスク上に連続して順番に格納されるため、上記のクエリを実行しても不要なデータは読み込まれません。
 また、ディスクからメモリへのブロック単位での保存と転送は、分析クエリのデータアクセスパターンに適しているため、クエリに必要なカラムだけがディスクから読み込まれ、使用しないデータに対する不要な I/O を回避できます。これは、無関係なカラムも含めて行全体を読み込む行指向の保存方式と比べて、[はるかに高速](https://benchmark.clickhouse.com/)です。
 
+<div className="ch-image-lg">
+
 ![カラム指向データベースの構造](/images/column-oriented.webp)
+
+</div>
 
 <div id="data-replication-and-integrity">
   ## データのレプリケーションと整合性

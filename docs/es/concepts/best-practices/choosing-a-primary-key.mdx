@@ -120,7 +120,11 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 La siguiente animación muestra cómo se crea un índice primario disperso optimizado para la tabla Posts de Stack Overflow. En lugar de indexar filas individuales, el índice se aplica a bloques de filas:
 
+<div className="ch-image-lg">
+
 ![Clave primaria](/images/bestpractices/create_primary_key.webp)
+
+</div>
 
 Si se repite la misma consulta en una tabla con esta clave de ordenación:
 
@@ -168,7 +172,11 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 Además, visualizamos cómo el índice disperso descarta todos los bloques de filas que no pueden contener coincidencias para nuestra consulta de ejemplo:
 
+<div className="ch-image-lg">
+
 ![Clave primaria](/images/bestpractices/primary_key.webp)
+
+</div>
 
 <Note>
   Todas las columnas de una tabla se ordenarán según el valor de la clave de ordenación especificada, independientemente de si están incluidas en la propia clave. Por ejemplo, si `CreationDate` se usa como clave, el orden de los valores en todas las demás columnas se corresponderá con el orden de los valores de la columna `CreationDate`. Se pueden especificar varias claves de ordenación; esto ordenará con la misma semántica que una cláusula `ORDER BY` en una consulta `SELECT`.

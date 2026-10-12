@@ -13,7 +13,11 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 本指南介绍如何使用 Azure Private Link，通过虚拟网络在 Azure (包括客户自有服务和 Microsoft Partner 服务) 与 ClickHouse Cloud 之间建立私有连接。Azure Private Link 通过避免数据暴露在公网，简化网络架构，并提升 Azure 中各端点之间连接的安全性。
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![PrivateLink 概览](/images/cloud/security/azure-pe.webp)
+
+</div>
 
 <Warning>
   Azure Private Link 仅支持从您的 Azure VNet 发起到 ClickHouse Cloud 的连接。它不能用于从 ClickHouse Cloud 发起到您 VNet 中服务的连接，例如私有数据库。
@@ -56,7 +60,11 @@ ClickHouse 会尝试将您的服务分组，以便在 Azure 区域内复用同�
 
 在 ClickHouse Cloud 控制台中，打开要通过 PrivateLink 连接的服务，然后打开 **Settings** 菜单。点击 **Set up private endpoint** 按钮。记下 `Service name` 和 `DNS name`，后续配置 Private Link 时需要用到它们。
 
+<div className="ch-image-lg">
+
 ![专用终结点](/images/cloud/security/azure-privatelink-pe-create.webp)
+
+</div>
 
 记下 `Service name` 和 `DNS name`，后续步骤中会用到它们。
 
@@ -117,11 +125,19 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 在 Azure 门户中，打开 **Private Link Center → Private Endpoints**。
 
+<div className="ch-image-lg">
+
 ![打开 Azure Private Center](/images/cloud/security/azure-private-link-center.webp)
+
+</div>
 
 点击 **Create** 按钮，打开专用终结点创建对话框。
 
+<div className="ch-image-lg">
+
 ![打开 Azure Private Center](/images/cloud/security/azure-private-link-center.webp)
+
+</div>
 
 ***
 
@@ -133,7 +149,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 完成上述步骤后，点击 **Next: Resource** 按钮。
 
+<div className="ch-image-md">
+
 ![创建专用终结点基础配置](/images/cloud/security/azure-pe-create-basic.webp)
+
+</div>
 
 ***
 
@@ -143,7 +163,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 点击 **Next: Virtual Network** 按钮。
 
+<div className="ch-image-md">
+
 ![专用终结点资源选择](/images/cloud/security/azure-pe-resource.webp)
+
+</div>
 
 ***
 
@@ -156,13 +180,21 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 点击 **Next: DNS** 按钮。
 
+<div className="ch-image-md">
+
 ![专用终结点虚拟网络选择](/images/cloud/security/azure-pe-create-vnet.webp)
+
+</div>
 
 点击 **Next: Tags** 按钮。
 
 ***
 
+<div className="ch-image-md">
+
 ![专用终结点 DNS 配置](/images/cloud/security/azure-pe-create-dns.webp)
+
+</div>
 
 你也可以选择为专用终结点添加标签。
 
@@ -170,17 +202,29 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 ***
 
+<div className="ch-image-md">
+
 ![专用终结点标签](/images/cloud/security/azure-pe-create-tags.webp)
+
+</div>
 
 最后，点击 **Create** 按钮。
 
+<div className="ch-image-md">
+
 ![专用终结点评审](/images/cloud/security/azure-pe-create-review.webp)
+
+</div>
 
 已创建专用终结点的 **Connection status** 将处于 **Pending** 状态。将该专用终结点添加到服务允许列表后，其状态会变为 **Approved**。
 
 打开与该专用终结点关联的网络接口，并复制 **Private IPv4 address** (本示例中为 10.0.0.4) ；后续步骤会用到此信息。
 
+<div className="ch-image-lg">
+
 ![专用终结点 IP 地址](/images/cloud/security/azure-pe-ip.webp)
+
+</div>
 
 <div id="option-2-using-terraform-to-create-a-private-endpoint-in-azure">
   ### 选项 2：使用 Terraform 在 Azure 中创建专用终结点
@@ -211,18 +255,30 @@ resource "azurerm_private_endpoint" "example_clickhouse_cloud" {
 
 专用终结点资源 ID 可在 Azure 门户中查看。打开上一步创建的专用终结点，然后点击 **JSON View**：
 
+<div className="ch-image-lg">
+
 ![专用终结点 视图](/images/cloud/security/azure-pe-view.webp)
+
+</div>
 
 复制顶层的 `id` 字段 (即专用终结点的 Resource ID，格式为 `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) ，不要使用 `properties` 对象内嵌套的 `id` 字段：
 
 **首选方法：使用 Resource ID**
 
+<div className="ch-image-lg">
+
 ![专用终结点资源 ID](/images/cloud/security/azure-pe-resource-id.webp)
+
+</div>
 
 **旧版方法：使用 resourceGUID**
 为保持向后兼容，您仍然可以使用 resourceGUID。找到 `resourceGuid` 字段并复制该值：
 
+<div className="ch-image-lg">
+
 ![专用终结点 Resource GUID](/images/cloud/security/azure-pe-resource-guid.webp)
+
+</div>
 
 <div id="setting-up-dns-for-private-link">
   ## 为 Private Link 配置 DNS
@@ -263,7 +319,11 @@ resource "azurerm_private_dns_zone" "clickhouse_cloud_private_link_zone" {
 4. 在 IP Address 中，输入你在专用终结点中看到的 IP 地址。
 5. 选择 **确定**。
 
+<div className="ch-image-lg">
+
 ![Private Link DNS 通配符设置](/images/cloud/security/azure-pl-dns-wildcard.webp)
+
+</div>
 
 **选项 2：使用 Terraform**
 
@@ -325,7 +385,11 @@ Address: 10.0.0.4
 
 要移除端点，请打开 **Organization details -&gt; Private Endpoints**，然后点击删除按钮删除该端点。
 
+<div className="ch-image-lg">
+
 ![移除专用终结点](/images/cloud/security/azure-pe-remove-private-endpoint.webp)
+
+</div>
 
 <div id="option-2-api">
   ### 选项 2：API
@@ -403,7 +467,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
   如果您想允许通过现有 PrivateLink 连接进行访问，请使用现有端点下拉菜单。
 </Note>
 
+<div className="ch-image-lg">
+
 ![专用终结点筛选器](/images/cloud/security/azure-privatelink-pe-filter.webp)
+
+</div>
 
 <div id="option-2-api">
   ### 选项 2：API
@@ -472,7 +540,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 在 ClickHouse Cloud 控制台中，前往 **设置**。点击 **设置专用终结点** 按钮。在打开的弹出面板中，复制 **DNS name**。
 
+<div className="ch-image-lg">
+
 ![专用终结点 DNS name](/images/cloud/security/azure-privatelink-pe-dns.webp)
+
+</div>
 
 <div id="option-2-api-3">
   #### 选项 2：API

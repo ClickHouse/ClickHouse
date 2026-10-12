@@ -66,11 +66,19 @@ La publication `clickpipes` définit l’ensemble des tables dont les événemen
 Dans Neon, vous pouvez activer la réplication logique via l’UI. Cela est nécessaire pour que le CDC de ClickPipes puisse répliquer les données.
 Accédez à l’onglet **Settings**, puis à la section **Logical Replication**.
 
+<div className="ch-image-lg">
+
 ![Activer la réplication logique](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp)
+
+</div>
 
 Cliquez sur **Enable** pour finaliser cette étape. Vous devriez voir le message de réussite ci-dessous une fois l’option activée.
 
+<div className="ch-image-lg">
+
 ![Réplication logique activée](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp)
+
+</div>
 
 Vérifions les paramètres ci-dessous dans votre instance Neon Postgres :
 
@@ -87,7 +95,11 @@ SHOW max_replication_slots; -- should be 10
 Si vous disposez du plan Neon Enterprise, vous pouvez ajouter les [ClickPipes IPs](/fr/integrations/clickpipes/networking/static-ips) à la liste d’autorisation afin d’autoriser la réplication depuis ClickPipes vers votre instance Neon Postgres.
 Pour cela, cliquez sur l’onglet **Settings**, puis accédez à la section **IP Allow**.
 
+<div className="ch-image-lg">
+
 ![Écran d’autorisation des IP](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp)
+
+</div>
 
 <div id="copy-connection-details">
   ## Copier les informations de connexion
@@ -97,7 +109,11 @@ Maintenant que l&#39;utilisateur est créé, que la publication est prête et qu
 Rendez-vous dans le **Dashboard** et, dans la zone de texte où s&#39;affiche la chaîne de connexion,
 passez l&#39;affichage sur **Paramètres uniquement**. Nous aurons besoin de ces paramètres à l&#39;étape suivante.
 
+<div className="ch-image-lg">
+
 ![Informations de connexion](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp)
+
+</div>
 
 <div id="whats-next">
   ## Et ensuite ?

@@ -315,7 +315,11 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
   * ثم بحسب `URL`،
   * وأخيرًا بحسب `EventTime`:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتناثرة 01](/images/guides/best-practices/sparse-primary-indexes-01.webp)
+
+</div>
 
 تمثل `UserID.bin` و`URL.bin` و`EventTime.bin` ملفات البيانات الموجودة على القرص والتي تُخزَّن فيها قيم الأعمدة `UserID` و`URL` و`EventTime`.
 
@@ -338,7 +342,11 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
 يوضح المخطط التالي كيف تُنظَّم (قيم أعمدة) 8.87 مليون صف من جدولنا
 في 1083 حبيبة، نتيجة احتواء تعليمة DDL الخاصة بالجدول على الإعداد `index_granularity` (المضبوط على قيمته الافتراضية البالغة 8192).
 
+<div className="ch-image-lg">
+
 ![Sparse Primary Indices 02](/images/guides/best-practices/sparse-primary-indexes-02.webp)
+
+</div>
 
 تنتمي منطقيًا أول 8192 صفًا (قيم أعمدتها) — استنادًا إلى الترتيب الفعلي على القرص — إلى الحبيبة 0، ثم تنتمي الـ 8192 صفًا التالية (قيم أعمدتها) إلى الحبيبة 1، وهكذا.
 
@@ -369,11 +377,19 @@ ClickHouse هو <a href="/ar/get-started/about/distinctive-features#true-column-
 * يخزّن إدخال الفهرس الأول (&#39;العلامة 0&#39; في المخطط أدناه) قيم أعمدة المفتاح للصف الأول من الحبيبة 0 في المخطط أعلاه،
 * ويخزّن إدخال الفهرس الثاني (&#39;العلامة 1&#39; في المخطط أدناه) قيم أعمدة المفتاح للصف الأول من الحبيبة 1 في المخطط أعلاه، وهكذا.
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتفرقة 03a](/images/guides/best-practices/sparse-primary-indexes-03a.webp)
+
+</div>
 
 إجمالًا، يحتوي الفهرس على 1083 إدخالًا لجدولنا الذي يضم 8.87 مليون صف و1083 حبيبة:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتفرقة 03b](/images/guides/best-practices/sparse-primary-indexes-03b.webp)
+
+</div>
 
 <Note>
   * بالنسبة إلى الجداول التي تستخدم [درجة تحبّب الفهرس التكيفية](/ar/resources/changelogs/oss/2019#experimental-features-1)، تُخزَّن أيضًا علامة إضافية &quot;نهائية&quot; في الفهرس الأساسي تسجّل قيم أعمدة المفتاح الأساسي لآخر صف في الجدول. ولكن لأننا عطّلنا درجة تحبّب الفهرس التكيفية (لتبسيط الشرح في هذا الدليل، وكذلك لجعل المخططات والنتائج قابلة لإعادة الإنتاج)، فإن فهرس جدول المثال لدينا لا يتضمن هذه العلامة النهائية.
@@ -589,7 +605,11 @@ LIMIT 10;
 
 يوضح المخطط التالي جزءًا من ملف الفهرس الأساسي لجدولنا.
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتناثرة 04](/images/guides/best-practices/sparse-primary-indexes-04.webp)
+
+</div>
 
 كما ناقشنا أعلاه، ومن خلال بحث ثنائي عبر علامات UserID البالغ عددها 1083 في الفهرس، جرى تحديد العلامة 176. لذلك، قد تحتوي الحبيبة 176 المقابلة على صفوف تكون قيمة عمود UserID فيها 749.927.693.
 
@@ -607,7 +627,11 @@ LIMIT 10;
 
 يوضح المخطط التالي ملفات العلامات الثلاثة `UserID.mrk` و`URL.mrk` و`EventTime.mrk` التي تخزّن المواقع الفعلية للحبيبات الخاصة بأعمدة الجدول `UserID` و`URL` و`EventTime`.
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتناثرة 05](/images/guides/best-practices/sparse-primary-indexes-05.webp)
+
+</div>
 
 لقد ناقشنا أن الفهرس الأساسي عبارة عن ملف مصفوفة مسطّح غير مضغوط (primary.idx) يحتوي على علامات فهرس يبدأ ترقيمها من 0.
 
@@ -655,7 +679,11 @@ LIMIT 10;
 
 يوضح المخطط التالي والنص أدناه كيف يحدد ClickHouse، في استعلامنا المثال، موقع الحبيبة 176 في ملف البيانات UserID.bin.
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتناثرة 06](/images/guides/best-practices/sparse-primary-indexes-06.webp)
+
+</div>
 
 ناقشنا سابقًا في هذا الدليل أن ClickHouse اختار علامة الفهرس الأساسي 176، وبالتالي الحبيبة 176، على أنها قد تحتوي على صفوف مطابقة لاستعلامنا.
 
@@ -772,7 +800,11 @@ Processed 8.81 million rows,
 
 لنفترض أن UserID منخفض الكاردينالية. في هذه الحالة، يُرجَّح أن تتوزع قيمة UserID نفسها على عدة صفوف جدول وحبيبات، وبالتالي على عدة علامات فهرسة. وبالنسبة إلى علامات الفهرسة التي لها UserID نفسه، تكون قيم URL الخاصة بها مرتبة ترتيبًا تصاعديًا (لأن صفوف الجدول مرتبة أولًا حسب UserID ثم حسب URL). وهذا يتيح ترشيحًا فعالًا كما هو موضح أدناه:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتفرقة 06](/images/guides/best-practices/sparse-primary-indexes-07.webp)
+
+</div>
 
 هناك ثلاثة سيناريوهات مختلفة لعملية تحديد الحبيبات في بياناتنا النموذجية المجردة في المخطط أعلاه:
 
@@ -786,7 +818,11 @@ Processed 8.81 million rows,
 
 عندما يكون UserID مرتفع الكاردينالية، فمن غير المرجح أن تتوزع قيمة UserID نفسها على عدة صفوف جدول وحبيبات. وهذا يعني أن قيم URL لعلامات الفهرسة لا تكون متزايدة بشكل رتيب:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتفرقة 06](/images/guides/best-practices/sparse-primary-indexes-08.webp)
+
+</div>
 
 كما نرى في المخطط أعلاه، تُحدَّد جميع العلامات المعروضة التي تكون قيم URL فيها أصغر من W3 من أجل تمرير صفوف الحبيبات المرتبطة بها إلى ClickHouse engine.
 
@@ -820,7 +856,11 @@ ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
 
 أنشأ ClickHouse الآن فهرسًا إضافيًا يخزّن — لكل مجموعة من 4 [حبيبات](#data-is-organized-into-granules-for-parallel-data-processing) متتالية (لاحظ العبارة `GRANULARITY 4` في تعليمة `ALTER TABLE` أعلاه) — الحد الأدنى والحد الأقصى لقيمة URL:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتفرقة 13a](/images/guides/best-practices/sparse-primary-indexes-13a.webp)
+
+</div>
 
 يخزّن إدخال الفهرس الأول (`mark 0` في المخطط أعلاه) الحد الأدنى والحد الأقصى لقيم URL الخاصة [بالصفوف التي تنتمي إلى أول 4 حبيبات في جدولنا](#data-is-organized-into-granules-for-parallel-data-processing).
 
@@ -858,15 +898,27 @@ ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
 
 عند إنشاء **جدول ثانٍ** بمفتاح أساسي مختلف، يجب توجيه الاستعلامات صراحةً إلى نسخة الجدول الأنسب للاستعلام، كما يجب إدراج البيانات الجديدة صراحةً في كلا الجدولين من أجل الحفاظ على تزامنهما:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتناثرة 09a](/images/guides/best-practices/sparse-primary-indexes-09a.webp)
+
+</div>
 
 أما مع **عرض مادي**، فيُنشأ الجدول الإضافي ضمنيًا وتظل البيانات متزامنة تلقائيًا بين الجدولين:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتناثرة 09b](/images/guides/best-practices/sparse-primary-indexes-09b.webp)
+
+</div>
 
 ويُعد **إسقاط** الخيار الأكثر شفافية لأنه، إلى جانب الحفاظ تلقائيًا على تزامن الجدول الإضافي المُنشأ ضمنيًا (والمخفي) مع تغيّرات البيانات، يختار ClickHouse أيضًا تلقائيًا نسخة الجدول الأكثر فاعلية للاستعلامات:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتناثرة 09c](/images/guides/best-practices/sparse-primary-indexes-09c.webp)
+
+</div>
 
 فيما يلي نناقش هذه الخيارات الثلاثة لإنشاء عدة فهارس أساسية واستخدامها بمزيد من التفصيل، مع أمثلة واقعية.
 
@@ -914,11 +966,19 @@ OPTIMIZE TABLE hits_URL_UserID FINAL;
 
 لأننا غيّرنا ترتيب الأعمدة في المفتاح الأساسي، فإن الصفوف المُدخلة تُخزَّن الآن على القرص بترتيب معجمي مختلف (مقارنةً بـ[الجدول الأصلي](#a-table-with-a-primary-key))، ولذلك فإن الحبيبات الـ1083 في هذا الجدول تحتوي أيضًا على قيم مختلفة عمّا كانت عليه سابقًا:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتفرقة 10](/images/guides/best-practices/sparse-primary-indexes-10.webp)
+
+</div>
 
 وهذا هو المفتاح الأساسي الناتج:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتفرقة 11](/images/guides/best-practices/sparse-primary-indexes-11.webp)
+
+</div>
 
 ويمكن الآن استخدامه لتسريع تنفيذ استعلام المثال لدينا بشكل كبير، والذي يطبّق عامل تصفية على عمود URL لحساب أفضل 10 مستخدمين نقروا على URL ‏&quot;http://public&#95;search&quot; بأكبر عدد من المرات:
 
@@ -1057,11 +1117,19 @@ Ok.
   * إذا أُدرجت صفوف جديدة في جدول المصدر hits&#95;UserID&#95;URL، فستُدرج هذه الصفوف أيضًا تلقائيًا في الجدول المُنشأ ضمنيًا
   * عمليًا، يكون للجدول المُنشأ ضمنيًا ترتيب الصفوف نفسه والفهرس الأساسي نفسه كما في [الجدول الثانوي الذي أنشأناه صراحةً](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables):
 
+  <div className="ch-image-lg">
+
   ![Sparse Primary Indices 12b1](/images/guides/best-practices/sparse-primary-indexes-12b-1.webp)
+
+  </div>
 
   يخزّن ClickHouse [ملفات بيانات الأعمدة](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin) و[ملفات العلامات](#mark-files-are-used-for-locating-granules) (*.mrk2) و[الفهرس الأساسي](#the-primary-index-has-one-entry-per-granule) (primary.idx) للجدول المُنشأ ضمنيًا في مجلد خاص داخل دليل بيانات خادم ClickHouse:
 
+  <div className="ch-image-md">
+
   ![Sparse Primary Indices 12b2](/images/guides/best-practices/sparse-primary-indexes-12b-2.webp)
+
+  </div>
 </Note>
 
 يمكن الآن استخدام الجدول المُنشأ ضمنيًا (وفهرسه الأساسي) الذي يستند إليه العرض المادي لتسريع تنفيذ استعلام المثال لدينا بدرجة كبيرة عند التصفية على عمود URL:
@@ -1139,11 +1207,19 @@ ALTER TABLE hits_UserID_URL
   * يُرجى ملاحظة أن الإسقاطات لا تجعل الاستعلامات التي تستخدم `ORDER BY` أكثر كفاءة، حتى إذا كانت `ORDER BY` مطابقة لعبارة `ORDER BY` الخاصة بالإسقاط (راجع https://github.com/ClickHouse/ClickHouse/issues/47333)
   * عمليًا، يمتلك الجدول المخفي المُنشأ ضمنيًا ترتيب الصفوف نفسه والفهرس الأساسي نفسه اللذين يمتلكهما [الجدول الثانوي الذي أنشأناه صراحةً](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables):
 
+  <div className="ch-image-lg">
+
   ![Sparse Primary Indices 12c1](/images/guides/best-practices/sparse-primary-indexes-12c-1.webp)
+
+  </div>
 
   يخزّن ClickHouse [ملفات بيانات الأعمدة](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin) و[ملفات العلامات](#mark-files-are-used-for-locating-granules) (*.mrk2) و[الفهرس الأساسي](#the-primary-index-has-one-entry-per-granule) (primary.idx) الخاص بالجدول المخفي في مجلد خاص (مُشار إليه باللون البرتقالي في لقطة الشاشة أدناه)، بجوار ملفات بيانات جدول المصدر وملفات العلامات وملفات الفهرس الأساسي الخاصة به:
 
+  <div className="ch-image-sm">
+
   ![Sparse Primary Indices 12c2](/images/guides/best-practices/sparse-primary-indexes-12c-2.webp)
+
+  </div>
 </Note>
 
 يمكن الآن استخدام الجدول المخفي (وفهرسه الأساسي) الذي أنشأه الإسقاط، ضمنيًا، لتسريع تنفيذ استعلامنا المثال بشكل كبير عند التصفية حسب عمود URL. لاحظ أن الاستعلام يستهدف، من ناحية الصياغة، جدول المصدر الخاص بالإسقاط.
@@ -1419,7 +1495,11 @@ ORDER BY Ratio ASC
 
 يوضح المخطط أدناه ترتيب الصفوف على القرص لمفتاح أساسي تكون فيه أعمدة المفتاح مرتبة حسب الكاردينالية بترتيب تصاعدي:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتناثرة 14a](/images/guides/best-practices/sparse-primary-indexes-14a.webp)
+
+</div>
 
 لقد ناقشنا أن [بيانات صفوف الجدول تُخزَّن على القرص مرتبة حسب أعمدة المفتاح الأساسي](#data-is-stored-on-disk-ordered-by-primary-key-columns).
 
@@ -1431,7 +1511,11 @@ ORDER BY Ratio ASC
 
 وعلى النقيض من المخطط أعلاه، يوضح المخطط أدناه ترتيب الصفوف على القرص لمفتاح أساسي تكون فيه أعمدة المفتاح مرتبة حسب الكاردينالية بترتيب تنازلي:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتناثرة 14b](/images/guides/best-practices/sparse-primary-indexes-14b.webp)
+
+</div>
 
 تُرتَّب صفوف الجدول الآن أولًا حسب قيمة `ch`، وتُرتَّب الصفوف التي لها قيمة `ch` نفسها حسب قيمة `cl`.
 لكن بما أن عمود المفتاح الأول `ch` ذو كاردينالية عالية، فمن غير المرجّح أن توجد صفوف لها قيمة `ch` نفسها. ونتيجةً لذلك، فمن غير المرجّح أيضًا أن تكون قيم `cl` مرتبة (محليًا، أي ضمن الصفوف التي لها قيمة `ch` نفسها).
@@ -1472,7 +1556,11 @@ ORDER BY Ratio ASC
 * ترتيب insert للصفوف عند تغيّر المحتوى (على سبيل المثال بسبب ضغطات المفاتيح أثناء كتابة النص في منطقة النص) و
 * الترتيب على القرص لبيانات الصفوف المُدرجة عند استخدام `PRIMARY KEY (hash)`:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتناثرة 15a](/images/guides/best-practices/sparse-primary-indexes-15a.webp)
+
+</div>
 
 ونظرًا إلى أن العمود `hash` يُستخدم بوصفه عمود المفتاح الأساسي
 
@@ -1489,7 +1577,11 @@ ORDER BY Ratio ASC
 * ترتيب insert للصفوف عند تغيّر المحتوى (على سبيل المثال بسبب ضغطات المفاتيح أثناء كتابة النص في منطقة النص) و
 * الترتيب على القرص لبيانات الصفوف المُدرجة عند استخدام `PRIMARY KEY (fingerprint, hash)` المركب:
 
+<div className="ch-image-lg">
+
 ![الفهارس الأساسية المتناثرة 15b](/images/guides/best-practices/sparse-primary-indexes-15b.webp)
+
+</div>
 
 الآن تُرتَّب الصفوف على القرص أولًا حسب `fingerprint`، وبالنسبة إلى الصفوف التي لها قيمة `fingerprint` نفسها، تحدد قيمة `hash` الترتيب النهائي.
 

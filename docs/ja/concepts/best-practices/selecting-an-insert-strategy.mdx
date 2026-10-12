@@ -9,6 +9,7 @@ doc_type: 'guide'
 ---
 
 import AsyncInserts from '/snippets/ja/_async_inserts.mdx';
+
 import BulkInserts from '/snippets/ja/_bulk_inserts.mdx';
 
 効率的なデータインジェストは、高性能な ClickHouse デプロイメントの基盤です。適切な 挿入 戦略を選ぶことは、スループット、コスト、信頼性に大きく影響します。このセクションでは、ワークロードに適した判断ができるよう、ベストプラクティス、トレードオフ、設定オプションについて説明します。
@@ -31,7 +32,11 @@ import BulkInserts from '/snippets/ja/_bulk_inserts.mdx';
 
 以下では、ClickHouse の MergeTree における挿入の仕組みを簡単に説明します。
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![挿入プロセス](/images/bestpractices/insert_process.webp)
+
+</div>
 
 <div id="client-side-steps">
   #### クライアント側の手順

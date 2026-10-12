@@ -102,7 +102,11 @@ Em vez de processar 100 milhões de linhas e 800 megabytes, o ClickHouse leu e a
 De forma mais visual, foi assim que as 4096 linhas com `my_value` igual a 125 foram lidas e selecionadas, e como as linhas seguintes
 foram ignoradas sem precisar ser lidas do disco:
 
+<div className="ch-image-md">
+
 ![Simple Skip](/images/guides/best-practices/simple_skip.webp)
+
+</div>
 
 Você pode acessar informações detalhadas sobre o uso de skip indexes ativando o trace ao executar consultas. No
 clickhouse-client, defina `send_logs_level`:
@@ -221,7 +225,11 @@ Os skip indexes não são intuitivos, especialmente para quem está acostumado c
 
 Considere a seguinte distribuição de dados:
 
+<div className="ch-image-md">
+
 ![Exemplo ruim](/images/guides/best-practices/bad_skip.webp)
+
+</div>
 
 Suponha que a chave primária/ORDER BY seja `timestamp` e que exista um índice em `visitor_id`. Considere a seguinte consulta:
 

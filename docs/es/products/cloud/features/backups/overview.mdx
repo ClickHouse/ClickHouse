@@ -23,7 +23,11 @@ En la captura de pantalla de abajo, los cuadrados con línea continua representa
 
 El día 1, se realiza una copia de seguridad completa para iniciar la cadena de copias de seguridad. El día 2, se realiza una copia de seguridad incremental, y tanto la copia de seguridad completa como la incremental están disponibles para restaurar. Para el día 7, tenemos una copia de seguridad completa y seis copias de seguridad incrementales en la cadena, todas visibles y disponibles para restaurar. El día 8, realizamos una nueva copia de seguridad completa y, el día 9, una vez que tenemos dos copias de seguridad en la nueva cadena, la cadena anterior se descarta.
 
+<div className="ch-image-lg">
+
 ![Ejemplo de cadena de copias de seguridad en ClickHouse Cloud](/images/cloud/manage/backup-chain.webp)
+
+</div>
 
 ### Política predeterminada de copias de seguridad {#default-backup-policy}
 

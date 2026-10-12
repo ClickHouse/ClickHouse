@@ -45,15 +45,27 @@ Une valeur maximale sûre est de 10 millions.
 Vous pouvez définir l’intervalle de synchronisation et la taille du lot d’extraction lorsque vous créez un ClickPipe ou modifiez un ClickPipe existant.
 Lors de la création d’un ClickPipe, ces paramètres s’affichent à la deuxième étape de l’assistant de création, comme illustré ci-dessous :
 
+<div className="ch-image-md">
+
 ![Créer les paramètres de synchronisation](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
+
+</div>
 
 Lorsque vous modifiez un ClickPipe existant, accédez à l’onglet **Paramètres** du pipe, mettez le pipe en pause, puis cliquez sur **Configurer** ici :
 
+<div className="ch-image-md">
+
 ![Modifier le bouton de synchronisation](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
+
+</div>
 
 Cela ouvrira un volet contenant les paramètres de synchronisation, dans lequel vous pourrez modifier l’intervalle de synchronisation et la taille du lot d’extraction :
 
+<div className="ch-image-md">
+
 ![Modifier les paramètres de synchronisation](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
+
+</div>
 
 <div id="monitoring">
   ### Suivi du comportement du contrôle de synchronisation
@@ -61,4 +73,8 @@ Cela ouvrira un volet contenant les paramètres de synchronisation, dans lequel 
 
 Vous pouvez voir la durée de chaque lot dans la table **CDC Syncs** de l’onglet **Metrics** du ClickPipe. Notez que la durée indiquée ici inclut le temps d’envoi et que, s’il n’y a aucune ligne entrante, le ClickPipe attend ; ce temps d’attente est également inclus dans la durée.
 
+<div className="ch-image-md">
+
 ![table CDC Syncs](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)
+
+</div>

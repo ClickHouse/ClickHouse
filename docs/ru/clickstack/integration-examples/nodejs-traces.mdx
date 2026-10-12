@@ -45,7 +45,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     3. Перейдите в **Team Settings → API Keys**
     4. Скопируйте свой **Ingestion API Key**
 
+    <div className="ch-image-lg">
+
     ![Ключ API ClickStack](/images/clickstack/api-key.webp)
+
+    </div>
   </Step>
 
   <Step title="Запустите приложение" id="run-application">
@@ -74,11 +78,19 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   <Step title="Проверьте трассировки в HyperDX" id="verify-traces">
     После настройки войдите в HyperDX и убедитесь, что трассировки поступают. Вы должны увидеть примерно такую картину. Если трассировки не отображаются, попробуйте изменить временной диапазон:
 
+    <div className="ch-image-lg">
+
     ![Экран поиска трассировок](/images/clickstack/nodejs/traces-search-view.webp)
+
+    </div>
 
     Нажмите на любую трассировку, чтобы открыть подробный просмотр со спанами, длительностью и атрибутами:
 
+    <div className="ch-image-lg">
+
     ![Подробный просмотр трассировки](/images/clickstack/nodejs/trace-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -117,7 +129,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     3. Перейдите в **Team Settings → API Keys**
     4. Скопируйте свой **Ingestion API Key**
 
+    <div className="ch-image-lg">
+
     ![Ключ API ClickStack](/images/clickstack/api-key.webp)
+
+    </div>
 
     Задайте ключ API как переменную окружения:
 
@@ -142,9 +158,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     2. Перейдите в представление **Search** и выберите источник **Traces**
     3. Установите временной диапазон **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
 
+    <div className="ch-image-lg">
+
     ![Представление поиска трассировок](/images/clickstack/nodejs/traces-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Представление отдельной трассировки](/images/clickstack/nodejs/trace-view.webp)
+
+    </div>
 
     <Info>
       **Отображение часового пояса**
@@ -169,15 +193,27 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     1. Откройте HyperDX и перейдите в раздел **Dashboards**
     2. Нажмите **Import Dashboard** в правом верхнем углу (в меню с многоточием)
 
+    <div className="ch-image-lg">
+
     ![Импорт панели мониторинга](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Загрузите файл `nodejs-traces-dashboard.json` и нажмите **Finish Import**
 
+    <div className="ch-image-lg">
+
     ![Завершение импорта](/images/clickstack/nodejs/finish-import.webp)
+
+    </div>
   </Step>
 
   <Step title="Панель мониторинга будет создана со всеми преднастроенными визуализациями" id="created-dashboard">
+    <div className="ch-image-lg">
+
     ![Пример панели мониторинга](/images/clickstack/nodejs/example-traces-dashboard.webp)
+
+    </div>
 
     <Note>
       Для демо-набора данных установите временной диапазон **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (с учётом вашего местного часового пояса). По умолчанию временной диапазон в импортированной панели мониторинга не задан.

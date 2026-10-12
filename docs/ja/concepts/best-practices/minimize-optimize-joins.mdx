@@ -54,7 +54,11 @@ ClickHouse は、速度とメモリ使用量のトレードオフが異なる複
 * **Partial Merge JOIN:** メモリ使用量を最小限に抑えられますが、速度は遅くなります。メモリが限られた環境で大規模なテーブルを結合するのに最適です。
 * **Grace Hash JOIN:** 柔軟でメモリ使用量を調整しやすく、パフォーマンス特性を調整できる大規模なデータセットに適しています。
 
+<div className="ch-image-md">
+
 ![Joins — speed vs memory](/images/bestpractices/joins-speed-memory.png)
+
+</div>
 
 <Note>
   各アルゴリズムでサポートされる JOIN の種類は異なります。各アルゴリズムでサポートされる JOIN タイプの完全な一覧は、[こちら](/ja/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)を参照してください。

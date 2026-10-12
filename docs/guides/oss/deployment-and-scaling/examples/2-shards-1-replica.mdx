@@ -15,6 +15,7 @@ import KeeperConfigExplanation from '/snippets/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/_working_example.mdx';
+
 import CloudTip from '/snippets/_cloud_tip.mdx';
 
 > In this example, you'll learn how to set up a simple ClickHouse cluster which
@@ -23,7 +24,11 @@ The other three servers are used for coordination.
 
 The architecture of the cluster you will be setting up is shown below:
 
-![](/images/deployment-guides/replication-sharding-examples/sharding.webp)
+<div className="ch-image-md">
+
+![Architecture diagram for 2 shards and 1 replica](/images/deployment-guides/replication-sharding-examples/sharding.webp)
+
+</div>
 
 <DedicatedKeeperServers/>
 

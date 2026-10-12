@@ -50,7 +50,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 | Limit       | يُضيف عبارة [LIMIT](/ar/reference/statements/select/limit) إلى نهاية الاستعلام. إذا تم ضبطه على `0` فسيتم استبعاده. قد تحتاج بعض المرئيات إلى ضبطه على `0` لعرض جميع البيانات. |
 | عوامل تصفية | قائمة بعوامل تصفية ستُطبَّق في عبارة `WHERE`.                                                                                                                           |
 
+<div className="ch-image-md">
+
 ![مثال على استعلام جدول تجميعي](/images/integrations/data-visualization/grafana/demo_table_query.webp)
+
+</div>
 
 سيعرض نوع الاستعلام هذا البيانات في شكل جدول.
 
@@ -80,7 +84,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 | عوامل التصفية | قائمة بعوامل التصفية التي ستُطبَّق في عبارة `WHERE`.                                                                                                                       |
 | تصفية الرسالة | حقل إدخال نصي لتصفية السجلات بسهولة باستخدام `LIKE %value%`. ويُستبعَد عندما يكون الإدخال فارغًا.                                                                          |
 
+<div className="ch-image-md">
+
 ![مثال على استعلام سجلات OTel](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
+
+</div>
 
 <br />
 
@@ -88,7 +96,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 يمكن عرض الأعمدة الإضافية المحددة في الاستعلام ضمن صف السجل الموسّع:
 
+<div className="ch-image-md">
+
 ![مثال على الحقول الإضافية في استعلام السجلات](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
+
+</div>
 
 ### سلاسل زمنية {#time-series}
 
@@ -120,7 +132,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 | Limit        | يضيف عبارة [LIMIT](/ar/reference/statements/select/limit) إلى نهاية الاستعلام. وإذا ضُبطت قيمته على `0`، فسيُستبعد، ويُنصح بذلك لبعض مجموعات بيانات السلاسل الزمنية لعرض التصور البياني كاملًا. |
 | عوامل تصفية  | قائمة بعوامل تصفية ستُطبَّق في عبارة `WHERE`.                                                                                                                                         |
 
+<div className="ch-image-md">
+
 ![مثال على استعلام سلاسل زمنية](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
+
+</div>
 
 يعرض نوع الاستعلام هذا البيانات باستخدام لوحة السلاسل الزمنية.
 
@@ -157,7 +173,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 | عوامل التصفية        | قائمة بعوامل التصفية التي ستُطبَّق في clause ‏`WHERE`.                                                                                                                     |
 | معرّف التتبّع        | معرّف التتبّع المطلوب التصفية وفقه. يُستخدم فقط في وضع معرّف التتبّع، وعند فتح [رابط بيانات](#data-links) لمعرّف التتبّع.                                                         |
 
+<div className="ch-image-md">
+
 ![مثال على استعلام تتبّع OTel](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
+
+</div>
 
 سيعرض نوع الاستعلام هذا البيانات باستخدام عرض الجدول في وضع Trace Search، وباستخدام لوحة التتبّع في وضع معرّف التتبّع.
 
@@ -175,7 +195,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 يمكنك التبديل بين أنواع الاستعلامات للحصول على العرض المرئي الأنسب لاستعلامك.
 ويؤثر هذا التبديل أيضًا في عرض لوحة المعلومات، ولا سيما عند التعامل مع بيانات السلاسل الزمنية.
 
+<div className="ch-image-md">
+
 ![مثال على استعلام SQL خام](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
+
+</div>
 
 <div id="data-links">
   ## روابط البيانات
@@ -188,13 +212,21 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   مثال على روابط trace في جدول
 
+  <div className="ch-image-sm">
+
   ![روابط trace في جدول](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
+
+  </div>
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   مثال على روابط trace في السجلات
 
+  <div className="ch-image-md">
+
   ![روابط trace في السجلات](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
+
+  </div>
 </div>
 
 <div id="how-to-make-a-data-link">
@@ -221,7 +253,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   مثال على عرض تتبّع (اللوحة اليمنى) من استعلام سجلات (اللوحة اليسرى)
 
+  <div className="ch-image-md">
+
   ![مثال على استخدام روابط البيانات للربط](/images/integrations/data-visualization/grafana/demo_data_links.webp)
+
+  </div>
 </div>
 
 <div id="macros">

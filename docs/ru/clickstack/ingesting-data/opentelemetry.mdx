@@ -125,7 +125,11 @@ keywords: ['clickstack', 'opentelemetry', 'трассировки', 'обсер�
 
     Кроме того, требуется заголовок авторизации, содержащий ключ API для ингестии ClickStack. Этот ключ можно найти в приложении HyperDX в разделе `Team Settings → API Keys`.
 
+    <div className="ch-image-lg">
+
     ![Ключи ингестии](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     Для language SDKs это можно задать либо в функции `init`, либо через переменную окружения `OTEL_EXPORTER_OTLP_HEADERS`, например:
 

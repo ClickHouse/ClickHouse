@@ -12,7 +12,11 @@ ClickHouse has [full `JOIN` support](https://clickhouse.com/blog/clickhouse-full
 - As of ClickHouse 24.12, the query planner automatically reorders two-table joins to place the smaller table on the right-hand side for optimal performance. In version 25.9, this was extended to optimize join order across queries joining three or more tables.
 - If your query requires a direct join i.e. a `LEFT ANY JOIN` - as shown below, we recommend using [Dictionaries](/concepts/features/dictionaries/index) where possible.
 
+<div className="ch-image-sm">
+
 ![Left any join](/images/guides/joins-1.webp)
+
+</div>
 
 - If performing inner joins, it is often more optimal to write these as sub-queries using the `IN` clause. Consider the following queries, which are functionally equivalent. Both find the number of `posts` that don't mention ClickHouse in the question but do in the `comments`.
 
@@ -136,7 +140,11 @@ ClickHouse supports a number of [join algorithms](https://clickhouse.com/blog/cl
 
 <br />
 
+<div className="ch-image-lg">
+
 ![speed by memory for joins](/images/guides/joins-2.png)
+
+</div>
 
 <br />
 
@@ -146,7 +154,11 @@ The supported `JOIN` types for each join algorithm are shown below and should be
 
 <br />
 
+<div className="ch-image-lg">
+
 ![join features](/images/guides/joins-3.webp)
+
+</div>
 
 <br />
 
@@ -160,7 +172,11 @@ If your key optimization metric is performance and you're looking to execute the
 
 <br />
 
+<div className="ch-image-lg">
+
 ![join flowchart](/images/guides/joins-4.webp)
+
+</div>
 
 <br />
 
@@ -184,7 +200,11 @@ If you want to optimize a join for the lowest memory usage instead of the fastes
 
 <br />
 
+<div className="ch-image-lg">
+
 ![Join memory optimization decision tree](/images/guides/joins-5.webp)
+
+</div>
 
 <br />
 

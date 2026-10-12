@@ -26,7 +26,11 @@ The Logs configuration requires a time, log level, and message column in order f
 
 The Traces configuration is slightly more complex (full list [here](/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)). The required columns here are needed such that subsequent queries, which build a full trace profile, can be abstracted. These queries assume data is structured similarly to OTel, so users deviating significantly from the standard schema will need to use views to benefit from this feature.
 
+<div className="ch-image-sm">
+
 ![Connector config](/images/use-cases/observability/observability-15.webp)
+
+</div>
 
 Once configured you can navigate to [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) and begin searching logs and traces.
 
@@ -38,7 +42,11 @@ If adhering to the Grafana requirements for logs, you can select `Query Type: Lo
 SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
 ```
 
+<div className="ch-image-lg">
+
 ![Connector logs config](/images/use-cases/observability/observability-16.webp)
+
+</div>
 
 The query builder provides a simple means of modifying the query, avoiding the need for you to write SQL. Filtering, including finding logs containing keywords, can be performed from the query builder. Users wishing to write more complex queries can switch to the SQL editor. Provided the appropriate columns are returned, and `logs` selected as the Query Type, the results will be rendered as logs. The required columns for log rendering are listed [here](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format).
 
@@ -46,7 +54,11 @@ The query builder provides a simple means of modifying the query, avoiding the n
 
 If logs contain trace Ids, you can benefit from being able to navigate through to a trace for a specific log line.
 
+<div className="ch-image-lg">
+
 ![Logs to traces](/images/use-cases/observability/observability-17.webp)
+
+</div>
 
 ## Traces {#traces}
 
@@ -67,7 +79,11 @@ WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
 
 This query returns the column names expected by Grafana, rendering a table of traces as shown below. Filtering on duration or other columns can be performed without needing to write SQL.
 
+<div className="ch-image-lg">
+
 ![Traces](/images/use-cases/observability/observability-18.webp)
+
+</div>
 
 Users wishing to write more complex queries can switch to the `SQL Editor`.
 
@@ -103,7 +119,11 @@ LIMIT 1000
 Note how the above query uses the materialized view `otel_traces_trace_id_ts` to perform the trace id lookup. See [Accelerating Queries - Using Materialized views for lookups](/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups) for further details.
 </Note>
 
+<div className="ch-image-lg">
+
 ![Trace Details](/images/use-cases/observability/observability-19.webp)
+
+</div>
 
 ### Traces to logs {#traces-to-logs}
 
@@ -117,7 +137,11 @@ WHERE ( traceID = '<trace_id>' )
 ORDER BY timestamp ASC LIMIT 1000
 ```
 
+<div className="ch-image-lg">
+
 ![Traces to logs](/images/use-cases/observability/observability-20.webp)
+
+</div>
 
 ## Dashboards {#dashboards}
 
@@ -125,7 +149,11 @@ You can build dashboards in Grafana using the ClickHouse data source. We recomme
 
 The plugin provides several out-of-the-box dashboards, including an example dashboard, "Simple ClickHouse OTel dashboarding," for logging and tracing data conforming to the OTel specification. This requires users to conform to the default column names for OTel and can be installed from the data source configuration.
 
+<div className="ch-image-lg">
+
 ![Dashboards](/images/use-cases/observability/observability-21.webp)
+
+</div>
 
 We provide some simple tips for building visualizations below.
 
@@ -146,7 +174,11 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
+<div className="ch-image-lg">
+
 ![Time series](/images/use-cases/observability/observability-22.webp)
+
+</div>
 
 ### Multi-line charts {#multi-line-charts}
 
@@ -171,7 +203,11 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
+<div className="ch-image-lg">
+
 ![Multi-line charts](/images/use-cases/observability/observability-23.webp)
+
+</div>
 
 ### Visualizing geo data {#visualizing-geo-data}
 
@@ -195,4 +231,8 @@ FROM coords
 GROUP BY hash
 ```
 
+<div className="ch-image-lg">
+
 ![Visualizing geo data](/images/use-cases/observability/observability-24.webp)
+
+</div>

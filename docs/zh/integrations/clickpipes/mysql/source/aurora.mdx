@@ -24,7 +24,11 @@ import { IAMAuthentication } from "/snippets/zh/clickpipes/_iam_authentication.m
   <Step title="通过自动备份启用二进制日志记录" id="enable-binlog-logging">
     自动备份功能决定 MySQL 是否启用二进制日志记录。您可以在 RDS 控制台中依次进入 **Modify** &gt; **Additional configuration** &gt; **Backup**，然后选中 **Enable automated backups** 复选框 (如果尚未选中) ，为实例配置自动备份。
 
+    <div className="ch-image-lg">
+
     ![在 Aurora 中启用自动备份](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+
+    </div>
 
     我们建议根据复制用例，将 **Backup retention period** 设置为合理且较长的值。
   </Step>
@@ -56,13 +60,21 @@ import { IAMAuthentication } from "/snippets/zh/clickpipes/_iam_authentication.m
   如果你使用的是 MySQL 集群，则下面的参数可在 [DB 集群](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) 参数组中找到，而不是 DB 实例参数组。
 </Tip>
 
+<div className="ch-image-lg">
+
 ![在 Aurora 中查找参数组的位置](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/aurora_config.webp)
+
+</div>
 
 <br />
 
 点击参数组链接，进入其详情页。你应该会在右上角看到一个 **Edit** 按钮。
 
+<div className="ch-image-lg">
+
 ![编辑参数组](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</div>
 
 <br />
 
@@ -70,15 +82,27 @@ import { IAMAuthentication } from "/snippets/zh/clickpipes/_iam_authentication.m
 
 1. 将 `binlog_format` 设为 `ROW`。
 
+<div className="ch-image-lg">
+
 ![将 binlog 格式设为 ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</div>
 
 2. 将 `binlog_row_metadata` 设为 `FULL`。
 
+<div className="ch-image-lg">
+
 ![binlog 行元数据](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</div>
 
 3. 将 `binlog_row_image` 设为 `FULL`。
 
+<div className="ch-image-lg">
+
 ![binlog 行镜像](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</div>
 
 <br />
 
@@ -105,7 +129,11 @@ Amazon Aurora MySQL v2 (MySQL 5.7) 和 v3 (MySQL 8.0) 以及 Aurora Serverless v
 7. 点击右上角的 **Save Changes**。
 8. 重启实例，使更改生效。
 
+<div className="ch-image-lg">
+
 ![GTID 已启用](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
+
+</div>
 
 <div id="configure-database-user">
   ## 配置数据库用户
@@ -148,9 +176,17 @@ Amazon Aurora MySQL v2 (MySQL 5.7) 和 v3 (MySQL 8.0) 以及 Aurora Serverless v
 
 要限制发往 Aurora MySQL 实例的流量，请将[文档中列出的静态 NAT IP 地址](/zh/integrations/clickpipes/networking/static-ips)添加到 Aurora **安全组 (Security Group) **的**入站规则**中。
 
+<div className="ch-image-lg">
+
 ![在哪里可以找到 Aurora MySQL 的安全组（Security Group）？](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![编辑上述安全组（Security Group）的入站规则](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### 通过 AWS PrivateLink 进行私有访问

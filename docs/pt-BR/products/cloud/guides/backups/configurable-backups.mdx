@@ -9,6 +9,7 @@ doc_type: 'guide'
 
 import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
 import ConfigurableBackupsCLI from "/snippets/pt-BR/cloud/backups/_configurable_backups_cli.mdx";
 
 <Visibility for="agents">
@@ -21,11 +22,19 @@ import ConfigurableBackupsCLI from "/snippets/pt-BR/cloud/backups/_configurable_
 
     Para configurar o agendamento de backup de um serviço, vá até a guia **Settings** no Console e clique em **Change backup configuration**.
 
+    <div className="ch-image-lg">
+
     ![Configurar definições de backup](/images/cloud/manage/backup-settings.webp)
+
+    </div>
 
     Isso abre uma guia à direita, na qual você pode escolher os valores de retenção, frequência e horário de início. Será necessário salvar as configurações escolhidas para que entrem em vigor.
 
+    <div className="ch-image-lg">
+
     ![Selecionar retenção e frequência de backup](/images/cloud/manage/backup-configuration-form.webp)
+
+    </div>
 
     <Note>
       Horário de início e frequência são mutuamente excludentes. O horário de início prevalece.

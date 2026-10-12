@@ -62,7 +62,11 @@ If large batches can't be inserted, you can delegate batching to ClickHouse usin
 
 With asynchronous inserts, data is inserted into a buffer first and then written to the database storage later in 3 steps, as illustrated by the diagram below:
 
+<div className="ch-image-md">
+
 ![Postgres inserts](/images/guides/postgres-inserts.webp)
+
+</div>
 
 With asynchronous inserts enabled, ClickHouse:
 

@@ -23,7 +23,11 @@ Los miembros de la organización con el rol **Admin** pueden configurar el escal
   Los servicios Scale de una sola réplica y los servicios Enterprise con perfiles estándar `1:4` admiten el escalado vertical automático. Los servicios Enterprise con perfiles personalizados requieren un redimensionamiento vertical con asistencia de soporte. Los servicios del nivel Basic mantienen un tamaño fijo y no se pueden escalar.
 </Note>
 
+<div className="ch-image-lg">
+
 ![Página de configuración del escalado](/images/cloud/manage/AutoScaling.webp)
+
+</div>
 
 Establece la **Memoria máxima** de tus réplicas en un valor superior a la **Memoria mínima**. El servicio se escalará según sea necesario dentro de esos límites. Estos ajustes también están disponibles durante el flujo inicial de creación del servicio. A cada réplica de tu servicio se le asignarán los mismos recursos de memoria y CPU.
 

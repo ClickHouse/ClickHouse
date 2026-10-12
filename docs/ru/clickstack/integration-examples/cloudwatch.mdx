@@ -56,7 +56,11 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     3. Перейдите в **Team Settings → API Keys**
     4. Скопируйте **ключ API для приёма данных**
 
+    <div className="ch-image-lg">
+
     ![Ключ API ClickStack](/images/clickstack/api-key.webp)
+
+    </div>
 
     Сохраните его как переменную окружения:
 
@@ -292,7 +296,11 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     3. Подождите 1–2 минуты, пока не появятся журналы (в зависимости от интервала опроса)
     4. Найдите журналы из ваших групп журналов CloudWatch
 
+    <div className="ch-image-lg">
+
     ![Раздел поиска журналов](/images/clickstack/cloudwatch/log-search-view.webp)
+
+    </div>
 
     Обратите внимание на следующие ключевые атрибуты в журналах:
 
@@ -301,7 +309,11 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     * `ResourceAttributes['cloudwatch.log.stream']`: имя потока журналов
     * `Body`: фактическое содержимое сообщения журнала
 
+    <div className="ch-image-lg">
+
     ![Значения столбца журнала ошибок](/images/clickstack/cloudwatch/error-log-column-values.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -356,7 +368,11 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
 
     Вы должны увидеть журналы из нескольких групп логов CloudWatch.
 
+    <div className="ch-image-lg">
+
     ![Демонстрационный экран поиска](/images/clickstack/cloudwatch/demo-search-view.webp)
+
+    </div>
 
     <Info>
       **Отображение часового пояса**
@@ -381,17 +397,29 @@ AWS CloudWatch — это сервис мониторинга ресурсов �
     1. Откройте HyperDX и перейдите в раздел Панели мониторинга
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
+    <div className="ch-image-lg">
+
     ![Кнопка импорта панели мониторинга](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Загрузите файл `cloudwatch-logs-dashboard.json` и нажмите **Finish Import**
 
+    <div className="ch-image-lg">
+
     ![Диалог завершения импорта](/images/clickstack/cloudwatch/finish-import.webp)
+
+    </div>
   </Step>
 
   <Step title="Просмотрите панель мониторинга" id="created-dashboard">
     Панель мониторинга будет создана со всеми уже настроенными визуализациями:
 
+    <div className="ch-image-lg">
+
     ![Панель мониторинга CloudWatch Logs](/images/clickstack/cloudwatch/logs-dashboard.webp)
+
+    </div>
 
     <Note>
       Для демо-набора данных установите временной диапазон **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** (скорректируйте его в соответствии с вашим часовым поясом). По умолчанию у импортированной панели мониторинга временной диапазон не задан.

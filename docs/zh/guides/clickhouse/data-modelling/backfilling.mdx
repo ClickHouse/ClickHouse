@@ -476,7 +476,11 @@ materialized view 的查询通常会更复杂 (这并不少见，否则用户也
 
 需要注意的是，任何关联到该表引擎的 materialized views 在数据插入时仍会按数据块执行，并将结果发送到目标表。这些块的大小可以配置。更大的块虽然可能更高效 (处理速度也更快) ，但也会消耗更多资源 (主要是内存) 。使用这种表引擎意味着我们可以以增量方式构建 materialized view，即一次处理一个块，从而避免将整个聚合保存在内存中。
 
+<div className="ch-image-md">
+
 ![ClickHouse 中的反规范化](/images/data-modeling/null_table_mv.webp)
+
+</div>
 
 <br />
 

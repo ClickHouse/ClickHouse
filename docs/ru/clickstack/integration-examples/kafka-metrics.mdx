@@ -41,7 +41,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     3. Перейдите в **Team Settings → API Keys**
     4. Скопируйте свой **ключ API для приёма данных**
 
+    <div className="ch-image-lg">
+
     ![Ключ API ClickStack](/images/clickstack/api-key.webp)
+
+    </div>
 
     5. Задайте его как переменную окружения:
 
@@ -278,17 +282,29 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу, в меню с многоточием
 
+    <div className="ch-image-lg">
+
     ![Кнопка импорта панели мониторинга](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Загрузите файл `kafka-metrics-dashboard.json` и нажмите **Finish Import**
 
+    <div className="ch-image-lg">
+
     ![Диалог завершения импорта](/images/clickstack/kafka/import-kafka-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="Откройте панель мониторинга" id="created-dashboard">
     Панель мониторинга будет создана со всеми преднастроенными визуализациями:
 
+    <div className="ch-image-lg">
+
     ![Панель мониторинга метрик Kafka](/images/clickstack/kafka/kafka-metrics-dashboard.webp)
+
+    </div>
 
     <Note>
       Для демо-набора данных установите временной диапазон **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)** (скорректируйте его в соответствии с вашим местным часовым поясом). По умолчанию у импортированной панели мониторинга временной диапазон не задан.

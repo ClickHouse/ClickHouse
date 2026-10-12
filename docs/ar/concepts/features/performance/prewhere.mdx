@@ -17,7 +17,11 @@ keywords: ['prewhere', 'تحسين الاستعلام', 'الأداء', 'الت�
 
 سنبدأ بتوضيح كيفية معالجة استعلام على جدول [uk&#95;price&#95;paid&#95;simple](/ar/concepts/core-concepts/parts) من دون استخدام PREWHERE:
 
+<div className="ch-image-md">
+
 ![معالجة الاستعلام بدون تحسين PREWHERE](/images/guides/best-practices/prewhere_01.webp)
+
+</div>
 
 <br />
 
@@ -43,7 +47,11 @@ keywords: ['prewhere', 'تحسين الاستعلام', 'الأداء', 'الت�
 
 الخطوات الثلاث الأولى من المعالجة هي نفسها كما في السابق:
 
+<div className="ch-image-md">
+
 ![معالجة الاستعلام باستخدام تحسين PREWHERE](/images/guides/best-practices/prewhere_02.webp)
+
+</div>
 
 <br />
 
@@ -64,7 +72,11 @@ keywords: ['prewhere', 'تحسين الاستعلام', 'الأداء', 'الت�
 
 في مثالنا، تتطابق جميع الحبيبات المحددة، لذا ② تُحدَّد بعد ذلك الحبيبات المناظرة موضعيًا لعمود التصفية التالي — `date` — للمعالجة:
 
+<div className="ch-image-md">
+
 ![الخطوة 1: التصفية حسب المدينة](/images/guides/best-practices/prewhere_03.webp)
+
+</div>
 
 <br />
 
@@ -75,7 +87,11 @@ keywords: ['prewhere', 'تحسين الاستعلام', 'الأداء', 'الت�
 
 في هذه الحالة، تحتوي حبيبتان من أصل ثلاث على صفوف متطابقة، لذا ② لا تُحدَّد لمزيد من المعالجة إلا الحبيبات المناظرة موضعيًا لهما من عمود التصفية التالي — `price` —:
 
+<div className="ch-image-md">
+
 ![الخطوة 2: التصفية حسب التاريخ](/images/guides/best-practices/prewhere_04.webp)
+
+</div>
 
 <br />
 
@@ -86,7 +102,11 @@ keywords: ['prewhere', 'تحسين الاستعلام', 'الأداء', 'الت�
 
 ولا تحتوي على صفوف متطابقة سوى واحدة من الحبيبتين، لذا ② لا يلزم تحميل سوى الحبيبة المناظرة موضعيًا لها من عمود `SELECT` — `street` — لمزيد من المعالجة:
 
+<div className="ch-image-md">
+
 ![الخطوة 2: التصفية حسب السعر](/images/guides/best-practices/prewhere_05.webp)
+
+</div>
 
 <br />
 

@@ -8,13 +8,18 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
 每个 ClickHouse Managed Postgres 实例都内置了向任意 ClickHouse 服务进行 CDC (变更数据捕获) 的能力。这使你能够将 Postgres 实例中的部分或全部数据迁移到 ClickHouse，并让 Postgres 中的数据变更持续、近乎实时地同步到 ClickHouse。其底层由 [ClickPipes](/zh/integrations/clickpipes/home) 提供支持。
 
 要使用此功能，请点击 Postgres 实例侧边栏中的 **同步到 ClickHouse**。
 
+<div className="ch-image-md">
+
 ![显示侧边栏中集成选项的 ClickHouse 集成页面](/images/managed-postgres/clickhouse-integration-intro.webp)
+
+</div>
 
 <Note>
   在继续之前，请确保你的 Postgres 服务可被 ClickPipes 服务访问。默认情况下通常已满足此条件，但如果你限制了 IP 访问，则可能需要根据你的 **ClickHouse 服务** 所在的区域，从[此](/zh/integrations/clickpipes/networking/static-ips)列表中为某些源 IP 开放访问。
@@ -34,7 +39,11 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
       * **仅初始加载**：对现有数据执行一次性快照，不进行持续更新
       * **仅 CDC (变更数据捕获)**：跳过初始快照，仅捕获后续变更
 
+    <div className="ch-image-md">
+
     ![复制服务配置，显示集成名称、目标服务和复制方法选项](/images/managed-postgres/replication-service-step.webp)
+
+    </div>
 
     Click **下一步** 继续。
   </Step>
@@ -48,7 +57,11 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
     * **快照中每个分区的行数**：初始快照期间每个分区包含的行数 (默认：100000)
     * **并行快照的表数量**：并发执行快照的表数量 (默认：1)
 
+    <div className="ch-image-md">
+
     ![复制设置步骤，显示同步间隔、并行线程、拉取批次大小和快照配置选项](/images/managed-postgres/integration-replication-settings.webp)
+
+    </div>
 
     Click **下一步** 继续。
   </Step>
@@ -63,7 +76,11 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
     展开各个 schema 并选择要复制的单个表。你还可以自定义目标表名和列设置。
 
+    <div className="ch-image-md">
+
     ![选择表步骤，显示数据库选择、复制选项，以及按 schema 分组的表选择器](/images/managed-postgres/select-tables-step.webp)
+
+    </div>
 
     Click **将数据复制到 ClickHouse** 开始复制。
   </Step>
@@ -71,7 +88,11 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
   <Step title="监控你的 ClickPipe" id="monitor-clickpipe">
     ClickPipe 启动后，你会在同一菜单中看到它。所有数据的初始快照可能需要一些时间，具体取决于你的表大小。
 
+    <div className="ch-image-md">
+
     ![ClickHouse 集成列表，显示一个处于运行中的 ClickPipe 及其目标服务和状态](/images/managed-postgres/integration-running.webp)
+
+    </div>
 
     点击集成名称可查看详细状态、监控进度、查看错误并管理 ClickPipe。参见 [Postgres ClickPipe 的生命周期](/zh/integrations/clickpipes/postgres/lifecycle) 来了解 ClickPipe 可能处于的不同状态。
   </Step>

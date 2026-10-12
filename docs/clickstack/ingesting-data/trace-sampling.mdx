@@ -45,6 +45,10 @@ Open your trace source in **Source Settings** and enter the ClickHouse expressio
 
 For example, if your OpenTelemetry tail-sampling processor writes the rate into `SpanAttributes['SampleRate']`:
 
+<div className="ch-image-lg">
+
 ![Sample Rate Expression field in ClickStack Source Settings](/images/clickstack/trace-sampling-source-settings.webp)
+
+</div>
 
 Once configured, all charts, dashboards, alerts, and service dashboard panels automatically apply sample-weighted aggregations. No changes to individual queries are needed.

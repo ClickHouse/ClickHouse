@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 コードインタープリターを使うと、エージェントが管理されたサンドボックス環境でコードを実行できます。計算、データ変換、フォーマット変換、プロットの作成など、自然言語よりもコードで行うほうが適した作業に利用できます。
@@ -18,7 +19,11 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 エージェントビルダーの **Capabilities** セクションで **Run Code** を有効にし、保存します。コードを実行するタイミングは、ユーザーのリクエストとエージェントへの指示に基づいてエージェントが判断します。
 
+<div className="ch-image-sm">
+
 ![Capabilities パネルの Run Code セクション。Run Code のチェックボックスがオンになっており、Upload to Code Environment ボタンが表示されている](/images/cloud/agent-builder/run-code/run-code.webp)
+
+</div>
 
 <div id="supported-languages">
   ## サポートされている言語

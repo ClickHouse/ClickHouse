@@ -74,7 +74,11 @@ MergeTree (または Replicated テーブル) に直接 insert し、データ�
 
 非同期挿入では、以下の図にあるように、データはまずバッファに入れられ、その後 3 つのステップでデータベースストレージに書き込まれます。
 
+<div className="ch-image-md">
+
 ![Postgres inserts](/images/guides/postgres-inserts.webp)
+
+</div>
 
 非同期挿入を有効にすると、ClickHouse は次のように動作します。
 

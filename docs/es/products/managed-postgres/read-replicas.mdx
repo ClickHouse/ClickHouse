@@ -8,17 +8,26 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
 Las réplicas de lectura le permiten crear una o varias copias de su base de datos primaria de ClickHouse Managed Postgres. Estas réplicas siguen continuamente su base de datos primaria mediante la replicación native de PostgreSQL para mantenerse al día con los cambios.
 
 Para administrar las réplicas de lectura, haga clic en el icono de Edit de su warehouse:
 
+<div className="ch-image-md">
+
 ![Vista del warehouse con el icono de Edit](/images/managed-postgres/warehouse-view.webp)
+
+</div>
 
 Esto abre el cuadro de diálogo del warehouse, donde puede ver los servicios existentes y crear nuevas réplicas de lectura:
 
+<div className="ch-image-md">
+
 ![Cuadro de diálogo para administrar réplicas de lectura](/images/managed-postgres/read-replica-dialog.webp)
+
+</div>
 
 ## Gestionar las réplicas de lectura {#managing-read-replicas}
 
@@ -26,11 +35,19 @@ La página **Réplicas de lectura** te ofrece dos vistas, entre las que puedes a
 
 La vista **Flow** muestra la topología de replicación: la instancia primaria en la parte superior, con flechas que descienden hacia cada réplica asociada, mostrando de un vistazo el nivel, la región y el estado:
 
+<div className="ch-image-lg">
+
 ![Vista de flujo de réplicas de lectura que muestra la topología de la instancia primaria y las réplicas](/images/managed-postgres/read-replicas-flow.webp)
+
+</div>
 
 La vista **Table** enumera cada réplica con su nombre de servicio, proveedor de nube y región, estado del servicio, hora de creación y una acción **Detach service**:
 
+<div className="ch-image-lg">
+
 ![Vista de tabla de réplicas de lectura](/images/managed-postgres/read-replicas-table.webp)
+
+</div>
 
 Para crear una nueva réplica, haz clic en **Create read replica** en la esquina superior derecha de cualquiera de las dos vistas.
 

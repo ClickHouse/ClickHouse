@@ -53,7 +53,11 @@ ClickHouse échantillonne automatiquement les clés primaires et choisit la tabl
 produire le même résultat correct, tout en nécessitant de lire le moins de données possible,
 comme illustré dans la figure ci-dessous :
 
+<div className="ch-image-md">
+
 ![Projections dans ClickHouse](/images/data-modeling/projections_1.webp)
+
+</div>
 
 <div id="smarter_storage_with_part_offset">
   ### Un stockage plus intelligent avec `_part_offset`
@@ -318,7 +322,11 @@ SETTINGS mutations_sync = 1
 La figure ci-dessous est une visualisation de la table principale `uk_price_paid_with_projections`
 et de ses deux projections :
 
+<div className="ch-image-md">
+
 ![Visualisation de la table principale uk_price_paid_with_projections et de ses deux projections](/images/data-modeling/projections_2.webp)
+
+</div>
 
 Si nous exécutons maintenant de nouveau la requête qui affiche les comtés de Londres pour les trois prix
 les plus élevés, nous constatons une amélioration des performances de la requête :

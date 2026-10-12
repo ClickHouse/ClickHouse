@@ -8,6 +8,7 @@ doc_type: '참고'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 에이전트가 여러 대화에 걸쳐 사용자별로 기억해 둘 수 있는 저장소입니다. 여러 항목으로 구성되며, 각 항목은 키-값 쌍입니다. 예를 들어 선호하는
@@ -28,7 +29,11 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 왼쪽 탐색 메뉴의 **Memories**(뇌) 아이콘에서 메모리 패널을 여십시오. 이 패널에는 저장된 메모리 항목이 나열되며, 항목을 생성, 편집, 삭제, 필터링할 수 있는 컨트롤이 제공됩니다.
 
+<div className="ch-image-sm">
+
 ![왼쪽 탐색 메뉴에서 뇌 아이콘이 강조 표시된 Memories 패널로, 필터 입력란, Add 버튼, 메모리 사용 체크박스, 편집 및 삭제 컨트롤이 있는 메모리 항목, 그리고 Admin Settings 버튼이 표시되어 있습니다](/images/cloud/agent-builder/memory/memories.webp)
+
+</div>
 
 메모리는 각 사용자에게만 비공개로 제공됩니다. 다른 사용자의 에이전트는 해당 항목을 볼 수 없으며, 사용자 에이전트도 다른 사용자의 항목은 볼 수 없습니다.
 
@@ -38,7 +43,11 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 패널 상단의 **+** 버튼을 클릭하여 **Create Memory** 대화상자를 여십시오. **Key**(소문자와 밑줄만 사용)와 **Value**를 입력한 다음 **Create**를 클릭하십시오.
 
+<div className="ch-image-sm">
+
 ![메모리 패널에서 + 버튼이 강조 표시된 Create Memory 화면](/images/cloud/agent-builder/memory/create.webp)
+
+</div>
 
 <div id="filter-memories">
   ### 메모리 필터링
@@ -46,7 +55,11 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 패널 상단의 **메모리 필터링** 입력란을 사용하여 키를 기준으로 항목을 찾으십시오.
 
+<div className="ch-image-sm">
+
 ![메모리 패널에서 **메모리 필터링** 입력란이 강조 표시되어 있고 'demo'가 입력되어 있음](/images/cloud/agent-builder/memory/filter.webp)
+
+</div>
 
 <div id="edit-memory">
   ### 메모리 편집
@@ -54,7 +67,11 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 메모리의 연필 아이콘을 클릭하여 **Edit Memory** 대화상자를 여십시오. 키 또는 값을 수정한 후 **Save**를 클릭하십시오.
 
+<div className="ch-image-sm">
+
 ![Edit Memory 연필 아이콘이 강조 표시된 메모리 항목](/images/cloud/agent-builder/memory/edit.webp)
+
+</div>
 
 <div id="delete-memory">
   ### 메모리 삭제
@@ -62,7 +79,11 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 메모리의 휴지통 아이콘을 클릭하여 삭제합니다.
 
+<div className="ch-image-sm">
+
 ![Delete Memory 휴지통 아이콘이 강조 표시된 메모리 항목](/images/cloud/agent-builder/memory/delete.webp)
+
+</div>
 
 <div id="toggle-memory">
   ## 메모리 켜기/끄기
@@ -72,7 +93,11 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
 메모리가 꺼져 있으면 에이전트는 메모리 저장소를 읽지도 쓰지도 않습니다.
 
+<div className="ch-image-sm">
+
 ![상단의 메모리 사용 체크박스가 강조 표시된 메모리 패널](/images/cloud/agent-builder/memory/toggle.webp)
+
+</div>
 
 <div id="memory-best-practices">
   ## 메모리 모범 사례

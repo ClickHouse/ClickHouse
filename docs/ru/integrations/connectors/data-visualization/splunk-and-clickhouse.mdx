@@ -32,7 +32,11 @@ Splunk — популярная платформа для безопасност
 
 С помощью этого руководства вы сможете создать панель мониторинга, подключенную к ClickHouse, примерно такую:
 
+<div className="ch-image-lg">
+
 ![Панель мониторинга Splunk с визуализациями данных о такси Нью-Йорка](/images/integrations/splunk/splunk-1.webp)
+
+</div>
 
 <Note>
   В этом руководстве используется [набор данных New York City Taxi](/ru/get-started/sample-datasets/nyc-taxi). Вы также можете использовать множество других наборов данных из [нашей документации](http://localhost:3000/docs/getting-started/example-datasets).
@@ -69,7 +73,11 @@ Splunk — популярная платформа для безопасност
 
 После того как вы убедитесь, что DB Connect App установлен, добавьте путь `java_home` в DB Connect App в разделе Configuration -&gt; Settings, затем нажмите save и reset.
 
+<div className="ch-image-md">
+
 ![Страница настроек Splunk DB Connect с конфигурацией Java Home](/images/integrations/splunk/splunk-2.webp)
+
+</div>
 
 <div id="configure-jdbc-for-clickhouse">
   ## Настройка JDBC для ClickHouse
@@ -104,7 +112,11 @@ ui_default_catalog = $database$
 
 Вернитесь в DB Connect App и перейдите в Configuration &gt; Settings &gt; Drivers. Рядом с ClickHouse должен отображаться зеленый флажок:
 
+<div className="ch-image-lg">
+
 ![Страница драйверов Splunk DB Connect, где показано, что драйвер ClickHouse успешно установлен](/images/integrations/splunk/splunk-3.webp)
+
+</div>
 
 <div id="connect-splunk-search-to-clickhouse">
   ## Подключите поиск Splunk к ClickHouse
@@ -114,13 +126,21 @@ ui_default_catalog = $database$
 
 Создайте новое подключение к ClickHouse через Configuration -&gt; Databases -&gt; Connections и выберите &quot;New Connection&quot;.
 
+<div className="ch-image-sm">
+
 ![Кнопка создания нового подключения в Splunk DB Connect](/images/integrations/splunk/splunk-4.webp)
+
+</div>
 
 <br />
 
 Добавьте данные хоста ClickHouse и убедитесь, что флажок &quot;Enable SSL&quot; установлен:
 
+<div className="ch-image-md">
+
 ![Страница настройки подключения Splunk к ClickHouse](/images/integrations/splunk/splunk-5.webp)
+
+</div>
 
 После сохранения подключение ClickHouse к Splunk будет успешно настроено!
 
@@ -136,11 +156,19 @@ ui_default_catalog = $database$
 
 В SQL Explorer выберите сведения о подключении в разделе DataLab приложения DB Connect App. В этом примере мы используем таблицу `trips`:
 
+<div className="ch-image-md">
+
 ![SQL Explorer в Splunk: выбор подключения к ClickHouse](/images/integrations/splunk/splunk-6.webp)
+
+</div>
 
 Выполните SQL-запрос к таблице `trips`, который возвращает общее количество записей в таблице:
 
+<div className="ch-image-md">
+
 ![Выполнение SQL-запроса в Splunk с отображением количества записей в таблице trips](/images/integrations/splunk/splunk-7.webp)
+
+</div>
 
 Если запрос выполнен успешно, вы увидите результаты.
 
@@ -162,7 +190,11 @@ ORDER BY count DESC LIMIT 10;" connection="chc"
 
 Выберите вкладку визуализации, чтобы увидеть созданную столбчатую диаграмму:
 
+<div className="ch-image-lg">
+
 ![Визуализация столбчатой диаграммы в Splunk, показывающая 10 районов с наибольшим числом посадок](/images/integrations/splunk/splunk-8.webp)
+
+</div>
 
 Теперь создадим панель мониторинга: нажмите Save As &gt; Save to a Dashboard.
 
@@ -175,7 +207,11 @@ FROM default.trips GROUP BY passenger_count;" connection="chc"
 
 На этот раз давайте создадим столбчатую диаграмму и сохраним её на предыдущей панели мониторинга.
 
+<div className="ch-image-lg">
+
 ![Столбчатая диаграмма в Splunk, показывающая среднюю стоимость поездки в зависимости от количества пассажиров](/images/integrations/splunk/splunk-9.webp)
+
+</div>
 
 Наконец, давайте добавим ещё один запрос, который показывает корреляцию между количеством пассажиров и длиной поездки:
 
@@ -188,7 +224,11 @@ ORDER BY year, count(*) DESC; " connection="chc"
 
 Наша итоговая панель мониторинга должна выглядеть так:
 
+<div className="ch-image-lg">
+
 ![Итоговая панель мониторинга Splunk с несколькими визуализациями данных о такси в Нью-Йорке](/images/integrations/splunk/splunk-10.webp)
+
+</div>
 
 <div id="time-series-data">
   ## Данные временных рядов

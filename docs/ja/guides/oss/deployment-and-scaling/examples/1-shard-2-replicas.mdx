@@ -15,13 +15,18 @@ import KeeperConfigExplanation from '/snippets/ja/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/ja/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/ja/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/ja/_working_example.mdx';
+
 import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
 > この例では、データをレプリケーションするシンプルな ClickHouse クラスターのセットアップ方法を学びます。サーバーは 5 台構成です。うち 2 台はデータのコピーを保持するために使用されます。残りの 3 台は、データのレプリケーションを調整するために使用されます。
 
 これからセットアップするクラスターのアーキテクチャを以下に示します。
 
+<div className="ch-image-md">
+
 ![ReplicatedMergeTree を使用した 1 分片 2 レプリカのアーキテクチャ図](/images/deployment-guides/replication-sharding-examples/replication.webp)
+
+</div>
 
 <DedicatedKeeperServers />
 

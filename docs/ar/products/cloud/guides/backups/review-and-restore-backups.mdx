@@ -9,6 +9,7 @@ doc_type: 'guide'
 
 import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
 يوضح هذا الدليل آلية عمل النسخ الاحتياطية في ClickHouse Cloud، والخيارات المتاحة لك لإعداد النسخ الاحتياطية لخدمتك، وكيفية الاستعادة من نسخة احتياطية.
 
 **المتطلبات الأساسية**
@@ -19,7 +20,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 تُنفَّذ النسخ الاحتياطية وفقًا للجدول الزمني المُهيأ لخدمتك، سواء كان الجدول اليومي الافتراضي أو [جدولًا زمنيًا مخصصًا](/ar/products/cloud/guides/backups/configurable-backups) اخترته. ويمكنك عرض جميع النسخ الاحتياطية المتاحة من علامة التبويب **Backups** الخاصة بالخدمة. ومن هنا، يمكنك الاطّلاع على حالة النسخة الاحتياطية ومدتها، بالإضافة إلى حجمها. كما يمكنك أيضًا استعادة نسخة احتياطية محددة باستخدام عمود **Actions**.
 
+<div className="ch-image-md">
+
 ![قائمة حالات النسخ الاحتياطي في ClickHouse Cloud](/images/cloud/manage/backup-status-list.webp)
+
+</div>
 
 ## فهم تكلفة النسخ الاحتياطي {#understanding-backup-cost}
 
@@ -27,7 +32,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 لفهم تكلفة النسخ الاحتياطي، يمكنك عرض تكلفة النسخ الاحتياطي لكل خدمة من شاشة الاستخدام (كما هو موضح أدناه). وبعد تشغيل النسخ الاحتياطية لبضعة أيام وفق جدول زمني مخصص، يمكنك تكوين فكرة عن التكلفة وتقدير التكلفة الشهرية للنسخ الاحتياطية.
 
+<div className="ch-image-md">
+
 ![مخطط استخدام النسخ الاحتياطي في ClickHouse Cloud](/images/cloud/manage/backup-usage.webp)
+
+</div>
 
 يتطلب تقدير التكلفة الإجمالية لنسخك الاحتياطية تحديد جدول زمني. وقبل تعيين جدول زمني، يمكنك استخدام [حاسبة التسعير](https://clickhouse.com/pricing) للحصول على تقدير للتكلفة الشهرية من خلال تقديم المدخلات التالية:
 
@@ -48,11 +57,19 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 بعد النقر على أيقونة **Restore** الخاصة بالنسخة الاحتياطية، يمكنك تحديد اسم الخدمة الجديدة التي سيتم إنشاؤها، ثم استعادة هذه النسخة الاحتياطية:
 
+<div className="ch-image-md">
+
 ![استعادة نسخة احتياطية في ClickHouse Cloud](/images/cloud/manage/backup-restore.webp)
+
+</div>
 
 ستظهر الخدمة الجديدة في قائمة الخدمات بالحالة `Provisioning` إلى أن تصبح جاهزة:
 
+<div className="ch-image-md">
+
 ![جاري تجهيز الخدمة](/images/cloud/manage/backup-service-provisioning.webp)
+
+</div>
 
 <div id="working-with-your-restored-service">
   ## العمل مع الخدمة المستعادة

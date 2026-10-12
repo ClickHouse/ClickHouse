@@ -48,7 +48,11 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
   <Step title="Activer l’authentification unique SAML" id="enable-saml-sso">
     Cliquez sur le bouton bascule à côté de `Enable SAML single sign-on`. Laissez cet écran ouvert, car vous devrez y revenir plusieurs fois pendant le processus de configuration.
 
+    <div className="ch-image-lg">
+
     ![Commencer la configuration SAML](/images/cloud/security/saml-self-serve-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Créer une application dans votre fournisseur d’identité" id="create-idp-application">
@@ -63,19 +67,31 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
       ClickHouse ne prend pas en charge l’authentification initiée par le fournisseur d’identité. Pour permettre à vos utilisateurs d’accéder facilement à ClickHouse Cloud, configurez un signet pour eux à l’aide de ce format d’URL de connexion : `https://console.clickhouse.cloud/?connection={orgId}`, où `{orgID}` correspond à votre Organization ID sur la page Organization details.
     </Tip>
 
+    <div className="ch-image-lg">
+
     ![Créer une application dans le fournisseur d’identité](/images/cloud/security/saml-self-serve-2.webp)
+
+    </div>
   </Step>
 
   <Step title="Ajoutez l’URL de métadonnées à votre configuration SAML" id="add-metadata-url">
     Récupérez la `Metadata URL` auprès de votre fournisseur SAML. Revenez dans ClickHouse Cloud, cliquez sur `Next: Provide metadata URL`, puis collez l’URL dans le champ de texte.
 
+    <div className="ch-image-lg">
+
     ![Ajouter l’URL de métadonnées](/images/cloud/security/saml-self-serve-3.webp)
+
+    </div>
   </Step>
 
   <Step title="Obtenir le code de vérification du domaine" id="get-domain-verification-code">
     Cliquez sur `Next: Verify your domains`. Saisissez votre domaine dans la zone de texte, puis cliquez sur `Check domain`. Le système générera un code de vérification aléatoire à ajouter à un enregistrement TXT auprès de votre fournisseur DNS.
 
+    <div className="ch-image-lg">
+
     ![Ajouter un domaine à vérifier](/images/cloud/security/saml-self-serve-4.webp)
+
+    </div>
   </Step>
 
   <Step title="Vérifiez votre domaine" id="verify-your-domain">
@@ -85,7 +101,11 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
       La mise à jour et la vérification de l’enregistrement DNS peuvent prendre plusieurs minutes. Vous pouvez quitter la page de configuration et y revenir plus tard pour terminer l’opération sans devoir recommencer. La valeur de vérification est valide pendant 48 heures à compter de sa génération initiale.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![Vérifiez votre domaine](/images/cloud/security/saml-self-serve-5.webp)
+
+    </div>
   </Step>
 
   <Step title="Mettre à jour le rôle par défaut et le délai d’expiration de la session" id="update-defaults">
@@ -195,7 +215,11 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
 
     1. Accédez à votre console d&#39;administration Google (admin.google.com).
 
+       <div className="ch-image-md">
+
        ![Application SAML Google](/images/cloud/security/saml-google-app.webp)
+
+       </div>
 
     2. Cliquez sur **Apps**, puis sur **Web and mobile apps** dans le menu de gauche.
 
@@ -249,7 +273,11 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
 
     5. Saisissez un nom et sélectionnez **Intégrer toute autre application que vous ne trouvez pas dans la galerie (hors galerie)**, puis cliquez sur **Créer**.
 
+       <div className="ch-image-md">
+
        ![Application Azure hors galerie](/images/cloud/security/saml-azure-app.webp)
+
+       </div>
 
     6. Cliquez sur **Utilisateurs et groupes** à gauche, puis assignez des utilisateurs.
 
@@ -275,7 +303,11 @@ Le reste de ce guide porte sur cette configuration ponctuelle.
         | (A) email                                    | Basic          | user.mail       |
         | (U) /identity/claims/name                    | Omitted        | user.mail       |
 
+        <div className="ch-image-md">
+
         ![Attributs et revendications](/images/cloud/security/saml-azure-claims.webp)
+
+        </div>
 
     11. Copiez l’URL des métadonnées et revenez à [Ajouter l’URL des métadonnées à votre configuration SAML](#add-metadata-url) pour poursuivre la procédure.
   </Tab>

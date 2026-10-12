@@ -66,7 +66,11 @@ keywords: ['ClickStack', 'text-to-chart', 'ИИ', 'визуализация', 'C
   <Step title="Выберите источник данных" id="select-data-source">
     Выберите источник данных, который хотите визуализировать, — например, **журналы**, **Traces** или **Metrics**.
 
+    <div className="ch-image-lg">
+
     ![Chart explorer](/images/clickstack/text-to-chart/chart-explorer.webp)
+
+    </div>
   </Step>
 
   <Step title="Введите текстовый промпт" id="enter-text-prompt">
@@ -78,7 +82,11 @@ keywords: ['ClickStack', 'text-to-chart', 'ИИ', 'визуализация', 'C
 
     ClickStack преобразует промпт в запрос и автоматически построит визуализацию.
 
+    <div className="ch-image-lg">
+
     ![Text to chart](/images/clickstack/text-to-chart/text-to-chart.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -99,7 +107,11 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 * **Username**: `otel_demo`
 * **Password**: Оставьте пустым
 
+<div className="ch-image-lg">
+
 ![Создание подключения](/images/clickstack/text-to-chart/create-connection.webp)
+
+</div>
 
 Затем измените каждый из источников — **журналы**, **Traces**, **Metrics** и **Sessions** — так, чтобы они использовали базу данных `otel_v2`. Подробные сведения о настройке источников см. в [руководстве по удалённому демо-набору данных](/ru/clickstack/example-datasets/remote-demo-data).
 

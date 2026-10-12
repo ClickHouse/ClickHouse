@@ -60,7 +60,11 @@ doc_type: 'guide'
 
 نوضح كلتا هاتين المعماريتين أدناه.
 
+<div className="ch-image-lg">
+
 ![ترحيل الوكلاء](/images/use-cases/observability/clickstack-migrating-agents.webp)
+
+</div>
 
 في المثال التالي، نقدّم الخطوات الأولية لتهيئة Vector لاستقبال أحداث السجلات من Filebeat عبر بروتوكول Lumberjack. كما نوفّر VRL لربط أحداث ECS الواردة بمواصفة OTel، قبل إرسالها إلى ClickStack جامع OpenTelemetry عبر OTLP. ويمكن للمستخدمين الذين يستهلكون الأحداث من Kafka استبدال مصدر Vector Logstash بـ [مصدر Kafka](https://vector.dev/docs/reference/configuration/sources/kafka/) — مع بقاء جميع الخطوات الأخرى كما هي.
 
@@ -249,7 +253,11 @@ doc_type: 'guide'
 
     يتم إنشاء `YOUR_INGESTION_API_KEY` بواسطة ClickStack. يمكنك العثور على المفتاح في واجهة ClickStack (HyperDX) ضمن `Team Settings → API Keys`.
 
+    <div className="ch-image-lg">
+
     ![مفاتيح إدخال البيانات](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     يظهر أدناه الإعداد الكامل النهائي:
 
@@ -337,11 +345,19 @@ doc_type: 'guide'
 
     يمكن إجراء التهيئة المركزية عبر Kibana من خلال إضافة [Output إلى Fleet](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings).
 
+    <div className="ch-image-md">
+
     ![إضافة مخرج Logstash](/images/use-cases/observability/add-logstash-output.webp)
+
+    </div>
 
     يمكن بعد ذلك استخدام هذا الـ Output ضمن [سياسة وكيل](https://www.elastic.co/docs/reference/fleet/agent-policy). وهذا يعني تلقائيًا أن أي وكلاء يستخدمون هذه السياسة سيرسلون بياناتهم إلى Vector.
 
+    <div className="ch-image-md">
+
     ![إعدادات الوكيل](/images/use-cases/observability/agent-output-settings.webp)
+
+    </div>
 
     ونظرًا إلى أن هذا يتطلب تهيئة اتصال آمن عبر TLS، فنوصي بالرجوع إلى الدليل [&quot;تهيئة SSL/TLS لمخرج Logstash&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)، مع افتراض أن مثيل Vector لديك يؤدي دور Logstash.
 
@@ -396,7 +412,11 @@ exporters:
 
 يُنشئ ClickStack القيمة `YOUR_INGESTION_API_KEY` المستخدمة هنا. يمكنك العثور على المفتاح في ClickStack UI ضمن `Team Settings → API Keys`.
 
+<div className="ch-image-lg">
+
 ![مفاتيح الاستيعاب](/images/use-cases/observability/ingestion-keys.webp)
+
+</div>
 
 إذا كان Vector مُهيأً لاستخدام mutual TLS، مع الشهادة والمفاتيح التي جرى إنشاؤها باتباع الخطوات الواردة في دليل [&quot;تكوين SSL/TLS لمخرج Logstash&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output)، فسيلزم تهيئة الـ exporter ‏`otlp` وفقًا لذلك، على سبيل المثال.
 

@@ -49,7 +49,11 @@ SYSTEM INSTRUMENT REMOVE ALL
 
 Мы преобразуем данные, собранные в system.trace&#95;log, [в формат Chrome](/ru/reference/system-tables/trace_log#chrome-event-trace-format), чтобы визуализировать их в [Perfetto](https://ui.perfetto.dev). Обратите внимание на query&#95;id, cpu&#95;id и трассировку стека для каждой записи.
 
+<div className="ch-image-md">
+
 ![по времени](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
+
+</div>
 
 <div id="profiling-a-native-application-using-xray">
   ## Профилирование нативного приложения с помощью XRay
@@ -159,19 +163,31 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
   #### Хронологический порядок
 </div>
 
+<div className="ch-image-md">
+
 ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
+
+</div>
 
 <div id="left-heavy">
   #### Перекос влево
 </div>
 
+<div className="ch-image-md">
+
 ![перекос влево](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
+
+</div>
 
 <div id="sandwitch">
   #### Сэндвич
 </div>
 
+<div className="ch-image-md">
+
 ![сэндвич](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
+
+</div>
 
 <div id="check-out-the-docs">
   ## Ознакомьтесь с документацией

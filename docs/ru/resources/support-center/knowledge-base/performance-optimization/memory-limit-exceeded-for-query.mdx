@@ -65,7 +65,11 @@ ClickHouse Cloud делает автоматически и без лишних 
 сортируются на диске, если они не помещаются в памяти, что позволяет выполнять JOIN
 для больших таблиц.
 
+<div className="ch-image-md">
+
 ![Алгоритмы JOIN](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+
+</div>
 
 Начиная с версии 20.3, ClickHouse поддерживает значение auto для настройки `join_algorithm`.
 Оно указывает ClickHouse использовать адаптивный подход к JOIN: предпочтение

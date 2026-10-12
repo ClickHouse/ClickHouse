@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 ClickHouse Agents utilise un modèle d’autorisation en couches : les rôles contrôlent les fonctionnalités que les utilisateurs peuvent utiliser, les listes d’accès au niveau des ressources déterminent qui peut utiliser un agent spécifique ou une autre ressource, et les permissions d’admin déterminent qui gère l’ensemble.
@@ -53,11 +54,19 @@ La visibilité à l’échelle de l’organisation est ce qui rend une ressource
 
 Cliquez sur l’icône **share** en bas de l’Agent Builder. Un badge sur l’icône indique combien d’utilisateurs ou de groupes ont actuellement accès.
 
+<div className="ch-image-sm">
+
 ![Bas du panneau Agent Builder avec l’icône share mise en évidence et un badge indiquant qu’un principal partagé a accès](/images/cloud/agent-builder/sharing/sharing.webp)
+
+</div>
 
 La fenêtre modale **Share** s’ouvre. Recherchez un utilisateur ou un groupe par nom ou par adresse e-mail, choisissez le niveau d’accès (**Viewer**, **Editor** ou **Owner**), puis cliquez sur **Save Changes**. Pour partager avec toute l’organisation, activez le bouton bascule **Share with everyone in ClickHouse**.
 
+<div className="ch-image-md">
+
 ![Fenêtre modale Share avec la section des autorisations des utilisateurs et des groupes, un champ de recherche, un utilisateur existant avec un rôle Owner, un bouton bascule Share with everyone in ClickHouse, ainsi que les boutons Cancel et Save Changes](/images/cloud/agent-builder/sharing/share-agent-modal.webp)
+
+</div>
 
 Le destinataire verra l’agent dans sa liste des agents disponibles la prochaine fois qu’il actualisera. Pour révoquer l’accès, supprimez la ligne dans cette même fenêtre modale. Le destinataire perd immédiatement l’accès ; ses conversations en cours se terminent, mais il ne pourra pas en ouvrir de nouvelles.
 

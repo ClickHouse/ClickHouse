@@ -35,7 +35,11 @@ ClickStack은 알림을 생성하는 두 가지의 상호 보완적인 방법, �
   <Step title="알림 생성 대화상자 열기" id="open-dialog">
     먼저 [검색](/ko/clickstack/features/search)을 입력한 다음 `Search` 페이지 오른쪽 상단의 `Alerts` 버튼을 클릭하십시오.
 
+    <div className="ch-image-lg">
+
     ![검색 보기 알림](/images/use-cases/observability/alerts_search_view.webp)
+
+    </div>
   </Step>
 
   <Step title="알림 만들기" id="create-the-alert">
@@ -48,13 +52,21 @@ ClickStack은 알림을 생성하는 두 가지의 상호 보완적인 방법, �
 
     저장하기 전에 ClickStack이 임계값 조건을 시각화하므로 예상대로 동작하는지 확인할 수 있습니다.
 
+    <div className="ch-image-lg">
+
     ![검색 알림](/images/use-cases/observability/search_alert.webp)
+
+    </div>
   </Step>
 </Steps>
 
 하나의 검색에 여러 알림을 추가할 수 있습니다. 위 과정을 반복하면 알림 편집 대화상자 상단에 현재 알림이 탭으로 표시되며, 각 알림에는 번호가 할당됩니다.
 
+<div className="ch-image-md">
+
 ![여러 알림](/images/use-cases/observability/multiple_search_alerts.webp)
+
+</div>
 
 <div id="dashboard-alerts">
   ### 2. 대시보드 차트 알림
@@ -78,19 +90,31 @@ ClickStack은 알림을 생성하는 두 가지의 상호 보완적인 방법, �
   <Step title="차트 편집 대화 상자 열기" id="open-chart-dialog">
     차트의 구성 메뉴를 열고 알림 버튼을 선택하십시오. 그러면 차트 편집 대화 상자가 표시됩니다.
 
+    <div className="ch-image-lg">
+
     ![차트 알림 편집](/images/use-cases/observability/edit_chart_alert.webp)
+
+    </div>
   </Step>
 
   <Step title="알림 추가" id="add-chart-alert">
     **Add Alert**를 선택하십시오.
 
+    <div className="ch-image-lg">
+
     ![차트에 알림 추가](/images/use-cases/observability/add_chart_alert.webp)
+
+    </div>
   </Step>
 
   <Step title="알림 조건 정의" id="define-alert-conditions">
     조건(`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`), 임계값, 지속 시간, 웹훅을 정의하십시오. 여기서 지속 시간은 알림이 얼마나 자주 트리거되는지도 결정합니다.
 
+    <div className="ch-image-lg">
+
     ![차트용 알림 생성](/images/use-cases/observability/create_chart_alert.webp)
+
+    </div>
 
     이 화면에서 직접 새 웹훅을 추가할 수도 있습니다. 자세한 내용은 [웹훅 추가](#add-webhook)를 참조하십시오.
   </Step>
@@ -106,11 +130,19 @@ ClickStack은 알림을 생성하는 두 가지의 상호 보완적인 방법, �
 
 예시로, 아래 차트에 대한 알림 생성 과정을 살펴보겠습니다. 웹훅을 지정하기 전에 사용자는 `Add New Webhook`을 선택할 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![새 웹훅 추가](/images/use-cases/observability/add_new_webhook.webp)
+
+</div>
 
 그러면 웹훅 생성 대화상자가 열리며, 여기에서 새 웹훅을 생성할 수 있습니다.
 
+<div className="ch-image-md">
+
 ![웹훅 생성](/images/use-cases/observability/add_webhook_dialog.webp)
+
+</div>
 
 웹훅 이름은 필수이며 설명은 선택 사항입니다. 그 외 필수로 입력해야 하는 설정은 서비스 유형에 따라 다릅니다.
 
@@ -158,11 +190,19 @@ ClickStack 알림은 별도 설정 없이 다음 서비스 유형과 통합됩�
 
 알림은 HyperDX 왼쪽의 알림 패널에서 중앙 집중식으로 관리할 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![알림 관리](/images/use-cases/observability/manage_alerts.webp)
+
+</div>
 
 이 화면에서는 생성되어 현재 ClickStack에서 실행 중인 모든 알림을 확인할 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![알림 보기](/images/use-cases/observability/alerts_view.webp)
+
+</div>
 
 이 화면에는 알림 평가 이력도 표시됩니다. 알림은 일정한 시간 인터벌로 평가되며(알림 생성 시 설정한 period/duration에 따라 결정됨), 각 평가 시 HyperDX가 데이터를 쿼리하여 알림 조건이 충족되었는지 확인합니다.
 
@@ -182,7 +222,11 @@ ClickStack 알림은 별도 설정 없이 다음 서비스 유형과 통합됩�
 알림을 삭제하려면 연결된 검색 또는 차트의 편집 대화상자를 연 다음 **Remove Alert**를 선택하십시오.
 아래 예시에서 `Remove Alert` 버튼을 클릭하면 차트에서 알림이 삭제됩니다.
 
+<div className="ch-image-lg">
+
 ![차트 알림 제거](/images/use-cases/observability/remove_chart_alert.webp)
+
+</div>
 
 <div id="sql-based-alerts">
   ## SQL 기반 차트 알림
@@ -216,7 +260,11 @@ SQL 기반 차트에 알림을 만들려면 다음 단계를 따르십시오.
 
     표시 유형으로 **선**, **Stacked Bar**, 또는 **Number**를 선택합니다.
 
+    <div className="ch-image-lg">
+
     ![SQL 차트 만들기](/images/use-cases/observability/open_sql_chart_mode.webp)
+
+    </div>
   </Step>
 
   <Step title="알림 추가" id="add-sql-alert">
@@ -227,7 +275,11 @@ SQL 기반 차트에 알림을 만들려면 다음 단계를 따르십시오.
     * **인터벌**: 알림을 평가하는 주기입니다(1m, 5m, 15m, 30m, 1h, 6h, 12h 또는 1d). 각 평가에 사용되는 시간 윈도우도 함께 정의합니다.
     * **웹훅**: 알림이 발생할 때 사용할 알림 채널입니다. [웹훅 추가](#add-webhook)를 참조하십시오.
 
+    <div className="ch-image-lg">
+
     ![차트 알림 편집](/images/use-cases/observability/add_raw_sql_alert.webp)
+
+    </div>
 
     <Warning>
       **알림 시간 범위**

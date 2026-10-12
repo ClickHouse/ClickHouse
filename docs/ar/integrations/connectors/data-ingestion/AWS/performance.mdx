@@ -25,7 +25,11 @@ keywords: ['S3', 'الأداء', 'التحسين', 'التخزين الكائن�
   ### حجم كتلة الإدراج
 </div>
 
+<div className="ch-image-lg">
+
 ![آلية حجم كتلة الإدراج في ClickHouse](/images/integrations/data-ingestion/s3/insert_mechanics.webp)
+
+</div>
 
 عند تنفيذ `INSERT INTO SELECT`، يتلقى ClickHouse جزءًا من البيانات، ثم ① يُنشئ (على الأقل) كتلة إدراج واحدة داخل الذاكرة (لكل [مفتاح تقسيم](/ar/reference/engines/table-engines/mergetree-family/custom-partitioning-key)) من البيانات المستلمة. بعد ذلك، تُرتَّب بيانات الكتلة وتُطبَّق عليها تحسينات خاصة بمحرك الجدول. ثم تُضغط البيانات وتُكتب ② إلى مساحة تخزين قاعدة البيانات على شكل جزء بيانات جديد.
 
@@ -33,7 +37,11 @@ keywords: ['S3', 'الأداء', 'التحسين', 'التخزين الكائن�
 
 عند استخدام استعلام `INSERT INTO SELECT` بالاقتران مع محرك جدول تكامل أو دالة الجدول، يسحب خادم ClickHouse البيانات:
 
+<div className="ch-image-lg">
+
 ![سحب البيانات من المصادر الخارجية في ClickHouse](/images/integrations/data-ingestion/s3/pull.webp)
+
+</div>
 
 وحتى يكتمل تحميل البيانات، ينفّذ خادم حلقةً:
 
@@ -66,7 +74,11 @@ Go to ①
 
 سيواصل ClickHouse [دمج الأجزاء](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance) في أجزاء أكبر إلى أن [تصل](/ar/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) إلى حجم مضغوط يبلغ نحو 150 GiB. يوضح هذا المخطط كيف يدمج خادم ClickHouse الأجزاء:
 
+<div className="ch-image-lg">
+
 ![عمليات الدمج في الخلفية في ClickHouse](/images/integrations/data-ingestion/s3/merges.webp)
+
+</div>
 
 يستخدم خادم ClickHouse واحد عدة [خيوط دمج الأجزاء في الخلفية](/ar/reference/settings/server-settings/settings/background#background_pool_size) لتنفيذ [عمليات دمج الأجزاء](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes) المتزامنة. وينفّذ كل خيط حلقة:
 
@@ -92,13 +104,21 @@ Go to ①
   ### توازي الإدراج
 </div>
 
+<div className="ch-image-lg">
+
 ![استخدام الموارد لتوازي الإدراج](/images/integrations/data-ingestion/s3/resource_usage.webp)
+
+</div>
 
 يمكن لخادم ClickHouse معالجة البيانات وإدراجها بالتوازي. ويؤثر مستوى توازي الإدراج في إنتاجية إدخال البيانات واستخدام الذاكرة في خادم ClickHouse. ويتطلب تحميل البيانات ومعالجتها بالتوازي قدرًا أكبر من الذاكرة الرئيسية، لكنه يزيد إنتاجية إدخال البيانات لأن معالجتها تتم بسرعة أكبر.
 
 تتيح دوال الجداول مثل s3 تحديد مجموعات من أسماء الملفات المطلوب تحميلها باستخدام أنماط glob. وعندما يطابق نمط glob عدة ملفات موجودة، يمكن لـ ClickHouse موازاة عمليات القراءة عبر هذه الملفات وداخل كل ملف، وإدراج البيانات بالتوازي في جدول باستخدام خيوط إدراج تعمل بالتوازي (لكل خادم):
 
+<div className="ch-image-lg">
+
 ![خيوط الإدراج المتوازية في ClickHouse](/images/integrations/data-ingestion/s3/insert_threads.webp)
+
+</div>
 
 إلى أن تتم معالجة جميع البيانات من كل الملفات، ينفّذ كل خيط إدراج حلقة:
 
@@ -126,7 +146,11 @@ Go to ①.
   ## تأثير حجم الموارد العتادية
 </div>
 
+<div className="ch-image-lg">
+
 ![تأثير حجم الموارد العتادية على أداء ClickHouse](/images/integrations/data-ingestion/s3/hardware_size.webp)
+
+</div>
 
 يؤثر عدد أنوية CPU المتاحة وسعة RAM في ما يلي:
 
@@ -357,7 +381,11 @@ SETTINGS max_threads = 92
 
 يقوم الخادم الذي يتلقى استعلام الإدراج أولًا بتفسير نمط `glob`، ثم يوزّع معالجة كل ملف مطابق ديناميكيًا بينه وبين الخوادم الأخرى.
 
+<div className="ch-image-lg">
+
 ![الدالة s3Cluster في ClickHouse](/images/integrations/data-ingestion/s3/s3Cluster.webp)
+
+</div>
 
 نكرر استعلام القراءة السابق مع توزيع عبء العمل عبر 3 عُقد، مع تعديل الاستعلام لاستخدام `s3Cluster`. ويتم ذلك تلقائيًا في ClickHouse Cloud، من خلال الإشارة إلى العنقود `default`.
 

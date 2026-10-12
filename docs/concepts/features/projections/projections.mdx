@@ -48,7 +48,11 @@ ClickHouse automatically samples the primary keys and chooses a table that can
 generate the same correct result, but requires the least amount of data to be 
 read as shown in the figure below:
 
+<div className="ch-image-md">
+
 ![Projections in ClickHouse](/images/data-modeling/projections_1.webp)
+
+</div>
 
 ### Smarter storage with `_part_offset` {#smarter_storage_with_part_offset}
 
@@ -309,7 +313,11 @@ becomes `AggregatingMergeTree`, and all aggregate functions are converted to
 The figure below is a visualization of the main table `uk_price_paid_with_projections`
 and its two projections:
 
+<div className="ch-image-md">
+
 ![Visualization of the main table uk_price_paid_with_projections and its two projections](/images/data-modeling/projections_2.webp)
+
+</div>
 
 If we now run the query that lists the counties in London for the three highest 
 paid prices again, we see an improvement in query performance:

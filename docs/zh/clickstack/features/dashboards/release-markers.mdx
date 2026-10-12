@@ -17,7 +17,11 @@ keywords: ['clickstack', '仪表盘', '发布标记', '部署跟踪', 'service.v
 
 发布标记默认关闭。打开仪表盘的更多菜单，然后选择**显示发布标记**。
 
+<div className="ch-image-sm">
+
 ![仪表盘的更多菜单；“视图”部分中，“显示告警注释”下方有“显示发布标记”选项](/images/clickstack/dashboards/release-markers-menu.webp)
+
+</div>
 
 该开关会将 `releaseMarkers=true` 添加到仪表盘 URL 中，因此您共享的链接打开时会自动启用标记。这属于视图状态，而非仪表盘配置：不会随仪表盘一起保存，关闭后该参数也会被移除。
 
@@ -78,7 +82,11 @@ coalesce(
 
 将鼠标悬停在标记标签上，即可列出该时间点的所有发行版，以及发布它们的服务、版本和时间。
 
+<div className="ch-image-sm">
+
 ![在展示两个服务的图表中，将鼠标悬停在发行版标记上时显示的工具提示，其中包含服务 frontend、版本 2.0.2 以及该版本首次出现的时间](/images/clickstack/dashboards/release-marker-tooltip.webp)
+
+</div>
 
 颜色用于将标记与其数据系列关联，但图表图例最多只显示四个条目，其余条目会折叠到“+N more”之后；此时屏幕上没有可供比对颜色的参照。工具提示会直接显示服务名称，因此无论卡片图表展示多少个数据系列都能适用。
 

@@ -106,21 +106,41 @@ Azure Data Factory مُعدّ بالفعل، فيمكنك تخطي هذه الخ
 
 1. سجّل الدخول إلى [Microsoft Azure Portal](https://portal.azure.com/) وانقر على
    **إنشاء مورد**.
+   <div className="ch-image-lg">
+
    ![الصفحة الرئيسية لـ Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp)
+
+   </div>
 
 2. في جزء الفئات على اليسار، حدّد **التحليلات**، ثم انقر على
    **Data Factory** ضمن قائمة الخدمات الشائعة.
+   <div className="ch-image-lg">
+
    ![مورد جديد في Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp)
+
+   </div>
 
 3. حدّد اشتراكك ومجموعة الموارد، وأدخل اسمًا لمثيل Data
    Factory الجديد، واختر المنطقة، واترك الإصدار على V2.
+   <div className="ch-image-lg">
+
    ![Data Factory جديد في Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp)
+
+   </div>
 
 4. انقر على **مراجعة + إنشاء**، ثم انقر على **إنشاء** لبدء عملية النشر.
 
+   <div className="ch-image-lg">
+
    ![تأكيد Data Factory جديد في Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp)
 
+   </div>
+
+   <div className="ch-image-lg">
+
    ![نجاح إنشاء Data Factory جديد في Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp)
+
+   </div>
 
 بمجرد اكتمال عملية النشر بنجاح، يمكنك البدء في استخدام مثيل Azure
 Data Factory الجديد.
@@ -130,33 +150,61 @@ Data Factory الجديد.
 </div>
 
 1. سجّل الدخول إلى Microsoft Azure Portal وافتح مثيل Data Factory الخاص بك.
+   <div className="ch-image-lg">
+
    ![الصفحة الرئيسية لـ Azure Portal مع Data Factory](/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp)
 
+   </div>
+
 2. في صفحة **Overview** الخاصة بـ Data Factory، انقر على **Launch Studio**.
+   <div className="ch-image-lg">
+
    ![صفحة Data Factory في Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp)
+
+   </div>
 
 3. من القائمة الجانبية اليسرى، اختر **Manage**، ثم انتقل إلى **Linked services**،
    وانقر على **+ New** لإنشاء خدمة مرتبطة جديدة.
+   <div className="ch-image-lg">
+
    ![زر خدمة مرتبطة جديدة في Azure Data Factory](/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp)
+
+   </div>
 
 4. في **شريط البحث عن خدمة مرتبطة جديدة**، اكتب **REST**، ثم اختر **REST**، وانقر على **Continue**
    لإنشاء مثيل [لموصل REST](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest).
+   <div className="ch-image-lg">
+
    ![البحث عن خدمة مرتبطة جديدة في Azure Data Factory](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp)
+
+   </div>
 
 5. في جزء تكوين الخدمة المرتبطة، أدخل اسمًا للخدمة الجديدة،
    ثم انقر على حقل **Base URL**، وبعد ذلك انقر على **Add dynamic content** (لا يظهر هذا الرابط إلا
    عند تحديد الحقل).
+   <div className="ch-image-lg">
+
    ![جزء الخدمة المرتبطة الجديدة](/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp)
+
+   </div>
 
 6. في جزء المحتوى الديناميكي، يمكنك إنشاء URL مُعلَّمًا بمعلمات، مما
    يتيح لك تحديد استعلام لاحقًا عند إنشاء datasets لجدوال
    مختلفة، وهذا يجعل الخدمة المرتبطة قابلاً لإعادة الاستخدام.
+   <div className="ch-image-lg">
+
    ![Base URL فارغ لـ الخدمة المرتبطة الجديدة](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp)
+
+   </div>
 
 7. انقر على **&quot;+&quot;** بجوار حقل filter وأضف parameter جديدًا، وسمّه
    `pQuery`، واضبط النوع على String، واضبط default value على `SELECT 1`.
    ثم انقر على **Save**.
+   <div className="ch-image-lg">
+
    ![Parameters الخاصة بـ الخدمة المرتبطة الجديدة](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp)
+
+   </div>
 
 8. في حقل expression، أدخل ما يلي ثم انقر على **OK**. استبدل
    `your-clickhouse-url.com` بالعنوان الفعلي لمثيل ClickHouse
@@ -164,16 +212,28 @@ Data Factory الجديد.
    ```text
    @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
    ```
+   <div className="ch-image-lg">
+
    ![حقل expression المعبأ لـ الخدمة المرتبطة الجديدة](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp)
+
+   </div>
 
 9. بالعودة إلى النموذج الرئيسي، اختر basic authentication، ثم أدخل username
    وpassword المستخدمين للاتصال بـ ClickHouse HTTP interface، وانقر على **Test
    connection**. إذا كان كل شيء مُعدًّا بشكل صحيح، فستظهر لك رسالة
    نجاح.
+   <div className="ch-image-lg">
+
    ![التحقق من الاتصال لـ الخدمة المرتبطة الجديدة](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp)
 
+   </div>
+
 10. انقر على **Create** لإكمال الإعداد.
+    <div className="ch-image-lg">
+
     ![قائمة Linked services](/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp)
+
+    </div>
 
 يُفترض الآن أن يظهر الخدمة المرتبطة الجديد المستند إلى REST في القائمة.
 
@@ -206,19 +266,31 @@ ClickHouse.
 
 2. في Azure Data Factory Studio، حدِّد Author في الجزء الأيسر. مرِّر المؤشر
    فوق العنصر Dataset، وانقر على أيقونة النقاط الثلاث، ثم اختر New dataset.
+   <div className="ch-image-lg">
+
    ![عنصر مجموعة بيانات جديدة](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp)
+
+   </div>
 
 3. في شريط البحث، اكتب **REST**، وحدِّد **REST**، ثم انقر **Continue**.
    أدخل اسمًا لمجموعة البيانات وحدِّد **خدمة مرتبطة** التي أنشأتها
    في الخطوة السابقة. انقر **OK** لإنشاء مجموعة البيانات.
+   <div className="ch-image-lg">
+
    ![صفحة مجموعة بيانات جديدة](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp)
+
+   </div>
 
 4. ينبغي أن ترى الآن مجموعة البيانات التي أنشأتها حديثًا مُدرجة ضمن قسم Datasets
    في جزء Factory Resources على اليسار. حدِّد مجموعة البيانات لفتح
    خصائصها. سترى المعلَمة `pQuery` التي جرى تعريفها في
    خدمة مرتبطة. انقر على حقل النص **Value**. ثم انقر **Add dynamic**
    content.
+   <div className="ch-image-lg">
+
    ![خصائص مجموعة بيانات جديدة](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp)
+
+   </div>
 
 5. في الجزء الذي يُفتح، الصق الاستعلام التالي:
    ```sql
@@ -237,12 +309,20 @@ ClickHouse.
   يجب كتابتها بالشكل `''best_effort''`.
 </Danger>
 
+<div className="ch-image-lg">
+
 ![استعلام مجموعة بيانات جديدة](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp)
+
+</div>
 
 6. انقر **OK** لحفظ التعبير. ثم انقر **Test connection**. إذا كان كل شيء
    مُعَدًّا بشكل صحيح، فسترى رسالة **Connection successful**. انقر **Publish
    all** أعلى الصفحة لحفظ تغييراتك.
+   <div className="ch-image-lg">
+
    ![نجاح اتصال مجموعة البيانات الجديدة](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp)
+
+   </div>
 
 <div id="setting-up-an-example-dataset">
   ### إعداد مجموعة بيانات تجريبية
@@ -275,14 +355,26 @@ ClickHouse.
 1. افتح **Azure Data Factory Studio**، ثم انتقل إلى **تبويب Author**. في جزء
    **Factory Resources**، مرّر المؤشر فوق **Pipeline**، وانقر على
    أيقونة النقاط الثلاث، ثم اختر **New pipeline**.
+   <div className="ch-image-lg">
+
    ![عنصر مسار معالجة جديد في ADF](/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp)
+
+   </div>
 
 2. في جزء **Activities**، وسّع قسم **Move and transform**، ثم
    اسحب نشاط **Copy data** إلى اللوحة.
+   <div className="ch-image-lg">
+
    ![عنصر Copy Data جديد](/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp)
 
+   </div>
+
 3. حدّد **تبويب Source**، ثم اختر مجموعة البيانات المصدر التي أنشأتها سابقًا.
+   <div className="ch-image-lg">
+
    ![مصدر Copy Data](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp)
+
+   </div>
 
 4. انتقل إلى **تبويب Sink**، ثم اختر مجموعة بيانات ClickHouse التي أنشأتها
    لجدول sensors. اضبط **Request method** على POST. وتأكد من أن **HTTP compression
@@ -300,12 +392,20 @@ ClickHouse.
   [اختيار استراتيجية الإدراج / الإدراجات الدفعية عند التزامن](/ar/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous).
 </Info>
 
+<div className="ch-image-lg">
+
 ![اختيار POST لمصب Copy Data](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp)
+
+</div>
 
 5. انقر على **Debug** أعلى اللوحة لتشغيل المسار. بعد انتظار قصير،
    سيُدرَج النشاط في قائمة الانتظار ثم يُنفَّذ. إذا كان كل شيء مُعدًّا
    بشكل صحيح، فينبغي أن تنتهي المهمة بحالة **Success**.
+   <div className="ch-image-lg">
+
    ![نجاح Debug في Copy Data](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp)
+
+   </div>
 
 6. بعد اكتمال ذلك، انقر على **Publish all** لحفظ تغييرات المسار ومجموعة البيانات.
 

@@ -26,7 +26,11 @@ Le partitionnement dans ClickHouse permet de séparer logiquement les données s
 
 Le partitionnement est spécifié sur une table lors de sa définition initiale via la clause `PARTITION BY`. Cette clause peut contenir une expression SQL portant sur une ou plusieurs colonnes, dont le résultat détermine vers quelle partition une ligne est envoyée.
 
+<div className="ch-image-md">
+
 ![Partitions](/images/use-cases/observability/observability-14.webp)
+
+</div>
 
 Les data parts sont logiquement associées (via un préfixe commun de nom de dossier) à chaque partition sur le disque et peuvent être interrogées séparément. Dans l’exemple ci-dessous, le schéma `otel_logs` par défaut effectue un partitionnement par jour à l’aide de l’expression `toDate(Timestamp)`. À mesure que des lignes sont insérées dans ClickHouse, cette expression est évaluée pour chaque ligne, qui est ensuite dirigée vers la partition correspondante si elle existe (si la ligne est la première d’un jour donné, la partition sera créée).
 

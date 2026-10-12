@@ -46,47 +46,87 @@ uvx mcpo --port 8000 -- uv run --with mcp-clickhouse --python 3.10 mcp-clickhous
 
 You can see a list of the endpoints created by navigating to http://localhost:8000/docs
 
+<div className="ch-image-md">
+
 ![Open API endpoints](/images/use-cases/AI_ML/MCP/0_endpoints.webp)
+
+</div>
 
 To use these endpoints with Open WebUI, we need to navigate to settings:
 
+<div className="ch-image-md">
+
 ![Open WebUI settings](/images/use-cases/AI_ML/MCP/1_settings.webp)
+
+</div>
 
 Click on `Tools`:
 
+<div className="ch-image-md">
+
 ![Open WebUI tools](/images/use-cases/AI_ML/MCP/2_tools_page.webp)
+
+</div>
 
 Add http://localhost:8000 as the tool URL:
 
+<div className="ch-image-md">
+
 ![Open WebUI tool](/images/use-cases/AI_ML/MCP/3_add_tool.webp)
+
+</div>
 
 Once we've done this, we should see a `1` next to the tool icon on the chat bar:
 
+<div className="ch-image-md">
+
 ![Open WebUI tools available](/images/use-cases/AI_ML/MCP/4_tools_available.webp)
+
+</div>
 
 If we click on the tool icon, we can then list the available tools:
 
+<div className="ch-image-md">
+
 ![Open WebUI tool listing](/images/use-cases/AI_ML/MCP/5_list_of_tools.webp)
+
+</div>
 </Step>
 <Step title="Configure OpenAI" id="configure-openai">
 
 By default, Open WebUI works with Ollama models, but we can add OpenAI compatible endpoints as well.
 These are configured via the settings menu, but this time we need to click on the `Connections` tab:
 
+<div className="ch-image-md">
+
 ![Open WebUI connections](/images/use-cases/AI_ML/MCP/6_connections.webp)
+
+</div>
 
 Let's add the endpoint and our OpenAI key:
 
+<div className="ch-image-md">
+
 ![Open WebUI - Add OpenAI as a connection](/images/use-cases/AI_ML/MCP/7_add_connection.webp)
+
+</div>
 
 The OpenAI models will then be available on the top menu:
 
+<div className="ch-image-md">
+
 ![Open WebUI - Models](/images/use-cases/AI_ML/MCP/8_openai_models_more.webp)
+
+</div>
 </Step>
 <Step title="Chat to ClickHouse MCP server with Open WebUI" id="chat-to-clickhouse-mcp-server">
 
 We can then have a conversation and Open WebUI will call the MCP server if necessary:
 
+<div className="ch-image-md">
+
 ![Open WebUI - Chat with ClickHouse MCP server](/images/use-cases/AI_ML/MCP/9_conversation.webp)
+
+</div>
 </Step>
 </Steps>

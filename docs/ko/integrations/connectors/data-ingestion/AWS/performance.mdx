@@ -25,7 +25,11 @@ keywords: ['s3', '성능', '최적화', '객체 스토리지', '데이터 로딩
   ### 삽입 블록 크기
 </div>
 
+<div className="ch-image-lg">
+
 ![ClickHouse의 삽입 블록 크기 메커니즘](/images/integrations/data-ingestion/s3/insert_mechanics.webp)
+
+</div>
 
 `INSERT INTO SELECT`를 수행할 때 ClickHouse는 일정량의 데이터를 받아, 받은 데이터로부터 ① [파티셔닝 키](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)별로 메모리 내 삽입 블록을 (최소) 하나 생성합니다. 그런 다음 블록의 데이터를 정렬하고, 테이블 엔진별 최적화를 적용합니다. 이후 데이터는 압축되어 ② 새로운 데이터 파트 형태로 데이터베이스 스토리지에 기록됩니다.
 
@@ -33,7 +37,11 @@ keywords: ['s3', '성능', '최적화', '객체 스토리지', '데이터 로딩
 
 통합 테이블 엔진 또는 테이블 함수와 함께 `INSERT INTO SELECT` 쿼리를 사용하면 ClickHouse 서버가 데이터를 가져옵니다:
 
+<div className="ch-image-lg">
+
 ![ClickHouse에서 외부 소스의 데이터를 가져오는 방식](/images/integrations/data-ingestion/s3/pull.webp)
+
+</div>
 
 데이터가 완전히 로드될 때까지 서버는 다음 루프를 실행합니다:
 
@@ -66,7 +74,11 @@ Go to ①
 
 ClickHouse는 [파트를 머지](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse#data-needs-to-be-batched-for-optimal-performance)하여 더 큰 파트로 계속 통합하며, [압축된 크기](/ko/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)가 약 150 GiB에 이를 때까지 이 작업을 반복합니다. 다음 다이어그램은 ClickHouse 서버가 파트를 머지하는 방식을 보여줍니다.
 
+<div className="ch-image-lg">
+
 ![ClickHouse의 백그라운드 머지](/images/integrations/data-ingestion/s3/merges.webp)
+
+</div>
 
 단일 ClickHouse 서버는 여러 개의 [백그라운드 머지 스레드](/ko/reference/settings/server-settings/settings/background#background_pool_size)를 사용해 동시에 [파트 병합](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#more-parts--more-background-part-merges:~:text=to%20execute%20concurrent-,part%20merges,-.%20Each%20thread%20executes)을 실행합니다. 각 스레드는 다음과 같은 루프를 실행합니다.
 
@@ -92,13 +104,21 @@ CPU 코어 수와 RAM 크기를 [늘리면](https://clickhouse.com/blog/supercha
   ### 삽입 병렬성
 </div>
 
+<div className="ch-image-lg">
+
 ![삽입 병렬성에 따른 리소스 사용량](/images/integrations/data-ingestion/s3/resource_usage.webp)
+
+</div>
 
 ClickHouse 서버는 데이터를 병렬로 처리하고 삽입할 수 있습니다. 삽입 병렬성 수준은 ClickHouse 서버의 수집 처리량과 메모리 사용량에 영향을 줍니다. 데이터를 병렬로 로드하고 처리하면 더 많은 주 메모리가 필요하지만, 데이터가 더 빠르게 처리되므로 수집 처리량은 증가합니다.
 
 `s3`와 같은 테이블 함수는 글롭 패턴을 사용해 로드할 파일 이름 집합을 지정할 수 있습니다. 글롭 패턴이 여러 기존 파일과 일치하면 ClickHouse는 파일 간 및 파일 내부의 읽기를 병렬화하고, 병렬로 실행되는 삽입 스레드(서버별)를 활용해 데이터를 테이블에 병렬로 삽입할 수 있습니다:
 
+<div className="ch-image-lg">
+
 ![ClickHouse의 병렬 삽입 스레드](/images/integrations/data-ingestion/s3/insert_threads.webp)
+
+</div>
 
 모든 파일의 데이터가 모두 처리될 때까지 각 삽입 스레드는 다음 루프를 실행합니다:
 
@@ -126,7 +146,11 @@ S3 테이블 함수를 사용하는 쿼리의 성능 최적화는 두 가지 경
   ## 하드웨어 크기의 영향
 </div>
 
+<div className="ch-image-lg">
+
 ![하드웨어 크기가 ClickHouse 성능에 미치는 영향](/images/integrations/data-ingestion/s3/hardware_size.webp)
+
+</div>
 
 사용 가능한 CPU 코어 수와 RAM 용량은 다음에 영향을 줍니다.
 
@@ -357,7 +381,11 @@ SETTINGS max_threads = 92
 
 처음에 삽입 쿼리를 수신한 서버는 먼저 글롭 패턴을 확인한 다음, 일치하는 각 파일의 처리를 자신과 다른 서버에 동적으로 분배합니다.
 
+<div className="ch-image-lg">
+
 ![ClickHouse의 s3Cluster 함수](/images/integrations/data-ingestion/s3/s3Cluster.webp)
+
+</div>
 
 앞서 사용한 읽기 쿼리를 다시 사용하되, 작업 부하를 3개의 노드에 분산하도록 `s3Cluster`를 사용하도록 쿼리를 조정합니다. ClickHouse Cloud에서는 `default` 클러스터를 참조하면 이 작업이 자동으로 수행됩니다.
 

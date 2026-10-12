@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge/>
 
 Web search lets an agent fetch information from the public web during a conversation. Use it for questions where the answer needs to be current — recent releases, documentation that lives outside your service, or a quick check against an authoritative source.
@@ -16,7 +17,11 @@ Web search lets an agent fetch information from the public web during a conversa
 
 In the Agent Builder, enable **Web Search** in the **Capabilities** section. Once enabled, the agent decides when to issue a search based on the user's question and the agent's instructions. The search runs, results are scraped, and the most relevant content is passed back into the model context.
 
+<div className="ch-image-sm">
+
 ![Capabilities panel with the Web Search section highlighted, showing the Web Search checkbox](/images/cloud/agent-builder/web-search/web-search.webp)
+
+</div>
 
 ## How a search round works {#how-a-search-round-works}
 

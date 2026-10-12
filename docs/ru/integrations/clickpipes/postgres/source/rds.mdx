@@ -41,17 +41,33 @@ postgres=> SHOW rds.logical_replication ;
 1. Создайте новую группу параметров для вашей версии Postgres с требуемыми настройками:
    * Установите `rds.logical_replication` в значение 1
 
+<div className="ch-image-lg">
+
 ![Где в RDS находятся группы параметров?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![Изменение значения rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
 
+</div>
+
 2. Примените новую группу параметров к вашей базе данных RDS Postgres
+
+<div className="ch-image-lg">
 
 ![Изменение RDS Postgres с использованием новой группы параметров](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
 
+</div>
+
 3. Перезагрузите экземпляр RDS, чтобы изменения вступили в силу
 
+<div className="ch-image-lg">
+
 ![Перезагрузка RDS Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+
+</div>
 
 <div id="configure-database-user">
   ## Настройка пользователя базы данных
@@ -119,9 +135,17 @@ postgres=> SHOW rds.logical_replication ;
 
 Если вы хотите ограничить трафик к своему экземпляру RDS, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в раздел `Inbound rules` группы безопасности RDS.
 
+<div className="ch-image-lg">
+
 ![Где найти группу безопасности в RDS Postgres?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Изменение inbound rules для указанной выше группы безопасности](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### Частный доступ через AWS PrivateLink

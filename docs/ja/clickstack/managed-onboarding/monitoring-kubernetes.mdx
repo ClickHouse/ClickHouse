@@ -300,15 +300,27 @@ Kubernetes 上で稼働するワークロードの場合、ゲートウェイ co
   <Step title="ClickStack UIで確認する" id="confirm-in-ui">
     [ClickHouse Cloud console](https://console.clickhouse.cloud)でサービスを開き、左側のメニューから**ClickStack**を選択します。
 
+    <div className="ch-image-lg">
+
     ![ClickStackを起動](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+    </div>
 
     **Search**ビューで、ログソースを`Logs`に切り替え、時間範囲を**Last 15 minutes**に設定します。数秒以内に、`k8s.namespace.name`、`k8s.pod.name`、`k8s.node.name`などの属性が付与された、クラスター全体のコンテナーログが表示されるはずです。
 
+    <div className="ch-image-lg">
+
     ![Kubernetesログを表示したClickStack Searchビュー](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+
+    </div>
 
     インフラストラクチャのメトリクスやイベントを関連付けて確認するには、**Dashboards** -&gt; **Kubernetes** の順に移動し、組み込みの**Kubernetes**ダッシュボードを開きます。`Pods`、`Nodes`、`Namespaces`の各タブには、いずれもデータが表示されるはずです。
 
+    <div className="ch-image-lg">
+
     ![ClickStack Kubernetesダッシュボード](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+
+    </div>
 
     何も表示されない場合:
 

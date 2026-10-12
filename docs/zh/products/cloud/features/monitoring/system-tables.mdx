@@ -56,7 +56,11 @@ ORDER BY
 
 ClickHouse 内置了高级可观测性仪表板功能，可通过 `$HOST:$PORT/dashboard` 访问 (需要用户名和密码) ，显示 `system.dashboards` 中包含的 Cloud 概览指标。
 
+<div className="ch-image-lg">
+
 ![原生高级可观测性仪表板](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</div>
 
 <Note>
   此仪表板需要直接对 ClickHouse 实例进行身份验证，并且独立于 [Cloud Console 高级仪表板](/zh/products/cloud/features/monitoring/cloud-console#advanced-dashboard)；后者可通过 Cloud Console UI 访问，无需额外身份验证。

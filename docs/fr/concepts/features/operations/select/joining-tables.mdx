@@ -12,7 +12,11 @@ ClickHouse offre une [prise en charge complète de `JOIN`](https://clickhouse.co
 * À partir de ClickHouse 24.12, le planner de requêtes réordonne automatiquement les jointures entre deux tables afin de placer la plus petite à droite pour des performances optimales. Dans la version 25.9, cette optimisation a été étendue à l’ordre des jointures dans les requêtes qui joignent trois tables ou plus.
 * Si votre requête nécessite une jointure directe, c’est-à-dire un `LEFT ANY JOIN`, comme illustré ci-dessous, nous vous recommandons d’utiliser des [Dictionaries](/fr/concepts/features/dictionaries/index) lorsque c’est possible.
 
+<div className="ch-image-sm">
+
 ![Left any join](/images/guides/joins-1.webp)
+
+</div>
 
 * Pour les jointures internes, il est souvent plus efficace de les écrire sous forme de sous-requêtes avec la clause `IN`. Considérez les requêtes suivantes, qui sont fonctionnellement équivalentes. Toutes deux calculent le nombre de `posts` qui ne mentionnent pas ClickHouse dans la question, mais le mentionnent dans les `comments`.
 
@@ -138,7 +142,11 @@ ClickHouse prend en charge plusieurs [algorithmes de jointure](https://clickhous
 
 <br />
 
+<div className="ch-image-lg">
+
 ![vitesse selon la mémoire pour les jointures](/images/guides/joins-2.png)
+
+</div>
 
 <br />
 
@@ -148,7 +156,11 @@ Les types de `JOIN` pris en charge par chaque algorithme de jointure sont indiqu
 
 <br />
 
+<div className="ch-image-lg">
+
 ![fonctionnalités des jointures](/images/guides/joins-3.webp)
+
+</div>
 
 <br />
 
@@ -164,7 +176,11 @@ Si votre principal critère d’optimisation est la performance et que vous souh
 
 <br />
 
+<div className="ch-image-lg">
+
 ![organigramme de jointure](/images/guides/joins-4.webp)
+
+</div>
 
 <br />
 
@@ -190,7 +206,11 @@ Si vous cherchez à optimiser une jointure pour minimiser l’utilisation mémoi
 
 <br />
 
+<div className="ch-image-lg">
+
 ![Arbre de décision pour l’optimisation mémoire des jointures](/images/guides/joins-5.webp)
+
+</div>
 
 <br />
 

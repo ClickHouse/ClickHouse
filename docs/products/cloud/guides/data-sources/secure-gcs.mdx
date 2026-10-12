@@ -37,11 +37,19 @@ For following this guide you will need:
 
 1. In the Google Cloud Console, navigate to IAM & Admin → Service Accounts
 
+<div className="ch-image-md">
+
 ![](/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp)
+
+</div>
 
 2. Click `Service accounts` from the left-hand menu, then click `Create service account`:
 
+<div className="ch-image-md">
+
 ![](/images/cloud/guides/accessing-data/GCS/create_service_account.webp)
+
+</div>
 
 Enter a name and description for your service account, for example:
 
@@ -52,11 +60,19 @@ Service account description: Service account for ClickHouse Cloud to access GCS 
 
 Click `Create and continue`
 
+<div className="ch-image-sm">
+
 ![](/images/cloud/guides/accessing-data/GCS/create_and_continue.webp)
+
+</div>
 
 Grant the service account the `Storage Object User` role:
 
+<div className="ch-image-sm">
+
 ![](/images/cloud/guides/accessing-data/GCS/storage_object_user.webp)
+
+</div>
 
 This role provides read and write access to GCS objects
 
@@ -69,7 +85,11 @@ Click `Continue`, then `Done`
 
 Make note of the service account email address:
 
+<div className="ch-image-md">
+
 ![](/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp)
+
+</div>
 </Step>
 <Step title="Grant bucket access to the service account" id="grant-bucket-access-to-service-account">
 
@@ -106,19 +126,31 @@ Grant access only to the specific buckets that ClickHouse needs to access, rathe
 
 Navigate to `Cloud Storage` → `Settings` → `Interoperability`:
 
+<div className="ch-image-sm">
+
 ![](/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp)
+
+</div>
 
 If you don't see an "Access keys" section, click `Enable interoperability access`
 
 Under "Access keys for service accounts", click `Create a key for a service account`:
 
+<div className="ch-image-md">
+
 ![](/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp)
+
+</div>
 
 Select the service account you created earlier (e.g clickhouse-gcs-access@your-project.iam.gserviceaccount.com)
 
 Click `Create key`:
 
+<div className="ch-image-md">
+
 ![](/images/cloud/guides/accessing-data/GCS/create_a_key.webp)
+
+</div>
 
 The HMAC key will be displayed.
 Save both the Access Key and Secret immediately - you won't be able to view the secret again.
@@ -174,7 +206,11 @@ When [setting up a GCS ClickPipe](/integrations/clickpipes/object-storage/google
 1. Select `Credentials` under `Authentication method` during ClickPipe setup
 2. Provide HMAC credentials obtained in the previous steps
 
+<div className="ch-image-md">
+
 ![](/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp)
+
+</div>
 
 <Note>
 Service account authentication isn't currently supported - you must use HMAC keys

@@ -26,7 +26,11 @@ Metabase هي أداة واجهة مستخدم سهلة الاستخدام وم�
 
 في هذا الدليل، ستطرح بعض الأسئلة على بيانات ClickHouse باستخدام Metabase وتعرض الإجابات بصريًا. وستبدو إحدى هذه الإجابات كما يلي:
 
+<div className="ch-image-md">
+
 ![تصور مخطط دائري في Metabase يعرض بيانات من ClickHouse](/images/integrations/data-visualization/metabase_08.webp)
+
+</div>
 
 <p />
 
@@ -60,13 +64,21 @@ Metabase هي أداة واجهة مستخدم سهلة الاستخدام وم�
 
     3. إذا تم تثبيت برنامج التشغيل بنجاح، فسترى **ClickHouse** في القائمة المنسدلة الخاصة بـ **نوع قاعدة البيانات**:
 
+       <div className="ch-image-md">
+
        ![اختيار قاعدة البيانات في Metabase مع ظهور ClickHouse كأحد الخيارات](/images/integrations/data-visualization/metabase_01.webp)
+
+       </div>
 
     4. امنح قاعدة البيانات **اسمًا معروضًا**، وهو إعداد في Metabase، لذا يمكنك استخدام أي اسم تريده.
 
     5. أدخِل تفاصيل الاتصال لقاعدة بيانات ClickHouse. فعِّل اتصالًا آمنًا إذا كان ClickHouse server مُعدًّا لاستخدام SSL. على سبيل المثال:
 
+       <div className="ch-image-md">
+
        ![نموذج تفاصيل الاتصال في Metabase لقاعدة بيانات ClickHouse](/images/integrations/data-visualization/metabase_02.webp)
+
+       </div>
 
     6. انقر على زر **حفظ**، وسيقوم Metabase بفحص قاعدة البيانات بحثًا عن الجداول.
   </Step>
@@ -76,25 +88,45 @@ Metabase هي أداة واجهة مستخدم سهلة الاستخدام وم�
 
     2. في الزاوية العلوية اليمنى، انقر على قائمة **+ New** وستلاحظ أنه يمكنك طرح أسئلة وتشغيل استعلامات SQL وإنشاء لوحة المعلومات:
 
+       <div className="ch-image-sm">
+
        ![قائمة New في Metabase تعرض خيارات إنشاء أسئلة واستعلامات SQL ولوحات معلومات](/images/integrations/data-visualization/metabase_03.webp)
+
+       </div>
 
     3. على سبيل المثال، إليك استعلام SQL يعمل على table باسم `uk_price_paid` ويُرجع متوسط السعر المدفوع حسب السنة من 1995 إلى 2022:
 
+       <div className="ch-image-md">
+
        ![محرر SQL في Metabase يعرض استعلامًا على بيانات UK price paid](/images/integrations/data-visualization/metabase_04.webp)
+
+       </div>
   </Step>
 
   <Step title="اطرح سؤالًا" id="5-ask-a-question">
     1. انقر على **+ New** واختر **Question**. لاحظ أنه يمكنك إنشاء سؤال بدءًا من database وtable. على سبيل المثال، يُطرح السؤال التالي على table باسم `uk_price_paid` في قاعدة البيانات `default`. إليك سؤالًا بسيطًا يحسب متوسط السعر حسب البلدة ضمن مقاطعة Greater Manchester:
 
+       <div className="ch-image-md">
+
        ![واجهة منشئ الأسئلة في Metabase مع بيانات أسعار UK](/images/integrations/data-visualization/metabase_06.webp)
+
+       </div>
 
     2. انقر على زر **Visualize** لعرض النتائج في شكل table.
 
+       <div className="ch-image-md">
+
        ![تصور في Metabase يعرض نتائج جدولية لمتوسط الأسعار حسب البلدة](/images/integrations/data-visualization/metabase_07.webp)
+
+       </div>
 
     3. أسفل النتائج، انقر على زر **تصور** لتغيير التصور إلى مخطط شريطي (أو أي خيار آخر متاح):
 
+       <div className="ch-image-md">
+
        ![تصور مخطط دائري في Metabase لمتوسط الأسعار حسب البلدة في Greater Manchester](/images/integrations/data-visualization/metabase_08.webp)
+
+       </div>
   </Step>
 </Steps>
 

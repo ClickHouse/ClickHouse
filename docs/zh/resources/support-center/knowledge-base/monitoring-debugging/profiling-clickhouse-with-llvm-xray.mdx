@@ -44,7 +44,11 @@ SYSTEM INSTRUMENT REMOVE ALL
 我们将 system.trace&#95;log 中收集的数据转换为[Chrome
 格式](/zh/reference/system-tables/trace_log#chrome-event-trace-format)，以便在 [Perfetto](https://ui.perfetto.dev) 中可视化。请注意每个条目的 query&#95;id、cpu&#95;id 和 stacktrace。
 
+<div className="ch-image-md">
+
 ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
+
+</div>
 
 <div id="profiling-a-native-application-using-xray">
   ## 使用 XRay 对原生应用程序进行性能分析
@@ -152,19 +156,31 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
   #### 按时间顺序
 </div>
 
+<div className="ch-image-md">
+
 ![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
+
+</div>
 
 <div id="left-heavy">
   #### 左偏重
 </div>
 
+<div className="ch-image-md">
+
 ![左偏重](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
+
+</div>
 
 <div id="sandwitch">
   #### 三明治
 </div>
 
+<div className="ch-image-md">
+
 ![三明治](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
+
+</div>
 
 <div id="check-out-the-docs">
   ## 查阅文档

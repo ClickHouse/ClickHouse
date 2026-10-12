@@ -17,7 +17,11 @@ keywords: ['prewhere', 'query optimization', 'performance', 'filtering', 'best p
 
 먼저 [uk&#95;price&#95;paid&#95;simple](/ko/concepts/core-concepts/parts) 테이블에 대한 쿼리가 PREWHERE를 사용하지 않을 때 어떻게 처리되는지 살펴보겠습니다:
 
+<div className="ch-image-md">
+
 ![PREWHERE 최적화 없이 쿼리 처리](/images/guides/best-practices/prewhere_01.webp)
+
+</div>
 
 <br />
 
@@ -43,7 +47,11 @@ keywords: ['prewhere', 'query optimization', 'performance', 'filtering', 'best p
 
 처음 세 단계는 앞서와 동일합니다:
 
+<div className="ch-image-md">
+
 ![PREWHERE 최적화가 적용된 쿼리 처리](/images/guides/best-practices/prewhere_02.webp)
+
+</div>
 
 <br />
 
@@ -64,7 +72,11 @@ ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실�
 
 이 예시에서는 선택된 모든 그래뉼이 일치하므로, ② 다음 필터 컬럼인 `date`에서 위치상 대응되는 그래뉼이 처리 대상으로 선택됩니다:
 
+<div className="ch-image-md">
+
 ![1단계: town으로 필터링](/images/guides/best-practices/prewhere_03.webp)
+
+</div>
 
 <br />
 
@@ -75,7 +87,11 @@ ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실�
 
 이 경우 3개의 그래뉼 중 2개에 일치하는 행이 포함되어 있으므로, ② 다음 필터 컬럼인 `price`에서 위치상 대응되는 그래뉼만 후속 처리 대상으로 선택됩니다:
 
+<div className="ch-image-md">
+
 ![2단계: date로 필터링](/images/guides/best-practices/prewhere_04.webp)
+
+</div>
 
 <br />
 
@@ -86,7 +102,11 @@ ClickHouse는 ① `town` 컬럼에서 선택된 그래뉼을 읽고, 그중 실�
 
 2개의 그래뉼 중 1개에만 일치하는 행이 포함되어 있으므로, ② `SELECT` 컬럼인 `street`에서 위치상 대응되는 그래뉼만 추가 처리를 위해 로드하면 됩니다:
 
+<div className="ch-image-md">
+
 ![2단계: price로 필터링](/images/guides/best-practices/prewhere_05.webp)
+
+</div>
 
 <br />
 

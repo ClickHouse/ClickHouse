@@ -28,7 +28,11 @@ La configuration des logs nécessite une colonne de temps, une colonne de niveau
 
 La configuration des traces est légèrement plus complexe (liste complète [ici](/fr/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)). Ces colonnes sont requises afin d&#39;abstraire les requêtes ultérieures qui reconstituent un profil de trace complet. Ces requêtes supposent que les données sont structurées de manière similaire à OTel ; les utilisateurs qui s&#39;écartent sensiblement du schéma standard devront donc utiliser des vues pour bénéficier de cette fonctionnalité.
 
+<div className="ch-image-sm">
+
 ![Configuration du connecteur](/images/use-cases/observability/observability-15.webp)
+
+</div>
 
 Une fois la configuration terminée, vous pouvez accéder à [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) et commencer à rechercher des logs et des traces.
 
@@ -42,7 +46,11 @@ Si vous suivez les exigences de Grafana concernant les logs, vous pouvez sélect
 SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
 ```
 
+<div className="ch-image-lg">
+
 ![Config des logs du connecteur](/images/use-cases/observability/observability-16.webp)
+
+</div>
 
 Le générateur de requêtes permet de modifier facilement la requête, sans avoir à écrire de SQL. Le filtrage, y compris la recherche de logs contenant des mots-clés, peut s’effectuer depuis le générateur de requêtes. Les utilisateurs qui souhaitent écrire des requêtes plus complexes peuvent passer à l’éditeur SQL. Si les colonnes appropriées sont renvoyées et que `logs` est sélectionné comme type de requête, les résultats s’afficheront sous forme de logs. Les colonnes requises pour l’affichage des logs sont répertoriées [ici](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format).
 
@@ -52,7 +60,11 @@ Le générateur de requêtes permet de modifier facilement la requête, sans avo
 
 Si les logs contiennent des identifiants de trace, vous pouvez naviguer jusqu’à la trace correspondant à une ligne de log donnée.
 
+<div className="ch-image-lg">
+
 ![Des logs aux traces](/images/use-cases/observability/observability-17.webp)
+
+</div>
 
 <div id="traces">
   ## Traces
@@ -75,7 +87,11 @@ WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
 
 Cette requête renvoie les noms de colonnes attendus par Grafana et affiche un tableau de traces, comme indiqué ci-dessous. Il est possible de filtrer sur la durée ou d’autres colonnes sans avoir à écrire de SQL.
 
+<div className="ch-image-lg">
+
 ![Traces](/images/use-cases/observability/observability-18.webp)
+
+</div>
 
 Les utilisateurs qui souhaitent écrire des requêtes plus complexes peuvent basculer vers le `éditeur SQL`.
 
@@ -113,7 +129,11 @@ LIMIT 1000
   Remarquez que la requête ci-dessus utilise la vue matérialisée `otel_traces_trace_id_ts` pour rechercher l’identifiant de trace. Consultez [Accélérer les requêtes - Utiliser des vues matérialisées pour les recherches](/fr/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups) pour plus de détails.
 </Note>
 
+<div className="ch-image-lg">
+
 ![Détails de la trace](/images/use-cases/observability/observability-19.webp)
+
+</div>
 
 <div id="traces-to-logs">
   ### Des traces aux logs
@@ -129,7 +149,11 @@ WHERE ( traceID = '<trace_id>' )
 ORDER BY timestamp ASC LIMIT 1000
 ```
 
+<div className="ch-image-lg">
+
 ![Des traces aux logs](/images/use-cases/observability/observability-20.webp)
+
+</div>
 
 <div id="dashboards">
   ## Tableaux de bord
@@ -139,7 +163,11 @@ Vous pouvez créer des tableaux de bord dans Grafana à l’aide de la source de
 
 Le plugin fournit plusieurs tableaux de bord prêts à l’emploi, dont un exemple, « Simple ClickHouse OTel dashboarding », pour les données de logs et de traces conformes à la spécification OTel. Pour l’utiliser, les utilisateurs doivent respecter les noms de colonne OTel par défaut, et il peut être installé depuis la configuration de la source de données.
 
+<div className="ch-image-lg">
+
 ![Tableaux de bord](/images/use-cases/observability/observability-21.webp)
+
+</div>
 
 Vous trouverez ci-dessous quelques conseils simples pour créer des visualisations.
 
@@ -162,7 +190,11 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
+<div className="ch-image-lg">
+
 ![Série temporelle](/images/use-cases/observability/observability-22.webp)
+
+</div>
 
 <div id="multi-line-charts">
   ### Graphiques multilignes
@@ -189,7 +221,11 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
+<div className="ch-image-lg">
+
 ![Graphiques à plusieurs courbes](/images/use-cases/observability/observability-23.webp)
+
+</div>
 
 <div id="visualizing-geo-data">
   ### Visualisation des données géographiques
@@ -215,4 +251,8 @@ FROM coords
 GROUP BY hash
 ```
 
+<div className="ch-image-lg">
+
 ![Visualisation de données géographiques](/images/use-cases/observability/observability-24.webp)
+
+</div>

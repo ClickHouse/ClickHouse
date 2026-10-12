@@ -30,7 +30,11 @@ Pour illustrer la façon dont l’index primaire clairsemé est construit, nous 
 
 Pour [rappel](/fr/concepts/core-concepts/parts), dans notre table d’exemple ① avec la clé primaire (town, street), les données ② insérées sont ③ stockées sur disque, triées selon les valeurs des colonnes de la clé primaire et compressées, dans des fichiers distincts pour chaque colonne :
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+
+</div>
 
 <br />
 
@@ -40,7 +44,11 @@ Lors du traitement, les données de chaque colonne sont ④ logiquement divisée
 
 Cette structure en granules est aussi ce qui rend l’index primaire **sparse** : au lieu d’indexer chaque ligne, ClickHouse stocke ⑤ les valeurs de la clé primaire d’une seule ligne par granule — plus précisément, la première ligne. On obtient ainsi une entrée d’index par granule :
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+
+</div>
 
 <br />
 
@@ -54,7 +62,11 @@ Grâce à sa nature sparse, l’index primaire est suffisamment compact pour ten
 
 Nous montrons brièvement comment l’index primaire clairsemé est utilisé pour accélérer les requêtes à l’aide d’une autre animation :
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+
+</div>
 
 <br />
 

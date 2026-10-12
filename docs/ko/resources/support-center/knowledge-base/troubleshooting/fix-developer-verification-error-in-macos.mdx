@@ -15,7 +15,11 @@ keywords: ['개발자 확인', 'macOS']
 
 `clickhouse` 명령을 실행하려고 하면 다음과 같은 오류가 표시될 수 있습니다:
 
+<div className="ch-image-md">
+
 ![macOS 개발자 확인 오류 대화상자](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
+
+</div>
 
 이 개발자 확인 오류를 해결하려면 시스템 설정 창에서 관련 설정을 찾아 macOS의 격리 상태에서 앱을 제거하거나, 터미널을 사용하거나, ClickHouse를 다시 설치해야 합니다.
 
@@ -29,13 +33,21 @@ keywords: ['개발자 확인', 'macOS']
 
 2. **Privacy &amp; Security**로 이동하십시오.
 
+   <div className="ch-image-md">
+
    ![MacOS Privacy & Security 설정 기본 보기](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
+
+   </div>
 
 3. 창 하단으로 스크롤하여 &#95;&quot;clickhouse-macos-aarch64&quot; was blocked from use because it is not from an identified developer&quot;&#95;라는 메시지를 찾으십시오.
 
 4. **Allow Anyway**를 클릭하십시오.
 
+   <div className="ch-image-md">
+
    ![Allow Anyway 버튼이 표시된 MacOS Privacy & Security 설정](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
+
+   </div>
 
 5. MacOS 사용자 비밀번호를 입력하십시오.
 

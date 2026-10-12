@@ -39,7 +39,11 @@ Préparez un nouveau compte AWS, un projet GCP ou un abonnement Azure au sein de
 
 <Steps>
   <Step title="Choisissez un fournisseur de services cloud" id="choose-cloud-provider">
+    <div className="ch-image-lg ch-image-background-black">
+
     ![Sélectionner un CSP pour BYOC](/images/cloud/reference/byoc-onboarding-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Configuration du compte, du projet ou de l’abonnement" id="account-setup">
@@ -49,7 +53,11 @@ Préparez un nouveau compte AWS, un projet GCP ou un abonnement Azure au sein de
       **Appliquez les artefacts d’onboarding exactement tels qu’ils sont fournis.** Ne modifiez rien dans le modèle CloudFormation ou le module Terraform — notamment en renommant des ressources ou en ajoutant des paramètres tels que `PermissionsBoundary` — sans l’accord explicite de ClickHouse. L’automatisation de ClickHouse dépend des ressources exactes créées par ces artefacts ; les personnalisations prises en charge sont exposées sous forme de paramètres. En particulier, sur AWS, le rôle IAM doit conserver son nom par défaut, `ClickHouseManagementRole` — sans préfixe ni suffixe — sauf si ClickHouse a explicitement accepté au préalable un autre nom. Le module Terraform expose techniquement une entrée `role_name`, mais l’automatisation de ClickHouse doit être configurée en conséquence ; la modifier sans coordination (ou renommer le rôle dans le modèle CloudFormation, qui ne propose pas ce paramètre) crée une pile qui s’applique correctement, mais dont le provisionnement de l’infrastructure échoue, car ClickHouse ne peut pas assumer le rôle attendu.
     </Warning>
 
+    <div className="ch-image-lg ch-image-background-black">
+
     ![Initialiser un compte BYOC](/images/cloud/reference/byoc-onboarding-2.webp)
+
+    </div>
 
     <Note>
       Les buckets de stockage, le VPC/VNet, le cluster Kubernetes et les ressources de calcul nécessaires à l’exécution de ClickHouse ne sont pas inclus dans cette configuration initiale. Ils seront provisionnés à l’étape suivante.
@@ -98,7 +106,11 @@ Préparez un nouveau compte AWS, un projet GCP ou un abonnement Azure au sein de
 
     * **Zones de disponibilité** : si vous prévoyez d’utiliser le peering VPC, l’alignement des zones de disponibilité entre les comptes source et BYOC peut contribuer à réduire les coûts de trafic inter-AZ. Par exemple, dans AWS, les suffixes de zone de disponibilité (`a`, `b`, `c`) peuvent correspondre à différents ID de zones physiques selon les comptes. Consultez le [guide AWS](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html) pour plus de détails.
 
+    <div className="ch-image-lg ch-image-background-black">
+
     ![Configurez l’infrastructure BYOC](/images/cloud/reference/byoc-onboarding-3.webp)
+
+    </div>
 
 #### Validation préalable
 
@@ -114,7 +126,11 @@ Préparez un nouveau compte AWS, un projet GCP ou un abonnement Azure au sein de
 
     Lorsque des vérifications échouent, chacune est répertoriée avec l’action à laquelle elle correspond et la raison de l’échec (par exemple, `iam:CreateRole · explicitDeny`). Développez **Show passed checks** pour passer en revue tout ce qui a réussi.
 
+    <div className="ch-image-lg ch-image-background-black">
+
     ![Validation préalable BYOC signalant des vérifications de configuration Cloud ayant échoué](/images/cloud/reference/byoc-onboarding-preflight-failed.png)
+
+    </div>
 
     Pour corriger ces échecs, réexécutez la dernière pile CloudFormation ou Terraform de ClickHouse — ou accordez les actions signalées à l’identité de gestion (rôle IAM / compte de service / principal de service) — puis choisissez l’une des options suivantes :
 
@@ -140,7 +156,11 @@ Préparez un nouveau compte AWS, un projet GCP ou un abonnement Azure au sein de
 
 Une fois votre infrastructure BYOC provisionnée, vous êtes prêt à lancer votre premier service ClickHouse. Ouvrez la console ClickHouse Cloud, sélectionnez votre environnement BYOC et suivez les instructions pour créer un nouveau service.
 
+<div className="ch-image-md">
+
 ![BYOC créer un nouveau service](/images/cloud/reference/byoc-new-service-1.webp)
+
+</div>
 
 Lors de la création du service, vous configurerez les options suivantes :
 

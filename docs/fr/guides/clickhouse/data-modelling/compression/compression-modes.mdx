@@ -44,7 +44,11 @@ D’après les [tests de performance de Facebook](https://facebook.github.io/zst
 | mode                | byte    | Mode de compression                                                                                      |
 | compressed&#95;data | binary  | Bloc de données compressées                                                                              |
 
+<div className="ch-image-md">
+
 ![Schéma illustrant la structure du bloc de compression de ClickHouse](/images/data-compression/ch_compression_block.webp)
+
+</div>
 
 L’en-tête est constitué de (raw&#95;size + data&#95;size + mode), et la taille brute correspond à len(header + compressed&#95;data).
 

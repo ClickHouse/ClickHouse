@@ -38,7 +38,11 @@ Uma tabela de visão geral com uma linha por serviço responde à pergunta &quot
 
     Ordene por `Requests` em ordem decrescente para que os serviços com mais tráfego apareçam no topo. Esta tabela é o catálogo: uma linha por serviço, avaliado por RED.
 
+    <div className="ch-image-lg">
+
     ![Tabela de inventário de serviços com colunas RED (Requests, Errors, P95 Duration) para cada serviço, ordenada por volume de requisições, acima de uma tendência de requisições ao longo do tempo](/images/clickstack/dashboards/row-click-catalog.webp)
+
+    </div>
 
     <Tip>
       **Coloque a coluna de group-by primeiro**
@@ -61,7 +65,11 @@ Uma tabela de visão geral com uma linha por serviço responde à pergunta &quot
   <Step title="Clique em uma linha" id="click-dashboard">
     Ao passar o mouse sobre uma linha, aparece um link na borda direita da tabela, com uma dica descrevendo a ação (`Open dashboard \"Service Detail\"`). Clicar na linha abre o dashboard `Service Detail` com o filtro `Service` definido com o valor clicado, para que cada tile (os indicadores RED principais, os percentis de latência, o detalhamento por endpoint) seja reescopado para aquele único serviço com um único clique.
 
+    <div className="ch-image-lg">
+
     ![Dashboard Service Detail após um clique em uma linha, com o filtro Service definido para o serviço clicado e os indicadores RED principais, percentis de latência e detalhamento por endpoint todos restritos a ele](/images/clickstack/dashboards/row-click-drilldown.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -86,7 +94,11 @@ Partindo da mesma tabela de inventário de serviços, direcione o clique da linh
   <Step title="Clique em uma linha" id="click-search">
     Ao clicar em uma linha de serviço, a página Busca é aberta nessa fonte de traces, filtrada por `ServiceName = <service>`, para que você veja os spans apenas desse serviço no mesmo intervalo de tempo.
 
+    <div className="ch-image-lg">
+
     ![Página Busca aberta na fonte de traces após um clique na linha, filtrada para o serviço clicado](/images/clickstack/dashboards/row-click-search-drilldown.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -98,7 +110,11 @@ A mesma estrutura funciona para qualquer catálogo de itens. Agrupe a tabela por
 
 As ações de clique na linha são configuradas no próprio tile de tabela; não há uma página separada para isso. Adicione ou edite um tile e defina seu tipo de visualização como **Table**. Um botão **Row Click Action** aparecerá na barra de ferramentas do editor, ao lado de **Display Settings**. O botão é exibido apenas em tiles de tabela, e seu rótulo reflete a ação atual: `Row Click Action: Default`, `Row Click Action: Busca` ou `Row Click Action: Dashboard`. Clique nele para abrir o painel lateral.
 
+<div className="ch-image-lg">
+
 ![Painel lateral de Row Click Action no modo Dashboard, com o dashboard Service Detail selecionado como destino e um filtro ServiceName gerado a partir da linha clicada](/images/clickstack/dashboards/row-click-drawer.webp)
+
+</div>
 
 O painel lateral oferece três ações:
 

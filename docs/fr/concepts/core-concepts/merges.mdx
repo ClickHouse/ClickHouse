@@ -24,7 +24,11 @@ Pour contrôler le nombre de parts par table et mettre en œuvre le point ② ci
 
 Le schéma suivant illustre ce processus de fusion en arrière-plan :
 
+<div className="ch-image-lg">
+
 ![PART MERGES](/images/managing-data/core-concepts/merges_01.webp)
+
+</div>
 
 <br />
 
@@ -67,7 +71,11 @@ Le résultat de la requête [précédemment documentée](/fr/concepts/core-conce
 
 Avec ClickHouse 24.10, un nouveau [tableau de bord des fusions](https://presentations.clickhouse.com/2024-release-24.10/index.html#17) a été ajouté aux [tableaux de bord de monitoring](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) intégrés. Disponible aussi bien dans OSS que dans Cloud via le handler HTTP `/merges`, il permet de visualiser toutes les fusions de parts de notre table d’exemple :
 
+<div className="ch-image-lg">
+
 ![PART MERGES](/images/managing-data/core-concepts/merges-dashboard.webp)
+
+</div>
 
 <br />
 
@@ -85,7 +93,11 @@ L’enregistrement du tableau de bord ci-dessus montre l’ensemble du processus
 
 Un serveur ClickHouse utilise plusieurs [threads de fusion](/fr/reference/settings/server-settings/settings/background#background_pool_size) en arrière-plan pour exécuter des fusions de parts concurrentes :
 
+<div className="ch-image-lg">
+
 ![FUSION DE PART](/images/managing-data/core-concepts/merges_02.webp)
+
+</div>
 
 <br />
 
@@ -119,7 +131,11 @@ ClickHouse ne charge pas nécessairement en mémoire, d’un seul coup, toutes l
 
 Le schéma ci-dessous illustre comment un seul [thread de fusion](/fr/concepts/core-concepts/merges#concurrent-merges) en arrière-plan dans ClickHouse fusionne des parts (par défaut, sans [fusion verticale](/fr/concepts/core-concepts/merges#memory-optimized-merges)) :
 
+<div className="ch-image-lg">
+
 ![FUSION DE PART](/images/managing-data/core-concepts/merges_03.webp)
+
+</div>
 
 <br />
 
@@ -155,7 +171,11 @@ Nous allons maintenant présenter brièvement le mécanisme de fusion de certain
 
 Le diagramme ci-dessous illustre comment les parts d’une table [MergeTree](/fr/reference/engines/table-engines/mergetree-family/mergetree) standard sont fusionnées :
 
+<div className="ch-image-lg">
+
 ![FUSIONS DE PARTIES](/images/managing-data/core-concepts/merges_04.webp)
+
+</div>
 
 <br />
 
@@ -169,7 +189,11 @@ Les colonnes de la table, ① décompressées et prétriées, sont ② fusionné
 
 Les fusions de parts dans une table [ReplacingMergeTree](/fr/reference/engines/table-engines/mergetree-family/replacingmergetree) fonctionnent de manière similaire aux [fusions standard](/fr/concepts/core-concepts/merges#standard-merges), mais seule la version la plus récente de chaque ligne est conservée, les versions plus anciennes étant supprimées :
 
+<div className="ch-image-lg">
+
 ![FUSIONS DE PARTIES](/images/managing-data/core-concepts/merges_05.webp)
+
+</div>
 
 <br />
 
@@ -187,7 +211,11 @@ Cependant, `ReplacingMergeTree` supprime les lignes dupliquées ayant la même c
 
 Les données numériques sont automatiquement agrégées lors des fusions de parts d’une table [SummingMergeTree](/fr/reference/engines/table-engines/mergetree-family/summingmergetree) :
 
+<div className="ch-image-lg">
+
 ![FUSIONS DE PARTIES](/images/managing-data/core-concepts/merges_06.webp)
+
+</div>
 
 <br />
 
@@ -201,7 +229,11 @@ L’instruction DDL du schéma ci-dessus définit une table `SummingMergeTree` a
 
 L’exemple de table `SummingMergeTree` ci-dessus est une variante spécialisée de la table [AggregatingMergeTree](/fr/reference/engines/table-engines/mergetree-family/aggregatingmergetree), qui permet une [transformation automatique incrémentielle des données](https://www.youtube.com/watch?v=QDAJTKZT8y4) en appliquant l’une des [90+](/fr/reference/functions/aggregate-functions/reference-index) fonctions d’agrégation lors des fusions de parts :
 
+<div className="ch-image-lg">
+
 ![FUSIONS DE PARTIES](/images/managing-data/core-concepts/merges_07.webp)
+
+</div>
 
 <br />
 

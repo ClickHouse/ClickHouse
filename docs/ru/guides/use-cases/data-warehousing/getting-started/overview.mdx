@@ -39,7 +39,11 @@ ClickHouse предлагает три способа читать открыт�
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![Запрос к Iceberg](/images/datalake/iceberg-query-direct.webp)
+
+    </div>
 
     ClickHouse напрямую читает метаданные Iceberg из S3 и автоматически определяет схему. Тот же подход работает для [`deltaLake()`](/ru/reference/functions/table-functions/deltalake), [`hudi()`](/ru/reference/functions/table-functions/hudi) и [`paimon()`](/ru/reference/functions/table-functions/paimon).
 
@@ -66,7 +70,11 @@ ClickHouse предлагает три способа читать открыт�
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![Запрос к Iceberg](/images/datalake/iceberg-query-engine.webp)
+
+    </div>
 
     Движок таблицы поддерживает кэширование данных, кэширование метаданных, эволюцию схемы и запросы к прошлым версиям данных. Подробные сведения о возможностях движка таблицы см. в руководстве [Прямые запросы](/ru/guides/use-cases/data-warehousing/getting-started/querying-directly), а полное сравнение возможностей — в [матрице поддержки](/ru/guides/use-cases/data-warehousing/support-matrix).
   </Step>
@@ -158,7 +166,11 @@ ClickHouse предлагает три способа читать открыт�
 
     Этот запрос сканирует весь набор данных в S3, поскольку Iceberg не знает о фильтре `counterid`, — его выполнение займет несколько секунд.
 
+    <div className="ch-image-lg">
+
     ![Запрос Iceberg](/images/datalake/iceberg-query.webp)
+
+    </div>
 
     Теперь создайте таблицу MergeTree и загрузите данные:
 
@@ -192,7 +204,11 @@ ClickHouse предлагает три способа читать открыт�
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![Запрос к ClickHouse](/images/datalake/clickhouse-query.webp)
+
+    </div>
 
     Поскольку `counterid` — первый столбец в ключе `ORDER BY`, разреженный первичный индекс ClickHouse сразу переходит к нужным гранулам, считывая только строки для `counterid = 38` вместо сканирования всех 100 миллионов строк. Это дает заметный прирост скорости.
 

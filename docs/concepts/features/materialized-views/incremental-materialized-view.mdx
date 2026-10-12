@@ -17,7 +17,11 @@ The principal motivation for Materialized Views is that the results inserted int
 
 Materialized views in ClickHouse are updated in real time as data flows into the table they're based on, functioning more like continually updating indexes. This is in contrast to other databases where Materialized Views are typically static snapshots of a query that must be refreshed (similar to ClickHouse [Refreshable Materialized Views](/reference/statements/create/view#refreshable-materialized-view)).
 
+<div className="ch-image-md">
+
 ![Materialized view diagram](/images/materialized-view/materialized-view-diagram.webp)
+
+</div>
 
 ## Example {#example}
 

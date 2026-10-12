@@ -42,11 +42,19 @@ doc_type: 'guide'
       <Tab title="через EventBridge">
         **a.** В свойствах S3 бакета перейдите в **Event notifications &gt; Amazon EventBridge** и включите отправку уведомлений в EventBridge. Нажмите **Save changes**.
 
+        <div className="ch-image-lg">
+
         ![Включение уведомлений Amazon EventBridge в свойствах S3 бакета](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp)
+
+        </div>
 
         **b.** В консоли AWS перейдите в **Amazon EventBridge &gt; Rules &gt; Create rule**. Укажите имя правила (например, `S3ObjectCreated`), выберите шину событий **default** и нажмите **Next**. На шаге **Build event pattern** выберите **AWS events or EventBridge partner events** в качестве источника событий, затем вручную введите следующий шаблон события, заменив `<bucket-name>` именем вашего бакета:
 
+        <div className="ch-image-lg">
+
         ![Указание имени правила EventBridge и шины событий](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp)
+
+        </div>
 
         ```json
         {
@@ -64,9 +72,17 @@ doc_type: 'guide'
 
         **c.** На шаге **Select target(s)** выберите **AWS service** в качестве типа цели и укажите **SQS queue**. Выберите очередь, созданную на предыдущем шаге. Оставьте флажок **Use execution role (recommended)** установленным, чтобы EventBridge автоматически создал необходимую роль IAM, затем нажмите **Next** и завершите настройку.
 
+        <div className="ch-image-lg">
+
         ![Настройка очереди SQS в качестве цели правила EventBridge](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp)
 
+        </div>
+
+        <div className="ch-image-lg">
+
         ![Правило EventBridge успешно создано](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp)
+
+        </div>
 
         **d.** Измените политику доступа очереди SQS, чтобы разрешить EventBridge отправлять в неё сообщения. Замените `<sqs-queue-arn>` и `<eventbridge-rule-arn>` соответствующими значениями:
 

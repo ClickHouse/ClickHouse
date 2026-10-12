@@ -24,7 +24,11 @@ O log binário é um conjunto de arquivos de log que contém informações sobre
   <Step title="Habilite o log binário por meio do backup automatizado" id="enable-binlog-logging">
     O recurso de backups automatizados determina se o log binário está ativado ou desativado no MySQL. Os backups automatizados podem ser configurados para sua instância no RDS Console navegando até **Modify** &gt; **Additional configuration** &gt; **Backup** e marcando a caixa de seleção **Enable automated backups** (se ainda não estiver marcada).
 
+    <div className="ch-image-lg">
+
     ![Habilitando backups automatizados no Aurora](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+
+    </div>
 
     Recomendamos definir o **Backup retention period** como um valor razoavelmente longo, dependendo do caso de uso da replicação.
   </Step>
@@ -56,13 +60,21 @@ O grupo de parâmetros pode ser encontrado ao clicar na sua instância MySQL no 
   Se você tiver um cluster MySQL, os parâmetros abaixo podem ser encontrados no grupo de parâmetros do [DB cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html), em vez do grupo da instância DB.
 </Tip>
 
+<div className="ch-image-lg">
+
 ![Onde encontrar o grupo de parâmetros no Aurora](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/aurora_config.webp)
+
+</div>
 
 <br />
 
 Clique no link do grupo de parâmetros para ir à página dedicada a ele. Você deverá ver um botão **Edit** no canto superior direito.
 
+<div className="ch-image-lg">
+
 ![Editar o grupo de parâmetros](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</div>
 
 <br />
 
@@ -70,15 +82,27 @@ Os parâmetros a seguir precisam ser definidos da seguinte forma:
 
 1. `binlog_format` como `ROW`.
 
+<div className="ch-image-lg">
+
 ![Formato do binlog como ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</div>
 
 2. `binlog_row_metadata` como `FULL`.
 
+<div className="ch-image-lg">
+
 ![Metadados de linha do binlog](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</div>
 
 3. `binlog_row_image` como `FULL`.
 
+<div className="ch-image-lg">
+
 ![Imagem de linha do binlog](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</div>
 
 <br />
 
@@ -105,7 +129,11 @@ A replicação baseada em GTID é compatível com Amazon Aurora MySQL v2 (MySQL 
 7. Clique em **Save Changes** no canto superior direito.
 8. Reinicie sua instância para que as alterações entrem em vigor.
 
+<div className="ch-image-lg">
+
 ![GTID ativado](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
+
+</div>
 
 <div id="configure-database-user">
   ## Configure um usuário do banco de dados
@@ -148,9 +176,17 @@ Conecte-se à sua instância do Aurora MySQL como usuário administrador e execu
 
 Para restringir o tráfego para sua instância do Aurora MySQL, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/networking/static-ips) às **regras de entrada** do Security Group do Aurora.
 
+<div className="ch-image-lg">
+
 ![Onde encontrar o Security Group no Aurora MySQL?](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Edite as regras de entrada do Security Group acima](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### Acesso privado via AWS PrivateLink

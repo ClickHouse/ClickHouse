@@ -50,15 +50,27 @@ MongoDB ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可�
 
 1. 在 ClickHouse Cloud 控制台中，进入您的 ClickHouse Cloud 服务。
 
+<div className="ch-image-lg">
+
 ![ClickPipes 服务](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. 在左侧菜单中选择 `Data Sources`，然后点击“Set up a ClickPipe”。
 
+<div className="ch-image-lg">
+
 ![选择导入](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. 选择 `MongoDB CDC` 卡片。
 
+<div className="ch-image-lg">
+
 ![选择 MongoDB](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp)
+
+</div>
 
 <div id="add-your-source-mongodb-database-connection">
   ### 添加源 MongoDB 数据库连接
@@ -71,7 +83,11 @@ MongoDB ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可�
   更多信息，请参阅本页[顶部](#prerequisites)链接的源 MongoDB 设置指南。
 </Info>
 
+<div className="ch-image-lg">
+
 ![填写连接信息](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp)
+
+</div>
 
 <div id="optional-changing-tls-settings">
   #### &#x20;(可选) 修改 TLS 设置
@@ -89,7 +105,11 @@ MongoDB ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可�
 
 2. 填写 SSH 连接信息。
 
+   <div className="ch-image-lg">
+
    ![SSH 隧道](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+   </div>
 
 3. 若要使用基于密钥的身份验证，请点击“Revoke and generate key pair”生成新的密钥对，然后将生成的公钥复制到 SSH 服务器上的 `~/.ssh/authorized_keys` 中。
 
@@ -117,7 +137,11 @@ MongoDB ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可�
 
 5. 在这里，您可以为 ClickPipe 选择目标数据库。您可以选择现有数据库，也可以新建一个。
 
+   <div className="ch-image-lg">
+
    ![选择目标数据库](/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp)
+
+   </div>
 
 6. 您可以选择要从源 MongoDB 数据库复制过来的表。选择表时，您还可以为目标 ClickHouse 数据库中的这些表重命名。
 
@@ -127,7 +151,11 @@ MongoDB ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可�
 
 7. 在权限下拉菜单中选择“完全访问”角色，然后点击“完成设置”。
 
+   <div className="ch-image-lg">
+
    ![检查权限](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+   </div>
 
 <div id="whats-next">
   ## 接下来呢？

@@ -30,7 +30,11 @@ doc_type: 'guide'
 
 وللتذكير [بما سبق](/ar/concepts/core-concepts/parts)، في ① جدول المثال لدينا ذي المفتاح الأساسي (town, street)، تُخزَّن ② البيانات المُدرجة ③ على القرص، مرتبةً حسب قيم أعمدة المفتاح الأساسي، ومضغوطةً، في ملفات منفصلة لكل عمود:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+
+</div>
 
 <br />
 
@@ -40,7 +44,11 @@ doc_type: 'guide'
 
 وهذا التقسيم إلى حبيبات هو أيضًا ما يجعل الفهرس الأساسي **متناثرًا**: فبدلًا من فهرسة كل صف، يخزّن ClickHouse ⑤ قيم المفتاح الأساسي من صف واحد فقط لكل حبيبة—وتحديدًا الصف الأول. وينتج عن ذلك مُدخل فهرس واحد لكل حبيبة:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+
+</div>
 
 <br />
 
@@ -54,7 +62,11 @@ doc_type: 'guide'
 
 نوضح بإيجاز كيف يُستخدم الفهرس الأساسي المتناثر لتسريع الاستعلام من خلال رسم متحرك آخر:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+
+</div>
 
 <br />
 

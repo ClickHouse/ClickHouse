@@ -49,7 +49,11 @@ LIMIT 8;
 
 Puedes [ejecutar esta consulta en el ClickHouse SQL Playground](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true), que selecciona y filtra [solo unas pocas de las más de 100](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true) columnas existentes, y devuelve el resultado en cuestión de milisegundos:
 
+<div className="ch-image-lg">
+
 ![Consulta de ejemplo en una base de datos orientada a columna](/images/column-oriented-example-query.webp)
+
+</div>
 
 Como puedes ver en la sección de estadísticas del diagrama anterior, la consulta procesó 100 millones de filas en 92 milisegundos, con un rendimiento de algo más de 1.000 millones de filas por segundo, o algo menos de 7 GB de datos transferidos por segundo.
 
@@ -57,14 +61,22 @@ Como puedes ver en la sección de estadísticas del diagrama anterior, la consul
 
 En una base de datos orientada a fila, aunque la consulta anterior solo procesa unas pocas de las columnas existentes, el sistema sigue necesitando cargar en memoria desde disco los datos de otras columnas existentes. Esto se debe a que los datos se almacenan en disco en fragmentos llamados [bloques](https://en.wikipedia.org/wiki/Block_\(data_storage\)) (normalmente de tamaño fijo, p. ej., 4 KB u 8 KB). Los bloques son las unidades de datos más pequeñas que se leen del disco a la memoria. Cuando una aplicación o base de datos solicita datos, el subsistema de E/S de disco del sistema operativo lee del disco los bloques necesarios. Aunque solo se necesite una parte de un bloque, se lee el bloque completo en memoria (esto se debe al diseño del disco y del sistema de archivos):
 
+<div className="ch-image-lg">
+
 ![Estructura de una base de datos orientada a fila](/images/row-oriented.webp)
+
+</div>
 
 **DBMS orientado a columna**
 
 Dado que los valores de cada columna se almacenan secuencialmente en disco, uno tras otro, no se cargan datos innecesarios cuando se ejecuta la consulta anterior.
 Como el almacenamiento y la transferencia por bloques del disco a la memoria se ajustan al patrón de acceso a los datos de las consultas analíticas, solo se leen del disco las columnas necesarias para una consulta, lo que evita operaciones de E/S innecesarias sobre datos que no se utilizan. Esto es [mucho más rápido](https://benchmark.clickhouse.com/) en comparación con el almacenamiento basado en filas, donde se leen filas completas (incluidas las columnas irrelevantes):
 
+<div className="ch-image-lg">
+
 ![Estructura de base de datos orientada a columna](/images/column-oriented.webp)
+
+</div>
 
 <div id="data-replication-and-integrity">
   ## Replicación e integridad de los datos

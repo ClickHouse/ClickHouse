@@ -30,7 +30,11 @@ In this guide, we will use the ClickHouse JDBC driver to connect ClickHouse to S
 
 With this guide, you will be able to create a dashboard connected to ClickHouse similar to this:
 
+<div className="ch-image-lg">
+
 ![Splunk dashboard showing NYC taxi data visualizations](/images/integrations/splunk/splunk-1.webp)
+
+</div>
 
 <Note>
 This guide uses the [New York City Taxi dataset](/get-started/sample-datasets/nyc-taxi). There are many other datasets that you can use from [our docs](http://localhost:3000/docs/getting-started/example-datasets).
@@ -61,7 +65,11 @@ If you're having issues installing the DB Connect App, please see [this link](ht
 
 Once you've verified that the DB Connect App is installed, add the java_home path  to the DB Connect App in Configuration -> Settings, and click save then reset.
 
+<div className="ch-image-md">
+
 ![Splunk DB Connect settings page showing Java Home configuration](/images/integrations/splunk/splunk-2.webp)
+
+</div>
 
 ## Configure JDBC for ClickHouse {#configure-jdbc-for-clickhouse}
 
@@ -93,7 +101,11 @@ Restart Splunk using `$SPLUNK_HOME/bin/splunk restart`.
 
 Navigate back to the DB Connect App and go to Configuration > Settings > Drivers. You should see a green tick next to ClickHouse:
 
+<div className="ch-image-lg">
+
 ![Splunk DB Connect drivers page showing ClickHouse driver successfully installed](/images/integrations/splunk/splunk-3.webp)
+
+</div>
 
 ## Connect Splunk search to ClickHouse {#connect-splunk-search-to-clickhouse}
 
@@ -101,13 +113,21 @@ Navigate to DB Connect App Configuration -> Databases -> Identities: Create a Id
 
 Create a new Connection to ClickHouse from Configuration -> Databases -> Connections and select "New Connection".
 
+<div className="ch-image-sm">
+
 ![Splunk DB Connect new connection button](/images/integrations/splunk/splunk-4.webp)
+
+</div>
 
 <br />
 
 Add ClickHouse host details and ensure "Enable SSL" is ticked:
 
+<div className="ch-image-md">
+
 ![Splunk connection configuration page for ClickHouse](/images/integrations/splunk/splunk-5.webp)
+
+</div>
 
 After saving the connection, you will have successfully connected to ClickHouse to Splunk!
 
@@ -121,11 +141,19 @@ We will now run a SQL query to test that everything works.
 
 Select your connection details in the SQL Explorer from the DataLab section of the DB Connect App. We're using the  `trips` table for this demo:
 
+<div className="ch-image-md">
+
 ![Splunk SQL Explorer selecting connection to ClickHouse](/images/integrations/splunk/splunk-6.webp)
+
+</div>
 
 Execute a SQL query on the `trips` table that returns the count of all the records in the table:
 
+<div className="ch-image-md">
+
 ![Splunk SQL query execution showing count of records in trips table](/images/integrations/splunk/splunk-7.webp)
+
+</div>
 
 If your query is successful, you should see the results.
 
@@ -145,7 +173,11 @@ ORDER BY count DESC LIMIT 10;" connection="chc"
 
 Select the visualization tab to view the column chart created:
 
+<div className="ch-image-lg">
+
 ![Splunk column chart visualization showing top 10 pickup neighborhoods](/images/integrations/splunk/splunk-8.webp)
+
+</div>
 
 We will now create a dashboard by clicking Save As > Save to a Dashboard.
 
@@ -158,7 +190,11 @@ FROM default.trips GROUP BY passenger_count;" connection="chc"
 
 This time, let's create a bar chart visualization and save it to the previous dashboard.
 
+<div className="ch-image-lg">
+
 ![Splunk bar chart showing average fare by passenger count](/images/integrations/splunk/splunk-9.webp)
+
+</div>
 
 Finally, let's add one more query that shows the correlation between the number of passengers and the distance of the trip:
 
@@ -171,7 +207,11 @@ ORDER BY year, count(*) DESC; " connection="chc"
 
 Our final dashboard should look like this:
 
+<div className="ch-image-lg">
+
 ![Final Splunk dashboard with multiple visualizations of NYC taxi data](/images/integrations/splunk/splunk-10.webp)
+
+</div>
 
 ## Time series data {#time-series-data}
 

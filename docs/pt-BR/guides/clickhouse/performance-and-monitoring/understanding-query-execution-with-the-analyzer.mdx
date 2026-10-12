@@ -27,7 +27,11 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 Agora que temos alguns dados no ClickHouse, queremos executar algumas consultas e entender como elas são executadas. A execução de uma consulta é dividida em várias etapas. Cada etapa da execução da consulta pode ser analisada e ter problemas investigados usando a consulta `EXPLAIN` correspondente. Essas etapas estão resumidas no gráfico abaixo:
 
+<div className="ch-image-md">
+
 ![Etapas da consulta EXPLAIN](/images/guides/developer/analyzer1.webp)
+
+</div>
 
 Vamos ver cada elemento em ação durante a execução da consulta. Vamos usar algumas consultas e depois examiná-las com a instrução `EXPLAIN`.
 
@@ -356,7 +360,11 @@ digraph
 
 Em seguida, você pode copiar essa saída e colá-la [aqui](https://dreampuf.github.io/GraphvizOnline) para gerar o seguinte grafo:
 
+<div className="ch-image-md">
+
 ![Saída do grafo](/images/guides/developer/analyzer3.webp)
+
+</div>
 
 Um retângulo branco corresponde a um nó do pipeline, o retângulo cinza corresponde às etapas do plano de consulta, e o `x` seguido de um número corresponde à quantidade de entradas/saídas em uso. Caso não queira visualizá-los no formato compacto, você sempre pode adicionar `compact=0`:
 
@@ -396,7 +404,11 @@ digraph
 }
 ```
 
+<div className="ch-image-md">
+
 ![Saída compacta do grafo](/images/guides/developer/analyzer4.webp)
+
+</div>
 
 Por que o ClickHouse não lê os dados da tabela usando várias threads? Vamos tentar adicionar mais dados à nossa tabela:
 
@@ -455,7 +467,11 @@ digraph
 }
 ```
 
+<div className="ch-image-md">
+
 ![Saída do grafo em paralelo](/images/guides/developer/analyzer5.webp)
+
+</div>
 
 Assim, o executor decidiu não paralelizar as operações porque o volume de dados não era grande o suficiente. Ao adicionar mais linhas, o executor passou a usar várias threads, como mostrado no grafo.
 

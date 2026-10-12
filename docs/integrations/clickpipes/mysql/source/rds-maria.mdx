@@ -26,7 +26,11 @@ The binary log is a set of log files that contain information about data modific
 
 The automated backups feature determines whether binary logging is turned on or off for MySQL. It can be set in the AWS console:
 
+<div className="ch-image-lg">
+
 ![Enabling automated backups in RDS](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+
+</div>
 
 Setting backup retention to a reasonably long value depending on the replication use-case is advisable.
 
@@ -47,25 +51,45 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
 
 The parameter group can be found when you click on your MariaDB instance in the RDS Console, and then navigate to the `Configurations` tab.
 
+<div className="ch-image-lg">
+
 ![Where to find parameter group in RDS](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
+
+</div>
 
 Upon clicking on the parameter group link, you will be taken to the parameter group link page. You will see an Edit button in the top-right:
 
+<div className="ch-image-lg">
+
 ![Edit parameter group](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</div>
 
 Settings `binlog_format`, `binlog_row_metadata` and `binlog_row_image` need to be set as follows:
 
 1. `binlog_format` to `ROW`.
 
+<div className="ch-image-lg">
+
 ![Binlog format to ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</div>
 
 2. `binlog_row_metadata` to `FULL`
 
+<div className="ch-image-lg">
+
 ![Binlog row metadata to FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</div>
 
 3. `binlog_row_image` to `FULL`
 
+<div className="ch-image-lg">
+
 ![Binlog row image to FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</div>
 
 Next, click on `Save Changes` in the top-right. You may need to reboot your instance for the changes to take effect. If you see `Pending reboot` next to the parameter group link in the Configurations tab of the RDS instance, this is a good indication that a reboot of your instance is needed.
 
@@ -114,9 +138,17 @@ AWS [introduced IAM database authentication for RDS for MariaDB in version 10.6.
 
 If you want to restrict traffic to your RDS instance, please add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the `Inbound rules` of your RDS security group.
 
+<div className="ch-image-lg">
+
 ![Where to find security group in RDS?](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Edit inbound rules for the above security group](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 ### Private access via AWS PrivateLink {#private-access-via-aws-privatelink}
 

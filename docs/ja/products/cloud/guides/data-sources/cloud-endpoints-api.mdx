@@ -50,8 +50,16 @@ MySQL や PostgreSQL Engine などのインテグレーションを使用して�
 
 たとえば、`us-east-2` で稼働し、ClickHouse Cloud サービスへの接続が必要な AWS RDS インスタンスでは、セキュリティグループの受信ルールは次のように設定します。
 
+<div className="ch-image-lg">
+
 ![AWS セキュリティグループルール](/images/_snippets/aws-rds-mysql.webp)
+
+</div>
 
 同じ ClickHouse Cloud サービスが `us-east-2` で稼働していて、今度は GCP 上の MySQL に接続する場合、`Authorized networks` は次のようになります。
 
+<div className="ch-image-md">
+
 ![GCP 承認済みネットワーク](/images/_snippets/gcp-authorized-network.webp)
+
+</div>

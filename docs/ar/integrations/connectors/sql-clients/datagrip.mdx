@@ -31,7 +31,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
   <Step title="حمّل برنامج تشغيل ClickHouse" id="2-load-the-clickhouse-driver">
     1. شغّل DataGrip، ثم في علامة التبويب **Data Sources** ضمن مربع الحوار **Data Sources and Drivers**، انقر على أيقونة **+**
 
+    <div className="ch-image-lg">
+
     ![علامة التبويب Data Sources في DataGrip مع تمييز الأيقونة +](/images/integrations/sql-clients/datagrip-5.webp)
+
+    </div>
 
     حدِّد **ClickHouse**
 
@@ -39,14 +43,22 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
       عند إنشاء الاتصالات، يتغيّر الترتيب، لذا قد لا يظهر ClickHouse في أعلى القائمة بعد.
     </Tip>
 
+    <div className="ch-image-sm">
+
     ![تحديد ClickHouse في DataGrip من قائمة مصادر البيانات](/images/integrations/sql-clients/datagrip-6.webp)
+
+    </div>
 
     * انتقل إلى علامة التبويب **Drivers** وحمّل برنامج تشغيل ClickHouse
 
       لا يأتي DataGrip مرفقًا ببرامج التشغيل لتقليل حجم التنزيل. في علامة التبويب **Drivers**
       حدِّد **ClickHouse** من قائمة **Complete Support**، ثم انقر لتوسيع علامة **+**. اختر برنامج التشغيل **Latest stable** من خيار **Provided Driver**:
 
+    <div className="ch-image-lg">
+
     ![علامة التبويب Drivers في DataGrip تعرض تثبيت برنامج تشغيل ClickHouse](/images/integrations/sql-clients/datagrip-1.webp)
+
+    </div>
   </Step>
 
   <Step title="الاتصال بـ ClickHouse" id="3-connect-to-clickhouse">
@@ -65,7 +77,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
       لمزيد من التفاصيل حول إعدادات JDBC URL، يُرجى الرجوع إلى repository [ClickHouse JDBC driver](https://github.com/ClickHouse/clickhouse-java).
     </Tip>
 
+    <div className="ch-image-lg">
+
     ![نموذج تفاصيل الاتصال في DataGrip مع إعدادات ClickHouse](/images/integrations/sql-clients/datagrip-7.webp)
+
+    </div>
   </Step>
 </Steps>
 

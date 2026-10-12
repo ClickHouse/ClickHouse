@@ -28,7 +28,11 @@ shared-nothing アーキテクチャでは、クラスターは通常、複数�
 場合は各分片で指定されたクエリが実行されます。分散テーブルに対するクエリを
 受けたサーバーがデータを集約し、クライアントに応答を返します。
 
+<div className="ch-image-md">
+
 ![分片アーキテクチャ](/images/deployment-guides/parallel-replicas-1.webp)
+
+</div>
 
 上の図は、クライアントが分散テーブルにクエリを実行した際に何が起こるかを示しています。
 
@@ -71,7 +75,11 @@ ClickHouse Cloud のアーキテクチャは、上で示したものとは大き
 
 以下の図は ClickHouse Cloud のアーキテクチャを示しています。
 
+<div className="ch-image-md">
+
 ![非分片アーキテクチャ](/images/deployment-guides/parallel-replicas-2.webp)
+
+</div>
 
 このアーキテクチャでは、レプリカをほぼ瞬時に追加・削除できるため、
 クラスターの高い拡張性を実現できます。ClickHouse
@@ -99,7 +107,11 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 
 では、以下の図を使って、実際にどのように動作するのか見てみましょう。
 
+<div className="ch-image-md">
+
 ![並列レプリカ](/images/deployment-guides/parallel-replicas-3.webp)
+
+</div>
 
 並列レプリカでは:
 
@@ -161,7 +173,11 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 
 上のリストの (1) と (2) に対処するため、アナウンス という概念を導入しました。以下の図でその仕組みを見てみましょう。
 
+<div className="ch-image-md">
+
 ![アナウンス](/images/deployment-guides/parallel-replicas-4.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -205,7 +221,11 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
 
 以下の図は、動的協調がどのように機能するかを示しています。
 
+<div className="ch-image-md">
+
 ![動的協調 - パート 1](/images/deployment-guides/parallel-replicas-5.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -218,7 +238,11 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
   </li>
 </ol>
 
+<div className="ch-image-md">
+
 ![動的協調 - パート 2](/images/deployment-guides/parallel-replicas-6.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -231,7 +255,11 @@ Keeper クラスター (右側に表示) は、メタデータの単一の信頼
   </li>
 </ol>
 
+<div className="ch-image-md">
+
 ![動的協調 - パート 3](/images/deployment-guides/parallel-replicas-7.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -493,7 +521,11 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
+<div className="ch-image-lg">
+
 ![並列レプリカ なしの EXPLAIN](/images/deployment-guides/parallel-replicas-8.webp)
+
+</div>
 
 続いて、並列レプリカ を有効にした場合:
 
@@ -508,4 +540,8 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
+<div className="ch-image-lg">
+
 ![並列レプリカ を使った EXPLAIN](/images/deployment-guides/parallel-replicas-9.webp)
+
+</div>

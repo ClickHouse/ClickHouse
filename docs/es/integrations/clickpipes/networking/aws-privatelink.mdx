@@ -279,19 +279,35 @@ Para configurar nombres de DNS privado personalizados:
 
 1. Acceda a SQL Console de su servicio de ClickHouse Cloud.
 
+<div className="ch-image-md">
+
 ![Servicio de ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. Seleccione el botón `fuente de datos` en el menú lateral izquierdo y haga clic en &quot;Configurar un ClickPipe&quot;.
 
+<div className="ch-image-lg">
+
 ![Seleccionar importaciones](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. Seleccione Kafka o Postgres como fuente de datos.
 
+<div className="ch-image-lg">
+
 ![Seleccionar fuente de datos](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
+
+</div>
 
 4. Seleccione la opción `Reverse private endpoint`.
 
+<div className="ch-image-lg">
+
 ![Seleccionar endpoint privado inverso](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
+
+</div>
 
 5. Seleccione uno de los endpoints privados inversos existentes o cree uno nuevo.
 
@@ -302,11 +318,19 @@ Para configurar nombres de DNS privado personalizados:
   Para el acceso dentro de la misma región, se recomienda crear un recurso de VPC.
 </Info>
 
+<div className="ch-image-lg">
+
 ![Seleccionar endpoint privado inverso](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
+
+</div>
 
 6. Proporcione los parámetros necesarios para el tipo de endpoint seleccionado.
 
+<div className="ch-image-lg">
+
 ![Seleccionar endpoint privado inverso](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
+
+</div>
 
 * Para un recurso de VPC, proporcione el ARN del recurso compartido de configuración y el ID de configuración.
   * Para MSK multi-VPC, proporcione el ARN del cluster y el método de autenticación utilizado con un endpoint creado.
@@ -319,7 +343,11 @@ Para configurar nombres de DNS privado personalizados:
    La página se actualizará automáticamente cuando el endpoint esté listo.
    Es posible que el servicio de endpoint de VPC requiera que acepte la solicitud de conexión en la consola de AWS.
 
+<div className="ch-image-lg">
+
 ![Seleccionar endpoint privado inverso](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
+
+</div>
 
 8. Cuando el endpoint esté listo, podrá usar un nombre DNS para conectarse a la fuente de datos.
 
@@ -341,11 +369,19 @@ Puede administrar los endpoints privados inversos existentes en la configuració
 
 1. En la barra lateral, busque el botón `Settings` y haga clic en él.
 
+   <div className="ch-image-lg">
+
    ![Configuración de ClickHouse Cloud](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
+
+   </div>
 
 2. Haga clic en `Reverse private endpoints` en la sección `ClickPipe reverse private endpoints`.
 
+   <div className="ch-image-md">
+
    ![Configuración de ClickHouse Cloud](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
+
+   </div>
 
    La información detallada del endpoint privado inverso se muestra en el panel lateral.
 

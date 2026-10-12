@@ -8,13 +8,18 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
 Cada instancia de ClickHouse Managed Postgres incluye capacidades de CDC integradas hacia cualquiera de tus servicios de ClickHouse. Esto te permite trasladar parte o la totalidad de los datos de tu instancia de Postgres a ClickHouse y hacer que los cambios de datos en Postgres se reflejen en ClickHouse de forma continua y casi en tiempo real. Internamente, esto funciona con [ClickPipes](/es/integrations/clickpipes/home).
 
 Para acceder, haz clic en **Sincronizar con ClickHouse** en la barra lateral de tu instancia de Postgres.
 
+<div className="ch-image-md">
+
 ![Página de inicio de la integración con ClickHouse que muestra la opción de integración en la barra lateral](/images/managed-postgres/clickhouse-integration-intro.webp)
+
+</div>
 
 <Note>
   Antes de continuar, asegúrate de que el servicio de ClickPipes pueda acceder a tu servicio de Postgres. Así debería ser de forma predeterminada, pero si has restringido el acceso por IP, es posible que debas conceder acceso a algunas IP de origen de [esta](/es/integrations/clickpipes/networking/static-ips) lista, según la región en la que se encuentre tu **servicio de ClickHouse**.
@@ -34,7 +39,11 @@ Haz clic en **Replicate data in ClickHouse** para comenzar a configurar tu Click
       * **Initial load only**: instantánea puntual de los datos existentes, sin actualizaciones continuas
       * **CDC only**: omite la instantánea inicial y captura únicamente los cambios nuevos a partir de ese momento
 
+    <div className="ch-image-md">
+
     ![Configuración del servicio de replicación que muestra el nombre de la integración, el servicio de destino y las opciones de método de replicación](/images/managed-postgres/replication-service-step.webp)
+
+    </div>
 
     Haga clic en **Next** para continuar.
   </Step>
@@ -48,7 +57,11 @@ Haz clic en **Replicate data in ClickHouse** para comenzar a configurar tu Click
     * **Snapshot number of rows per partition**: filas por partición durante la instantánea inicial (valor predeterminado: 100000)
     * **Snapshot number of tables in parallel**: cuántas tablas se incluyen en la instantánea de forma simultánea (valor predeterminado: 1)
 
+    <div className="ch-image-md">
+
     ![Paso de configuración de replicación que muestra el intervalo de sincronización, los subprocesos paralelos, el tamaño del lote de extracción y las opciones de configuración de la instantánea](/images/managed-postgres/integration-replication-settings.webp)
+
+    </div>
 
     Haga clic en **Next** para continuar.
   </Step>
@@ -63,7 +76,11 @@ Haz clic en **Replicate data in ClickHouse** para comenzar a configurar tu Click
 
     Expanda los esquemas y seleccione las tablas que desea replicar. También puede personalizar los nombres de las tablas de destino y la configuración de las columnas.
 
+    <div className="ch-image-md">
+
     ![Paso de selección de tablas que muestra la selección de base de datos, las opciones de replicación y el selector de tablas agrupadas por esquema](/images/managed-postgres/select-tables-step.webp)
+
+    </div>
 
     Haga clic en **Replicate data to ClickHouse** para iniciar la replicación.
   </Step>
@@ -71,7 +88,11 @@ Haz clic en **Replicate data in ClickHouse** para comenzar a configurar tu Click
   <Step title="Monitorear su ClickPipe" id="monitor-clickpipe">
     Una vez que el ClickPipe se inicie, aparecerá en ese mismo menú. La instantánea inicial de todos los datos puede tardar un tiempo, según el tamaño de sus tablas.
 
+    <div className="ch-image-md">
+
     ![Lista de integraciones de ClickHouse que muestra un ClickPipe en ejecución con su servicio de destino y su estado](/images/managed-postgres/integration-running.webp)
+
+    </div>
 
     Haga clic en el nombre de la integración para ver el estado detallado, monitorear el progreso, consultar errores y administrar el ClickPipe. Consulte [Ciclo de vida de un ClickPipe de Postgres](/es/integrations/clickpipes/postgres/lifecycle) para comprender los distintos estados en los que puede encontrarse su ClickPipe.
   </Step>

@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 Web search permet à un agent de récupérer des informations sur le Web public au cours d’une conversation. Utilisez-le pour les questions dont la réponse doit être à jour — versions récentes, documentation hébergée en dehors de votre service, ou vérification rapide auprès d’une source de référence.
@@ -18,7 +19,11 @@ Web search permet à un agent de récupérer des informations sur le Web public 
 
 Dans l’Agent Builder, activez **Web Search** dans la section **Capabilities**. Une fois cette option activée, l’agent détermine quand effectuer une recherche en fonction de la question de l’utilisateur et de ses instructions. La recherche s’exécute, les résultats sont récupérés, puis le contenu le plus pertinent est réinjecté dans le contexte du modèle.
 
+<div className="ch-image-sm">
+
 ![Panneau Capabilities avec la section Web Search mise en évidence, montrant la case à cocher Web Search](/images/cloud/agent-builder/web-search/web-search.webp)
+
+</div>
 
 <div id="how-a-search-round-works">
   ## Comment fonctionne un cycle de recherche

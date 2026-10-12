@@ -22,11 +22,19 @@ import IntroClickPipe from '/snippets/zh/_intro.mdx';
   <Step title="选择数据源" id="1-select-the-data-source">
     **1.** 在 ClickHouse Cloud 中，从主导航菜单选择 **Data sources** 并点击 **Create ClickPipe**。
 
+    <div className="ch-image-lg">
+
     ![选择导入](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+    </div>
 
     **2.** 点击 **BigQuery** 磁贴。
 
+    <div className="ch-image-lg">
+
     ![选择 BigQuery 磁贴](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
+
+    </div>
   </Step>
 
   <Step title="设置你的 ClickPipe 连接" id="2-setup-your-clickpipe-connection">
@@ -34,7 +42,11 @@ import IntroClickPipe from '/snippets/zh/_intro.mdx';
 
     **1.** 上传为 ClickPipes 创建的服务账号的 `.json` 密钥。确保该服务账号具有最小所需的 [权限](/zh/integrations/clickpipes/bigquery/overview#permissions)。
 
+    <div className="ch-image-lg">
+
     ![上传服务账号密钥](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
+
+    </div>
 
     **2.** 选择 **Replication method**。在 Private Preview 中，当前唯一支持的选项是 [**仅初始加载**](/zh/integrations/clickpipes/bigquery/overview#initial-load)。
 
@@ -52,7 +64,11 @@ import IntroClickPipe from '/snippets/zh/_intro.mdx';
 
     **2.** 选择要复制的表以及 (可选) 要复制的列。只有提供的服务账号有权访问的数据集才会被列出。
 
+    <div className="ch-image-lg">
+
     ![权限](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp)
+
+    </div>
 
     **3.** 对于每个选定的表，请务必在 **Advanced settings** &gt; **Use a custom sorting key** 下定义自定义排序键。将来，排序键会根据上游数据库中现有的聚类或分区键自动推断。
 
@@ -60,7 +76,11 @@ import IntroClickPipe from '/snippets/zh/_intro.mdx';
       你**必须**为被复制的表定义 [排序键](/zh/concepts/best-practices/choosing-a-primary-key)，以优化 ClickHouse 中的查询性能。否则，排序键将被设置为 `tuple()`，这意味着不会创建主索引，ClickHouse 将对该表上的所有查询执行全表扫描。
     </Warning>
 
+    <div className="ch-image-lg">
+
     ![权限](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp)
+
+    </div>
   </Step>
 
   <Step title="配置权限" id="6-configure-permissions">
@@ -75,6 +95,10 @@ import IntroClickPipe from '/snippets/zh/_intro.mdx';
   <Step title="完成设置" id="7-complete-setup">
     点击 **Create ClickPipe** 完成设置。你将被重定向到概览页面，在那里可以查看初始加载的进度并点击查看你的 BigQuery ClickPipes 的详细信息。
 
+    <div className="ch-image-lg">
+
     ![权限](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
+
+    </div>
   </Step>
 </Steps>

@@ -18,15 +18,27 @@ integration:
 
 1. MongoDB Atlas コンソールでクラスターの `Overview` タブに移動し、`Configuration` タブをクリックします。
 
+<div className="ch-image-lg">
+
 ![クラスター設定に移動](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp)
+
+</div>
 
 2. `Additional Settings` をクリックし、`More Configuration Options` までスクロールします。
 
+<div className="ch-image-lg">
+
 ![追加設定を展開](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp)
+
+</div>
 
 3. `More Configuration Options` をクリックし、最小の oplog ウィンドウを `72 hours` 以上に設定します。
 
+<div className="ch-image-lg">
+
 ![oplog 保持時間を設定](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp)
+
+</div>
 
 4. `Review Changes` をクリックして内容を確認し、続けて `Apply Changes` をクリックして変更を反映します。
 
@@ -38,7 +50,11 @@ MongoDB Atlas のコンソールにログインしたら、左側のナビゲー
 
 ClickPipes では、パスワード認証が必要です。
 
+<div className="ch-image-lg">
+
 ![データベースユーザーを追加](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp)
+
+</div>
 
 ClickPipes では、次のロールを持つユーザーが必要です。
 
@@ -47,11 +63,19 @@ ClickPipes では、次のロールを持つユーザーが必要です。
 
 これらのロールは、`Specific Privileges` セクションにあります。
 
+<div className="ch-image-lg">
+
 ![ユーザーロールを設定](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp)
+
+</div>
 
 さらに、ClickPipes ユーザーにアクセスを許可するクラスター/インスタンスを指定することもできます。
 
+<div className="ch-image-lg">
+
 ![クラスター/インスタンスへのアクセスを制限](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp)
+
+</div>
 
 <div id="whats-next">
   ## 次は何をすればよいですか？

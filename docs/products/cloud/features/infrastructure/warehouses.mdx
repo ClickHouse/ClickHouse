@@ -19,7 +19,11 @@ Each ClickHouse Cloud service includes:
 - An endpoint (or multiple endpoints created via ClickHouse Cloud UI console) to connect to the service (for example, `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`) for local and third party app connections 
 - An object storage folder where the service stores all the data and part of the metadata:
 
+<div className="ch-image-md">
+
 ![Single Service in ClickHouse Cloud](/images/cloud/reference/compute-compute-1.webp)
+
+</div>
 
 <br/>
 
@@ -33,7 +37,11 @@ This means you can choose the right size compute for your workload. Some of your
 
 Compute-compute separation also allows you to separate read operations from write operations so they don't interfere with each other:
 
+<div className="ch-image-md">
+
 ![Compute separation in ClickHouse Cloud](/images/cloud/reference/compute-compute-2.webp)
+
+</div>
 
 <br/>
 
@@ -48,7 +56,11 @@ For example, in the screenshot below, you can see a warehouse "DWH Prod" consist
 - Primary service `DWH Prod`
 - Secondary service `DWH Prod Subservice`
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![Warehouse example with primary and secondary services](/images/cloud/reference/compute-compute-8.webp)
+
+</div>
 
 <br/>
 
@@ -71,7 +83,11 @@ Because all services in a warehouse share the same set of tables, they also shar
 This means that all database users that are created in Service 1 will also be able to use Service 2 with the same permissions (grants for tables, views, etc), and vice versa.
 A different endpoint is used for each service, but the same username and password is used across all services. In other words, **users are shared across services that work with the same storage** as shown in the figure below:
 
+<div className="ch-image-md">
+
 ![User access across services sharing same data](/images/cloud/reference/compute-compute-3.webp)
+
+</div>
 
 <br/>
 
@@ -87,7 +103,11 @@ This allows you to restrict access to specific services.
 
 In the example below, Alice is restricted from accessing service 2 in the warehouse:
 
+<div className="ch-image-md">
+
 ![Network access control settings](/images/cloud/reference/compute-compute-4.webp)
+
+</div>
 
 <br/>
 
@@ -111,7 +131,11 @@ Services can be one of:
 Sometimes you want to isolate critical read workloads from write/merge overhead by making a service read only.
 You can do so for the second service and any additional services you create, however the first service will always be read-write, as shown in the figure below:
 
+<div className="ch-image-lg">
+
 ![Read-write and Read-only services in a warehouse](/images/cloud/reference/compute-compute-5.webp)
+
+</div>
 
 <br/>
 
@@ -193,7 +217,11 @@ Please refer to the pricing calculator on the [pricing](https://clickhouse.com/p
 
 To create a warehouse, you need to create a second service that will share the data with an existing service. This can be done by clicking the plus sign on any of the existing services:
 
+<div className="ch-image-md">
+
 ![Creating a new service in a warehouse](/images/cloud/reference/compute-compute-7.webp)
+
+</div>
 
 <br/>
 

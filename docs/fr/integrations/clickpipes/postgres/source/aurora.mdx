@@ -41,17 +41,33 @@ Si ce n’est pas déjà fait, suivez ces étapes :
 1. Créez un nouveau groupe de paramètres pour votre version d’Aurora PostgreSQL avec le paramètre requis :
    * Définissez `rds.logical_replication` sur 1
 
+<div className="ch-image-lg">
+
 ![Où trouver les groupes de paramètres dans Aurora](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![Modification de rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
 
+</div>
+
 2. Appliquez le nouveau groupe de paramètres à votre cluster Aurora PostgreSQL
+
+<div className="ch-image-lg">
 
 ![Modification d’Aurora PostgreSQL avec le nouveau groupe de paramètres](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
 
+</div>
+
 3. Redémarrez votre cluster Aurora pour appliquer les modifications
 
+<div className="ch-image-lg">
+
 ![Redémarrage d’Aurora PostgreSQL](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
+
+</div>
 
 <div id="configure-database-user">
   ## Configurer un utilisateur de base de données
@@ -119,9 +135,17 @@ La publication `clickpipes` définit l’ensemble des tables dont les événemen
 
 Si vous souhaitez restreindre le trafic vers votre cluster Aurora, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/networking/static-ips) aux `Inbound rules` de votre groupe de sécurité Aurora.
 
+<div className="ch-image-lg">
+
 ![Où trouver le groupe de sécurité dans Aurora PostgreSQL ?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Modifier les `Inbound rules` du groupe de sécurité ci-dessus](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### Accès privé via AWS PrivateLink

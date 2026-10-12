@@ -190,7 +190,11 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 次のアニメーションは、例のテーブルに対して minmax スキップ索引がどのように構築されるかを示したもので、テーブル内の各行ブロック (granule) ごとに `ViewCount` の最小値と最大値を追跡しています。
 
+<div className="ch-image-lg">
+
 ![スキップ索引の構築](/images/bestpractices/building_skipping_indices.webp)
+
+</div>
 
 先ほどのクエリを再度実行すると、パフォーマンスが大幅に改善されていることがわかります。スキャンされた行数が減っている点に注目してください。
 
@@ -255,7 +259,11 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 この例のクエリにある `ViewCount` &gt; 10,000,000 という述語に一致し得ないすべての行ブロックを、minmaxスキップ索引がどのように除外するかを示すアニメーションも掲載しています。
 
+<div className="ch-image-lg">
+
 ![スキップ索引の使用](/images/bestpractices/using_skipping_indices.webp)
+
+</div>
 
 <div id="related-docs">
   ## 関連ドキュメント

@@ -14,47 +14,83 @@ The Postman Application is available for use within a web browser or can be down
 
 * Free accounts are available at [https://www.postman.com](https://www.postman.com).
 
+<div className="ch-image-md">
+
 ![Postman site](/images/cloud/manage/postman/postman1.webp)
+
+</div>
 
 ### Create a workspace {#create-a-workspace}
 
 * Name your workspace and set the visibility level. 
 
+<div className="ch-image-md">
+
 ![Create workspace](/images/cloud/manage/postman/postman2.webp)
+
+</div>
 
 ### Create a collection {#create-a-collection}
 
 * Below "Explore" on the top left Menu click "Import": 
 
+<div className="ch-image-md">
+
 ![Explore > Import](/images/cloud/manage/postman/postman3.webp)
+
+</div>
 
 * A modal will appear:
 
+<div className="ch-image-md">
+
 ![API URL entry](/images/cloud/manage/postman/postman4.webp)
+
+</div>
 
 * Enter the API address: "https://api.clickhouse.cloud/v1" and press 'Enter':
 
 * Select "Postman Collection" by clicking on the "Import" button:
 
+<div className="ch-image-md">
+
 ![Collection > Import](/images/cloud/manage/postman/postman6.webp)
+
+</div>
 
 ### Interface with the ClickHouse Cloud API spec {#interface-with-the-clickhouse-cloud-api-spec}
 * The "API spec for ClickHouse Cloud" will now appear within "Collections" (Left Navigation).
 
+<div className="ch-image-md">
+
 ![Import your API](/images/cloud/manage/postman/postman7.webp)
+
+</div>
 
 * Click on "API spec for ClickHouse Cloud." From the middle pain select the 'Authorization' tab:
 
+<div className="ch-image-md">
+
 ![Import complete](/images/cloud/manage/postman/postman8.webp)
+
+</div>
 
 ### Set authorization {#set-authorization}
 * Toggle the dropdown menu to select "Basic Auth":
 
+<div className="ch-image-md">
+
 ![Basic auth](/images/cloud/manage/postman/postman9.webp)
+
+</div>
 
 * Enter the Username and Password received when you set up your ClickHouse Cloud API keys:
 
+<div className="ch-image-md">
+
 ![credentials](/images/cloud/manage/postman/postman10.webp)
+
+</div>
 
 ### Enable variables {#enable-variables}
 
@@ -65,7 +101,11 @@ The Postman Application is available for use within a web browser or can be down
 * Within the "Collection", click the "Variable" tab in the middle pane (The Base URL will have been set by the earlier API import):
 * Below `baseURL` click the open field "Add new value", and Substitute your organization ID and service ID:
 
+<div className="ch-image-md">
+
 ![Organization ID and Service ID](/images/cloud/manage/postman/postman11.webp)
+
+</div>
 
 ## Test the ClickHouse Cloud API functionalities {#test-the-clickhouse-cloud-api-functionalities}
 
@@ -74,26 +114,46 @@ The Postman Application is available for use within a web browser or can be down
 * Under the "OpenAPI spec for ClickHouse Cloud", expand the folder > V1 > organizations
 * Click "GET list of available organizations" and press the blue "Send" button on the right:
 
+<div className="ch-image-md">
+
 ![Test retrieval of organizations](/images/cloud/manage/postman/postman12.webp)
+
+</div>
 
 * The returned results should deliver your organization details with "status": 200. (If you receive a "status" 400 with no organization information your configuration isn't correct).
 
+<div className="ch-image-md">
+
 ![Status](/images/cloud/manage/postman/postman13.webp)
+
+</div>
 
 ### Test "GET organizational details" {#test-get-organizational-details}
 
 * Under the `organizationid` folder, navigate to "GET organizational details":
 * In the middle frame menu under Params an `organizationid` is required.
 
+<div className="ch-image-md">
+
 ![Test retrieval of organization details](/images/cloud/manage/postman/postman14.webp)
+
+</div>
 
 * Edit this value with `orgid` in curly braces `{{orgid}}` (From setting this value earlier a menu will appear with the value):
 
+<div className="ch-image-md">
+
 ![Submit test](/images/cloud/manage/postman/postman15.webp)
+
+</div>
 
 * After pressing the "Save" button, press the blue "Send" button at the top right of the screen.
 
+<div className="ch-image-md">
+
 ![Return value](/images/cloud/manage/postman/postman16.webp)
+
+</div>
 
 * The returned results should deliver your organization details with "status": 200. (If you receive a "status" 400 with no organization information your configuration isn't correct).
 
@@ -103,6 +163,10 @@ The Postman Application is available for use within a web browser or can be down
 * Edit the Values for `organizationid` and `serviceid` with `{{orgid}}` and `{{serviceid}}` respectively.
 * Press "Save" and then the blue "Send" button on the right.
 
+<div className="ch-image-md">
+
 ![List of services](/images/cloud/manage/postman/postman17.webp)
+
+</div>
 
 * The returned results should deliver a list of your services and their details with "status": 200. (If you receive a "status" 400 with no services information your configuration isn't correct).

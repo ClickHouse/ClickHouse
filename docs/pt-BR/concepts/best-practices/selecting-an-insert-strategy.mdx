@@ -9,6 +9,7 @@ doc_type: 'guide'
 ---
 
 import AsyncInserts from '/snippets/pt-BR/_async_inserts.mdx';
+
 import BulkInserts from '/snippets/pt-BR/_bulk_inserts.mdx';
 
 A ingestão eficiente de dados é a base de implantações do ClickHouse com alto desempenho. Selecionar a estratégia de inserção correta pode afetar drasticamente a taxa de transferência, o custo e a confiabilidade. Esta seção apresenta melhores práticas, trade-offs e opções de configuração para ajudar você a tomar a decisão certa para a sua carga de trabalho.
@@ -31,7 +32,11 @@ Por padrão, as inserções no ClickHouse são síncronas.  Cada consulta de ins
 
 A seguir, analisamos brevemente como funcionam as inserções do MergeTree no ClickHouse:
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![Processos de inserção](/images/bestpractices/insert_process.webp)
+
+</div>
 
 <div id="client-side-steps">
   #### Etapas no lado do cliente

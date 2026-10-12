@@ -14,13 +14,18 @@ import KeeperConfigExplanation from '/snippets/ko/_keeper_explanation.mdx';
 import VerifyKeeperStatus from '/snippets/ko/_verify_keeper_using_mntr.mdx';
 import DedicatedKeeperServers from '/snippets/ko/_dedicated_keeper_servers.mdx';
 import ExampleFiles from '/snippets/ko/_working_example.mdx';
+
 import CloudTip from '/snippets/ko/_cloud_tip.mdx';
 
 > 이 예시에서는 복제와 확장을 모두 지원하는 간단한 ClickHouse 클러스터를 설정하는 방법을 알아봅니다. 이 클러스터는 2개의 세그먼트와 2개의 레플리카로 구성되며, 조정을 관리하고 클러스터에서 quorum을 유지하기 위한 3노드 ClickHouse Keeper 클러스터를 포함합니다.
 
 설정할 클러스터의 아키텍처는 아래와 같습니다.
 
+<div className="ch-image-md">
+
 ![2개 세그먼트와 1개 레플리카의 아키텍처 다이어그램](/images/deployment-guides/replication-sharding-examples/both.webp)
+
+</div>
 
 <DedicatedKeeperServers />
 

@@ -37,15 +37,27 @@ Para adicionar este conjunto de dados a um serviço existente do ClickHouse Clou
 
 No menu à esquerda, clique em `Data sources`. Em seguida, clique em `Predefined sample data`:
 
+<div className="ch-image-md">
+
 ![Adicionar conjunto de dados de exemplo](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</div>
 
 Selecione `Get started` no cartão de dados de preços pagos de imóveis do Reino Unido (4GB):
 
+<div className="ch-image-md">
+
 ![Selecionar conjunto de dados de preços pagos do Reino Unido](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</div>
 
 Em seguida, clique em `Import dataset`:
 
+<div className="ch-image-md">
+
 ![Importar conjunto de dados de preços pagos do Reino Unido](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</div>
 
 O ClickHouse criará automaticamente a tabela `pp_complete` no banco de dados `default` e preencherá a tabela com 28,92 milhões de linhas de dados de preços.
 
@@ -78,12 +90,20 @@ jupyter notebook
 Uma nova janela do navegador deve abrir com a interface do Jupyter em `localhost:8888`.
 Clique em `File` &gt; `New` &gt; `Notebook` para criar um novo notebook.
 
+<div className="ch-image-md">
+
 ![Criar um novo notebook](/images/use-cases/AI_ML/jupyter/4.webp)
+
+</div>
 
 Você será solicitado a selecionar um kernel.
 Selecione qualquer kernel Python disponível; neste exemplo, vamos selecionar o `ipykernel`:
 
+<div className="ch-image-md">
+
 ![Selecionar kernel](/images/use-cases/AI_ML/jupyter/5.webp)
+
+</div>
 
 Em uma célula em branco, você pode digitar o seguinte comando para instalar o chDB, que usaremos para nos conectar à nossa instância remota do ClickHouse Cloud:
 
@@ -163,7 +183,11 @@ O resultado é então armazenado como um DataFrame em uma variável chamada `df`
 
 `df.head` exibe apenas as primeiras linhas dos dados retornados:
 
+<div className="ch-image-md">
+
 ![pré-visualização do dataframe](/images/use-cases/AI_ML/jupyter/6.webp)
+
+</div>
 
 Execute o comando a seguir em uma nova célula para verificar os tipos das colunas:
 
@@ -200,7 +224,11 @@ plt.tight_layout()
 plt.show()
 ```
 
+<div className="ch-image-md">
+
 ![prévia do DataFrame](/images/use-cases/AI_ML/jupyter/7.webp)
+
+</div>
 
 Como era de se esperar, os preços dos imóveis em Londres aumentaram substancialmente ao longo do tempo.
 
@@ -256,7 +284,11 @@ df_2.head()
   ```
 </Accordion>
 
+<div className="ch-image-md">
+
 ![prévia do DataFrame](/images/use-cases/AI_ML/jupyter/8.webp)
+
+</div>
 
 Embora faltem dados a partir de 2020, podemos plotar os dois conjuntos de dados um em relação ao outro para os anos de 1995 a 2019.
 Em uma nova célula, execute o seguinte comando:
@@ -302,7 +334,11 @@ plt.tight_layout()
 plt.show()
 ```
 
+<div className="ch-image-md">
+
 ![Gráfico do conjunto de dados remoto e do conjunto de dados local](/images/use-cases/AI_ML/jupyter/9.webp)
+
+</div>
 
 Pelos dados do gráfico, vemos que as vendas começaram em torno de 160.000 em 1995 e cresceram rapidamente, atingindo um pico de cerca de 540.000 em 1999.
 Depois disso, os volumes caíram acentuadamente ao longo da metade dos anos 2000, despencando durante a crise financeira de 2007-2008 e chegando a cerca de 140.000.

@@ -300,15 +300,27 @@ Para una carga de trabajo que se ejecuta en Kubernetes, el propio collector gate
   <Step title="Confirmar en la UI de ClickStack" id="confirm-in-ui">
     Abre tu servicio en la [ClickHouse Cloud console](https://console.clickhouse.cloud) y selecciona **ClickStack** en el menú de la izquierda.
 
+    <div className="ch-image-lg">
+
     ![Abrir ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+    </div>
 
     En la vista de **Búsqueda**, selecciona `Logs` como fuente y establece el rango de tiempo en **Últimos 15 minutos**. Los logs de contenedores de todo el clúster deberían aparecer en unos segundos, enriquecidos con atributos como `k8s.namespace.name`, `k8s.pod.name` y `k8s.node.name`.
 
+    <div className="ch-image-lg">
+
     ![Vista de Búsqueda de ClickStack con logs de Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+
+    </div>
 
     Para ver las métricas y los eventos de infraestructura en contexto, abre el dashboard integrado de **Kubernetes** y ve a **Dashboards** -&gt; **Kubernetes**. Las pestañas `Pods`, `Nodes` y `Namespaces` deberían mostrar datos.
 
+    <div className="ch-image-lg">
+
     ![Dashboard de Kubernetes de ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+
+    </div>
 
     Si no aparece nada:
 

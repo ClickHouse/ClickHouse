@@ -20,15 +20,27 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
     3. Assurez-vous que chaque sous-réseau dispose d’une plage CIDR minimale de `/25` (par ex. 10.0.0.0/25). Un `/25` prend en charge environ 10 nœuds de serveur ClickHouse par zone de disponibilité ; `/24` est recommandé pour la plupart des déploiements, et des sous-réseaux plus grands pour les déploiements dont vous prévoyez la croissance. Les adresses IP des pods sont allouées à partir du sous-réseau lui-même, donc chaque réplique consomme des adresses du sous-réseau.
     4. Ajoutez les tags `kubernetes.io/role/internal-elb=1` et `clickhouse-byoc="true"` à chaque sous-réseau afin de permettre une configuration correcte de l’équilibreur de charge.
 
+    <div className="ch-image-lg">
+
     ![Sous-réseau VPC BYOC](/images/cloud/reference/byoc-subnet-1.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Tags de sous-réseau VPC BYOC](/images/cloud/reference/byoc-subnet-2.webp)
+
+    </div>
   </Step>
 
   <Step title="Configurez le point de terminaison Gateway S3" id="configure-s3-endpoint">
     Si votre VPC n&#39;a pas encore de point de terminaison Gateway S3 configuré, vous devrez en créer un pour permettre une communication sécurisée et privée entre votre VPC et Amazon S3. Ce point de terminaison permet à vos services ClickHouse d&#39;accéder à S3 sans passer par l&#39;internet public. Reportez-vous à la capture d&#39;écran ci-dessous pour voir un exemple de configuration.
 
+    <div className="ch-image-lg">
+
     ![Point de terminaison S3 BYOC](/images/cloud/reference/byoc-s3-endpoint.webp)
+
+    </div>
   </Step>
 
   <Step title="Assurez la connectivité réseau" id="ensure-network-connectivity">
@@ -93,7 +105,11 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC plut�
     4. Si nécessaire, saisissez également les **Public subnet IDs** si votre configuration requiert des équilibreurs de charge exposés publiquement.
     5. Cliquez sur **Set up Infrastructure** pour lancer le provisionnement.
 
+    <div className="ch-image-lg">
+
     ![UI de configuration BYOC de ClickHouse Cloud avec Use existing VPC sélectionné](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
+
+    </div>
 
     <Note>
       La configuration d’une nouvelle région peut prendre jusqu’à 40 minutes.

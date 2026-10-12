@@ -42,15 +42,27 @@ Para adicionar este conjunto de dados a um serviço existente do ClickHouse Clou
 
 No menu à esquerda, clique em `Data sources`. Em seguida, clique em `Predefined sample data`:
 
+<div className="ch-image-md">
+
 ![Adicionar conjunto de dados de exemplo](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</div>
 
 Selecione `Get started` no cartão de dados de preços pagos de imóveis do Reino Unido (4GB):
 
+<div className="ch-image-md">
+
 ![Selecionar conjunto de dados de preços pagos do Reino Unido](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</div>
 
 Em seguida, clique em `Import dataset`:
 
+<div className="ch-image-md">
+
 ![Importar conjunto de dados de preços pagos do Reino Unido](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</div>
 
 O ClickHouse criará automaticamente a tabela `pp_complete` no banco de dados `default` e a preencherá com 28,92 milhões de linhas de dados de preços.
 
@@ -91,7 +103,11 @@ marimo edit clickhouse_exploration.py
 
 Uma nova janela do navegador deve abrir com a interface do Marimo em localhost:2718:
 
+<div className="ch-image-md">
+
 ![interface do Marimo](/images/use-cases/AI_ML/Marimo/4.webp)
+
+</div>
 
 Os notebooks do Marimo são armazenados como arquivos Python puros, o que facilita o controle de versão e o compartilhamento com outras pessoas.
 
@@ -122,7 +138,11 @@ result
 
 Você deve ver o resultado exibido abaixo da célula que você acabou de executar:
 
+<div className="ch-image-md">
+
 ![Marimo hello world](/images/use-cases/AI_ML/Marimo/5.webp)
+
+</div>
 
 <div id="exploring-the-data">
   ## Explorando os dados
@@ -204,7 +224,11 @@ fig
 
 Talvez não seja surpresa que os preços dos imóveis em Londres tenham aumentado substancialmente ao longo do tempo.
 
+<div className="ch-image-md">
+
 ![Visualização de dados do Marimo](/images/use-cases/AI_ML/Marimo/6.webp)
+
+</div>
 
 Um dos pontos fortes do Marimo é seu modelo de execução reativa. Vamos criar um widget interativo para selecionar diferentes cidades dinamicamente.
 
@@ -265,7 +289,11 @@ fig_reactive
 
 Agora, ao selecionar uma cidade na lista suspensa, o gráfico é atualizado dinamicamente:
 
+<div className="ch-image-md">
+
 ![Gráfico dinâmico do Marimo](/images/use-cases/AI_ML/Marimo/7.webp)
+
+</div>
 
 <div id="exploring-price-distributions">
   ### Explorando distribuições de preços com box plots interativos
@@ -341,7 +369,11 @@ Se você selecionar o botão de opções no canto superior direito da célula, p
 o código.
 Ao mover o controle deslizante, o gráfico será atualizado automaticamente graças à execução reativa do Marimo:
 
+<div className="ch-image-md">
+
 ![Gráfico dinâmico do Marimo](/images/use-cases/AI_ML/Marimo/8.webp)
+
+</div>
 
 <div id="summary">
   ## Resumo

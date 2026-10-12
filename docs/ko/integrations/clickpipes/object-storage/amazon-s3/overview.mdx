@@ -187,7 +187,11 @@ S3 ClickPipe는 공개 및 비공개 버킷을 지원합니다. [Requester Pays]
 
 [액세스 키](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html)를 사용해 인증하려면 ClickPipe 연결을 설정할 때 **인증 방법**에서 `Credentials`를 선택하십시오. 그런 다음 `Access key`와 `Secret key`에 각각 액세스 키 ID(예: `AKIAIOSFODNN7EXAMPLE`)와 비밀 액세스 키(예: `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`)를 입력하십시오.
 
+<div className="ch-image-lg">
+
 ![S3 ClickPipes용 IAM 자격 증명](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp)
+
+</div>
 
 <div id="iam-role">
   #### IAM role
@@ -195,7 +199,11 @@ S3 ClickPipe는 공개 및 비공개 버킷을 지원합니다. [Requester Pays]
 
 인증에 [역할 기반 접근](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)을 사용하려면 ClickPipe 연결을 설정할 때 **인증 방법**에서 `IAM role`을 선택하십시오.
 
+<div className="ch-image-lg">
+
 ![S3 ClickPipes용 IAM 인증](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp)
+
+</div>
 
 S3 액세스에 필요한 신뢰 정책이 포함된 [역할을 생성](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)하려면 [이 가이드](/ko/products/cloud/guides/data-sources/accessing-s3-data-securely)를 따르십시오. 그런 다음 `IAM role ARN`에 IAM 역할 ARN을 입력하십시오.
 
@@ -240,7 +248,11 @@ ClickPipes는 대부분의 사용 사례 요구 사항을 충족하는 적절한
 | `Parallel view processing`           | false         | attached 상태인 뷰에 순차 처리 대신 [동시에 푸시](/ko/reference/settings/session-settings/parallel#parallel_view_processing)할지 여부입니다.            |
 | `Use cluster function`               | true          | 여러 노드에서 파일을 병렬로 처리할지 여부입니다.                                                                                                   |
 
+<div className="ch-image-lg">
+
 ![ClickPipes의 고급 설정](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
+
+</div>
 
 <div id="scaling">
   ### 스케일링

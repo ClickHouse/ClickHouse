@@ -51,9 +51,17 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
    * اختر **DBFS** أو **Workspace** → ثم انتقل إلى ملف JAR الذي رفعته
    * انقر على **Install**
 
+<div className="ch-image-lg">
+
 ![علامة التبويب Libraries في Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![تثبيت المكتبة من وحدة تخزين مساحة العمل](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
+
+</div>
 
 4. أعد تشغيل العنقود لتحميل المكتبة
 
@@ -88,7 +96,11 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
+<div className="ch-image-lg">
+
 ![إعداد مكتبات Maven في Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
+
+</div>
 
 3. انقر على **تثبيت** ثم أعد تشغيل العنقود لتحميل المكتبة
 

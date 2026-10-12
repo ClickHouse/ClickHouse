@@ -17,13 +17,21 @@ ClickHouse Cloud предоставляет API на основе OpenAPI, ко�
   <Step title="Откройте страницу API Keys">
     Используйте вкладку **API Keys** в левом меню, чтобы создавать ключи API и управлять ими.
 
+    <div className="ch-image-sm">
+
     ![Вкладка API Keys](/images/cloud/manage/openapi1.webp)
+
+    </div>
   </Step>
 
   <Step title="Начните создание ключа API">
     На странице **API Keys** сначала отобразится предложение создать ваш первый ключ API, как показано ниже. После создания первого ключа вы сможете создавать новые ключи с помощью кнопки `New API Key`, которая появится в правом верхнем углу.
 
+    <div className="ch-image-md">
+
     ![Страница API Keys](/images/cloud/manage/openapi2.webp)
+
+    </div>
   </Step>
 
   <Step title="Настройте ключ API">
@@ -39,7 +47,11 @@ ClickHouse Cloud предоставляет API на основе OpenAPI, ко�
       Чтобы использовать ключи API с [эндпоинтами Query API](/ru/products/cloud/guides/sql-console/query-endpoints), установите для Organization Role значение `Member` (минимум) и предоставьте Service Role доступ к `Query Endpoints`.
     </Tip>
 
+    <div className="ch-image-md">
+
     ![Форма создания ключа API](/images/cloud/manage/openapi3.png)
+
+    </div>
   </Step>
 
   <Step title="Добавьте разрешённые IP-адреса">
@@ -47,7 +59,11 @@ ClickHouse Cloud предоставляет API на основе OpenAPI, ко�
 
     Эндпоинты Query API учитывают списки разрешённых IP-адресов на уровне ключа API. Поскольку запросы проксируются из инфраструктуры ClickHouse, списки разрешённых IP-адресов на уровне сервиса не применяются. Подробности см. в разделе [IP Access Control](/ru/products/cloud/features/sql-console-features/query-endpoints#ip-access-control).
 
+    <div className="ch-image-md">
+
     ![Разрешённые IP-адреса, настроенные для ключа API](/images/cloud/guides/query-endpoints/specific-locations.webp)
+
+    </div>
 
     Закончив настройку ключа, нажмите **Generate API Key**.
   </Step>
@@ -55,7 +71,11 @@ ClickHouse Cloud предоставляет API на основе OpenAPI, ко�
   <Step title="Сохраните учётные данные ключа API">
     На следующем экране будут показаны ваши Key ID и Key secret. Скопируйте эти значения и сохраните их в безопасном месте, например в хранилище секретов. После ухода с этого экрана они больше не будут отображаться.
 
+    <div className="ch-image-md">
+
     ![Данные ключа API](/images/cloud/manage/openapi4.webp)
+
+    </div>
   </Step>
 
   <Step title="Аутентифицируйте API-запросы">
@@ -76,7 +96,11 @@ ClickHouse Cloud предоставляет API на основе OpenAPI, ко�
       Удаление ключа API — необратимое действие. Любые сервисы, использующие этот ключ, немедленно потеряют доступ к ClickHouse Cloud.
     </Note>
 
+    <div className="ch-image-md">
+
     ![Страница управления API Keys](/images/cloud/manage/openapi5.webp)
+
+    </div>
   </Step>
 </Steps>
 

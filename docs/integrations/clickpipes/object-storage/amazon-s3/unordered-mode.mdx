@@ -42,11 +42,19 @@ We strongly recommend configuring a **Dead-Letter-Queue (DLQ)** for the SQS queu
 
 **a.** In the S3 bucket properties, navigate to **Event notifications > Amazon EventBridge** and enable sending notifications to EventBridge. Click **Save changes**.
 
+<div className="ch-image-lg">
+
 ![Enabling Amazon EventBridge notifications in S3 bucket properties](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp)
+
+</div>
 
 **b.** In the AWS Console, navigate to **Amazon EventBridge > Rules > Create rule**. Name the rule (e.g. `S3ObjectCreated`), choose the **default** event bus, and click **Next**. On the **Build event pattern** step, select **AWS events or EventBridge partner events** as the event source, then enter the following event pattern manually, replacing `<bucket-name>` with your bucket name:
 
+<div className="ch-image-lg">
+
 ![Defining the EventBridge rule name and event bus](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp)
+
+</div>
 
 ```json
 {
@@ -64,9 +72,17 @@ Optionally, add an `object.key` condition to the pattern to filter by prefix or 
 
 **c.** On the **Select target(s)** step, choose **AWS service** as the target type and select **SQS queue**. Pick the queue created in the previous step. Leave **Use execution role (recommended)** checked to let EventBridge auto-create the required IAM role, then click **Next** and complete the wizard.
 
+<div className="ch-image-lg">
+
 ![Setting the SQS queue as the EventBridge rule target](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![EventBridge rule successfully created](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp)
+
+</div>
 
 **d.** Edit the SQS queue access policy to allow EventBridge to send messages to it. Replace `<sqs-queue-arn>` and `<eventbridge-rule-arn>` with the appropriate values:
 

@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 Um cluster gerenciado executa uma pequena camada de plataforma da qual os serviços ClickHouse dependem. O ClickHouse Cloud propõe atualizações para essa camada; o executor não aplica nada até que você aprove cada uma delas com suas próprias credenciais do cluster.
@@ -27,7 +28,11 @@ O executor nunca aplica um pacote que você não tenha aprovado. Ele recusa uma 
 
 ## Aprovar uma atualização de plataforma {#approve-a-platform-update}
 
+<div className="ch-image-lg">
+
 ![Fluxo de aprovação de plataforma do ClickHouse Connector](/images/cloud/reference/byoc-connector-platform-approval.svg)
+
+</div>
 
 ### Credenciais de registry {#registry-credentials}
 

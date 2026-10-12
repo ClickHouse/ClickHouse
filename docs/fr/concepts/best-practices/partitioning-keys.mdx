@@ -32,7 +32,11 @@ PARTITION BY toStartOfMonth(date)
 
 Chaque fois qu’un ensemble de lignes est inséré dans la table, au lieu de créer (au[ moins](/fr/reference/settings/session-settings/max-insert#max_insert_block_size)) une seule part de données contenant toutes les lignes insérées (comme décrit [ici](/fr/concepts/core-concepts/parts)), ClickHouse crée une nouvelle part de données pour chaque valeur unique de clé de partition parmi les lignes insérées :
 
+<div className="ch-image-lg">
+
 ![Partitions](/images/bestpractices/partitions.webp)
+
+</div>
 
 Le serveur ClickHouse commence par scinder les 4 lignes de l’insertion d’exemple représentée dans le schéma ci-dessus selon leur valeur de clé de partition `toStartOfMonth(date)`. Ensuite, pour chaque partition identifiée, les lignes sont traitées comme d’[habitude](/fr/concepts/core-concepts/parts) en exécutant plusieurs étapes séquentielles (① Tri, ② Découpage en colonnes, ③ Compression, ④ Écriture sur disque).
 
@@ -40,7 +44,11 @@ Pour une explication plus détaillée du partitionnement, nous recommandons [ce 
 
 Lorsque le partitionnement est activé, ClickHouse [fusionne](/fr/concepts/core-concepts/merges) les parts de données uniquement au sein d’une même partition, et non entre plusieurs partitions. Nous l’illustrons pour notre table d’exemple ci-dessus :
 
+<div className="ch-image-md">
+
 ![Partitions](/images/bestpractices/merges_with_partitions.webp)
+
+</div>
 
 <div id="applications-of-partitioning">
   ## Applications du partitionnement

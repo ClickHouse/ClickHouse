@@ -30,7 +30,11 @@ Para ilustrar como o índice primário esparso é construído, usamos a tabela [
 
 Como [lembrete](/pt-BR/concepts/core-concepts/parts), na nossa tabela de exemplo ① com a chave primária (town, street), os dados ② inseridos são ③ armazenados em disco, ordenados pelos valores das colunas da chave primária e comprimidos, em arquivos separados para cada coluna:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+
+</div>
 
 <br />
 
@@ -40,7 +44,11 @@ Para processamento, os dados de cada coluna são ④ divididos logicamente em gr
 
 Essa estrutura em grânulos também é o que torna o índice primário **esparso**: em vez de indexar cada linha, o ClickHouse armazena ⑤ os valores da chave primária de apenas uma linha por grânulo — especificamente, a primeira linha. Isso resulta em uma entrada de índice por grânulo:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+
+</div>
 
 <br />
 
@@ -54,7 +62,11 @@ Graças à sua esparsidade, o índice primário é pequeno o suficiente para cab
 
 Mostramos como o índice primário esparso é usado para acelerar consultas com outra animação:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+
+</div>
 
 <br />
 

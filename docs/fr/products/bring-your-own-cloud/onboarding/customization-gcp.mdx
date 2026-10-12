@@ -21,7 +21,11 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC au li
       Pour exposer des services via [Private Service Connect](/fr/cloud/reference/byoc/onboarding/network-gcp#setup-psc), vous avez également besoin, dans ce VPC, d’un sous-réseau dédié dont l’objectif est `PRIVATE_SERVICE_CONNECT`. Vous pouvez le créer dès maintenant ou plus tard, avant d’activer le private link.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![Détails du sous-réseau GCP BYOC montrant les plages IPv4 primaires et secondaires avec Private Google Access activé](/images/cloud/reference/byoc-gcp-subnet.webp)
+
+    </div>
   </Step>
 
   <Step title="Assurez la connectivité réseau" id="ensure-network-connectivity">
@@ -51,7 +55,11 @@ Si vous préférez utiliser un VPC existant pour déployer ClickHouse BYOC au li
     5. Si votre VPC se trouve dans un projet hôte de Shared VPC, saisissez l’**ID du projet hôte du Shared VPC**. Laissez le champ vide lorsque le VPC se trouve dans le même projet que l’infrastructure. Voir [Shared VPC depuis un projet hôte](#shared-vpc-host-project) ci-dessous.
     6. Cliquez sur **Set up Infrastructure** pour lancer le provisionnement.
 
+    <div className="ch-image-lg">
+
     ![Interface de configuration BYOC de ClickHouse Cloud avec Use existing VPC sélectionné pour GCP, affichant les champs nom du réseau VPC, nom du sous-réseau, noms des plages secondaires et ID du projet hôte du Shared VPC](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
+
+    </div>
   </Step>
 </Steps>
 

@@ -15,7 +15,11 @@ La función **Query Insights** facilita el uso del registro de consultas integra
 
 Después de seleccionar un servicio, el elemento de navegación **Monitoring** de la barra lateral izquierda debería expandirse para mostrar un nuevo subelemento, **Query insights**. Al hacer clic en esta opción, se abre la nueva página de Query insights:
 
+<div className="ch-image-md">
+
 ![Vista general de la interfaz de Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
+
+</div>
 
 <div id="top-level-metrics">
   ## Métricas principales
@@ -23,7 +27,11 @@ Después de seleccionar un servicio, el elemento de navegación **Monitoring** d
 
 Los paneles de estadísticas de la parte superior muestran algunas métricas principales básicas de las consultas durante el período seleccionado. Debajo, se muestran tres gráficos de series temporales con el volumen de consultas, la latencia y la tasa de errores, desglosados por tipo de consulta (`select`, `insert`, `other`) en el intervalo de tiempo seleccionado. El gráfico de latencia puede ajustarse aún más para mostrar las latencias p50, p90 y p99:
 
+<div className="ch-image-md">
+
 ![Gráfico de latencia de la UI de Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
+
+</div>
 
 <div id="recent-queries">
   ## Consultas recientes
@@ -31,7 +39,11 @@ Los paneles de estadísticas de la parte superior muestran algunas métricas pri
 
 Debajo de las métricas principales, una tabla muestra las entradas del registro de consultas (agrupadas por el hash de la consulta normalizada y el usuario) dentro del intervalo de tiempo seleccionado:
 
+<div className="ch-image-md">
+
 ![Tabla de consultas recientes en la UI de Query Insights](/images/cloud/sqlconsole/insights_recent.webp)
+
+</div>
 
 Las consultas recientes se pueden filtrar y ordenar por cualquier campo disponible. La tabla también puede configurarse para mostrar u ocultar campos adicionales, como tablas y latencias p90 y p99.
 
@@ -41,11 +53,19 @@ Las consultas recientes se pueden filtrar y ordenar por cualquier campo disponib
 
 Al seleccionar una consulta de la tabla de consultas recientes, se abrirá un panel lateral con métricas e información específicas de la consulta seleccionada:
 
+<div className="ch-image-md">
+
 ![Desglose de la consulta en la UI de Query Insights](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</div>
 
 Como podemos ver en el panel lateral, esta consulta en particular se ha ejecutado más de 3000 veces en las últimas 24 horas. Todas las métricas de la pestaña **Información de la consulta** son métricas agregadas, pero también podemos ver las métricas de ejecuciones individuales seleccionando la pestaña **Historial de la consulta**:
 
+<div className="ch-image-sm">
+
 ![Información de la consulta en la UI de Query Insights](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</div>
 
 <br />
 

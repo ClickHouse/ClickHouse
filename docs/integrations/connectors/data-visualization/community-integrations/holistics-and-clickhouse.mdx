@@ -50,7 +50,11 @@ To connect to ClickHouse with HTTP(S) you will need this information:
 
 You can find these details by clicking the **Connect** button in your ClickHouse Cloud console and selecting **HTTPS**.
 
+<div className="ch-image-md">
+
 ![Location of the Connect button in the ClickHouse Cloud console](/images/integrations/data-visualization/holistics_01.webp)
+
+</div>
 </Step>
 <Step title="Configure network access" id="step-2-configure-network-access">
 
@@ -58,7 +62,11 @@ Since Holistics is a cloud-based application, its servers must be able to reach 
 
 1. **Direct Connection (Recommended):** Allowlist Holistics' IP addresses in your firewall or ClickHouse Cloud IP Access List. You can find the list of IPs in the [IP Whitelisting guide](https://docs.holistics.io/docs/connect/ip-whitelisting).
 
+   <div className="ch-image-md">
+
    ![Example of IP allowlisting in ClickHouse Cloud](/images/integrations/data-visualization/holistics_02.webp)
+
+   </div>
 
 2. **Reverse SSH Tunnel:** If your database is in a private network (VPC) and can't be exposed publicly, use a [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
 </Step>
@@ -66,11 +74,19 @@ Since Holistics is a cloud-based application, its servers must be able to reach 
 
 1. In Holistics, go to **Settings → Data Sources**.
 
+   <div className="ch-image-md">
+
    ![Navigating to Data Sources in Holistics settings](/images/integrations/data-visualization/holistics_03.webp)
+
+   </div>
 
 2. Click **New Data Source** and select **ClickHouse**.
 
+   <div className="ch-image-md">
+
    ![Selecting ClickHouse from the list of new data sources](/images/integrations/data-visualization/holistics_04.webp)
+
+   </div>
 
 3. Fill in the form with the details gathered in Step 1.
 
@@ -81,11 +97,19 @@ Since Holistics is a cloud-based application, its servers must be able to reach 
    | **Require SSL**   | Toggle **ON** if using port 8443 (Required for ClickHouse Cloud). |
    | **Database Name** | `default` (or your specific DB)                                   |
 
+   <div className="ch-image-md">
+
    ![Filling in ClickHouse connection details in Holistics](/images/integrations/data-visualization/holistics_05.webp)
+
+   </div>
 
 4. Click **Test Connection**.
 
+   <div className="ch-image-md">
+
    ![Successful ClickHouse connection test in Holistics](/images/integrations/data-visualization/holistics_06.webp)
+
+   </div>
 
    - **Success:** Click **Save**.
    - **Failure:** Check your username/password and ensure the [Holistics IPs are allowlisted](https://docs.holistics.io/docs/connect/ip-whitelisting).

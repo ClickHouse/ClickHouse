@@ -18,13 +18,21 @@ doc_type: 'guide'
 
 従来の [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) アーキテクチャの ClickHouse クラスターでは、① データ量が大きすぎて単一のサーバーに収まらない場合、または ② 単一のサーバーではデータ処理が遅すぎる場合に、シャーディングが使用されます。次の図は、[uk&#95;price&#95;paid&#95;simple](/ja/concepts/core-concepts/parts) テーブルが単一マシンの容量を超えるケース①を示しています。
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_01.webp)
+
+</div>
 
 <br />
 
 このような場合、データはテーブルの分片として複数の ClickHouse サーバーに分割できます。
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_02.webp)
+
+</div>
 
 <br />
 
@@ -57,7 +65,11 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 以下の図は、分散テーブルに対する INSERT が ClickHouse でどのように処理されるかを示しています。
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_03.webp)
+
+</div>
 
 <br />
 
@@ -73,7 +85,11 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 この図は、ClickHouse で分散テーブルを使用した場合に SELECTクエリがどのように処理されるかを示しています。
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_04.webp)
+
+</div>
 
 <br />
 
@@ -93,7 +109,11 @@ ClickHouse のレプリケーションは、複数のサーバーに**分片デ�
 
 次の図は、6 台のサーバーで構成された ClickHouse クラスターを示しています。ここでは、先に紹介した 2 つのテーブルの分片 `Shard-1` と `Shard-2` が、それぞれ 3 つのレプリカを持っています。このクラスターにクエリが送信されます。
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_replicas_01.webp)
+
+</div>
 
 <br />
 

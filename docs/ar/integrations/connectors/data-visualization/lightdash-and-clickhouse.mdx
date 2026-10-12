@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
+
 import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -28,7 +29,11 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
 في هذا الدليل، سترى كيف يتصل **Lightdash** بـ **ClickHouse** لاستكشاف نماذج dbt لديك وإنشاء لوحات معلومات تفاعلية.
 يوضح المثال أدناه لوحة معلومات مكتملة تستند إلى بيانات من ClickHouse.
 
+<div className="ch-image-md">
+
 ![مثال على لوحة معلومات في Lightdash](/images/integrations/data-visualization/lightdash_02.webp)
+
+</div>
 
 <Steps>
   <Step title="اجمع تفاصيل الاتصال" id="connection-data-required">
@@ -55,7 +60,11 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
 
     على سبيل المثال:
 
+    <div className="ch-image-md">
+
     ![مثال على إعداد profiles.yml لمشروع lightdash-clickhouse](/images/integrations/data-visualization/lightdash_01.webp)
+
+    </div>
 
     <br />
   </Step>
@@ -87,7 +96,11 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
   <Step title="تحديد المقاييس والأبعاد في Lightdash" id="defining-metrics-and-dimensions-in-lightdash">
     في Lightdash، تُعرَّف جميع **المقاييس** و**الأبعاد** مباشرةً في ملفات `.yml` الخاصة بنماذج dbt. وهذا يجعل منطق الأعمال لديك خاضعًا للتحكم في الإصدارات، ومتسقًا، وشفافًا بالكامل.
 
+    <div className="ch-image-md">
+
     ![مثال على تعريف المقاييس في ملف .yml](/images/integrations/data-visualization/lightdash_03.webp)
+
+    </div>
 
     <br />
 
@@ -113,7 +126,11 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
     4. **النتائج** — لعرض البيانات الأولية المعادة من قاعدة بيانات ClickHouse
     5. **SQL** — لفحص استعلام SQL المُولَّد الذي تستند إليه نتائجك
 
+    <div className="ch-image-lg">
+
     ![عرض Explore في Lightdash يوضّح الأبعاد، وعوامل التصفية، والمخطط، والنتائج، وSQL](/images/integrations/data-visualization/lightdash_04.webp)
+
+    </div>
 
     من هنا، يمكنك إنشاء الاستعلامات وتعديلها بشكل تفاعلي — عبر سحب الحقول وإفلاتها، وإضافة عوامل التصفية، والتبديل بين أنواع التصور مثل الجداول، والمخططات الشريطية، أو السلاسل الزمنية.
 
@@ -137,7 +154,11 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
     3. أنشئ تصورك في أداة إنشاء المخططات
     4. احفظه — وسيظهر في أسفل لوحة المعلومات
 
+    <div className="ch-image-lg">
+
     ![إنشاء المخططات وتنظيمها داخل لوحة معلومات في Lightdash](/images/integrations/data-visualization/lightdash_05.webp)
+
+    </div>
 
     تعرّف على المزيد حول كيفية إنشاء لوحات المعلومات وتنظيمها هنا:
     [إنشاء لوحات المعلومات ← مستندات Lightdash](https://docs.lightdash.com/get-started/exploring-data/dashboards?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
@@ -151,7 +172,11 @@ Lightdash هي **منصة ذكاء أعمال قائمة على الذكاء ا�
 
     وهي مدعومة بالطبقة الدلالية نفسها التي تستخدمها في dbt، ما يعني أن كل إجابة تظل خاضعة للحوكمة، وقابلة للتفسير، وسريعة — وكل ذلك بالاستناد إلى ClickHouse.
 
+    <div className="ch-image-lg">
+
     ![واجهة Ask AI في Lightdash تعرض استعلامًا بلغة طبيعية مدعومًا بمقاييس dbt](/images/integrations/data-visualization/lightdash_06.webp)
+
+    </div>
 
     <Tip>
       تعرّف على المزيد حول AI Agents هنا: [AI Agents → وثائق Lightdash](https://docs.lightdash.com/guides/ai-agents?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)

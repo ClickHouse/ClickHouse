@@ -29,7 +29,11 @@ no shard especificado, ou ela pode ser enviada para a tabela distribuída e, nes
 caso, cada shard executará a consulta. O servidor no qual a tabela distribuída
 foi consultada agregará os dados e responderá ao cliente:
 
+<div className="ch-image-md">
+
 ![arquitetura com shards](/images/deployment-guides/parallel-replicas-1.webp)
+
+</div>
 
 A figura acima mostra o que acontece quando um cliente consulta uma tabela distribuída:
 
@@ -70,7 +74,11 @@ virtualmente infinita de armazenamento, a necessidade de shards se torna menos i
 
 A figura abaixo mostra a arquitetura do ClickHouse Cloud:
 
+<div className="ch-image-md">
+
 ![arquitetura sem sharding](/images/deployment-guides/parallel-replicas-2.webp)
+
+</div>
 
 Essa arquitetura nos permite adicionar e remover réplicas quase
 instantaneamente, garantindo uma escalabilidade muito alta do cluster. O cluster ClickHouse
@@ -97,7 +105,11 @@ como unidade de trabalho.
 
 Agora, vamos ver como isso funciona na prática com a ajuda da figura abaixo:
 
+<div className="ch-image-md">
+
 ![Parallel replicas](/images/deployment-guides/parallel-replicas-3.webp)
+
+</div>
 
 Com réplicas paralelas:
 
@@ -162,7 +174,11 @@ Veremos como esses fatores são contornados nas seções a seguir.
 Para abordar (1) e (2) da lista acima, introduzimos o conceito de
 anúncio. Vamos visualizar como isso funciona usando a figura abaixo:
 
+<div className="ch-image-md">
+
 ![Anúncios](/images/deployment-guides/parallel-replicas-4.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -206,7 +222,11 @@ um anúncio com todas as partes.
 
 A figura abaixo mostra como a coordenação dinâmica funciona:
 
+<div className="ch-image-md">
+
 ![Coordenação dinâmica - parte 1](/images/deployment-guides/parallel-replicas-5.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -219,7 +239,11 @@ A figura abaixo mostra como a coordenação dinâmica funciona:
   </li>
 </ol>
 
+<div className="ch-image-md">
+
 ![Coordenação dinâmica - parte 2](/images/deployment-guides/parallel-replicas-6.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -232,7 +256,11 @@ A figura abaixo mostra como a coordenação dinâmica funciona:
   </li>
 </ol>
 
+<div className="ch-image-md">
+
 ![Coordenação dinâmica - parte 3](/images/deployment-guides/parallel-replicas-7.webp)
+
+</div>
 
 <ol className="docs-ordered-list">
   <li>
@@ -506,7 +534,11 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
+<div className="ch-image-lg">
+
 ![EXPLAIN sem parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
+
+</div>
 
 E agora, com réplica paralela:
 
@@ -521,4 +553,8 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
+<div className="ch-image-lg">
+
 ![EXPLAIN com parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)
+
+</div>

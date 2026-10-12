@@ -35,11 +35,19 @@ ClickStack은 ClickHouse Cloud를 통해 인증합니다. ClickStack 역할을 �
 
 <Tabs>
   <Tab title="Cloud Users and roles">
+    <div className="ch-image-lg">
+
     ![ClickHouse Cloud Users and roles 페이지](/images/clickstack/rbac/team-page-cloud.webp)
+
+    </div>
   </Tab>
 
   <Tab title="ClickStack Team Settings">
+    <div className="ch-image-lg">
+
     ![팀 구성원과 각 역할이 표시된 ClickStack Team Settings 페이지](/images/clickstack/rbac/team-page-clickstack.webp)
+
+    </div>
   </Tab>
 </Tabs>
 
@@ -82,7 +90,11 @@ ClickStack에는 3개의 시스템 역할이 있습니다. 이러한 역할은 �
   <Step title="Team Settings로 이동" id="step-navigate">
     **Team Settings**를 열고 **RBAC Roles**로 스크롤합니다.
 
+    <div className="ch-image-lg">
+
     ![RBAC Roles](/images/clickstack/rbac/rbac-section.webp)
+
+    </div>
   </Step>
 
   <Step title="새 역할 추가" id="step-add-role">
@@ -92,7 +104,11 @@ ClickStack에는 3개의 시스템 역할이 있습니다. 이러한 역할은 �
   <Step title="권한 구성 및 저장" id="step-configure">
     역할의 권한을 설정한 다음 **Create Role**를 클릭합니다.
 
+    <div className="ch-image-md">
+
     ![Add Role modal](/images/clickstack/rbac/add-role-modal.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -149,7 +165,11 @@ ClickStack에는 3개의 시스템 역할이 있습니다. 이러한 역할은 �
 
 모드를 전환하려면 역할 편집기에서 셰브론을 클릭해 리소스 유형을 펼친 다음 **액세스 제어 모드**를 전환하십시오.
 
+<div className="ch-image-md">
+
 ![역할 편집기의 기본 액세스와 세분화된 제어 모드](/images/clickstack/rbac/default-vs-fine-grained.webp)
+
+</div>
 
 <div id="configuring-access-rules">
   #### 액세스 규칙 구성
@@ -157,7 +177,11 @@ ClickStack에는 3개의 시스템 역할이 있습니다. 이러한 역할은 �
 
 각 액세스 규칙은 **조건**과 **액세스 수준**으로 이루어집니다. 조건은 리소스의 속성을 기준으로 리소스를 식별합니다.
 
+<div className="ch-image-md">
+
 ![조건 툴팁: 이름 또는 태그(제목에 표시됨), 혹은 ID(URL에서 확인 가능)를 기준으로 리소스를 식별](/images/clickstack/rbac/condition-tip.webp)
+
+</div>
 
 | 조건 필드    | 연산자              | 일치 대상                                                                     | 예시                                                                           |
 | -------- | ---------------- | ------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
@@ -167,11 +191,19 @@ ClickStack에는 3개의 시스템 역할이 있습니다. 이러한 역할은 �
 
 다음 스크린샷에는 URL 표시줄에서 강조된 대시보드 ID와 태그 패널(오른쪽 상단)에 표시된 &quot;TESTING&quot; 태그가 함께 나와 있습니다.
 
+<div className="ch-image-lg">
+
 ![URL 표시줄의 리소스 ID와 오른쪽 상단의 태그가 표시된 대시보드](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
+
+</div>
 
 리소스 유형마다 여러 규칙을 추가할 수 있습니다. 각 규칙은 OR 논리로 독립적으로 평가됩니다. 즉, 리소스가 **어느 하나의** 규칙과 일치하면 액세스할 수 있습니다. 어떤 규칙과도 일치하지 않는 리소스에는 액세스할 수 없습니다.
 
+<div className="ch-image-md">
+
 ![OR 논리가 적용된 액세스 규칙 툴팁](/images/clickstack/rbac/access-rules-tip.webp)
+
+</div>
 
 **예시**: 역할에 테스트용 대시보드에 대한 읽기 전용 액세스를 부여하려면 대시보드를 펼치고, 세분화된 제어로 전환한 다음, 다음 두 규칙을 추가합니다.
 
@@ -180,7 +212,11 @@ ClickStack에는 3개의 시스템 역할이 있습니다. 이러한 역할은 �
 
 두 규칙 중 하나라도 일치하는 대시보드에는 액세스할 수 있습니다.
 
+<div className="ch-image-md">
+
 ![OR로 결합된 두 개의 세분화된 액세스 규칙: Name contains testing에 Read 액세스, 그리고 Tag is testing에 Read 액세스](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
+
+</div>
 
 <div id="security-policies">
   ## 보안 정책
@@ -192,4 +228,8 @@ ClickStack에는 3개의 시스템 역할이 있습니다. 이러한 역할은 �
 
 **Generative AI**를 사용하면 Anthropic 또는 Amazon Bedrock으로 구동되는 LLM 기반 기능(예: 자연어 쿼리 생성)을 활성화하거나 비활성화할 수 있습니다. 비활성화하면 데이터가 AI 프로바이더로 전송되지 않습니다.
 
+<div className="ch-image-lg">
+
 ![보안 정책](/images/clickstack/rbac/security-policies.webp)
+
+</div>

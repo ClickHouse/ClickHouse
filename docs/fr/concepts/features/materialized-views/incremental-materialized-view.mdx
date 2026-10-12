@@ -19,7 +19,11 @@ La principale raison d&#39;utiliser des vues matérialisées est que les résult
 
 Dans ClickHouse, les vues matérialisées sont mises à jour en temps réel à mesure que les données alimentent la table sur laquelle elles reposent, et fonctionnent davantage comme des index mis à jour en continu. Cela contraste avec d&#39;autres bases de données, où les vues matérialisées sont généralement des instantanés statiques d&#39;une requête qui doivent être actualisés (comme les [vues matérialisées actualisables](/fr/reference/statements/create/view#refreshable-materialized-view) dans ClickHouse).
 
+<div className="ch-image-md">
+
 ![Schéma d’une vue matérialisée](/images/materialized-view/materialized-view-diagram.webp)
+
+</div>
 
 <div id="example">
   ## Exemple

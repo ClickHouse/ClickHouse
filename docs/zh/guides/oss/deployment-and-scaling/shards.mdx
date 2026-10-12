@@ -18,13 +18,21 @@ doc_type: 'guide'
 
 在传统的 [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) ClickHouse 集群中，当 ① 数据量大到单台服务器无法承载，或 ② 单台服务器处理数据的速度过慢时，就会使用分片。下图展示了情况 ①，即 [uk&#95;price&#95;paid&#95;simple](/zh/concepts/core-concepts/parts) 表超出了单台机器的容量：
 
+<div className="ch-image-lg">
+
 ![分片](/images/managing-data/core-concepts/shards_01.webp)
+
+</div>
 
 <br />
 
 在这种情况下，可以将数据以表分片的形式分散到多台 ClickHouse 服务器上：
 
+<div className="ch-image-lg">
+
 ![分片](/images/managing-data/core-concepts/shards_02.webp)
+
+</div>
 
 <br />
 
@@ -57,7 +65,11 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 下图说明了在 ClickHouse 中，向分布式表执行 INSERT 时的处理流程：
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_03.webp)
+
+</div>
 
 <br />
 
@@ -73,7 +85,11 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 此图展示了在 ClickHouse 中使用分布式表时，SELECT 查询的处理方式：
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_04.webp)
+
+</div>
 
 <br />
 
@@ -93,7 +109,11 @@ ClickHouse 中的复制通过在多台服务器上维护**分片数据的副本*
 
 下图展示了一个由六台服务器组成的 ClickHouse 集群，其中前面介绍的两个表分片 `Shard-1` 和 `Shard-2` 各自都有三个副本。一个查询被发送到该集群：
 
+<div className="ch-image-lg">
+
 ![SHARDS](/images/managing-data/core-concepts/shards_replicas_01.webp)
+
+</div>
 
 <br />
 

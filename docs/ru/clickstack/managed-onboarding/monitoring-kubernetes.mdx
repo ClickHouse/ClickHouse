@@ -300,15 +300,27 @@ hide_advert: true
   <Step title="Проверьте в интерфейсе ClickStack" id="confirm-in-ui">
     Откройте свой сервис в [консоли ClickHouse Cloud](https://console.clickhouse.cloud) и выберите **ClickStack** в левом меню.
 
+    <div className="ch-image-lg">
+
     ![Запуск ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+    </div>
 
     В представлении **Search** переключите источник на `Logs` и установите временной диапазон **Последние 15 минут**. Журналы контейнеров со всего кластера должны появиться в течение нескольких секунд с такими атрибутами, как `k8s.namespace.name`, `k8s.pod.name` и `k8s.node.name`.
 
+    <div className="ch-image-lg">
+
     ![Представление ClickStack Search с журналами Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+
+    </div>
 
     Чтобы увидеть метрики и события инфраструктуры в контексте, откройте встроенную панель мониторинга **Kubernetes**, перейдя в **Dashboards** -&gt; **Kubernetes**. Данные должны появиться на всех вкладках: `Pods`, `Nodes` и `Namespaces`.
 
+    <div className="ch-image-lg">
+
     ![Панель мониторинга Kubernetes в ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+
+    </div>
 
     Если ничего не отображается:
 

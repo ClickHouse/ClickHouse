@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
 このガイドでは、Postgres のネイティブな論理レプリケーションを使用して PostgreSQL データベースを ClickHouse Managed Postgres に移行する方法を、手順を追って説明します。
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.logical-replication-beta" />
@@ -49,7 +50,11 @@ dig +short <your-managed-postgres-hostname>
 
 ソースデータベースが次のように設定されていることを確認してください。
 
+<div className="ch-image-md">
+
 ![ソース PostgreSQL レプリケーション設定](/images/managed-postgres/logical_replication/source-setup.webp)
+
+</div>
 
 <div id="migration-logical-replication-schema-dump">
   ## ソースデータベースのスキーマのみをダンプする
@@ -74,7 +79,11 @@ pg_dump \
 
 この例では、`events` と `users` の 2 つのテーブルがあります。`events` には 100 万行、`users` には 1,000 行あります。
 
+<div className="ch-image-lg">
+
 ![ソース PostgreSQL テーブルのセットアップ](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</div>
 
 <div id="migration-pgdump-pg-restore-create-pg">
   ### ClickHouse Managed Postgres インスタンスを作成する
@@ -82,7 +91,11 @@ pg_dump \
 
 まず、ClickHouse Managed Postgres インスタンスが用意されていることを確認してください。可能であれば、ソースと同じリージョンに配置することをおすすめします。手順については、[こちら](/ja/products/managed-postgres/quickstart#create-postgres-database)のクイックガイドを参照してください。このガイドでは、次の構成を作成します。
 
+<div className="ch-image-md">
+
 ![ClickHouse Managed Postgres インスタンスを作成](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</div>
 
 <div id="migration-logical-replication-restore-schema">
   ## スキーマを ClickHouse Managed Postgres に復元する
@@ -105,7 +118,11 @@ pg_restore \
 
 この例では、このコマンドを実行すると 2 つのテーブルが作成され、どちらも空の状態になります:
 
+<div className="ch-image-lg">
+
 ![移行先 ClickHouse Managed Postgres の初期セットアップ](/images/managed-postgres/logical_replication/target-initial-setup.webp)
+
+</div>
 
 <div id="migration-logical-replication-setup-replication">
   ## 論理レプリケーションを設定する
@@ -143,7 +160,11 @@ PUBLICATION <pub_name_you_entered_above>;
 
 この例では、subscriptionの設定後、データが流入しました。
 
+<div className="ch-image-lg">
+
 ![論理レプリケーション後の移行結果](/images/managed-postgres/logical_replication/migration-result.webp)
+
+</div>
 
 以降、ソースデータベースに新たに挿入された行は、ほぼリアルタイムで移行先の ClickHouse Managed Postgres データベースにレプリケートされます。
 

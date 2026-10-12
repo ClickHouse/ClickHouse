@@ -345,7 +345,11 @@ Also worth checking:
 ### Can I have the ClickPipe create a replication slot with failover enabled? {#failover-slot}
 Yes, for a Postgres ClickPipe with replication mode as CDC or Snapshot + CDC, you can have ClickPipes create a replication slot with failover enabled, by toggling the below switch in the `Advanced Settings` section while creating the ClickPipe. Note that your Postgres version must be 17 or above to use this feature.
 
+<div className="ch-image-md">
+
 ![](/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp)
+
+</div>
 
 If the source is configured accordingly, the slot is preserved after failovers to a Postgres read replica, ensuring continuous data replication. Learn more [here](https://www.postgresql.org/docs/current/logical-replication-failover.html).
 

@@ -59,7 +59,11 @@ Distributed 环境中特别重要，因为协调节点会接收来自各个分�
 在这种情况下，如果右侧和左侧数据都放不进内存，就会在磁盘上对两侧进行排序，
 从而支持大表连接。
 
+<div className="ch-image-md">
+
 ![连接算法](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
+
+</div>
 
 自 20.3 起，ClickHouse 已支持将 `join_algorithm` 设置为 auto。
 这表示 ClickHouse 会采用自适应连接策略：优先使用 hash-join

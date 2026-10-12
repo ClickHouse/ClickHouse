@@ -39,7 +39,11 @@ From [Facebook benchmarks](https://facebook.github.io/zstd/#benchmarks):
 | mode            | byte    | Compression mode                                 |
 | compressed_data | binary  | Block of compressed data                         |
 
+<div className="ch-image-md">
+
 ![Diagram illustrating ClickHouse compression block structure](/images/data-compression/ch_compression_block.webp)
+
+</div>
 
 Header is (raw_size + data_size + mode), raw size consists of len(header + compressed_data).
 

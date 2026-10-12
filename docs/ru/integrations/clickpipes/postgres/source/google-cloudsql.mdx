@@ -28,13 +28,25 @@ Postgres 12 и новее
 
 1. Нажмите кнопку **Edit** на странице Overview.
 
+<div className="ch-image-lg">
+
 ![Кнопка Edit в Cloud SQL Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
+
+</div>
 
 2. Перейдите в раздел Flags и установите `cloudsql.logical_decoding` в значение on. Для применения этого изменения потребуется перезапустить сервер Postgres.
 
+<div className="ch-image-lg">
+
 ![Установите cloudsql.logical_decoding в значение on](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Перезапуск сервера](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## Создание пользователя ClickPipes и предоставление разрешений
@@ -96,17 +108,33 @@ Postgres 12 и новее
 
 1. Перейдите в раздел **Connections**
 
+<div className="ch-image-lg">
+
 ![Раздел Connections в Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
+
+</div>
 
 2. Перейдите в подраздел Networking
 
+<div className="ch-image-lg">
+
 ![Подраздел Networking в Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
+
+</div>
 
 3. Добавьте [публичные IP-адреса ClickPipes](/ru/integrations/clickpipes/networking/static-ips)
 
+<div className="ch-image-lg">
+
 ![Добавление сетей ClickPipes в брандмауэр](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Сети ClickPipes добавлены в брандмауэр](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
+
+</div>
 
 <div id="whats-next">
   ## Что дальше?

@@ -27,15 +27,27 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 
 Скачайте ClickHouse Cloud Audit Add-on for Splunk с [Splunkbase](https://splunkbase.splunk.com/app/7709).
 
+<div className="ch-image-lg">
+
 ![Сайт Splunkbase со страницей загрузки ClickHouse Cloud Audit Add-on for Splunk](/images/integrations/tools/data-integration/splunk/splunk_001.webp)
+
+</div>
 
 В Splunk Enterprise перейдите в Apps -&gt; Manage. Затем нажмите Install app from file.
 
+<div className="ch-image-lg">
+
 ![Интерфейс Splunk Enterprise со страницей управления Apps и опцией Install app from file](/images/integrations/tools/data-integration/splunk/splunk_002.webp)
+
+</div>
 
 Выберите скачанный с Splunkbase архивный файл и нажмите Upload.
 
+<div className="ch-image-lg">
+
 ![Диалог установки приложения Splunk для загрузки дополнения ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_003.webp)
+
+</div>
 
 Если всё прошло успешно, вы увидите установленное приложение ClickHouse журнала аудита. Если нет, проверьте журналы Splunkd на наличие ошибок.
 
@@ -56,19 +68,35 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 
 Перейдите в Organization -&gt; Organization details. Там вы сможете скопировать идентификатор организации.
 
+<div className="ch-image-lg">
+
 ![Консоль ClickHouse Cloud со страницей Organization details, на которой показан идентификатор организации](/images/integrations/tools/data-integration/splunk/splunk_004.webp)
+
+</div>
 
 Затем в левом меню перейдите в раздел API Keys.
 
+<div className="ch-image-lg">
+
 ![Консоль ClickHouse Cloud с разделом API Keys в левом навигационном меню](/images/integrations/tools/data-integration/splunk/splunk_005.webp)
+
+</div>
 
 Создайте ключ API, задайте ему понятное имя и выберите привилегии `Admin`. Нажмите Generate API Key.
 
+<div className="ch-image-lg">
+
 ![Консоль ClickHouse Cloud с интерфейсом создания ключа API и выбранными привилегиями Admin](/images/integrations/tools/data-integration/splunk/splunk_006.webp)
+
+</div>
 
 Сохраните ключ API и секрет в надежном месте.
 
+<div className="ch-image-lg">
+
 ![Консоль ClickHouse Cloud с созданными ключом API и секретом, которые нужно сохранить](/images/integrations/tools/data-integration/splunk/splunk_007.webp)
+
+</div>
 
 <div id="configure-data-input-in-splunk">
   ## Настройка ввода данных в Splunk
@@ -76,19 +104,35 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 
 Снова перейдите в Splunk и откройте Settings -&gt; Data inputs.
 
+<div className="ch-image-lg">
+
 ![Интерфейс Splunk с меню Settings и пунктом Data inputs](/images/integrations/tools/data-integration/splunk/splunk_008.webp)
+
+</div>
 
 Выберите ввод данных ClickHouse Cloud Audit Logs.
 
+<div className="ch-image-lg">
+
 ![Страница Splunk Data inputs с опцией ClickHouse Cloud Audit Logs](/images/integrations/tools/data-integration/splunk/splunk_009.webp)
+
+</div>
 
 Нажмите &quot;New&quot;, чтобы настроить новый экземпляр ввода данных.
 
+<div className="ch-image-lg">
+
 ![Интерфейс Splunk для настройки нового ввода данных ClickHouse Cloud Audit Logs](/images/integrations/tools/data-integration/splunk/splunk_010.webp)
+
+</div>
 
 После ввода всей информации нажмите Next.
 
+<div className="ch-image-lg">
+
 ![Страница настройки Splunk с заполненными параметрами ввода данных ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_011.webp)
+
+</div>
 
 Ввод данных настроен, теперь можно просматривать журналы аудита.
 
@@ -98,4 +142,8 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 
 Модульный ввод сохраняет данные в Splunk. Чтобы просмотреть данные, вы можете использовать стандартное представление поиска в Splunk.
 
+<div className="ch-image-lg">
+
 ![Интерфейс поиска Splunk с данными журналов аудита ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_012.webp)
+
+</div>

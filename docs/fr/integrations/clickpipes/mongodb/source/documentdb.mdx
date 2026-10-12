@@ -25,17 +25,33 @@ Par défaut, Amazon DocumentDB conserve les journaux du flux de changements pend
 
 1. Cliquez sur `Parameter groups` dans le panneau de gauche, puis repérez le groupe de paramètres utilisé par votre cluster DocumentDB (si vous utilisez le groupe de paramètres `default`, vous devrez d’abord en créer un nouveau pour pouvoir le modifier).
 
+<div className="ch-image-lg">
+
 ![Sélectionner le groupe de paramètres](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp)
+
+</div>
 
 2. Recherchez `change_stream_log_retention_duration`, sélectionnez-le et remplacez sa valeur par `259200` (72 heures)
 
+<div className="ch-image-lg">
+
 ![Modifier le groupe de paramètres](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp)
+
+</div>
 
 3. Cliquez sur `Apply Changes` pour appliquer immédiatement le groupe de paramètres modifié à votre cluster DocumentDB. Vous devriez voir le statut du groupe de paramètres passer à `applying`, puis à `in-sync` une fois la modification appliquée.
 
+<div className="ch-image-lg">
+
 ![Appliquer le groupe de paramètres](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Statut du groupe de paramètres](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp)
+
+</div>
 
 <div id="update-change-stream-log-retention-via-aws-cli">
   ### Mettre à jour la rétention des journaux du flux de changements via l’AWS CLI

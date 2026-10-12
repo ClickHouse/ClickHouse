@@ -8,13 +8,18 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
 ClickHouse Managed Postgres のインスタンスにはすべて、任意の ClickHouse service への CDC (変更データキャプチャ) 機能が標準で備わっています。これにより、Postgres インスタンス上のデータの一部またはすべてを ClickHouse に移行し、Postgres 側でのデータ変更を継続的かつほぼリアルタイムに ClickHouse へ反映できます。この機能は内部的に [ClickPipes](/ja/integrations/clickpipes/home) によって実現されています。
 
 利用するには、Postgres インスタンスのサイドバーにある **Sync to ClickHouse** をクリックします。
 
+<div className="ch-image-md">
+
 ![サイドバーに連携オプションを表示する ClickHouse 連携のランディングページ](/images/managed-postgres/clickhouse-integration-intro.webp)
+
+</div>
 
 <Note>
   次に進む前に、Postgres service に ClickPipes サービスからアクセスできることを確認してください。デフォルトではアクセス可能ですが、IP アクセスを制限している場合は、**ClickHouse service** が配置されているリージョンに応じて、[こちら](/ja/integrations/clickpipes/networking/static-ips)のリストに記載されたソース IP からのアクセスを許可する必要があります。
@@ -34,7 +39,11 @@ ClickHouse Managed Postgres のインスタンスにはすべて、任意の Cli
       * **初期ロード only**: 既存データの snapshot を一度だけ取得し、以降の更新は行いません
       * **CDC (変更データキャプチャ)  only**: 初回 snapshot をスキップし、以降の新しい変更のみをキャプチャします
 
+    <div className="ch-image-md">
+
     ![インテグレーション名、宛先サービス、レプリケーション方式のオプションを示すレプリケーションサービスの構成画面](/images/managed-postgres/replication-service-step.webp)
+
+    </div>
 
     **Next** をクリックして次に進みます。
   </Step>
@@ -48,7 +57,11 @@ ClickHouse Managed Postgres のインスタンスにはすべて、任意の Cli
     * **Snapshot number of rows per partition**: 初回 snapshot 時のパーティションあたりの行数 (デフォルト: 100000)
     * **Snapshot number of tables in parallel**: 同時に snapshot を取得するテーブル数 (デフォルト: 1)
 
+    <div className="ch-image-md">
+
     ![同期間隔、並列スレッド数、Pull バッチサイズ、snapshot 構成オプションを示すレプリケーション設定のステップ](/images/managed-postgres/integration-replication-settings.webp)
+
+    </div>
 
     **Next** をクリックして次に進みます。
   </Step>
@@ -63,7 +76,11 @@ ClickHouse Managed Postgres のインスタンスにはすべて、任意の Cli
 
     スキーマを展開し、レプリケーションするテーブルを個別に選択します。宛先テーブル名やカラム設定をカスタマイズすることもできます。
 
+    <div className="ch-image-md">
+
     ![データベースの選択、レプリケーションオプション、スキーマごとにグループ化されたテーブル選択画面を示すテーブル選択のステップ](/images/managed-postgres/select-tables-step.webp)
+
+    </div>
 
     **Replicate data to ClickHouse** をクリックしてレプリケーションを開始します。
   </Step>
@@ -71,7 +88,11 @@ ClickHouse Managed Postgres のインスタンスにはすべて、任意の Cli
   <Step title="ClickPipe の監視" id="monitor-clickpipe">
     ClickPipe が開始されると、同じメニューに一覧表示されます。全データの初回 snapshot には、テーブルのサイズに応じて時間がかかる場合があります。
 
+    <div className="ch-image-md">
+
     ![実行中の ClickPipe と、その宛先サービスおよびステータスを示す ClickHouse 連携一覧](/images/managed-postgres/integration-running.webp)
+
+    </div>
 
     インテグレーション名をクリックすると、詳細なステータスの確認、進捗の監視、エラーの表示、ClickPipe の管理を行えます。ClickPipe が取り得るさまざまな状態については、[Postgres ClickPipe のライフサイクル](/ja/integrations/clickpipes/postgres/lifecycle)を参照してください。
   </Step>

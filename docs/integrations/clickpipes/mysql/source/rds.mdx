@@ -23,7 +23,11 @@ The binary log is a set of log files that contain information about data modific
 
 The automated backups feature determines whether binary logging is turned on or off for MySQL. Automated backups can be configured for your instance in the RDS Console by navigating to **Modify** > **Additional configuration** > **Backup** and selecting the **Enable automated backups** checkbox (if not selected already).
 
+<div className="ch-image-lg">
+
 ![Enabling automated backups in RDS](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+
+</div>
 
 We recommend setting the **Backup retention period** to a reasonably long value, depending on the replication use case.
 
@@ -55,26 +59,46 @@ The parameter group can be found when you click on your MySQL instance in the RD
 If you have a MySQL cluster, the parameters below can be found in the [DB cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) parameter group instead of the DB instance group.
 </Tip>
 
+<div className="ch-image-lg">
+
 ![Where to find parameter group in RDS](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
+
+</div>
 
 <br/>
 Click the parameter group link, which will take you to its dedicated page. You should see an **Edit** button in the top right.
 
+<div className="ch-image-lg">
+
 ![Edit parameter group](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</div>
 
 The following parameters need to be set as follows:
 
 1. `binlog_format` to `ROW`.
 
+<div className="ch-image-lg">
+
 ![Binlog format to ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</div>
 
 2. `binlog_row_metadata` to `FULL`
 
+<div className="ch-image-lg">
+
 ![Binlog row metadata to FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</div>
 
 3. `binlog_row_image` to `FULL`
 
+<div className="ch-image-lg">
+
 ![Binlog row image to FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</div>
 
 <br/>
 Then, click on **Save Changes** in the top right corner. You may need to reboot your instance for the changes to take effect — a way of knowing this is if you see `Pending reboot` next to the parameter group link in the **Configuration** tab of the RDS instance.
@@ -98,7 +122,11 @@ GTID-based replication is supported for Amazon RDS for MySQL versions 5.7, 8.0 a
 7. Click on **Save Changes** in the top right corner.
 8. Reboot your instance for the changes to take effect.
 
+<div className="ch-image-lg">
+
 ![GTID enabled](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
+
+</div>
 
 <br/>
 <Tip>
@@ -138,9 +166,17 @@ Connect to your RDS MySQL instance as an admin user and execute the following co
 
 To restrict traffic to your Aurora MySQL instance, add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the **Inbound rules** of your RDS security group.
 
+<div className="ch-image-lg">
+
 ![Where to find security group in RDS MySQL?](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Edit inbound rules for the above security group](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 ### Private access via AWS PrivateLink {#private-access-via-aws-privatelink}
 

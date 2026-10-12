@@ -28,13 +28,25 @@ Postgres 12 o posterior
 
 1. Haz clic en el botón **Edit** de la página Overview.
 
+<div className="ch-image-lg">
+
 ![Botón Edit en Cloud SQL Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
+
+</div>
 
 2. Ve a Flags y cambia `cloudsql.logical_decoding` a on. Este cambio requerirá reiniciar el servidor de Postgres.
 
+<div className="ch-image-lg">
+
 ![Cambiar cloudsql.logical_decoding a on](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Reiniciar servidor](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## Crear un usuario de ClickPipes y conceder permisos
@@ -96,17 +108,33 @@ Sigue estos pasos para añadir las IP de ClickPipes a la red.
 
 1. Ve a la sección **Conexiones**
 
+<div className="ch-image-lg">
+
 ![Sección Conexiones en Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
+
+</div>
 
 2. Ve a la subsección Redes
 
+<div className="ch-image-lg">
+
 ![Subsección Redes en Cloud SQL](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
+
+</div>
 
 3. Añade las [IP públicas de ClickPipes](/es/integrations/clickpipes/networking/static-ips)
 
+<div className="ch-image-lg">
+
 ![Añadir redes de ClickPipes al firewall](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Redes de ClickPipes añadidas al firewall](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
+
+</div>
 
 <div id="whats-next">
   ## ¿Qué sigue?

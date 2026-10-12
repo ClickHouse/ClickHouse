@@ -115,7 +115,11 @@ ClickStack UI에서는 각 관측성 데이터 타입/축에 대해 사용자가
 
 이 구성은 애플리케이션의 `Team Settings -> Sources`에서 수행할 수 있으며, 아래는 로그에 대한 예시입니다:
 
+<div className="ch-image-md">
+
 ![HyperDX 소스 구성](/images/use-cases/observability/hyperdx-25.webp)
+
+</div>
 
 각 소스를 생성할 때는 최소 1개의 테이블을 지정해야 하며, HyperDX가 데이터를 쿼리할 수 있도록 컬럼 집합도 함께 지정해야 합니다.
 
@@ -294,15 +298,27 @@ Materialized view를 Log 및 Trace 데이터 소스에 등록하면, 조건에 �
 
 예를 들어, 이 trace 소스는 강조 속성과 강조 트레이스 속성으로 구성되어 있습니다.
 
+<div className="ch-image-md">
+
 ![강조 속성 구성](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
+
+</div>
 
 이러한 속성은 로그 또는 스팬을 클릭한 뒤 사이드 패널에 표시됩니다.
 
+<div className="ch-image-md">
+
 ![강조 속성](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
+
+</div>
 
 속성을 클릭하면 해당 속성을 검색 값으로 사용하는 옵션이 표시됩니다. 속성 구성에 선택적 Lucene 표현식이 제공된 경우, 검색에는 SQL 표현식 대신 Lucene 표현식이 사용됩니다.
 
+<div className="ch-image-md">
+
 ![강조 속성 검색](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
+
+</div>
 
 <div id="correlated-sources">
   ### 상관관계 소스
@@ -319,7 +335,11 @@ ClickStack에서 소스 간 전체 상호 연관을 사용하려면 로그, 트�
 
 예를 들어, 아래는 상관관계 소스로 구성된 로그 소스입니다:
 
+<div className="ch-image-md">
+
 ![상관관계 소스가 구성된 HyperDX 소스](/images/use-cases/observability/hyperdx-26.webp)
+
+</div>
 
 <div id="application-configuration-settings">
   ### 애플리케이션 구성 설정

@@ -199,7 +199,11 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Создайте пользователя, указав имя пользователя и пароль, которые соответствуют требованиям сложности.
 
+    <div className="ch-image-lg">
+
     ![Интерфейс HyperDX](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
   </Step>
 
   <Step title="Получение ключа API для приёма данных" id="retrieve-ingestion-api-key">
@@ -207,7 +211,11 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Перейдите в [`Team Settings`](http://localhost:8080/team) и скопируйте `Ingestion API Key` из раздела `API Keys`. Этот ключ API обеспечивает безопасную ингестию данных через OpenTelemetry Collector.
 
+    <div className="ch-image-lg">
+
     ![Копирование ключа API](/images/use-cases/observability/copy_api_key.webp)
+
+    </div>
   </Step>
 
   <Step title="Создание секрета Kubernetes с ключом API" id="create-api-key-kubernetes-secret">
@@ -231,7 +239,11 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Данные трассировок и логов из демо-сервисов теперь должны начать поступать в HyperDX.
 
+    <div className="ch-image-lg">
+
     ![Данные HyperDX в Kubernetes](/images/use-cases/observability/hyperdx-kubernetes-data.webp)
+
+    </div>
   </Step>
 
   <Step title="Добавьте Helm-репозиторий OpenTelemetry" id="add-otel-helm-repo">
@@ -482,4 +494,8 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
   </Step>
 </Steps>
 
+<div className="ch-image-lg">
+
 ![ClickHouse в Kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</div>

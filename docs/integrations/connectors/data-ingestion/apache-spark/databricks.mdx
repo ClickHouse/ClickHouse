@@ -45,9 +45,17 @@ However, if you disable Unity Catalog by creating a cluster with **No isolation 
    - Select **DBFS** or **Workspace** → Navigate to the uploaded JAR file
    - Click **Install**
 
+<div className="ch-image-lg">
+
 ![Databricks Libraries tab](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Installing library from workspace volume](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
+
+</div>
 
 4. Restart the cluster to load the library
 
@@ -78,7 +86,11 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
+<div className="ch-image-lg">
+
 ![Databricks Maven libraries configuration](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
+
+</div>
 
 3. Click **Install** and restart the cluster to load the library
 

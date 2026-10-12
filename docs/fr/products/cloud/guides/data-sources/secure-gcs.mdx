@@ -43,11 +43,19 @@ Pour suivre ce guide, vous aurez besoin de :
   <Step title="Créer un compte de service Google Cloud" id="create-gcs-account">
     1. Dans Google Cloud Console, accédez à IAM &amp; Admin → Service Accounts
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp)
+
+    </div>
 
     2. Dans le menu de gauche, cliquez sur `Service accounts`, puis sur `Create service account` :
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/create_service_account.webp)
+
+    </div>
 
     Saisissez un nom et une description pour votre compte de service, par exemple :
 
@@ -58,11 +66,19 @@ Pour suivre ce guide, vous aurez besoin de :
 
     Cliquez sur `Create and continue`
 
+    <div className="ch-image-sm">
+
     ![](/images/cloud/guides/accessing-data/GCS/create_and_continue.webp)
+
+    </div>
 
     Attribuez au compte de service le rôle `Storage Object User` :
 
+    <div className="ch-image-sm">
+
     ![](/images/cloud/guides/accessing-data/GCS/storage_object_user.webp)
+
+    </div>
 
     Ce rôle accorde un accès en lecture et en écriture aux objets GCS
 
@@ -75,7 +91,11 @@ Pour suivre ce guide, vous aurez besoin de :
 
     Notez l’adresse e-mail du compte de service :
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp)
+
+    </div>
   </Step>
 
   <Step title="Accorder au compte de service l’accès au bucket" id="grant-bucket-access-to-service-account">
@@ -114,19 +134,31 @@ Pour suivre ce guide, vous aurez besoin de :
   <Step title="Générer des clés HMAC pour le compte de service" id="generate-hmac-keys-for-service-account">
     Accédez à `Cloud Storage` → `Settings` → `Interoperability` :
 
+    <div className="ch-image-sm">
+
     ![](/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp)
+
+    </div>
 
     Si vous ne voyez pas de section &quot;Access keys&quot;, cliquez sur `Enable interoperability access`
 
     Sous &quot;Access keys for service accounts&quot;, cliquez sur `Create a key for a service account` :
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp)
+
+    </div>
 
     Sélectionnez le compte de service que vous avez créé précédemment (par exemple, clickhouse-gcs-access@your-project.iam.gserviceaccount.com)
 
     Cliquez sur `Create key` :
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/create_a_key.webp)
+
+    </div>
 
     La clé HMAC s&#39;affichera.
     Enregistrez immédiatement l&#39;Access Key et le Secret : vous ne pourrez plus afficher le secret ensuite.
@@ -182,7 +214,11 @@ Pour suivre ce guide, vous aurez besoin de :
     1. Sélectionnez `Credentials` dans `Authentication method` lors de la configuration du ClickPipe
     2. Renseignez les identifiants HMAC obtenus aux étapes précédentes
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp)
+
+    </div>
 
     <Note>
       L&#39;authentification par service account n&#39;est actuellement pas prise en charge : vous devez utiliser des clés HMAC

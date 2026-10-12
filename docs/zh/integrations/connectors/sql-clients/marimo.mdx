@@ -16,7 +16,11 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
 
 [marimo](https://marimo.io/) 是一款开源的 Python 响应式笔记本，内置 SQL。运行某个单元格或与某个 UI 元素交互时，marimo 会自动运行受影响的单元格 (或将其标记为已过时) ，从而保持代码与输出一致，并在 bug 发生前防患于未然。每个 marimo 笔记本都以纯 Python 格式存储，可作为脚本执行，也可部署为应用。
 
+<div className="ch-image-md">
+
 ![连接到 ClickHouse](/images/integrations/sql-clients/marimo/clickhouse-connect.webp)
+
+</div>
 
 <Steps>
   <Step title="安装带 SQL 支持的 marimo" id="install-marimo-sql">
@@ -31,21 +35,37 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
   <Step title="连接到 ClickHouse。" id="connect-to-clickhouse">
     前往 marimo 编辑器左侧的数据源面板，然后点击“Add database”。
 
+    <div className="ch-image-sm">
+
     ![添加新数据库](/images/integrations/sql-clients/marimo/panel-arrow.webp)
+
+    </div>
 
     系统会提示你填写数据库详细信息。
 
+    <div className="ch-image-md">
+
     ![填写数据库详细信息](/images/integrations/sql-clients/marimo/add-db-details.webp)
+
+    </div>
 
     随后，你会看到一个可运行的单元格，用于建立连接。
 
+    <div className="ch-image-md">
+
     ![运行该单元格以连接到 ClickHouse](/images/integrations/sql-clients/marimo/run-cell.webp)
+
+    </div>
   </Step>
 
   <Step title="运行 SQL" id="run-sql">
     设置好连接后，您可以新建一个 SQL 单元格，并选择 ClickHouse 引擎。
 
+    <div className="ch-image-md">
+
     ![选择 SQL 引擎](/images/integrations/sql-clients/marimo/choose-sql-engine.webp)
+
+    </div>
 
     本指南将使用 New York Taxi 数据集。
 
@@ -103,16 +123,28 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
     SELECT * FROM trips LIMIT 1000;
     ```
 
+    <div className="ch-image-lg">
+
     ![DataFrame 中的结果](/images/integrations/sql-clients/marimo/results.webp)
+
+    </div>
 
     现在，你已经可以在 DataFrame 中查看结果了。接下来，我想将某个给定上车地点对应的最高费用下车点可视化。marimo 提供了多个 UI 组件来帮助你实现这一点。我会使用下拉菜单选择地点，并用 Altair 绘制图表。
 
+    <div className="ch-image-lg">
+
     ![下拉菜单、表和图表的组合](/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp)
+
+    </div>
 
     marimo 的响应式执行模型也扩展到了 SQL 查询中，因此你对 SQL 的更改会自动触发依赖单元的后续计算 (对于开销较大的计算，也可以选择仅将单元标记为已过时) 。因此，查询一更新，图表和表也会随之变化。
 
     你还可以切换到 App View，以获得一个更简洁的数据探索界面。
 
+    <div className="ch-image-md">
+
     ![运行 App View](/images/integrations/sql-clients/marimo/run-app-view.webp)
+
+    </div>
   </Step>
 </Steps>

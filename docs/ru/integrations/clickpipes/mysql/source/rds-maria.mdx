@@ -30,7 +30,11 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
   <Step title="Включите binary logging через автоматическое резервное копирование" id="enable-binlog-logging-rds">
     Функция автоматического резервного копирования определяет, включено ли binary logging для MySQL. Это можно настроить в консоли AWS:
 
+    <div className="ch-image-lg">
+
     ![Включение автоматического резервного копирования в RDS](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+
+    </div>
 
     Рекомендуется установить срок хранения резервных копий на достаточно длительный период в зависимости от сценария репликации.
   </Step>
@@ -52,25 +56,45 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
 
 Группу параметров можно найти, если нажать на свой экземпляр MariaDB в RDS Console, а затем перейти на вкладку `Configurations`.
 
+<div className="ch-image-lg">
+
 ![Где найти группу параметров в RDS](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
+
+</div>
 
 После нажатия на ссылку группы параметров вы перейдёте на страницу этой группы. В правом верхнем углу будет кнопка Edit:
 
+<div className="ch-image-lg">
+
 ![Редактирование группы параметров](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</div>
 
 Параметры `binlog_format`, `binlog_row_metadata` и `binlog_row_image` должны быть заданы следующим образом:
 
 1. `binlog_format` — `ROW`.
 
+<div className="ch-image-lg">
+
 ![Формат binlog: ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</div>
 
 2. `binlog_row_metadata` — `FULL`
 
+<div className="ch-image-lg">
+
 ![Метаданные строк binlog: FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</div>
 
 3. `binlog_row_image` — `FULL`
 
+<div className="ch-image-lg">
+
 ![Образ строки binlog: FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</div>
 
 Затем нажмите `Save Changes` в правом верхнем углу. Чтобы изменения вступили в силу, может потребоваться перезагрузить экземпляр. Если рядом со ссылкой на группу параметров на вкладке `Configurations` экземпляра RDS отображается `Pending reboot`, это означает, что экземпляр, скорее всего, нужно перезагрузить.
 
@@ -131,9 +155,17 @@ import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.m
 
 Если вы хотите ограничить трафик к своему экземпляру RDS, добавьте [указанные в документации статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в `Inbound rules` группы безопасности RDS.
 
+<div className="ch-image-lg">
+
 ![Где найти группу безопасности в RDS?](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Изменение inbound rules для указанной выше группы безопасности](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### Доступ через частную сеть с помощью AWS PrivateLink

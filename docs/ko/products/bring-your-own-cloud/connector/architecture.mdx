@@ -7,6 +7,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 ## 구성 요소 {#components}
@@ -19,7 +20,11 @@ ClickHouse Connector는 세 개의 데몬을 실행하며, 모두 `clicklink` �
 
 Kubernetes에서는 `clicklink-connector` Helm 차트가 사용자가 선택한 네임스페이스(기본값 `clicklink`)에 데몬을 배포합니다. 실행기는 단일 레플리카 배포로, 명령 상태를 영구 볼륨에 보관합니다. Linux VM에서는 데몬이 권한 없는 `clicklink` 시스템 사용자 권한으로 `clicklink-scraper`, `clicklink-troubleshooter`, `clicklink-executor` systemd unit으로 실행됩니다.
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector architecture](/images/cloud/reference/byoc-connector-architecture.svg)
+
+</div>
 
 ## 연결 {#connections}
 
@@ -55,7 +60,11 @@ Kubernetes에서는 `clicklink-connector` Helm 차트가 사용자가 선택한 
 
 ## 데이터 흐름 {#data-flow}
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector 데이터 흐름](/images/cloud/reference/byoc-connector-data-flow.svg)
+
+</div>
 
 ### 환경 외부로 전송되는 항목 {#what-leaves}
 

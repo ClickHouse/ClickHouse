@@ -16,7 +16,11 @@ doc_type: 'guide'
 
 تقلل هذه العملية الحاجة إلى عمليات ربط معقدة وقت الاستعلام، ويمكن أن تسرّع عمليات القراءة بشكل كبير، مما يجعلها مثالية للتطبيقات ذات متطلبات القراءة العالية والاستعلامات المعقدة. ومع ذلك، قد تزيد من تعقيد عمليات الكتابة والصيانة، إذ يجب تمرير أي تغييرات على البيانات المكررة إلى جميع المواضع التي تظهر فيها للحفاظ على الاتساق.
 
+<div className="ch-image-lg">
+
 ![إلغاء التطبيع في ClickHouse](/images/data-modeling/denormalization-diagram.webp)
+
+</div>
 
 <br />
 
@@ -145,7 +149,11 @@ LIMIT 5
 
 لننظر الآن إلى `Users` و`Badges`:
 
+<div className="ch-image-lg">
+
 ![مخطط Users وBadges](/images/data-modeling/denormalization-schema.webp)
+
+</div>
 
 <p />
 

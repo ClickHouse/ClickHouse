@@ -74,7 +74,11 @@ MergeTree(또는 복제된 테이블(Replicated Table))에 직접 삽입하고, 
 
 비동기 삽입을 사용하면 아래 다이어그램과 같이 데이터가 먼저 버퍼에 삽입된 다음, 이후 3단계에 걸쳐 데이터베이스 스토리지에 기록됩니다.
 
+<div className="ch-image-md">
+
 ![Postgres inserts](/images/guides/postgres-inserts.webp)
+
+</div>
 
 비동기 삽입이 활성화되면 ClickHouse는 다음을 수행합니다:
 

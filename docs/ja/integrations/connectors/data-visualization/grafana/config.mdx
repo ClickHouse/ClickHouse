@@ -24,7 +24,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 
 設定画面の例：
 
+<div className="ch-image-sm">
+
 ![セキュアなネイティブ設定の例](/images/integrations/data-visualization/grafana/config_common.webp)
+
+</div>
 
 共通設定の YAML 設定例：
 
@@ -56,7 +60,11 @@ secureJsonData:
 
 HTTP protocol で接続を選択すると、追加の設定項目が表示されます。
 
+<div className="ch-image-md">
+
 ![追加の HTTP 設定オプション](/images/integrations/data-visualization/grafana/config_http.webp)
+
+</div>
 
 <div id="http-path">
   #### HTTP パス
@@ -104,7 +112,11 @@ secureJsonData:
 
 これらの設定は任意です。
 
+<div className="ch-image-sm">
+
 ![追加設定の例](/images/integrations/data-visualization/grafana/config_additional.webp)
+
+</div>
 
 YAML の例:
 
@@ -139,7 +151,11 @@ OpenTelemetry を使用している場合は、&quot;**Use OTel**&quot; スイ�
 
 ログ設定画面の例:
 
+<div className="ch-image-sm">
+
 ![Logs config](/images/integrations/data-visualization/grafana/config_logs.webp)
+
+</div>
 
 ログ設定 YAML の例:
 
@@ -177,7 +193,11 @@ OpenTelemetry は必須ではありませんが、トレースにそのスキー
 
 トレース設定画面の例:
 
+<div className="ch-image-sm">
+
 ![トレース設定](/images/integrations/data-visualization/grafana/config_traces.webp)
+
+</div>
 
 トレース設定 YAML の例:
 
@@ -280,11 +300,19 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 次に、このテーブルを Grafana で使えるように設定できます。なお、名前は任意で、別のデータベースで定義することも可能です。
 
+<div className="ch-image-md">
+
 ![別名テーブル設定の例](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
+
+</div>
 
 これで Grafana では、`DESC example_table` の結果ではなく、別名テーブル の結果が表示されます。
 
+<div className="ch-image-md">
+
 ![別名テーブル選択の例](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
+
+</div>
 
 どちらのエイリアス方式も、複雑な型変換や JSON フィールドの抽出に利用できます。
 

@@ -12,6 +12,7 @@ integration:
 
 import MySQLCloudSetup from '/snippets/ar/_clickhouse_mysql_cloud_setup.mdx';
 import MySQLOnPremiseSetup from '/snippets/ar/_clickhouse_mysql_on_premise_setup.mdx';
+
 يمكن لـ Tableau Online الاتصال بـ ClickHouse Cloud أو ببيئة ClickHouse المحلية عبر واجهة MySQL باستخدام مصدر بيانات MySQL الرسمي.
 
 <div id="clickhouse-cloud-setup">
@@ -32,25 +33,41 @@ import MySQLOnPremiseSetup from '/snippets/ar/_clickhouse_mysql_on_premise_setup
 
 سجّل الدخول إلى موقع Tableau Cloud الخاص بك وأضف مصدر بيانات منشورًا جديدًا.
 
+<div className="ch-image-md">
+
 ![واجهة Tableau Online تعرض زر 'New' لإنشاء مصدر بيانات منشور](/images/integrations/data-visualization/tableau_online_01.webp)
+
+</div>
 
 <br />
 
 حدّد &quot;MySQL&quot; من قائمة الموصلات المتاحة.
 
+<div className="ch-image-md">
+
 ![شاشة اختيار الموصلات في Tableau Online مع تمييز خيار MySQL](/images/integrations/data-visualization/tableau_online_02.webp)
+
+</div>
 
 <br />
 
 أدخِل تفاصيل الاتصال التي جمعتها أثناء إعداد ClickHouse.
 
+<div className="ch-image-md">
+
 ![شاشة إعداد اتصال MySQL في Tableau Online مع حقول الخادم والمنفذ وقاعدة البيانات وبيانات الاعتماد](/images/integrations/data-visualization/tableau_online_03.webp)
+
+</div>
 
 <br />
 
 سيقوم Tableau Online بفحص قاعدة البيانات وعرض قائمة بالجداول المتاحة. اسحب الجدول المطلوب إلى مساحة العمل على اليمين. بالإضافة إلى ذلك، يمكنك النقر على &quot;Update Now&quot; لمعاينة البيانات، وكذلك ضبط أنواع الحقول أو أسمائها التي اكتشفها بدقة أكبر.
 
+<div className="ch-image-md">
+
 ![صفحة مصدر البيانات في Tableau Online تعرض جداول قاعدة البيانات على اليسار ومساحة العمل على اليمين مع وظيفة السحب والإفلات](/images/integrations/data-visualization/tableau_online_04.webp)
+
+</div>
 
 <br />
 
@@ -70,7 +87,11 @@ import MySQLOnPremiseSetup from '/snippets/ar/_clickhouse_mysql_on_premise_setup
 يمكنك القيام بذلك باتباع دليل الإعداد المعروض [هنا](https://www.tableau.com/support/drivers) إذا اخترت MySQL من القائمة المنسدلة Data Source.
 إذا كان لديك جهاز Mac بمعالج M1، فراجع [سلسلة استكشاف الأخطاء وإصلاحها هذه](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac) للاطلاع على حل بديل لتثبيت برنامج التشغيل.
 
+<div className="ch-image-md">
+
 ![واجهة Tableau Desktop تعرض قائمة Connect مع تمييز خيار MySQL](/images/integrations/data-visualization/tableau_desktop_01.webp)
+
+</div>
 
 <br />
 
@@ -82,26 +103,42 @@ import MySQLOnPremiseSetup from '/snippets/ar/_clickhouse_mysql_on_premise_setup
 
 أدخل بيانات اعتماد مستخدم MySQL الخاصة بمثيلك على ClickHouse Cloud، ومسار الشهادة الجذرية التي نزّلتها.
 
+<div className="ch-image-sm">
+
 ![مربع حوار اتصال MySQL في Tableau Desktop مع تمكين خيار SSL ووجود حقول للخادم واسم المستخدم وكلمة المرور والشهادة](/images/integrations/data-visualization/tableau_desktop_02.webp)
+
+</div>
 
 <br />
 
 اختر الجداول المطلوبة كالمعتاد (على نحو مماثل لـ Tableau Online)،
 ثم اختر &quot;Server&quot; -&gt; &quot;Publish Data Source&quot; -&gt; Tableau Cloud.
 
+<div className="ch-image-md">
+
 ![Tableau Desktop يعرض قائمة Server مع تمييز خيار Publish Data Source](/images/integrations/data-visualization/tableau_desktop_03.webp)
+
+</div>
 
 <br />
 
 مهم: تحتاج إلى اختيار &quot;Embedded password&quot; ضمن خيارات &quot;Authentication&quot;.
 
+<div className="ch-image-md">
+
 ![مربع حوار النشر في Tableau Desktop يعرض خيارات Authentication مع تحديد Embedded password](/images/integrations/data-visualization/tableau_desktop_04.webp)
+
+</div>
 
 <br />
 
 بالإضافة إلى ذلك، اختر &quot;Update workbook to use the published data source&quot;.
 
+<div className="ch-image-sm">
+
 ![مربع حوار النشر في Tableau Desktop مع تحديد خيار 'Update workbook to use the published data source'](/images/integrations/data-visualization/tableau_desktop_05.webp)
+
+</div>
 
 <br />
 

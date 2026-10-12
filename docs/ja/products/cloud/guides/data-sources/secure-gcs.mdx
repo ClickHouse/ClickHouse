@@ -43,11 +43,19 @@ ClickHouse Cloud は、Google Cloud のサービスアカウントに関連付�
   <Step title="Google Cloud のサービス アカウントを作成する" id="create-gcs-account">
     1. Google Cloud Console で、IAM &amp; Admin → Service Accounts に移動します
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp)
+
+    </div>
 
     2. 左側のメニューで `Service accounts` をクリックし、続いて `Create service account` をクリックします。
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/create_service_account.webp)
+
+    </div>
 
     サービス アカウントの名前と説明を入力します。たとえば次のとおりです。
 
@@ -58,11 +66,19 @@ ClickHouse Cloud は、Google Cloud のサービスアカウントに関連付�
 
     `Create and continue` をクリックします
 
+    <div className="ch-image-sm">
+
     ![](/images/cloud/guides/accessing-data/GCS/create_and_continue.webp)
+
+    </div>
 
     service account に `Storage Object User` ロールを付与します。
 
+    <div className="ch-image-sm">
+
     ![](/images/cloud/guides/accessing-data/GCS/storage_object_user.webp)
+
+    </div>
 
     このロールにより、GCS object への読み取りおよび書き込みアクセスが可能になります
 
@@ -75,7 +91,11 @@ ClickHouse Cloud は、Google Cloud のサービスアカウントに関連付�
 
     service account のメールアドレスを控えておきます。
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp)
+
+    </div>
   </Step>
 
   <Step title="サービス アカウントにバケットへのアクセス権を付与する" id="grant-bucket-access-to-service-account">
@@ -114,19 +134,31 @@ ClickHouse Cloud は、Google Cloud のサービスアカウントに関連付�
   <Step title="サービス アカウント用の HMAC キーを生成する" id="generate-hmac-keys-for-service-account">
     `Cloud Storage` → `Settings` → `Interoperability` に移動します。
 
+    <div className="ch-image-sm">
+
     ![](/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp)
+
+    </div>
 
     `Access keys` セクションが表示されない場合は、`Enable interoperability access` をクリックします
 
     `Access keys for service accounts` の下で、`Create a key for a service account` をクリックします。
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp)
+
+    </div>
 
     先ほど作成したサービス アカウントを選択します (例: clickhouse-gcs-access@your-project.iam.gserviceaccount.com)
 
     `Create key` をクリックします。
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/create_a_key.webp)
+
+    </div>
 
     HMAC キーが表示されます。
     Access Key と Secret の両方をすぐに保存してください。Secret は後でもう一度表示することはできません。
@@ -182,7 +214,11 @@ ClickHouse Cloud は、Google Cloud のサービスアカウントに関連付�
     1. ClickPipe の設定時に、`Authentication method` で `Credentials` を選択します
     2. 前の手順で取得した HMAC 認証情報を入力します
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp)
+
+    </div>
 
     <Note>
       現時点ではサービスアカウント認証はサポートされていないため、HMAC キーを使用する必要があります

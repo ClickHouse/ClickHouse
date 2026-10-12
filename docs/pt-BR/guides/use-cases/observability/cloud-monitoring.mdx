@@ -9,6 +9,7 @@ keywords: ['observabilidade', 'monitoramento', 'nuvem', 'métricas', 'saúde do 
 
 import ObservabilityIntegrations from '/snippets/pt-BR/_observability_integration_options.mdx';
 import DirectIntegrations from '/snippets/pt-BR/_direct_observability_integration_options.mdx';
+
 import CommunityMonitoring from '/snippets/pt-BR/_community_monitoring.mdx';
 
 Este guia fornece às equipes corporativas que estão avaliando o ClickHouse Cloud informações abrangentes sobre os recursos de monitoramento e observabilidade para implantações em produção. Clientes Enterprise frequentemente perguntam sobre recursos de monitoramento prontos para uso, a integração com stacks de observabilidade existentes, incluindo ferramentas como Datadog e AWS CloudWatch, e como o monitoramento do ClickHouse se compara ao de implantações autogerenciadas.
@@ -25,13 +26,21 @@ O ClickHouse Cloud oferece monitoramento abrangente por meio de interfaces de da
   O acesso a essas métricas não emite uma consulta para o serviço subjacente e não reativa serviços ociosos.
 </Note>
 
+<div className="ch-image-lg">
+
 ![Advanced dashboard](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</div>
 
 Os usuários que quiserem expandir essas visualizações podem usar o recurso de dashboards no ClickHouse Cloud, consultando tabelas de sistema diretamente.
 
 * **Native advanced dashboard**: Uma interface de dashboard alternativa acessível por meio de &quot;You can still access the native advanced dashboard&quot; na seção monitoramento. Ela é aberta em uma guia separada, com autenticação, e oferece uma UI alternativa para monitorar a integridade do sistema e do serviço. Esse dashboard permite analytics avançados, nos quais você pode modificar as consultas SQL subjacentes.
 
+<div className="ch-image-lg">
+
 ![Advanced dashboard](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</div>
 
 Ambos os dashboards oferecem visibilidade imediata da integridade e do desempenho do serviço sem dependências externas, diferenciando-se de ferramentas externas voltadas para depuração, como o ClickStack.
 

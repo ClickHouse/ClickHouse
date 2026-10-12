@@ -15,7 +15,11 @@ keywords: ['开发者验证', 'MacOS']
 
 尝试运行任何 `clickhouse` 命令时，你可能会看到以下错误：
 
+<div className="ch-image-md">
+
 ![MacOS 开发者验证错误对话框](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
+
+</div>
 
 要解决此验证错误，你需要将该应用从 MacOS 的隔离区中移除；你可以在系统设置窗口中找到相应选项，也可以使用终端，或者重新安装 ClickHouse。
 
@@ -29,13 +33,21 @@ keywords: ['开发者验证', 'MacOS']
 
 2. 前往**隐私与安全**：
 
+   <div className="ch-image-md">
+
    ![MacOS 隐私与安全设置默认视图](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
+
+   </div>
 
 3. 滚动到窗口底部，找到一条消息：*&quot;clickhouse-macos-aarch64&quot; 因并非来自已识别的开发者而被阻止使用*。
 
 4. 点击**仍要允许**。
 
+   <div className="ch-image-md">
+
    ![MacOS 隐私与安全设置中显示“仍要允许”按钮](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
+
+   </div>
 
 5. 输入你的 MacOS 用户密码。
 

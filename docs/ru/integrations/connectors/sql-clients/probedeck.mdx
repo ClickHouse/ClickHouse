@@ -72,7 +72,11 @@ ProbeDeck — клиент для iOS и iPadOS, предназначенный 
     ClickHouse Cloud использует ключи уровня организации со страницы **API Keys** для Cloud API и
     эндпоинтов Query API. При SQL-подключении ProbeDeck эти ключи не используются.
 
+    <div className="ch-image-sm">
+
     ![Форма подключения ProbeDeck, настроенная для HTTPS на порту 8443 с именем пользователя ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
+
+    </div>
   </Step>
 </Steps>
 
@@ -148,11 +152,19 @@ ProbeDeck хранит секреты соединения и импортиро
 | Метрики памяти и сервера                                             | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | Исторические скорости запросов и диска                               | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
+<div className="ch-image-sm">
+
 ![Панель мониторинга ProbeDeck с выполняющимися запросами, репликацией, дисками, частями, мутациями, слияниями, скоростью запросов и памятью](/images/integrations/sql-clients/probedeck-dashboard.png)
+
+</div>
 
 Нажмите **Выполняющиеся запросы**, чтобы отсортировать активные запросы по времени выполнения и просмотреть использование памяти и количество прочитанных строк.
 
+<div className="ch-image-sm">
+
 ![Список выполняющихся запросов ProbeDeck, отсортированный по времени выполнения](/images/integrations/sql-clients/probedeck-running-queries.png)
+
+</div>
 
 <div id="query-the-uk-property-price-dataset">
   ## Выполнение запроса к набору данных о ценах на недвижимость в Великобритании

@@ -24,7 +24,11 @@ Para ter uma visão geral rápida de todas as opções, consulte [aqui](#all-yam
 
 Exemplo de tela de configuração:
 
+<div className="ch-image-sm">
+
 ![Exemplo de configuração nativa segura](/images/integrations/data-visualization/grafana/config_common.webp)
+
+</div>
 
 Exemplo de YAML de configuração para configurações comuns:
 
@@ -56,7 +60,11 @@ Observe que uma propriedade `version` é adicionada quando a configuração é s
 
 Mais configurações serão exibidas se você optar por se conectar pelo protocolo HTTP.
 
+<div className="ch-image-md">
+
 ![Opções extras de configuração de HTTP](/images/integrations/data-visualization/grafana/config_http.webp)
+
+</div>
 
 <div id="http-path">
   #### Caminho HTTP
@@ -104,7 +112,11 @@ secureJsonData:
 
 Estas configurações adicionais são opcionais.
 
+<div className="ch-image-sm">
+
 ![Exemplo de configurações adicionais](/images/integrations/data-visualization/grafana/config_additional.webp)
+
+</div>
 
 Exemplo em YAML:
 
@@ -139,7 +151,11 @@ Embora OpenTelemetry não seja obrigatório para logs, usar um único dataset de
 
 Exemplo de tela de configuração de logs:
 
+<div className="ch-image-sm">
+
 ![Configuração de logs](/images/integrations/data-visualization/grafana/config_logs.webp)
+
+</div>
 
 Exemplo de YAML de configuração de logs:
 
@@ -177,7 +193,11 @@ Embora OpenTelemetry não seja obrigatório, esse recurso funciona melhor ao usa
 
 Exemplo de tela de configuração de traces:
 
+<div className="ch-image-sm">
+
 ![Configuração de traces](/images/integrations/data-visualization/grafana/config_traces.webp)
+
+</div>
 
 Exemplo de YAML de configuração de traces:
 
@@ -280,11 +300,19 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 Podemos então configurar essa tabela para uso no Grafana. Observe que o nome pode ser qualquer um, ou até mesmo ser definido em um banco de dados separado:
 
+<div className="ch-image-md">
+
 ![Exemplo de configuração de tabela de aliases](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
+
+</div>
 
 Agora o Grafana verá os resultados da tabela de aliases em vez dos resultados de `DESC example_table`:
 
+<div className="ch-image-md">
+
 ![Exemplo de seleção de tabela de aliases](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
+
+</div>
 
 Ambas as formas de alias podem ser usadas para realizar conversões complexas de tipo ou extração de campos JSON.
 

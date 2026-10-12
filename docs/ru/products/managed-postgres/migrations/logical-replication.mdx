@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
 В этом руководстве приведены пошаговые инструкции по переносу базы данных PostgreSQL в ClickHouse Managed Postgres с использованием нативной логической репликации Postgres.
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.logical-replication-beta" />
@@ -49,7 +50,11 @@ dig +short <your-managed-postgres-hostname>
 
 Убедитесь, что ваша исходная база данных настроена именно так:
 
+<div className="ch-image-md">
+
 ![Настройка репликации в исходном PostgreSQL](/images/managed-postgres/logical_replication/source-setup.webp)
+
+</div>
 
 <div id="migration-logical-replication-schema-dump">
   ## Дамп схемы исходной базы данных
@@ -74,7 +79,11 @@ pg_dump \
 
 В нашем случае есть две таблицы — `events` и `users`. В `events` миллион строк, а в `users` — тысяча строк.
 
+<div className="ch-image-lg">
+
 ![Настройка таблиц в исходной базе PostgreSQL](/images/managed-postgres/pg_dump_restore/source-setup.webp)
+
+</div>
 
 <div id="migration-pgdump-pg-restore-create-pg">
   ### Создайте экземпляр ClickHouse Managed Postgres
@@ -82,7 +91,11 @@ pg_dump \
 
 Сначала убедитесь, что у вас уже настроен экземпляр ClickHouse Managed Postgres, желательно в том же регионе, что и исходный экземпляр. Для этого можно воспользоваться кратким руководством [здесь](/ru/products/managed-postgres/quickstart#create-postgres-database). Для этого руководства мы развернем следующее:
 
+<div className="ch-image-md">
+
 ![Создание экземпляра ClickHouse Managed Postgres](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
+
+</div>
 
 <div id="migration-logical-replication-restore-schema">
   ## Восстановите схему в ClickHouse Managed Postgres
@@ -105,7 +118,11 @@ pg_restore \
 
 В нашем случае после выполнения этой команды у нас есть две пустые таблицы:
 
+<div className="ch-image-lg">
+
 ![Начальная настройка целевого ClickHouse Managed Postgres](/images/managed-postgres/logical_replication/target-initial-setup.webp)
+
+</div>
 
 <div id="migration-logical-replication-setup-replication">
   ## Настройте логическую репликацию
@@ -143,7 +160,11 @@ PUBLICATION <pub_name_you_entered_above>;
 
 В нашем случае после настройки подписки данные начали поступать:
 
+<div className="ch-image-lg">
+
 ![Результат миграции после логической репликации](/images/managed-postgres/logical_replication/migration-result.webp)
+
+</div>
 
 Новые строки, вставляемые в исходную базу данных, теперь будут реплицироваться в целевую базу данных ClickHouse Managed Postgres почти в реальном времени.
 

@@ -17,7 +17,11 @@ keywords: ['prewhere', 'оптимизация запросов', 'произв�
 
 Для начала рассмотрим, как обрабатывается запрос к таблице [uk&#95;price&#95;paid&#95;simple](/ru/concepts/core-concepts/parts) без использования PREWHERE:
 
+<div className="ch-image-md">
+
 ![Обработка запроса без оптимизации PREWHERE](/images/guides/best-practices/prewhere_01.webp)
+
+</div>
 
 <br />
 
@@ -43,7 +47,11 @@ keywords: ['prewhere', 'оптимизация запросов', 'произв�
 
 Первые три шага обработки такие же, как и раньше:
 
+<div className="ch-image-md">
+
 ![Обработка запроса с оптимизацией PREWHERE](/images/guides/best-practices/prewhere_02.webp)
+
+</div>
 
 <br />
 
@@ -64,7 +72,11 @@ ClickHouse начинает обработку PREWHERE с ① чтения вы
 
 В нашем примере все выбранные гранулы подходят, поэтому ② для обработки выбираются соответствующие им позиционно выровненные гранулы следующего столбца фильтра — `date`:
 
+<div className="ch-image-md">
+
 ![Шаг 1: Фильтрация по town](/images/guides/best-practices/prewhere_03.webp)
+
+</div>
 
 <br />
 
@@ -75,7 +87,11 @@ ClickHouse начинает обработку PREWHERE с ① чтения вы
 
 В этом случае две из трёх гранул содержат подходящие строки, поэтому ② для дальнейшей обработки выбираются только их позиционно выровненные гранулы из следующего столбца фильтра — `price`:
 
+<div className="ch-image-md">
+
 ![Шаг 2: Фильтрация по date](/images/guides/best-practices/prewhere_04.webp)
+
+</div>
 
 <br />
 
@@ -86,7 +102,11 @@ ClickHouse начинает обработку PREWHERE с ① чтения вы
 
 Только одна из двух гранул содержит подходящие строки, поэтому ② для дальнейшей обработки нужно загрузить только её позиционно выровненную гранулу из столбца `SELECT` — `street`:
 
+<div className="ch-image-md">
+
 ![Шаг 2: Фильтрация по price](/images/guides/best-practices/prewhere_05.webp)
+
+</div>
 
 <br />
 

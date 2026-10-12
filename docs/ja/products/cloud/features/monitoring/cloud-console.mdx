@@ -66,7 +66,11 @@ Infrastructure ダッシュボードでは、ClickHouse プロセスが使用し
 
 このダッシュボードは、[組み込みの高度なオブザーバビリティダッシュボード](/ja/products/cloud/features/monitoring/advanced-dashboard)をベースに変更を加えたもので、各系列はレプリカごとのメトリクスを表します。ClickHouse 固有の問題を監視し、トラブルシューティングする際に役立ちます。
 
+<div className="ch-image-lg">
+
 ![ClickHouse Cloud の高度なダッシュボード](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</div>
 
 <Note>
   ClickHouse Cloud は、このダッシュボードに表示されるメトリクスをシステムテーブルからスクレイプして保存しているため、サービスがアイドル状態でも表示できます。これらのメトリクスにアクセスしても、基盤となるサービスに対してクエリは発行されず、アイドル状態のサービスが起動することもありません。
@@ -113,7 +117,11 @@ Infrastructure ダッシュボードでは、ClickHouse プロセスが使用し
 
 サービスを選択すると、左側のサイドバーにある **監視** ナビゲーション項目が展開され、**クエリインサイト** サブ項目が表示されます。
 
+<div className="ch-image-md">
+
 ![クエリインサイト UI の概要](/images/cloud/sqlconsole/insights_overview.webp)
+
+</div>
 
 <div id="top-level-metrics">
   ### 上部のメトリクス
@@ -121,7 +129,11 @@ Infrastructure ダッシュボードでは、ClickHouse プロセスが使用し
 
 上部の統計ボックスには、選択した時間範囲における基本的なクエリメトリクスが表示されます。その下の時系列チャートには、クエリ量、レイテンシ、エラー率がクエリ種別 (select、insert、other) ごとに表示されます。レイテンシチャートは、p50、p90、p99 のレイテンシを表示するように切り替えられます。
 
+<div className="ch-image-md">
+
 ![クエリインサイトのレイテンシチャート](/images/cloud/sqlconsole/insights_latency.webp)
+
+</div>
 
 <div id="recent-queries">
   ### 最近のクエリ
@@ -129,7 +141,11 @@ Infrastructure ダッシュボードでは、ClickHouse プロセスが使用し
 
 選択した時間範囲について、正規化されたクエリハッシュとユーザーごとにグループ化されたクエリログエントリを表示するテーブルです。最近のクエリは、利用可能な任意のフィールドでフィルタやソートを行えます。また、tables、p90、p99 レイテンシなどの追加フィールドを表示するか非表示にするかを設定できます。
 
+<div className="ch-image-md">
+
 ![クエリインサイトの最近のクエリ テーブル](/images/cloud/sqlconsole/insights_recent.webp)
+
+</div>
 
 <div id="query-drill-down">
   ### クエリのドリルダウン
@@ -137,11 +153,19 @@ Infrastructure ダッシュボードでは、ClickHouse プロセスが使用し
 
 最近のクエリ テーブルでクエリを選択すると、選択したクエリに固有のメトリクスや情報を表示するフライアウトが開きます。
 
+<div className="ch-image-md">
+
 ![クエリインサイト UI のクエリドリルダウン](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</div>
 
 **Query info** タブ内のすべてのメトリクスは集計メトリクスですが、**Query history** タブを選択すると、各実行のメトリクスも確認できます。
 
+<div className="ch-image-sm">
+
 ![クエリインサイト UI のクエリ情報](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</div>
 
 このペインでは、各クエリ実行の `Settings` 項目と `Profile Events` 項目を展開して、追加情報を確認できます。
 

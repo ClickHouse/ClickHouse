@@ -30,7 +30,11 @@ ClickHouse のスパースプライマリインデックスは、テーブルの
 
 [おさらい](/ja/concepts/core-concepts/parts)として、主キー (town, street) を持つ ① の例のテーブルでは、② 挿入されたデータは ③ 主キーカラムの値でソートされ、圧縮されたうえで、各カラムごとに別々のファイルとしてディスクに保存されます。
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+
+</div>
 
 <br />
 
@@ -40,7 +44,11 @@ ClickHouse のスパースプライマリインデックスは、テーブルの
 
 このグラニュール構造こそが、プライマリインデックスを **スパース** にしている理由でもあります。ClickHouse はすべての行を索引化するのではなく、⑤ 各グラニュールにつき 1 行、具体的には先頭の行の主キー値だけを保存します。その結果、グラニュールごとに 1 つの索引エントリが作成されます。
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+
+</div>
 
 <br />
 
@@ -54,7 +62,11 @@ ClickHouse のスパースプライマリインデックスは、テーブルの
 
 次のアニメーションでは、スパースプライマリインデックスがクエリの高速化にどのように使われるかを示します。
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+
+</div>
 
 <br />
 

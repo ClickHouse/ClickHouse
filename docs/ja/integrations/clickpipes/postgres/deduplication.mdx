@@ -62,7 +62,11 @@ ORDER BY id;
 
 以下の図は、ClickPipes を使用して PostgreSQL と ClickHouse 間でテーブル `users` を同期する基本的な例を示しています。
 
+<div className="ch-image-lg">
+
 ![ClickPipes 初期ロード](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
+
+</div>
 
 **Step 1** では、PostgreSQL 内の 2 行の初期スナップショットと、ClickPipes がその 2 行を ClickHouse に初期ロードする様子を示しています。ご覧のとおり、2 行ともそのまま ClickHouse にコピーされます。
 

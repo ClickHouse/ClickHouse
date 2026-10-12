@@ -16,7 +16,11 @@ doc_type: 'guide'
 
 这一过程减少了查询时对复杂 JOIN 的需求，并且能够显著提升读取操作速度，因此非常适合读取密集且查询复杂的应用。不过，这也会增加写入操作和维护的复杂度，因为对重复数据的任何修改都必须同步到所有实例中，以保持一致性。
 
+<div className="ch-image-lg">
+
 ![ClickHouse 中的反规范化](/images/data-modeling/denormalization-diagram.webp)
+
+</div>
 
 <br />
 
@@ -145,7 +149,11 @@ LIMIT 5
 
 现在来看一下 `Users` 和 `Badges`：
 
+<div className="ch-image-lg">
+
 ![Users 和 Badges schema](/images/data-modeling/denormalization-schema.webp)
+
+</div>
 
 <p />
 

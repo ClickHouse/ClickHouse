@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 managed モードでは、コネクタは 3 つ目のコンポーネントである executor を実行します。ClickHouse Cloud はこれを介して、お使いの Kubernetes クラスター 内で ClickHouse サービス を運用します。このページでは、サービス の作成、その ステータス の確認、ClickHouse Cloud がそれに対して行う処理、そして廃止されるまでの流れについて説明します。
@@ -39,7 +40,11 @@ AWS 認証情報 が必要なのは `prepare` のみで、S3 バケットと IAM
 * `prepare` には、コネクタ 設定のコピー (`--config`) 、executor のローカル API への `kubectl port-forward`、および書き込み可能な `--output-dir` が必要です。executor に対して service name を照合し、到達できない場合は実行を拒否します。
 * このホストに設定で指定された認証情報ファイルが存在しない場合、`instances create` はそれらを `clicklink-hmac` および `clicklink-mtls` Secret から読み取り、読み取るたびにその旨を通知します。コネクタ のネームスペースが `clicklink` でない場合は `--connector-namespace` を追加してください。このフォールバックがあるのは `instances create` のみです。
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector service lifecycle in managed mode](/images/cloud/reference/byoc-connector-service-lifecycle.svg)
+
+</div>
 
 <Steps>
   <Step title="サービスを準備する" id="prepare">

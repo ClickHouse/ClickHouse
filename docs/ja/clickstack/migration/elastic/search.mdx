@@ -17,11 +17,19 @@ ClickHouse は完全な SQL をサポートするだけでなく、[`argMax`](/j
 
 シンプルなログやトレースの調査には、ClickStack UI (HyperDX) が、フィールドと値によるクエリ、範囲指定、ワイルドカードなどに対応した、直感的なテキストベースの絞り込みを行える [Lucene スタイルの構文](/ja/clickstack/features/search) を提供します。これは、Elasticsearch の [Lucene 構文](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) や、[Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql) の一部に相当します。
 
+<div className="ch-image-lg">
+
 ![検索](/images/use-cases/observability/hyperdx-search.webp)
+
+</div>
 
 この検索インターフェイスは、こうした馴染みのある構文をサポートしつつ、内部ではそれを効率的な SQL の `WHERE` 句に変換します。そのため、Kibana ユーザーにも親しみやすく、必要に応じて SQL の強力な機能も活用できます。これにより、ClickHouse の [文字列検索関数](/ja/reference/functions/regular-functions/string-search-functions)、[類似度関数](/ja/reference/functions/regular-functions/string-functions#stringJaccardIndex)、[日時関数](/ja/reference/functions/regular-functions/date-time-functions) を幅広く活用できます。
 
+<div className="ch-image-lg">
+
 ![SQL](/images/use-cases/observability/hyperdx-sql.webp)
+
+</div>
 
 以下では、ClickStack と Elasticsearch の Lucene クエリ言語を比較します。
 

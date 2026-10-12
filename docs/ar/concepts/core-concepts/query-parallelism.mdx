@@ -19,7 +19,11 @@ keywords: ['المعالجة المتوازية', 'تحسين الاستعلام
 
 عندما يُشغِّل ClickHouse ① استعلامًا تجميعيًا مع عامل تصفية على المفتاح الأساسي للجدول، فإنه ② يحمّل الفهرس الأساسي إلى الذاكرة من أجل ③ تحديد الحبيبات التي يجب معالجتها وتلك التي يمكن تخطيها بأمان:
 
+<div className="ch-image-md">
+
 ![تحليل الفهرس](/images/guides/best-practices/query-parallelism_01.webp)
+
+</div>
 
 <div id="distributing-work-across-processing-lanes">
   ### توزيع العمل عبر مسارات المعالجة
@@ -27,7 +31,11 @@ keywords: ['المعالجة المتوازية', 'تحسين الاستعلام
 
 ثم تُوزَّع البيانات المحددة [ديناميكيًا](#load-balancing-across-processing-lanes) على `n` من [مسارات المعالجة](/ar/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) المتوازية، حيث تُمرَّر البيانات وتُعالَج فيها [كتلة](/ar/resources/develop-contribute/introduction/architecture#block) بعد أخرى حتى الوصول إلى النتيجة النهائية:
 
+<div className="ch-image-md">
+
 ![4 مسارات معالجة متوازية](/images/guides/best-practices/query-parallelism_02.webp)
+
+</div>
 
 <br />
 
@@ -37,7 +45,11 @@ keywords: ['المعالجة المتوازية', 'تحسين الاستعلام
 
 على جهاز يحتوي على `8` أنوية، ستتضاعف تقريبًا إنتاجية معالجة الاستعلام (لكن استخدام الذاكرة سيزداد أيضًا تبعًا لذلك)، لأن عددًا أكبر من المسارات سيعالج البيانات بالتوازي:
 
+<div className="ch-image-md">
+
 ![8 مسارات معالجة متوازية](/images/guides/best-practices/query-parallelism_03.webp)
+
+</div>
 
 <br />
 
@@ -51,7 +63,11 @@ keywords: ['المعالجة المتوازية', 'تحسين الاستعلام
 
 عندما تكون بيانات الجدول موزعة عبر عدة خوادم على شكل [shards](/ar/guides/oss/deployment-and-scaling/shards)، يعالج كل خادم الجزء الخاص به بالتوازي. وداخل كل خادم، تُعالَج البيانات المحلية باستخدام مسارات معالجة متوازية، تمامًا كما هو موضح أعلاه:
 
+<div className="ch-image-md">
+
 ![مسارات موزعة](/images/guides/best-practices/query-parallelism_04.webp)
+
+</div>
 
 <br />
 
@@ -125,7 +141,11 @@ FROM
 
 يمكن لـ [واجهة الويب المضمّنة](/ar/concepts/features/interfaces/http) في ClickHouse (المتاحة عند نقطة النهاية `/play`) عرض الخطة الفيزيائية أعلاه في شكل تصوّر بياني. في هذا المثال، نضبط `max_threads` على `4` للحفاظ على التصوّر مختصرًا، بحيث يعرض 4 مسارات معالجة متوازية فقط:
 
+<div className="ch-image-lg">
+
 ![مسار تنفيذ الاستعلام](/images/guides/best-practices/query-parallelism_05.webp)
+
+</div>
 
 ملاحظة: اقرأ التصوّر من اليسار إلى اليمين. يمثّل كل صف مسار معالجة متوازيًا يمرّر كتل البيانات كتلةً تلو الأخرى، مع تطبيق تحويلات مثل التصفية والتجميع ومراحل المعالجة النهائية. في هذا المثال، يمكنك رؤية أربعة مسارات متوازية تقابل الإعداد `max_threads = 4`.
 

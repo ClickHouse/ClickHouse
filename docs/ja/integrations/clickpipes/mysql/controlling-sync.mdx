@@ -51,15 +51,27 @@ Pull バッチサイズは、ClickPipe がソースデータベースから 1 �
 ClickPipe の作成時または既存の ClickPipe の編集時に、同期間隔と Pull バッチサイズを設定できます。
 ClickPipe の作成時には、以下のように作成ウィザードの 2 番目のステップで表示されます。
 
+<div className="ch-image-md">
+
 ![同期設定を作成](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
+
+</div>
 
 既存の ClickPipe を編集する場合は、パイプの **Settings** タブに移動し、パイプを一時停止してから、ここで **Configure** をクリックします。
 
+<div className="ch-image-md">
+
 ![同期編集ボタン](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
+
+</div>
 
 すると、同期設定を表示するフライアウトが開き、そこで同期間隔と Pull バッチサイズを変更できます。
 
+<div className="ch-image-md">
+
 ![同期設定を編集](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
+
+</div>
 
 <div id="monitoring">
   ### 同期制御の挙動を監視する
@@ -67,4 +79,8 @@ ClickPipe の作成時には、以下のように作成ウィザードの 2 番�
 
 各バッチにかかる時間は、ClickPipe の **Metrics** タブにある **CDC Syncs** テーブルで確認できます。ここでの所要時間には、送信にかかる時間に加え、受信する行がない場合に ClickPipe が待機する時間も含まれます。
 
+<div className="ch-image-md">
+
 ![CDC Syncs テーブル](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)
+
+</div>

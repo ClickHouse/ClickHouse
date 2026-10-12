@@ -11,7 +11,11 @@ import AddARemoteSystem from '/snippets/ar/_add_remote_ip_access_list_detail.mdx
 
 import CompatibilityNote from '/snippets/ar/compatibility.mdx';
 
+<div className="ch-image-lg">
+
 ![الترحيل من ClickHouse المُدار ذاتيًا](/images/integrations/migration/self-managed-01.webp)
+
+</div>
 
 يوضح هذا الدليل كيفية الترحيل من خادم ClickHouse مُدار ذاتيًا إلى ClickHouse Cloud، وكذلك كيفية الترحيل بين خدمات ClickHouse Cloud.
 تُستخدم الدالة [`remoteSecure`](/ar/reference/functions/table-functions/remote) في استعلامات `SELECT` و`INSERT` لإتاحة الوصول إلى خوادم ClickHouse البعيدة، مما يجعل ترحيل الجداول بسيطًا بمجرد كتابة استعلام `INSERT INTO` يتضمن `SELECT`.
@@ -20,7 +24,11 @@ import CompatibilityNote from '/snippets/ar/compatibility.mdx';
   ## الترحيل من ClickHouse المُدار ذاتيًا إلى ClickHouse Cloud
 </div>
 
+<div className="ch-image-lg">
+
 ![ترحيل ClickHouse المُدار ذاتيًا](/images/integrations/migration/self-managed-02.webp)
+
+</div>
 
 بغضّ النظر عمّا إذا كان جدول المصدر لديك مُجزّأً و/أو مُكرَّرًا، ففي ClickHouse Cloud لا تحتاج إلا إلى إنشاء جدول وجهة (يمكنك ترك معلمة `Engine` لهذا الجدول، إذ سيُختار `SharedMergeTree` تلقائيًا بوصفه محرك الجدول)،
 وسيتولى ClickHouse Cloud تلقائيًا التوسّع الرأسي والأفقي.
@@ -94,7 +102,11 @@ CREATE TABLE db.table ...
 
 * استخدم الدالة `remoteSecure` لسحب البيانات من المصدر المُدار ذاتيًا
 
+<div className="ch-image-lg">
+
 ![ترحيل ClickHouse المُدار ذاتيًا](/images/integrations/migration/self-managed-03.webp)
+
+</div>
 
 ```sql
 INSERT INTO db.table SELECT * FROM
@@ -107,7 +119,11 @@ remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
 
 * استخدم الدالة `remoteSecure` لدفع البيانات إلى خدمة ClickHouse Cloud
 
+<div className="ch-image-lg">
+
 ![ترحيل ClickHouse المُدار ذاتيًا](/images/integrations/migration/self-managed-04.webp)
+
+</div>
 
 <Tip>
   **أضف النظام البعيد إلى IP Access List الخاصة بخدمة ClickHouse Cloud**
@@ -127,7 +143,11 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
   ## الترحيل بين خدمات ClickHouse Cloud
 </div>
 
+<div className="ch-image-lg">
+
 ![ترحيل ClickHouse المُدار ذاتيًا](/images/integrations/migration/self-managed-05.webp)
+
+</div>
 
 فيما يلي بعض الاستخدامات الشائعة لترحيل البيانات بين خدمات ClickHouse Cloud:
 
@@ -136,7 +156,11 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
 
 في هذا المثال، توجد خدمتان من ClickHouse Cloud، وسيُشار إليهما باسم *المصدر* و*الوجهة*. ستُسحب البيانات من المصدر إلى الوجهة. ومع أنه يمكنك استخدام الدفع إذا رغبت، فإن السحب هو المعروض هنا لأنه يستخدم مستخدمًا للقراءة فقط.
 
+<div className="ch-image-lg">
+
 ![ترحيل ClickHouse المُدار ذاتيًا](/images/integrations/migration/self-managed-06.webp)
+
+</div>
 
 تتضمن عملية الترحيل بضع خطوات:
 

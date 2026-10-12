@@ -27,7 +27,11 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 Ahora que tenemos algunos datos en ClickHouse, queremos ejecutar algunas consultas y comprender cómo se ejecutan. La ejecución de una consulta se descompone en muchos pasos. Cada paso de la ejecución de la consulta puede analizarse y depurarse mediante la consulta `EXPLAIN` correspondiente. Estos pasos se resumen en el siguiente gráfico:
 
+<div className="ch-image-md">
+
 ![Pasos de la consulta EXPLAIN](/images/guides/developer/analyzer1.webp)
+
+</div>
 
 Veamos cada elemento en acción durante la ejecución de la consulta. Vamos a tomar algunas consultas y luego examinarlas mediante la sentencia `EXPLAIN`.
 
@@ -356,7 +360,11 @@ digraph
 
 A continuación, puede copiar esta salida y pegarla [aquí](https://dreampuf.github.io/GraphvizOnline) para generar el siguiente grafo:
 
+<div className="ch-image-md">
+
 ![Resultado del grafo](/images/guides/developer/analyzer3.webp)
+
+</div>
 
 Un rectángulo blanco corresponde a un nodo del pipeline, el rectángulo gris corresponde a los pasos del plan de consulta, y la `x` seguida de un número corresponde a la cantidad de entradas/salidas que se están utilizando. Si no desea verlos en formato compacto, siempre puede añadir `compact=0`:
 
@@ -396,7 +404,11 @@ digraph
 }
 ```
 
+<div className="ch-image-md">
+
 ![Salida compacta del grafo](/images/guides/developer/analyzer4.webp)
+
+</div>
 
 ¿Por qué ClickHouse no lee de la tabla con varios hilos? Intentemos añadir más datos a nuestra tabla:
 
@@ -455,7 +467,11 @@ digraph
 }
 ```
 
+<div className="ch-image-md">
+
 ![Salida del grafo en paralelo](/images/guides/developer/analyzer5.webp)
+
+</div>
 
 Así, el ejecutor decidió no paralelizar las operaciones porque el volumen de datos no era lo bastante alto. Al añadir más filas, el ejecutor pasó a usar varios hilos, como se muestra en el grafo.
 

@@ -24,7 +24,11 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
 
 在本指南中，你将把 ClickHouse 中的数据连接到 Explo，并将结果可视化。图表效果如下：
 
+<div className="ch-image-md">
+
 ![Explo 仪表盘](/images/integrations/data-visualization/explo_15.webp)
+
+</div>
 
 <p />
 
@@ -44,27 +48,51 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
 
     2. 点击左侧边栏中的 Explo **数据**选项卡。
 
+    <div className="ch-image-sm">
+
     ![数据选项卡](/images/integrations/data-visualization/explo_01.webp)
+
+    </div>
 
     3. 点击右上角的 **连接数据源**。
 
+    <div className="ch-image-sm">
+
     ![连接数据源](/images/integrations/data-visualization/explo_02.webp)
+
+    </div>
 
     4. 填写 **Getting Started** 页面的信息。
 
+    <div className="ch-image-md">
+
     ![Getting Started](/images/integrations/data-visualization/explo_03.webp)
+
+    </div>
 
     5. 选择 **ClickHouse**
 
+    <div className="ch-image-md">
+
     ![ClickHouse](/images/integrations/data-visualization/explo_04.webp)
+
+    </div>
 
     6. 输入您的 **ClickHouse 凭据**。
 
+    <div className="ch-image-md">
+
     ![凭据](/images/integrations/data-visualization/explo_05.webp)
+
+    </div>
 
     7. 配置 **安全**
 
+    <div className="ch-image-md">
+
     ![安全](/images/integrations/data-visualization/explo_06.webp)
+
+    </div>
 
     8. 在 ClickHouse 中，**将 Explo 的 IP 地址加入白名单**。
        `54.211.43.19, 52.55.98.121, 3.214.169.94, 以及 54.156.141.148`
@@ -73,15 +101,27 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
   <Step title="创建仪表板" id="3-create-a-dashboard">
     1. 前往左侧导航栏中的 **仪表盘** 选项卡。
 
+    <div className="ch-image-sm">
+
     ![仪表板](/images/integrations/data-visualization/explo_07.webp)
+
+    </div>
 
     2. 点击右上角的 **Create Dashboard**，然后为仪表板命名。至此，您已创建好一个仪表板！
 
+    <div className="ch-image-sm">
+
     ![创建仪表板](/images/integrations/data-visualization/explo_08.webp)
+
+    </div>
 
     3. 现在您应该会看到一个类似这样的界面：
 
+    <div className="ch-image-md">
+
     ![Explo 仪表板](/images/integrations/data-visualization/explo_09.webp)
+
+    </div>
   </Step>
 
   <Step title="运行 SQL 查询" id="4-run-a-sql-query">
@@ -89,33 +129,61 @@ import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaint
        `SELECT * FROM YOUR_TABLE_NAME
        LIMIT 100`
 
+    <div className="ch-image-md">
+
     ![Explo 仪表板](/images/integrations/data-visualization/explo_10.webp)
+
+    </div>
 
     2. 现在点击运行，然后前往预览选项卡查看数据。
 
+    <div className="ch-image-md">
+
     ![Explo 仪表板](/images/integrations/data-visualization/explo_11.webp)
+
+    </div>
   </Step>
 
   <Step title="构建图表" id="5-build-a-chart">
     1. 从左侧将条形图图标拖到画布上。
 
+    <div className="ch-image-sm">
+
     ![Explo 仪表板](/images/integrations/data-visualization/explo_16.webp)
+
+    </div>
 
     2. 选择数据集。现在您应该会看到如下界面：
 
+    <div className="ch-image-sm">
+
     ![Explo 仪表板](/images/integrations/data-visualization/explo_12.webp)
+
+    </div>
 
     3. 按下图所示，在 X 轴中填入 **county**，并在 Y 轴部分填入 **Price**：
 
+    <div className="ch-image-sm">
+
     ![Explo 仪表板](/images/integrations/data-visualization/explo_13.webp)
+
+    </div>
 
     4. 然后将聚合方式更改为 **AVG**。
 
+    <div className="ch-image-sm">
+
     ![Explo 仪表板](/images/integrations/data-visualization/explo_14.webp)
+
+    </div>
 
     5. 现在，我们就得到了按 county 细分的房屋平均价格！
 
+    <div className="ch-image-md">
+
     ![Explo 仪表板](/images/integrations/data-visualization/explo_15.webp)
+
+    </div>
   </Step>
 </Steps>
 

@@ -25,17 +25,33 @@ Por padrão, o Amazon DocumentDB mantém os logs do change stream por 3 horas, e
 
 1. Clique em `Parameter groups` no painel esquerdo e localize o grupo de parâmetros usado pelo seu cluster do DocumentDB (se você estiver usando o grupo de parâmetros padrão, primeiro será necessário criar um novo grupo de parâmetros para poder modificá-lo).
 
+<div className="ch-image-lg">
+
 ![Selecionar grupo de parâmetros](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp)
+
+</div>
 
 2. Procure por `change_stream_log_retention_duration`, selecione o parâmetro e altere-o para `259200` (72 horas)
 
+<div className="ch-image-lg">
+
 ![Modificar grupo de parâmetros](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp)
+
+</div>
 
 3. Clique em `Apply Changes` para aplicar imediatamente o grupo de parâmetros modificado ao seu cluster do DocumentDB. Você deverá ver o status do grupo de parâmetros mudar para `applying` e, em seguida, para `in-sync` quando a alteração for aplicada.
 
+<div className="ch-image-lg">
+
 ![Aplicar grupo de parâmetros](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Status do grupo de parâmetros](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp)
+
+</div>
 
 <div id="update-change-stream-log-retention-via-aws-cli">
   ### Atualize a retenção de logs do change stream pela AWS CLI

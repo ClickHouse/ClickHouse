@@ -19,7 +19,11 @@ A principal motivação para usar visões materializadas é que os resultados in
 
 As visões materializadas no ClickHouse são atualizadas em tempo real à medida que os dados fluem para a tabela em que se baseiam, funcionando mais como índices atualizados continuamente. Isso contrasta com outros bancos de dados, nos quais as visões materializadas normalmente são snapshots estáticos de uma consulta que precisam ser atualizados (semelhantes às [visões materializadas atualizáveis](/pt-BR/reference/statements/create/view#refreshable-materialized-view) do ClickHouse).
 
+<div className="ch-image-md">
+
 ![Diagrama de visão materializada](/images/materialized-view/materialized-view-diagram.webp)
+
+</div>
 
 <div id="example">
   ## Exemplo

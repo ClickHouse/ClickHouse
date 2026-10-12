@@ -18,15 +18,27 @@ integration:
 
 1. Перейдите на вкладку `Overview` вашего кластера в консоли MongoDB Atlas и откройте вкладку `Configuration`.
 
+<div className="ch-image-lg">
+
 ![Перейдите к конфигурации кластера](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp)
+
+</div>
 
 2. Нажмите `Additional Settings` и прокрутите вниз до раздела `More Configuration Options`.
 
+<div className="ch-image-lg">
+
 ![Разверните дополнительные настройки](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp)
+
+</div>
 
 3. Нажмите `More Configuration Options` и установите минимальное окно oplog равным `72 hours` или больше.
 
+<div className="ch-image-lg">
+
 ![Задайте количество часов хранения oplog](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp)
+
+</div>
 
 4. Нажмите `Review Changes`, чтобы просмотреть изменения, а затем `Apply Changes`, чтобы применить их.
 
@@ -38,7 +50,11 @@ integration:
 
 Для ClickPipes требуется аутентификация по паролю:
 
+<div className="ch-image-lg">
+
 ![Добавление пользователя базы данных](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp)
+
+</div>
 
 Для ClickPipes требуется пользователь со следующими ролями:
 
@@ -47,11 +63,19 @@ integration:
 
 Их можно найти в разделе `Specific Privileges`:
 
+<div className="ch-image-lg">
+
 ![Настройка ролей пользователя](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp)
+
+</div>
 
 Также можно указать кластеры/экземпляры, к которым нужно предоставить доступ пользователю ClickPipes:
 
+<div className="ch-image-lg">
+
 ![Ограничение доступа к кластеру/экземпляру](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp)
+
+</div>
 
 <div id="whats-next">
   ## Что дальше?

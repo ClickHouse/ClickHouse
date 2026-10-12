@@ -45,7 +45,11 @@ doc_type: 'reference'
 | mode                | byte    | Режим сжатия                                                                               |
 | compressed&#95;data | binary  | Блок сжатых данных                                                                         |
 
+<div className="ch-image-md">
+
 ![Диаграмма, иллюстрирующая структуру блока сжатия ClickHouse](/images/data-compression/ch_compression_block.webp)
+
+</div>
 
 Заголовок имеет вид (raw&#95;size + data&#95;size + mode), а raw&#95;size равен len(header + compressed&#95;data).
 

@@ -7,6 +7,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 ## コンポーネント {#components}
@@ -19,7 +20,11 @@ ClickHouse Connector は 3 つのデーモンを実行します。いずれも `
 
 Kubernetes では、`clicklink-connector` Helm チャートが、任意に選択したネームスペース (デフォルトは `clicklink`) にデーモンをデプロイします。executor は単一 replica の Deployment で、コマンドの state を永続 volume 上に保持します。Linux VM では、デーモンは非特権の `clicklink` システムユーザーのもとで `clicklink-scraper`、`clicklink-troubleshooter`、`clicklink-executor` の systemd unit として実行されます。
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector architecture](/images/cloud/reference/byoc-connector-architecture.svg)
+
+</div>
 
 ## 接続 {#connections}
 
@@ -55,7 +60,11 @@ Kubernetes では、`clicklink-connector` Helm チャートが、任意に選択
 
 ## データフロー {#data-flow}
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connectorのデータフロー](/images/cloud/reference/byoc-connector-data-flow.svg)
+
+</div>
 
 ### 環境外に送信されるもの {#what-leaves}
 

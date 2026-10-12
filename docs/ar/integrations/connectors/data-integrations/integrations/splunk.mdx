@@ -27,15 +27,27 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
 نزّل إضافة ClickHouse Cloud Audit لـ Splunk من [Splunkbase](https://splunkbase.splunk.com/app/7709).
 
+<div className="ch-image-lg">
+
 ![موقع Splunkbase يعرض صفحة تنزيل إضافة ClickHouse Cloud Audit لـ Splunk](/images/integrations/tools/data-integration/splunk/splunk_001.webp)
+
+</div>
 
 في Splunk Enterprise، انتقل إلى Apps -&gt; Manage، ثم انقر على Install app from file.
 
+<div className="ch-image-lg">
+
 ![واجهة Splunk Enterprise تعرض صفحة إدارة Apps مع خيار Install app from file](/images/integrations/tools/data-integration/splunk/splunk_002.webp)
+
+</div>
 
 حدّد الملف المؤرشف الذي نزّلته من Splunkbase، ثم انقر على Upload.
 
+<div className="ch-image-lg">
+
 ![مربع حوار تثبيت تطبيق Splunk لتحميل إضافة ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_003.webp)
+
+</div>
 
 إذا سار كل شيء كما ينبغي، فمن المفترض أن ترى الآن تطبيق سجلات تدقيق ClickHouse مثبّتًا. وإذا لم يحدث ذلك، فراجع سجلات Splunkd بحثًا عن أي أخطاء.
 
@@ -56,19 +68,35 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
 انتقل إلى Organization -&gt; Organization details في مؤسستك. ومن هناك يمكنك نسخ معرّف المؤسسة.
 
+<div className="ch-image-lg">
+
 ![تعرض ClickHouse Cloud console صفحة Organization details التي تتضمن معرّف المؤسسة](/images/integrations/tools/data-integration/splunk/splunk_004.webp)
+
+</div>
 
 بعد ذلك، انتقل إلى API Keys من القائمة الجانبية اليسرى.
 
+<div className="ch-image-lg">
+
 ![تعرض ClickHouse Cloud console قسم API Keys في قائمة التنقل اليسرى](/images/integrations/tools/data-integration/splunk/splunk_005.webp)
+
+</div>
 
 أنشئ مفتاح واجهة برمجة التطبيقات، وامنحه اسمًا ذا معنى، وحدد صلاحيات `Admin`. ثم انقر على Generate مفتاح واجهة برمجة التطبيقات.
 
+<div className="ch-image-lg">
+
 ![تعرض ClickHouse Cloud console واجهة إنشاء مفتاح واجهة برمجة التطبيقات مع تحديد صلاحيات Admin](/images/integrations/tools/data-integration/splunk/splunk_006.webp)
+
+</div>
 
 احفظ الـ مفتاح واجهة برمجة التطبيقات والقيمة السرية في مكان آمن.
 
+<div className="ch-image-lg">
+
 ![تعرض ClickHouse Cloud console الـ مفتاح واجهة برمجة التطبيقات والقيمة السرية اللذين تم إنشاؤهما لحفظهما](/images/integrations/tools/data-integration/splunk/splunk_007.webp)
+
+</div>
 
 <div id="configure-data-input-in-splunk">
   ## تكوين إدخال البيانات في Splunk
@@ -76,19 +104,35 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
 بالعودة إلى Splunk، انتقل إلى Settings -&gt; Data inputs.
 
+<div className="ch-image-lg">
+
 ![واجهة Splunk تعرض قائمة Settings مع خيار Data inputs](/images/integrations/tools/data-integration/splunk/splunk_008.webp)
+
+</div>
 
 حدد إدخال بيانات ClickHouse Cloud Audit Logs.
 
+<div className="ch-image-lg">
+
 ![صفحة Data inputs في Splunk تعرض خيار ClickHouse Cloud Audit Logs](/images/integrations/tools/data-integration/splunk/splunk_009.webp)
+
+</div>
 
 انقر على &quot;New&quot; لتكوين مثيل جديد من إدخال البيانات.
 
+<div className="ch-image-lg">
+
 ![واجهة Splunk لتكوين إدخال بيانات جديد لـ ClickHouse Cloud Audit Logs](/images/integrations/tools/data-integration/splunk/splunk_010.webp)
+
+</div>
 
 بعد إدخال جميع المعلومات، انقر على Next.
 
+<div className="ch-image-lg">
+
 ![صفحة التكوين في Splunk بعد اكتمال إعدادات إدخال بيانات ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_011.webp)
+
+</div>
 
 تم تكوين الإدخال، ويمكنك الآن البدء في استعراض سجلات التدقيق.
 
@@ -98,4 +142,8 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
 يخزّن المدخل المعياري البيانات في Splunk. لعرض هذه البيانات، يمكنك استخدام واجهة البحث العامة في Splunk.
 
+<div className="ch-image-lg">
+
 ![واجهة البحث في Splunk تعرض بيانات سجلات تدقيق ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_012.webp)
+
+</div>

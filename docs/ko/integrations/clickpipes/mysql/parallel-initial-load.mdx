@@ -25,7 +25,11 @@ integration:
 
 기능 플래그를 활성화하면 ClickPipe 테이블 선택기에서 아래 설정을 확인할 수 있습니다(ClickPipe 생성 시와 편집 시 모두):
 
+<div className="ch-image-md">
+
 ![파티션 키 컬럼](/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp)
+
+</div>
 
 MySQL ClickPipe는 원본 테이블을 논리적으로 파티션으로 나누기 위해 원본 테이블의 한 컬럼을 사용합니다. 이 컬럼을 **파티션 키 컬럼**이라고 합니다. 이 컬럼은 원본 테이블을 여러 파티션으로 분할하는 데 사용되며, 분할된 파티션은 ClickPipe에서 병렬로 처리할 수 있습니다.
 
@@ -39,7 +43,11 @@ MySQL ClickPipe는 원본 테이블을 논리적으로 파티션으로 나누기
 
 다음 설정을 살펴보겠습니다:
 
+<div className="ch-image-md">
+
 ![스냅샷 매개변수](/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp)
+
+</div>
 
 <div id="numrows-mysql-snapshot">
   #### 파티션당 스냅샷 행 수

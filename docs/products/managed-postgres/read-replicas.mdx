@@ -8,17 +8,26 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
 Read replicas allow you to create one or more copies of your primary ClickHouse Managed Postgres database. These replicas continuously follow your primary database using PostgreSQL's native replication to stay up to date with changes.
 
 To manage read replicas, click the edit icon on your warehouse:
 
+<div className="ch-image-md">
+
 ![Warehouse view with edit icon](/images/managed-postgres/warehouse-view.webp)
+
+</div>
 
 This opens the warehouse dialog where you can view existing services and create new read replicas:
 
+<div className="ch-image-md">
+
 ![Read replica management dialog](/images/managed-postgres/read-replica-dialog.webp)
+
+</div>
 
 ## Managing read replicas {#managing-read-replicas}
 
@@ -26,11 +35,19 @@ The **Read replicas** page gives you two views, toggled with the **Flow** and **
 
 The **Flow** view displays the replication topology — your primary instance at the top with arrows flowing down to each attached replica, showing tier, region, and status at a glance:
 
+<div className="ch-image-lg">
+
 ![Read replicas flow view showing primary and replica topology](/images/managed-postgres/read-replicas-flow.webp)
+
+</div>
 
 The **Table** view lists each replica with its service name, cloud provider and region, service status, creation time, and a **Detach service** action:
 
+<div className="ch-image-lg">
+
 ![Read replicas table view](/images/managed-postgres/read-replicas-table.webp)
+
+</div>
 
 To create a new replica, click **Create read replica** in the top-right corner of either view.
 

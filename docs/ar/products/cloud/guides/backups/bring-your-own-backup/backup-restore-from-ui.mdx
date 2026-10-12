@@ -37,7 +37,11 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
 
     * a. احصل على ARN من صفحة إعدادات خدمة ClickHouse Cloud، ضمن Network security information، وسيبدو مشابهًا لما يلي:
 
+    <div className="ch-image-lg">
+
     ![AWS S3 ARN](/images/cloud/manage/backups/arn.webp)
+
+    </div>
 
     * b. لهذا الدور، أنشئ trust policy كما يلي:
 
@@ -110,13 +114,21 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
   <Step title="تغيير النسخ الاحتياطي الخارجي" id="configure-external-bucket">
     في صفحة &quot;Settings&quot;، انقر على &quot;Set up external backup&quot;:
 
+    <div className="ch-image-lg">
+
     ![تغيير النسخ الاحتياطي الخارجي](/images/cloud/manage/backups/change_external_backup.webp)
+
+    </div>
   </Step>
 
   <Step title="تهيئة AWS IAM Role ARN وتفاصيل حاوية S3" id="configure-aws-iam-role-arn-and-s3-bucket-details">
     في الشاشة التالية، أدخل AWS IAM Role ARN الذي أنشأته للتو وBucket URL لحاوية S3 بالتنسيق التالي:
 
+    <div className="ch-image-lg">
+
     ![تهيئة AWS IAM Role ARN وتفاصيل حاوية S3](/images/cloud/manage/backups/configure_arn_s3_details.webp)
+
+    </div>
   </Step>
 
   <Step title="حفظ التغييرات" id="save-changes">
@@ -135,7 +147,11 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     ستعرض صفحة &quot;Backups&quot; هذه النسخ الاحتياطية الموجودة في حاوية التخزين الخاصة بك في جدول منفصل،
     كما هو موضح أدناه:
 
+    <div className="ch-image-lg">
+
     ![عرض النسخ الاحتياطية المخزنة في حاوية التخزين الخاصة بك](/images/cloud/manage/backups/view_backups.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -159,7 +175,11 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     انقر على رابط “access or restore a backup” الموجود أعلى قائمة النسخ الاحتياطية في
     واجهة المستخدم للحصول على أمر SQL لاستعادة النسخة الاحتياطية. سيبدو الأمر كما يلي:
 
+    <div className="ch-image-md">
+
     ![احصل على أمر SQL المستخدم لاستعادة النسخة الاحتياطية](/images/cloud/manage/backups/backup_command.webp)
+
+    </div>
 
     <Warning>
       **نقل النسخ الاحتياطية إلى موقع آخر**
@@ -231,13 +251,21 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
   <Step title="تغيير النسخ الاحتياطي الخارجي" id="gcp-configure-external-bucket">
     في صفحة `Settings`، انقر على `Change external backup`
 
+    <div className="ch-image-lg">
+
     ![تغيير النسخ الاحتياطي الخارجي](/images/cloud/manage/backups/change_external_backup.webp)
+
+    </div>
   </Step>
 
   <Step title="تهيئة مفتاح HMAC والسر" id="gcp-configure-gcp-hmac-key-and-secret">
     في النافذة المنبثقة، أدخل مسار الـ حاوية التخزين في GCP، ومفتاح HMAC والسر اللذين أُنشئا في القسم السابق.
 
+    <div className="ch-image-md">
+
     ![تهيئة مفتاح HMAC والسر](/images/cloud/manage/backups/gcp_configure.webp)
+
+    </div>
   </Step>
 
   <Step title="حفظ الحاوية الخارجية" id="gcp-save-external-bucket">
@@ -255,7 +283,11 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
   <Step title="عرض النسخ الاحتياطية المخزنة في الـ حاوية التخزين الخاص بك" id="gcp-view-backups-stored-in-your-bucket">
     يجب أن تعرض صفحة Backups هذه النسخ الاحتياطية الموجودة في الـ حاوية التخزين الخاص بك في جدول منفصل كما هو موضح أدناه:
 
+    <div className="ch-image-lg">
+
     ![عرض النسخ الاحتياطية المخزنة في الـ حاوية التخزين الخاص بك](/images/cloud/manage/backups/gcp_stored_backups.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -275,7 +307,11 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     الخاص بتلك النسخة تحديدًا. وستحتاج إلى إضافة مفتاح الوصول السري الخاص بك
     إلى الأمر:
 
+    <div className="ch-image-md">
+
     ![الحصول على أمر SQL المستخدم لاستعادة النسخة الاحتياطية](/images/cloud/manage/backups/gcp_restore_command.webp)
+
+    </div>
 
     <Warning>
       **نقل النسخ الاحتياطية إلى موقع آخر**
@@ -332,14 +368,22 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
   <Step title="تغيير النسخ الاحتياطي الخارجي" id="azure-configure-external-bucket">
     في صفحة `Settings`، انقر على `Change external backup`
 
+    <div className="ch-image-lg">
+
     ![تغيير النسخ الاحتياطي الخارجي](/images/cloud/manage/backups/change_external_backup.webp)
+
+    </div>
   </Step>
 
   <Step title="أدخل سلسلة الاتصال واسم الحاوية لحساب Azure Storage الخاص بك" id="azure-provide-connection-string-and-container-name-azure">
     في الشاشة التالية، أدخل `Connection String` و`Container Name` لحساب Azure Storage
     الذي أنشأته في القسم السابق:
 
+    <div className="ch-image-md">
+
     ![أدخل سلسلة الاتصال واسم الحاوية لحساب Azure Storage الخاص بك](/images/cloud/manage/backups/azure_connection_details.webp)
+
+    </div>
   </Step>
 
   <Step title="حفظ الحاوية الخارجية" id="azure-save-external-bucket">
@@ -358,7 +402,11 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     يجب أن تعرض صفحة Backups هذه النسخ الاحتياطية الموجودة في حاوية التخزين الخاصة بك في جدول منفصل،
     كما هو موضح أدناه:
 
+    <div className="ch-image-md">
+
     ![عرض النسخ الاحتياطية المخزنة في حاوية التخزين الخاصة بك](/images/cloud/manage/backups/view_backups_azure.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -379,7 +427,11 @@ keywords: ['النسخ الاحتياطية', 'التعافي من الكوار�
     أمر الاستعادة الخاص بتلك النسخة الاحتياطية. ستحتاج إلى إضافة سلسلة الاتصال لحساب التخزين
     في Azure إلى الأمر.
 
+    <div className="ch-image-md">
+
     ![استعادة النسخ الاحتياطية في Azure](/images/cloud/manage/backups/restore_backups_azure.webp)
+
+    </div>
 
     <Warning>
       **نقل النسخ الاحتياطية إلى موقع آخر**

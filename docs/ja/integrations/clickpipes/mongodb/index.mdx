@@ -50,15 +50,27 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 1. ClickHouse Cloud コンソールで、ClickHouse Cloud サービスに移動します。
 
+<div className="ch-image-lg">
+
 ![ClickPipes サービス](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. 左側のメニューで `Data Sources` を選択し、「Set up a ClickPipe」をクリックします。
 
+<div className="ch-image-lg">
+
 ![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. `MongoDB CDC` タイルを選択します。
 
+<div className="ch-image-lg">
+
 ![MongoDB を選択](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp)
+
+</div>
 
 <div id="add-your-source-mongodb-database-connection">
   ### ソースの MongoDB データベース接続を追加する
@@ -71,7 +83,11 @@ ClickHouse Cloud アカウントにログインしていることを確認して
   詳しくは、[このページ上部](#prerequisites)にリンクされているソース MongoDB のセットアップガイドを参照してください。
 </Info>
 
+<div className="ch-image-lg">
+
 ![接続情報を入力](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp)
+
+</div>
 
 <div id="optional-changing-tls-settings">
   #### &#x20;(任意) TLS設定の変更
@@ -89,7 +105,11 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 2. SSH接続の詳細を入力します。
 
+   <div className="ch-image-lg">
+
    ![SSHトンネリング](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+   </div>
 
 3. 鍵ベースの認証を使用するには、「Revoke and generate key pair」をクリックして新しいキーペアを生成し、生成された公開鍵をSSHサーバーの`~/.ssh/authorized_keys`にコピーします。
 
@@ -117,7 +137,11 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 5. ここでは、ClickPipe の宛先データベースを選択できます。既存のデータベースを選ぶことも、新しく作成することもできます。
 
+   <div className="ch-image-lg">
+
    ![宛先データベースを選択](/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp)
+
+   </div>
 
 6. コピー元の MongoDB データベースからレプリケートするテーブルを選択できます。テーブルの選択時には、宛先の ClickHouse データベースでテーブル名を変更することもできます。
 
@@ -127,7 +151,11 @@ ClickHouse Cloud アカウントにログインしていることを確認して
 
 7. 権限のドロップダウンで「Full access」ロールを選択し、「Complete Setup」をクリックします。
 
+   <div className="ch-image-lg">
+
    ![権限の確認](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+   </div>
 
 <div id="whats-next">
   ## 次のステップ

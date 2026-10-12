@@ -161,7 +161,11 @@ La plantilla Pub/Sub to ClickHouse está disponible en Google Cloud Console.
 Inicie sesión en Google Cloud Console y busque Dataflow.
 
 1. Presione el botón `CREATE JOB FROM TEMPLATE`.
+   <div className="ch-image-lg">
+
    ![Consola de Dataflow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+
+   </div>
 
 2. Una vez que se abra el formulario de la plantilla, introduzca un nombre para el job y seleccione la región deseada.
 
@@ -188,7 +192,11 @@ Inicie sesión en Google Cloud Console y busque Dataflow.
 
 Ve a la [pestaña Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) en tu Google Cloud Console para supervisar el estado del trabajo. Allí encontrarás los detalles del trabajo, incluidos el progreso y cualquier error:
 
+<div className="ch-image-lg">
+
 ![Consola de Dataflow que muestra un trabajo de Pub/Sub a ClickHouse en ejecución](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
+
+</div>
 
 La plantilla también emite las siguientes métricas personalizadas en el espacio de nombres `PubSubToClickHouse`, visibles desde la página del trabajo de Dataflow:
 

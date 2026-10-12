@@ -30,9 +30,17 @@ doc_type: 'guide'
 
 لمزيد من التفاصيل، نوصي بهذا [الدليل المتعمق](/ar/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
+<div className="ch-image-lg">
+
 ![فهرس B-Tree في PostgreSQL](/images/migrations/postgres-b-tree.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![الفهرس المتفرق في PostgreSQL](/images/migrations/postgres-sparse-index.webp)
+
+</div>
 
 لا يحدد المفتاح المختار في ClickHouse الفهرس فحسب، بل يحدد أيضًا الترتيب الذي تُكتب به البيانات على disk. ولهذا السبب، يمكن أن يؤثر بدرجة كبيرة في مستويات Compression، مما قد ينعكس بدوره على query performance. فمفتاح الترتيب الذي يجعل قيم معظم الأعمدة تُكتب بترتيب متجاور يتيح لخوارزمية الضغط المختارة (والـ codecs) ضغط البيانات بكفاءة أعلى.
 
@@ -54,7 +62,11 @@ doc_type: 'guide'
 
 في ClickHouse، يُحدَّد التقسيم للجدول عند تعريفه أول مرة عبر العبارة `PARTITION BY`. ويمكن أن تحتوي هذه العبارة على تعبير SQL على أي أعمدة، وتحدّد نتيجته القسم الذي يُرسل إليه الصف.
 
+<div className="ch-image-md">
+
 ![أقسام PostgreSQL إلى أقسام ClickHouse](/images/migrations/postgres-partitions.webp)
+
+</div>
 
 ترتبط أجزاء البيانات منطقيًا بكل قسم على القرص، ويمكن الاستعلام عنها بشكل مستقل. في المثال أدناه، نقسّم جدول `posts` حسب السنة باستخدام التعبير `toYear(CreationDate)`. ومع إدراج الصفوف في ClickHouse، سيُقيَّم هذا التعبير لكل صف ويُوجَّه إلى القسم الناتج إذا كان موجودًا (وإذا كان هذا الصف هو الأول لتلك السنة، فسيُنشأ القسم).
 
@@ -272,7 +284,11 @@ WHERE UserId = 8592047
 واحد، حيث تُستغل إسقاطات، متى أمكن، لتسريع
 زمن الاستجابة.
 
+<div className="ch-image-md">
+
 ![إسقاطات PostgreSQL في ClickHouse](/images/migrations/postgres-projections.webp)
+
+</div>
 
 وهذا على النقيض من العروض المادية، حيث يتعين على المستخدم اختيار
 الجدول الهدف المُحسَّن المناسب أو إعادة كتابة استعلامه، بحسب عوامل التصفية.

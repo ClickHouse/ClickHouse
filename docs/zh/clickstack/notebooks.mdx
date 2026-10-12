@@ -13,7 +13,11 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 AI Notebooks 是 ClickStack 中的一种交互式调查工具，结合了 AI agent 和手动分析。你可以用自然语言描述问题，AI agent 会代你查询日志、链路追踪和指标，并以一系列卡片的形式呈现相关数据、图表和摘要。你也可以在 AI 生成的结果旁添加自己的卡片 (图表、表、搜索和 Markdown 注释) ，从而形成完整的调查记录。
 
+<div className="ch-image-lg">
+
 ![AI Notebook 正在调查一次由 Visa 缓存已满引发的故障](/images/use-cases/observability/hyperdx-notebook-hero.webp)
+
+</div>
 
 <Info>
   **仅限托管 ClickStack**
@@ -44,7 +48,11 @@ AI Notebooks 目前在 ClickHouse Cloud 中处于 Beta 阶段。AI 模型和提�
 2. 将 **Generative AI** 切换为开启。
 3. 查看并接受同意对话框。
 
+<div className="ch-image-lg">
+
 ![Team Settings 中的 Generative AI 开关](/images/use-cases/observability/hyperdx-notebook-ai-consent.webp)
+
+</div>
 
 <div id="using-notebooks">
   ## 使用 AI Notebooks
@@ -59,7 +67,11 @@ AI Notebooks 目前在 ClickHouse Cloud 中处于 Beta 阶段。AI 模型和提�
 
 笔记本列表页面会显示你有权限访问的所有笔记本。你可以按名称或标签进行过滤，或在 **我的笔记本** 和 **所有笔记本** 之间切换。
 
+<div className="ch-image-lg">
+
 ![笔记本列表页面](/images/use-cases/observability/hyperdx-notebook-list.webp)
+
+</div>
 
 <div id="running-investigation">
   ### 运行 AI 调查
@@ -77,7 +89,11 @@ AI Notebooks 目前在 ClickHouse Cloud 中处于 Beta 阶段。AI 模型和提�
 
 调查运行期间，你可以点击 **Stop** 取消它。
 
+<div className="ch-image-lg">
+
 ![包含 AI 生成卡片的笔记本](/images/use-cases/observability/hyperdx-notebook-tiles.webp)
+
+</div>
 
 <div id="branching">
   ### 为调查创建分支
@@ -91,11 +107,19 @@ AI Notebooks 目前在 ClickHouse Cloud 中处于 Beta 阶段。AI 模型和提�
 2. 在对话框中，输入修改后的提示词，将调查引导到新的方向。
 3. 点击 **Interrupt &amp; Create Branch**。AI 会从该点启动一个新的调查分支。
 
+<div className="ch-image-md">
+
 ![创建新分支对话框](/images/use-cases/observability/hyperdx-notebook-branch-modal.webp)
+
+</div>
 
 当某个卡片有多个分支时，卡片标题栏上会显示左右箭头按钮，以及一个徽标 (例如 **1/2**) ，用于指示当前共有多少个分支。点击箭头即可在不同分支之间切换。
 
+<div className="ch-image-lg">
+
 ![卡片上的分支导航箭头和 1/2 徽标](/images/use-cases/observability/hyperdx-notebook-branching.webp)
+
+</div>
 
 <div id="manual-tiles">
   ### 添加手动卡片
@@ -114,7 +138,11 @@ AI Notebooks 目前在 ClickHouse Cloud 中处于 Beta 阶段。AI 模型和提�
 
 手动卡片会添加到当前分支中最后一个可见卡片的下方。你可以拖动卡片底边来上下调整其大小。
 
+<div className="ch-image-lg">
+
 ![笔记本底部的手动卡片按钮](/images/use-cases/observability/hyperdx-notebook-manual-tiles.webp)
+
+</div>
 
 <Note>
   如果当前有 AI 调查正在运行，添加或编辑手动卡片会取消该调查。继续之前会先显示确认对话框。
@@ -142,4 +170,8 @@ AI Notebooks 目前在 ClickHouse Cloud 中处于 Beta 阶段。AI 模型和提�
 
 这些上下文会追加到 AI 的系统提示中，并用于团队内所有笔记本调查。
 
+<div className="ch-image-lg">
+
 ![用于自定义上下文的 Agent Settings 面板](/images/use-cases/observability/hyperdx-notebook-agent-context.webp)
+
+</div>

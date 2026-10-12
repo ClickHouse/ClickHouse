@@ -19,11 +19,19 @@ A família de mecanismos de tabela SharedMergeTree é o que viabiliza o ClickHou
 
 Uma melhoria significativa trazida pelo SharedMergeTree é que ele proporciona uma separação mais profunda entre computação e armazenamento em comparação com o ReplicatedMergeTree. A seguir, você pode ver como o ReplicatedMergeTree separa computação e armazenamento:
 
+<div className="ch-image-md">
+
 ![Diagrama do ReplicatedMergeTree](/images/cloud/reference/shared-merge-tree-1.png)
+
+</div>
 
 Como você pode ver, embora os dados armazenados no ReplicatedMergeTree fiquem no armazenamento de objetos, os metadados ainda residem em cada um dos servidores ClickHouse. Isso significa que, para cada operação replicada, os metadados também precisam ser replicados em todas as réplicas.
 
+<div className="ch-image-md">
+
 ![Diagrama do ReplicatedMergeTree com Metadados](/images/cloud/reference/shared-merge-tree-2.png)
+
+</div>
 
 Ao contrário do ReplicatedMergeTree, o SharedMergeTree não exige que as réplicas se comuniquem entre si. Em vez disso, toda a comunicação acontece por meio do armazenamento compartilhado e do clickhouse-keeper. O SharedMergeTree implementa replicação assíncrona sem líder e usa o clickhouse-keeper para coordenação e armazenamento de metadados. Isso significa que os metadados não precisam ser replicados à medida que seu serviço escala para cima e para baixo. Isso resulta em operações mais rápidas de replicação, mutação, mesclagem e escalonamento. O SharedMergeTree permite centenas de réplicas para cada tabela, tornando possível escalar dinamicamente sem shards. Uma abordagem de execução distribuída de consultas é usada no ClickHouse Cloud para aproveitar mais recursos computacionais em uma consulta.
 

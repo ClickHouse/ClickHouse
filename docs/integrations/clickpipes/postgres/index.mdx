@@ -14,6 +14,7 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 import ChangingTLSSettings from '/snippets/clickpipes/_changing_tls_settings.mdx';
 import PostgresClickPipeCli from '/snippets/clickpipes/_postgres_clickpipe_cli.mdx';
+
 import SettingPartitionBy from '/snippets/clickpipes/_target_ch_partition_by.mdx';
 
 <Visibility for="agents">
@@ -67,15 +68,27 @@ Make sure you're logged in to your ClickHouse Cloud account. If you don't have a
 [//]: # (   TODO update image here)
 1. In the ClickHouse Cloud console, navigate to your ClickHouse Cloud Service.
 
+<div className="ch-image-lg">
+
 ![ClickPipes service](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. Select the `Data Sources` button on the left-side menu and click on "Set up a ClickPipe"
 
+<div className="ch-image-lg">
+
 ![Select imports](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. Select the `Postgres CDC` tile
 
+   <div className="ch-image-lg">
+
    ![Select Postgres](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
+
+   </div>
 
 ### Adding your source Postgres database connection {#adding-your-source-postgres-database-connection}
 
@@ -87,7 +100,11 @@ Make sure you're logged in to your ClickHouse Cloud account. If you don't have a
    For more information refer to the source Postgres setup guides linked at [the top of this page](#prerequisites).
 </Info>
 
+   <div className="ch-image-lg">
+
    ![Fill in connection details](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
+
+   </div>
 
 #### (Optional) Setting up AWS Private Link {#optional-setting-up-aws-private-link}
 
@@ -106,7 +123,11 @@ You can specify SSH tunneling details if your source Postgres database isn't pub
 1. Enable the "Use SSH Tunnelling" toggle.
 2. Fill in the SSH connection details.
 
+   <div className="ch-image-lg">
+
    ![SSH tunneling](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+   </div>
 
 3. To use Key-based authentication, click on "Revoke and generate key pair" to generate a new key pair and copy the generated public key to your SSH server under `~/.ssh/authorized_keys`.
 4. Click on "Verify Connection" to verify the connection.
@@ -122,7 +143,11 @@ Once the connection details are filled in, click on "Next".
 
 5. Make sure to select the replication slot from the dropdown list you created in the prerequisites step.
 
+   <div className="ch-image-lg">
+
    ![Select replication slot](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
+
+   </div>
 
 #### Advanced settings {#advanced-settings}
 
@@ -138,7 +163,11 @@ You can configure the Advanced settings if needed. A brief description of each s
 
 6. Here you can select the destination database for your ClickPipe. You can either select an existing database or create a new one.
 
+   <div className="ch-image-lg">
+
    ![Select destination database](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
+
+   </div>
 
 7. You can select the tables you want to replicate from the source Postgres database. While selecting the tables, you can also choose to rename the tables in the destination ClickHouse database as well as exclude specific columns.
 
@@ -152,7 +181,11 @@ You can configure the Advanced settings if needed. A brief description of each s
 
 9. Select the "Full access" role from the permissions dropdown and click "Complete Setup".
 
+   <div className="ch-image-lg">
+
    ![Review permissions](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+   </div>
 
 ## What's next? {#whats-next}
 

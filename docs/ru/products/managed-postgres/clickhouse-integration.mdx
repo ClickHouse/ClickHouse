@@ -8,13 +8,18 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
 Каждый экземпляр ClickHouse Managed Postgres имеет встроенные возможности CDC для любого из ваших сервисов ClickHouse. Это позволяет перенести часть или все данные из вашего экземпляра Postgres в ClickHouse, а изменения данных в Postgres будут непрерывно, почти в реальном времени, отражаться в ClickHouse. В основе этой возможности лежит [ClickPipes](/ru/integrations/clickpipes/home).
 
 Чтобы воспользоваться этой функцией, нажмите **Синхронизация с ClickHouse** на боковой панели вашего экземпляра Postgres.
 
+<div className="ch-image-md">
+
 ![Страница Интеграция с ClickHouse с пунктом интеграции на боковой панели](/images/managed-postgres/clickhouse-integration-intro.webp)
+
+</div>
 
 <Note>
   Перед продолжением убедитесь, что ваш сервис Postgres доступен сервису ClickPipes. Обычно это так по умолчанию, но если вы ограничили доступ по IP, вам может потребоваться разрешить доступ для некоторых исходных IP-адресов из [этого](/ru/integrations/clickpipes/networking/static-ips) списка в зависимости от региона, где расположен ваш **сервис ClickHouse**.
@@ -34,7 +39,11 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
       * **Initial load only**: однократный снимок существующих данных без дальнейших обновлений
       * **CDC only**: пропустить начальный снимок и фиксировать только новые изменения в дальнейшем
 
+    <div className="ch-image-md">
+
     ![Настройка сервиса репликации с именем интеграции, целевым сервисом и параметрами метода репликации](/images/managed-postgres/replication-service-step.webp)
+
+    </div>
 
     Нажмите **Next**, чтобы продолжить.
   </Step>
@@ -48,7 +57,11 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
     * **Snapshot number of rows per partition**: количество строк на партицию во время начального снимка (по умолчанию: 100000)
     * **Snapshot number of tables in parallel**: количество таблиц, для которых снимки создаются параллельно (по умолчанию: 1)
 
+    <div className="ch-image-md">
+
     ![Шаг параметров репликации с интервалом синхронизации, параллельными потоками, размером pull-батча и параметрами снимка](/images/managed-postgres/integration-replication-settings.webp)
+
+    </div>
 
     Нажмите **Next**, чтобы продолжить.
   </Step>
@@ -63,7 +76,11 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
     Раскройте схемы и выберите отдельные таблицы для репликации. Вы также можете настроить имена целевых таблиц и параметры столбцов.
 
+    <div className="ch-image-md">
+
     ![Шаг выбора таблиц с выбором базы данных, параметрами репликации и средством выбора таблиц, сгруппированным по схемам](/images/managed-postgres/select-tables-step.webp)
+
+    </div>
 
     Нажмите **Replicate data to ClickHouse**, чтобы запустить репликацию.
   </Step>
@@ -71,7 +88,11 @@ import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
   <Step title="Отслеживайте ClickPipe" id="monitor-clickpipe">
     После запуска ClickPipe он появится в том же меню. Создание начального снимка всех данных может занять некоторое время в зависимости от размера ваших таблиц.
 
+    <div className="ch-image-md">
+
     ![Список Интеграция с ClickHouse с работающим ClickPipe, его целевым сервисом и статусом](/images/managed-postgres/integration-running.webp)
+
+    </div>
 
     Нажмите на имя интеграции, чтобы просмотреть подробный status, отслеживать прогресс, просматривать ошибки и управлять ClickPipe. См. [Lifecycle of a Postgres ClickPipe](/ru/integrations/clickpipes/postgres/lifecycle), чтобы понять, в каких состояниях может находиться ваш ClickPipe.
   </Step>

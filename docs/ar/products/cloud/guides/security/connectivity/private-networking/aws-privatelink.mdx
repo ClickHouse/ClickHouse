@@ -94,7 +94,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 في ClickHouse Cloud console، افتح الخدمة التي تريد الاتصال بها عبر PrivateLink، ثم انتقل إلى قائمة **Settings**.
 
+<div className="ch-image-md">
+
 ![نقاط النهاية الخاصة](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+</div>
 
 دوّن `Service name` و`اسم DNS`، ثم [انتقل إلى الخطوة التالية](#create-aws-endpoint).
 
@@ -160,7 +164,11 @@ jq .result
 
 حدِّد **Endpoint services that use NLBs and GWLBs**، ثم استخدم `Service name`<sup>console</sup> أو `endpointServiceId`<sup>واجهة برمجة تطبيقات</sup> الذي حصلت عليه من خطوة [Obtain Endpoint &quot;Service name&quot; ](#obtain-endpoint-service-info) في حقل **Service Name**. انقر على **Verify service**:
 
+<div className="ch-image-md">
+
 ![إعدادات نقطة نهاية AWS PrivateLink](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+</div>
 
 <Note>
   لإنشاء اتصال بين المناطق، فعِّل مربع الاختيار **Cross region endpoint** وحدِّد Region الخاصة بالخدمة التي تعمل فيها خدمة ClickHouse الخاصة بك.
@@ -170,7 +178,11 @@ jq .result
 
 بعد ذلك، حدِّد VPC والشبكات الفرعية الخاصة بك:
 
+<div className="ch-image-md">
+
 ![تحديد VPC والشبكات الفرعية](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+</div>
 
 كخطوة اختيارية، عيِّن مجموعات الأمان/الوسوم:
 
@@ -180,7 +192,11 @@ jq .result
 
 بعد إنشاء VPC Endpoint، دوِّن قيمة `Endpoint ID`، إذ ستحتاج إليها في خطوة لاحقة.
 
+<div className="ch-image-md">
+
 ![معرّف VPC Endpoint](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+</div>
 
 <div id="option-2-aws-cloudformation">
   #### الخيار 2: AWS CloudFormation
@@ -256,7 +272,11 @@ resource "aws_vpc_endpoint" "this" {
   إذا كنت تريد السماح بالوصول من اتصال PrivateLink حالي، فاستخدم القائمة المنسدلة لنقطة النهاية الحالية.
 </Note>
 
+<div className="ch-image-md">
+
 ![مرشّح نقاط النهاية الخاصة](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+</div>
 
 للإزالة، يُرجى الانتقال إلى ClickHouse Cloud console، ثم العثور على الخدمة، وبعد ذلك الانتقال إلى **الإعدادات** الخاصة بها، ثم العثور على نقطة النهاية التي تريد إزالتها. أزلها من قائمة نقاط النهاية.
 
@@ -333,7 +353,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
 
 في ClickHouse Cloud console، انتقل إلى **الإعدادات**. انقر على زر **إعداد نقطة نهاية خاصة**. في اللوحة الجانبية المنبثقة، انسخ **اسم DNS**.
 
+<div className="ch-image-md">
+
 ![اسم DNS لنقطة النهاية الخاصة](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+</div>
 
 <div id="option-2-api-3">
   ##### الخيار 2: واجهة برمجة تطبيقات

@@ -15,7 +15,11 @@ Ce guide s’adresse à vous si vous souhaitez créer votre propre solution d’
 
 ClickHouse seul n’est pas une solution d’observabilité clé en main. Il peut toutefois servir de moteur de stockage très performant pour les données d’observabilité, avec des taux de compression inégalés et des temps de réponse aux requêtes extrêmement rapides. Pour utiliser ClickHouse dans une solution d’observabilité, vous avez besoin à la fois d’une interface utilisateur et d’un framework de collecte de données. Nous recommandons actuellement d’utiliser **Grafana** pour visualiser les signaux d’observabilité et **OpenTelemetry** pour la collecte de données (tous deux sont des intégrations officiellement prises en charge).
 
+<div className="ch-image-md">
+
 ![OTel simple](/images/use-cases/observability/observability-1.webp)
+
+</div>
 
 <br />
 
@@ -101,6 +105,10 @@ Chaque trace se compose de plusieurs spans, le span initial associé à la requ�
 
 La plupart des fournisseurs d&#39;observabilité visualisent ces informations sous la forme d&#39;un diagramme en cascade, où les durées relatives sont représentées par des barres horizontales de taille proportionnelle. Par exemple, dans Grafana :
 
+<div className="ch-image-lg">
+
 ![Exemple de trace](/images/use-cases/observability/observability-2.webp)
+
+</div>
 
 Pour les utilisateurs qui souhaitent approfondir les concepts de logs et de traces, nous recommandons vivement la [documentation OpenTelemetry](https://opentelemetry.io/docs/concepts/).

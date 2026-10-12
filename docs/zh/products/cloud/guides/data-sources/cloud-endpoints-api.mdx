@@ -50,8 +50,16 @@ keywords: ['ClickHouse Cloud', '静态 IP 地址', '云端点', 'API', '安全',
 
 例如，运行在 `us-east-2` 且需要连接到 ClickHouse Cloud 服务的 AWS RDS 实例，应配置以下入站安全组规则：
 
+<div className="ch-image-lg">
+
 ![AWS 安全组规则](/images/_snippets/aws-rds-mysql.webp)
+
+</div>
 
 对于同样运行在 `us-east-2` 的 ClickHouse Cloud 服务，如果这次连接的是 GCP 中的 MySQL，`Authorized networks` 应如下所示：
 
+<div className="ch-image-md">
+
 ![GCP Authorized networks](/images/_snippets/gcp-authorized-network.webp)
+
+</div>

@@ -161,7 +161,11 @@ ORDER BY failed_at;
 سجّل الدخول إلى Google Cloud Console وابحث عن Dataflow.
 
 1. اضغط على الزر `CREATE JOB FROM TEMPLATE`.
+   <div className="ch-image-lg">
+
    ![وحدة تحكم Dataflow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+
+   </div>
 
 2. بعد فتح نموذج القالب، أدخل اسم المهمة وحدد المنطقة المطلوبة.
 
@@ -188,7 +192,11 @@ ORDER BY failed_at;
 
 انتقل إلى [علامة التبويب Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) في Google Cloud Console لمتابعة حالة المهمة. ستجد تفاصيل المهمة، بما في ذلك مدى التقدّم وأي أخطاء:
 
+<div className="ch-image-lg">
+
 ![واجهة Dataflow تعرض مهمة Pub/Sub إلى ClickHouse قيد التشغيل](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
+
+</div>
 
 يُصدر القالب أيضًا المقاييس المخصّصة التالية ضمن مساحة الاسم `PubSubToClickHouse`، ويمكن الاطلاع عليها من صفحة مهمة Dataflow:
 

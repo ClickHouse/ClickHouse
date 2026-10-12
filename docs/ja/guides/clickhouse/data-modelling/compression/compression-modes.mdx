@@ -44,7 +44,11 @@ LZ4 と ZSTD はどちらも同じ著者によるものですが、トレード�
 | mode                | byte    | 圧縮モード                                                                                      |
 | compressed&#95;data | binary  | 圧縮データのブロック                                                                                 |
 
+<div className="ch-image-md">
+
 ![ClickHouse の圧縮ブロック構造を示す図](/images/data-compression/ch_compression_block.webp)
+
+</div>
 
 ヘッダーは (raw&#95;size + data&#95;size + mode) で、元のサイズは len(header + compressed&#95;data) に相当します。
 

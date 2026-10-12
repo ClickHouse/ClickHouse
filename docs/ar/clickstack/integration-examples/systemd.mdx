@@ -40,7 +40,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     3. انتقل إلى **Team Settings → API Keys**
     4. انسخ **مفتاح API للاستيعاب** الخاص بك
 
+    <div className="ch-image-lg">
+
     ![مفتاح API لـ ClickStack](/images/clickstack/api-key.webp)
+
+    </div>
 
     5. اضبطه كمتغير بيئة:
 
@@ -183,9 +187,17 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     3. صفِّ حسب `service.name:systemd-logs`
     4. يجب أن ترى إدخالات سجلات منظَّمة تتضمن حقولًا مثل `unit` و`priority` و`MESSAGE` و`_HOSTNAME`
 
+    <div className="ch-image-lg">
+
     ![عرض البحث في السجلات](/images/clickstack/systemd/systemd-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![عرض السجل](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -264,9 +276,17 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     2. انتقل إلى Search view واضبط source على `Logs`
     3. اضبط النطاق الزمني على **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
 
+    <div className="ch-image-lg">
+
     ![عرض البحث في السجلات](/images/clickstack/systemd/systemd-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![عرض السجل](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </div>
 
     <Info>
       **عرض المنطقة الزمنية**
@@ -291,11 +311,19 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     1. افتح HyperDX وانتقل إلى قسم Dashboards
     2. انقر على **Import Dashboard** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
+    <div className="ch-image-lg">
+
     ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. ارفع الملف `systemd-logs-dashboard.json` وانقر على **Finish Import**
 
+    <div className="ch-image-lg">
+
     ![إنهاء الاستيراد](/images/clickstack/systemd/finish-import-systemd.webp)
+
+    </div>
   </Step>
 
   <Step title="عرض لوحة المعلومات" id="created-dashboard">
@@ -307,7 +335,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     * حالات فشل الخدمة
     * معدلات الأخطاء
 
+    <div className="ch-image-lg">
+
     ![مثال على لوحة المعلومات](/images/clickstack/systemd/systemd-logs-dashboard.webp)
+
+    </div>
 
     <Note>
       بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** (مع تعديله بحسب منطقتك الزمنية المحلية).

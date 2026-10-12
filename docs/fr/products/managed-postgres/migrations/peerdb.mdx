@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
 Ce guide explique, étape par étape, comment migrer votre base de données PostgreSQL vers ClickHouse Managed Postgres à l’aide de PeerDB.
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-peerdb-beta" />
@@ -42,7 +43,11 @@ Nous devons d&#39;abord créer des peers pour les bases de données source et ci
 
 Créez un peer pour votre base de données PostgreSQL source en saisissant les détails de connexion, tels que l’hôte, le port, le nom de la base de données, le nom d’utilisateur et le mot de passe. Une fois ces informations renseignées, cliquez sur le bouton `Create peer` pour enregistrer le peer.
 
+<div className="ch-image-md">
+
 ![Création du peer source](/images/managed-postgres/peerdb/source-peer.webp)
+
+</div>
 
 <div id="migration-peerdb-target-peer">
   ### Création du peer cible
@@ -50,11 +55,19 @@ Créez un peer pour votre base de données PostgreSQL source en saisissant les d
 
 De la même manière, créez un peer pour votre instance ClickHouse Managed Postgres en fournissant les informations de connexion nécessaires. Vous pouvez obtenir les [informations de connexion](/fr/products/managed-postgres/connection) de votre instance depuis la console ClickHouse Cloud. Après avoir renseigné les informations, cliquez sur le bouton `Create peer` pour enregistrer le peer cible.
 
+<div className="ch-image-md">
+
 ![Création du peer cible](/images/managed-postgres/peerdb/target-peer.webp)
+
+</div>
 
 Vous devriez maintenant voir les peers source et cible dans la section « Peers ».
 
+<div className="ch-image-md">
+
 ![Liste des peers](/images/managed-postgres/peerdb/peers.webp)
+
+</div>
 
 <div id="migration-peerdb-source-schema-dump">
   ### Obtenir le dump du schéma de la base de données source
@@ -142,7 +155,11 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 Ensuite, nous devons créer un mirror pour définir le processus de migration des données entre les peers source et cible. Dans PeerDB UI, accédez à la section &quot;Mirrors&quot; en cliquant sur &quot;Mirrors&quot; dans la barre latérale. Pour créer un nouveau mirror, cliquez sur le bouton `+ New mirror`.
 
+<div className="ch-image-md">
+
 ![Créer un mirror](/images/managed-postgres/peerdb/create-mirror.webp)
+
+</div>
 
 1. Donnez à votre mirror un nom décrivant la migration.
 2. Sélectionnez les peers source et cible que vous avez créés précédemment dans les menus déroulants.
@@ -151,11 +168,19 @@ Ensuite, nous devons créer un mirror pour définir le processus de migration de
 * Soft delete est sur OFF.
 * Développez `Advanced settings`. Assurez-vous que le **système de types Postgres est activé** et que les **colonnes PeerDB sont désactivées**.
 
+<div className="ch-image-md">
+
 ![Paramètres du mirror](/images/managed-postgres/peerdb/settings.webp)
+
+</div>
 
 4. Sélectionnez les tables que vous souhaitez migrer. Vous pouvez choisir des tables spécifiques ou sélectionner toutes les tables de la base de données source.
 
+<div className="ch-image-md">
+
 ![Sélecteur de tables](/images/managed-postgres/peerdb/table-picker.webp)
+
+</div>
 
 <Info>
   **Sélection des tables**
@@ -167,7 +192,11 @@ Ensuite, nous devons créer un mirror pour définir le processus de migration de
 
 Vous devriez voir votre mirror nouvellement créé dans la section &quot;Mirrors&quot;.
 
+<div className="ch-image-md">
+
 ![Liste des mirrors](/images/managed-postgres/peerdb/mirrors.webp)
+
+</div>
 
 <div id="migration-peerdb-initial-load">
   ## Attendre le chargement initial
@@ -175,7 +204,11 @@ Vous devriez voir votre mirror nouvellement créé dans la section &quot;Mirrors
 
 Après avoir créé le mirror, PeerDB lance le chargement initial des données depuis la base de données source vers la base de données cible. Vous pouvez cliquer sur le mirror, puis sur l’onglet **Chargement initial** pour suivre la progression de la migration initiale des données.
 
+<div className="ch-image-md">
+
 ![Progression du chargement initial](/images/managed-postgres/peerdb/initial-load.webp)
+
+</div>
 
 Une fois le chargement initial terminé, vous devriez voir un statut indiquant que la migration est terminée.
 

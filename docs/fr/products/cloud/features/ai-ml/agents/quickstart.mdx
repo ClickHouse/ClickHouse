@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 Créez un agent personnalisé dans la console Cloud et exécutez une requête en langage naturel sur votre service.
@@ -27,7 +28,11 @@ Créez un agent personnalisé dans la console Cloud et exécutez une requête en
   <Step title="Lancer ClickHouse Agents" id="launch-agents">
     Depuis votre service Cloud, cliquez sur **ClickHouse agents** dans la barre latérale gauche pour ouvrir la page de lancement des agents. Cliquez sur **Launch ClickHouse agents** pour ouvrir l’Agent Builder.
 
+    <div className="ch-image-lg">
+
     ![Navigation du service Cloud avec ClickHouse agents (Beta) sélectionné, affichant la page de lancement avec le bouton Launch ClickHouse agents](/images/cloud/agent-builder/launch-ch-agents.webp)
+
+    </div>
   </Step>
 
   <Step title="Créer l’agent" id="create-the-agent">
@@ -39,7 +44,11 @@ Créez un agent personnalisé dans la console Cloud et exécutez une requête en
     * **Instructions** - le system prompt, qui décrit le rôle de l’agent, les questions auxquelles il doit répondre et les règles métier qu’il doit suivre.
     * **Model** - choisissez un modèle dans la liste déroulante.
 
+    <div className="ch-image-lg">
+
     ![Panneau Agent Builder affichant le menu déroulant Create New Agent, les champs du formulaire (Name, Description, Category, Instructions, Model) et la section Capabilities](/images/cloud/agent-builder/agent-builder.webp)
+
+    </div>
   </Step>
 
   <Step title="Ajouter des capacités et des outils" id="attach-tools">
@@ -47,15 +56,27 @@ Créez un agent personnalisé dans la console Cloud et exécutez une requête en
 
     Les **Capabilities** du panneau principal — des fonctionnalités natives comme [Run Code](/fr/products/cloud/features/ai-ml/agents/builder/code-interpreter), [Web Search](/fr/products/cloud/features/ai-ml/agents/builder/web-search), File Context, Artifacts, [MCP Servers](/fr/products/cloud/features/ai-ml/agents/builder/mcp-servers) et [Skills](/fr/products/cloud/features/ai-ml/agents/builder/skills). Activez celles dont l’agent a besoin.
 
+    <div className="ch-image-sm">
+
     ![Section Capabilities du panneau Agent Builder affichant les interrupteurs Run Code, Web Search, File Context, Artifacts, MCP Servers et Skills](/images/cloud/agent-builder/capabilities.webp)
+
+    </div>
 
     Les **Tools**, accessibles via le bouton **Add Tools** en bas du panneau — des intégrations tierces comme la [génération d’images](/fr/products/cloud/features/ai-ml/agents/builder/image-generation), [Vision](/fr/products/cloud/features/ai-ml/agents/builder/vision), des API de recherche et des services externes.
 
+    <div className="ch-image-sm">
+
     ![Bas du panneau Agent Builder avec le bouton Add Tools mis en évidence](/images/cloud/agent-builder/tools-button.webp)
+
+    </div>
 
     Cliquez sur **Add Tools** pour parcourir le catalogue :
 
+    <div className="ch-image-lg">
+
     ![Fenêtre modale Agent Tools affichant une grille d’intégrations tierces, dont Google, OpenAI Image Tools, Wolfram, DALL-E-3, Tavily Search, Calculator et Stable Diffusion](/images/cloud/agent-builder/tools-modal.webp)
+
+    </div>
 
     Les [Subagents](/fr/products/cloud/features/ai-ml/agents/builder/subagents) se configurent dans **Advanced settings** — consultez la page des subagents pour plus de détails.
 
@@ -65,7 +86,11 @@ Créez un agent personnalisé dans la console Cloud et exécutez une requête en
   <Step title="Exécuter une requête" id="run-a-query">
     Enregistrez l’agent, ouvrez une nouvelle conversation et sélectionnez votre agent dans le sélecteur d’agents. Saisissez une question — par exemple, *&quot;Quelles sont mes 10 principales tables par nombre de lignes cette semaine ?&quot;* — et l’agent planifie, appelle des outils si nécessaire, puis fournit une réponse.
 
+    <div className="ch-image-lg">
+
     ![Échange dans le chat affichant la question 'Quelles sont mes 10 principales tables par nombre de lignes cette semaine ?' et la réponse de l’agent — un tableau Markdown classant les 10 principales tables de tous les services par nombre de lignes, avec Key Observations en dessous](/images/cloud/agent-builder/chat-query.webp)
+
+    </div>
   </Step>
 </Steps>
 

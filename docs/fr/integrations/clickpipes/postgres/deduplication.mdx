@@ -62,7 +62,11 @@ ORDER BY id;
 
 L’illustration ci-dessous présente un exemple simple de synchronisation d’une table `users` entre PostgreSQL et ClickHouse à l’aide de ClickPipes.
 
+<div className="ch-image-lg">
+
 ![Chargement initial de ClickPipes](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
+
+</div>
 
 **Étape 1** montre l’instantané initial des 2 lignes dans PostgreSQL, puis ClickPipes effectuant le chargement initial de ces 2 lignes vers ClickHouse. Comme vous pouvez l’observer, les deux lignes sont copiées telles quelles dans ClickHouse.
 

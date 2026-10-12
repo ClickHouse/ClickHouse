@@ -16,7 +16,11 @@ doc_type: 'guide'
 
 このプロセスにより、クエリ時の複雑な JOIN が不要になり、読み取り処理を大幅に高速化できるため、読み取り負荷が高く複雑なクエリを伴うアプリケーションに適しています。一方で、書き込み処理や保守の複雑さは増す可能性があります。整合性を維持するには、複製されたデータへの変更をすべてのインスタンスに反映させる必要があるためです。
 
+<div className="ch-image-lg">
+
 ![ClickHouse における非正規化](/images/data-modeling/denormalization-diagram.webp)
+
+</div>
 
 <br />
 
@@ -145,7 +149,11 @@ LIMIT 5
 
 次に、`Users` と `Badges` を見ていきましょう。
 
+<div className="ch-image-lg">
+
 ![Users と Badges のスキーマ](/images/data-modeling/denormalization-schema.webp)
+
+</div>
 
 <p />
 

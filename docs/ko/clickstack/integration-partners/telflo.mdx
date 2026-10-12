@@ -118,7 +118,11 @@ Telflo는 다음 기능을 제공합니다:
 
     수신기에서 프로세서를 거쳐 exporter까지 엣지를 연결하여 시그널별로 하나의 파이프라인을 구성합니다. status 행에는 **config valid** 또는 수정해야 할 오류 개수가 표시되며, **YAML** 탭에서 생성된 구성을 확인할 수 있습니다.
 
+    <div className="ch-image-lg">
+
     ![ClickHouse exporter가 구성된 Telflo Editor의 collector pipeline](/images/clickstack/telflo/telflo-configuration.webp)
+
+    </div>
 
     본격적으로 배포하기 전에 샘플 텔레메트리를 구성에 흘려보내 최종 출력이 어떻게 나오는지 확인할 수 있습니다. [Telflo 테스트](https://docs.telflo.com/docs/testing/overview)를 참조하십시오. 또는 수행하려는 작업을 설명하면 툴바의 **AI** 버튼으로 열 수 있는 Telflo AI 어시스턴트가 구성을 빌드하고 검사하며 테스트해 줍니다. 직접 운영하는 에이전트도 [Telflo CLI](https://docs.telflo.com/docs/cli/)를 통해 동일한 작업을 수행할 수 있습니다.
   </Step>
@@ -135,7 +139,11 @@ Telflo는 다음 기능을 제공합니다:
 
     변경 사항을 배포하려면 새 버전을 게시하고 이를 그룹에 할당하십시오. 롤백하려면 이전에 배포했던 버전을 할당하십시오.
 
+    <div className="ch-image-lg">
+
     ![롤아웃 후 모든 collector가 동기화된 Telflo fleet](/images/clickstack/telflo/telflo-fleet.webp)
+
+    </div>
   </Step>
 
   <Step title="텔레메트리 확인" id="verify-telemetry">

@@ -21,42 +21,78 @@ doc_type: 'guide'
 
 2. في علامة التبويب `Users`، حدِّد `Create user`
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-1.webp)
+
+</div>
 
 3. أدخل اسم المستخدم
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-2.webp)
+
+</div>
 
 4. حدِّد `Next`
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-3.webp)
+
+</div>
 
 5. حدِّد `Next`
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-4.webp)
+
+</div>
 
 6. حدِّد `Create user`
 
 تم الآن إنشاء المستخدم.
 انقر على المستخدم الذي أنشأته للتو
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-5.webp)
+
+</div>
 
 7. حدِّد `Create access key`
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-6.webp)
+
+</div>
 
 8. حدِّد `Application running outside AWS`
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-7.webp)
+
+</div>
 
 9. حدِّد `Create access key`
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-8.webp)
+
+</div>
 
 10. نزّل مفتاح الوصول والمفتاح السري بصيغة ‎.csv‎ لاستخدامهما لاحقًا
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-9.webp)
+
+</div>
 
 <div id="create-an-s3-bucket">
   ## إنشاء حاوية S3
@@ -64,11 +100,19 @@ doc_type: 'guide'
 
 1. في قسم حاوية S3، حدّد **Create bucket**
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-10.webp)
+
+</div>
 
 2. أدخل اسم الحاوية، واترك الخيارات الأخرى على القيم الافتراضية
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-11.webp)
+
+</div>
 
 <Note>
   يجب أن يكون اسم الحاوية فريدًا على مستوى AWS بالكامل، وليس على مستوى المؤسسة فقط، وإلا فسيظهر خطأ.
@@ -76,37 +120,69 @@ doc_type: 'guide'
 
 3. اترك `Block all Public Access` مفعّلًا؛ إذ لا حاجة إلى الوصول العام.
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-12.webp)
+
+</div>
 
 4. حدّد **Create Bucket** في أسفل الصفحة
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-13.webp)
+
+</div>
 
 5. حدّد الرابط، وانسخ ARN، واحفظه لاستخدامه عند تهيئة سياسة الوصول الخاصة بالحاوية
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-14.webp)
+
+</div>
 
 6. بعد إنشاء الحاوية، اعثر على حاوية S3 الجديدة في قائمة حاويات S3 وحدّد اسم الحاوية، ما سينقلك إلى الصفحة الموضحة أدناه:
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-15.webp)
+
+</div>
 
 7. حدّد `Create folder`
 
 8. أدخل اسم مجلد ليكون الوجهة لقرص S3 في ClickHouse أو للنسخة الاحتياطية، ثم حدّد `Create folder` في أسفل الصفحة
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-16.webp)
+
+</div>
 
 9. ينبغي أن يكون المجلد الآن ظاهرًا في قائمة الحاوية
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-17.webp)
+
+</div>
 
 10. حدّد مربع الاختيار للمجلد الجديد وانقر على `Copy URL`. احفظ URL لاستخدامه في تهيئة التخزين الخاصة بـ ClickHouse في القسم التالي.
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-18.webp)
+
+</div>
 
 11. حدّد علامة التبويب **Permissions** وانقر على الزر **Edit** في قسم **Bucket Policy**
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console - إضافة مستخدم جديد](/images/_snippets/s3/2025/s3-19.webp)
+
+</div>
 
 12. أضف سياسة للحاوية، كما في المثال أدناه
 

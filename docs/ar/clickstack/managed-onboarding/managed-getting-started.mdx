@@ -10,6 +10,7 @@ hide_advert: true
 ---
 
 import GatherCredentials from '/snippets/ar/clickstack/_gather_credentials.mdx';
+
 import CreateIngestionUser from '/snippets/ar/clickstack/_create_ingestion_user.mdx';
 
 ينقلك هذا الدليل من خدمة ClickStack مُدارة فارغة تمامًا إلى تدفّق السجلات والمقاييس والتتبعات وإعادة تشغيل الجلسات من تطبيق حقيقي. ستنشر OpenTelemetry Collector جديدًا (أو تكيّف واحدًا موجودًا إذا كان لديك) ليتصل بخدمتك، ثم تُزوّد تطبيق Node.js نموذجيًا بأدوات الرصد من دون أي تغييرات على business logic الخاصة به، وبعد ذلك تستكشف بيانات telemetry في واجهة ClickStack.
@@ -210,7 +211,11 @@ import CreateIngestionUser from '/snippets/ar/clickstack/_create_ingestion_user.
 
     افتح [http://localhost:5001](http://localhost:5001). سترى أداة لاختيار السنة، وإحصاءات موجزة، ومخططًا للنشاط، وجدولين لأبرز المستخدمين والنطاقات، ومربع بحث. جرّب التنقّل: بدّل السنوات وتعمّق في القصص.
 
+    <div className="ch-image-lg">
+
     ![تطبيق HackerNews Analyzer يعمل محليًا](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </div>
 
     في هذه المرحلة، يكون التطبيق قيد التشغيل لكنه غير مزوّد بأدوات القياس عن بُعد. لا يعرض ClickStack أي بيانات، إذ ما يزال بانتظار بيانات القياس عن بُعد. هذه هي حالة &quot;ما قبل&quot;.
   </Step>
@@ -299,31 +304,55 @@ import CreateIngestionUser from '/snippets/ar/clickstack/_create_ingestion_user.
   <Step title="شغّل ClickStack واستكشف بيانات التليمتري الخاصة بك" id="launch-clickstack">
     افتح خدمتك في [ClickHouse Cloud console](https://console.clickhouse.cloud) وحدد **ClickStack** من القائمة اليمنى، ثم **Start Ingestion**.
 
+    <div className="ch-image-lg">
+
     ![تشغيل ClickStack](/images/use-cases/observability/clickstack-cloud-first-time.webp)
+
+    </div>
 
     يمكنك تخطي الخطوة التالية، لأنك أعددت الـ collector بالفعل. انقر على **Launch ClickStack** للمتابعة.
 
     سيُفتح ClickStack في علامة تبويب جديدة، ويُفترض أن يتم توجيهك تلقائيًا إلى صفحة **Getting Started**. وإذا لم يحدث ذلك، فحدد **Getting Started** من القائمة الجانبية، ثم انقر على **Start Ingestion** ثم **Next**.
 
+    <div className="ch-image-lg">
+
     ![ClickStack Start Ingestion](/images/use-cases/observability/clickstack-start-ingestion.webp)
+
+    </div>
 
     يجب أن يكتشف ClickStack جداولك وبيانات التليمتري تلقائيًا، ما يتيح لك المتابعة. حدد **Start Exploring** لبدء استكشاف بياناتك.
 
+    <div className="ch-image-lg">
+
     ![ClickStack Start Exploring](/images/use-cases/observability/clickstack-start-exploring.webp)
+
+    </div>
 
     اعرض الآن البيانات التي ينتجها التطبيق:
 
     1. انتقل إلى **Search** وطبّق عامل تصفية على آخر 5 دقائق. ستبدأ logs الخاصة بـ `hn-analyzer-api` في الظهور.
 
+    <div className="ch-image-lg">
+
     ![سجلات ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_logs.webp)
+
+    </div>
 
     2. انقر على أحد الطلبات وتتبع trace صعودًا. سترى span الخاصة بمعالج Express، وspan فرعية لـ HTTP تشير إلى ClickHouse cluster مع مدة الشبكة الفعلية، وسجلات `console.log` مترابطة على trace نفسه.
 
+    <div className="ch-image-lg">
+
     ![ClickStack Traces](/images/clickstack/getting-started/instrument_app_clickstack_traces.webp)
+
+    </div>
 
     3. افتح **Session Replay** لتشغيل فيديو قابل للتنقل لجلسة متصفح، متزامن مع المخطط الزمني للـ trace.
 
+    <div className="ch-image-lg">
+
     ![جلسات ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp)
+
+    </div>
 
     تصل logs وmetrics وtraces وعمليات إعادة تشغيل الجلسات كلها إلى واجهة UI نفسها، وتستخدم لغة query نفسها، وتكون مترابطة تلقائيًا.
 

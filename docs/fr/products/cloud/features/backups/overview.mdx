@@ -23,7 +23,11 @@ Dans la capture d’écran ci-dessous, les carrés en trait plein représentent 
 
 Le jour 1, une sauvegarde complète est effectuée pour démarrer la chaîne de sauvegarde. Le jour 2, une sauvegarde incrémentielle est effectuée, et les sauvegardes complète et incrémentielle peuvent toutes deux être utilisées pour la restauration. Au jour 7, la chaîne contient une sauvegarde complète et six sauvegardes incrémentielles, toutes visibles et disponibles pour la restauration. Le jour 8, une nouvelle sauvegarde complète est effectuée et, au jour 9, dès que la nouvelle chaîne contient deux sauvegardes, la chaîne précédente est supprimée.
 
+<div className="ch-image-lg">
+
 ![Exemple de chaîne de sauvegarde dans ClickHouse Cloud](/images/cloud/manage/backup-chain.webp)
+
+</div>
 
 <div id="default-backup-policy">
   ### Politique de sauvegarde par défaut

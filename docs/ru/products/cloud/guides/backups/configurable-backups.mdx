@@ -9,6 +9,7 @@ doc_type: 'guide'
 
 import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
 import ConfigurableBackupsCLI from "/snippets/ru/cloud/backups/_configurable_backups_cli.mdx";
 
 <Visibility for="agents">
@@ -21,11 +22,19 @@ import ConfigurableBackupsCLI from "/snippets/ru/cloud/backups/_configurable_bac
 
     Чтобы настроить расписание резервного копирования для сервиса, перейдите на вкладку **Настройки** в консоли и нажмите **Изменить настройки резервного копирования**.
 
+    <div className="ch-image-lg">
+
     ![Настройка параметров резервного копирования](/images/cloud/manage/backup-settings.webp)
+
+    </div>
 
     Справа откроется вкладка, где можно задать срок хранения, частоту и время начала. Чтобы выбранные настройки вступили в силу, их нужно сохранить.
 
+    <div className="ch-image-lg">
+
     ![Выбор срока хранения и частоты резервного копирования](/images/cloud/manage/backup-configuration-form.webp)
+
+    </div>
 
     <Note>
       Время начала и частота — взаимоисключающие параметры. Приоритет имеет время начала.

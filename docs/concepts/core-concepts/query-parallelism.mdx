@@ -17,20 +17,32 @@ We use an aggregation query on the [uk_price_paid_simple](/concepts/core-concept
 
 When ClickHouse ① runs an aggregation query with a filter on the table's primary key, it ② loads the primary index into memory to ③ identify which granules need to be processed, and which can be safely skipped:
 
+<div className="ch-image-md">
+
 ![Index analysis](/images/guides/best-practices/query-parallelism_01.webp)
+
+</div>
 
 ### Distributing work across processing lanes {#distributing-work-across-processing-lanes}
 
 The selected data is then [dynamically](#load-balancing-across-processing-lanes) distributed across `n` parallel [processing lanes](/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization), which stream and process the data [block](/resources/develop-contribute/introduction/architecture#block) by block into the final result:
 
+<div className="ch-image-md">
+
 ![4 parallel processing lanes](/images/guides/best-practices/query-parallelism_02.webp)
+
+</div>
 
 <br/><br/>
 The number of `n` parallel processing lanes is controlled by the [`max_threads`](/reference/settings/session-settings/max-threads#max_threads) setting, which by default matches the number of cores (threads) of a single CPU available to ClickHouse on the server. In the example above, we assume `4` cores.
 
 On a machine with `8` cores, query processing throughput would roughly double (but memory usage would also increase accordingly), as more lanes process data in parallel:
 
+<div className="ch-image-md">
+
 ![8 parallel processing lanes](/images/guides/best-practices/query-parallelism_03.webp)
+
+</div>
 
 <br/><br/>
 Efficient lane distribution is key to maximizing CPU utilization and reducing total query time.
@@ -39,7 +51,11 @@ Efficient lane distribution is key to maximizing CPU utilization and reducing to
 
 When table data is distributed across multiple servers as [shards](/guides/oss/deployment-and-scaling/shards), each server processes its shard in parallel. Within each server, the local data is handled using parallel processing lanes, just as described above:
 
+<div className="ch-image-md">
+
 ![Distributed lanes](/images/guides/best-practices/query-parallelism_04.webp)
+
+</div>
 
 <br/><br/>
 The server that initially receives the query collects all sub-results from the shards and combines them into the final global result.
@@ -104,7 +120,11 @@ Note: Read the operator plan above from bottom to top. Each line represents a st
 
 ClickHouse's [embedded web UI](/concepts/features/interfaces/http) (available at the `/play` endpoint) can render the physical plan from above as a graphical visualization. In this example, we set `max_threads` to `4` to keep the visualization compact, showing just 4 parallel processing lanes:
 
+<div className="ch-image-lg">
+
 ![Query pipeline](/images/guides/best-practices/query-parallelism_05.webp)
+
+</div>
 
 Note: Read the visualization from left to right. Each row represents a parallel processing lane that streams data block by block, applying transformations such as filtering, aggregation, and final processing stages. In this example, you can see four parallel lanes corresponding to the `max_threads = 4` setting.
 

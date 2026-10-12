@@ -39,7 +39,11 @@ O ClickHouse oferece três maneiras de ler formatos de tabela abertos: funções
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![Consulta do Iceberg](/images/datalake/iceberg-query-direct.webp)
+
+    </div>
 
     O ClickHouse lê os metadados do Iceberg diretamente do S3 e infere o esquema automaticamente. A mesma abordagem funciona para [`deltaLake()`](/pt-BR/reference/functions/table-functions/deltalake), [`hudi()`](/pt-BR/reference/functions/table-functions/hudi) e [`paimon()`](/pt-BR/reference/functions/table-functions/paimon).
 
@@ -66,7 +70,11 @@ O ClickHouse oferece três maneiras de ler formatos de tabela abertos: funções
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![Consulta no Iceberg](/images/datalake/iceberg-query-engine.webp)
+
+    </div>
 
     O mecanismo de tabela oferece suporte a cache de dados, cache de metadados, evolução de esquema e time travel. Consulte o guia [Consultando diretamente](/pt-BR/guides/use-cases/data-warehousing/getting-started/querying-directly) para obter detalhes sobre os recursos do mecanismo de tabela e a [matriz de suporte](/pt-BR/guides/use-cases/data-warehousing/support-matrix) para uma comparação completa dos recursos.
   </Step>
@@ -158,7 +166,11 @@ O ClickHouse oferece três maneiras de ler formatos de tabela abertos: funções
 
     Esta consulta percorre todo o conjunto de dados no S3, já que o Iceberg não reconhece o filtro `counterid` — espere que leve vários segundos.
 
+    <div className="ch-image-lg">
+
     ![Consulta no Iceberg](/images/datalake/iceberg-query.webp)
+
+    </div>
 
     Agora crie uma tabela MergeTree e carregue os dados:
 
@@ -192,7 +204,11 @@ O ClickHouse oferece três maneiras de ler formatos de tabela abertos: funções
     LIMIT 5
     ```
 
+    <div className="ch-image-lg">
+
     ![Consulta do ClickHouse](/images/datalake/clickhouse-query.webp)
+
+    </div>
 
     Como `counterid` é a primeira coluna da chave `ORDER BY`, o índice primário esparso do ClickHouse vai direto aos grânulos relevantes — lendo apenas as linhas de `counterid = 38` em vez de varrer todas as 100 milhões de linhas. O resultado é uma aceleração drástica.
 

@@ -111,7 +111,11 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
     SELECT * FROM nginxdb.access_logs
     ```
 
+    <div className="ch-image-lg">
+
     ![عرض سجلات ClickHouse بتنسيق جدولي](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
+
+    </div>
   </Step>
 
   <Step title="تحليل السجلات" id="4-parse-the-logs">
@@ -213,7 +217,11 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
     SELECT * FROM nginxdb.access_logs_view
     ```
 
+    <div className="ch-image-lg">
+
     ![اعرض سجلات ClickHouse المُحلَّلة بتنسيق جدولي](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
+
+    </div>
 
     <Note>
       في الدرس أعلاه، جرى تخزين البيانات في جدولين، لكن يمكنك تغيير الجدول الأولي `nginxdb.access_logs` لاستخدام محرك الجدول [`Null`](/ar/reference/engines/table-engines/special/null).

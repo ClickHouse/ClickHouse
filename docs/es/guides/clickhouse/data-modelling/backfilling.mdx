@@ -476,7 +476,11 @@ El [motor de tabla Null](/es/reference/engines/table-engines/special/null) propo
 
 Es importante destacar que cualquier vista materializada adjunta al motor de tabla sigue ejecutándose sobre bloques de datos a medida que se insertan, enviando los resultados a una tabla de destino. Estos bloques tienen un tamaño configurable. Aunque los bloques más grandes pueden ser más eficientes (y procesarse más rápido), consumen más recursos (principalmente memoria). El uso de este motor de tabla significa que podemos crear nuestra vista materializada de forma incremental, es decir, un bloque cada vez, evitando así tener que mantener toda la agregación en memoria.
 
+<div className="ch-image-md">
+
 ![Desnormalización en ClickHouse](/images/data-modeling/null_table_mv.webp)
+
+</div>
 
 <br />
 

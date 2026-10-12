@@ -22,7 +22,11 @@ receiver は通常の collector パイプライン 内にあるため、次の�
 * 現在の収集レイヤーを維持したまま ClickStack へ移行しつつ、OpenTelemetry インストルメンテーションを段階的に導入して、**移行をスムーズに進める**。
 * 長期的に **両方のスタックを並列に運用し**、それぞれのプラットフォームを得意分野に応じて使い分ける。
 
+<div className="ch-image-lg">
+
 ![Datadogエージェントの移行](/images/use-cases/observability/migrating_datadog_agents.png)
+
+</div>
 
 <div id="why-run-clickstack-alongside-datadog">
   ## なぜ Datadog と併用して ClickStack を運用するのか
@@ -46,17 +50,29 @@ receiver は通常の collector パイプライン 内にあるため、次の�
 
 一般的な OpenTelemetry のデプロイメントでは、テレメトリーはバックエンドに到達する前に OpenTelemetry collector に送られます。collector は、agent モードの collector や、アプリケーションをインストルメントする [OpenTelemetry SDKs](/ja/clickstack/ingesting-data/sdks/index) からデータを受け取り、必要に応じてフィルタリングや変換を適用し、イベントをバッチ化して、目的の宛先にエクスポートします。
 
+<div className="ch-image-lg">
+
 ![シンプルな OTel パイプライン](/images/use-cases/observability/simple_otel_pipeline.png)
+
+</div>
 
 [Datadog receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver) は、このアーキテクチャに新たな入力経路を追加します。Datadog の agent や SDK で使われるプロトコルを理解するエンドポイントを公開し、受信した Datadog ペイロードを OpenTelemetry のデータモデルに変換します。以降は、他のテレメトリーと同様に通常の collector パイプラインを通ります。
 
 既存の Datadog エージェント は、ClickStack collector 上で稼働する receiver にログとトレースを送信するよう再設定するだけで済みます。アプリケーションは既存の Datadog SDK をそのまま使い続けられ、インフラストラクチャ全体にすでにデプロイされている agent もそのまま維持できます。
 
+<div className="ch-image-lg">
+
 ![Datadog から OpenTelemetry へ](/images/use-cases/observability/datadog_to_otel.png)
+
+</div>
 
 collector パイプラインでは複数のエクスポーターを利用できるため、同じテレメトリーを Datadog と ClickStack の両方に同時に送信できます。これにより、並行的な評価や長期的な並行運用が可能になります。つまり、同一のデータで両方のプラットフォームを比較したうえで、移行するかどうかを独立して判断できます。
 
+<div className="ch-image-lg">
+
 ![Datadog エージェント の移行](/images/use-cases/observability/migrating_datadog_agents.png)
+
+</div>
 
 <div id="what-the-receiver-handles">
   ## receiverが処理する内容
@@ -200,7 +216,11 @@ Datadog receiver は、`8126` ポートで待ち受ける ClickStack 版の Open
       <Step title="インジェスト API key をコピーする" id="copy-ingestion-key-oss">
         ClickStack のインターフェイス (HyperDX) で、左下のユーザーを選択し、**Team Settings &gt; API Keys** に移動して、**Ingestion API Key** をコピーします。
 
+        <div className="ch-image-lg">
+
         ![ClickStack インジェスト key](/images/use-cases/observability/hyperdx_ingestion_key.png)
+
+        </div>
       </Step>
 
       <Step title="Datadog agent を設定する" id="configure-datadog-agent-oss">
@@ -274,7 +294,11 @@ Datadog receiver は、`8126` ポートで待ち受ける ClickStack 版の Open
 
     アプリの実行方法は、[README の手順](https://github.com/ClickHouse/hn-news-analyzer/tree/datadog-instrumentation) を参照してください。
 
+    <div className="ch-image-lg">
+
     ![ローカルで実行中の HackerNews Analyzer アプリケーション](/images/clickstack/getting-started/hackernews_main.webp)
+
+    </div>
   </Step>
 
   <Step title="receiver を有効にして ClickStack を起動する" id="launch-clickstack-example">
@@ -313,11 +337,23 @@ Datadog receiver は、`8126` ポートで待ち受ける ClickStack 版の Open
   <Step title="ClickStack でテレメトリーを確認する" id="explore-telemetry">
     [http://localhost:8080](http://localhost:8080) で HyperDX インターフェイスを開き、Datadog エージェント から収集されたトレース、ログ、メトリクスを確認します。
 
+    <div className="ch-image-lg">
+
     ![clickstack の Datadog traces 2](/images/use-cases/observability/datadog_clickstack_demo_2.png)
+
+    </div>
+
+    <div className="ch-image-lg">
 
     ![clickstack の Datadog traces 1](/images/use-cases/observability/datadog_clickstack_demo_1.png)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![clickstack の Datadog traces 3](/images/use-cases/observability/datadog_clickstack_demo_3.png)
+
+    </div>
   </Step>
 </Steps>
 

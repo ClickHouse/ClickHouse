@@ -21,42 +21,78 @@ Neste procedimento, vamos criar um usuário para uma conta de serviço, não um 
 
 2. Na guia `Users`, selecione `Create user`
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-1.webp)
+
+</div>
 
 3. Insira um nome de usuário
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-2.webp)
+
+</div>
 
 4. Selecione `Next`
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-3.webp)
+
+</div>
 
 5. Selecione `Next`
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-4.webp)
+
+</div>
 
 6. Selecione `Create user`
 
 O usuário foi criado.
 Clique no usuário recém-criado
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-5.webp)
+
+</div>
 
 7. Selecione `Create access key`
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-6.webp)
+
+</div>
 
 8. Selecione `Application running outside AWS`
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-7.webp)
+
+</div>
 
 9. Selecione `Create access key`
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-8.webp)
+
+</div>
 
 10. Baixe sua chave de acesso e a chave secreta como um arquivo .csv para usar mais tarde
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-9.webp)
+
+</div>
 
 <div id="create-an-s3-bucket">
   ## Criar um bucket do S3
@@ -64,11 +100,19 @@ Clique no usuário recém-criado
 
 1. Na seção de bucket do S3, selecione **Create bucket**
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-10.webp)
+
+</div>
 
 2. Insira um nome para o bucket e deixe as demais opções com os valores padrão
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-11.webp)
+
+</div>
 
 <Note>
   O nome do bucket deve ser exclusivo em toda a AWS, não apenas na sua organização, ou ocorrerá um erro.
@@ -76,37 +120,69 @@ Clique no usuário recém-criado
 
 3. Deixe `Block all Public Access` enabled; o acesso público não é necessário.
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-12.webp)
+
+</div>
 
 4. Selecione **Create Bucket** na parte inferior da página
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-13.webp)
+
+</div>
 
 5. Selecione o link, copie o ARN e salve-o para usar ao configurar a política de acesso do bucket
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-14.webp)
+
+</div>
 
 6. Depois que o bucket for criado, localize o novo bucket do S3 na lista de buckets do S3 e selecione o nome dele; isso levará você à página mostrada abaixo:
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-15.webp)
+
+</div>
 
 7. Selecione `Create folder`
 
 8. Insira um nome de pasta que será o destino do disco S3 ou do backup do ClickHouse e selecione `Create folder` na parte inferior da página
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-16.webp)
+
+</div>
 
 9. A pasta agora deve estar visível na lista do bucket
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-17.webp)
+
+</div>
 
 10. Marque a caixa de seleção da nova pasta e clique em `Copy URL`. Salve a URL para usar na configuração de armazenamento do ClickHouse na próxima seção.
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-18.webp)
+
+</div>
 
 11. Selecione a guia **Permissions** e clique no botão **Edit** na seção **Bucket Policy**
 
+<div className="ch-image-lg">
+
 ![Console de Gerenciamento do AWS IAM - Adicionando um novo usuário](/images/_snippets/s3/2025/s3-19.webp)
+
+</div>
 
 12. Adicione uma política de bucket, conforme o exemplo abaixo
 

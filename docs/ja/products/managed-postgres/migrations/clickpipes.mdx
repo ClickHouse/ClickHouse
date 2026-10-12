@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
 
 ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Postgres サービスに移行するための ClickPipes をご利用いただけるようになりました。この組み込みインテグレーションにより、ソースデータベースへの接続、スキーマのエクスポート、Managed Postgres へのインポート、継続的なレプリケーションの設定をスムーズに行えます。
@@ -43,15 +44,27 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 
 [ClickHouse Cloud console](https://clickhouse.cloud) を開き、Managed Postgres サービスを選択します。
 
+<div className="ch-image-lg">
+
 ![ClickHouse Cloud のサービス一覧に表示される Managed Postgres のサービスカード](/images/managed-postgres/pgpg/servicecard.webp)
+
+</div>
 
 左側のサイドバーで、**データソース** をクリックします。
 
+<div className="ch-image-lg">
+
 ![Managed Postgres サービスのサイドバーにある データソース エントリ](/images/managed-postgres/pgpg/overview.webp)
+
+</div>
 
 **Start import** をクリックします。
 
+<div className="ch-image-lg">
+
 ![Start import ボタンが表示された データソース ページ](/images/managed-postgres/pgpg/startimport.webp)
+
+</div>
 
 ソース PostgreSQL データベースの接続情報 (ホスト、ポート、ユーザー名、パスワード、データベース名) を入力します。ソース側で必要な場合は、**TLS** を有効にします。
 
@@ -63,13 +76,21 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 * **初期ロード only** — 一回限りのコピーで、継続的なレプリケーションは行いません。
 * **CDC only** — 初期コピーをスキップし、この時点以降の新しい変更だけをレプリケートします。
 
+<div className="ch-image-lg">
+
 ![ステップ 1: インジェスト方法のオプションを含むソースデータベース接続フォーム](/images/managed-postgres/pgpg/migrationform.webp)
+
+</div>
 
 **Next** をクリックします。
 
 ## 自動スキーマ移行 {#automated-schema-migration}
 
+<div className="ch-image-lg">
+
 ![ステップ 2: 宛先データベースセレクターを使用した自動スキーマ移行](/images/managed-postgres/pg_dump_restore/automated.webp)
+
+</div>
 
 このオプションを選択すると、ClickPipe の作成後、[Setup フェーズ](/ja/integrations/clickpipes/postgres/lifecycle#setup)中にソースデータベースのスキーマが自動的に取得され、Managed Postgres サービスに適用されます。
 
@@ -77,7 +98,11 @@ ClickHouse Cloud では、外部の PostgreSQL データベースを Managed Pos
 
 ドロップダウンから宛先データベースを選択するか、**新しいデータベースを作成**をクリックして作成します。
 
+<div className="ch-image-lg">
+
 ![新しい Postgres データベースを作成するダイアログ](/images/managed-postgres/pg_dump_restore/newdb.webp)
+
+</div>
 
 ### 監視 {#monitoring}
 
@@ -91,13 +116,21 @@ ClickPipes の詳細ビューで、スキーマ移行の進行状況を確認で
 
 移行先データベースにすでにデータが存在する場合や、自動モードで想定されるクリーンな状態ではなく、よりカスタマイズしたセットアップを行う場合は、ここで**手動**モードを選択できます。
 
+<div className="ch-image-lg">
+
 ![ステップ2: pg_dumpエクスポートコマンドによる手動スキーマ移行](/images/managed-postgres/pg_dump_restore/manual.webp)
+
+</div>
 
 ### データベーススキーマをエクスポートする {#step-2-export-schema}
 
 ウィザードには、ソースへの接続情報があらかじめ入力された `pg_dump` コマンドが表示されます。これをターミナルで実行します。
 
+<div className="ch-image-lg">
+
 ![ステップ 2: スキーマのエクスポート用 `pg_dump` コマンド](/images/managed-postgres/pgpg/nextexport.webp)
+
+</div>
 
 ```shell
 pg_dump \
@@ -110,7 +143,11 @@ pg_dump \
 
 これにより、`pg.sql` が現在のディレクトリに作成されます。
 
+<div className="ch-image-lg">
+
 ![`pg_dump` 実行後のターミナル出力](/images/managed-postgres/pgpg/psqlexport.webp)
+
+</div>
 
 **Next** をクリックします。
 
@@ -120,7 +157,11 @@ pg_dump \
 
 ウィザードには、スキーマダンプを Managed Postgres サービスに適用するための `psql` コマンドが表示されます。これをターミナルで実行します。
 
+<div className="ch-image-lg">
+
 ![ステップ 3: スキーマのインポート用 `psql` コマンド](/images/managed-postgres/pgpg/nextimport.webp)
+
+</div>
 
 ```shell
 psql \
@@ -131,7 +172,11 @@ psql \
   -f pg.sql
 ```
 
+<div className="ch-image-lg">
+
 ![`psql` によるスキーマのインポート実行後のターミナル出力](/images/managed-postgres/pgpg/psqlimport.webp)
+
+</div>
 
 **Next** をクリックします。
 
@@ -149,7 +194,11 @@ psql \
 | スナップショットのパーティションあたりの行数 | 100000  | 大規模なテーブルスナップショットのパーティションサイズ |
 | 並列でスナップショットを作成するテーブル数  | 1       | 同時実行でスナップショットを作成するテーブル数     |
 
+<div className="ch-image-lg">
+
 ![ステップ 4: パブリケーションと高度なレプリケーションオプションを含むインジェスト設定フォーム](/images/managed-postgres/pgpg/advancedsettings.webp)
+
+</div>
 
 **Next** をクリックします。
 
@@ -159,7 +208,11 @@ psql \
 
 レプリケートするテーブルを選択します。テーブルはスキーマごとにグループ化されています。個別にテーブルを選択するか、スキーマを展開してその中のすべてのテーブルを選択します。
 
+<div className="ch-image-lg">
+
 ![ステップ5: スキーマごとにグループ化されたテーブル選択画面。［移行を作成］ボタン付き](/images/managed-postgres/pgpg/tablepicker.webp)
+
+</div>
 
 **移行を作成** をクリックします。
 
@@ -167,11 +220,19 @@ psql \
 
 移行を作成すると、**データソース**にステータスが **実行中** として表示されます。
 
+<div className="ch-image-lg">
+
 ![実行中の移行が表示されたデータソース一覧](/images/managed-postgres/pgpg/migrationlist.webp)
+
+</div>
 
 移行をクリックすると、詳細ビューが開きます。**テーブル** タブには、処理済み行数、パーティション数、パーティションあたりの平均時間など、各テーブルの初期ロードの進行状況が表示されます。**メトリクス** タブには、CDC が開始されるとレプリケーションラグとスループットが表示されます。
 
+<div className="ch-image-lg">
+
 ![テーブルごとの初期ロード統計を表示する移行詳細ビュー](/images/managed-postgres/pgpg/initialload.webp)
+
+</div>
 
 ## トラフィックの切り替え {#cutover}
 
@@ -200,31 +261,51 @@ WHERE datname = '<source_db>'
 
 続行するには **Mark as completed** をクリックします。
 
+<div className="ch-image-lg">
+
 ![移行後の手順 1: ソースデータベースを読み取り専用モードに設定する](/images/managed-postgres/pgpg/post-migration/readonly.webp)
+
+</div>
 
 ### ステップ2: 行数を検証する {#cutover-validate}
 
 検証対象とするレプリケートテーブルを選択します。ClickPipes は選択された各テーブルの行数をソースとターゲットの両方でカウントし、比較します。大規模なテーブルでは、概算の行数が返される場合があります。すべてのテーブルを検証する場合は **Select all tables** を使用し、個別に指定する場合は対象のテーブルを検索してトグルで選択したうえで、**Count rows** をクリックします。
 
+<div className="ch-image-lg">
+
 ![移行後の手順 2: select tables and validate row counts between source and target](/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp)
+
+</div>
 
 ### ステップ3: パイプを一時停止する {#cutover-pause}
 
 シーケンスをリセットしてトラフィックを切り替える前にレプリケーションを停止するため、ClickPipe を一時停止します。**Pause ClickPipe** をクリックし、パイプが一時停止するまで待ってから次に進んでください。
 
+<div className="ch-image-lg">
+
 ![移行後の手順 3: pause the ClickPipe to stop replication](/images/managed-postgres/pgpg/post-migration/pause-pipe.webp)
+
+</div>
 
 ### ステップ4: シーケンスをリセットする {#cutover-reset-sequences}
 
 以降の挿入が正しい値から続くように、宛先側でシーケンスをリセットします。**Reset sequences** をクリックすると、各シーケンスが対象テーブル内の現在の最大値に合わせて調整されます。
 
+<div className="ch-image-lg">
+
 ![移行後の手順 4: reset sequences on the destination](/images/managed-postgres/pgpg/post-migration/reset-sequences.webp)
+
+</div>
 
 ### ステップ 5: トラフィックを切り替える {#cutover-traffic}
 
 アプリケーションのデータベース URL を Managed Postgres の接続文字列に変更し、読み取りと書き込みを Managed Postgres サービスに向けます。ウィザードでは接続情報が複数のフォーマット (**url**、**psql**、**env**、**yaml**、**jdbc**) で提供されるため、ご利用のスタックに合ったものをコピーしてください。アプリケーションの更新が完了したら、**Mark as completed** をクリックします。
 
+<div className="ch-image-lg">
+
 ![移行後の手順 5: トラフィックを切り替える using the Managed Postgres connection string](/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp)
+
+</div>
 
 ### ステップ6: クリーンアップ {#cutover-cleanup}
 
@@ -236,7 +317,11 @@ SELECT pg_drop_replication_slot('<slot_name>');
 
 続いて **Delete ClickPipe migration** をクリックし、**データソース** から移行を削除します。
 
+<div className="ch-image-lg">
+
 ![移行後の手順 6: clean up by dropping the replication slot and deleting the migration](/images/managed-postgres/pgpg/post-migration/cleanup.webp)
+
+</div>
 
 ## 次のステップ {#next-steps}
 

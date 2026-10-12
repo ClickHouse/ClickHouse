@@ -17,7 +17,11 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
 في هذا الدليل، ستثبّت Rocket.BI وتنشئ لوحة معلومات بسيطة باستخدامه.
 هذه هي لوحة المعلومات:
 
+<div className="ch-image-md">
+
 ![لوحة معلومات Rocket BI تعرض مقاييس المبيعات مع مخططات ومؤشرات أداء رئيسية](/images/integrations/data-visualization/rocketbi_01.webp)
+
+</div>
 
 <br />
 
@@ -52,7 +56,11 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 يمكنك إنشاء **عدد غير محدود من لوحات المعلومات** ورسم **عدد غير محدود من المخططات** في لوحة معلومات واحدة.
 
+<div className="ch-image-md">
+
 ![رسم متحرك يوضح عملية إنشاء مخطط جديد في Rocket BI](/images/integrations/data-visualization/rocketbi_02.webp)
+
+</div>
 
 <br />
 
@@ -68,13 +76,21 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 في عامل تصفية Tab، حدِّد حقول المقاييس التي تريد استخدامها. تأكّد من إبقاء إعداد التجميع محددًا.
 
+<div className="ch-image-md">
+
 ![لوحة إعداد عنصر تحكم المقاييس في Rocket BI تعرض الحقول المحددة وإعدادات التجميع](/images/integrations/data-visualization/rocketbi_03.webp)
+
+</div>
 
 <br />
 
 أعِد تسمية عوامل التصفية واحفظ عنصر التحكم في لوحة المعلومات
 
+<div className="ch-image-md">
+
 ![عنصر تحكم المقاييس مع عوامل تصفية أُعيدت تسميتها وجاهز للحفظ في لوحة المعلومات](/images/integrations/data-visualization/rocketbi_04.webp)
+
+</div>
 
 <div id="create-a-date-type-control">
   #### أنشئ عنصر تحكم من نوع التاريخ
@@ -82,19 +98,31 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 اختر حقلاً من نوع Date كعمود التاريخ الرئيسي:
 
+<div className="ch-image-md">
+
 ![واجهة اختيار حقل Date في Rocket BI تعرض أعمدة التاريخ المتاحة](/images/integrations/data-visualization/rocketbi_05.webp)
+
+</div>
 
 <br />
 
 أضف نُسخًا مكررة بنطاقات lookup مختلفة. على سبيل المثال: سنوي أو شهري أو يومي أو يوم من أيام الأسبوع.
 
+<div className="ch-image-md">
+
 ![تهيئة نطاق التاريخ التي تعرض خيارات مختلفة لفترة زمنية مثل السنة والشهر واليوم](/images/integrations/data-visualization/rocketbi_06.webp)
+
+</div>
 
 <br />
 
 أعِد تسمية عوامل التصفية واحفظ عنصر التحكم في لوحة المعلومات
 
+<div className="ch-image-md">
+
 ![عنصر تحكم في نطاق التاريخ مع عوامل تصفية أُعيدت تسميتها وجاهز للحفظ في لوحة المعلومات](/images/integrations/data-visualization/rocketbi_07.webp)
+
+</div>
 
 <div id="now-let-build-the-charts">
   ### الآن، لننشئ الرسوم البيانية
@@ -106,25 +134,41 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 اختر Adding new chart، ثم اختر Pie Chart
 
+<div className="ch-image-md">
+
 ![لوحة اختيار نوع المخطط مع تمييز خيار المخطط الدائري](/images/integrations/data-visualization/rocketbi_08.webp)
+
+</div>
 
 <br />
 
 أولاً، اسحب العمود &quot;Region&quot; وأفلِته من Dataset إلى Legend Field
 
+<div className="ch-image-md">
+
 ![واجهة سحب وإفلات تُظهر إضافة عمود Region إلى حقل وسيلة الإيضاح](/images/integrations/data-visualization/rocketbi_09.webp)
+
+</div>
 
 <br />
 
 ثم انتقل إلى تبويب Chart Control
 
+<div className="ch-image-md">
+
 ![واجهة تبويب Chart Control تعرض خيارات تهيئة التصور](/images/integrations/data-visualization/rocketbi_10.webp)
+
+</div>
 
 <br />
 
 اسحب Metrics Control وأفلِته في Value Field
 
+<div className="ch-image-md">
+
 ![إضافة Metrics Control إلى حقل القيمة في المخطط الدائري](/images/integrations/data-visualization/rocketbi_11.webp)
+
+</div>
 
 <br />
 
@@ -132,19 +176,31 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 انتقل إلى Chart Setting لمزيد من التخصيص
 
+<div className="ch-image-md">
+
 ![لوحة إعدادات المخطط تعرض خيارات تخصيص المخطط الدائري](/images/integrations/data-visualization/rocketbi_12.webp)
+
+</div>
 
 <br />
 
 على سبيل المثال، غيّر Data label إلى Percentage
 
+<div className="ch-image-md">
+
 ![تغيير إعدادات تسمية البيانات لعرض النسب المئوية على المخطط الدائري](/images/integrations/data-visualization/rocketbi_13.webp)
+
+</div>
 
 <br />
 
 احفظ المخطط وأضِفه إلى لوحة معلومات
 
+<div className="ch-image-md">
+
 ![عرض لوحة معلومات ويُظهر المخطط الدائري المُضاف حديثًا مع عناصر تحكم أخرى](/images/integrations/data-visualization/rocketbi_14.webp)
+
+</div>
 
 <div id="use-date-control-in-a-time-series-chart">
   #### استخدم عنصر التحكم بالتاريخ في مخطط زمني
@@ -152,25 +208,41 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 لنستخدم مخطط أعمدة متراصًا
 
+<div className="ch-image-md">
+
 ![واجهة إنشاء مخطط أعمدة متراص مع بيانات زمنية](/images/integrations/data-visualization/rocketbi_15.webp)
+
+</div>
 
 <br />
 
 في Chart Control، استخدم عنصر تحكم بالمقاييس للمحور Y وDate Range للمحور X
 
+<div className="ch-image-md">
+
 ![إعداد Chart Control يوضح المقاييس على المحور Y وDate Range على المحور X](/images/integrations/data-visualization/rocketbi_16.webp)
+
+</div>
 
 <br />
 
 أضف عمود Region إلى Breakdown
 
+<div className="ch-image-md">
+
 ![إضافة عمود Region كبُعد تفصيلي في مخطط الأعمدة المتراص](/images/integrations/data-visualization/rocketbi_17.webp)
+
+</div>
 
 <br />
 
 أضف Number Chart كمؤشرات أداء رئيسية وأضف لمسة جمالية إلى لوحة المعلومات
 
+<div className="ch-image-md">
+
 ![لوحة معلومات مكتملة تتضمن مخططات أرقام لمؤشرات الأداء الرئيسية ومخططًا دائريًا وتمثيلًا مرئيًا زمنيًا](/images/integrations/data-visualization/rocketbi_18.webp)
+
+</div>
 
 <br />
 

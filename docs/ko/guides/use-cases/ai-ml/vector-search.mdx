@@ -45,7 +45,11 @@ ClickHouse는 [브루트포스 벡터 검색](/ko/reference/engines/table-engine
 벡터 검색이 어떻게 작동하는지 이해하기 위해 간단한 예시를 살펴보겠습니다.
 단어의 임베딩(벡터 표현)을 예로 들어 보겠습니다:
 
+<div className="ch-image-md">
+
 ![과일과 동물 임베딩 시각화](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
+
+</div>
 
 몇 가지 예시 임베딩으로 아래 테이블(table)을 생성하십시오:
 
@@ -116,7 +120,11 @@ ClickHouse의 벡터화된 쿼리 실행 엔진은 연산마다 프로세서 레
   ### 계층형 탐색 가능 소세계(HNSW)
 </div>
 
+<div className="ch-image-md">
+
 ![HNSW 계층 구조](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
+
+</div>
 
 HNSW는 여러 계층의 노드(벡터)로 구성됩니다. 각 노드는 하나 이상의 계층에 무작위로 할당되며, 상위 계층에 포함될 확률은 지수적으로 감소합니다.
 
@@ -152,7 +160,11 @@ HNSW는 여러 계층의 노드(벡터)로 구성됩니다. 각 노드는 하나
 QBit는 부동소수점 수가 비트로 표현되는 방식을 활용해 `BFloat16`, `Float32`, `Float64` 값을 저장할 수 있는 새로운 데이터 구조입니다.
 각 숫자를 통째로 저장하는 대신, QBit는 값을 **비트 평면**으로 나눕니다. 즉, 각 값의 첫 번째 비트들, 두 번째 비트들, 세 번째 비트들처럼 분리합니다.
 
+<div className="ch-image-md">
+
 ![QBit 비트 평면 개념](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
+
+</div>
 
 이 접근 방식은 기존 양자화의 주요 한계를 해결합니다. 중복 데이터를 저장할 필요도 없고, 값이 무의미해질 위험도 없습니다. 또한 QBit는 메모리 내 인덱스를 유지하지 않고 저장된 데이터에 직접 작동하므로 HNSW의 RAM 병목도 피할 수 있습니다.
 
@@ -193,7 +205,11 @@ INSERT INTO fruit_animal VALUES
 ('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
+<div className="ch-image-md">
+
 ![QBit 데이터 구조 전치](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
+
+</div>
 
 데이터가 QBit 컬럼에 삽입되면 모든 첫 번째 비트끼리, 모든 두 번째 비트끼리 정렬되도록 전치됩니다. 이를 **그룹**이라고 합니다.
 
@@ -235,13 +251,21 @@ ORDER BY distance;
   ### I/O 최적화
 </div>
 
+<div className="ch-image-md">
+
 ![QBit I/O 최적화](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
+
+</div>
 
 거리를 계산하려면 먼저 필요한 데이터를 디스크에서 읽은 다음 전치를 되돌려야 합니다(그룹화된 비트 표현을 다시 전체 벡터로 변환). QBit는 값을 정밀도 수준별로 비트 전치된 형태로 저장하므로, ClickHouse는 원하는 정밀도까지 숫자를 복원하는 데 필요한 상위 비트 평면만 읽을 수 있습니다.
 
 위 쿼리에서는 정밀도 수준 16을 사용합니다. Float64는 64비트이므로 처음 16개의 비트 평면만 읽어 **데이터의 75%를 스키핑합니다**.
 
+<div className="ch-image-md">
+
 ![QBit 복원](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
+
+</div>
 
 읽은 후에는 로드된 비트 평면에서 각 숫자의 상위 부분만 복원하고, 읽지 않은 비트는 0으로 둡니다.
 
@@ -249,7 +273,11 @@ ORDER BY distance;
   ### 계산 최적화
 </div>
 
+<div className="ch-image-md">
+
 ![다운캐스팅 비교](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
+
+</div>
 
 Float32나 BFloat16처럼 더 작은 타입으로 캐스팅하면 사용되지 않는 이 부분을 없앨 수 있지 않을까 생각할 수 있습니다. 실제로는 가능하지만, 모든 행에 명시적 CAST를 적용하면 비용이 큽니다.
 

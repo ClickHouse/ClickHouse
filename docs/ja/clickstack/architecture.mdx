@@ -21,7 +21,11 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
 
     このモデルでは、**ClickHouse と ClickStack UI (HyperDX)** は ClickHouse Cloud によってホスト、運用、保護されます。ユーザーが担うのは、テレメトリー データをマネージドサービスに送信するための **OpenTelemetry (OTel) collector** を実行することだけです。
 
+    <div className="ch-image-lg">
+
     ![マネージド アーキテクチャ](/images/use-cases/observability/clickstack-managed-architecture.webp)
+
+    </div>
 
 ### ClickHouse Cloud: エンジン
 
@@ -75,7 +79,11 @@ ClickStack のアーキテクチャは、デプロイ方法によって異なり
   <Tab title="オープンソース版 ClickStack">
     ClickStack Open Source のアーキテクチャは、**ClickHouse**、**HyperDX**、および **OpenTelemetry (OTel) collector** の 3 つの中核コンポーネントを中心に構成されています。アプリケーション状態の保存には **MongoDB** インスタンスが使用されます。これらが連携することで、ログ、メトリクス、トレースに最適化された、高性能なオープンソースのオブザーバビリティスタックを実現します。
 
+    <div className="ch-image-lg">
+
     ![アーキテクチャ](/images/use-cases/observability/clickstack-oss-architecture.webp)
+
+    </div>
 
 ### ClickHouse: データベースエンジン
 

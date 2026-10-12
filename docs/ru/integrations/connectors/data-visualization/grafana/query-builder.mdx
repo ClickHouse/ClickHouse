@@ -50,7 +50,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 | Limit        | Добавляет оператор [LIMIT](/ru/reference/statements/select/limit) в конец запроса. Если указано значение `0`, он не добавляется. Для некоторых визуализаций может потребоваться значение `0`, чтобы показать все данные. |
 | Filters      | Список фильтров, применяемых в условии `WHERE`.                                                                                                                                                                          |
 
+<div className="ch-image-md">
+
 ![Пример агрегатного табличного запроса](/images/integrations/data-visualization/grafana/demo_table_query.webp)
+
+</div>
 
 Данные для этого типа запроса отображаются в виде таблицы.
 
@@ -78,7 +82,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 | Фильтры           | Список фильтров, которые будут применены в условии `WHERE`.                                                                                                                            |
 | Фильтр сообщения  | Текстовое поле для удобной фильтрации журналов с помощью `LIKE %value%`. Исключается, если поле ввода пусто.                                                                           |
 
+<div className="ch-image-md">
+
 ![Пример запроса к журналам OTel](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
+
+</div>
 
 <br />
 
@@ -86,7 +94,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 
 Дополнительные столбцы, выбранные в запросе, можно просмотреть в раскрытой строке журнала:
 
+<div className="ch-image-md">
+
 ![Пример дополнительных полей в запросе журналов](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
+
+</div>
 
 <div id="time-series">
   ### Временные ряды
@@ -120,7 +132,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 | Limit        | Добавляет оператор [LIMIT](/ru/reference/statements/select/limit) в конец запроса. Если установить значение `0`, он не будет добавлен; это рекомендуется для некоторых датасетов временных рядов, чтобы показать визуализацию целиком. |
 | Filters      | Список фильтров, применяемых в операторе `WHERE`.                                                                                                                                                                                      |
 
+<div className="ch-image-md">
+
 ![Пример запроса временных рядов](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
+
+</div>
 
 Этот тип запроса отображает данные на панели временных рядов.
 
@@ -157,7 +173,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 | Фильтры                | Список фильтров, которые будут применены в операторе `WHERE`.                                                                                                                          |
 | Trace ID               | Trace ID для фильтрации. Используется только в режиме Trace ID и при открытии [ссылки на данные](#data-links) для Trace ID.                                                            |
 
+<div className="ch-image-md">
+
 ![Пример запроса трассировки OTel](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
+
+</div>
 
 Этот тип запроса отображает данные в виде таблицы в режиме Trace Search и на панели трассировки в режиме Trace ID.
 
@@ -173,7 +193,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 Вы можете переключаться между типами запросов, чтобы выбрать визуализацию, которая лучше всего подходит для вашего запроса.
 Это переключение также влияет на отображение в режиме панели мониторинга, особенно при работе с данными временных рядов.
 
+<div className="ch-image-md">
+
 ![Пример SQL-запроса в исходном виде](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
+
+</div>
 
 ## Ссылки на данные {#data-links}
 
@@ -184,13 +208,21 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   Пример ссылок на трассировки в таблице
 
+  <div className="ch-image-sm">
+
   ![Ссылки на трассировки в таблице](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
+
+  </div>
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Пример ссылок на трассировки в журналах
 
+  <div className="ch-image-md">
+
   ![Ссылки на трассировки в журналах](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
+
+  </div>
 </div>
 
 <div id="how-to-make-a-data-link">
@@ -217,7 +249,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Пример просмотра трассировки (справа) из запроса к журналам (слева)
 
+  <div className="ch-image-md">
+
   ![Пример перехода по ссылкам на данные](/images/integrations/data-visualization/grafana/demo_data_links.webp)
+
+  </div>
 </div>
 
 <div id="macros">

@@ -13,7 +13,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 
 このガイドでは、Azure プライベートリンクを使用して、Azure (顧客所有のサービスおよび Microsoft Partner サービスを含む) と ClickHouse Cloud の間に、仮想ネットワーク経由のプライベート接続を提供する方法を説明します。Azure プライベートリンクを使用すると、データがパブリック インターネットに公開されるのを防ぎつつ、ネットワーク アーキテクチャを簡素化し、Azure 内のエンドポイント間の接続を保護できます。
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![プライベートリンクの概要](/images/cloud/security/azure-pe.webp)
+
+</div>
 
 <Warning>
   Azure プライベートリンクは、お使いの Azure VNet から ClickHouse Cloud への接続開始のみをサポートします。プライベート データベースなど、ClickHouse Cloud からお使いの VNet 内のサービスへの接続開始には使用できません。
@@ -56,7 +60,11 @@ Terraform の例は、ClickHouse の [Terraform プロバイダー リポジト�
 
 ClickHouse Cloud consoleで、PrivateLink経由で接続する対象のサービスを開き、**Settings** メニューを開きます。**Set up private endpoint** ボタンをクリックします。Private Linkの設定に使用する `Service name` と `DNS name` を控えておきます。
 
+<div className="ch-image-lg">
+
 ![プライベート エンドポイント](/images/cloud/security/azure-privatelink-pe-create.webp)
+
+</div>
 
 `Service name` と `DNS name` を控えておきます。これらは次の手順で必要になります。
 
@@ -117,11 +125,19 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 Azure Portal で、**Private Link Center → Private Endpoints** を開きます。
 
+<div className="ch-image-lg">
+
 ![Azure Private Center を開く](/images/cloud/security/azure-private-link-center.webp)
+
+</div>
 
 **Create** ボタンをクリックして、プライベート エンドポイントの作成ダイアログを開きます。
 
+<div className="ch-image-lg">
+
 ![Azure Private Center を開く](/images/cloud/security/azure-private-link-center.webp)
+
+</div>
 
 ***
 
@@ -133,7 +149,11 @@ Azure Portal で、**Private Link Center → Private Endpoints** を開きます
 
 上記の設定が完了したら、**Next: Resource** ボタンをクリックします。
 
+<div className="ch-image-md">
+
 ![プライベート エンドポイントの基本設定を作成](/images/cloud/security/azure-pe-create-basic.webp)
+
+</div>
 
 ***
 
@@ -143,7 +163,11 @@ Azure Portal で、**Private Link Center → Private Endpoints** を開きます
 
 **Next: Virtual Network** ボタンをクリックします。
 
+<div className="ch-image-md">
+
 ![プライベート エンドポイントのリソース選択](/images/cloud/security/azure-pe-resource.webp)
+
+</div>
 
 ***
 
@@ -156,13 +180,21 @@ Azure Portal で、**Private Link Center → Private Endpoints** を開きます
 
 **Next: DNS** ボタンをクリックします。
 
+<div className="ch-image-md">
+
 ![プライベート エンドポイントの仮想ネットワーク選択](/images/cloud/security/azure-pe-create-vnet.webp)
+
+</div>
 
 **Next: Tags** ボタンをクリックします。
 
 ***
 
+<div className="ch-image-md">
+
 ![プライベート エンドポイントの DNS 設定](/images/cloud/security/azure-pe-create-dns.webp)
+
+</div>
 
 必要に応じて、プライベート エンドポイントにタグを追加できます。
 
@@ -170,17 +202,29 @@ Azure Portal で、**Private Link Center → Private Endpoints** を開きます
 
 ***
 
+<div className="ch-image-md">
+
 ![プライベート エンドポイントのタグ](/images/cloud/security/azure-pe-create-tags.webp)
+
+</div>
 
 最後に、**Create** ボタンをクリックします。
 
+<div className="ch-image-md">
+
 ![プライベート エンドポイントの確認](/images/cloud/security/azure-pe-create-review.webp)
+
+</div>
 
 作成したプライベート エンドポイントの **Connection status** は **Pending** 状態になります。このプライベート エンドポイントをサービスの 許可リスト に追加すると、**Approved** 状態に変わります。
 
 プライベート エンドポイントに関連付けられているネットワーク インターフェイスを開き、**Private IPv4 address** (この例では 10.0.0.4) をコピーします。この情報は次の手順で必要になります。
 
+<div className="ch-image-lg">
+
 ![プライベート エンドポイントの IP アドレス](/images/cloud/security/azure-pe-ip.webp)
+
+</div>
 
 <div id="option-2-using-terraform-to-create-a-private-endpoint-in-azure">
   ### オプション 2: Terraform を使用して Azure でプライベート エンドポイントを作成する
@@ -211,18 +255,30 @@ resource "azurerm_private_endpoint" "example_clickhouse_cloud" {
 
 プライベート エンドポイントのリソース ID は Azure Portal で確認できます。前の手順で作成したプライベート エンドポイントを開き、**JSON View** をクリックします。
 
+<div className="ch-image-lg">
+
 ![プライベート エンドポイントの表示](/images/cloud/security/azure-pe-view.webp)
+
+</div>
 
 最上位レベルの `id` フィールド (`/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>` 形式のプライベート エンドポイントのリソース ID) をコピーします。`properties` オブジェクト内にネストされている `id` フィールドは使用しないでください。
 
 **推奨される方法: リソース ID を使用する**
 
+<div className="ch-image-lg">
+
 ![プライベート エンドポイントのリソース ID](/images/cloud/security/azure-pe-resource-id.webp)
+
+</div>
 
 **従来の方法: resourceGUID を使用する**
 後方互換性のため、resourceGUID も引き続き使用できます。`resourceGuid` フィールドを見つけて、この値をコピーします。
 
+<div className="ch-image-lg">
+
 ![プライベート エンドポイントのリソース GUID](/images/cloud/security/azure-pe-resource-guid.webp)
+
+</div>
 
 <div id="setting-up-dns-for-private-link">
   ## プライベートリンク用の DNS を設定する
@@ -263,7 +319,11 @@ resource "azurerm_private_dns_zone" "clickhouse_cloud_private_link_zone" {
 4. IP Address には、プライベート エンドポイントに表示されている IP アドレスを入力します。
 5. **OK** を選択します。
 
+<div className="ch-image-lg">
+
 ![プライベートリンク DNS ワイルドカード設定](/images/cloud/security/azure-pl-dns-wildcard.webp)
+
+</div>
 
 **オプション 2: Terraform を使用する**
 
@@ -325,7 +385,11 @@ Address: 10.0.0.4
 
 エンドポイントを削除するには、**Organization details -&gt; Private Endpoints** を開き、削除ボタンをクリックします。
 
+<div className="ch-image-lg">
+
 ![プライベート エンドポイントを削除](/images/cloud/security/azure-pe-remove-private-endpoint.webp)
+
+</div>
 
 <div id="option-2-api">
   ### オプション 2: API
@@ -403,7 +467,11 @@ ClickHouse Cloud console で、PrivateLink 経由で接続するサービスを�
   既存の PrivateLink 接続からのアクセスを許可する場合は、既存のエンドポイントのドロップダウン メニューを使用します。
 </Note>
 
+<div className="ch-image-lg">
+
 ![プライベート エンドポイント フィルター](/images/cloud/security/azure-privatelink-pe-filter.webp)
+
+</div>
 
 <div id="option-2-api">
   ### オプション 2: API
@@ -472,7 +540,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" -X PATCH -H "Content-Type: ap
 
 ClickHouse Cloud consoleで **Settings** に移動します。**Set up private endpoint** ボタンをクリックします。開いたフライアウトで、**DNS Name** をコピーします。
 
+<div className="ch-image-lg">
+
 ![プライベート エンドポイントの DNS 名](/images/cloud/security/azure-privatelink-pe-dns.webp)
+
+</div>
 
 <div id="option-2-api-3">
   #### オプション 2: API

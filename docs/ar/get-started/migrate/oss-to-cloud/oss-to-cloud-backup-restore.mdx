@@ -275,19 +275,31 @@ FROM s3(
   </Step>
 
   <Step title="أنشئ خدمة جديدة" id="create-new-service">
+    <div className="ch-image-md">
+
     ![أنشئ خدمة جديدة](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
+
+    </div>
   </Step>
 
   <Step title="اضبط الإعدادات وأنشئ خدمة" id="configure-and-create">
     اختر المنطقة والتكوين المطلوبين، ثم انقر على `Create service`
 
+    <div className="ch-image-md">
+
     ![إعداد تفضيلات الخدمة](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
+
+    </div>
   </Step>
 
   <Step title="أنشئ دور وصول" id="create-an-access-role">
     افتح SQL Console
 
+    <div className="ch-image-md">
+
     ![إعداد تفضيلات الخدمة](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
+
+    </div>
 
     ### إعداد الوصول إلى S3
 
@@ -391,7 +403,11 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 
 إذا تفقدت حاوية S3 التي كانت فارغة سابقًا، فسترى الآن ظهور بعض المجلدات:
 
+<div className="ch-image-md">
+
 ![النسخة الاحتياطية والبيانات والبيانات الوصفية](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
+
+</div>
 
 إذا كنت تُجري ترحيلًا كاملًا، فيمكنك تشغيل الأمر التالي لإنشاء نسخة احتياطية من الخادم بالكامل:
 

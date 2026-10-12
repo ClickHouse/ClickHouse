@@ -25,7 +25,11 @@ No entanto, o ClickPipe do MySQL pode paralelizar esse processo, o que pode acel
 
 Depois de habilitar a feature flag, você deverá ver a configuração abaixo no seletor de tabelas do ClickPipe (tanto durante a criação quanto na edição de um ClickPipe):
 
+<div className="ch-image-md">
+
 ![Coluna de chave de partição](/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp)
+
+</div>
 
 O ClickPipe do MySQL usa uma coluna da sua tabela de origem para particionar logicamente as tabelas de origem. Essa coluna é chamada de **coluna de chave de partição**. Ela é usada para dividir a tabela de origem em partições, que podem então ser processadas em paralelo pelo ClickPipe.
 
@@ -39,7 +43,11 @@ O ClickPipe do MySQL usa uma coluna da sua tabela de origem para particionar log
 
 Veja as configurações abaixo:
 
+<div className="ch-image-md">
+
 ![Parâmetros do snapshot](/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp)
+
+</div>
 
 <div id="numrows-mysql-snapshot">
   #### Número de linhas do snapshot por partição

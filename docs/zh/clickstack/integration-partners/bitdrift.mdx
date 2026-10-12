@@ -37,7 +37,11 @@ import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.
 
 bitdrift 会将移动端遥测数据保留在边缘，直到需要时才获取。因此，团队可以提取导致崩溃或性能问题的完整未采样会话，而无需基于一组固定的预采样信号进行分析。bitdrift Capture 平台既可作为由 bitdrift 托管的 SaaS 使用，也可部署在您 AWS 账户自带的云环境 (或 bucket) 中。
 
+<div className="ch-image-lg">
+
 ![显示用户通往 ANR 路径的 bitdrift User Journey 仪表板](/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png)
+
+</div>
 
 *显示用户通往 ANR 路径的 bitdrift User Journey 仪表板。*
 
@@ -83,7 +87,11 @@ ClickStack 为工程团队提供基于 ClickHouse 构建的可观测性解决方
 
 配置完成后，bitdrift 时间线日志行和 span 视图会显示 **View Trace** 链接，将捕获的 trace ID 带入 ClickStack UI (HyperDX)。
 
+<div className="ch-image-lg">
+
 ![bitdrift trace 链接到 ClickStack UI 中的分布式 trace](/images/clickstack/bitdrift/bitdrift-view-trace.jpg)
+
+</div>
 
 *通过 bitdrift 会话中的 View Trace 链接进入 ClickStack UI (HyperDX) 中的分布式 trace。*
 

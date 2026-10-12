@@ -17,7 +17,11 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 В этом руководстве вы установите Rocket.BI и создадите простую панель мониторинга.
 Вот как она выглядит:
 
+<div className="ch-image-md">
+
 ![Панель мониторинга Rocket BI с метриками продаж, диаграммами и KPI](/images/integrations/data-visualization/rocketbi_01.webp)
+
+</div>
 
 <br />
 
@@ -52,7 +56,11 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 Вы можете создавать **неограниченное количество панелей мониторинга** и **неограниченное количество диаграмм** на каждой панели мониторинга.
 
+<div className="ch-image-md">
+
 ![Анимация, показывающая процесс создания новой диаграммы в Rocket BI](/images/integrations/data-visualization/rocketbi_02.webp)
+
+</div>
 
 <br />
 
@@ -68,13 +76,21 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 На вкладке Tab выберите поля метрик, которые хотите использовать. Убедитесь, что параметр агрегации настроен правильно.
 
+<div className="ch-image-md">
+
 ![Панель настройки элемента управления метриками Rocket BI с выбранными полями и параметрами агрегации](/images/integrations/data-visualization/rocketbi_03.webp)
+
+</div>
 
 <br />
 
 Переименуйте фильтры и сохраните элемент управления на панель мониторинга
 
+<div className="ch-image-md">
+
 ![Элемент управления метриками с переименованными фильтрами, готовый к сохранению на панель мониторинга](/images/integrations/data-visualization/rocketbi_04.webp)
+
+</div>
 
 <div id="create-a-date-type-control">
   #### Создайте элемент управления с типом даты
@@ -82,19 +98,31 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 Выберите поле Date в качестве основного столбца даты:
 
+<div className="ch-image-md">
+
 ![Интерфейс выбора поля даты в Rocket BI с доступными столбцами даты](/images/integrations/data-visualization/rocketbi_05.webp)
+
+</div>
 
 <br />
 
 Добавьте дублирующиеся варианты с разными диапазонами. Например: год, месяц, день или день недели.
 
+<div className="ch-image-md">
+
 ![Настройка диапазона дат с различными вариантами периода времени, такими как год, месяц и день](/images/integrations/data-visualization/rocketbi_06.webp)
+
+</div>
 
 <br />
 
 Переименуйте фильтры и сохраните элемент управления в панель мониторинга
 
+<div className="ch-image-md">
+
 ![Элемент управления диапазоном дат с переименованными фильтрами, готовый к сохранению в панель мониторинга](/images/integrations/data-visualization/rocketbi_07.webp)
+
+</div>
 
 <div id="now-let-build-the-charts">
   ### Теперь давайте создадим диаграммы
@@ -106,25 +134,41 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 Выберите Adding new chart, затем — Select Pie Chart
 
+<div className="ch-image-md">
+
 ![Панель выбора типа диаграммы с выделенной опцией круговой диаграммы](/images/integrations/data-visualization/rocketbi_08.webp)
+
+</div>
 
 <br />
 
 Сначала перетащите столбец &quot;Region&quot; из Dataset в поле Legend Field
 
+<div className="ch-image-md">
+
 ![Интерфейс перетаскивания, показывающий добавление столбца Region в поле легенды](/images/integrations/data-visualization/rocketbi_09.webp)
+
+</div>
 
 <br />
 
 Затем перейдите на вкладку элемента управления диаграммой
 
+<div className="ch-image-md">
+
 ![Интерфейс вкладки управления диаграммой с параметрами настройки визуализации](/images/integrations/data-visualization/rocketbi_10.webp)
+
+</div>
 
 <br />
 
 Перетащите элемент управления метриками в поле Value Field
 
+<div className="ch-image-md">
+
 ![Элемент управления метриками добавляется в поле значений круговой диаграммы](/images/integrations/data-visualization/rocketbi_11.webp)
+
+</div>
 
 <br />
 
@@ -132,19 +176,31 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 Перейдите в Chart Setting для дальнейшей настройки
 
+<div className="ch-image-md">
+
 ![Панель настроек диаграммы с параметрами настройки круговой диаграммы](/images/integrations/data-visualization/rocketbi_12.webp)
+
+</div>
 
 <br />
 
 Например, измените Data label на Percentage
 
+<div className="ch-image-md">
+
 ![Настройки подписей данных изменены для отображения процентов на круговой диаграмме](/images/integrations/data-visualization/rocketbi_13.webp)
+
+</div>
 
 <br />
 
 Сохраните диаграмму и добавьте её на панель мониторинга
 
+<div className="ch-image-md">
+
 ![Вид панели мониторинга с новой круговой диаграммой и другими элементами управления](/images/integrations/data-visualization/rocketbi_14.webp)
+
+</div>
 
 <div id="use-date-control-in-a-time-series-chart">
   #### Использование элемента выбора даты на диаграмме временного ряда
@@ -152,25 +208,41 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 Давайте используем столбчатую диаграмму с накоплением
 
+<div className="ch-image-md">
+
 ![Интерфейс создания столбчатой диаграммы с накоплением для данных временного ряда](/images/integrations/data-visualization/rocketbi_15.webp)
+
+</div>
 
 <br />
 
 В элементе управления диаграммой выберите Metrics Control для оси Y, а Date Range — для оси X
 
+<div className="ch-image-md">
+
 ![Настройка элемента управления диаграммой: метрики по оси Y и диапазон дат по оси X](/images/integrations/data-visualization/rocketbi_16.webp)
+
+</div>
 
 <br />
 
 Добавьте столбец Region в Breakdown
 
+<div className="ch-image-md">
+
 ![Столбец Region добавляется в Breakdown для столбчатой диаграммы с накоплением](/images/integrations/data-visualization/rocketbi_17.webp)
+
+</div>
 
 <br />
 
 Добавьте Number Chart в качестве KPI и сделайте панель мониторинга нагляднее
 
+<div className="ch-image-md">
+
 ![Готовая панель мониторинга с KPI в виде числовых диаграмм, круговой диаграммой и визуализацией временного ряда](/images/integrations/data-visualization/rocketbi_18.webp)
+
+</div>
 
 <br />
 

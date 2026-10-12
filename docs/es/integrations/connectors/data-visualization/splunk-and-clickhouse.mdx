@@ -32,7 +32,11 @@ En esta guía, usaremos el driver JDBC de ClickHouse para conectar ClickHouse co
 
 Con esta guía, podrá crear un dashboard conectado a ClickHouse similar a este:
 
+<div className="ch-image-lg">
+
 ![Dashboard de Splunk que muestra visualizaciones de datos de taxis de Nueva York](/images/integrations/splunk/splunk-1.webp)
+
+</div>
 
 <Note>
   Esta guía utiliza el [conjunto de datos New York City Taxi](/es/get-started/sample-datasets/nyc-taxi). Puede usar muchos otros conjuntos de datos de [nuestra documentación](http://localhost:3000/docs/getting-started/example-datasets).
@@ -69,7 +73,11 @@ Si tiene problemas para instalar la DB Connect App, consulte [este enlace](https
 
 Una vez que haya verificado que la DB Connect App está instalada, añada la ruta de `java_home` a la DB Connect App en Configuration -&gt; Settings y haga clic en save; luego, en reset.
 
+<div className="ch-image-md">
+
 ![Página de configuración de Splunk DB Connect que muestra la configuración de Java Home](/images/integrations/splunk/splunk-2.webp)
+
+</div>
 
 <div id="configure-jdbc-for-clickhouse">
   ## Configurar JDBC para ClickHouse
@@ -104,7 +112,11 @@ Reinicie Splunk con `$SPLUNK_HOME/bin/splunk restart`.
 
 Vuelva a la DB Connect App y vaya a Configuration &gt; Settings &gt; Drivers. Debería ver una marca de verificación verde junto a ClickHouse:
 
+<div className="ch-image-lg">
+
 ![Página de drivers de Splunk DB Connect que muestra el driver de ClickHouse instalado correctamente](/images/integrations/splunk/splunk-3.webp)
+
+</div>
 
 <div id="connect-splunk-search-to-clickhouse">
   ## Conectar la búsqueda de Splunk a ClickHouse
@@ -114,13 +126,21 @@ Vaya a DB Connect App Configuration -&gt; Databases -&gt; Identities y cree una 
 
 Cree una nueva conexión a ClickHouse desde Configuration -&gt; Databases -&gt; Connections y seleccione &quot;New Connection&quot;.
 
+<div className="ch-image-sm">
+
 ![Botón de nueva conexión de Splunk DB Connect](/images/integrations/splunk/splunk-4.webp)
+
+</div>
 
 <br />
 
 Agregue los datos del host de ClickHouse y asegúrese de que &quot;Enable SSL&quot; esté marcado:
 
+<div className="ch-image-md">
+
 ![Página de configuración de la conexión de Splunk para ClickHouse](/images/integrations/splunk/splunk-5.webp)
+
+</div>
 
 Después de guardar la conexión, habrá conectado correctamente ClickHouse a Splunk.
 
@@ -136,11 +156,19 @@ Ahora ejecutaremos una consulta SQL para comprobar que todo funciona.
 
 Selecciona los datos de tu conexión en SQL Explorer desde la sección DataLab de la DB Connect App. Estamos usando la tabla `trips` para esta demostración:
 
+<div className="ch-image-md">
+
 ![SQL Explorer de Splunk seleccionando la conexión a ClickHouse](/images/integrations/splunk/splunk-6.webp)
+
+</div>
 
 Ejecuta una consulta SQL en la tabla `trips` que devuelva el recuento de todos los registros de la tabla:
 
+<div className="ch-image-md">
+
 ![Ejecución de una consulta SQL en Splunk que muestra el recuento de registros en la tabla trips](/images/integrations/splunk/splunk-7.webp)
+
+</div>
 
 Si la consulta se ejecuta correctamente, deberías ver los resultados.
 
@@ -162,7 +190,11 @@ ORDER BY count DESC LIMIT 10;" connection="chc"
 
 Selecciona la pestaña de visualización para ver el gráfico de columnas creado:
 
+<div className="ch-image-lg">
+
 ![Visualización del gráfico de columnas de Splunk que muestra los 10 principales barrios de recogida](/images/integrations/splunk/splunk-8.webp)
+
+</div>
 
 Ahora crearemos un dashboard haciendo clic en Save As &gt; Save to a Dashboard.
 
@@ -175,7 +207,11 @@ FROM default.trips GROUP BY passenger_count;" connection="chc"
 
 Esta vez, creemos una visualización de tipo gráfico de barras y guardémosla en el dashboard anterior.
 
+<div className="ch-image-lg">
+
 ![Gráfico de barras de Splunk que muestra la tarifa media por número de pasajeros](/images/integrations/splunk/splunk-9.webp)
+
+</div>
 
 Por último, agreguemos una consulta más que muestre la correlación entre el número de pasajeros y la distancia del viaje:
 
@@ -188,7 +224,11 @@ ORDER BY year, count(*) DESC; " connection="chc"
 
 Nuestro dashboard final debería verse así:
 
+<div className="ch-image-lg">
+
 ![Dashboard final de Splunk con varias visualizaciones de datos de taxis de NYC](/images/integrations/splunk/splunk-10.webp)
+
+</div>
 
 <div id="time-series-data">
   ## Datos de series temporales

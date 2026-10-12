@@ -32,7 +32,11 @@ ORDER BY (town, street);
 
 每当一组行被插入到该表中时，就会创建一个数据分区片段。下图对此进行了示意：
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/part.webp)
+
+</div>
 
 <br />
 
@@ -66,7 +70,11 @@ ORDER BY (town, street);
 
 为了控制每个表中的 parts 数量，[后台合并](/zh/concepts/core-concepts/merges)任务会定期将较小的 parts 合并成较大的 parts，直到其达到[可配置](/zh/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)的压缩大小 (通常约为 150 GB) 。合并后的 parts 会被标记为非活动，并在经过一个[可配置](/zh/reference/settings/merge-tree-settings/other#old_parts_lifetime)的时间间隔后删除。随着时间推移，这一过程会形成合并后 parts 的层级结构，这也正是它被称为 MergeTree 表的原因：
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/merges.webp)
+
+</div>
 
 <br />
 

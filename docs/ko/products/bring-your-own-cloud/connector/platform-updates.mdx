@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 관리형 클러스터에는 ClickHouse 서비스가 의존하는 소규모 플랫폼 계층이 함께 실행됩니다. ClickHouse Cloud는 이 계층에 대한 업데이트를 제안하지만, 사용자가 자신의 클러스터 자격 증명으로 각 업데이트를 승인하기 전까지 실행기는 어떤 변경도 적용하지 않습니다.
@@ -27,7 +28,11 @@ import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge
 
 ## 플랫폼 업데이트 승인 {#approve-a-platform-update}
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector 플랫폼 승인 흐름](/images/cloud/reference/byoc-connector-platform-approval.svg)
+
+</div>
 
 ### 레지스트리 자격 증명 {#registry-credentials}
 

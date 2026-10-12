@@ -197,9 +197,17 @@ Si vous souhaitez tester l’intégration des logs PostgreSQL avant de configure
     3. Filtrez sur `source:postgresql` pour afficher les logs spécifiques à PostgreSQL
     4. Vous devriez voir des entrées de logs structurées avec des champs tels que `user_name`, `database_name`, `error_severity`, `message`, `query`, etc.
 
+    <div className="ch-image-lg">
+
     ![Vue Search des logs](/images/clickstack/postgres/postgres-logs-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Vue Log](/images/clickstack/postgres/postgres-log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -289,9 +297,17 @@ Pour les utilisateurs qui souhaitent tester l’intégration des logs PostgreSQL
       HyperDX affiche les horodatages dans le fuseau horaire local de votre navigateur. Les données de démonstration couvrent **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. Cette large plage horaire vous garantit de voir les logs de démonstration, quel que soit l’endroit où vous vous trouvez. Une fois les logs visibles, vous pouvez réduire la plage à une période de 24 heures pour obtenir des visualisations plus claires.
     </Info>
 
+    <div className="ch-image-lg">
+
     ![Vue Search des logs](/images/clickstack/postgres/postgres-logs-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Vue d’un log](/images/clickstack/postgres/postgres-log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -310,17 +326,29 @@ Pour vous aider à commencer à surveiller PostgreSQL avec ClickStack, nous four
     1. Ouvrez HyperDX et accédez à la section Tableaux de bord
     2. Cliquez sur **Importer un tableau de bord** dans le coin supérieur droit, dans le menu à points de suspension
 
+    <div className="ch-image-lg">
+
     ![Bouton d’importation de tableau de bord](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Téléversez le fichier `postgresql-logs-dashboard.json` et cliquez sur **Terminer l’importation**
 
+    <div className="ch-image-lg">
+
     ![Terminer l’importation](/images/clickstack/postgres/import-logs-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="Afficher le tableau de bord" id="created-dashboard">
     Le tableau de bord sera créé avec toutes les visualisations déjà configurées :
 
+    <div className="ch-image-lg">
+
     ![Tableau de bord des logs](/images/clickstack/postgres/postgres-logs-dashboard.webp)
+
+    </div>
 
     <Note>
       Pour le jeu de données de démonstration, définissez la plage horaire sur **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (à ajuster selon votre fuseau horaire local). Le tableau de bord importé n’aura pas de plage horaire définie par défaut.

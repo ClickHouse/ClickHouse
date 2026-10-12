@@ -7,13 +7,18 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 이 페이지는 ClickHouse Connector의 보안 참고 문서로, 아이덴티티, 연결, 구체적인 권한, 구조적 제한 사항, 그리고 모든 작업이 어떻게 귀속되는지를 다룹니다. 각 구성 요소가 어떻게 맞물려 동작하는지는 [architecture](/ko/products/bring-your-own-cloud/connector/architecture)를 참조하십시오.
 
 ## 아이덴티티 {#identities}
 
+<div className="ch-image-lg">
+
 ![ClickHouse Connector identity model](/images/cloud/reference/byoc-connector-identity-model.svg)
+
+</div>
 
 * **커넥터의 mTLS 클라이언트 인증서**는 조직 ID를 공통 이름(common name)으로 사용하며, 모든 데몬을 커넥터 엔드포인트에 인증합니다. `clicklink clctl instances create`도 엔드포인트를 호출할 때 동일한 인증서와 HMAC 키를 사용합니다.
 * **`pcm_scraper`와 `pcm_troubleshooter`**는 스크레이퍼와 Troubleshooter가 접속할 때 사용하는 읽기 전용 ClickHouse 사용자입니다. 실행기에는 ClickHouse 사용자가 없습니다.

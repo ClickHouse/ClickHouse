@@ -37,7 +37,11 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
 
 bitdrift는 요청이 있을 때까지 모바일 텔레메트리를 엣지에 보관하므로, 팀은 고정된 사전 샘플링 신호 집합에 의존하는 대신 크래시나 성능 문제로 이어진 전체 비샘플링 세션을 가져올 수 있습니다. bitdrift Capture 플랫폼은 bitdrift가 호스팅하는 SaaS 또는 AWS account에서 자체 Cloud(또는 버킷)를 사용하는 배포 방식으로 제공됩니다.
 
+<div className="ch-image-lg">
+
 ![ANR로 이어지는 경로를 보여 주는 bitdrift User Journey 대시보드](/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png)
+
+</div>
 
 *사용자가 ANR에 이르기까지 거치는 경로를 보여 주는 bitdrift User Journey 대시보드입니다.*
 
@@ -83,7 +87,11 @@ ClickStack은 ClickHouse 기반의 관측성 솔루션으로, 백엔드 서비�
 
 구성이 완료되면 bitdrift 타임라인 로그 행과 스팬 보기에는 캡처된 트레이스 ID를 ClickStack UI(HyperDX)로 전달하는 **View Trace** 링크가 표시됩니다.
 
+<div className="ch-image-lg">
+
 ![ClickStack UI의 분산 트레이스에 연결된 bitdrift 트레이스](/images/clickstack/bitdrift/bitdrift-view-trace.jpg)
+
+</div>
 
 *bitdrift 세션의 View Trace 링크를 따라 ClickStack UI(HyperDX)의 분산 트레이스로 이동합니다.*
 

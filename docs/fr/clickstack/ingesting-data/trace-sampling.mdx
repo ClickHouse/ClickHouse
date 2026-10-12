@@ -49,6 +49,10 @@ Ouvrez votre source de traces dans **Paramètres de la source** et saisissez, da
 
 Par exemple, si votre tail-sampling processor OpenTelemetry écrit ce taux dans `SpanAttributes['SampleRate']` :
 
+<div className="ch-image-lg">
+
 ![Champ Expression de taux d’échantillonnage dans les paramètres de la source ClickStack](/images/clickstack/trace-sampling-source-settings.webp)
+
+</div>
 
 Une fois cette configuration en place, tous les graphiques, tableaux de bord, alertes et panneaux du tableau de bord du service appliquent automatiquement des agrégations pondérées selon le taux d’échantillonnage. Il n’est pas nécessaire de modifier les requêtes individuellement.

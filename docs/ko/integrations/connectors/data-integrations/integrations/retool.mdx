@@ -11,6 +11,7 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
+
 import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -23,32 +24,52 @@ import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.
   <Step title="ClickHouse 리소스 생성" id="2-create-a-clickhouse-resource">
     Retool 계정에 로그인한 다음 *Resources* 탭으로 이동합니다. &quot;Create New&quot; -&gt; &quot;Resource&quot;를 선택합니다:
 
+    <div className="ch-image-lg">
+
     ![새 리소스 생성](/images/integrations/tools/data-integration/retool/retool_01.webp)
+
+    </div>
 
     <br />
 
     사용 가능한 커넥터 목록에서 &quot;JDBC&quot;를 선택합니다:
 
+    <div className="ch-image-lg">
+
     ![JDBC 커넥터 선택](/images/integrations/tools/data-integration/retool/retool_02.webp)
+
+    </div>
 
     <br />
 
     설정 마법사에서 &quot;Driver name&quot;으로 `com.clickhouse.jdbc.ClickHouseDriver`를 선택했는지 확인합니다:
 
+    <div className="ch-image-lg">
+
     ![올바른 드라이버 선택](/images/integrations/tools/data-integration/retool/retool_03.webp)
+
+    </div>
 
     <br />
 
     다음 형식으로 ClickHouse 자격 증명을 입력합니다: `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
     인스턴스에 SSL이 필요하거나 ClickHouse Cloud를 사용하는 경우 연결 문자열에 `&ssl=true`를 추가하여 `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true` 형식이 되도록 합니다
 
+    <div className="ch-image-lg">
+
     ![자격 증명 입력](/images/integrations/tools/data-integration/retool/retool_04.webp)
+
+    </div>
 
     <br />
 
     그런 다음 연결을 테스트합니다:
 
+    <div className="ch-image-lg">
+
     ![연결 테스트](/images/integrations/tools/data-integration/retool/retool_05.webp)
+
+    </div>
 
     <br />
 

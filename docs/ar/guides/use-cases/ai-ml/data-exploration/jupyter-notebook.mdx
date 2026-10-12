@@ -37,15 +37,27 @@ doc_type: 'guide'
 
 في القائمة الجانبية اليسرى، انقر على `Data sources`، ثم انقر على `Predefined sample data`:
 
+<div className="ch-image-md">
+
 ![إضافة مجموعة بيانات تجريبية](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</div>
 
 حدِّد `Get started` في بطاقة بيانات أسعار العقارات المدفوعة في المملكة المتحدة (4GB):
 
+<div className="ch-image-md">
+
 ![تحديد مجموعة بيانات أسعار العقارات المدفوعة في المملكة المتحدة](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</div>
 
 ثم انقر على `Import dataset`:
 
+<div className="ch-image-md">
+
 ![استيراد مجموعة بيانات أسعار العقارات المدفوعة في المملكة المتحدة](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</div>
 
 سينشئ ClickHouse تلقائيًا الجدول `pp_complete` في قاعدة البيانات `default` ويملأه بـ 28.92 مليون صف من بيانات نقاط الأسعار.
 
@@ -78,12 +90,20 @@ jupyter notebook
 يُفترض أن تُفتح نافذة متصفح جديدة تعرض واجهة Jupyter على `localhost:8888`.
 انقر على `File` &gt; `New` &gt; `Notebook` لإنشاء دفتر ملاحظات جديد.
 
+<div className="ch-image-md">
+
 ![أنشئ دفتر ملاحظات جديدًا](/images/use-cases/AI_ML/jupyter/4.webp)
+
+</div>
 
 سيُطلب منك اختيار نواة.
 اختر أي نواة بايثون متاحة لديك، وفي هذا المثال سنختار `ipykernel`:
 
+<div className="ch-image-md">
+
 ![اختر النواة](/images/use-cases/AI_ML/jupyter/5.webp)
+
+</div>
 
 في خلية فارغة، يمكنك كتابة الأمر التالي لتثبيت chDB، والذي سنستخدمه للاتصال بمثيل ClickHouse Cloud البعيد:
 
@@ -163,7 +183,11 @@ df.head()
 
 يعرض `df.head` الصفوف القليلة الأولى فقط من البيانات المُعادة:
 
+<div className="ch-image-md">
+
 ![معاينة DataFrame](/images/use-cases/AI_ML/jupyter/6.webp)
+
+</div>
 
 شغّل الأمر التالي في خلية جديدة للتحقق من أنواع الأعمدة:
 
@@ -200,7 +224,11 @@ plt.tight_layout()
 plt.show()
 ```
 
+<div className="ch-image-md">
+
 ![معاينة إطار البيانات](/images/use-cases/AI_ML/jupyter/7.webp)
+
+</div>
 
 وربما ليس من المستغرب أن أسعار العقارات في لندن قد ارتفعت بشكل كبير بمرور الوقت.
 
@@ -256,7 +284,11 @@ df_2.head()
   ```
 </Accordion>
 
+<div className="ch-image-md">
+
 ![معاينة إطار البيانات](/images/use-cases/AI_ML/jupyter/8.webp)
+
+</div>
 
 على الرغم من أن البيانات غير متوفرة لدينا بدءًا من عام 2020، يمكننا رسم مجموعتي البيانات مقابل بعضهما البعض للسنوات من 1995 إلى 2019.
 في خلية جديدة، شغّل الأمر التالي:
@@ -302,7 +334,11 @@ plt.tight_layout()
 plt.show()
 ```
 
+<div className="ch-image-md">
+
 ![رسم بياني لمجموعة بيانات بعيدة ومجموعة بيانات محلية](/images/use-cases/AI_ML/jupyter/9.webp)
+
+</div>
 
 من البيانات المرسومة، نرى أن المبيعات بدأت عند نحو 160,000 في عام 1995 ثم ارتفعت بسرعة، لتبلغ ذروتها عند نحو 540,000 في عام 1999.
 بعد ذلك، تراجع حجم المبيعات بشكل حاد خلال منتصف العقد الأول من الألفية، وانخفض بشدة أثناء الأزمة المالية في 2007-2008 ليصل إلى نحو 140,000.

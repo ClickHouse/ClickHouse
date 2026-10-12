@@ -24,7 +24,11 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
   <Step title="自動バックアップでバイナリログを有効にする" id="enable-binlog-logging">
     自動バックアップ機能によって、MySQL でバイナリログを有効にするかどうかが決まります。自動バックアップは、RDS Console で **Modify** &gt; **Additional configuration** &gt; **Backup** に移動し、**Enable automated backups** チェックボックスを選択することで (まだ選択されていない場合) インスタンスに設定できます。
 
+    <div className="ch-image-lg">
+
     ![Aurora で自動バックアップを有効にする](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
+
+    </div>
 
     レプリケーションのユースケースに応じて、**Backup retention period** は十分に長い値に設定することを推奨します。
   </Step>
@@ -56,13 +60,21 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
   MySQL クラスターを使用している場合、以下のパラメータは DB インスタンスグループではなく、[DB cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) のパラメータグループにあります。
 </Tip>
 
+<div className="ch-image-lg">
+
 ![Aurora でパラメータグループを確認する場所](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/aurora_config.webp)
+
+</div>
 
 <br />
 
 パラメータグループのリンクをクリックすると、その詳細ページに移動します。右上に **Edit** ボタンが表示されるはずです。
 
+<div className="ch-image-lg">
+
 ![パラメータグループの編集](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
+
+</div>
 
 <br />
 
@@ -70,15 +82,27 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
 
 1. `binlog_format` を `ROW` に設定します。
 
+<div className="ch-image-lg">
+
 ![Binlog フォーマットを ROW に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
+
+</div>
 
 2. `binlog_row_metadata` を `FULL` に設定します。
 
+<div className="ch-image-lg">
+
 ![Binlog 行メタデータ](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
+
+</div>
 
 3. `binlog_row_image` を `FULL` に設定します。
 
+<div className="ch-image-lg">
+
 ![Binlog 行イメージ](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
+
+</div>
 
 <br />
 
@@ -105,7 +129,11 @@ GTID ベースのレプリケーションは、Amazon Aurora MySQL v2 (MySQL 5.7
 7. 右上の **Save Changes** をクリックします。
 8. 変更を反映するため、インスタンスを再起動します。
 
+<div className="ch-image-lg">
+
 ![GTID が有効](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
+
+</div>
 
 <div id="configure-database-user">
   ## データベースユーザーを設定する
@@ -148,9 +176,17 @@ GTID ベースのレプリケーションは、Amazon Aurora MySQL v2 (MySQL 5.7
 
 Aurora MySQL インスタンスへのトラフィックを制限するには、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を、Aurora のセキュリティグループの **Inbound rules** に追加します。
 
+<div className="ch-image-lg">
+
 ![Aurora MySQL でセキュリティグループはどこで確認できますか？](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![上記のセキュリティグループのインバウンドルールを編集](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
+
+</div>
 
 <div id="private-access-via-aws-privatelink">
   ### AWS PrivateLink 経由のプライベートアクセス

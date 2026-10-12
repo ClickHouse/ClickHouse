@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 في الوضع المُدار يشغّل الـ موصل مكوّنًا ثالثًا هو المنفّذ، ومن خلاله تُشغّل ClickHouse Cloud خدمات ClickHouse في عنقود Kubernetes الخاص بك. تتناول هذه الصفحة إنشاء خدمة، وقراءة حالتها (status)، وما تقوم به ClickHouse Cloud بها، وكيفية إيقافها نهائيًا (retired).
@@ -39,7 +40,11 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
 * يحتاج `prepare` إلى نسخة من تهيئة موصل (`--config`)، وإلى `kubectl port-forward` نحو واجهة برمجة التطبيقات المحلية الخاصة بـ المنفّذ، وإلى `--output-dir` قابل للكتابة. وهو يتحقق من اسم الخدمة لدى المنفّذ ويرفض العمل إن تعذّر عليه الوصول إليه.
 * عندما لا تتوفر على هذا المضيف ملفات بيانات الاعتماد التي تحدّدها التهيئة، يقرأها `instances create` من Secrets المسماة `clicklink-hmac` و`clicklink-mtls` ويُعلن عن كل عملية قراءة. أضف `--connector-namespace` إذا لم تكن مساحة أسماء الـ موصل هي `clicklink`. وهذا الـ fallback متاح في `instances create` دون غيره.
 
+<div className="ch-image-lg">
+
 ![دورة حياة خدمة في ClickHouse Connector في الوضع المُدار](/images/cloud/reference/byoc-connector-service-lifecycle.svg)
+
+</div>
 
 <Steps>
   <Step title="إعداد الخدمة" id="prepare">

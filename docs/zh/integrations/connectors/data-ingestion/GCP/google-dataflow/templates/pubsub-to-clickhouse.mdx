@@ -161,7 +161,11 @@ ORDER BY failed_at;
 登录 Google Cloud Console 并搜索 Dataflow。
 
 1. 点击 `CREATE JOB FROM TEMPLATE` 按钮。
+   <div className="ch-image-lg">
+
    ![Dataflow 控制台](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+
+   </div>
 
 2. 打开模板表单后，输入作业名称并选择所需的区域。
 
@@ -188,7 +192,11 @@ ORDER BY failed_at;
 
 前往 Google Cloud Console 中的 [Dataflow Jobs 选项卡](https://console.cloud.google.com/dataflow/jobs) 以监控作业状态。你可以在其中查看作业详情，包括进度和错误信息：
 
+<div className="ch-image-lg">
+
 ![显示正在运行的从 Pub/Sub 到 ClickHouse 作业的 Dataflow 控制台](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
+
+</div>
 
 该模板还会在 `PubSubToClickHouse` 命名空间下导出以下自定义指标，可在 Dataflow 作业页面查看：
 

@@ -190,7 +190,11 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 다음 애니메이션은 예시 테이블에서 minmax 스킵 인덱스가 어떻게 생성되는지 보여줍니다. 이 인덱스는 테이블의 각 행 블록(granule)별 최소 `ViewCount` 값과 최대 `ViewCount` 값을 기록합니다:
 
+<div className="ch-image-lg">
+
 ![스킵 인덱스 구축](/images/bestpractices/building_skipping_indices.webp)
+
+</div>
 
 앞서 사용한 쿼리를 다시 실행하면 성능이 크게 향상된 것을 확인할 수 있습니다. 스캔된 행 수가 줄어든 점에 주목하십시오:
 
@@ -255,7 +259,11 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 또한 예시 쿼리에서 `ViewCount` &gt; 10,000,000 프레디케이트와 일치할 수 없는 모든 행 블록을 minmax 스킵 인덱스가 어떻게 걸러내는지 보여주는 애니메이션도 확인할 수 있습니다:
 
+<div className="ch-image-lg">
+
 ![스킵 인덱스 사용](/images/bestpractices/using_skipping_indices.webp)
+
+</div>
 
 <div id="related-docs">
   ## 관련 문서

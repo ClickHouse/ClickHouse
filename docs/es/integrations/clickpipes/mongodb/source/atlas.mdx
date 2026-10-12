@@ -18,15 +18,27 @@ Se requiere una retención mínima del oplog de 24 horas para la replicación. R
 
 1. Vaya a la pestaña `Overview` de su clúster en la consola de MongoDB Atlas y haga clic en la pestaña `Configuration`.
 
+<div className="ch-image-lg">
+
 ![Ir a la configuración del clúster](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-cluster-overview-configuration.webp)
+
+</div>
 
 2. Haga clic en `Additional Settings` y desplácese hacia abajo hasta `More Configuration Options`.
 
+<div className="ch-image-lg">
+
 ![Expandir la configuración adicional](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-expand-additional-settings.webp)
+
+</div>
 
 3. Haga clic en `More Configuration Options` y establezca la ventana mínima del oplog en `72 hours` o más.
 
+<div className="ch-image-lg">
+
 ![Configurar las horas de retención del oplog](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-set-retention-hours.webp)
+
+</div>
 
 4. Haga clic en `Review Changes` para revisar los cambios y, a continuación, en `Apply Changes` para aplicarlos.
 
@@ -38,7 +50,11 @@ Una vez que hayas iniciado sesión en la consola de MongoDB Atlas, haz clic en `
 
 ClickPipes requiere autenticación por contraseña:
 
+<div className="ch-image-lg">
+
 ![Agregar usuario de base de datos](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-add-new-database-user.webp)
+
+</div>
 
 ClickPipes requiere un usuario con los siguientes roles:
 
@@ -47,11 +63,19 @@ ClickPipes requiere un usuario con los siguientes roles:
 
 Puedes encontrarlos en la sección `Specific Privileges`:
 
+<div className="ch-image-lg">
+
 ![Configurar roles de usuario](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-database-user-privilege.webp)
+
+</div>
 
 Además, puedes especificar los clústeres/instancias a los que quieres otorgar acceso al usuario de ClickPipes:
 
+<div className="ch-image-lg">
+
 ![Restringir acceso a clúster/instancia](/images/integrations/data-ingestion/clickpipes/mongodb/mongo-atlas-restrict-access.webp)
+
+</div>
 
 <div id="whats-next">
   ## ¿Qué sigue?

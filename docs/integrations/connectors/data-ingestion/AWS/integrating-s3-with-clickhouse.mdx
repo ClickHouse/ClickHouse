@@ -810,7 +810,11 @@ SELECT * FROM s3_table1;
 6.  In the AWS console, navigate to the buckets, and select the new one and the folder.
 You should see something like the following:
 
+<div className="ch-image-lg">
+
 ![S3 bucket view in AWS console showing ClickHouse data files stored in S3](/images/integrations/data-ingestion/s3/s3-j.webp)
+
+</div>
 
 ## Replicating a single shard across two AWS regions using S3 Object Storage {#s3-multi-region}
 
@@ -1203,9 +1207,17 @@ These tests will verify that data is being replicated across the two servers, an
 
   Check the S3 data in each S3 Bucket (the totals aren't shown, but both buckets have approximately 36 MiB stored after the inserts):
 
+<div className="ch-image-lg">
+
 ![Size of data in first S3 bucket showing storage usage metrics](/images/integrations/data-ingestion/s3/bucket1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Size of data in second S3 bucket showing storage usage metrics](/images/integrations/data-ingestion/s3/bucket2.webp)
+
+</div>
 
 ## S3Express {#s3express}
 

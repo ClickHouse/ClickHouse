@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
@@ -115,7 +116,11 @@ Para recopilar un solo servicio, añade `/<PG_ID>` a `metrics_path`.
 
 Un dashboard de Grafana listo para usar visualiza todas las métricas que expone el endpoint: una tabla de servicios ordenable, uso de CPU y memoria, uso de disco con alertas por umbral, conexiones por estado, transacciones y proporción de reversiones, actividad de tuplas, E/S, almacenamiento por base de datos e interbloqueos.
 
+<div className="ch-image-md">
+
 ![dashboard de Grafana de los servicios de ClickHouse Managed Postgres](/images/managed-postgres/monitoring/grafana-dashboard.webp)
+
+</div>
 
 <div id="import-dashboard">
   ### Importación del dashboard

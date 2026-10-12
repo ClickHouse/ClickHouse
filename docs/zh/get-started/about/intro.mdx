@@ -49,7 +49,11 @@ LIMIT 8;
 
 你可以[在 ClickHouse SQL Playground 中运行此查询](https://sql.clickhouse.com?query=U0VMRUNUIE1vYmlsZVBob25lTW9kZWwsIENPVU5UKCkgQVMgYyAKRlJPTSBtZXRyaWNhLmhpdHMgCldIRVJFIAogICAgICBSZWdpb25JRCA9IDIyOSAKICBBTkQgRXZlbnREYXRlID49ICcyMDEzLTA3LTAxJyAKICBBTkQgRXZlbnREYXRlIDw9ICcyMDEzLTA3LTMxJyAKICBBTkQgTW9iaWxlUGhvbmUgIT0gMCAKICBBTkQgTW9iaWxlUGhvbmVNb2RlbCBub3QgaW4gWycnLCAnaVBhZCddIApHUk9VUCBCWSBNb2JpbGVQaG9uZU1vZGVsCk9SREVSIEJZIGMgREVTQyAKTElNSVQgODs\&chart=eyJ0eXBlIjoicGllIiwiY29uZmlnIjp7InhheGlzIjoiTW9iaWxlUGhvbmVNb2RlbCIsInlheGlzIjoiYyJ9fQ\&run_query=true)，它只会从现有的[100 多个列中](https://sql.clickhouse.com/?query=U0VMRUNUIG5hbWUKRlJPTSBzeXN0ZW0uY29sdW1ucwpXSEVSRSBkYXRhYmFzZSA9ICdtZXRyaWNhJyBBTkQgdGFibGUgPSAnaGl0cyc7\&tab=results\&run_query=true)选取并过滤少数几个，并在几毫秒内返回结果：
 
+<div className="ch-image-lg">
+
 ![列式数据库中的示例查询](/images/column-oriented-example-query.webp)
+
+</div>
 
 如上图的统计信息所示，该查询在 92 毫秒内处理了 1 亿行，吞吐量约为每秒超过 10 亿行，或者说每秒传输略低于 7 GB 的数据。
 
@@ -57,14 +61,22 @@ LIMIT 8;
 
 在行式数据库中，尽管上面的查询只处理了现有列中的少数几个，系统仍然需要将其他列的数据从磁盘加载到内存中。原因在于，数据在磁盘上是以称为 [块](https://en.wikipedia.org/wiki/Block_\(data_storage\)) 的数据块形式存储的 (通常是固定大小，例如 4 KB 或 8 KB) 。块是从磁盘读入内存的最小数据单位。当应用程序或数据库请求数据时，操作系统的磁盘 I/O 子系统会从磁盘读取所需的块。即使只需要块中的一部分，整个块也会被读入内存 (这是由磁盘和文件系统的设计决定的) ：
 
+<div className="ch-image-lg">
+
 ![行式数据库结构](/images/row-oriented.webp)
+
+</div>
 
 **列式 DBMS**
 
 由于每一列的值在磁盘上都是连续存储的，因此运行上述查询时不会加载任何不必要的数据。
 由于按块存储以及从磁盘到内存的传输方式都与分析查询的数据访问模式相契合，查询时只需从磁盘读取所需的列，从而避免对未使用数据进行不必要的 I/O。与行式存储相比，这种方式要[快得多](https://benchmark.clickhouse.com/)，因为行式存储会读取整行数据 (包括无关的列) ：
 
+<div className="ch-image-lg">
+
 ![列式数据库结构](/images/column-oriented.webp)
+
+</div>
 
 <div id="data-replication-and-integrity">
   ## 数据复制与完整性

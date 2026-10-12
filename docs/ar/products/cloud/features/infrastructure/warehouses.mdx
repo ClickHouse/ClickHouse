@@ -20,7 +20,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 * نقطة نهاية واحدة (أو عدة نقاط نهاية تُنشأ عبر واجهة Console في ClickHouse Cloud) للاتصال بالخدمة (على سبيل المثال، `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`) من أجل الاتصالات المحلية واتصالات تطبيقات الجهات الخارجية
 * مجلد في التخزين الكائني تخزّن فيه الخدمة جميع البيانات وجزءًا من البيانات الوصفية:
 
+<div className="ch-image-md">
+
 ![خدمة واحدة في ClickHouse Cloud](/images/cloud/reference/compute-compute-1.webp)
+
+</div>
 
 <br />
 
@@ -34,7 +38,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 كما يتيح **فصل الحوسبة عن الحوسبة** فصل عمليات القراءة عن عمليات الكتابة حتى لا تتداخل مع بعضها:
 
+<div className="ch-image-md">
+
 ![فصل compute في ClickHouse Cloud](/images/cloud/reference/compute-compute-2.webp)
+
+</div>
 
 <br />
 
@@ -51,7 +59,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 * الخدمة الأساسية `DWH Prod`
 * الخدمة الثانوية `DWH Prod Subservice`
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![مثال على مستودع يضم خدمة أساسية وخدمات ثانوية](/images/cloud/reference/compute-compute-8.webp)
+
+</div>
 
 <br />
 
@@ -76,7 +88,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 وهذا يعني أن جميع مستخدمي قاعدة البيانات الذين يُنشؤون في Service 1 سيتمكنون أيضًا من استخدام Service 2 بالأذونات نفسها (مثل منح الجداول وطرق العرض وما إلى ذلك)، والعكس صحيح.
 تُستخدم نقطة نهاية مختلفة لكل خدمة، لكن يُستخدم اسم المستخدم وكلمة المرور نفسيهما عبر جميع الخدمات. وبعبارة أخرى، **يتشارك المستخدمون بين الخدمات التي تعمل على مساحة التخزين نفسها**، كما هو موضح في الشكل أدناه:
 
+<div className="ch-image-md">
+
 ![وصول المستخدم بين الخدمات التي تشترك في البيانات نفسها](/images/cloud/reference/compute-compute-3.webp)
+
+</div>
 
 <br />
 
@@ -94,7 +110,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 
 في المثال أدناه، مُنعت Alice من الوصول إلى الخدمة 2 في المستودع:
 
+<div className="ch-image-md">
+
 ![إعدادات التحكم في الوصول إلى الشبكة](/images/cloud/reference/compute-compute-4.webp)
+
+</div>
 
 <br />
 
@@ -121,7 +141,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ar/components/ScalePlanFeatureB
 قد تحتاج أحيانًا إلى عزل أعباء عمل القراءة الحرجة عن overhead الكتابة/الدمج من خلال جعل خدمة للقراءة فقط.
 يمكنك القيام بذلك للخدمة الثانية وأي خدمات إضافية تنشئها، لكن الخدمة الأولى ستكون دائمًا من نوع للقراءة والكتابة، كما هو موضح في الشكل أدناه:
 
+<div className="ch-image-lg">
+
 ![خدمات للقراءة والكتابة وللقراءة فقط في مستودع](/images/cloud/reference/compute-compute-5.webp)
+
+</div>
 
 <br />
 
@@ -213,7 +237,11 @@ SETTINGS distributed_ddl_task_timeout=0
 
 لإنشاء مستودع، تحتاج إلى إنشاء خدمة ثانية تشترك في البيانات مع خدمة موجودة. ويمكنك القيام بذلك بالنقر على علامة الزائد في أيٍ من الخدمات الحالية:
 
+<div className="ch-image-md">
+
 ![إنشاء خدمة جديدة في مستودع](/images/cloud/reference/compute-compute-7.webp)
+
+</div>
 
 <br />
 

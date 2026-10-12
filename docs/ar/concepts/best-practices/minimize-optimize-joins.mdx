@@ -54,7 +54,11 @@ doc_type: 'guide'
 * **Partial Merge JOIN:** يقلّل استهلاك الذاكرة إلى الحد الأدنى، لكنه أبطأ — وهو الأنسب لربط الجداول الكبيرة عند محدودية الذاكرة.
 * **Grace Hash JOIN:** مرن وقابل لضبط الذاكرة، ومناسب لمجموعات البيانات الكبيرة مع إمكانية ضبط خصائص الأداء.
 
+<div className="ch-image-md">
+
 ![Joins — السرعة مقابل الذاكرة](/images/bestpractices/joins-speed-memory.png)
+
+</div>
 
 <Note>
   يختلف دعم كل خوارزمية لأنواع JOIN. ويمكن العثور على قائمة كاملة بأنواع JOIN المدعومة لكل خوارزمية [هنا](/ar/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).

@@ -28,13 +28,25 @@ Postgres 12 以降
 
 1. **概要** ページで **Edit** ボタンをクリックします。
 
+<div className="ch-image-lg">
+
 ![Cloud SQL Postgres の Edit ボタン](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/edit.webp)
+
+</div>
 
 2. Flags に移動し、`cloudsql.logical_decoding` を on に変更します。この変更を反映するには、Postgres サーバーの再起動が必要です。
 
+<div className="ch-image-lg">
+
 ![`cloudsql.logical_decoding` を on に変更する](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![サーバーを再起動する](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/cloudsql_logical_decoding3.webp)
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## ClickPipes ユーザーの作成と権限の付与
@@ -96,17 +108,33 @@ Postgres 12 以降
 
 1. **Connections** セクションに移動します
 
+<div className="ch-image-lg">
+
 ![Cloud SQL の Connections セクション](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections.webp)
+
+</div>
 
 2. Networking サブセクションに移動します
 
+<div className="ch-image-lg">
+
 ![Cloud SQL の Networking サブセクション](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/connections_networking.webp)
+
+</div>
 
 3. [ClickPipes のパブリック IP アドレス](/ja/integrations/clickpipes/networking/static-ips) を追加します
 
+<div className="ch-image-lg">
+
 ![ClickPipes のネットワークをファイアウォールに追加](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![ClickPipes のネットワークがファイアウォールに追加された状態](/images/integrations/data-ingestion/clickpipes/postgres/source/google-cloudsql/firewall2.webp)
+
+</div>
 
 <div id="whats-next">
   ## 次のステップ

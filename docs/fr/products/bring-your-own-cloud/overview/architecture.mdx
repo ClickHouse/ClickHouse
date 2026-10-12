@@ -13,7 +13,11 @@ doc_type: 'reference'
 
 Le diagramme ci-dessous illustre les relations entre les organizations ClickHouse Cloud, les comptes cloud et l’infrastructure BYOC.
 
+<div className="ch-image-lg">
+
 ![Hiérarchie des organizations BYOC](/images/cloud/reference/byoc-organization-hierarchy.svg)
+
+</div>
 
 * **Organization ClickHouse Cloud :** entité de premier niveau dans ClickHouse Cloud qui gère les utilisateurs, la facturation et les services ClickHouse non BYOC. Les utilisateurs d’une organization peuvent accéder à la fois aux services Cloud standard et aux services BYOC.
 * **Organization ClickHouse BYOC :** organization distincte dédiée à la gestion des déploiements BYOC. Elle partage les utilisateurs avec l’organization Cloud, mais est liée à un ou plusieurs comptes cloud dans lesquels l’infrastructure BYOC est déployée.
@@ -41,7 +45,11 @@ Dans votre **Customer BYOC VPC**, ClickHouse provisionne un cluster Kubernetes (
 
 <br />
 
+<div className="ch-image-lg">
+
 ![Architecture BYOC : le plan de contrôle ClickHouse, dans le ClickHouse VPC, gère un plan de données Kubernetes situé dans le compte cloud du client ; les données ClickHouse, les sauvegardes, les logs et les données de supervision restent dans le compte du client, et seul un ensemble restreint de données de télémétrie opérationnelle est exporté.](/images/cloud/reference/byoc-architecture.svg)
+
+</div>
 
 <br />
 

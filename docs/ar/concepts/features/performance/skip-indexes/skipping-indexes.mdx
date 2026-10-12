@@ -101,7 +101,11 @@ SELECT * FROM skip_table WHERE my_value IN (125, 700)
 وبصيغة أكثر وضوحًا، هكذا تمت قراءة 4096 صفًا ذات `my_value` يساوي 125 واختيارها، وكيف جرى
 تخطي الصفوف التالية من دون القراءة من disk:
 
+<div className="ch-image-md">
+
 ![تخطي بسيط](/images/guides/best-practices/simple_skip.webp)
+
+</div>
 
 يمكنك الوصول إلى معلومات تفصيلية حول استخدام فهرس التخطي من خلال تمكين trace عند تنفيذ queries. من
 clickhouse-client، اضبط `send_logs_level`:
@@ -220,7 +224,11 @@ SET send_logs_level='trace';
 
 ضع في اعتبارك توزيع البيانات التالي:
 
+<div className="ch-image-md">
+
 ![تخطٍّ سيئ](/images/guides/best-practices/bad_skip.webp)
+
+</div>
 
 افترض أن المفتاح الأساسي/مفتاح ORDER BY هو `timestamp`، وأن هناك فهرسًا على `visitor_id`. انظر الاستعلام التالي:
 

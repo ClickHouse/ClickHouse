@@ -857,7 +857,11 @@ SELECT * FROM s3_table1;
 6. Dans la console AWS, accédez aux buckets, puis sélectionnez le nouveau bucket ainsi que le dossier.
    Vous devriez voir quelque chose comme ceci :
 
+<div className="ch-image-lg">
+
 ![Vue du bucket S3 dans la console AWS montrant les fichiers de données ClickHouse stockés dans S3](/images/integrations/data-ingestion/s3/s3-j.webp)
+
+</div>
 
 <div id="s3-multi-region">
   ## Répliquer un seul shard sur deux régions AWS à l’aide du stockage objet S3
@@ -1296,9 +1300,17 @@ Ces tests permettront de vérifier que les données sont bien répliquées entre
 
   Vérifiez les données S3 dans chaque bucket S3 (les totaux ne sont pas affichés, mais les deux buckets contiennent environ 36 MiB après les insertions) :
 
+<div className="ch-image-lg">
+
 ![Taille des données dans le premier bucket S3 affichant les métriques d'utilisation du stockage](/images/integrations/data-ingestion/s3/bucket1.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Taille des données dans le deuxième bucket S3 affichant les métriques d'utilisation du stockage](/images/integrations/data-ingestion/s3/bucket2.webp)
+
+</div>
 
 <div id="s3express">
   ## S3Express

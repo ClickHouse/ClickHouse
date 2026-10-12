@@ -34,13 +34,21 @@ ClickHouseは、Notionで事前設定済みの接続として提供されてい�
 1. Notionで、サイドバーの**Agents**セクションから新しいカスタムエージェントを作成します。
 2. エージェントの**Settings**で、**Tools and Access**の**Add connection**を選択し、利用可能な接続の一覧から**ClickHouse**を追加します。
 
+<div className="ch-image-md">
+
 ![NotionのAdd connection pickerでClickHouseを選択している画面](/images/integrations/tools/data-integration/notion/add-clickhouse-connection.webp)
+
+</div>
 
 3. **Connect**をクリックし、ClickHouse Cloudの認証情報を使ってOAuthフローを完了します。アクセス範囲は、アカウントがすでにアクセスできる組織とサービスに限定されます。
 
 4. エージェントの設定で新しいClickHouse接続を展開し、このエージェントで使用するツールのトグルをオンにします。各ツールについて、エージェントが自動的に実行するか、毎回承認を求めるかも選択できます。ClickHouse Remote MCPサーバーによって公開されるすべてのツールは読み取り専用です。完全かつ最新の一覧は、[利用可能なツール](/ja/products/cloud/features/ai-ml/remote-mcp#available-tools)のリファレンスを参照してください。
 
+<div className="ch-image-md">
+
 ![ツールごとのトグルが表示された、Notionで展開されたClickHouse接続](/images/integrations/tools/data-integration/notion/clickhouse-tools-toggles.webp)
+
+</div>
 
 <Note>
   各カスタムエージェントには専用のClickHouse接続が必要で、接続を認証した本人だけがそのツール設定を変更できます。詳しくは、Notionの[Agent接続に関するセキュリティのベストプラクティス](https://www.notion.com/help/security-best-practices-for-agent-connections)を参照してください。

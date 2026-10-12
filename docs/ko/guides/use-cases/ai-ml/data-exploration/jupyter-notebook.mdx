@@ -37,15 +37,27 @@ doc_type: 'guide'
 
 왼쪽 메뉴에서 `데이터 소스`를 클릭하십시오. 그런 다음 `Predefined sample data`를 클릭하십시오.
 
+<div className="ch-image-md">
+
 ![예시 데이터셋 추가](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</div>
 
 영국 부동산 실거래가 데이터(4GB) 카드에서 `Get started`를 선택하십시오.
 
+<div className="ch-image-md">
+
 ![영국 실거래가 데이터셋 선택](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</div>
 
 그런 다음 `Import dataset`를 클릭하십시오.
 
+<div className="ch-image-md">
+
 ![영국 실거래가 데이터셋 가져오기](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</div>
 
 ClickHouse는 `default` 데이터베이스에 `pp_complete` 테이블을 자동으로 생성하고, 가격 포인트 데이터 2,892만 행을 테이블에 채웁니다.
 
@@ -78,12 +90,20 @@ jupyter notebook
 새 브라우저 창이 열리며 `localhost:8888`에서 Jupyter 인터페이스가 표시됩니다.
 새 노트북을 만들려면 `File` &gt; `New` &gt; `Notebook`을 클릭하세요.
 
+<div className="ch-image-md">
+
 ![새 노트북 만들기](/images/use-cases/AI_ML/jupyter/4.webp)
+
+</div>
 
 커널을 선택하라는 메시지가 표시됩니다.
 사용 가능한 Python 커널 중 아무 것이나 선택하면 되며, 이 예시에서는 `ipykernel`을 선택합니다:
 
+<div className="ch-image-md">
+
 ![커널 선택](/images/use-cases/AI_ML/jupyter/5.webp)
+
+</div>
 
 빈 셀에 다음 명령을 입력하면 원격 ClickHouse Cloud 인스턴스에 연결하는 데 사용할 chDB를 설치할 수 있습니다:
 
@@ -163,7 +183,11 @@ df.head()
 
 `df.head`는 반환된 데이터의 처음 몇 개 행만 표시합니다:
 
+<div className="ch-image-md">
+
 ![데이터프레임 미리보기](/images/use-cases/AI_ML/jupyter/6.webp)
+
+</div>
 
 새 셀에서 다음 명령을 실행하여 컬럼의 타입을 확인하십시오:
 
@@ -200,7 +224,11 @@ plt.tight_layout()
 plt.show()
 ```
 
+<div className="ch-image-md">
+
 ![데이터프레임 미리보기](/images/use-cases/AI_ML/jupyter/7.webp)
+
+</div>
 
 예상하셨겠지만, 런던의 부동산 가격은 시간이 지나면서 크게 상승했습니다.
 
@@ -256,7 +284,11 @@ df_2.head()
   ```
 </Accordion>
 
+<div className="ch-image-md">
+
 ![데이터프레임 미리보기](/images/use-cases/AI_ML/jupyter/8.webp)
+
+</div>
 
 2020년 이후 데이터는 없지만, 1995년부터 2019년까지는 두 데이터셋을 서로 비교해 시각화할 수 있습니다.
 새 셀에서 다음 명령을 실행하세요.
@@ -302,7 +334,11 @@ plt.tight_layout()
 plt.show()
 ```
 
+<div className="ch-image-md">
+
 ![원격 데이터셋과 로컬 데이터셋의 그래프](/images/use-cases/AI_ML/jupyter/9.webp)
+
+</div>
 
 그래프로 표시된 데이터를 보면, 판매량은 1995년에 약 160,000 수준에서 시작해 빠르게 증가했으며, 1999년에는 약 540,000으로 정점을 찍었습니다.
 이후 거래량은 2000년대 중반까지 급격히 감소했고, 2007-2008년 금융 위기 동안 크게 떨어져 약 140,000 수준까지 하락했습니다.

@@ -25,7 +25,11 @@ integration:
 
 启用该功能标志后，你应该会在 ClickPipe 表选择器中看到如下设置 (无论是在创建还是编辑 ClickPipe 时) ：
 
+<div className="ch-image-md">
+
 ![分区键列](/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp)
+
+</div>
 
 MySQL ClickPipe 会使用源表中的某一列对源表进行逻辑分区。该列称为**分区键列**。它用于将源表划分为多个分区，ClickPipe 随后即可并行处理这些分区。
 
@@ -39,7 +43,11 @@ MySQL ClickPipe 会使用源表中的某一列对源表进行逻辑分区。该�
 
 下面介绍这些设置：
 
+<div className="ch-image-md">
+
 ![快照参数](/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp)
+
+</div>
 
 <div id="numrows-mysql-snapshot">
   #### 每个分区的快照行数

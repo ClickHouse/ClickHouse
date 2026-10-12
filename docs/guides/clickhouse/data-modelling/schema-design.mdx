@@ -14,7 +14,11 @@ For the examples in this guide, we use a subset of the Stack Overflow dataset. T
 
 > The primary keys and relationships indicated aren't enforced through constraints (Parquet is file not table format) and purely indicate how the data is related and the unique keys it possesses.
 
+<div className="ch-image-lg">
+
 ![Stack Overflow Schema](/images/data-modeling/stackoverflow-schema.webp)
+
+</div>
 
 <br />
 
@@ -227,7 +231,11 @@ Users coming from OLTP databases often look for the equivalent concept in ClickH
 
 At the scale at which ClickHouse is often used, memory and disk efficiency are paramount. Data is written to ClickHouse tables in chunks known as parts, with rules applied for merging the parts in the background. In ClickHouse, each part has its own primary index. When parts are merged, then the merged part's primary indexes are also merged. The primary index for a part has one index entry per group of rows - this technique is called sparse indexing.
 
+<div className="ch-image-md">
+
 ![Sparse Indexing in ClickHouse](/images/data-modeling/schema-design-indices.webp)
+
+</div>
 
 The selected key in ClickHouse will determine not only the index, but also order in which data is written on disk. Because of this, it can dramatically impact compression levels which can in turn affect query performance. An ordering key which causes the values of most columns to be written in contiguous order will allow the selected compression algorithm (and codecs) to compress the data more effectively.
 

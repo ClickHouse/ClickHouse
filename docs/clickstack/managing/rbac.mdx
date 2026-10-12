@@ -33,10 +33,18 @@ Once a user has Cloud access, they appear in the ClickStack **Team Settings** pa
 
 <Tabs>
 <Tab title="Cloud Users and roles">
+<div className="ch-image-lg">
+
 ![ClickHouse Cloud Users and roles page](/images/clickstack/rbac/team-page-cloud.webp)
+
+</div>
 </Tab>
 <Tab title="ClickStack Team Settings">
+<div className="ch-image-lg">
+
 ![ClickStack Team Settings page showing team members and their roles](/images/clickstack/rbac/team-page-clickstack.webp)
+
+</div>
 </Tab>
 </Tabs>
 
@@ -70,7 +78,11 @@ You can set a default role for new users under [Security policies](#security-pol
 
 Open **Team Settings** and scroll to **RBAC Roles**.
 
+<div className="ch-image-lg">
+
 ![RBAC Roles](/images/clickstack/rbac/rbac-section.webp)
+
+</div>
 </Step>
 <Step title="Add a new role" id="step-add-role">
 
@@ -80,7 +92,11 @@ Click **+ Add Role**. Enter a **Role Name** and optionally add a **Description**
 
 Set permissions for the role, then click **Create Role**.
 
+<div className="ch-image-md">
+
 ![Add Role modal](/images/clickstack/rbac/add-role-modal.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -127,13 +143,21 @@ Each resource type has an **Access Control Mode**:
 
 To switch modes, click the chevron to expand a resource type in the role editor, then toggle the **Access Control Mode**.
 
+<div className="ch-image-md">
+
 ![Default Access vs Fine-Grained Controls modes in the role editor](/images/clickstack/rbac/default-vs-fine-grained.webp)
+
+</div>
 
 #### Configuring access rules {#configuring-access-rules}
 
 Each access rule consists of a **condition** and an **access level**. Conditions match resources by their properties:
 
+<div className="ch-image-md">
+
 ![Condition tooltip: match resources by Name or Tag (shown by the title) or by ID (found in the URL)](/images/clickstack/rbac/condition-tip.webp)
+
+</div>
 
 | Condition field | Operators | What it matches | Example |
 |---|---|---|---|
@@ -143,11 +167,19 @@ Each access rule consists of a **condition** and an **access level**. Conditions
 
 The following screenshot shows both the dashboard ID highlighted in the URL bar and a "TESTING" tag visible in the tag panel (top-right).
 
+<div className="ch-image-lg">
+
 ![Dashboard showing the resource ID in the URL bar and a tag in the top-right corner](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
+
+</div>
 
 You can add multiple rules per resource type. Each rule is checked independently using OR logic — a resource is accessible if it matches **any** rule. Resources that don't match any rule aren't accessible.
 
+<div className="ch-image-md">
+
 ![Access rules with OR logic tooltip](/images/clickstack/rbac/access-rules-tip.webp)
+
+</div>
 
 **Example**: To give a role read-only access to testing dashboards, expand Dashboards, switch to Fine-Grained Controls, and add two rules:
 - **Name** `contains` `testing` with access level **Read**                                                                                                                                   
@@ -155,7 +187,11 @@ You can add multiple rules per resource type. Each rule is checked independently
 
  A dashboard that matches either rule is accessible.
 
+<div className="ch-image-md">
+
 ![Two fine-grained access rules joined by OR: Name contains testing with Read access, and Tag is testing with Read access](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
+
+</div>
 
 ## Security policies {#security-policies}
 
@@ -165,4 +201,8 @@ The **Security Policies** section in **Team Settings** provides additional contr
 
 **Generative AI** lets you enable or disable LLM-powered features (such as natural language query generation) powered by Anthropic or Amazon Bedrock. When disabled, no data is sent to AI providers.
 
+<div className="ch-image-lg">
+
 ![Security policies](/images/clickstack/rbac/security-policies.webp)
+
+</div>

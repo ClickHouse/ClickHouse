@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
 クエリインサイトは、[ClickHouse Managed Postgres](/ja/products/managed-postgres/overview) インスタンスから
@@ -60,7 +61,11 @@ Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左�
 アプリケーショントラフィックに応じて増減すること、エラー率が横ばいまたはゼロであること、そして
 各パーセンタイルのレイテンシが互いに近い値で推移していることです。
 
+<div className="ch-image-lg">
+
 ![6つの統計カードを表示したクエリインサイトの概要: 1秒あたりのクエリ数、クエリレイテンシのパーセンタイル、操作内訳のドーナツ、返された行数のエリアチャート、95.2 パーセントのバッファヒット率ドーナツ、エラーの縦棒チャート](/images/managed-postgres/monitoring/query-insights-overview.webp)
+
+</div>
 
 <div id="slow-patterns">
   ## 低速クエリパターン
@@ -68,7 +73,11 @@ Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左�
 
 概要で問題の兆候が見つかったら、調査はパターンテーブルから始まります。正規化されたクエリパターンごとに1行が表示され、リテラル値は取り除かれているため、同じステートメントの実行は同じ行に集約されます。
 
+<div className="ch-image-lg">
+
 ![Database、User、Operation、Calls、Errors、Avg latency、P95、Max latency、Total runtime、Rows returned、Cache hit の各カラムを備え、正規化されたクエリごとに1行を表示する低速クエリパターンテーブル](/images/managed-postgres/monitoring/query-insights-patterns.webp)
+
+</div>
 
 <div id="sort">
   ### 気になる観点でソートする
@@ -120,7 +129,11 @@ Cloud Console で ClickHouse Managed Postgres インスタンスを開き、左�
 ストリームを確認したいときに使用します。たとえば、修正が反映されたことを
 確認したり、エラーが発生した正確な瞬間を特定したりするのに役立ちます。
 
+<div className="ch-image-lg">
+
 ![Database、User、Operation、Application のフィルタードロップダウンと、Time、Operation、Query、Duration、Rows、Database、User、Blks read のカラムを備えた Recent Queries テーブル](/images/managed-postgres/monitoring/query-insights-recent-queries.webp)
+
+</div>
 
 デフォルトで表示されるカラムは、Time、Operation、Query、Duration、Rows、
 Database、User、Blks read です。Application、Blks hit、CPU user、
@@ -154,9 +167,17 @@ patterns または 最近のクエリ テーブル内の任意の行をクリッ
 * **最近の実行** — 同じパターンの個々の実行で、
   実行ごとのカウンターを表示します。
 
+<div className="ch-image-md">
+
 ![クエリ詳細フライアウト。クエリパターンのコードブロックと、合計呼び出し回数、レイテンシーのパーセンタイル、合計ランタイム、返された行数、cache ヒット率、読み取られたブロック数、ヒットしたブロック数、CPU 時間、WAL バイト数、エラーを含む 13 個の統計カードから成る集計リソース使用量グリッドを表示](/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp)
 
+</div>
+
+<div className="ch-image-md">
+
 ![続きのクエリ詳細フライアウト。データベース、ユーザー、操作、アプリケーションを含むクエリコンテキストセクションと、timestamp、OK ステータス、サーバーロール、ホスト ID、および duration、行数、cache ヒット、CPU、共有ブロック読み取り数、共有ブロックヒット数の実行ごとのカウンターを含む最近の実行カードを表示](/images/managed-postgres/monitoring/query-insights-detail-recent.webp)
+
+</div>
 
 <div id="counters">
   ### 実行ごとのカウンター

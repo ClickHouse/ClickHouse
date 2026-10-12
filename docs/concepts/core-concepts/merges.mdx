@@ -21,7 +21,11 @@ To control the number of parts per table and implement ② above, ClickHouse con
 
 The following diagram sketches this background merge process:
 
-![](/images/managing-data/core-concepts/merges_01.webp)
+<div className="ch-image-lg">
+
+![PART MERGES](/images/managing-data/core-concepts/merges_01.webp)
+
+</div>
 
 <br/>
 
@@ -59,7 +63,11 @@ The [previously documented](/concepts/core-concepts/parts#monitoring-table-parts
 
 In ClickHouse 24.10, a new [merges dashboard](https://presentations.clickhouse.com/2024-release-24.10/index.html#17) was added to the built-in [monitoring dashboards](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards). Available in both OSS and Cloud via the `/merges` HTTP handler, we can use it to visualize all part merges for our example table:
 
-![](/images/managing-data/core-concepts/merges-dashboard.webp)
+<div className="ch-image-lg">
+
+![PART MERGES](/images/managing-data/core-concepts/merges-dashboard.webp)
+
+</div>
 
 <br/>
 
@@ -74,7 +82,11 @@ The recorded dashboard above captures the entire process, from the initial data 
 ## Concurrent merges {#concurrent-merges}
 A single ClickHouse server uses several background [merge threads](/reference/settings/server-settings/settings/background#background_pool_size) to execute concurrent part merges:
 
-![](/images/managing-data/core-concepts/merges_02.webp)
+<div className="ch-image-lg">
+
+![PART MERGES](/images/managing-data/core-concepts/merges_02.webp)
+
+</div>
 
 <br/>
 
@@ -100,7 +112,11 @@ ClickHouse doesn't necessarily load all parts to be merged into memory at once, 
 ## Merge mechanics {#merge-mechanics}
 The diagram below illustrates how a single background [merge thread](/concepts/core-concepts/merges#concurrent-merges) in ClickHouse merges parts (by default, without [vertical merging](/concepts/core-concepts/merges#memory-optimized-merges)):
 
-![](/images/managing-data/core-concepts/merges_03.webp)
+<div className="ch-image-lg">
+
+![PART MERGES](/images/managing-data/core-concepts/merges_03.webp)
+
+</div>
 
 <br/>
 
@@ -130,7 +146,11 @@ Next, we will briefly outline the merge mechanics of specific engines in the Mer
 ### Standard merges {#standard-merges}
 The diagram below illustrates how parts in a standard [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) table are merged:
 
-![](/images/managing-data/core-concepts/merges_04.webp)
+<div className="ch-image-lg">
+
+![PART MERGES](/images/managing-data/core-concepts/merges_04.webp)
+
+</div>
 
 <br/>
 
@@ -141,7 +161,11 @@ The ① decompressed, pre-sorted table columns are ② merged while preserving t
 ### Replacing merges {#replacing-merges}
 Part merges in a [ReplacingMergeTree](/reference/engines/table-engines/mergetree-family/replacingmergetree) table work similarly to [standard merges](/concepts/core-concepts/merges#standard-merges), but only the most recent version of each row is retained, with older versions being discarded:
 
-![](/images/managing-data/core-concepts/merges_05.webp)
+<div className="ch-image-lg">
+
+![PART MERGES](/images/managing-data/core-concepts/merges_05.webp)
+
+</div>
 
 <br/>
 
@@ -156,7 +180,11 @@ However, the `ReplacingMergeTree` removes duplicate rows with the same sorting k
 ### Summing merges {#summing-merges}
 Numeric data is automatically summarized during merges of parts from a [SummingMergeTree](/reference/engines/table-engines/mergetree-family/summingmergetree) table:
 
-![](/images/managing-data/core-concepts/merges_06.webp)
+<div className="ch-image-lg">
+
+![PART MERGES](/images/managing-data/core-concepts/merges_06.webp)
+
+</div>
 
 <br/>
 
@@ -167,7 +195,11 @@ In the ② merging step, ClickHouse replaces all rows with the same sorting key 
 ### Aggregating merges {#aggregating-merges}
 The `SummingMergeTree` table example from above is a specialized variant of the [AggregatingMergeTree](/reference/engines/table-engines/mergetree-family/aggregatingmergetree) table, allowing [automatic incremental data transformation](https://www.youtube.com/watch?v=QDAJTKZT8y4) by applying any of [90+](/reference/functions/aggregate-functions/reference-index) aggregation functions during part merges:
 
-![](/images/managing-data/core-concepts/merges_07.webp)
+<div className="ch-image-lg">
+
+![PART MERGES](/images/managing-data/core-concepts/merges_07.webp)
+
+</div>
 
 <br/>
 

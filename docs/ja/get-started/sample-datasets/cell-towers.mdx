@@ -232,7 +232,11 @@ doc_type: 'guide'
     「Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables」と入力して送信します。
     ある実行例では、エージェントは次の手順を実行しました。
 
+    <div className="ch-image-lg">
+
     ![ドイツの基地局密度グリッドを作成するために実行された手順を示す ClickHouse Agent のチャット](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
+
+    </div>
 
     * `mcc_country_dict` でドイツの Mobile Country Code を検索し、MCC が `262` であることを特定しました。
     * `pointInPolygon` を使用して、`germany` のポリゴン内にある `mcc = 262` の基地局を数え、2,588,635 基という結果を得ました。追加の `mcc` フィルタによって、ポリゴン内にあっても他国に登録されている基地局が除外されるため、前述の件数よりわずかに少なくなっています。
@@ -241,7 +245,11 @@ doc_type: 'guide'
 
     生成されたファイルを開いて結果を確認してください。明るく表示されている集中箇所は、ベルリン、ハンブルク、ミュンヘン、フランクフルトといった主要な大都市圏です。
 
+    <div className="ch-image-md">
+
     ![対数カラースケールを用いた 0.1 度グリッド上のドイツにおける基地局密度のヒートマップ](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
+
+    </div>
   </Step>
 </Steps>
 

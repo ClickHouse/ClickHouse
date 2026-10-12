@@ -20,15 +20,27 @@ To follow this guide, you will need:
 From the home page of your service, click **Data sources** in the left hand menu.
 Expand the **ClickPipes** dropdown and click **Create ClickPipe**
 
+<div className="ch-image-md">
+
 ![Navigate to Data Sources](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp)
 
+</div>
+
+<div className="ch-image-md">
+
 ![Create ClickPipe](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp)
+
+</div>
 </Step>
 <Step title="Select the data source" id="select-data-source">
 
 Select **Azure Blob Storage** as data type
 
+<div className="ch-image-md">
+
 ![Select Azure Blob Storage](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp)
+
+</div>
 </Step>
 <Step title="Setup your ClickPipe connection" id="setup-connection">
 
@@ -42,7 +54,11 @@ Optionally, enable continuous ingestion. See ["Continuous Ingestion"](/integrati
 
 Finally, click **Incoming data**
 
+<div className="ch-image-md">
+
 ![Configuration Details](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp)
+
+</div>
 </Step>
 <Step title="Select data format" id="select-data-format">
 
@@ -51,7 +67,11 @@ Finally, click **Incoming data**
 3. Complete additional format specific configuration such as delimiter used for comma-separated formats
 4. Click **Parse information**
 
+<div className="ch-image-md">
+
 ![Choose Data Format](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp)
+
+</div>
 </Step>
 <Step title="Configure table, schema and settings" id="configure-table-schema">
 
@@ -63,7 +83,11 @@ Now you need to create a new table or select an existing one where the incoming 
 4. Define any mappings from the source file to destination table for column name, column type, default value and nullability
 5. Finally, specify advanced settings such as the engine type you wish to use, the expression to partition by and the primary key
 
+<div className="ch-image-md">
+
 ![Parse Information](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp)
+
+</div>
 
 When you have finished configuring your table, schema and settings, click **Details and settings**
 </Step>
@@ -73,7 +97,11 @@ ClickPipes will set up a dedicated database user for data writing.
 You can select a role for this user.
 For materialized views or dictionary access from the destination table, opt for "Full access".
 
+<div className="ch-image-md">
+
 ![Configure Permissions](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp)
+
+</div>
 </Step>
 <Step title="Complete setup" id="complete-setup">
 

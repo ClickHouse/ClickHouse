@@ -28,13 +28,21 @@ To enable these flags:
 
 1. In the Google Cloud Console, navigate to the AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters) page. From the **Actions** menu for your primary instance, click **Edit**.
 
+   <div className="ch-image-lg">
+
    ![Edit primary instance configuration](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp)
+
+   </div>
 
 2. Scroll down to **Advanced configuration options** and expand the section. Under **Flags**, click **Add a database flag**.
    - Add the [`allowdb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) flag and set its value to `on`
    - Add the [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) flag and set its value to `on`
 
+   <div className="ch-image-lg">
+
    ![Set allowdb.enable_pglogical and alloydb.logical_decoding flags to on](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp)
+
+   </div>
 
 3. Click **Update instance** to save the configuration changes. It's important to note that this action **triggers a restart of the primary instance.**
 
@@ -46,7 +54,11 @@ To enable these flags:
 
    The result should be `logical`.
 
+   <div className="ch-image-lg">
+
    ![Verify that logical replication is enabled](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp)
+
+   </div>
 
 ## Create a ClickPipes user and manage replication permissions {#create-a-clickpipes-user-and-manage-replication-permissions}
 
@@ -110,7 +122,11 @@ For private connectivity from a ClickHouse Cloud service hosted on GCP, follow t
 
 3. Check the **Enable Public IP** checkbox to allow connections to the instance over the public internet. Under **Authorized external networks**, enter the [list of ClickPipes static IP addresses](/integrations/clickpipes/networking/static-ips) for the region your service is deployed in.
 
+   <div className="ch-image-lg">
+
    ![Configure networking for public access with an IP allowlist](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp)
+
+   </div>
 
 <Note>
    AlloyDB expects addresses to be specified in [CIDR notation](https://cloud.google.com/alloydb/docs/connection-overview#public-ip). You can adapt the provided list of ClickPipes static IP addresses to follow this notation by appending `/32` to each address.

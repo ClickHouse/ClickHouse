@@ -11,13 +11,18 @@ integration:
 ---
 
 import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
+
 import ConnectionDetails from '/snippets/es/_gather_your_details_http.mdx';
 
 <CommunityMaintainedBadge />
 
 <a href="https://www.fabi.ai/" target="_blank">Fabi.ai</a> es una plataforma integral y colaborativa de análisis de datos. Puedes aprovechar SQL, Python, IA y herramientas no-code para crear dashboards y flujos de trabajo de datos más rápido que nunca. Combinado con la escala y la potencia de ClickHouse, puedes crear y compartir tu primer dashboard de alto rendimiento sobre un conjunto de datos masivo en cuestión de minutos.
 
+<div className="ch-image-md">
+
 ![Plataforma de exploración de datos y flujos de trabajo de Fabi.ai](/images/integrations/data-visualization/fabi_01.webp)
+
+</div>
 
 <div id="gather-your-connection-details">
   ## Reúne los datos de conexión
@@ -33,11 +38,19 @@ Inicia sesión o crea tu cuenta de Fabi.ai: https://app.fabi.ai/
 
 1. Cuando crees tu cuenta por primera vez, se te pedirá que conectes tu base de datos. Si ya tienes una cuenta, haz clic en el panel de fuente de datos a la izquierda de cualquier Smartbook y selecciona Add Data Source.
 
+   <div className="ch-image-lg">
+
    ![Agregar fuente de datos](/images/integrations/data-visualization/fabi_02.webp)
+
+   </div>
 
 2. A continuación, se te pedirá que introduzcas tus datos de conexión.
 
+   <div className="ch-image-md">
+
    ![Formulario de credenciales de ClickHouse](/images/integrations/data-visualization/fabi_03.webp)
+
+   </div>
 
 3. ¡Enhorabuena! Ya has integrado ClickHouse en Fabi.ai.
 
@@ -47,7 +60,11 @@ Inicia sesión o crea tu cuenta de Fabi.ai: https://app.fabi.ai/
 
 Una vez que hayas conectado Fabi.ai a ClickHouse, ve a cualquier [Smartbook](https://docs.fabi.ai/analysis_and_reporting/smartbooks) y crea una celda SQL. Si solo tienes una fuente de datos conectada a tu instancia de Fabi.ai, la celda SQL se configurará automáticamente para usar ClickHouse; de lo contrario, puedes elegir la fuente de datos que quieres consultar en el menú desplegable de fuentes.
 
+<div className="ch-image-lg">
+
 ![Consultas en ClickHouse](/images/integrations/data-visualization/fabi_04.webp)
+
+</div>
 
 <div id="additional-resources">
   ## Recursos adicionales

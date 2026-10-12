@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
 <PrivatePreviewBadge />
 
 `WalShadow` は、PostgreSQL の先行書き込みログ (WAL) から直接読み取る、ClickHouse Managed Postgres 向けのネイティブなレプリケーションエンジンです。低レイテンシかつ高スループットのワークロード向けに最適化されており、Postgres から ClickHouse へのレプリケーションラグをサブ秒に抑えます。開発はオープンな形で [ClickHouse/walshadow](https://github.com/ClickHouse/walshadow) にて進められています。
@@ -16,7 +17,11 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 お使いのサービスで `WalShadow` が利用可能になると、**概要** ページに **プライベートプレビュー** バナーが表示されます。**Configure WalShadow** をクリックして開始してください。
 
+<div className="ch-image-md">
+
 ![Learn more と Configure WalShadow のリンクを含む WalShadow プライベートプレビューバナーが表示された Postgres サービスの概要ページ](/images/managed-postgres/walshadow/overview-banner.webp)
+
+</div>
 
 <Note>
   作業を進める前に、Postgres サービスが ClickHouse からアクセス可能であることを確認してください。`WalShadow` は宛先の ClickHouse サービスに直接接続するため、データベースとテーブルを作成する権限を持つ ClickHouse ユーザーとパスワードが必要です。
@@ -24,13 +29,21 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
 
 レプリケーションを設定するには、Postgres インスタンスのサイドバーで **Sync to ClickHouse** をクリックし、続いて **Replicate data in ClickHouse** をクリックします。
 
+<div className="ch-image-md">
+
 ![ClickPipes と WalShadow のレプリケーション方式が表示された Sync to ClickHouse のランディングページ](/images/managed-postgres/walshadow/sync-landing.webp)
+
+</div>
 
 <Steps>
   <Step title="レプリケーションエンジンを選択する" id="select-replication-engine">
     レプリケーションエンジンとして **WalShadow** を選択し、**Next** をクリックします。
 
+    <div className="ch-image-md">
+
     ![ClickPipes と WalShadow のオプションが表示され、WalShadow が選択されているレプリケーションエンジン選択のステップ](/images/managed-postgres/walshadow/select-engine.webp)
+
+    </div>
   </Step>
 
   <Step title="レプリケーションサービスを設定する" id="configure-replication-service">
@@ -43,7 +56,11 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
       * **初期ロード only**: 既存データを一回限り取り込み、その後の更新は行いません
       * **CDC only**: 初期取り込みは行わず、以降の新しい変更のみをキャプチャします
 
+    <div className="ch-image-md">
+
     ![ClickHouse サービス、Postgres database、レプリケーション方式のオプションが表示されたレプリケーションサービス設定のステップ](/images/managed-postgres/walshadow/configure-service.webp)
+
+    </div>
 
     **Next** をクリックして次に進みます。
   </Step>
@@ -55,7 +72,11 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
     * **Tables**: 各スキーマを展開して個別のテーブルを選択するか、**Select all tables** を切り替えます。テーブルごとに **Destination table name** をカスタマイズしたり、**Column settings** を調整したりできます。
     * **ClickHouse ユーザー** および **ClickHouse password**: `WalShadow` は宛先の ClickHouse サービスに直接接続するため、移行先データベースおよびテーブルを作成する権限を持つ認証情報が必要です。
 
+    <div className="ch-image-md">
+
     ![スキーマとテーブルの選択、宛先テーブル名、ClickHouse の認証情報が表示されたテーブル選択のステップ](/images/managed-postgres/walshadow/select-tables.webp)
+
+    </div>
 
     **Replicate data to ClickHouse** をクリックしてレプリケーションを開始します。
   </Step>
@@ -63,7 +84,11 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
   <Step title="WalShadow を監視する" id="monitor-walshadow">
     レプリケーションを開始すると、**Sync to ClickHouse** ページに `WalShadow` が表示されます。パイプラインのプロビジョニングと初期ロードの準備が行われている間、ステータスは **Creating** になります。
 
+    <div className="ch-image-md">
+
     ![WalShadow が Creating 状態で表示されている Sync to ClickHouse ページ](/images/managed-postgres/walshadow/walshadow-creating.webp)
+
+    </div>
 
     プロビジョニングが完了すると、ステータスは **Running** に変わります。このページには、レプリケーションのリアルタイムなメトリクスが表示されます:
 
@@ -75,7 +100,11 @@ import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge
     * **Uptime**: パイプラインの稼働時間
     * **Last updated**: メトリクスが最後に報告された時刻
 
+    <div className="ch-image-md">
+
     ![同期済み行数、ラグ、稼働時間のメトリクスとともに WalShadow が Running 状態で表示されている Sync to ClickHouse ページ](/images/managed-postgres/walshadow/walshadow-running.webp)
+
+    </div>
   </Step>
 </Steps>
 

@@ -45,7 +45,11 @@ PARTITION BY toStartOfMonth(date);
 
 テーブルに行のセットが挿入されるたびに、挿入されたすべての行を含む単一のデータパーツを ([少なくとも](/ja/reference/settings/session-settings/max-insert#max_insert_block_size)) 1 つ作成するのではなく ([こちら](/ja/concepts/core-concepts/parts)で説明しているとおり) 、ClickHouse は、挿入された行の中で一意な各パーティションキーの値ごとに、新しいデータパーツを 1 つ作成します。
 
+<div className="ch-image-lg">
+
 ![INSERT の処理](/images/managing-data/core-concepts/partitions.webp)
+
+</div>
 
 <br />
 
@@ -60,7 +64,11 @@ ClickHouse サーバーはまず、上の図に示されている 4 行の挿入
 
 パーティション化を有効にすると、ClickHouse はパーティションをまたいでではなく、各パーティション内でのみデータパーツを[マージ](/ja/concepts/core-concepts/merges)します。この動作を、上記の例のテーブルで図示します。
 
+<div className="ch-image-lg">
+
 ![パーツのマージ](/images/managing-data/core-concepts/merges_with_partitions.webp)
+
+</div>
 
 <br />
 
@@ -157,7 +165,11 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 
 ClickHouse はこのクエリを処理する際、無関係なデータを評価しないよう、一連のプルーニング手法を適用します。
 
+<div className="ch-image-lg">
+
 ![パーツマージ 2](/images/managing-data/core-concepts/partition-pruning.webp)
+
+</div>
 
 <br />
 

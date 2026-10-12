@@ -37,7 +37,11 @@ On an overview dashboard, add a **Table** tile on your traces source grouped by 
 
 Order by `Requests` descending so the busiest services sort to the top. This table is the catalog: one row per service, scored by RED.
 
+<div className="ch-image-lg">
+
 ![Service inventory table with RED columns (Requests, Errors, P95 Duration) for each service, ordered by request volume, above a requests-over-time trend](/images/clickstack/dashboards/row-click-catalog.webp)
+
+</div>
 
 <Tip>
 **Lead with the group-by column**
@@ -60,7 +64,11 @@ Click **Apply** and save. The clicked row's service now flows into the dashboard
 
 Hovering a row reveals a link affordance on the right edge of the table, with a hint describing the action (`Open dashboard "Service Detail"`). Clicking the row opens the `Service Detail` dashboard with its `Service` filter set to the clicked value, so every tile (the RED key figures, the latency percentiles, the per-endpoint breakdown) re-scopes to that one service in a single click.
 
+<div className="ch-image-lg">
+
 ![Service Detail dashboard after a row click, with the Service filter set to the clicked service and the RED key figures, latency percentiles, and per-endpoint breakdown all scoped to it](/images/clickstack/dashboards/row-click-drilldown.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -84,7 +92,11 @@ Click **Apply** and save.
 
 Clicking a service row now opens the Search page on that traces source, filtered to `ServiceName = <service>`, so you land on the spans for just that service over the same time range.
 
+<div className="ch-image-lg">
+
 ![Search page opened on the traces source after a row click, filtered to the clicked service](/images/clickstack/dashboards/row-click-search-drilldown.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -94,7 +106,11 @@ The same shape works for any catalog of items. Group the table by an operation (
 
 Row-click actions are configured on the table tile itself; there is no separate page for them. Add or edit a tile and set its visualization type to **Table**. A **Row Click Action** button then appears in the editor toolbar, next to **Display Settings**. The button is shown for table tiles only, and its label reflects the current action: `Row Click Action: Default`, `Row Click Action: Search`, or `Row Click Action: Dashboard`. Click it to open the drawer.
 
+<div className="ch-image-lg">
+
 ![Row Click Action drawer in Dashboard mode, with the Service Detail dashboard selected as the target and a ServiceName filter templated from the clicked row](/images/clickstack/dashboards/row-click-drawer.webp)
+
+</div>
 
 The drawer offers three actions:
 

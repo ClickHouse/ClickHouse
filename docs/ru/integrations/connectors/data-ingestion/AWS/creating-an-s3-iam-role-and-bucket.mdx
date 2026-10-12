@@ -21,42 +21,78 @@ doc_type: 'guide'
 
 2. На вкладке `Users` выберите `Create user`
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console — добавление нового пользователя](/images/_snippets/s3/2025/s3-1.webp)
+
+</div>
 
 3. Введите имя пользователя
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console — добавление нового пользователя](/images/_snippets/s3/2025/s3-2.webp)
+
+</div>
 
 4. Выберите `Next`
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console — добавление нового пользователя](/images/_snippets/s3/2025/s3-3.webp)
+
+</div>
 
 5. Выберите `Next`
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console — добавление нового пользователя](/images/_snippets/s3/2025/s3-4.webp)
+
+</div>
 
 6. Выберите `Create user`
 
 Пользователь создан.
 Нажмите на только что созданного пользователя
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console — добавление нового пользователя](/images/_snippets/s3/2025/s3-5.webp)
+
+</div>
 
 7. Выберите `Create access key`
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console — добавление нового пользователя](/images/_snippets/s3/2025/s3-6.webp)
+
+</div>
 
 8. Выберите `Application running outside AWS`
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console — добавление нового пользователя](/images/_snippets/s3/2025/s3-7.webp)
+
+</div>
 
 9. Выберите `Create access key`
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console — добавление нового пользователя](/images/_snippets/s3/2025/s3-8.webp)
+
+</div>
 
 10. Скачайте ключ доступа и secret в виде файла .csv, чтобы использовать их позже
 
+<div className="ch-image-lg">
+
 ![AWS IAM Management Console — добавление нового пользователя](/images/_snippets/s3/2025/s3-9.webp)
+
+</div>
 
 <div id="create-an-s3-bucket">
   ## Создание S3 бакета
@@ -64,11 +100,19 @@ doc_type: 'guide'
 
 1. В разделе S3 бакетов выберите **Create bucket**
 
+<div className="ch-image-lg">
+
 ![Консоль управления AWS IAM — добавление нового пользователя](/images/_snippets/s3/2025/s3-10.webp)
+
+</div>
 
 2. Введите имя бакета, остальные параметры оставьте по умолчанию
 
+<div className="ch-image-lg">
+
 ![Консоль управления AWS IAM — добавление нового пользователя](/images/_snippets/s3/2025/s3-11.webp)
+
+</div>
 
 <Note>
   Имя бакета должно быть уникальным во всем AWS, а не только в пределах организации, иначе возникнет ошибка.
@@ -76,37 +120,69 @@ doc_type: 'guide'
 
 3. Оставьте `Block all Public Access` включенным; публичный доступ не требуется.
 
+<div className="ch-image-lg">
+
 ![Консоль управления AWS IAM — добавление нового пользователя](/images/_snippets/s3/2025/s3-12.webp)
+
+</div>
 
 4. Внизу страницы выберите **Create Bucket**
 
+<div className="ch-image-lg">
+
 ![Консоль управления AWS IAM — добавление нового пользователя](/images/_snippets/s3/2025/s3-13.webp)
+
+</div>
 
 5. Выберите ссылку, скопируйте ARN и сохраните его для использования при настройке политики доступа к бакету
 
+<div className="ch-image-lg">
+
 ![Консоль управления AWS IAM — добавление нового пользователя](/images/_snippets/s3/2025/s3-14.webp)
+
+</div>
 
 6. После создания бакета найдите новый S3 бакет в списке S3 бакетов и выберите имя бакета — вы перейдете на страницу, показанную ниже:
 
+<div className="ch-image-lg">
+
 ![Консоль управления AWS IAM — добавление нового пользователя](/images/_snippets/s3/2025/s3-15.webp)
+
+</div>
 
 7. Выберите `Create folder`
 
 8. Введите имя папки, которая будет использоваться как папка назначения для S3-диска ClickHouse или резервной копии, и выберите `Create folder` внизу страницы
 
+<div className="ch-image-lg">
+
 ![Консоль управления AWS IAM — добавление нового пользователя](/images/_snippets/s3/2025/s3-16.webp)
+
+</div>
 
 9. Теперь папка должна отображаться в списке объектов бакета
 
+<div className="ch-image-lg">
+
 ![Консоль управления AWS IAM — добавление нового пользователя](/images/_snippets/s3/2025/s3-17.webp)
+
+</div>
 
 10. Установите флажок рядом с новой папкой и нажмите `Copy URL`. Сохраните URL для использования в конфигурации хранилища ClickHouse в следующем разделе.
 
+<div className="ch-image-lg">
+
 ![Консоль управления AWS IAM — добавление нового пользователя](/images/_snippets/s3/2025/s3-18.webp)
+
+</div>
 
 11. Выберите вкладку **Permissions** и нажмите кнопку **Edit** в разделе **Bucket Policy**
 
+<div className="ch-image-lg">
+
 ![Консоль управления AWS IAM — добавление нового пользователя](/images/_snippets/s3/2025/s3-19.webp)
+
+</div>
 
 12. Добавьте политику бакета, пример ниже
 

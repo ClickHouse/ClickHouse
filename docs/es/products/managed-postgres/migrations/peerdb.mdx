@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
 Esta guía ofrece instrucciones paso a paso para migrar su base de datos de PostgreSQL a ClickHouse Managed Postgres con PeerDB.
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-peerdb-beta" />
@@ -42,7 +43,11 @@ Primero, debemos crear peers para las bases de datos de origen y destino. Un pee
 
 Cree un peer para su base de datos PostgreSQL de origen completando los datos de conexión, como el host, el puerto, el nombre de la base de datos, el nombre de usuario y la contraseña. Una vez completados estos datos, haga clic en el botón `Create peer` para guardar el peer.
 
+<div className="ch-image-md">
+
 ![Creación del peer de origen](/images/managed-postgres/peerdb/source-peer.webp)
+
+</div>
 
 <div id="migration-peerdb-target-peer">
   ### Creación del peer de destino
@@ -50,11 +55,19 @@ Cree un peer para su base de datos PostgreSQL de origen completando los datos de
 
 Del mismo modo, crea un peer para tu instancia de ClickHouse Managed Postgres proporcionando los datos de conexión necesarios. Puedes obtener los [datos de conexión](/es/products/managed-postgres/connection) de tu instancia desde la consola de ClickHouse Cloud. Después de completar la información, haz clic en el botón `Create peer` para guardar el peer de destino.
 
+<div className="ch-image-md">
+
 ![Creación del peer de destino](/images/managed-postgres/peerdb/target-peer.webp)
+
+</div>
 
 Ahora deberías ver tanto el peer de origen como el peer de destino en la sección &quot;Peers&quot;.
 
+<div className="ch-image-md">
+
 ![Lista de peers](/images/managed-postgres/peerdb/peers.webp)
+
+</div>
 
 <div id="migration-peerdb-source-schema-dump">
   ### Obtener el volcado del esquema de origen
@@ -142,7 +155,11 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 A continuación, debemos crear un mirror para definir el proceso de migración de datos entre los peers de origen y destino. En la UI de PeerDB, ve a la sección &quot;Mirrors&quot; haciendo clic en &quot;Mirrors&quot; en la barra lateral. Para crear un mirror nuevo, haz clic en el botón `+ New mirror`.
 
+<div className="ch-image-md">
+
 ![Crear mirror](/images/managed-postgres/peerdb/create-mirror.webp)
+
+</div>
 
 1. Asigna a tu mirror un nombre que describa la migración.
 2. Selecciona los peers de origen y destino que creaste anteriormente en los menús desplegables.
@@ -151,11 +168,19 @@ A continuación, debemos crear un mirror para definir el proceso de migración d
 * Soft delete esté desactivado.
 * Expande `Advanced settings`. Asegúrate de que **Postgres type system esté habilitado** y **PeerDB columns esté deshabilitado**.
 
+<div className="ch-image-md">
+
 ![Configuración del mirror](/images/managed-postgres/peerdb/settings.webp)
+
+</div>
 
 4. Selecciona las tablas que quieres migrar. Puedes elegir tablas específicas o seleccionar todas las tablas de la base de datos de origen.
 
+<div className="ch-image-md">
+
 ![Selector de tablas](/images/managed-postgres/peerdb/table-picker.webp)
+
+</div>
 
 <Info>
   **Selección de tablas**
@@ -167,7 +192,11 @@ A continuación, debemos crear un mirror para definir el proceso de migración d
 
 Deberías ver el mirror que acabas de crear en la sección &quot;Mirrors&quot;.
 
+<div className="ch-image-md">
+
 ![Lista de mirrors](/images/managed-postgres/peerdb/mirrors.webp)
+
+</div>
 
 <div id="migration-peerdb-initial-load">
   ## Espere a que termine la carga inicial
@@ -175,7 +204,11 @@ Deberías ver el mirror que acabas de crear en la sección &quot;Mirrors&quot;.
 
 Después de crear el mirror, PeerDB iniciará la carga inicial de datos desde el origen hasta la base de datos de destino. Puede hacer clic en el mirror y, después, en la pestaña **Carga inicial** para supervisar el progreso de la migración inicial de datos.
 
+<div className="ch-image-md">
+
 ![Progreso de la carga inicial](/images/managed-postgres/peerdb/initial-load.webp)
+
+</div>
 
 Una vez completada la carga inicial, debería ver un estado que indique que la migración ha finalizado.
 

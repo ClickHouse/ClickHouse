@@ -49,6 +49,10 @@ Abra la fuente de trazas en **Configuración de la fuente** e introduzca la expr
 
 Por ejemplo, si el tail-sampling processor de OpenTelemetry escribe la tasa en `SpanAttributes['SampleRate']`:
 
+<div className="ch-image-lg">
+
 ![Campo Expresión de tasa de muestreo en la Configuración de la fuente de ClickStack](/images/clickstack/trace-sampling-source-settings.webp)
+
+</div>
 
 Una vez configurada, todos los gráficos, dashboards, alertas y paneles del dashboard del servicio aplican automáticamente agregaciones ponderadas por muestreo. No es necesario modificar las consultas individuales.

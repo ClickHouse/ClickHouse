@@ -21,7 +21,11 @@ Etapas comuns necessárias tanto para o peering de VPC quanto para o PrivateLink
 
 No console do ClickHouse Cloud, habilite o **balanceador de carga privado** para sua infraestrutura BYOC.
 
+<div className="ch-image-md">
+
 ![BYOC Habilitar balanceador de carga privado](/images/cloud/reference/byoc-private-load-balancer.webp)
+
+</div>
 
 <div id="aws-vpc-peering">
   ## Configurar peering de VPC
@@ -38,13 +42,21 @@ Para criar ou excluir o peering de VPC para o ClickHouse BYOC, siga estas etapas
     5. Defina VPC Accepter como o ID da VPC de destino. (Selecione outra conta, se aplicável)
     6. Clique em Create Peering Connection.
 
+    <div className="ch-image-lg">
+
     ![BYOC Criar conexão de peering](/images/cloud/reference/byoc-vpcpeering-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Aceitar a solicitação de conexão de peering" id="step-2-accept-the-peering-connection-request">
     Acesse a conta de peering e, na página (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request), o cliente poderá aprovar esta solicitação de peering de VPC.
 
+    <div className="ch-image-lg">
+
     ![BYOC Aceitar conexão de peering](/images/cloud/reference/byoc-vpcpeering-2.webp)
+
+    </div>
   </Step>
 
   <Step title="Adicionar o destino às tabelas de rotas da VPC do ClickHouse" id="step-3-add-destination-to-clickhouse-vpc-route-tables">
@@ -57,7 +69,11 @@ Para criar ou excluir o peering de VPC para o ClickHouse BYOC, siga estas etapas
     5. Insira o intervalo CIDR da VPC de destino em Destination.
     6. Selecione “Peering Connection” e o ID da conexão de peering em Target.
 
+    <div className="ch-image-lg">
+
     ![BYOC Adicionar tabela de rotas](/images/cloud/reference/byoc-vpcpeering-3.webp)
+
+    </div>
   </Step>
 
   <Step title="Adicionar o destino às tabelas de rotas da VPC de destino" id="step-4-add-destination-to-the-target-vpc-route-tables">
@@ -70,7 +86,11 @@ Para criar ou excluir o peering de VPC para o ClickHouse BYOC, siga estas etapas
     5. Insira o intervalo CIDR da VPC do ClickHouse em Destination.
     6. Selecione “Peering Connection” e o ID da conexão de peering em Target.
 
+    <div className="ch-image-lg">
+
     ![BYOC Adicionar tabela de rotas](/images/cloud/reference/byoc-vpcpeering-4.webp)
+
+    </div>
   </Step>
 
   <Step title="Editar o Security Group para permitir acesso da VPC emparelhada" id="step-5-edit-security-group-to-allow-peered-vpc-access">
@@ -105,14 +125,22 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
       Certifique-se de que o **balanceador de carga privado** esteja ativado como pré-requisito.
     </Note>
 
+    <div className="ch-image-md">
+
     ![Ativar o PrivateLink do BYOC](/images/cloud/reference/byoc-privatelink.webp)
+
+    </div>
   </Step>
 
   <Step title={<>Obtenha o <code>Service name</code> do endpoint</>} id="step-2-obtain-endpoint-service-name">
     1. No console do ClickHouse Cloud, acesse a página Settings do serviço ao qual você deseja se conectar via PrivateLink.
     2. Clique em &quot;Set up private endpoint&quot;.
     3. No flyout aberto, copie o valor de `Service name` — você o usará no próximo passo. (Pode levar algum tempo para que o valor seja gerado após a ativação do PrivateLink.)
+       <div className="ch-image-md">
+
        ![Endpoints privados](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+       </div>
   </Step>
 
   <Step title="Crie um endpoint na sua rede" id="step-3-create-endpoint">
@@ -121,15 +149,27 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
     2. Selecione &quot;Serviços de endpoint que usam NLBs e GWLBs&quot; e use o `Service name` obtido na etapa anterior.
 
     3. Clique em &quot;Verificar serviço&quot;.
+       <div className="ch-image-md">
+
        ![Configurações do endpoint AWS PrivateLink](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+       </div>
 
     4. (Opcional) Para estabelecer uma conexão entre regiões via PrivateLink, marque a caixa de seleção &quot;Endpoint entre regiões&quot; e especifique a região do serviço. A região do serviço é aquela em que sua infraestrutura BYOC foi criada. Além disso,
        1. Abra seu **console da AWS do BYOC** (ou seja, a conta da AWS em que sua infraestrutura BYOC foi criada) → VPC → Serviços de endpoint → `clickhouse-cloud-infra-xxx` → Regiões compatíveis.
        2. Adicione à lista de regiões compatíveis a região em que sua aplicação cliente está em execução. Por padrão, apenas a região dessa infraestrutura BYOC é compatível. Você pode adicionar várias regiões para se conectar a partir de regiões diferentes, e o ClickHouse não alterará nem redefinirá esses valores.
+          <div className="ch-image-md">
+
           ![Configurações de endpoint AWS PrivateLink entre regiões](/images/cloud/reference/byoc-privatelink-aws-cross-region.webp)
 
+          </div>
+
     5. Selecione sua VPC e as sub-redes (recomenda-se uma por zona de disponibilidade).
+       <div className="ch-image-md">
+
        ![Selecionar VPC e sub-redes](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+       </div>
 
     6. **Importante**: Habilite &quot;Nomes DNS privados&quot; para o endpoint — isso é necessário para que o DNS privado funcione corretamente.
        O DNS privado para endpoints BYOC (usando o formato `*.vpce.{subdomain}`) utiliza o recurso integrado &quot;Nomes DNS privados&quot; do AWS PrivateLink. Nenhum registro do Route53 é necessário — a resolução de DNS ocorre automaticamente quando:
@@ -148,13 +188,21 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
     8. Clique em &quot;Criar endpoint&quot; e aguarde alguns instantes até que ele seja criado.
 
     9. Após criar o endpoint, copie o valor de `Endpoint ID` — você o usará na próxima etapa.
+       <div className="ch-image-md">
+
        ![ID do endpoint da VPC](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+       </div>
   </Step>
 
   <Step title="Aprove a conexão com o endpoint" id="step-4-approve-endpoint-connection">
     1. Abra novamente o **console da sua BYOC VPC** → Serviços de endpoint → `clickhouse-cloud-infra-xxx` → Conexões de endpoint.
     2. Localize a solicitação de conexão criada na sua própria VPC e clique em &quot;Aceitar solicitação de conexão de endpoint&quot; para aprová-la.
+       <div className="ch-image-md">
+
        ![Aprovar PrivateLink BYOC](/images/cloud/reference/byoc-privatelink-2.webp)
+
+       </div>
   </Step>
 
   <Step title={<>Adicione o <code>Endpoint ID</code> à lista de permissões do serviço ClickHouse</>} id="step-5-add-endpoint-id-to-services-allow-list">
@@ -168,7 +216,11 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
       O menu suspenso exibirá as conexões PrivateLink existentes dos serviços na mesma infraestrutura.
     </Note>
 
+    <div className="ch-image-md">
+
     ![Filtro de endpoints privados](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+    </div>
   </Step>
 
   <Step title="Acesse uma instância via PrivateLink" id="step-6-connect-via-privatelink">
@@ -176,7 +228,11 @@ O AWS PrivateLink fornece uma conexão segura e privada aos seus serviços BYOC 
     2. Clique em &quot;Configurar endpoint privado&quot;.
     3. No flyout aberto, copie o `DNS name`.
 
+       <div className="ch-image-md">
+
        ![Nome DNS do endpoint privado](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+       </div>
 
        O acesso aos serviços do ClickHouse via PrivateLink é controlado em dois níveis:
 

@@ -9,6 +9,7 @@ doc_type: 'guide'
 
 import { CloudNotSupportedBadge } from "/snippets/ru/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
+
 В этом руководстве рассказывается, как работают резервные копии в ClickHouse Cloud, какие у вас есть варианты настройки резервного копирования для вашего сервиса и как выполнить восстановление из резервной копии.
 
 **Предварительные требования**
@@ -19,7 +20,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 Резервные копии создаются в соответствии с расписанием, настроенным для вашего сервиса, — стандартным ежедневным или [пользовательским](/ru/products/cloud/guides/backups/configurable-backups), которое вы выбрали. Все доступные резервные копии можно посмотреть на вкладке **Backups** сервиса. Здесь отображаются состояние резервной копии, её продолжительность и размер. Вы также можете восстановить конкретную резервную копию через столбец **Actions**.
 
+<div className="ch-image-md">
+
 ![Список состояний резервных копий в ClickHouse Cloud](/images/cloud/manage/backup-status-list.webp)
+
+</div>
 
 ## Стоимость резервного копирования {#understanding-backup-cost}
 
@@ -27,7 +32,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 Чтобы понять стоимость резервного копирования, на экране использования можно посмотреть стоимость резервных копий для каждого сервиса (как показано ниже). Когда резервное копирование по пользовательскому расписанию будет выполняться в течение нескольких дней, вы сможете оценить затраты и экстраполировать их, чтобы получить месячную стоимость резервных копий.
 
+<div className="ch-image-md">
+
 ![Диаграмма использования резервного копирования в ClickHouse Cloud](/images/cloud/manage/backup-usage.webp)
+
+</div>
 
 Чтобы оценить общую стоимость резервных копий, необходимо задать расписание. До этого можно воспользоваться [калькулятором цен](https://clickhouse.com/pricing), чтобы получить примерную месячную оценку, указав следующие параметры:
 
@@ -46,11 +55,19 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 
 После нажатия на значок **Restore** для резервной копии можно указать имя нового сервиса, который будет создан, а затем восстановить в него эту резервную копию:
 
+<div className="ch-image-md">
+
 ![Восстановление резервной копии в ClickHouse Cloud](/images/cloud/manage/backup-restore.webp)
+
+</div>
 
 Новый сервис будет отображаться в списке сервисов как `Provisioning`, пока не станет готов:
 
+<div className="ch-image-md">
+
 ![Сервис в процессе подготовки](/images/cloud/manage/backup-service-provisioning.webp)
+
+</div>
 
 <div id="working-with-your-restored-service">
   ## Работа с восстановленным сервисом

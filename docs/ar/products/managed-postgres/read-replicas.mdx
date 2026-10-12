@@ -8,17 +8,26 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
 تتيح لك النسخ المتماثلة للقراءة إنشاء نسخة واحدة أو أكثر من قاعدة بيانات ClickHouse Managed Postgres الأساسية لديك. وتتابع هذه النسخ قاعدة بياناتك الأساسية باستمرار باستخدام النسخ المتماثل الأصلي في PostgreSQL، لضمان مواكبة التغييرات أولًا بأول.
 
 لإدارة النسخ المتماثلة للقراءة، انقر على أيقونة Edit في الـ warehouse لديك:
 
+<div className="ch-image-md">
+
 ![عرض warehouse مع أيقونة Edit](/images/managed-postgres/warehouse-view.webp)
+
+</div>
 
 سيؤدي ذلك إلى فتح مربع حوار warehouse، حيث يمكنك عرض الخدمات الحالية وإنشاء نسخ متماثلة جديدة للقراءة:
 
+<div className="ch-image-md">
+
 ![مربع حوار إدارة النسخ المتماثلة للقراءة](/images/managed-postgres/read-replica-dialog.webp)
+
+</div>
 
 ## إدارة النسخ المتماثلة للقراءة {#managing-read-replicas}
 
@@ -26,11 +35,19 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 يعرض **Flow** بنية النسخ المتماثل — إذ يظهر المثيل الأساسي في الأعلى مع أسهم تتجه إلى الأسفل نحو كل نسخة متماثلة مرتبطة، مع إظهار الفئة والمنطقة والحالة بلمحة سريعة:
 
+<div className="ch-image-lg">
+
 ![عرض التدفق للنسخ المتماثلة للقراءة الذي يوضّح بنية المثيل الأساسي والنسخ المتماثلة](/images/managed-postgres/read-replicas-flow.webp)
+
+</div>
 
 يسرد عرض **Table** كل نسخة متماثلة مع اسم الخدمة، وموفّر الخدمة السحابية والمنطقة، وحالة الخدمة، ووقت الإنشاء، وإجراء **Detach service**:
 
+<div className="ch-image-lg">
+
 ![عرض الجدول للنسخ المتماثلة للقراءة](/images/managed-postgres/read-replicas-table.webp)
+
+</div>
 
 لإنشاء نسخة متماثلة جديدة، انقر على **Create read replica** في الزاوية العلوية اليمنى من أيٍّ من العرضين.
 

@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
 
 <Tip>
@@ -22,11 +23,19 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 لتوصيل تطبيقاتك بـ ClickHouse Managed Postgres، انتقل إلى عرض **Connect** في الشريط الجانبي الأيسر للمثيل.
 
+<div className="ch-image-md">
+
 ![انقر على Connect في الشريط الجانبي الأيسر لعرض تفاصيل الاتصال](/images/managed-postgres/connect-button.webp)
+
+</div>
 
 يؤدي النقر على **Connect** إلى فتح نافذة منبثقة تعرض بيانات اعتماد الاتصال وسلاسل الاتصال لديك بعدة تنسيقات.
 
+<div className="ch-image-md">
+
 ![نافذة الاتصال المنبثقة تعرض بيانات الاعتماد وتنسيقات سلاسل الاتصال](/images/managed-postgres/connect-modal.webp)
+
+</div>
 
 تعرض نافذة الاتصال المنبثقة المعلومات التالية:
 
@@ -95,7 +104,11 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 بالنسبة إلى أحمال العمل في بيئات الإنتاج، نوصي بالاتصال عبر TLS مع التحقق لضمان أنك تتواصل مع الخادم الصحيح. للقيام بذلك، نزّل حزمة شهادة CA من علامة التبويب **Settings** وأضِفها إلى الشهادات الموثوق بها لدى عميل قاعدة البيانات لديك.
 
+<div className="ch-image-md">
+
 ![نزّل شهادة CA من علامة التبويب Settings](/images/managed-postgres/tls-ca-bundle.webp)
+
+</div>
 
 شهادة CA فريدة لمثيل ClickHouse Managed Postgres الخاص بك، ولن تعمل مع مثيلات أخرى.
 

@@ -21,7 +21,11 @@ VPC 对等互连 和 PrivateLink 均需执行的通用步骤。
 
 在 ClickHouse Cloud 控制台中，为您的 BYOC 基础设施启用 **私有负载均衡器**。
 
+<div className="ch-image-md">
+
 ![BYOC 启用私有负载均衡器](/images/cloud/reference/byoc-private-load-balancer.webp)
+
+</div>
 
 <div id="aws-vpc-peering">
   ## 设置 VPC 对等互连
@@ -38,13 +42,21 @@ VPC 对等互连 和 PrivateLink 均需执行的通用步骤。
     5. 将 VPC Accepter 设置为目标 VPC ID。 (如适用，选择另一个账户)
     6. 点击 Create Peering Connection。
 
+    <div className="ch-image-lg">
+
     ![BYOC 创建对等连接](/images/cloud/reference/byoc-vpcpeering-1.webp)
+
+    </div>
   </Step>
 
   <Step title="接受对等连接请求" id="step-2-accept-the-peering-connection-request">
     前往对等账户后，客户可在 (VPC -&gt; Peering connections -&gt; Actions -&gt; Accept request) 页面批准此 VPC 对等互连请求。
 
+    <div className="ch-image-lg">
+
     ![BYOC 接受对等连接](/images/cloud/reference/byoc-vpcpeering-2.webp)
+
+    </div>
   </Step>
 
   <Step title="将目标端添加到 ClickHouse VPC 路由表" id="step-3-add-destination-to-clickhouse-vpc-route-tables">
@@ -57,7 +69,11 @@ VPC 对等互连 和 PrivateLink 均需执行的通用步骤。
     5. 在 Destination 中输入目标 VPC 的 CIDR 范围。
     6. 在 Target 中选择“Peering Connection”和该对等连接的 ID。
 
+    <div className="ch-image-lg">
+
     ![BYOC 添加路由表](/images/cloud/reference/byoc-vpcpeering-3.webp)
+
+    </div>
   </Step>
 
   <Step title="将目标端添加到目标 VPC 路由表" id="step-4-add-destination-to-the-target-vpc-route-tables">
@@ -70,7 +86,11 @@ VPC 对等互连 和 PrivateLink 均需执行的通用步骤。
     5. 在 Destination 中输入 ClickHouse VPC 的 CIDR 范围。
     6. 在 Target 中选择“Peering Connection”和该对等连接的 ID。
 
+    <div className="ch-image-lg">
+
     ![BYOC 添加路由表](/images/cloud/reference/byoc-vpcpeering-4.webp)
+
+    </div>
   </Step>
 
   <Step title="编辑安全组以允许对等 VPC 访问" id="step-5-edit-security-group-to-allow-peered-vpc-access">
@@ -105,14 +125,22 @@ AWS PrivateLink 可为您的 ClickHouse BYOC 服务提供安全的私网连接�
       请确保已启用**私网负载均衡器**，这是前置条件。
     </Note>
 
+    <div className="ch-image-md">
+
     ![启用 BYOC PrivateLink](/images/cloud/reference/byoc-privatelink.webp)
+
+    </div>
   </Step>
 
   <Step title={<>获取端点 <code>服务名称</code></>} id="step-2-obtain-endpoint-service-name">
     1. 在 ClickHouse Cloud 控制台中，前往要通过 PrivateLink 连接的服务的 Settings 页面。
     2. 点击“Set up private endpoint”。
     3. 在打开的弹出面板中，复制 `Service name` 的值——下一步会用到它。 (启用 PrivateLink 后，生成该值可能需要一段时间。)
+       <div className="ch-image-md">
+
        ![私有端点](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+       </div>
   </Step>
 
   <Step title="在您的网络中创建端点" id="step-3-create-endpoint">
@@ -121,17 +149,29 @@ AWS PrivateLink 可为您的 ClickHouse BYOC 服务提供安全的私网连接�
     2. 选择 &quot;Endpoint services that use NLBs and GWLBs&quot;，并使用上一步获取的 `Service name`。
 
     3. 单击 &quot;Verify service&quot;。
+       <div className="ch-image-md">
+
        ![AWS PrivateLink 端点设置](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+       </div>
 
     4. (可选) 如果要通过 PrivateLink 建立跨区域连接，请选中 &quot;Cross region endpoint&quot; 复选框，并指定服务区域。服务区域即创建 BYOC 基础设施的区域。同时：
 
     5. 打开您的**BYOC AWS 控制台** (即创建 BYOC 基础设施的 AWS 账户) → VPC → Endpoint services → `clickhouse-cloud-infra-xxx` → Supported regions。
 
     6. 将客户端应用程序所在的区域添加到支持区域列表中。默认仅支持该 BYOC 基础设施所在的区域。如果需要从不同区域连接，您可以添加多个区域；ClickHouse 不会更改或重置这些值。
+       <div className="ch-image-md">
+
        ![AWS PrivateLink 跨区域端点设置](/images/cloud/reference/byoc-privatelink-aws-cross-region.webp)
 
+       </div>
+
     7. 选择您的 VPC 和子网 (建议每个可用区选择一个子网) 。
+       <div className="ch-image-md">
+
        ![选择 VPC 和子网](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+       </div>
 
     8. **重要**：为端点启用 &quot;Private DNS names&quot;——这是私有 DNS 正常工作所必需的。
        BYOC 端点的私有 DNS (使用 `*.vpce.{subdomain}` 格式) 利用 AWS PrivateLink 内置的 &quot;Private DNS names&quot; 功能。无需创建 Route53 记录；满足以下条件时，DNS 会自动解析：
@@ -151,13 +191,21 @@ AWS PrivateLink 可为您的 ClickHouse BYOC 服务提供安全的私网连接�
     8. 单击 &quot;Create endpoint&quot;，稍候片刻，等待端点创建完成。
 
     9. 创建端点后，复制 `Endpoint ID` 的值，您将在下一步中使用它。
+       <div className="ch-image-md">
+
        ![VPC 端点 ID](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+       </div>
   </Step>
 
   <Step title="批准端点连接请求" id="step-4-approve-endpoint-connection">
     1. 再次打开 **BYOC VPC 控制台** → Endpoint services → `clickhouse-cloud-infra-xxx` → Endpoint connections。
     2. 找到来自您自身 VPC 的连接请求，然后点击 &quot;Accept endpoint connection request&quot; 予以批准。
+       <div className="ch-image-md">
+
        ![批准 BYOC PrivateLink](/images/cloud/reference/byoc-privatelink-2.webp)
+
+       </div>
   </Step>
 
   <Step title={<>将 <code>Endpoint ID</code> 添加到 ClickHouse 服务的允许列表</>} id="step-5-add-endpoint-id-to-services-allow-list">
@@ -171,7 +219,11 @@ AWS PrivateLink 可为您的 ClickHouse BYOC 服务提供安全的私网连接�
       该下拉列表将显示同一基础设施中服务的现有 PrivateLink 连接。
     </Note>
 
+    <div className="ch-image-md">
+
     ![专用端点过滤器](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+    </div>
   </Step>
 
   <Step title="通过 PrivateLink 访问实例" id="step-6-connect-via-privatelink">
@@ -179,7 +231,11 @@ AWS PrivateLink 可为您的 ClickHouse BYOC 服务提供安全的私网连接�
     2. 点击“Set up private endpoint”。
     3. 在打开的弹出面板中，复制 `DNS name`。
 
+       <div className="ch-image-md">
+
        ![专用终结点 DNS 名称](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+       </div>
 
        通过 PrivateLink 访问 ClickHouse 服务由以下两个层级控制：
 

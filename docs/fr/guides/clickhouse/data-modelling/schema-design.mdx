@@ -16,7 +16,11 @@ Pour les exemples de ce guide, nous utilisons un sous-ensemble du jeu de donnée
 
 > Les clés primaires et les relations indiquées ne sont pas imposées par des contraintes (Parquet est un format de fichier, pas un format de table) et servent uniquement à montrer comment les données sont liées ainsi que les clés uniques qu’elles possèdent.
 
+<div className="ch-image-lg">
+
 ![Schéma Stack Overflow](/images/data-modeling/stackoverflow-schema.webp)
+
+</div>
 
 <br />
 
@@ -235,7 +239,11 @@ Les utilisateurs issus de bases de données OLTP recherchent souvent le concept 
 
 À l&#39;échelle à laquelle ClickHouse est souvent utilisé, l&#39;efficacité de la mémoire et du disque est primordiale. Les données sont écrites dans les tables ClickHouse par blocs appelés parts, selon des règles qui régissent leur fusion en arrière-plan. Dans ClickHouse, chaque part possède son propre index primaire. Lorsque des parts sont fusionnées, les index primaires de la part résultante le sont également. L&#39;index primaire d&#39;une part comporte une entrée d&#39;index par groupe de lignes — cette technique est appelée indexation éparse.
 
+<div className="ch-image-md">
+
 ![Indexation éparse dans ClickHouse](/images/data-modeling/schema-design-indices.webp)
+
+</div>
 
 La clé choisie dans ClickHouse détermine non seulement l&#39;index, mais aussi l&#39;ordre dans lequel les données sont écrites sur le disque. Elle peut donc avoir un impact considérable sur le niveau de compression, ce qui peut à son tour affecter les performances des requêtes. Une clé de tri qui amène les valeurs de la plupart des colonnes à être écrites dans un ordre contigu permettra à l&#39;algorithme de compression sélectionné (ainsi qu&#39;aux codecs) de compresser les données plus efficacement.
 

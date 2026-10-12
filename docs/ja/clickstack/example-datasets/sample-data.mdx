@@ -17,13 +17,21 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
       <Step title="サービスを選択" id="select-your-service-managed">
         ClickHouse Cloudのメインページで、Managed ClickStack のサービスを選択します。
 
+        <div className="ch-image-lg">
+
         ![サービスを選択](/images/clickstack/select_service.webp)
+
+        </div>
       </Step>
 
       <Step title="ClickStack UI (HyperDX) にアクセスする" id="navigate-to-the-hyperdx-ui-managed">
         左側のメニューから `ClickStack` を選択すると、ClickStack UI が開き、自動的に認証されます。
 
+        <div className="ch-image-lg">
+
         ![ClickStack UI](/images/use-cases/observability/hyperdx.webp)
+
+        </div>
       </Step>
 
       <Step title="サンプルデータをダウンロード" id="download-sample-data-managed">
@@ -63,7 +71,11 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
 
         `Search` ビューに戻ると、データの読み込みが始まっていることを確認できます (データが表示されない場合は、時間範囲を `Last 1 hour` に調整してください) 。
 
+        <div className="ch-image-lg">
+
         ![HyperDX の検索](/images/use-cases/observability/hyperdx-10.webp)
+
+        </div>
 
         データの読み込みには数分かかります。次の手順に進む前に、読み込みが完了するまで待ってください。
       </Step>
@@ -73,7 +85,11 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
 
         左側のメニューから `Client Sessions` を選択します。
 
+        <div className="ch-image-lg">
+
         ![Sessions](/images/use-cases/observability/hyperdx-11.webp)
+
+        </div>
 
         このビューでは、e コマースストアのフロントエンドセッションを確認できます。セッションは、ユーザーがチェックアウトして購入完了を試みるまで Anonymous のままです。
 
@@ -81,7 +97,11 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
 
         失敗しているトレースと、それに関連付けられたメールアドレスを選択します。次のビューでは、ユーザーのセッションを再生して問題を確認できます。play を押してセッションを再生してください。
 
+        <div className="ch-image-lg">
+
         ![Session replay](/images/use-cases/observability/hyperdx-12.webp)
+
+        </div>
 
         リプレイでは、ユーザーがサイト内を移動し、商品をカートに追加していく様子が表示されます。必要に応じて、支払い完了を試みる場面までスキップしてください。
 
@@ -91,7 +111,11 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
 
         ユーザーは注文を完了できませんでしたが、明らかなエラーは見当たりません。左側パネルの一番下までスクロールすると、ユーザーのブラウザーから取得したネットワークイベントとコンソールイベントが表示されます。`/api/checkout` の呼び出し時に 500 エラーが発生していることがわかります。
 
+        <div className="ch-image-lg">
+
         ![Error in session](/images/use-cases/observability/hyperdx-13.webp)
+
+        </div>
 
         この `500` エラーを選択します。`Overview` と `Column Values` のどちらを見ても、想定外のエラーによって `Internal Error` が発生していること以外に、問題の原因は示されていません。
       </Step>
@@ -99,19 +123,35 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
       <Step title="トレースを確認する" id="explore-traces-managed">
         完全な分散トレースを確認するには、`Trace` タブに移動します。
 
+        <div className="ch-image-lg">
+
         ![セッショントレース](/images/use-cases/observability/hyperdx-14.webp)
+
+        </div>
 
         トレースを下にスクロールして、エラーの始点である `checkout` サービスのスパンを確認します。次に、`Payment` サービスのスパンを選択します。
 
+        <div className="ch-image-lg">
+
         ![スパン](/images/use-cases/observability/hyperdx-15.webp)
+
+        </div>
 
         `Column Values` タブを選択して下にスクロールします。問題は、cache がいっぱいになっていることに関連していると分かります。
 
+        <div className="ch-image-lg">
+
         ![カラム値](/images/use-cases/observability/hyperdx-16.webp)
+
+        </div>
 
         上にスクロールしてトレースに戻ると、先ほどの設定により、ログがそのスパンに相関付けられていることが分かります。これにより、さらに詳しいコンテキストを確認できます。
 
+        <div className="ch-image-lg">
+
         ![相関付けられたログ](/images/use-cases/observability/hyperdx-17.webp)
+
+        </div>
 
         payment サービスで cache が埋まりつつあり、そのため支払いを完了できなくなっていることが分かりました。
       </Step>
@@ -121,7 +161,11 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
 
         sources から `Logs` を選択し、`payment` サービスにフィルタを適用します。
 
+        <div className="ch-image-lg">
+
         ![Logs](/images/use-cases/observability/hyperdx-18.webp)
+
+        </div>
 
         この問題は最近発生したものですが、影響を受けた支払い件数は多いことがわかります。さらに、Visa の支払いに関連する cache が原因で問題が発生しているようです。
       </Step>
@@ -131,7 +175,11 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
 
         データソースとして `Metrics` を選択します。チャートビルダーで `visa_validation_cache.size (Gauge)` の `Maximum` を表示するよう設定し、`play` ボタンを押します。cache は最大サイズに達するまで明らかに増加し、その後エラーが発生しました。
 
+        <div className="ch-image-lg">
+
         ![メトリクス](/images/use-cases/observability/hyperdx-19.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -143,13 +191,21 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
       <Step title="ClickStack UI (HyperDX) にアクセスする" id="navigate-to-the-hyperdx-ui">
         ClickStack UI にアクセスするには、[http://localhost:8080](http://localhost:8080) を開きます。
 
+        <div className="ch-image-lg">
+
         ![ClickStack UI](/images/use-cases/observability/hyperdx.webp)
+
+        </div>
       </Step>
 
       <Step title="インジェスト API keyをコピー" id="copy-ingestion-api-key">
         [`Team Settings`](http://localhost:8080/team) を開き、`API Keys` セクションから `Ingestion API Key` をコピーします。この API key により、OpenTelemetry collector 経由のデータ インジェストが安全に行われます。
 
+        <div className="ch-image-lg">
+
         ![API keyをコピー](/images/use-cases/observability/copy_api_key.webp)
+
+        </div>
       </Step>
 
       <Step title="サンプルデータをダウンロード" id="download-sample-data">
@@ -196,7 +252,11 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
 
         `Search` ビューに戻ると、データの読み込みが始まっていることを確認できます (データが表示されない場合は、時間範囲を `Last 1 hour` に調整してください) 。
 
+        <div className="ch-image-lg">
+
         ![HyperDX の検索](/images/use-cases/observability/hyperdx-10.webp)
+
+        </div>
 
         データの読み込みには数分かかります。次の手順に進む前に、読み込みが完了するまで待ってください。
       </Step>
@@ -206,7 +266,11 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
 
         左側のメニューから [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000\&to=1747312920000\&sessionSource=l1324572572) を選択します。
 
+        <div className="ch-image-lg">
+
         ![Sessions](/images/use-cases/observability/hyperdx-11.webp)
+
+        </div>
 
         このビューでは、e コマースストアのフロントエンドセッションを確認できます。セッションは、ユーザーがチェックアウトして購入完了を試みるまで Anonymous のままです。
 
@@ -214,7 +278,11 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
 
         失敗しているトレースと、それに関連付けられたメールアドレスを選択します。次のビューでは、ユーザーのセッションを再生して問題を確認できます。play を押してセッションを再生してください。
 
+        <div className="ch-image-lg">
+
         ![Session replay](/images/use-cases/observability/hyperdx-12.webp)
+
+        </div>
 
         リプレイでは、ユーザーがサイト内を移動し、商品をカートに追加していく様子が表示されます。必要に応じて、支払い完了を試みる場面までスキップしてください。
 
@@ -224,7 +292,11 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
 
         ユーザーは注文を完了できませんでしたが、明らかなエラーは見当たりません。左側パネルの一番下までスクロールすると、ユーザーのブラウザーから取得したネットワークイベントとコンソールイベントが表示されます。`/api/checkout` の呼び出し時に 500 エラーが発生していることがわかります。
 
+        <div className="ch-image-lg">
+
         ![Error in session](/images/use-cases/observability/hyperdx-13.webp)
+
+        </div>
 
         この `500` エラーを選択します。`Overview` と `Column Values` のどちらを見ても、想定外のエラーによって `Internal Error` が発生していること以外に、問題の原因は示されていません。
       </Step>
@@ -232,19 +304,35 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
       <Step title="トレースを確認する" id="explore-traces">
         完全な分散トレースを確認するには、`Trace` タブに移動します。
 
+        <div className="ch-image-lg">
+
         ![セッショントレース](/images/use-cases/observability/hyperdx-14.webp)
+
+        </div>
 
         トレースを下にスクロールして、エラーの始点である `checkout` サービスのスパンを確認します。次に、`Payment` サービスのスパンを選択します。
 
+        <div className="ch-image-lg">
+
         ![スパン](/images/use-cases/observability/hyperdx-15.webp)
+
+        </div>
 
         `Column Values` タブを選択して下にスクロールします。問題は、cache がいっぱいになっていることに関連していると分かります。
 
+        <div className="ch-image-lg">
+
         ![カラム値](/images/use-cases/observability/hyperdx-16.webp)
+
+        </div>
 
         上にスクロールしてトレースに戻ると、先ほどの設定により、ログがそのスパンに相関付けられていることが分かります。これにより、さらに詳しいコンテキストを確認できます。
 
+        <div className="ch-image-lg">
+
         ![相関付けられたログ](/images/use-cases/observability/hyperdx-17.webp)
+
+        </div>
 
         payment サービスで cache が埋まりつつあり、そのため支払いを完了できなくなっていることが分かりました。
       </Step>
@@ -254,7 +342,11 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
 
         ソースから `Logs` を選択し、`payment` サービスにフィルターを適用します。
 
+        <div className="ch-image-lg">
+
         ![ログ](/images/use-cases/observability/hyperdx-18.webp)
+
+        </div>
 
         問題は最近発生したものですが、影響を受けた支払いの件数が多いことがわかります。さらに、Visa の支払いに関連する cache が問題を引き起こしているようです。
       </Step>
@@ -264,7 +356,11 @@ keywords: ['clickstack', 'サンプルデータ', 'サンプルデータセッ�
 
         データソースとして `Metrics` を選択します。チャートビルダーで `visa_validation_cache.size (Gauge)` の `Maximum` を表示するよう設定し、`play` ボタンを押します。cache は最大サイズに達するまで明らかに増加し、その後エラーが発生しました。
 
+        <div className="ch-image-lg">
+
         ![メトリクス](/images/use-cases/observability/hyperdx-19.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>

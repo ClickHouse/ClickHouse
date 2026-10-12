@@ -16,7 +16,11 @@ doc_type: 'guide'
 
 이 과정은 쿼리 시점에 복잡한 조인의 필요성을 줄이고 읽기 작업 속도를 크게 높일 수 있으므로, 읽기 비중이 높고 쿼리가 복잡한 애플리케이션에 적합합니다. 다만 중복된 데이터에 변경이 생기면 일관성을 유지하기 위해 모든 인스턴스에 반영해야 하므로, 쓰기 작업과 유지 관리가 더 복잡해질 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![ClickHouse의 비정규화](/images/data-modeling/denormalization-diagram.webp)
+
+</div>
 
 <br />
 
@@ -145,7 +149,11 @@ LIMIT 5
 
 이제 `Users`와 `Badges`를 살펴보겠습니다.
 
+<div className="ch-image-lg">
+
 ![Users와 Badges 스키마](/images/data-modeling/denormalization-schema.webp)
+
+</div>
 
 <p />
 

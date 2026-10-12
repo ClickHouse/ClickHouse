@@ -36,7 +36,11 @@ The OpenTelemetry Collector sends data to ClickStack's OTLP endpoint, which requ
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
 
+<div className="ch-image-lg">
+
 ![ClickStack API Key](/images/clickstack/api-key.webp)
+
+</div>
 
 5. Set it as an environment variable:
 
@@ -179,9 +183,17 @@ Once configured, log into HyperDX and verify logs are flowing:
 3. Filter by `service.name:systemd-logs`
 4. You should see structured log entries with fields like `unit`, `priority`, `MESSAGE`, `_HOSTNAME`
 
+<div className="ch-image-lg">
+
 ![Log search view](/images/clickstack/systemd/systemd-search-view.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Log view](/images/clickstack/systemd/systemd-log-view.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -259,9 +271,17 @@ Once ClickStack is running:
 2. Navigate to the Search view and set the source to `Logs`
 3. Set the time range to **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
 
+<div className="ch-image-lg">
+
 ![Log search view](/images/clickstack/systemd/systemd-search-view.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Log view](/images/clickstack/systemd/systemd-log-view.webp)
+
+</div>
 
 <Info>
 **Timezone display**
@@ -285,11 +305,19 @@ To help you get started monitoring systemd logs with ClickStack, we provide esse
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
+<div className="ch-image-lg">
+
 ![Import dashboard button](/images/clickstack/import-dashboard.webp)
+
+</div>
 
 3. Upload the `systemd-logs-dashboard.json` file and click **Finish Import**
 
+<div className="ch-image-lg">
+
 ![Finish import](/images/clickstack/systemd/finish-import-systemd.webp)
+
+</div>
 </Step>
 <Step title="View the dashboard" id="created-dashboard">
 
@@ -300,7 +328,11 @@ The dashboard includes visualizations for:
 - Service failures
 - Error rates
 
+<div className="ch-image-lg">
+
 ![Example dashboard](/images/clickstack/systemd/systemd-logs-dashboard.webp)
+
+</div>
 
 <Note>
 For the demo dataset, set the time range to **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** (adjust based on your local timezone).

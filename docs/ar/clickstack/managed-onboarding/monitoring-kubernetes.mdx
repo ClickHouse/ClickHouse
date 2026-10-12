@@ -300,15 +300,27 @@ hide_advert: true
   <Step title="تحقّق في واجهة ClickStack" id="confirm-in-ui">
     افتح خدمتك في [وحدة تحكم ClickHouse Cloud](https://console.clickhouse.cloud) ثم اختر **ClickStack** من القائمة الجانبية اليسرى.
 
+    <div className="ch-image-lg">
+
     ![تشغيل ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+    </div>
 
     في عرض **Search**، بدّل المصدر إلى `Logs` واضبط النطاق الزمني على **آخر 15 دقيقة**. يجب أن تظهر سجلات الحاويات من مختلف أنحاء العنقود خلال ثوانٍ قليلة، مع إغنائها بسمات مثل `k8s.namespace.name` و`k8s.pod.name` و`k8s.node.name`.
 
+    <div className="ch-image-lg">
+
     ![عرض Search في ClickStack مع سجلات Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+
+    </div>
 
     للاطّلاع على مقاييس البنية التحتية والأحداث ضمن سياقها، افتح لوحة المعلومات المضمّنة **Kubernetes** بالانتقال إلى **Dashboards** -&gt; **Kubernetes**. يجب أن تكون علامات التبويب `Pods` و`Nodes` و`Namespaces` جميعها مليئة بالبيانات.
 
+    <div className="ch-image-lg">
+
     ![لوحة معلومات Kubernetes في ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+
+    </div>
 
     إذا لم يظهر شيء:
 

@@ -28,7 +28,11 @@ Se puede acceder al dashboard avanzado desde:
 * Panel lateral izquierdo
   * `Monitoring` → `Advanced dashboard`
 
+<div className="ch-image-lg">
+
 ![dashboard avanzado](/images/cloud/manage/monitoring/advanced_dashboard.webp)
+
+</div>
 
 <div id="accessing-the-native-advanced-dashboard">
   ## Acceso al dashboard avanzado nativo
@@ -43,12 +47,20 @@ Se puede acceder al dashboard avanzado nativo navegando hasta:
 Esto abrirá el dashboard avanzado nativo en una nueva pestaña. Deberás
 autenticarte para acceder al dashboard.
 
+<div className="ch-image-lg">
+
 ![dashboard avanzado](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
+
+</div>
 
 Cada visualización tiene una consulta SQL asociada que la genera. Puedes
 editar esta consulta haciendo clic en el icono del lápiz.
 
+<div className="ch-image-lg">
+
 ![dashboard avanzado](/images/cloud/manage/monitoring/edit_visualization.webp)
+
+</div>
 
 <div id="out-of-box-visualizations">
   ## Visualizaciones preconfiguradas
@@ -135,7 +147,11 @@ operaciones de merge.
 Las métricas clave para detectar inserciones subóptimas son **Inserted Rows/sec** y
 **máx. de partes por partición**
 
+<div className="ch-image-lg">
+
 ![Inserciones sin lotes](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
+
+</div>
 
 El ejemplo anterior muestra dos picos en **Inserted Rows/sec** y **máx. de partes por partición**
 entre las 13 h y las 14 h. Esto indica que se están ingiriendo datos a una velocidad razonable.
@@ -161,7 +177,11 @@ avanzado.
 A continuación se muestra un ejemplo de un pico en el uso de CPU sin que cambie significativamente la
 cantidad de consultas por segundo ejecutadas.
 
+<div className="ch-image-lg">
+
 ![Consulta con uso intensivo de recursos](/images/cloud/manage/monitoring/resource_intensive_query.webp)
+
+</div>
 
 <div id="bad-primary-key-design">
   ### Mal diseño de la clave primaria
@@ -177,7 +197,11 @@ es **Selected Rows per second**. Un pico repentino en el número de filas selecc
 indicar tanto un aumento general del volumen total de consultas como consultas que
 seleccionan una gran cantidad de filas para ejecutarse.
 
+<div className="ch-image-lg">
+
 ![consulta con uso intensivo de recursos](/images/cloud/manage/monitoring/selected_rows_sec.webp)
+
+</div>
 
 Usando el timestamp como filtro, puedes encontrar las consultas ejecutadas en el momento
 del pico en la tabla `system.query_log`.

@@ -7,13 +7,18 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 هذه الصفحة هي المرجع الأمني لـ ClickHouse Connector: الهويات، والاتصالات، والامتيازات المحددة بدقة، والحدود البنيوية، وكيفية إسناد كل إجراء إلى مصدره. ولمعرفة كيف تتكامل هذه المكوّنات معًا، راجع [المعمارية](/ar/products/bring-your-own-cloud/connector/architecture).
 
 ## الهويات {#identities}
 
+<div className="ch-image-lg">
+
 ![نموذج هوية ClickHouse Connector](/images/cloud/reference/byoc-connector-identity-model.svg)
+
+</div>
 
 * **شهادة عميل mTLS الخاصة بالموصّل**، والتي يكون Organization ID الخاص بك هو الاسم الشائع (common name) فيها، تُصادق كل برنامج خفي لدى نقطة نهاية الموصّل الخاصة بك. ويستخدم `clicklink clctl instances create` الشهادة نفسها ومفتاح HMAC نفسه عند استدعائه لنقطة النهاية.
 * **`pcm_scraper` و`pcm_troubleshooter`** هما مستخدما ClickHouse للقراءة فقط اللذان يتصل بهما scraper ومستكشف الأخطاء ومصلحها. أما المنفّذ فليس له مستخدم ClickHouse.

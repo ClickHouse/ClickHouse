@@ -10,7 +10,11 @@ doc_type: 'guide'
 本指南介绍 ClickHouse Cloud 客户如何利用基于角色的访问控制，通过 Amazon Simple Storage Service (S3) 进行身份验证，并安全地访问其数据。
 在开始配置安全的 S3 访问之前，先了解其工作原理非常重要。下面概述了 ClickHouse 服务如何通过承担客户 AWS 账户中的角色来访问私有 S3 存储桶。
 
+<div className="ch-image-lg">
+
 ![ClickHouse 安全访问 S3 概览](/images/cloud/security/secures3.webp)
+
+</div>
 
 <br />
 
@@ -31,7 +35,11 @@ doc_type: 'guide'
 
 5. 复制如下所示该服务的 **Service role ID (IAM)** 值。
 
+<div className="ch-image-lg">
+
 ![获取 ClickHouse 服务的 IAM 角色 ARN](/images/cloud/security/secures3_arn.webp)
+
+</div>
 
 <div id="setting-up-iam-assume-role">
   ## 配置 IAM Assume Role
@@ -79,7 +87,11 @@ IAM Assume Role 可通过以下两种方式之一进行配置：
 
 10. 复制此 集成 的 **RoleArn** 值，这就是访问您的 S3 存储桶 所需的内容。
 
+<div className="ch-image-lg">
+
 ![显示 IAM Role ARN 的 CloudFormation stack 输出](/images/cloud/security/secures3_output.webp)
+
+</div>
 
 <div id="option-2-manually-create-iam-role">
   ### 手动创建 IAM 角色

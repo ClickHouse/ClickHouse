@@ -102,7 +102,11 @@ SELECT * FROM skip_table WHERE my_value IN (125, 700)
 これをより視覚的に示すと、`my_value` が 125 の4096行がどのように読み取られて選択され、その後の行が
 ディスクから読み取られることなくどのようにスキップされたかは次のとおりです。
 
+<div className="ch-image-md">
+
 ![Simple Skip](/images/guides/best-practices/simple_skip.webp)
+
+</div>
 
 クエリ実行時にトレースを有効にすると、スキップ索引の使用状況に関する詳細情報を確認できます。clickhouse-client
 では、`send_logs_level` を設定します:
@@ -221,7 +225,11 @@ SET send_logs_level='trace';
 
 次のようなデータ分布を考えてみましょう。
 
+<div className="ch-image-md">
+
 ![悪いスキップ](/images/guides/best-practices/bad_skip.webp)
+
+</div>
 
 プライマリ / ORDER BY キーが `timestamp` で、`visitor_id` に索引があるとします。次のクエリを考えてみましょう。
 

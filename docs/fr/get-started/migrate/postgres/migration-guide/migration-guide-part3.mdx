@@ -30,9 +30,17 @@ Pour comprendre pourquoi il n’est pas approprié d’utiliser votre clé prima
 
 Pour plus de détails, nous recommandons ce [guide approfondi](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
+<div className="ch-image-lg">
+
 ![Index B-Tree PostgreSQL](/images/migrations/postgres-b-tree.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Index épars PostgreSQL](/images/migrations/postgres-sparse-index.webp)
+
+</div>
 
 La clé sélectionnée dans ClickHouse déterminera non seulement l’index, mais aussi l’ordre dans lequel les données sont écrites sur disque. De ce fait, elle peut avoir un impact considérable sur les niveaux de compression, ce qui peut à son tour affecter les performances des requêtes. Une clé de tri qui amène les valeurs de la plupart des colonnes à être écrites dans un ordre contigu permettra à l’algorithme de compression sélectionné (et aux codecs) de compresser les données plus efficacement.
 
@@ -54,7 +62,11 @@ Si vous venez de Postgres, le concept de partitionnement de table vous est famil
 
 Dans ClickHouse, le partitionnement est défini sur une table lors de sa création initiale via la clause `PARTITION BY`. Cette clause peut contenir une expression SQL portant sur n’importe quelles colonnes, dont le résultat détermine vers quelle partition une ligne est envoyée.
 
+<div className="ch-image-md">
+
 ![Partitions PostgreSQL vers partitions ClickHouse](/images/migrations/postgres-partitions.webp)
+
+</div>
 
 Les data parts sont associées logiquement à chaque partition sur le disque et peuvent être interrogées isolément. Dans l’exemple ci-dessous, nous partitionnons la table `posts` par année à l’aide de l’expression `toYear(CreationDate)`. À mesure que des lignes sont insérées dans ClickHouse, cette expression est évaluée pour chaque ligne et la ligne est dirigée vers la partition correspondante si elle existe (si c’est la première ligne pour une année donnée, la partition sera créée).
 
@@ -272,7 +284,11 @@ mises à jour à mesure que les données sont insérées. De plus, les requêtes
 table, les projections étant exploitées lorsque c&#39;est possible pour accélérer le temps
 de réponse.
 
+<div className="ch-image-md">
+
 ![Projections PostgreSQL dans ClickHouse](/images/migrations/postgres-projections.webp)
+
+</div>
 
 À l&#39;inverse des vues matérialisées, l&#39;utilisateur doit alors sélectionner la
 table cible optimisée appropriée ou réécrire sa requête, selon les filtres.

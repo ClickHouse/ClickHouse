@@ -25,11 +25,19 @@ Los niveles **Scale** y **Enterprise** también admiten servicios con una sola r
 
 Para escalar horizontalmente un clúster, envíe una solicitud `PATCH` a través de la API para ajustar el número de réplicas. Las capturas de pantalla a continuación muestran una llamada a la API para ampliar un clúster de `3` réplicas a `6` réplicas, y la respuesta correspondiente.
 
+<div className="ch-image-lg">
+
 ![Solicitud PATCH de escalado](/images/cloud/manage/scaling-patch-request.webp)
+
+</div>
 
 *Solicitud `PATCH` para actualizar `numReplicas`*
 
+<div className="ch-image-md">
+
 ![Respuesta PATCH de escalado](/images/cloud/manage/scaling-patch-response.webp)
+
+</div>
 
 *Respuesta a la solicitud `PATCH`*
 
@@ -39,10 +47,18 @@ Si envía una nueva solicitud de escalado, o varias solicitudes seguidas, mientr
 
 Para escalar un servicio horizontalmente desde la UI, puedes ajustar el número de réplicas del servicio en la página **Settings**.
 
+<div className="ch-image-md">
+
 ![Configuración del escalado](/images/cloud/manage/scaling-configure.webp)
+
+</div>
 
 *Configuración de escalado del servicio desde la consola de ClickHouse Cloud*
 
 Una vez que el servicio se haya escalado, el dashboard de métricas en la consola de ClickHouse Cloud debería mostrar la asignación correcta del servicio. La captura de pantalla siguiente muestra el clúster escalado hasta una memoria total de `96 GiB`, es decir, `6` réplicas, cada una con una asignación de memoria de `16 GiB`.
 
+<div className="ch-image-md">
+
 ![Asignación de memoria del escalado](/images/cloud/manage/scaling-memory-allocation.webp)
+
+</div>

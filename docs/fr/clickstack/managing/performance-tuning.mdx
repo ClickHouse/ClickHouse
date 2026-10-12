@@ -10,6 +10,7 @@ keywords: ['clickstack', 'observabilité', 'logs', 'performances', 'optimisation
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
 
 import OtelLogsSchema from '/snippets/fr/clickstack/_schema_otel_logs.mdx';
+
 import OtelTracesSchema from '/snippets/fr/clickstack/_schema_otel_traces.mdx';
 
 <div id="introduction">
@@ -113,7 +114,11 @@ Prenons le schéma ClickStack par défaut pour les traces, dans lequel les méta
 
 Un utilisateur peut filtrer les traces à l’aide de la syntaxe Lucene, par exemple `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"` :
 
+<div className="ch-image-lg">
+
 ![Filtrage des traces](/images/clickstack/performance_guide/trace_filtering.webp)
+
+</div>
 
 Cela produit un prédicat SQL similaire à :
 
@@ -137,7 +142,11 @@ Désormais, les **nouvelles** données stockeront le nom du pod dans une colonne
 
 Les utilisateurs peuvent désormais interroger efficacement les noms de pod à l’aide de la syntaxe Lucene, par exemple `PodName:"checkout-675775c4cc-f2p9c"`
 
+<div className="ch-image-lg">
+
 ![Filtrage des traces v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
+
+</div>
 
 Pour les données nouvellement insérées, cela évite complètement l’accès à la structure Map et réduit considérablement les E/S.
 
@@ -764,7 +773,11 @@ Le même exemple, où `SeverityText` devient la première colonne de la clé pri
   <Step title="Mettre à jour le ClickStack UI pour lire depuis la table Merge" id="update-clickstack-ui-to-read-from-merge-tree">
     Configurez le ClickStack UI pour utiliser `otel_logs_merge` comme table pour la source de données de logs.
 
+    <div className="ch-image-lg">
+
     ![Sélectionner la table Merge](/images/clickstack/performance_guide/select_merge_table.webp)
+
+    </div>
 
     À ce stade, les écritures continuent d’aller vers `otel_logs` avec la clé primaire d’origine, tandis que les lectures utilisent la table Merge. Cela n’entraîne aucun changement visible pour les utilisateurs ni aucun impact sur l’ingestion.
   </Step>

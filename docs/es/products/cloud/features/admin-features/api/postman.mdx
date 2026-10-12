@@ -16,7 +16,11 @@ La aplicación Postman está disponible para usarse en un navegador web o puede 
 
 * Hay cuentas gratuitas disponibles en [https://www.postman.com](https://www.postman.com).
 
+<div className="ch-image-md">
+
 ![Sitio de Postman](/images/cloud/manage/postman/postman1.webp)
+
+</div>
 
 <div id="create-a-workspace">
   ### Crear un espacio de trabajo
@@ -24,7 +28,11 @@ La aplicación Postman está disponible para usarse en un navegador web o puede 
 
 * Asigna un nombre a tu espacio de trabajo y establece el nivel de visibilidad.
 
+<div className="ch-image-md">
+
 ![Crear un espacio de trabajo](/images/cloud/manage/postman/postman2.webp)
+
+</div>
 
 <div id="create-a-collection">
   ### Crear una colección
@@ -32,17 +40,29 @@ La aplicación Postman está disponible para usarse en un navegador web o puede 
 
 * Debajo de &quot;Explore&quot;, en el menú superior izquierdo, haz clic en &quot;Import&quot;:
 
+<div className="ch-image-md">
+
 ![Explore > Import](/images/cloud/manage/postman/postman3.webp)
+
+</div>
 
 * Se abrirá una ventana modal:
 
+<div className="ch-image-md">
+
 ![Campo de URL de la API](/images/cloud/manage/postman/postman4.webp)
+
+</div>
 
 * Introduce la URL de la API: &quot;https://api.clickhouse.cloud/v1&quot; y pulsa &#39;Enter&#39;:
 
 * Selecciona &quot;Postman Collection&quot; haciendo clic en el botón &quot;Import&quot;:
 
+<div className="ch-image-md">
+
 ![Colección > Import](/images/cloud/manage/postman/postman6.webp)
+
+</div>
 
 <div id="interface-with-the-clickhouse-cloud-api-spec">
   ### Interactúa con la especificación de la API de ClickHouse Cloud
@@ -50,11 +70,19 @@ La aplicación Postman está disponible para usarse en un navegador web o puede 
 
 * La &quot;especificación de la API de ClickHouse Cloud&quot; ahora aparecerá en &quot;Collections&quot; (navegación izquierda).
 
+<div className="ch-image-md">
+
 ![Importa tu API](/images/cloud/manage/postman/postman7.webp)
+
+</div>
 
 * Haz clic en &quot;especificación de la API de ClickHouse Cloud&quot;. En el panel central, selecciona la pestaña &quot;Authorization&quot;:
 
+<div className="ch-image-md">
+
 ![Importación completada](/images/cloud/manage/postman/postman8.webp)
+
+</div>
 
 <div id="set-authorization">
   ### Configurar la autorización
@@ -62,11 +90,19 @@ La aplicación Postman está disponible para usarse en un navegador web o puede 
 
 * Abre el menú desplegable y selecciona &quot;Basic Auth&quot;:
 
+<div className="ch-image-md">
+
 ![Basic auth](/images/cloud/manage/postman/postman9.webp)
+
+</div>
 
 * Introduce el nombre de usuario y la contraseña que recibiste al configurar tus API keys de ClickHouse Cloud:
 
+<div className="ch-image-md">
+
 ![credenciales](/images/cloud/manage/postman/postman10.webp)
+
+</div>
 
 <div id="enable-variables">
   ### Habilitar variables
@@ -81,7 +117,11 @@ La aplicación Postman está disponible para usarse en un navegador web o puede 
 * En la &quot;Collection&quot;, haz clic en la pestaña &quot;Variable&quot; del panel central (la URL base ya se habrá configurado con la importación previa de la API):
 * Debajo de `baseURL`, haz clic en el campo &quot;Add new value&quot; y reemplázalo por tu ID de la organización y tu ID del servicio:
 
+<div className="ch-image-md">
+
 ![ID de la organización e ID del servicio](/images/cloud/manage/postman/postman11.webp)
+
+</div>
 
 <div id="test-the-clickhouse-cloud-api-functionalities">
   ## Probar las funcionalidades de la API de ClickHouse Cloud
@@ -94,11 +134,19 @@ La aplicación Postman está disponible para usarse en un navegador web o puede 
 * En &quot;OpenAPI spec for ClickHouse Cloud&quot;, expanda la carpeta &gt; V1 &gt; organizations
 * Haga clic en &quot;GET list of available organizations&quot; y pulse el botón azul &quot;Send&quot; a la derecha:
 
+<div className="ch-image-md">
+
 ![Prueba de obtención de organizaciones](/images/cloud/manage/postman/postman12.webp)
+
+</div>
 
 * Los resultados devueltos deberían mostrar los detalles de su organización con &quot;status&quot;: 200. (Si recibe un &quot;status&quot; 400 sin información de la organización, su configuración no es correcta).
 
+<div className="ch-image-md">
+
 ![Estado](/images/cloud/manage/postman/postman13.webp)
+
+</div>
 
 <div id="test-get-organizational-details">
   ### Probar &quot;GET organizational details&quot;
@@ -107,15 +155,27 @@ La aplicación Postman está disponible para usarse en un navegador web o puede 
 * En la carpeta `organizationid`, ve a &quot;GET organizational details&quot;:
 * En el menú del panel central, en Params, se requiere un `organizationid`.
 
+<div className="ch-image-md">
+
 ![Probar la obtención de los detalles de la organización](/images/cloud/manage/postman/postman14.webp)
+
+</div>
 
 * Edita este valor con `orgid` entre llaves `{{orgid}}` (como ya estableciste este valor antes, aparecerá un menú con él):
 
+<div className="ch-image-md">
+
 ![Enviar prueba](/images/cloud/manage/postman/postman15.webp)
+
+</div>
 
 * Después de pulsar el botón &quot;Save&quot;, pulsa el botón azul &quot;Send&quot; en la esquina superior derecha de la pantalla.
 
+<div className="ch-image-md">
+
 ![Valor devuelto](/images/cloud/manage/postman/postman16.webp)
+
+</div>
 
 * Los resultados devueltos deberían mostrar los detalles de tu organización con &quot;status&quot;: 200. (Si recibes un &quot;status&quot; 400 sin información de la organización, la configuración no es correcta).
 
@@ -127,6 +187,10 @@ La aplicación Postman está disponible para usarse en un navegador web o puede 
 * Edita los valores de `organizationid` y `serviceid` con `{{orgid}}` y `{{serviceid}}`, respectivamente.
 * Pulsa &quot;Save&quot; y luego el botón azul &quot;Send&quot;, a la derecha.
 
+<div className="ch-image-md">
+
 ![Lista de servicios](/images/cloud/manage/postman/postman17.webp)
+
+</div>
 
 * Los resultados devueltos deberían mostrar una lista de tus servicios y sus detalles con &quot;status&quot;: 200. (Si recibes un &quot;status&quot; 400 sin información de servicios, tu configuración no es correcta).

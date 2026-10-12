@@ -38,29 +38,53 @@ DBeaver доступен в нескольких редакциях. В этом
   <Step title="Добавьте базу данных" id="3-add-a-database">
     * Используйте либо меню **Database &gt; New Database Connection**, либо значок **New Database Connection** в **Database Navigator**, чтобы открыть диалоговое окно **Connect to a database**:
 
+    <div className="ch-image-md">
+
     ![Добавить новую базу данных](/images/integrations/sql-clients/dbeaver-add-database.webp)
+
+    </div>
 
     * Выберите **Analytical**, затем **ClickHouse**:
 
     * Сформируйте JDBC URL. На вкладке **Main** укажите Host, Port, Username, Password и Database:
 
+    <div className="ch-image-md">
+
     ![Указать имя хоста, порт, пользователя, пароль и имя базы данных](/images/integrations/sql-clients/dbeaver-host-port.webp)
+
+    </div>
 
     * По умолчанию свойство **SSL &gt; Use SSL** отключено. Если вы подключаетесь к ClickHouse Cloud или серверу, для которого требуется SSL на HTTP-порту, включите **SSL &gt; Use SSL**:
 
+    <div className="ch-image-md">
+
     ![Включить SSL при необходимости](/images/integrations/sql-clients/dbeaver-use-ssl.webp)
+
+    </div>
 
     * Проверьте подключение:
 
+    <div className="ch-image-md">
+
     ![Проверить подключение](/images/integrations/sql-clients/dbeaver-test-connection.webp)
+
+    </div>
 
     Если DBeaver обнаружит, что у вас не установлен драйвер ClickHouse, он предложит загрузить его:
 
+    <div className="ch-image-md">
+
     ![Загрузить драйвер ClickHouse](/images/integrations/sql-clients/dbeaver-download-driver.webp)
+
+    </div>
 
     * После загрузки драйвера снова **проверьте** подключение:
 
+    <div className="ch-image-md">
+
     ![Проверить подключение](/images/integrations/sql-clients/dbeaver-test-connection.webp)
+
+    </div>
   </Step>
 
   <Step title="Выполните запрос к ClickHouse" id="4-query-clickhouse">
@@ -68,11 +92,19 @@ DBeaver доступен в нескольких редакциях. В этом
 
     * Щелкните правой кнопкой мыши по вашему подключению и выберите **SQL Editor &gt; Open SQL Script**, чтобы открыть редактор запросов:
 
+    <div className="ch-image-md">
+
     ![Открыть редактор SQL](/images/integrations/sql-clients/dbeaver-sql-editor.webp)
+
+    </div>
 
     * Пример запроса к `system.query_log`:
 
+    <div className="ch-image-md">
+
     ![Пример запроса](/images/integrations/sql-clients/dbeaver-query-log-select.webp)
+
+    </div>
   </Step>
 </Steps>
 

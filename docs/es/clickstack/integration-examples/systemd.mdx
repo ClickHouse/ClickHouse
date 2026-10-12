@@ -40,7 +40,11 @@ Si quiere probar primero esta integración sin modificar su configuración actua
     3. Ve a **Team Settings → API Keys**
     4. Copia tu **API key de ingesta**
 
+    <div className="ch-image-lg">
+
     ![API key de ClickStack](/images/clickstack/api-key.webp)
+
+    </div>
 
     5. Configúrala como variable de entorno:
 
@@ -183,9 +187,17 @@ Si quiere probar primero esta integración sin modificar su configuración actua
     3. Filtra por `service.name:systemd-logs`
     4. Deberías ver entradas de log estructuradas con campos como `unit`, `priority`, `MESSAGE`, `_HOSTNAME`
 
+    <div className="ch-image-lg">
+
     ![Vista Búsqueda de logs](/images/clickstack/systemd/systemd-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Vista de logs](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -264,9 +276,17 @@ Para quienes quieran probar la integración de logs de systemd antes de configur
     2. Ve a la Búsqueda view y selecciona `Logs` como source
     3. Establece el rango de tiempo en **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
 
+    <div className="ch-image-lg">
+
     ![Vista de búsqueda de logs](/images/clickstack/systemd/systemd-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Vista de logs](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </div>
 
     <Info>
       **Visualización de la zona horaria**
@@ -291,11 +311,19 @@ Para ayudarte a empezar a monitorizar los logs de systemd con ClickStack, propor
     1. Abre HyperDX y ve a la sección Dashboards
     2. Haz clic en **Import Dashboard** en la esquina superior derecha, dentro del menú de puntos suspensivos
 
+    <div className="ch-image-lg">
+
     ![Botón Import dashboard](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Sube el archivo `systemd-logs-dashboard.json` y haz clic en **Finish Import**
 
+    <div className="ch-image-lg">
+
     ![Finalizar importación](/images/clickstack/systemd/finish-import-systemd.webp)
+
+    </div>
   </Step>
 
   <Step title="Ver el dashboard" id="created-dashboard">
@@ -307,7 +335,11 @@ Para ayudarte a empezar a monitorizar los logs de systemd con ClickStack, propor
     * Fallos de servicios
     * Tasas de error
 
+    <div className="ch-image-lg">
+
     ![Dashboard de ejemplo](/images/clickstack/systemd/systemd-logs-dashboard.webp)
+
+    </div>
 
     <Note>
       Para el conjunto de datos de demostración, establece el intervalo de tiempo en **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** (ajústalo según tu zona horaria local).

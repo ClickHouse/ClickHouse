@@ -9,6 +9,7 @@ doc_type: 'guide'
 ---
 
 import AsyncInserts from '/snippets/ar/_async_inserts.mdx';
+
 import BulkInserts from '/snippets/ar/_bulk_inserts.mdx';
 
 يشكّل إدخال البيانات بكفاءة الأساس لعمليات نشر ClickHouse عالية الأداء. ويمكن أن يؤثر اختيار استراتيجية الإدراج المناسبة بشكل كبير في معدل النقل والتكلفة والموثوقية. يوضّح هذا القسم أفضل الممارسات والمفاضلات وخيارات الإعداد لمساعدتك على اتخاذ القرار المناسب لعبء العمل لديك.
@@ -31,7 +32,11 @@ import BulkInserts from '/snippets/ar/_bulk_inserts.mdx';
 
 نستعرض بإيجاز آلية الإدراج في MergeTree في ClickHouse أدناه:
 
+<div className="ch-image-lg ch-image-background-black">
+
 ![عمليات الإدراج](/images/bestpractices/insert_process.webp)
+
+</div>
 
 <div id="client-side-steps">
   #### خطوات جهة العميل

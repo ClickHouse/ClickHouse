@@ -38,7 +38,11 @@ ClickPipes es compatible con Postgres 12 y versiones posteriores.
 
    La salida debería ser `logical` de forma predeterminada. Si no es así, inicie sesión en la consola de PlanetScale, vaya a `Cluster configuration->Parameters` y desplácese hacia abajo hasta `Write-ahead log` para cambiarlo.
 
+<div className="ch-image-md">
+
 ![Ajuste de wal_level en la consola de PlanetScale](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp)
+
+</div>
 
 <Warning>
   Cambiar esto en la consola de PlanetScale ACTIVARÁ un reinicio.
@@ -46,7 +50,11 @@ ClickPipes es compatible con Postgres 12 y versiones posteriores.
 
 2. Además, se recomienda aumentar el valor de `max_slot_wal_keep_size` respecto a su valor predeterminado de 4GB. Esto también se hace desde la consola de PlanetScale; vaya a `Cluster configuration->Parameters` y, a continuación, desplácese hacia abajo hasta `Write-ahead log`. Para ayudarle a determinar el nuevo valor, consulte [aquí](/es/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings).
 
+<div className="ch-image-md">
+
 ![Ajuste de max_slot_wal_keep_size en la consola de PlanetScale](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp)
+
+</div>
 
 <div id="creating-a-user-with-permissions-and-publication">
   ## Crear un usuario con permisos y una publicación

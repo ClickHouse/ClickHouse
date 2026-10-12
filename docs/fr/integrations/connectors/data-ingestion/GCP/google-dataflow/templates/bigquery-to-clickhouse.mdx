@@ -97,11 +97,23 @@ Le template BigQuery vers ClickHouse peut être exécuté via la Google Cloud CL
     Connectez-vous à votre Google Cloud Console et recherchez DataFlow.
 
     1. Cliquez sur le bouton `CREATE JOB FROM TEMPLATE`
+       <div className="ch-image-lg">
+
        ![Console DataFlow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
+
+       </div>
     2. Une fois le formulaire du template ouvert, saisissez un nom de job et sélectionnez la région souhaitée.
+       <div className="ch-image-lg">
+
        ![Formulaire initial du template DataFlow](/images/integrations/data-ingestion/google-dataflow/template_initial_form.webp)
+
+       </div>
     3. Dans le champ `DataFlow Template`, saisissez `ClickHouse` ou `BigQuery`, puis sélectionnez le template `BigQuery to ClickHouse`
+       <div className="ch-image-lg">
+
        ![Sélectionner le template BigQuery to ClickHouse](/images/integrations/data-ingestion/google-dataflow/template_clickhouse_search.webp)
+
+       </div>
     4. Une fois sélectionné, le formulaire s’étend pour vous permettre de renseigner des informations supplémentaires :
        * L’URL JDBC du serveur ClickHouse, au format suivant `jdbc:clickhouse://host:port/schema`.
        * Le nom d’utilisateur ClickHouse.
@@ -114,7 +126,11 @@ Le template BigQuery vers ClickHouse peut être exécuté via la Google Cloud CL
       Pour l’ajouter, faites défiler la page jusqu’à l’option `Password for ClickHouse Endpoint`.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![Formulaire étendu du template BigQuery vers ClickHouse](/images/integrations/data-ingestion/google-dataflow/extended_template_form.webp)
+
+    </div>
 
     5. Personnalisez et ajoutez toute configuration liée à BigQuery/ClickHouseIO, comme indiqué dans
        la section [Template Parameters](#template-parameters)
@@ -172,7 +188,11 @@ Le template BigQuery vers ClickHouse peut être exécuté via la Google Cloud CL
 Accédez à l’[onglet Dataflow Jobs](https://console.cloud.google.com/dataflow/jobs) dans votre Google Cloud Console pour
 suivre l’état du job. Vous y trouverez les détails du job, notamment sa progression et les éventuelles erreurs :
 
+<div className="ch-image-lg">
+
 ![Console Dataflow affichant un job BigQuery vers ClickHouse en cours d’exécution](/images/integrations/data-ingestion/google-dataflow/dataflow-inqueue-job.webp)
+
+</div>
 
 <div id="troubleshooting">
   ## Dépannage

@@ -27,15 +27,27 @@ Ce module complémentaire ne contient qu’une entrée modulaire et ne fournit p
 
 Téléchargez le module complémentaire ClickHouse Cloud Audit pour Splunk sur [Splunkbase](https://splunkbase.splunk.com/app/7709).
 
+<div className="ch-image-lg">
+
 ![Site web Splunkbase affichant la page de téléchargement du module complémentaire ClickHouse Cloud Audit pour Splunk](/images/integrations/tools/data-integration/splunk/splunk_001.webp)
+
+</div>
 
 Dans Splunk Enterprise, accédez à Apps -&gt; Manage. Cliquez ensuite sur Install app from file.
 
+<div className="ch-image-lg">
+
 ![Interface de Splunk Enterprise affichant la page de gestion des Apps avec l’option Install app from file](/images/integrations/tools/data-integration/splunk/splunk_002.webp)
+
+</div>
 
 Sélectionnez le fichier d’archive téléchargé sur Splunkbase, puis cliquez sur Upload.
 
+<div className="ch-image-lg">
+
 ![Boîte de dialogue d’installation d’une application Splunk pour téléverser le module complémentaire ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_003.webp)
+
+</div>
 
 Si tout se passe bien, vous devriez maintenant voir l’application ClickHouse journaux d’audit installée. Sinon, consultez les logs de Splunkd pour repérer d’éventuelles erreurs.
 
@@ -56,19 +68,35 @@ Connectez-vous à la [console ClickHouse Cloud](https://console.clickhouse.cloud
 
 Accédez à Organization -&gt; Organization details. Vous pourrez y copier l’Organization ID.
 
+<div className="ch-image-lg">
+
 ![Console ClickHouse Cloud affichant la page Organization details avec l’Organization ID](/images/integrations/tools/data-integration/splunk/splunk_004.webp)
+
+</div>
 
 Ensuite, accédez à API Keys dans le menu de gauche.
 
+<div className="ch-image-lg">
+
 ![Console ClickHouse Cloud affichant la section API Keys dans le menu de navigation de gauche](/images/integrations/tools/data-integration/splunk/splunk_005.webp)
+
+</div>
 
 Créez une clé API, donnez-lui un nom explicite et sélectionnez les privilèges `Admin`. Cliquez sur Generate API Key.
 
+<div className="ch-image-lg">
+
 ![Console ClickHouse Cloud affichant l’interface de création de clé API avec les privilèges Admin sélectionnés](/images/integrations/tools/data-integration/splunk/splunk_006.webp)
+
+</div>
 
 Enregistrez la clé API et le secret dans un endroit sûr.
 
+<div className="ch-image-lg">
+
 ![Console ClickHouse Cloud affichant la clé API générée et le secret à enregistrer](/images/integrations/tools/data-integration/splunk/splunk_007.webp)
+
+</div>
 
 <div id="configure-data-input-in-splunk">
   ## Configurer l’entrée de données dans Splunk
@@ -76,19 +104,35 @@ Enregistrez la clé API et le secret dans un endroit sûr.
 
 De retour dans Splunk, accédez à Settings -&gt; Data inputs.
 
+<div className="ch-image-lg">
+
 ![Interface Splunk affichant le menu Settings avec l’option Data inputs](/images/integrations/tools/data-integration/splunk/splunk_008.webp)
+
+</div>
 
 Sélectionnez l’entrée de données ClickHouse Cloud Audit Logs.
 
+<div className="ch-image-lg">
+
 ![Page Splunk Data inputs affichant l’option ClickHouse Cloud Audit Logs](/images/integrations/tools/data-integration/splunk/splunk_009.webp)
+
+</div>
 
 Cliquez sur &quot;New&quot; pour configurer une nouvelle instance de l’entrée de données.
 
+<div className="ch-image-lg">
+
 ![Interface Splunk permettant de configurer une nouvelle entrée de données ClickHouse Cloud Audit Logs](/images/integrations/tools/data-integration/splunk/splunk_010.webp)
+
+</div>
 
 Une fois toutes les informations saisies, cliquez sur Next.
 
+<div className="ch-image-lg">
+
 ![Page de configuration Splunk avec les paramètres de l’entrée de données ClickHouse terminés](/images/integrations/tools/data-integration/splunk/splunk_011.webp)
+
+</div>
 
 L’entrée de données est configurée, vous pouvez commencer à parcourir les journaux d’audit.
 
@@ -98,4 +142,8 @@ L’entrée de données est configurée, vous pouvez commencer à parcourir les 
 
 L’entrée modulaire stocke les données dans Splunk. Pour les afficher, vous pouvez utiliser la vue de recherche générale de Splunk.
 
+<div className="ch-image-lg">
+
 ![Interface de recherche Splunk affichant les données des journaux d’audit ClickHouse](/images/integrations/tools/data-integration/splunk/splunk_012.webp)
+
+</div>

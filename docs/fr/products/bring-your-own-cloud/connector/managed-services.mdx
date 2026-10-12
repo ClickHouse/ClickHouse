@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 En mode managé, le connector exécute un troisième composant, l&#39;executor. C&#39;est par son intermédiaire que ClickHouse Cloud pilote les services ClickHouse dans votre Kubernetes cluster. Cette page décrit la création d&#39;un service, la lecture de son statut, ce que ClickHouse Cloud en fait, ainsi que la manière dont il est retiré.
@@ -39,7 +40,11 @@ Seul `prepare` a besoin des AWS credentials : il crée les S3 buckets et l&#39;I
 * `prepare` requiert une copie de la configuration du connector (`--config`), un `kubectl port-forward` vers l&#39;API locale de l&#39;executor et un `--output-dir` accessible en écriture. Il vérifie le service name auprès de l&#39;executor et refuse de s&#39;exécuter s&#39;il ne parvient pas à le joindre.
 * Lorsque cet hôte ne possède pas les fichiers de credentials désignés par la configuration, `instances create` les lit depuis les Secrets `clicklink-hmac` et `clicklink-mtls` et signale chaque lecture. Ajoutez `--connector-namespace` lorsque le namespace du connector n&#39;est pas `clicklink`. Seul `instances create` dispose de ce fallback.
 
+<div className="ch-image-lg">
+
 ![Cycle de vie d'un service ClickHouse Connector en mode managé](/images/cloud/reference/byoc-connector-service-lifecycle.svg)
+
+</div>
 
 <Steps>
   <Step title="Préparez le service" id="prepare">

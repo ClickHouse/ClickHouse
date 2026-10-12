@@ -51,15 +51,27 @@ Quando uma transação está em execução no banco de dados de origem, o ClickP
 Você pode definir o intervalo de sincronização e o tamanho do lote de extração ao criar um ClickPipe ou editar um já existente.
 Ao criar um ClickPipe, essas opções aparecem na segunda etapa do assistente de criação, como mostrado abaixo:
 
+<div className="ch-image-md">
+
 ![Criar configurações de sincronização](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
+
+</div>
 
 Ao editar um ClickPipe existente, vá até a guia **Settings** do pipe, pause-o e clique em **Configure** aqui:
 
+<div className="ch-image-md">
+
 ![Botão para editar a sincronização](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
+
+</div>
 
 Isso abrirá um painel lateral com as configurações de sincronização, onde você pode alterar o intervalo de sincronização e o tamanho do lote de extração:
 
+<div className="ch-image-md">
+
 ![Editar configurações de sincronização](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
+
+</div>
 
 <div id="tweaking">
   ### Ajustando as configurações de sincronização para ajudar a conter o crescimento do slot de replicação
@@ -75,4 +87,8 @@ Ao aumentar tanto o intervalo de sincronização quanto o tamanho do lote de ext
 
 Você pode ver quanto tempo cada lote leva na tabela **CDC Syncs**, na aba **Métricas** do ClickPipe. Observe que a duração aqui inclui o tempo de envio e, se não houver linhas chegando, o ClickPipe fica aguardando — esse tempo de espera também é incluído na duração.
 
+<div className="ch-image-md">
+
 ![tabela CDC Syncs](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)
+
+</div>

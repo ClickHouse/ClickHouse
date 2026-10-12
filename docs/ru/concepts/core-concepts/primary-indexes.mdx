@@ -30,7 +30,11 @@ doc_type: 'guide'
 
 Как [мы уже отмечали](/ru/concepts/core-concepts/parts), в нашей ① примерной таблице с первичным ключом (town, street) ② вставленные данные ③ сохраняются на диске, сортируются по значениям столбцов первичного ключа и сжимаются в отдельные файлы для каждого столбца:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+
+</div>
 
 <br />
 
@@ -40,7 +44,11 @@ doc_type: 'guide'
 
 Именно такая структура гранул делает первичный индекс **разреженным**: вместо индексации каждой строки ClickHouse сохраняет ⑤ значения первичного ключа только из одной строки на гранулу — а именно из первой. В результате получается одна запись индекса на гранулу:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+
+</div>
 
 <br />
 
@@ -54,7 +62,11 @@ doc_type: 'guide'
 
 Ниже схематично показано, как разреженный первичный индекс используется для ускорения запросов:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+
+</div>
 
 <br />
 

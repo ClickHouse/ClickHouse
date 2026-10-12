@@ -32,7 +32,11 @@ Puede [consultar esta tabla](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPT
 
 Se crea una parte de datos cada vez que se inserta un conjunto de filas en la tabla. El siguiente diagrama lo ilustra:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/part.webp)
+
+</div>
 
 <br />
 
@@ -66,7 +70,11 @@ Las partes de datos son autónomas e incluyen todos los metadatos necesarios par
 
 Para gestionar el número de partes por tabla, un proceso de [fusión en segundo plano](/es/concepts/core-concepts/merges) combina periódicamente las partes más pequeñas en otras más grandes hasta que alcanzan un tamaño comprimido [configurable](/es/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) (normalmente, ~150 GB). Las partes fusionadas se marcan como inactivas y se eliminan tras un intervalo de tiempo [configurable](/es/reference/settings/merge-tree-settings/other#old_parts_lifetime). Con el tiempo, este proceso crea una estructura jerárquica de partes fusionadas, de ahí que se llame tabla MergeTree:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/merges.webp)
+
+</div>
 
 <br />
 

@@ -28,19 +28,35 @@ Pub/Sub ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
 
 1. 进入你的 ClickHouse Cloud 服务的 SQL 控制台。
 
+<div className="ch-image-lg">
+
 ![ClickPipes 服务](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. 在左侧菜单中选择 `Data Sources` 按钮，然后点击“Set up a ClickPipe”
 
+<div className="ch-image-lg">
+
 ![选择导入](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. 选择 **GCP Pub/Sub** 作为数据源。
 
+<div className="ch-image-lg">
+
 ![选择 GCP Pub/Sub 作为数据源](/images/integrations/data-ingestion/clickpipes/cp_step1_pubsub.webp)
+
+</div>
 
 4. 填写表单，为 ClickPipe 提供名称、**GCP Project ID**，以及已被授予 Pub/Sub 访问权限的服务账号对应的**服务账号 JSON 文件**。Project ID 必须为 6–30 个字符，只能包含小写字母、数字和连字符，且必须以字母开头，不能以连字符结尾。
 
+<div className="ch-image-lg">
+
 ![填写连接详情](/images/integrations/data-ingestion/clickpipes/cp_step2_pubsub.webp)
+
+</div>
 
 5. 选择要从中摄取数据的 **Pub/Sub topic**。凭据验证通过后，下拉菜单会自动填充你在 GCP 项目中的 topics (按字母顺序排序) 。
 
@@ -49,19 +65,35 @@ Pub/Sub ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
    * **过滤表达式 (可选) 。** 对消息属性应用 Pub/Sub [订阅过滤器](https://cloud.google.com/pubsub/docs/subscription-message-filter)，例如 `attributes.type = "telemetry"`。过滤器仅适用于消息属性，不适用于载荷，并且在管道创建后无法更改 (如需更改过滤器，必须重新创建管道) 。
    * UI 会显示所选 topic 中的一条样本消息，并提供一个 **展平对象** 开关，让你预览嵌套 JSON 在目标端会如何被展平。
 
+<div className="ch-image-lg">
+
 ![设置 Pub/Sub topic、格式和起始偏移量](/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp)
+
+</div>
 
 6. 在下一步中，你可以选择将数据摄取到新的 ClickHouse 表中，或复用现有表。按照界面上的说明修改表名、schema 和设置。你可以在顶部的样本表中实时预览这些更改。
 
+<div className="ch-image-lg">
+
 ![设置表、schema 和设置](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
+
+</div>
 
 你还可以使用提供的控件自定义高级设置
 
+<div className="ch-image-lg">
+
 ![设置高级控件](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
+
+</div>
 
 7. 或者，你也可以选择将数据摄取到现有的 ClickHouse 表中。在这种情况下，UI 会允许你将源字段映射到所选目标表中的 ClickHouse 字段。
 
+<div className="ch-image-lg">
+
 ![使用现有表](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
+
+</div>
 
 8. 最后，你可以为内部 ClickPipes 用户配置权限。
 
@@ -70,21 +102,41 @@ Pub/Sub ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
 * `Full access`：拥有对集群的完全访问权限。如果你在目标表中使用了 materialized view 或 字典，这可能会很有用。
   * `Only destination table`：仅拥有对目标表的 `INSERT` 权限。
 
+<div className="ch-image-lg">
+
 ![权限](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
+
+</div>
 
 9. 点击“Complete Setup”后，系统会注册你的 ClickPipe，你将能够在汇总表中看到它。
 
+<div className="ch-image-sm">
+
 ![成功通知](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
+
+</div>
+
+<div className="ch-image-lg">
 
 ![移除通知](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
 
+</div>
+
 摘要表中提供了相关控件，用于显示源表或 ClickHouse 中目标表的样本数据
+
+<div className="ch-image-lg">
 
 ![查看目标端](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
 
+</div>
+
 以及用于删除 ClickPipe 和显示摄取作业摘要的控件。
 
+<div className="ch-image-lg">
+
 ![查看概览](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
+
+</div>
 
 10. **恭喜！** 您已成功设置第一个 Pub/Sub ClickPipe。它将持续运行，实时将来自您的 Pub/Sub topic 的数据摄取到您的 ClickHouse Cloud 服务中。
 

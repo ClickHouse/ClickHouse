@@ -199,7 +199,11 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
 
     Créez un utilisateur en indiquant un nom d’utilisateur et un mot de passe conformes aux exigences de complexité.
 
+    <div className="ch-image-lg">
+
     ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
   </Step>
 
   <Step title="Récupérer la clé API d’ingestion" id="retrieve-ingestion-api-key">
@@ -207,7 +211,11 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
 
     Accédez à [`Team Settings`](http://localhost:8080/team) et copiez l’`Ingestion API Key` depuis la section `API Keys`. Cette clé API garantit la sécurité de l’ingestion des données via l’OpenTelemetry collector.
 
+    <div className="ch-image-lg">
+
     ![Copier la clé API](/images/use-cases/observability/copy_api_key.webp)
+
+    </div>
   </Step>
 
   <Step title="Créer un secret Kubernetes pour l’API key" id="create-api-key-kubernetes-secret">
@@ -231,7 +239,11 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
 
     Les données de traces et de logs provenant des services de démonstration devraient désormais commencer à affluer vers HyperDX.
 
+    <div className="ch-image-lg">
+
     ![Données Kubernetes HyperDX](/images/use-cases/observability/hyperdx-kubernetes-data.webp)
+
+    </div>
   </Step>
 
   <Step title="Ajouter le dépôt Helm OpenTelemetry" id="add-otel-helm-repo">
@@ -482,4 +494,8 @@ Pour simuler le trafic applicatif, vous pouvez, si vous le souhaitez, déployer 
   </Step>
 </Steps>
 
+<div className="ch-image-lg">
+
 ![ClickHouse sur Kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</div>

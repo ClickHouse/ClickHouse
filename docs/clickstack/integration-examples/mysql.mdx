@@ -194,9 +194,17 @@ Once configured, log into HyperDX and verify logs are flowing:
 3. Filter by `source:mysql-error` or `source:mysql-slow` to see MySQL-specific logs
 4. You should see structured log entries with fields like `level`, `error_code`, `message` (for error logs) and `query_time`, `rows_examined`, `query` (for slow query logs)
 
+<div className="ch-image-lg">
+
 ![Search view](/images/clickstack/mysql/search-view.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Log view](/images/clickstack/mysql/log-view.webp)
+
+</div>
 </Step>
 </Steps>
 
@@ -317,9 +325,17 @@ Once ClickStack is running:
 If you don't see all 40 logs immediately, wait about a minute for the collector to finish processing. If logs still don't appear after waiting, run `docker restart clickstack-demo` and check again after another minute. This is a known issue with the OpenTelemetry filelog receiver when bulk-loading pre-existing files with `start_at: beginning`. Production deployments using `start_at: end` process logs as they're written in real-time and don't experience this issue.
 </Note>
 
+<div className="ch-image-lg">
+
 ![Search view](/images/clickstack/mysql/search-view.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![Log view](/images/clickstack/mysql/log-view.webp)
+
+</div>
 
 <Info>
 **Timezone Display**
@@ -343,17 +359,29 @@ To help you get started monitoring MySQL with ClickStack, we provide essential v
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
+<div className="ch-image-lg">
+
 ![Import dashboard button](/images/clickstack/import-dashboard.webp)
+
+</div>
 
 3. Upload the `mysql-logs-dashboard.json` file and click **Finish Import**
 
+<div className="ch-image-lg">
+
 ![Finish import](/images/clickstack/mysql/finish-import.webp)
+
+</div>
 </Step>
 <Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured.
 
+<div className="ch-image-lg">
+
 ![Example dashboard](/images/clickstack/mysql/example-dashboard.webp)
+
+</div>
 
 <Note>
 For the demo dataset, set the time range to **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.

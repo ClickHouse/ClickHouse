@@ -16,7 +16,11 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 
 [marimo](https://marimo.io/) は、SQL を標準搭載した、Python 向けのオープンソースのリアクティブノートブックです。セルを実行したり UI 要素を操作したりすると、marimo は影響を受けるセルを自動的に実行し (または古い状態としてマークし) 、コードと出力の整合性を保ちながら、不具合を未然に防ぎます。すべての marimo ノートブックは純粋な Python として保存され、スクリプトとして実行可能で、アプリとしてデプロイすることもできます。
 
+<div className="ch-image-md">
+
 ![ClickHouse に接続](/images/integrations/sql-clients/marimo/clickhouse-connect.webp)
+
+</div>
 
 <Steps>
   <Step title="SQL サポート付きで marimo をインストールする" id="install-marimo-sql">
@@ -31,21 +35,37 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
   <Step title="ClickHouse に接続する" id="connect-to-clickhouse">
     marimo エディターの左側にあるデータソースパネルに移動し、&#39;Add database&#39; をクリックします。
 
+    <div className="ch-image-sm">
+
     ![新しいデータベースを追加する](/images/integrations/sql-clients/marimo/panel-arrow.webp)
+
+    </div>
 
     データベースの詳細を入力するよう求められます。
 
+    <div className="ch-image-md">
+
     ![データベースの詳細を入力する](/images/integrations/sql-clients/marimo/add-db-details.webp)
+
+    </div>
 
     その後、接続を確立するために実行できるセルが表示されます。
 
+    <div className="ch-image-md">
+
     ![セルを実行して ClickHouse に接続する](/images/integrations/sql-clients/marimo/run-cell.webp)
+
+    </div>
   </Step>
 
   <Step title="SQL を実行する" id="run-sql">
     接続を設定したら、新しい SQL セルを作成し、ClickHouse engine を選択できます。
 
+    <div className="ch-image-md">
+
     ![SQL エンジンを選択](/images/integrations/sql-clients/marimo/choose-sql-engine.webp)
+
+    </div>
 
     このガイドでは、New York Taxi データセットを使用します。
 
@@ -103,16 +123,28 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
     SELECT * FROM trips LIMIT 1000;
     ```
 
+    <div className="ch-image-lg">
+
     ![DataFrame 内の結果](/images/integrations/sql-clients/marimo/results.webp)
+
+    </div>
 
     これで、結果を DataFrame で確認できるようになりました。次に、指定した乗車場所からの料金が最も高い降車地点を可視化してみましょう。marimo には、そのために役立つ UI コンポーネントがいくつか用意されています。ここでは、場所の選択にドロップダウンを使い、グラフの描画には altair を使います。
 
+    <div className="ch-image-lg">
+
     ![ドロップダウン、テーブル、グラフの組み合わせ](/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp)
+
+    </div>
 
     marimo のリアクティブ実行モデルは SQL クエリにも適用されるため、SQL を変更すると、依存するセルの後続の計算が自動的にトリガーされます (計算コストが高い場合は、セルを古い状態としてマークすることもできます) 。そのため、クエリを更新するとグラフとテーブルも変わります。
 
     データをすっきりしたインターフェイスで探索できるよう、App View に切り替えることもできます。
 
+    <div className="ch-image-md">
+
     ![App View の実行](/images/integrations/sql-clients/marimo/run-app-view.webp)
+
+    </div>
   </Step>
 </Steps>

@@ -7,13 +7,18 @@ doc_type: 'reference'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 本页是 ClickHouse 连接器的安全参考：涵盖其身份、连接、具体特权、结构性限制，以及每项操作的归因方式。若要了解各部分如何协同工作，请参阅[架构](/zh/products/bring-your-own-cloud/connector/architecture)。
 
 ## Identities {#identities}
 
+<div className="ch-image-lg">
+
 ![ClickHouse 连接器身份模型](/images/cloud/reference/byoc-connector-identity-model.svg)
+
+</div>
 
 * **连接器的 mTLS 客户端证书**以你的 organization ID 作为通用名 (common name) ，用于向你的连接器端点认证每个守护进程。`clicklink clctl instances create` 调用该端点时使用同一份证书和 HMAC key。
 * **`pcm_scraper` 和 `pcm_troubleshooter`** 是抓取器和故障排查工具连接时所用的只读 ClickHouse 用户。executor 没有对应的 ClickHouse 用户。

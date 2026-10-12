@@ -15,7 +15,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
 اربط ClickHouse Cloud بكتالوجات البيانات لديك للوصول إلى جداولك بتنسيق الجداول المفتوح. يمكنك إعداد الاتصالات من واجهة **مصادر البيانات**. وللإعداد باستخدام SQL، استخدم محرك قاعدة البيانات [`DataLakeCatalog`](/ar/reference/engines/database-engines/datalake) في محرر SQL الذي تفضّله.
 
+<div className="ch-image-md">
+
 ![واجهة ClickHouse Cloud مع تكاملات كتالوجات البيانات](/images/cloud/features/data-catalogs-ui.png)
+
+</div>
 
 بعد الاتصال، تظهر جداول الكتالوج في وحدة تحكم SQL ضمن اسم قاعدة البيانات الذي تختاره. يمكنك الاستعلام عنها باستخدام ClickHouse SQL القياسي، وربطها بجداول [MergeTree](/ar/reference/engines/table-engines/mergetree-family/mergetree)، واستخدامها كمصادر [للعروض المادية](/ar/concepts/features/materialized-views).
 
@@ -39,7 +43,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
     2. انقر على **+ إضافة كتالوج** إذا لم تكن قد أعددت أي مصادر بيانات بعد. وإلا، فانقر على **إضافة مصدر بيانات** &gt; **إضافة كتالوج لبحيرة البيانات**.
     3. في اللوحة المنبثقة **ربط كتالوج البيانات**، اختر الكتالوج من القائمة المنسدلة **اختيار كتالوج**. إذا كان الكتالوج يدعم عدة تنسيقات جداول مفتوحة، فاختر التنسيق من **تنسيق الجدول المفتوح**.
 
+    <div className="ch-image-lg">
+
     ![اللوحة المنبثقة «ربط كتالوج البيانات» مع القائمة المنسدلة «اختيار كتالوج» التي تعرض AWS Glue وBigLake Metastore وMicrosoft OneLake وPolaris وREST Catalog وUnity Catalog](/images/integrations/data-catalogs/catalog-flyout-select.png)
+
+    </div>
   </Step>
 
   <Step title="أضف اتصالاً بالكتالوج الخاص بك" id="add-your-catalog-connection">
@@ -205,7 +213,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
   <Step title="عرض جداول الكتالوج" id="view-tables">
     في صفحة **مصادر البيانات**، ابحث عن الكتالوج الخاص بك في جدول **الكتالوجات المرتبطة**، ثم انقر على **عرض الجداول**.
 
+    <div className="ch-image-lg">
+
     ![جدول الكتالوجات المرتبطة مع إجراء عرض الجداول](/images/integrations/data-catalogs/linked-catalogs-table.png)
+
+    </div>
 
     يفتح ClickHouse وحدة تحكم SQL مع تحديد قاعدة بيانات الكتالوج، ويعرض الجداول المتاحة.
 
@@ -213,7 +225,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
       قد لا تظهر الجداول فورًا بعد الاتصال بكتالوج. وقد يستغرق إدراج جميع الجداول، حسب الكتالوج، ما يصل إلى 3 دقائق.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![مستعرض الجداول في وحدة تحكم SQL يعرض جداول الكتالوج](/images/integrations/data-catalogs/catalog-tables-browser.png)
+
+    </div>
   </Step>
 
   <Step title="تشغيل استعلام" id="run-a-query">
@@ -223,7 +239,11 @@ import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
     SELECT * FROM `identity_profiles.identity_profiles_iceberg`
     ```
 
+    <div className="ch-image-lg">
+
     ![استعلام SQL مع نتائج يستخدم علامات الاقتباس العكسية لاسم جدول يحتوي على نقاط](/images/integrations/data-catalogs/catalog-sql-query.png)
+
+    </div>
   </Step>
 </Steps>
 

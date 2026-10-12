@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
@@ -114,7 +115,11 @@ scrape_configs:
 
 あらかじめ用意された Grafana ダッシュボードでは、エンドポイントが公開するあらゆるメトリクスを可視化できます。これには、ソート可能なサービス一覧テーブル、CPU とメモリの使用率、閾値アラート付きのディスク使用量、状態別の接続数、トランザクションとロールバック率、Tuple のアクティビティ、I/O、データベースごとのストレージ使用量、デッドロックが含まれます。
 
+<div className="ch-image-md">
+
 ![ClickHouse Managed Postgres Services の Grafana ダッシュボード](/images/managed-postgres/monitoring/grafana-dashboard.webp)
+
+</div>
 
 <div id="import-dashboard">
   ### ダッシュボードのインポート

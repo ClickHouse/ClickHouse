@@ -13,7 +13,11 @@ Event deltas combina un mapa de calor de latencia con análisis automático de a
 * **Modo de comparación**: arrastra un rectángulo sobre el mapa de calor para comparar los spans del interior (Selección) con todo lo que queda fuera (Fondo). Es útil para aislar desviaciones.
 * **Drill-down iterativo**: haz clic en cualquier barra para filtrar (o excluir) ese valor. El mapa de calor se actualiza según la población filtrada, por lo que puedes seguir acotando hasta que la causa sea evidente.
 
+<div className="ch-image-lg">
+
 ![Vista general de Event deltas en el servicio de pagos, con la banda brillante ascendiendo a mitad de la ventana y sin recuperación dentro del encuadre](/images/clickstack/event-deltas/overview.webp)
+
+</div>
 
 En la captura de pantalla anterior, el borde derecho del mapa de calor está aproximadamente en 10 ms, no de vuelta en la línea base de 1 ms que se mantuvo durante la mañana. La degradación sigue en curso, así que la estamos captando en pleno incidente.
 
@@ -74,7 +78,11 @@ La forma del rectángulo que dibujas cambia la pregunta que estás planteando. A
 
 Cuando el mapa de calor muestra que la latencia va aumentando a lo largo de la línea temporal (la banda lenta se engrosa, la banda brillante asciende o un punto de inflexión claro separa un período saludable de uno degradado), arrastra un rectángulo desde el punto de inflexión del ascenso hasta el borde derecho de la ventana. Para hacer más precisa la comparación, coloca la parte inferior del rectángulo en la línea base saludable en lugar de en la parte inferior del eje: así se aíslan los spans que realmente son más lentos de lo normal en la ventana degradada, en vez de incluir spans rápidos que siguen siendo saludables y que simplemente caen dentro del mismo intervalo temporal.
 
+<div className="ch-image-lg">
+
 ![Modo de comparación en el servicio de pagos, con el rectángulo trazado desde el punto de inflexión del ascenso hasta el borde derecho y la parte inferior apoyada en la línea base de 1 ms](/images/clickstack/event-deltas/before-after.webp)
+
+</div>
 
 Las barras de atributos situadas debajo del mapa de calor están ordenadas de mayor a menor divergencia. En este ejemplo, los gráficos de la fila superior muestran las señales más claras: `SpanKind`, `SpanName` y `ScopeName` presentan cada uno una marcada separación entre el naranja y el verde, entre la Selección lenta y el Fondo saludable. Leídos en conjunto, permiten identificar con precisión qué cambió en el punto de inflexión.
 
@@ -86,7 +94,11 @@ Esta es la forma adecuada cuando quieres plantear la pregunta &quot;¿qué cambi
 
 Cuando el mapa de calor muestra dos poblaciones de latencia claramente separadas en el eje de duración, arrastra un rectángulo ancho que abarque todo el intervalo temporal, pero cubra solo la banda superior, bien separada. La población lenta pasa a ser la Selección; el grueso de las rápidas pasa a ser el Fondo.
 
+<div className="ch-image-lg">
+
 ![Comparación de lento frente a rápido en frontend-proxy con el rectángulo cubriendo solo la banda superior claramente separada, bien alejada del grueso denso](/images/clickstack/event-deltas/slow-vs-fast.webp)
+
+</div>
 
 Dibuja el rectángulo ceñido a la banda superior, con una separación horizontal visible entre esta y el grueso denso. Un rectángulo demasiado amplio que invada la población rápida diluye la divergencia.
 
@@ -104,7 +116,11 @@ Los modos de comparación y distribución son más potentes cuando se encadenan.
 * **Excluir**: eliminar los spans con este valor
 * **Copiar**: copiar el valor al portapapeles
 
+<div className="ch-image-lg">
+
 ![Ventana emergente al hacer clic en una barra de ScopeVersion que muestra los porcentajes de Selección frente a Fondo y las acciones de filtrar, excluir y copiar](/images/clickstack/event-deltas/drill-down.webp)
+
+</div>
 
 Después de aplicar un filtro o una exclusión, se borra la selección del mapa de calor, el mapa de calor se vuelve a generar para la nueva población y el modo de distribución se reanuda sobre ese conjunto filtrado. Observa cómo cambia la forma del mapa de calor; un filtro eficaz elimina visiblemente la banda lenta, hace desaparecer la división bimodal o aplana la deriva ascendente. Repite: detecta el siguiente valor sospechoso, filtra, observa el nuevo mapa de calor y observa las nuevas distribuciones. Unas pocas iteraciones suelen acotar una regresión a uno o dos atributos.
 
@@ -120,7 +136,11 @@ Cuando la población sea lo bastante pequeña, cambia a la pestaña **Results Ta
 
 El icono de engranaje en la esquina superior derecha del mapa de calor abre el panel lateral de **Display Settings**.
 
+<div className="ch-image-lg">
+
 ![Panel lateral de Display Settings con campos de Scale, Value y Count](/images/clickstack/event-deltas/settings-drawer.webp)
+
+</div>
 
 | Parámetro | Predeterminado   | Descripción                                                                                                 |
 | --------- | ---------------- | ----------------------------------------------------------------------------------------------------------- |

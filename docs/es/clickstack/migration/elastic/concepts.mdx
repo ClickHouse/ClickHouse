@@ -89,7 +89,11 @@ Ambos sistemas ofrecen una API REST, pero ClickHouse también proporciona un **p
   ### Indexación y almacenamiento
 </div>
 
+<div className="ch-image-lg">
+
 ![Elasticsearch](/images/use-cases/observability/elasticsearch.webp)
+
+</div>
 
 El concepto de `sharding` es fundamental en el modelo de escalabilidad de Elasticsearch. Cada ① [**índice**](https://www.elastic.co/blog/what-is-an-elasticsearch-index) se divide en **segmentos**, cada uno de los cuales es un índice físico de Lucene almacenado como segmentos en disco. Un segmento puede tener una o más copias físicas, llamadas segmentos de réplica, para aportar resiliencia. Para escalar, los segmentos y las réplicas pueden distribuirse entre varios nodos. Un solo segmento ② consta de uno o más segmentos inmutables. Un segmento es la estructura básica de indexación de Lucene, la biblioteca de Java que proporciona las funciones de indexación y búsqueda en las que se basa Elasticsearch.
 
@@ -109,7 +113,11 @@ En Elasticsearch, los [mapeos de índice](https://www.elastic.co/guide/en/elasti
 
 ClickHouse, en cambio, es **orientado a columna** — cada columna se almacena de forma independiente, pero siempre ordenada según la clave primaria o clave de ordenación de la tabla. Esta ordenación permite [índices primarios dispersos](/es/concepts/core-concepts/primary-indexes), que permiten a ClickHouse omitir datos de forma eficiente durante la ejecución de consultas. Cuando las consultas filtran por campos de la clave primaria, ClickHouse lee solo las partes relevantes de cada columna, lo que reduce significativamente la E/S de disco y mejora el rendimiento, incluso sin un índice completo en cada columna.
 
+<div className="ch-image-lg">
+
 ![ClickHouse](/images/use-cases/observability/clickhouse.webp)
+
+</div>
 
 ClickHouse también admite [**índices de omisión**](/es/concepts/features/performance/skip-indexes/skipping-indexes), que aceleran el filtrado al precalcular datos de índice para las columnas seleccionadas. Deben definirse explícitamente, pero pueden mejorar significativamente el rendimiento. Además, ClickHouse permite especificar [codecs de compresión](/es/guides/use-cases/observability/build-your-own/schema-design#using-codecs) y algoritmos de compresión por columna, algo que Elasticsearch no admite (su [compresión](https://www.elastic.co/docs/reference/elasticsearch/index-settings/index-modules) solo se aplica al almacenamiento JSON de `_source`).
 
@@ -182,7 +190,11 @@ Las diferencias anteriores pueden atribuirse a los modelos de ejecución de Elas
 
 ClickHouse se diseñó para maximizar la eficiencia en hardware moderno. De forma predeterminada, ClickHouse ejecuta una consulta SQL con N vías de ejecución concurrentes en una máquina con N núcleos de CPU:
 
+<div className="ch-image-lg">
+
 ![Ejecución de ClickHouse](/images/use-cases/observability/clickhouse-execution.webp)
+
+</div>
 
 En un solo nodo, las vías de ejecución dividen los datos en rangos independientes, lo que permite el procesamiento concurrente en varios hilos de CPU. Esto incluye filtrado, agregación y ordenación. Los resultados locales de cada vía acaban fusionándose, y se aplica un operador de límite en caso de que la consulta incluya una cláusula `LIMIT`.
 
@@ -197,7 +209,11 @@ Este modelo permite escalar de forma eficiente entre núcleos y nodos, lo que ha
 
 Elasticsearch, por el contrario, asigna un hilo por segmento para la mayoría de las agregaciones, independientemente de cuántos núcleos de CPU haya disponibles. Estos hilos devuelven resultados top-N locales por segmento, que se fusionan en el nodo coordinador. Este enfoque puede infrautilizar los recursos del sistema e introducir posibles imprecisiones en las agregaciones globales, especialmente cuando los términos frecuentes se distribuyen entre varios segmentos. La precisión puede mejorarse aumentando el parámetro `shard_size`, pero esto tiene el coste de un mayor uso de memoria y una mayor latencia de consulta.
 
+<div className="ch-image-lg">
+
 ![Ejecución de Elasticsearch](/images/use-cases/observability/elasticsearch-execution.webp)
+
+</div>
 
 En resumen, ClickHouse ejecuta agregaciones y consultas con un paralelismo más granular y un mayor control sobre los recursos de hardware, mientras que Elasticsearch se basa en una ejecución por segmentos con restricciones más rígidas.
 
@@ -239,7 +255,11 @@ En Elasticsearch, los **rollups** o las **agregaciones** se consiguen mediante u
 
 El siguiente diagrama muestra de forma abstracta cómo funcionan los transforms (ten en cuenta que usamos el color azul para todos los documentos que pertenecen al mismo bucket para el que queremos precalcular valores agregados):
 
+<div className="ch-image-lg">
+
 ![Transforms de Elasticsearch](/images/use-cases/observability/es-transforms.webp)
+
+</div>
 
 Los transforms continuos usan [checkpoints](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html) basados en un intervalo de comprobación configurable (la [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html) del transform, con un valor predeterminado de 1 minuto). En el diagrama anterior, asumimos que ① se crea un nuevo checkpoint después de que haya transcurrido el intervalo de comprobación. Entonces, Elasticsearch comprueba si hay cambios en el índice de origen de los transforms y detecta tres nuevos documentos `blue` (11, 12 y 13) que existen desde el checkpoint anterior. Por lo tanto, el índice de origen se filtra para incluir todos los documentos `blue` existentes y, con una [agregación compuesta](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html) (para aprovechar la [paginación](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html) de resultados), se recalculan los valores agregados (y el índice de destino se actualiza con un documento que sustituye al que contenía los valores de agregación anteriores). Del mismo modo, en ② y ③, se procesan nuevos checkpoints comprobando si hay cambios y recalculando los valores agregados a partir de todos los documentos existentes que pertenecen al mismo bucket `blue`.
 
@@ -249,7 +269,11 @@ Este modelo es posible gracias al soporte de ClickHouse para [**estados parciale
 
 A continuación esbozamos de forma abstracta el funcionamiento de las vistas materializadas incrementales (ten en cuenta que usamos el color azul para todas las filas que pertenecen al mismo grupo para el que queremos precalcular valores agregados):
 
+<div className="ch-image-lg">
+
 ![Vistas materializadas de ClickHouse](/images/use-cases/observability/ch-mvs.webp)
+
+</div>
 
 En el diagrama anterior, la tabla de origen de la vista materializada ya contiene una parte de datos que almacena algunas filas `blue` (de la 1 a la 10) que pertenecen al mismo grupo. Para este grupo, también existe ya una parte de datos en la tabla de destino de la vista que almacena un [estado parcial de agregación](https://www.youtube.com/watch?v=QDAJTKZT8y4) para el grupo `blue`. Cuando se producen inserciones ① ② ③ en la tabla de origen con nuevas filas, se crea una parte de datos correspondiente en la tabla de origen para cada inserción y, en paralelo, (solo) para cada bloque de filas recién insertadas, se calcula un estado parcial de agregación y se inserta, en forma de parte de datos, en la tabla de destino de la vista materializada. ④ Durante las fusiones de partes en segundo plano, los estados parciales de agregación se fusionan, lo que da como resultado una agregación incremental de datos.
 

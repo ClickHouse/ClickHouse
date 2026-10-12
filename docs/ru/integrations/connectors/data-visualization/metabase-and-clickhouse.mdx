@@ -26,7 +26,11 @@ Metabase — это простой в использовании инструм�
 
 В этом руководстве вы будете задавать вопросы к данным в ClickHouse через Metabase и визуализировать полученные ответы. Один из результатов будет выглядеть так:
 
+<div className="ch-image-md">
+
 ![Визуализация круговой диаграммы в Metabase с данными из ClickHouse](/images/integrations/data-visualization/metabase_08.webp)
+
+</div>
 
 <p />
 
@@ -60,13 +64,21 @@ Metabase — это простой в использовании инструм�
 
     3. Если драйвер установлен правильно, в выпадающем меню **Database type** появится **ClickHouse**:
 
+       <div className="ch-image-md">
+
        ![Выбор базы данных в Metabase, где ClickHouse доступен как один из вариантов](/images/integrations/data-visualization/metabase_01.webp)
+
+       </div>
 
     4. Укажите для своей базы данных **Display name** — это параметр Metabase, поэтому можно использовать любое имя.
 
     5. Введите сведения о подключении к базе данных ClickHouse. Включите защищённое подключение, если ваш сервер ClickHouse настроен на использование SSL. Например:
 
+       <div className="ch-image-md">
+
        ![Форма сведений о подключении в Metabase для базы данных ClickHouse](/images/integrations/data-visualization/metabase_02.webp)
+
+       </div>
 
     6. Нажмите кнопку **Save**, и Metabase просканирует базу данных на наличие таблиц.
   </Step>
@@ -76,25 +88,45 @@ Metabase — это простой в использовании инструм�
 
     2. В правом верхнем углу нажмите меню **+ New** и обратите внимание, что вы можете задавать вопросы, выполнять SQL-запросы и создавать панель мониторинга:
 
+       <div className="ch-image-sm">
+
        ![Меню New в Metabase с вариантами создания вопросов, SQL-запросов и панелей мониторинга](/images/integrations/data-visualization/metabase_03.webp)
+
+       </div>
 
     3. Например, вот SQL-запрос, выполненный к таблице `uk_price_paid`, который возвращает среднюю цену покупки по годам с 1995 по 2022:
 
+       <div className="ch-image-md">
+
        ![Редактор SQL в Metabase, показывающий запрос к данным UK price paid](/images/integrations/data-visualization/metabase_04.webp)
+
+       </div>
   </Step>
 
   <Step title="Задайте вопрос" id="5-ask-a-question">
     1. Нажмите **+ New** и выберите **Question**. Обратите внимание, что вопрос можно построить, начав с базы данных и таблицы. Например, следующий вопрос задаётся к таблице `uk_price_paid` в базе данных `default`. Вот простой вопрос, который вычисляет среднюю цену по городам в графстве Greater Manchester:
 
+       <div className="ch-image-md">
+
        ![Интерфейс конструктора вопросов Metabase с данными UK price paid](/images/integrations/data-visualization/metabase_06.webp)
+
+       </div>
 
     2. Нажмите кнопку **Visualize**, чтобы увидеть результаты в табличном виде.
 
+       <div className="ch-image-md">
+
        ![Визуализация Metabase, показывающая табличные результаты средних цен по городам](/images/integrations/data-visualization/metabase_07.webp)
+
+       </div>
 
     3. Под результатами нажмите кнопку **Visualization**, чтобы изменить визуализацию на столбчатую диаграмму (или любой другой доступный вариант):
 
+       <div className="ch-image-md">
+
        ![Круговая диаграмма в Metabase со средней ценой по городам в Greater Manchester](/images/integrations/data-visualization/metabase_08.webp)
+
+       </div>
   </Step>
 </Steps>
 

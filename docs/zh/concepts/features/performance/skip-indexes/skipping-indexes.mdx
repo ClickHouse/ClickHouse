@@ -102,7 +102,11 @@ ClickHouse 不必处理 800 MB 的 1 亿行数据，而只读取并分析了 327
 更直观地说，下图展示了 `my_value` 为 125 的 4096 行是如何被读取并选中的，以及后续这些行
 如何在不从磁盘读取的情况下被跳过：
 
+<div className="ch-image-md">
+
 ![简单跳过](/images/guides/best-practices/simple_skip.webp)
+
+</div>
 
 你可以在执行查询时启用 trace，以查看跳过索引使用情况的详细信息。要在
 clickhouse-client 中执行此操作，请设置 `send_logs_level`：
@@ -214,7 +218,11 @@ SET send_logs_level='trace';
 
 请看下面的数据分布：
 
+<div className="ch-image-md">
+
 ![糟糕的跳过示例](/images/guides/best-practices/bad_skip.webp)
+
+</div>
 
 假设主键/ORDER BY 键是 `timestamp`，并且在 `visitor_id` 上建有索引。请看下面这个查询：
 

@@ -8,6 +8,7 @@ keywords: ['Google Cloud Storage ClickHouse', 'GCS ClickHouse integration', 'GCS
 ---
 
 import BucketDetails from '/snippets/_GCS_authentication_and_bucket.mdx';
+
 <Note>
 If you're using ClickHouse Cloud on [Google Cloud](https://cloud.google.com), this page doesn't apply as your services will already be using [Google Cloud Storage](https://cloud.google.com/storage). If you're looking to `SELECT` or `INSERT` data from GCS, please see the [`gcs` table function](/reference/functions/table-functions/gcs).
 </Note>
@@ -604,8 +605,16 @@ formatReadableSize(total_bytes): 36.42 MiB
 Looking at the buckets you will see that a folder was created in each bucket with the name that was used in the `storage.xml` configuration file.  Expand the folders and you will see many files, representing the data partitions.
 #### Bucket for replica one {#bucket-for-replica-one}
 
+<div className="ch-image-lg">
+
 ![Replica one bucket in Google Cloud Storage showing folder structure with data partitions](/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp)
+
+</div>
 
 #### Bucket for replica two {#bucket-for-replica-two}
 
+<div className="ch-image-lg">
+
 ![Replica two bucket in Google Cloud Storage showing folder structure with data partitions](/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp)
+
+</div>

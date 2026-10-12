@@ -66,7 +66,11 @@ Text-to-Chart를 사용하려면 [Anthropic API Key](https://console.anthropic.c
   <Step title="데이터 소스 선택하기" id="select-data-source">
     시각화할 데이터 소스를 선택합니다. 예를 들어 **Logs**, **Traces**, **메트릭**가 있습니다.
 
+    <div className="ch-image-lg">
+
     ![Chart Explorer](/images/clickstack/text-to-chart/chart-explorer.webp)
+
+    </div>
   </Step>
 
   <Step title="텍스트 프롬프트 입력하기" id="enter-text-prompt">
@@ -78,7 +82,11 @@ Text-to-Chart를 사용하려면 [Anthropic API Key](https://console.anthropic.c
 
     ClickStack은 프롬프트를 쿼리로 변환하고 시각화를 자동으로 렌더링합니다.
 
+    <div className="ch-image-lg">
+
     ![텍스트를 차트로](/images/clickstack/text-to-chart/text-to-chart.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -99,7 +107,11 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 * **Username**: `otel_demo`
 * **Password**: 비워 두세요
 
+<div className="ch-image-lg">
+
 ![연결 생성](/images/clickstack/text-to-chart/create-connection.webp)
+
+</div>
 
 그런 다음 각 소스인 **Logs**, **Traces**, **메트릭**, **Sessions**가 `otel_v2` 데이터베이스를 사용하도록 수정합니다. 소스 구성에 대한 자세한 내용은 [원격 데모 데이터세트 가이드](/ko/clickstack/example-datasets/remote-demo-data)를 참조하십시오.
 

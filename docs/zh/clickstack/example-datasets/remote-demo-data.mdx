@@ -60,7 +60,11 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     前往 `Team Settings`，然后在 `Local Connection` 旁点击 `Edit`：
 
+    <div className="ch-image-lg">
+
     ![编辑连接](/images/use-cases/observability/edit_connection.webp)
+
+    </div>
 
     将连接重命名为 `Demo`，然后在后续表单中填入以下演示服务器的连接信息：
 
@@ -69,7 +73,11 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
     * `Username`: `otel_demo`
     * `Password`: 留空
 
+    <div className="ch-image-lg">
+
     ![编辑 Demo 连接](/images/use-cases/observability/hyperdx-demo/edit_demo_connection.webp)
+
+    </div>
   </Step>
 
   <Step title="修改数据源" id="modify-sources">
@@ -81,7 +89,11 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     向上滚动到 `Sources`，将各个数据源——`Logs`、`Traces`、`Metrics` 和 `Sessions`——修改为使用 `otel_v2` 数据库。
 
+    <div className="ch-image-lg">
+
     ![编辑 Demo 数据源](/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp)
+
+    </div>
 
     <Note>
       你可能需要重新加载页面，以确保每个数据源中都列出了完整的数据库列表。
@@ -91,7 +103,11 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
   <Step title="调整时间范围" id="adjust-the-timeframe">
     将时间调整为通过右上角的时间选择器显示过去 `1 day` 的所有数据。
 
+    <div className="ch-image-lg">
+
     ![步骤 2](/images/use-cases/observability/hyperdx-demo/step_2.webp)
+
+    </div>
 
     你可能会注意到概览柱状图中的错误数量有细微变化，若干连续的柱子中红色部分会略有增加。
 
@@ -105,7 +121,11 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     这样一来，错误会更加明显：
 
+    <div className="ch-image-lg">
+
     ![第 3 步](/images/use-cases/observability/hyperdx-demo/step_3.webp)
+
+    </div>
   </Step>
 
   <Step title="识别错误模式" id="identify-error-patterns">
@@ -113,7 +133,11 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     这些错误聚类揭示了与支付失败相关的问题，其中包括一个名为 `Failed to place order` 的模式。其他聚类还表明存在银行卡扣费问题以及缓存已满的情况。
 
+    <div className="ch-image-lg">
+
     ![步骤 4](/images/use-cases/observability/hyperdx-demo/step_4.webp)
+
+    </div>
 
     请注意，这些错误聚类很可能来自不同的服务。
   </Step>
@@ -123,13 +147,21 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     这将显示与 `frontend` 服务相关的该错误的所有发生记录列表：
 
+    <div className="ch-image-lg">
+
     ![第 5 步](/images/use-cases/observability/hyperdx-demo/step_5.webp)
+
+    </div>
 
     选择其中任意一条错误记录。系统会详细显示日志元数据。查看 `Overview` 和 `Column Values` 后，可以看出由于缓存问题，银行卡扣费出现了异常：
 
     `failed to charge card: could not charge the card: rpc error: code = Unknown desc = Visa cache full: cannot add new item.`
 
+    <div className="ch-image-lg">
+
     ![第 6 步](/images/use-cases/observability/hyperdx-demo/step_6.webp)
+
+    </div>
   </Step>
 
   <Step title="在 Explore 中浏览基础设施" id="explore-the-infrastructure">
@@ -139,7 +171,11 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     选择 `Infrastructure` 选项卡，查看 `frontend` 服务底层 Pod (容器组) 的相关指标，并将时间范围扩展到 `1d`：
 
+    <div className="ch-image-lg">
+
     ![第 7 步](/images/use-cases/observability/hyperdx-demo/step_7.webp)
+
+    </div>
 
     这个问题看起来不像与基础设施有关——在这段时间内，无论错误发生前还是发生后，指标都没有明显变化。关闭基础设施选项卡。
   </Step>
@@ -149,11 +185,19 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     选择 `Trace` 以可视化相关的 trace。向下滚动该视图，我们可以看到 HyperDX 如何将跨多个微服务的分布式 trace 可视化，并连接各个服务中的 span。一次支付显然会涉及多个微服务，包括执行结账和货币转换的服务。
 
+    <div className="ch-image-lg">
+
     ![步骤 8](/images/use-cases/observability/hyperdx-demo/step_8.webp)
+
+    </div>
 
     继续滚动到视图底部后，我们可以看到是 `payment` 服务引发了该错误，并且该错误会沿着调用链逐级向上传播。
 
+    <div className="ch-image-lg">
+
     ![步骤 9](/images/use-cases/observability/hyperdx-demo/step_9.webp)
+
+    </div>
   </Step>
 
   <Step title="搜索链路追踪数据" id="searching-traces">
@@ -161,25 +205,45 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     选择 `搜索`，切换到主搜索视图。将数据源切换为 `Traces`，然后选择 `结果表` 视图。**确保时间范围仍设置为最近一天。**
 
+    <div className="ch-image-lg">
+
     ![步骤 10](/images/use-cases/observability/hyperdx-demo/step_10.webp)
+
+    </div>
 
     此视图显示最近一天内的所有链路追踪。我们知道问题出在支付服务，因此请在 `ServiceName` 上应用 `payment` 过滤器。
 
+    <div className="ch-image-lg">
+
     ![步骤 11](/images/use-cases/observability/hyperdx-demo/step_11.webp)
+
+    </div>
 
     如果选择 `Event Patterns`，对这些链路追踪应用事件聚类，我们就能立刻看到 `payment` 服务中的缓存问题。
 
+    <div className="ch-image-lg">
+
     ![步骤 12](/images/use-cases/observability/hyperdx-demo/step_12.webp)
+
+    </div>
   </Step>
 
   <Step title="在 Explore 中查看 trace 关联的基础设施" id="explore-infrastructure-for-a-trace">
     点击 `结果表` 切换到结果视图。使用 `StatusCode` 过滤器并将值设为 `Error`，筛选出错误。
 
+    <div className="ch-image-lg">
+
     ![步骤 13](/images/use-cases/observability/hyperdx-demo/step_13.webp)
+
+    </div>
 
     选择一条 `Error: Visa cache full: cannot add new item.` 错误，切换到 `Infrastructure` 选项卡，并将时间范围扩展到 `1d`。
 
+    <div className="ch-image-lg">
+
     ![步骤 14](/images/use-cases/observability/hyperdx-demo/step_14.webp)
+
+    </div>
 
     通过将链路追踪与指标关联起来，我们可以看到，`payment` 服务的内存和 CPU 先是上升，随后又降到 `0` (这可以归因于 pod (容器组) 重启) ——这表明缓存问题引发了资源方面的问题。可以预期，这已经影响了支付完成时间。
   </Step>
@@ -191,17 +255,29 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     返回结果表视图，并选择包含这些错误的时间段以缩小数据范围。请确保选择错误出现前左侧的数小时，以及在可能的情况下也包含错误出现后的时间 (该问题可能仍在持续) ：
 
+    <div className="ch-image-lg">
+
     ![步骤 15](/images/use-cases/observability/hyperdx-demo/step_15.webp)
+
+    </div>
 
     移除错误过滤器，然后从左侧的 `分析模式` 菜单中选择 `Event Deltas`。
 
+    <div className="ch-image-lg">
+
     ![步骤 16](/images/use-cases/observability/hyperdx-demo/step_16.webp)
+
+    </div>
 
     顶部面板显示的是耗时分布，颜色表示事件密度 (span 数量) 。位于主要集中区域之外的那部分事件，通常就是值得进一步调查的对象。
 
     如果我们选择耗时大于 `1ms` 的事件，并应用 `Filter by selection` 过滤器，就可以分析“正常”事件与耗时约为 0ms 的高密度 span 组之间的差异：
 
+    <div className="ch-image-lg">
+
     ![步骤 17](/images/use-cases/observability/hyperdx-demo/step_17.webp)
+
+    </div>
 
     在针对这部分数据子集完成分析后，我们可以看到，选择范围之外的“background” spans 大多是 Visa 事务，并且由于缓存错误而产生了 0ms 的响应。
   </Step>
@@ -230,11 +306,19 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     点击 `▶️` 后，即可看到支付性能如何随时间逐渐恶化。
 
+    <div className="ch-image-lg">
+
     ![第 18 步](/images/use-cases/observability/hyperdx-demo/step_18.webp)
+
+    </div>
 
     如果将 `Group By` 设置为 `SpanAttributes['app.payment.card_type']` (只需输入 `card` 即可自动补全) ，我们就能看到与 Mastercard 相比，该服务在 Visa 交易上的性能是如何下降的：
 
+    <div className="ch-image-lg">
+
     ![第 19 步](/images/use-cases/observability/hyperdx-demo/step_19.webp)
+
+    </div>
 
     请注意，一旦发生错误，响应会在 `0s` 返回。
   </Step>
@@ -252,7 +336,11 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     我们可以看到，缓存大小在 4–5 小时内持续增长 (很可能是在一次软件部署之后) ，随后达到 `100,000` 的最大值。通过 `Sample Matched Events`，我们可以看到这些错误与缓存达到该上限存在关联；此后，记录显示其大小为 `0`，同时响应也在 `0s` 内返回。
 
+    <div className="ch-image-lg">
+
     ![步骤 20](/images/use-cases/observability/hyperdx-demo/step_20.webp)
+
+    </div>
 
     总之，通过依次分析日志、链路追踪，最后再看指标，我们得出以下结论：
 
@@ -272,11 +360,19 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     先在左侧菜单中打开 `Client Sessions` 选项卡，然后确认数据源设置为 `Sessions`，时间范围设置为 `Last 1 day`：
 
+    <div className="ch-image-lg">
+
     ![第 21 步](/images/use-cases/observability/hyperdx-demo/step_21.webp)
+
+    </div>
 
     搜索 `SpanAttributes.userEmail: Ronny.Windler`，找到该客户的会话。选择该会话后，左侧会显示该客户会话的浏览器事件及关联 spans，右侧则会重新呈现用户的浏览器体验：
 
+    <div className="ch-image-lg">
+
     ![第 22 步](/images/use-cases/observability/hyperdx-demo/step_22.webp)
+
+    </div>
   </Step>
 
   <Step title="会话回放" id="replaying-sessions">
@@ -284,11 +380,19 @@ SRE 团队将使用 HyperDX 分析日志、链路追踪和指标，以诊断并�
 
     如果滚动到 spans 的底部，可以看到一个与 `/api/checkout` 关联的 `500` 错误。选择这个特定 span 的 ▶️ 按钮后，回放会跳转到该会话中的这一位置，让我们能够确认客户当时的体验——支付似乎就是无法完成，而且界面上没有显示任何错误。
 
+    <div className="ch-image-lg">
+
     ![步骤 23](/images/use-cases/observability/hyperdx-demo/step_23.webp)
+
+    </div>
 
     选择该 span 后，我们可以确认这是由内部错误引起的。点击 `Trace` 选项卡并滚动查看相连的 spans 后，我们能够确认该客户确实受到了我们的缓存问题影响。
 
+    <div className="ch-image-lg">
+
     ![步骤 24](/images/use-cases/observability/hyperdx-demo/step_24.webp)
+
+    </div>
   </Step>
 </Steps>
 

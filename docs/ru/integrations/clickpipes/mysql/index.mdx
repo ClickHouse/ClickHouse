@@ -11,6 +11,7 @@ integration:
 ---
 
 import ChangingTLSSettings from '/snippets/ru/clickpipes/_changing_tls_settings.mdx';
+
 import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.mdx';
 
 MySQL ClickPipe предоставляет полностью управляемое и отказоустойчивое решение для приёма данных из баз данных MySQL и MariaDB в ClickHouse Cloud. Он поддерживает как **пакетную загрузку** для одноразовой ингестии, так и **CDC (фиксацию изменений данных)** для непрерывной ингестии.
@@ -45,15 +46,27 @@ MySQL ClickPipes можно развёртывать и управлять им�
 
 1. В консоли ClickHouse Cloud перейдите к своему сервису ClickHouse Cloud.
 
+<div className="ch-image-lg">
+
 ![Сервис ClickHouse Cloud](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
+
+</div>
 
 2. Выберите кнопку `Data Sources` в меню слева и нажмите «Set up a ClickPipe»
 
+<div className="ch-image-lg">
+
 ![Выбор импорта](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
+
+</div>
 
 3. Выберите плитку `MySQL CDC`
 
+<div className="ch-image-lg">
+
 ![Выберите MySQL](/images/integrations/data-ingestion/clickpipes/mysql/mysql-tile.webp)
+
+</div>
 
 ### Добавьте подключение к исходной базе данных MySQL {#add-your-source-mysql-database-connection}
 
@@ -64,7 +77,11 @@ MySQL ClickPipes можно развёртывать и управлять им�
   Дополнительные сведения см. в руководствах по настройке исходной базы данных MySQL, ссылки на которые приведены [в верхней части этой страницы](#prerequisites).
 </Info>
 
+<div className="ch-image-lg">
+
 ![Заполните сведения о подключении](/images/integrations/data-ingestion/clickpipes/mysql/mysql-connection-details.webp)
+
+</div>
 
 #### (Необязательно) Изменение настроек TLS {#optional-changing-tls-settings}
 
@@ -78,7 +95,11 @@ MySQL ClickPipes можно развёртывать и управлять им�
 
 2. Заполните сведения для SSH-подключения.
 
+   <div className="ch-image-lg">
+
    ![SSH-туннелирование](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
+
+   </div>
 
 3. Чтобы использовать аутентификацию по ключу, нажмите &quot;Revoke and generate key pair&quot;, чтобы создать новую пару ключей, и скопируйте сгенерированный открытый ключ на ваш SSH-сервер в `~/.ssh/authorized_keys`.
 
@@ -105,7 +126,11 @@ MySQL ClickPipes можно развёртывать и управлять им�
 
 5. Здесь вы можете выбрать целевую базу данных для вашего ClickPipe. Можно выбрать существующую базу данных или создать новую.
 
+   <div className="ch-image-lg">
+
    ![Выберите целевую базу данных](/images/integrations/data-ingestion/clickpipes/mysql/select-destination-db.webp)
+
+   </div>
 
 6. Вы можете выбрать таблицы, которые хотите реплицировать из исходной базы данных MySQL. При выборе таблиц также можно переименовать их в целевой базе данных ClickHouse и исключить отдельные столбцы.
 
@@ -115,7 +140,11 @@ MySQL ClickPipes можно развёртывать и управлять им�
 
 8. Выберите роль &quot;Full access&quot; в раскрывающемся списке разрешений и нажмите &quot;Complete Setup&quot;.
 
+   <div className="ch-image-lg">
+
    ![Проверка разрешений](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
+
+   </div>
 
 Наконец, см. страницу [&quot;FAQ по ClickPipes для MySQL&quot;](/ru/integrations/clickpipes/mysql/faq), где описаны распространённые проблемы и способы их решения.
 

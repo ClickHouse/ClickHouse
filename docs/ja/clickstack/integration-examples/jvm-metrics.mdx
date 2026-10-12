@@ -39,7 +39,11 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     3. **Team Settings → API Keys** に移動します
     4. **インジェスト API key** をコピーします
 
+    <div className="ch-image-lg">
+
     ![ClickStack API key](/images/clickstack/api-key.webp)
+
+    </div>
   </Step>
 
   <Step title="OpenTelemetry Java agent をダウンロードする" id="download-agent">
@@ -208,17 +212,29 @@ ClickStack で JVM アプリケーションを監視できるように、JVM メ
     1. HyperDX を開き、Dashboards セクションに移動します
     2. 右上の三点メニューから **Import Dashboard** をクリックします
 
+    <div className="ch-image-lg">
+
     ![ダッシュボードのインポートボタン](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. `jvm-metrics-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
 
+    <div className="ch-image-lg">
+
     ![インポートを完了](/images/clickstack/jvm/jvm-metrics-import.webp)
+
+    </div>
   </Step>
 
   <Step title="ダッシュボードを表示する" id="created-dashboard">
     ダッシュボードは、すべての可視化が事前に設定された状態で作成されます。
 
+    <div className="ch-image-lg">
+
     ![Kafka メトリクス ダッシュボード](/images/clickstack/jvm/jvm-metrics-dashboard.webp)
+
+    </div>
 
     <Note>
       デモデータセットでは、時間範囲を **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)** に設定してください。ローカルのタイムゾーンに応じて調整してください。

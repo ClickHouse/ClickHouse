@@ -44,7 +44,11 @@ Según los [benchmarks de Facebook](https://facebook.github.io/zstd/#benchmarks)
 | mode                | byte    | Modo de compresión                                                                                |
 | compressed&#95;data | binary  | Bloque de datos comprimidos                                                                       |
 
+<div className="ch-image-md">
+
 ![Diagrama que ilustra la estructura del bloque de compresión de ClickHouse](/images/data-compression/ch_compression_block.webp)
+
+</div>
 
 El encabezado es (raw&#95;size + data&#95;size + mode); el tamaño bruto consiste en len(header + compressed&#95;data).
 

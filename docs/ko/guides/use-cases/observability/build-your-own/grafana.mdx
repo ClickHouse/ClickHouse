@@ -28,7 +28,11 @@ Grafana에서 ClickHouse 데이터 소스를 구성할 때 플러그인에서 �
 
 Traces 구성은 약간 더 복잡합니다(전체 목록은 [여기](/ko/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)에서 확인할 수 있습니다). 여기서 필요한 컬럼은 전체 trace profile을 구성하는 후속 쿼리를 추상화할 수 있도록 하기 위한 것입니다. 이러한 쿼리는 데이터가 OTel과 유사한 방식으로 구조화되어 있다고 가정하므로, 표준 스키마에서 크게 벗어난 경우 이 기능을 활용하려면 뷰를 사용해야 합니다.
 
+<div className="ch-image-sm">
+
 ![Connector config](/images/use-cases/observability/observability-15.webp)
+
+</div>
 
 구성이 완료되면 [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/)로 이동해 로그와 트레이스 검색을 시작할 수 있습니다.
 
@@ -42,7 +46,11 @@ Traces 구성은 약간 더 복잡합니다(전체 목록은 [여기](/ko/refere
 SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
 ```
 
+<div className="ch-image-lg">
+
 ![커넥터 로그 구성](/images/use-cases/observability/observability-16.webp)
+
+</div>
 
 쿼리 빌더를 사용하면 SQL을 직접 작성하지 않고도 쿼리를 손쉽게 수정할 수 있습니다. 키워드가 포함된 로그를 찾는 것을 비롯한 필터링 작업도 쿼리 빌더에서 수행할 수 있습니다. 더 복잡한 쿼리를 작성하려면 SQL Editor로 전환할 수 있습니다. 적절한 컬럼이 반환되고 Query Type으로 `logs`를 선택하면 결과가 로그로 렌더링됩니다. 로그 렌더링에 필요한 컬럼은 [여기](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format)에 나와 있습니다.
 
@@ -52,7 +60,11 @@ SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as t
 
 로그에 트레이스 ID가 포함되어 있으면 특정 로그 항목에서 해당 트레이스로 바로 이동할 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![로그에서 트레이스로](/images/use-cases/observability/observability-17.webp)
+
+</div>
 
 <div id="traces">
   ## 트레이스
@@ -75,7 +87,11 @@ WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
 
 이 쿼리는 Grafana에서 필요한 컬럼 이름을 반환하며, 아래와 같이 트레이스 테이블을 표시합니다. SQL을 작성하지 않고도 duration이나 다른 컬럼을 기준으로 필터링할 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![Traces](/images/use-cases/observability/observability-18.webp)
+
+</div>
 
 더 복잡한 쿼리를 작성하려는 사용자는 `SQL Editor`로 전환할 수 있습니다.
 
@@ -113,7 +129,11 @@ LIMIT 1000
   위 쿼리는 트레이스 ID 조회를 수행할 때 materialized view `otel_traces_trace_id_ts`를 사용합니다. 자세한 내용은 [쿼리 가속화 - 조회를 위한 materialized view 사용](/ko/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups)을 참조하십시오.
 </Note>
 
+<div className="ch-image-lg">
+
 ![트레이스 세부 정보](/images/use-cases/observability/observability-19.webp)
+
+</div>
 
 <div id="traces-to-logs">
   ### 트레이스에서 로그로
@@ -129,7 +149,11 @@ WHERE ( traceID = '<trace_id>' )
 ORDER BY timestamp ASC LIMIT 1000
 ```
 
+<div className="ch-image-lg">
+
 ![트레이스에서 로그로](/images/use-cases/observability/observability-20.webp)
+
+</div>
 
 <div id="dashboards">
   ## 대시보드
@@ -139,7 +163,11 @@ Grafana에서 ClickHouse 데이터 소스를 사용해 대시보드를 만들 �
 
 이 플러그인은 바로 사용할 수 있는 여러 대시보드를 제공하며, 여기에는 OTel 사양을 준수하는 로깅 및 트레이싱 데이터용 예시 대시보드인 &quot;Simple ClickHouse OTel dashboarding&quot;도 포함됩니다. 이 대시보드를 사용하려면 OTel의 기본 컬럼 이름 규칙을 따라야 하며, 데이터 소스 구성에서 설치할 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![대시보드](/images/use-cases/observability/observability-21.webp)
+
+</div>
 
 아래에는 시각화를 만들 때 유용한 몇 가지 간단한 팁을 제공합니다.
 
@@ -162,7 +190,11 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
+<div className="ch-image-lg">
+
 ![시계열](/images/use-cases/observability/observability-22.webp)
+
+</div>
 
 <div id="multi-line-charts">
   ### 다중 선 차트
@@ -189,7 +221,11 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
+<div className="ch-image-lg">
+
 ![여러 선이 있는 차트](/images/use-cases/observability/observability-23.webp)
+
+</div>
 
 <div id="visualizing-geo-data">
   ### Geo 데이터 시각화
@@ -215,4 +251,8 @@ FROM coords
 GROUP BY hash
 ```
 
+<div className="ch-image-lg">
+
 ![Geo 데이터 시각화](/images/use-cases/observability/observability-24.webp)
+
+</div>

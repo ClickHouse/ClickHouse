@@ -197,9 +197,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     3. 使用 `source:postgresql` 过滤，以查看 PostgreSQL 特有的日志
     4. 你应该会看到结构化的日志条目，其中包含 `user_name`、`database_name`、`error_severity`、`message`、`query` 等字段。
 
+    <div className="ch-image-lg">
+
     ![日志搜索视图](/images/clickstack/postgres/postgres-logs-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![日志视图](/images/clickstack/postgres/postgres-log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -289,9 +297,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       HyperDX 会以您浏览器的本地时区显示时间戳。演示数据的时间范围为 **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**。较大的时间范围可确保无论您身处何地都能看到演示日志。看到日志后，您可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
     </Info>
 
+    <div className="ch-image-lg">
+
     ![日志搜索视图](/images/clickstack/postgres/postgres-logs-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![日志视图](/images/clickstack/postgres/postgres-log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -310,17 +326,29 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     1. 打开 HyperDX，进入仪表盘部分
     2. 点击右上角省略号菜单中的 **Import Dashboard**
 
+    <div className="ch-image-lg">
+
     ![导入仪表盘按钮](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. 上传 `postgresql-logs-dashboard.json` 文件，然后点击 **Finish Import**
 
+    <div className="ch-image-lg">
+
     ![完成导入](/images/clickstack/postgres/import-logs-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="查看仪表盘" id="created-dashboard">
     仪表盘创建后，其中的所有可视化都已预先配置完成：
 
+    <div className="ch-image-lg">
+
     ![日志仪表盘](/images/clickstack/postgres/postgres-logs-dashboard.webp)
+
+    </div>
 
     <Note>
       对于演示数据集，请将时间范围设置为 **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (请根据你的本地时区进行调整) 。默认情况下，导入的仪表盘不会预设时间范围。

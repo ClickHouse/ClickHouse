@@ -37,15 +37,27 @@ doc_type: 'guide'
 
 左側のメニューで `Data sources` をクリックし、次に `Predefined sample data` をクリックします。
 
+<div className="ch-image-md">
+
 ![サンプルデータセットを追加](/images/use-cases/AI_ML/jupyter/1.webp)
+
+</div>
 
 UK property price paid data (4GB) のカードで `Get started` を選択します。
 
+<div className="ch-image-md">
+
 ![英国の不動産価格データセットを選択](/images/use-cases/AI_ML/jupyter/2.webp)
+
+</div>
 
 次に `Import dataset` をクリックします。
 
+<div className="ch-image-md">
+
 ![英国の不動産価格データセットをインポート](/images/use-cases/AI_ML/jupyter/3.webp)
+
+</div>
 
 ClickHouse は `default` データベースに `pp_complete` テーブルを自動的に作成し、そのテーブルに 2,892 万行の価格データを取り込みます。
 
@@ -78,12 +90,20 @@ jupyter notebook
 新しいブラウザーウィンドウが開き、`localhost:8888` に Jupyter インターフェイスが表示されます。
 新しいノートブックを作成するには、`File` &gt; `New` &gt; `Notebook` をクリックします。
 
+<div className="ch-image-md">
+
 ![新しいノートブックを作成](/images/use-cases/AI_ML/jupyter/4.webp)
+
+</div>
 
 カーネルの選択を求められます。
 使用可能な Python カーネルをどれでも選択できます。この例では `ipykernel` を選択します。
 
+<div className="ch-image-md">
+
 ![カーネルを選択](/images/use-cases/AI_ML/jupyter/5.webp)
+
+</div>
 
 空のセルに、リモートの ClickHouse Cloud インスタンスへの接続に使用する chDB をインストールするため、次のコマンドを入力します。
 
@@ -163,7 +183,11 @@ df.head()
 
 `df.head` は、返されたデータの先頭数行のみを表示します。
 
+<div className="ch-image-md">
+
 ![DataFrame のプレビュー](/images/use-cases/AI_ML/jupyter/6.webp)
+
+</div>
 
 新しいセルで次のコマンドを実行し、カラムの型を確認します。
 
@@ -200,7 +224,11 @@ plt.tight_layout()
 plt.show()
 ```
 
+<div className="ch-image-md">
+
 ![DataFrame のプレビュー](/images/use-cases/AI_ML/jupyter/7.webp)
+
+</div>
 
 当然といえば当然ですが、ロンドンの不動産価格は時間の経過とともに大幅に上昇しています。
 
@@ -255,7 +283,11 @@ df_2.head()
   ```
 </Accordion>
 
+<div className="ch-image-md">
+
 ![データフレームのプレビュー](/images/use-cases/AI_ML/jupyter/8.webp)
+
+</div>
 
 2020 年以降のデータはありませんが、1995 年から 2019 年までの 2 つのデータセットを対比してプロットできます。
 新しいセルで、次のコマンドを実行します。
@@ -301,7 +333,11 @@ plt.tight_layout()
 plt.show()
 ```
 
+<div className="ch-image-md">
+
 ![リモートデータセットとローカルデータセットのプロット](/images/use-cases/AI_ML/jupyter/9.webp)
+
+</div>
 
 プロットしたデータを見ると、販売件数は1995年の約160,000件から始まり、急速に増加して1999年には約540,000件でピークに達したことがわかります。
 その後、件数は2000年代半ばにかけて大きく減少し、2007～2008年の金融危機ではさらに大幅に落ち込み、約140,000件まで低下しました。

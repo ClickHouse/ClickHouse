@@ -72,7 +72,11 @@ Power BI Desktop でデータのクエリを始めるには、次の手順を実
 
 付属の `.msi` インストーラーを実行し、ウィザードの指示に従います。
 
+<div className="ch-image-md">
+
 ![インストール オプションを表示する ClickHouse ODBC ドライバのインストール ウィザード](/images/integrations/data-visualization/powerbi_odbc_install.webp)
+
+</div>
 
 <br />
 
@@ -88,13 +92,21 @@ Power BI Desktop でデータのクエリを始めるには、次の手順を実
 
 スタートメニューで ODBC を検索し、&quot;ODBC Data Sources **(64-bit)**&quot; を選択します。
 
+<div className="ch-image-md">
+
 ![ODBC Data Sources (64-bit) オプションが表示された Windows の検索画面](/images/integrations/data-visualization/powerbi_odbc_search.webp)
+
+</div>
 
 <br />
 
 ClickHouse Driver が一覧に表示されていることを確認します。
 
+<div className="ch-image-md">
+
 ![Drivers タブに ClickHouse ドライバが表示されている ODBC Data Source Administrator](/images/integrations/data-visualization/powerbi_odbc_verify.webp)
+
+</div>
 
 <br />
 
@@ -108,13 +120,21 @@ ClickHouse Driver が一覧に表示されていることを確認します。
 
 Power BI Desktop のスタート画面で、「Get Data」をクリックします。
 
+<div className="ch-image-md">
+
 ![「Get Data」ボタンが表示された Power BI Desktop のホーム画面](/images/integrations/data-visualization/powerbi_get_data.webp)
+
+</div>
 
 <br />
 
 「ClickHouse」を検索します
 
+<div className="ch-image-md">
+
 ![検索バーで「ClickHouse」を検索した Power BI の「Get Data」ダイアログ](/images/integrations/data-visualization/powerbi_search_clickhouse.webp)
+
+</div>
 
 <br />
 
@@ -131,7 +151,11 @@ Power BI Desktop のスタート画面で、「Get Data」をクリックしま�
   に記載されている任意の ODBC オプションです
 * Data Connectivity mode - DirectQuery
 
+<div className="ch-image-md">
+
 ![Host、Port、Database、接続モードのフィールドを示す ClickHouse 接続ダイアログ](/images/integrations/data-visualization/powerbi_connect_db.webp)
+
+</div>
 
 <br />
 
@@ -143,7 +167,11 @@ Power BI Desktop のスタート画面で、「Get Data」をクリックしま�
 
 * ユーザー名とパスワードを指定します
 
+<div className="ch-image-md">
+
 ![ユーザー名とパスワードを入力する ClickHouse 接続の認証情報ダイアログ](/images/integrations/data-visualization/powerbi_connect_user.webp)
+
+</div>
 
 <br />
 
@@ -154,7 +182,11 @@ Power BI Desktop のスタート画面で、「Get Data」をクリックしま�
 最後に、Navigator ビューにデータベースとテーブルが表示されます。目的のテーブルを選択し、「Load」をクリックして
 ClickHouse からデータをインポートします。
 
+<div className="ch-image-md">
+
 ![ClickHouse のデータベース テーブルとサンプル データを表示する Power BI の Navigator ビュー](/images/integrations/data-visualization/powerbi_table_navigation.webp)
+
+</div>
 
 <br />
 
@@ -184,25 +216,41 @@ DirectQuery を使用する ClickHouse Connector の利用を推奨します。
 
 ドライバのインストールが完了したら、ODBC データソースを作成できます。スタートメニューで ODBC を検索し、「ODBC Data Sources (64-bit)」を選択します。
 
+<div className="ch-image-md">
+
 ![「ODBC Data Sources (64-bit)」オプションが表示された Windows の検索画面](/images/integrations/data-visualization/powerbi_odbc_search.webp)
+
+</div>
 
 <br />
 
 ここで新しい User DSN を追加します。左側の「Add」ボタンをクリックしてください。
 
+<div className="ch-image-md">
+
 ![新しい DSN を作成するために Add ボタンが強調表示された ODBC Data Source Administrator](/images/integrations/data-visualization/powerbi_add_dsn.webp)
+
+</div>
 
 <br />
 
 ODBC ドライバの Unicode 版を選択します。
 
+<div className="ch-image-md">
+
 ![ClickHouse Unicode Driver の選択が表示された Create New Data Source ダイアログ](/images/integrations/data-visualization/powerbi_select_unicode.webp)
+
+</div>
 
 <br />
 
 connection details を入力します。
 
+<div className="ch-image-sm">
+
 ![connection parameters が表示された ClickHouse ODBC Driver の設定ダイアログ](/images/integrations/data-visualization/powerbi_connection_details.webp)
+
+</div>
 
 <br />
 
@@ -222,19 +270,31 @@ connection details を入力します。
 
 Power BI Desktop のスタート画面で、&quot;Get Data&quot; をクリックします。
 
+<div className="ch-image-md">
+
 ![「Get Data」ボタンが表示された Power BI Desktop のホーム画面](/images/integrations/data-visualization/powerbi_get_data.webp)
+
+</div>
 
 <br />
 
 &quot;Other&quot; -&gt; &quot;ODBC&quot; を選択します。
 
+<div className="ch-image-md">
+
 ![Other カテゴリで ODBC オプションが選択された Power BI の Get Data ダイアログ](/images/integrations/data-visualization/powerbi_select_odbc.webp)
+
+</div>
 
 <br />
 
 一覧から、先ほど作成したデータソースを選択します。
 
+<div className="ch-image-md">
+
 ![設定済みの ClickHouse DSN が表示された ODBC ドライバの選択ダイアログ](/images/integrations/data-visualization/powerbi_select_dsn.webp)
+
+</div>
 
 <br />
 
@@ -242,13 +302,21 @@ Power BI Desktop のスタート画面で、&quot;Get Data&quot; をクリック
   データソースの作成時に認証情報を指定しなかった場合は、ユーザー名とパスワードの入力を求められます。
 </Note>
 
+<div className="ch-image-md">
+
 ![ODBC DSN 接続の認証情報ダイアログ](/images/integrations/data-visualization/powerbi_dsn_credentials.webp)
+
+</div>
 
 <br />
 
 最後に、Navigator ビューにデータベースとテーブルが表示されます。目的のテーブルを選択し、&quot;Load&quot; をクリックして ClickHouse からデータをインポートします。
 
+<div className="ch-image-md">
+
 ![ClickHouse のデータベースとテーブル、およびサンプルデータが表示された Power BI の Navigator ビュー](/images/integrations/data-visualization/powerbi_table_navigation.webp)
+
+</div>
 
 <br />
 
@@ -315,7 +383,11 @@ UInt64 以上の符号なし整数型は、データセットに自動的には�
 Text
 に設定できます。
 
+<div className="ch-image-md">
+
 ![UInt64 カラムのデータ型変換を表示する Power Query Editor](/images/integrations/data-visualization/powerbi_16.webp)
+
+</div>
 
 <br />
 

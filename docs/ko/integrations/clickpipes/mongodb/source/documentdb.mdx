@@ -25,17 +25,33 @@ ClickPipes는 DocumentDB 5.0 버전을 지원합니다.
 
 1. 왼쪽 패널에서 `Parameter groups`를 클릭한 다음, DocumentDB 클러스터에서 사용 중인 parameter group을 찾으십시오(기본 parameter group을 사용 중이면, 이를 수정하려면 먼저 새 parameter group을 생성해야 합니다).
 
+<div className="ch-image-lg">
+
 ![parameter group 선택](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp)
+
+</div>
 
 2. `change_stream_log_retention_duration`를 검색한 다음, 해당 항목을 선택하여 `259200`(72시간)으로 수정하십시오.
 
+<div className="ch-image-lg">
+
 ![parameter group 수정](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp)
+
+</div>
 
 3. `Apply Changes`를 클릭하여 수정한 parameter group을 DocumentDB 클러스터에 즉시 적용하십시오. parameter group의 상태가 `applying`으로 변경된 후, 변경 사항이 적용되면 `in-sync`로 바뀝니다.
 
+<div className="ch-image-lg">
+
 ![parameter group 적용](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![parameter group 상태](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp)
+
+</div>
 
 <div id="update-change-stream-log-retention-via-aws-cli">
   ### AWS CLI로 변경 스트림 로그 보존 기간 업데이트

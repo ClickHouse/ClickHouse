@@ -71,7 +71,11 @@ Actualmente, la configuración de AWS Glue Schema Registry solo está disponible
 
 En el asistente para crear un ClickPipe, habilite **Registro de esquemas** en el paso de conexión de Kafka y establezca **Tipo de registro** en **AWS Glue**:
 
+<div className="ch-image-lg">
+
 ![Panel de registro de esquemas con AWS Glue seleccionado](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
+
+</div>
 
 | Campo               | Obligatorio | Descripción                                                                                                                                                                                             | Ejemplo                                                    |
 | ------------------- | ----------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -121,7 +125,11 @@ Use esta opción si su broker no se autentica con IAM (SASL/SCRAM, SASL/PLAIN, m
   <Step title="Obtenga el ARN del rol de IAM del servicio de ClickHouse" id="obtain-clickhouse-service-iam-role-arn">
     Abra el servicio, seleccione la pestaña **Settings**, desplácese hasta la sección **Network security information** y copie el valor de **Service role ID (IAM)**, un ARN con el formato `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. En adelante, se hará referencia a este valor como `{ClickHouse_IAM_ARN}`. Cada servicio de ClickHouse desplegado en AWS tiene su propio rol, por lo que este valor es distinto para cada servicio.
 
+    <div className="ch-image-lg">
+
     ![ID del rol de servicio (IAM)](/images/cloud/security/secures3_arn.webp)
+
+    </div>
   </Step>
 
   <Step title="Cree el rol de IAM del registro" id="create-registry-iam-role">

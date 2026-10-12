@@ -14,7 +14,11 @@ doc_type: 'guide'
 
 TLDR : parce que ClickHouse est plus rapide, moins cher et plus puissant que BigQuery pour l’analyse de données moderne :
 
+<div className="ch-image-md">
+
 ![ClickHouse vs BigQuery](/images/migrations/bigquery-2.webp)
+
+</div>
 
 <div id="loading-data-from-bigquery-to-clickhouse-cloud">
   ## Chargement de données de BigQuery vers ClickHouse Cloud
@@ -26,7 +30,11 @@ TLDR : parce que ClickHouse est plus rapide, moins cher et plus puissant que Bi
 
 Comme jeu de données d’exemple pour illustrer une migration typique de BigQuery vers ClickHouse Cloud, nous utilisons le jeu de données Stack Overflow décrit [ici](/fr/get-started/sample-datasets/stackoverflow). Il contient tous les `post`, `vote`, `user`, `comment` et `badge` apparus sur Stack Overflow entre 2008 et avril 2024. Le schéma BigQuery de ces données est présenté ci-dessous :
 
+<div className="ch-image-lg">
+
 ![Schéma](/images/migrations/bigquery-3.webp)
+
+</div>
 
 Pour les utilisateurs qui souhaitent charger ce jeu de données dans une instance BigQuery afin de tester les étapes de migration, nous fournissons les données de ces tables au format Parquet dans un GCS bucket, et les commandes DDL permettant de créer et de charger les tables dans BigQuery sont disponibles [ici](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==).
 
@@ -49,7 +57,11 @@ BigQuery prend en charge l’exportation de données vers le stockage objet de G
 
 2. Importez les données dans ClickHouse Cloud. Pour cela, nous pouvons utiliser la [fonction de table gcs](/fr/reference/functions/table-functions/gcs). Les requêtes DDL et d’importation sont disponibles [ici](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==). Notez que, comme une instance ClickHouse Cloud se compose de plusieurs nœuds de calcul, nous utilisons la [fonction de table s3Cluster](/fr/reference/functions/table-functions/s3Cluster) à la place de la fonction de table `gcs`. Cette fonction fonctionne également avec les buckets GCS et [utilise tous les nœuds d’un service ClickHouse Cloud](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers) pour charger les données en parallèle.
 
+<div className="ch-image-md">
+
 ![Chargement en masse](/images/migrations/bigquery-4.webp)
+
+</div>
 
 Cette approche présente plusieurs avantages :
 
@@ -159,7 +171,11 @@ Contrairement à BigQuery, ClickHouse crée automatiquement [un index primaire (
 * L’efficacité de la mémoire et du disque est primordiale à l’échelle à laquelle ClickHouse est souvent utilisé. Les données sont écrites dans les tables ClickHouse en fragments appelés parts, selon des règles appliquées pour fusionner ces parts en arrière-plan. Dans ClickHouse, chaque part possède son propre index primaire. Lorsque des parts sont fusionnées, les index primaires de la part fusionnée le sont également. À noter que ces index ne sont pas construits pour chaque ligne. À la place, l’index primaire d’une part contient une entrée d’index par groupe de lignes : cette technique s’appelle l’indexation sparse.
 * L’indexation sparse est possible parce que ClickHouse stocke les lignes d’une part sur disque selon l’ordre d’une clé spécifiée. Au lieu de localiser directement des lignes individuelles (comme un index basé sur un B-Tree), l’index primaire sparse permet d’identifier rapidement (via une recherche binaire sur les entrées d’index) des groupes de lignes susceptibles de correspondre à la requête. Les groupes de lignes potentiellement correspondantes ainsi localisés sont ensuite, en parallèle, transmis au moteur ClickHouse afin de trouver les correspondances. Cette conception permet à l’index primaire de rester compact (il tient entièrement en mémoire principale) tout en accélérant significativement les temps d’exécution des requêtes, en particulier pour les requêtes par plage typiques des cas d’usage analytiques. Pour plus de détails, nous recommandons [ce guide détaillé](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
+<div className="ch-image-md">
+
 ![Clés primaires ClickHouse](/images/migrations/bigquery-5.webp)
+
+</div>
 
 La clé primaire choisie dans ClickHouse détermine non seulement l’index, mais aussi l’ordre dans lequel les données sont écrites sur disque. De ce fait, elle peut avoir un impact considérable sur les taux de compression, ce qui peut, à son tour, affecter les performances des requêtes. Une clé de tri qui fait que les valeurs de la plupart des colonnes sont écrites dans un ordre contigu permettra à l’algorithme de compression sélectionné (et aux codecs) de compresser les données plus efficacement.
 
@@ -187,7 +203,11 @@ Le partitionnement contribue à améliorer les performances des requêtes en per
 
 Dans ClickHouse, le partitionnement est spécifié sur une table lors de sa définition initiale via la clause [`PARTITION BY`](/fr/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Cette clause peut contenir une expression SQL sur une ou plusieurs colonnes, dont le résultat détermine vers quelle partition une ligne est envoyée.
 
+<div className="ch-image-md">
+
 ![Partitions](/images/migrations/bigquery-6.webp)
+
+</div>
 
 Les data parts sont associées logiquement à chaque partition sur le disque et peuvent être interrogées de manière isolée. Dans l’exemple ci-dessous, nous partitionnons la table Posts par année à l’aide de l’expression [`toYear(CreationDate)`](/fr/reference/functions/regular-functions/date-time-functions#toYear). À mesure que des lignes sont insérées dans ClickHouse, cette expression est évaluée pour chaque ligne ; les lignes sont ensuite dirigées vers la partition correspondante sous la forme de nouvelles data parts appartenant à cette partition.
 
@@ -403,7 +423,11 @@ maintenues au fil des insertions de données. En outre, les requêtes peuvent si
 table, les projections étant exploitées lorsque c&#39;est possible pour accélérer le temps
 de réponse.
 
+<div className="ch-image-md">
+
 ![Projections](/images/migrations/bigquery-7.webp)
+
+</div>
 
 À l&#39;inverse, avec les vues matérialisées, l&#39;utilisateur doit sélectionner la
 table cible optimisée appropriée ou réécrire sa requête, selon les filtres.
@@ -429,7 +453,11 @@ Voici quelques exemples de requêtes comparant BigQuery à ClickHouse. Cette lis
 
 *BigQuery*
 
+<div className="ch-image-sm">
+
 ![Réécriture de requêtes BigQuery](/images/migrations/bigquery-8.webp)
+
+</div>
 
 *ClickHouse*
 
@@ -464,7 +492,11 @@ Peak memory usage: 323.37 MiB.
 
 <br />
 
+<div className="ch-image-sm">
+
 ![BigQuery 1](/images/migrations/bigquery-9.webp)
+
+</div>
 
 *ClickHouse*
 
@@ -500,9 +532,17 @@ Dans la mesure du possible, vous devriez tirer parti des fonctions d’agrégati
 
 *BigQuery*
 
+<div className="ch-image-sm">
+
 ![Fonctions d’agrégation 1](/images/migrations/bigquery-10.webp)
 
+</div>
+
+<div className="ch-image-sm">
+
 ![Fonctions d’agrégation 2](/images/migrations/bigquery-11.webp)
+
+</div>
 
 *ClickHouse*
 
@@ -558,7 +598,11 @@ Les fonctions conditionnelles et celles de traitement des tableaux simplifient c
 
 *BigQuery*
 
+<div className="ch-image-sm">
+
 ![Expressions conditionnelles et tableaux](/images/migrations/bigquery-12.webp)
+
+</div>
 
 *ClickHouse*
 

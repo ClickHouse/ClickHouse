@@ -10,6 +10,7 @@ keywords: ['ClickStack', '可观测性', '日志', '性能', '优化']
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 import OtelLogsSchema from '/snippets/zh/clickstack/_schema_otel_logs.mdx';
+
 import OtelTracesSchema from '/snippets/zh/clickstack/_schema_otel_traces.mdx';
 
 <div id="introduction">
@@ -113,7 +114,11 @@ ClickStack 将 Kubernetes 标记、服务元数据和自定义属性等元数据
 
 用户可以使用 Lucene 语法过滤链路追踪，例如 `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`：
 
+<div className="ch-image-lg">
+
 ![链路追踪过滤](/images/clickstack/performance_guide/trace_filtering.webp)
+
+</div>
 
 这会生成一个类似于以下内容的 SQL 谓词：
 
@@ -137,7 +142,11 @@ MATERIALIZED ResourceAttributes['k8s.pod.name']
 
 现在，用户可以使用 Lucene 语法高效查询 pod (容器组) 名称，例如 `PodName:"checkout-675775c4cc-f2p9c"`
 
+<div className="ch-image-lg">
+
 ![Trace 过滤 v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
+
+</div>
 
 对于新写入的数据，这样可以完全避免访问 map，并显著减少 I/O。
 
@@ -747,7 +756,11 @@ server 版本达到或高于下方相应阈值时才会生成重写后的形式�
   <Step title="更新 ClickStack UI 以从 merge 表读取数据" id="update-clickstack-ui-to-read-from-merge-tree">
     将 ClickStack UI 配置为使用 `otel_logs_merge` 作为日志数据源对应的表。
 
+    <div className="ch-image-lg">
+
     ![选择 Merge 表](/images/clickstack/performance_guide/select_merge_table.webp)
+
+    </div>
 
     此时，写入仍会继续进入使用原始主键的 `otel_logs`，而读取则通过 merge 表进行。对用户没有可见变化，也不会影响摄取。
   </Step>

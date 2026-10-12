@@ -14,7 +14,11 @@ Denormalizing data involves intentionally reversing the normalization process to
 
 This process reduces the need for complex joins at query time and can significantly speed up read operations, making it ideal for applications with heavy read requirements and complex queries. However, it can increase the complexity of write operations and maintenance, as any changes to the duplicated data must be propagated across all instances to maintain consistency.
 
+<div className="ch-image-lg">
+
 ![Denormalization in ClickHouse](/images/data-modeling/denormalization-diagram.webp)
+
+</div>
 
 <br />
 
@@ -133,7 +137,11 @@ The main observation here is that aggregated vote statistics for each post would
 
 Now let's consider our `Users` and `Badges`:
 
+<div className="ch-image-lg">
+
 ![Users and Badges schema](/images/data-modeling/denormalization-schema.webp)
+
+</div>
 
 <p></p>
 We first insert the data with the following command:

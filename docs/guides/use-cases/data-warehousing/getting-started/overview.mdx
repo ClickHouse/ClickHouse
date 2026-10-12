@@ -40,7 +40,11 @@ ORDER BY cnt DESC
 LIMIT 5
 ```
 
+<div className="ch-image-lg">
+
 ![Iceberg Query](/images/datalake/iceberg-query-direct.webp)
+
+</div>
 
 ClickHouse reads the Iceberg metadata directly from S3 and infers the schema automatically. The same approach works for [`deltaLake()`](/reference/functions/table-functions/deltalake), [`hudi()`](/reference/functions/table-functions/hudi), and [`paimon()`](/reference/functions/table-functions/paimon).
 
@@ -67,7 +71,11 @@ ORDER BY cnt DESC
 LIMIT 5
 ```
 
+<div className="ch-image-lg">
+
 ![Iceberg Query](/images/datalake/iceberg-query-engine.webp)
+
+</div>
 
 The table engine supports data caching, metadata caching, schema evolution, and time travel. See the [Querying directly](/guides/use-cases/data-warehousing/getting-started/querying-directly) guide for details on table engine features and the [support matrix](/guides/use-cases/data-warehousing/support-matrix) for a full feature comparison.
 </Step>
@@ -159,7 +167,11 @@ LIMIT 5
 
 This query scans the full dataset in S3 since Iceberg has no awareness of the `counterid` filter — expect it to take several seconds.
 
+<div className="ch-image-lg">
+
 ![Iceberg Query](/images/datalake/iceberg-query.webp)
+
+</div>
 
 Now create a MergeTree table and load the data:
 
@@ -193,7 +205,11 @@ ORDER BY cnt DESC
 LIMIT 5
 ```
 
+<div className="ch-image-lg">
+
 ![ClickHouse Query](/images/datalake/clickhouse-query.webp)
+
+</div>
 
 Because `counterid` is the first column in the `ORDER BY` key, ClickHouse's sparse primary index skips directly to the relevant granules — only reading the rows for `counterid = 38` instead of scanning all 100 million rows. The result is a dramatic speedup.
 

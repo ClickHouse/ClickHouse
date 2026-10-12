@@ -418,7 +418,11 @@ OpenTelemetry collectors 可部署为两种主要角色：
 
     此集成可确保 OTLP 端点通过自动生成的摄取 API key 进行保护，该 key 会在部署 HyperDX 应用时创建。所有发送到 collector 的遥测数据都必须包含此 API key 才能完成身份验证。您可以在 HyperDX 应用的 `Team Settings → API Keys` 中找到该 key。
 
+    <div className="ch-image-lg">
+
     ![摄取 API key](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     为进一步保障部署安全，我们建议：
 
@@ -557,7 +561,11 @@ service:
 
 如果无法保证使用大批次，可以通过 [异步插入](/zh/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts) 将批处理交给 ClickHouse。启用异步插入后，数据会先写入缓冲区，随后再异步写入数据库存储。
 
+<div className="ch-image-md">
+
 ![异步插入](/images/use-cases/observability/observability-6.webp)
+
+</div>
 
 在[启用异步插入](/zh/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)后，当 ClickHouse ① 收到一条插入查询时，查询中的数据会先 ② 立即写入内存缓冲区。等到 ③ 下一次缓冲区 flush 发生时，缓冲区中的数据会被[排序](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns)，并作为一个分片写入数据库存储。请注意，在 flush 到数据库存储之前，这些数据无法被查询到；缓冲区 flush 的行为是[可配置的](/zh/concepts/features/operations/insert/asyncinserts)。
 
@@ -581,7 +589,11 @@ service:
 
 ClickStack OTel collector 作为 gateway 实例运行——参见 [Collector roles](#collector-roles)。它们提供独立服务，通常按每个数据中心或每个区域部署。这些实例通过单一 OTLP 端点接收来自应用程序 (或其他承担 agent 角色的 collector) 的事件。通常会部署一组 collector 实例，并使用现成的负载均衡器在它们之间分摊负载。
 
+<div className="ch-image-lg">
+
 ![通过gateway进行扩缩容](/images/use-cases/observability/clickstack-with-gateways.webp)
+
+</div>
 
 这种架构的目标是将计算密集型处理从 agent 侧卸载出去，从而尽可能减少其资源占用。这些 ClickStack gateway 可以执行原本需要由 agent 完成的转换任务。此外，通过聚合来自多个 agent 的事件，这些 gateway 能够确保向 ClickHouse 发送更大的批次，从而实现高效插入。随着更多 agent 和 SDK 来源的加入，以及事件吞吐量的提升，这些 gateway collector 也可以轻松扩展。
 
@@ -597,7 +609,11 @@ ClickStack OTel collector 作为 gateway 实例运行——参见 [Collector rol
 
 但是，如果你需要很高的传递保障，或者需要数据重放能力 (可能还要重放到多个目标) ，那么 Kafka 会是一个有价值的架构补充。
 
+<div className="ch-image-lg">
+
 ![添加 Kafka](/images/use-cases/observability/observability-8.webp)
+
+</div>
 
 在这种情况下，可以将 OTel agent 配置为通过 [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md) 将数据发送到 Kafka。而 gateway 实例则使用 [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md) 来消费消息。更多细节请参阅 Confluent 和 OTel 文档。
 

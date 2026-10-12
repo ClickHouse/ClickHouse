@@ -15,7 +15,11 @@ La fonctionnalité **Query Insights** facilite l’exploitation du journal des r
 
 Après avoir sélectionné un service, l’élément de navigation **Monitoring** dans la barre latérale gauche devrait se déployer pour afficher un nouveau sous-élément **Query insights**. Cliquer sur cette option ouvre la nouvelle page Query insights :
 
+<div className="ch-image-md">
+
 ![Vue d’ensemble de l’interface utilisateur de Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
+
+</div>
 
 <div id="top-level-metrics">
   ## Métriques de haut niveau
@@ -23,7 +27,11 @@ Après avoir sélectionné un service, l’élément de navigation **Monitoring*
 
 Les encadrés statistiques en haut représentent quelques métriques de haut niveau de base des requêtes sur la période sélectionnée. En dessous, trois graphiques de séries temporelles affichent le volume de requêtes, la latence et le taux d’erreur, ventilés par type de requête (select, insert, other) sur la fenêtre temporelle sélectionnée. Le graphique de latence peut également être ajusté pour afficher les latences p50, p90 et p99 :
 
+<div className="ch-image-md">
+
 ![Graphique de latence de l’UI Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
+
+</div>
 
 <div id="recent-queries">
   ## Requêtes récentes
@@ -31,7 +39,11 @@ Les encadrés statistiques en haut représentent quelques métriques de haut niv
 
 Sous les métriques de haut niveau, un tableau affiche les entrées du journal des requêtes (regroupées par hash de requête normalisée et par utilisateur) sur la fenêtre temporelle sélectionnée :
 
+<div className="ch-image-md">
+
 ![Tableau des requêtes récentes dans l’UI Query Insights](/images/cloud/sqlconsole/insights_recent.webp)
+
+</div>
 
 Les requêtes récentes peuvent être filtrées et triées selon n’importe quel champ disponible. Le tableau peut également être configuré pour afficher ou masquer des champs supplémentaires, tels que les tables et les latences p90 et p99.
 
@@ -41,11 +53,19 @@ Les requêtes récentes peuvent être filtrées et triées selon n’importe que
 
 Sélectionner une requête dans le tableau **Requêtes récentes** ouvre un volet latéral contenant des métriques et des informations propres à la requête sélectionnée :
 
+<div className="ch-image-md">
+
 ![UI de Query Insights, drill-down sur une requête](/images/cloud/sqlconsole/insights_drilldown.webp)
+
+</div>
 
 Comme nous pouvons le voir dans le volet latéral, cette requête a été exécutée plus de 3 000 fois au cours des dernières 24 heures. Toutes les métriques de l&#39;onglet **Query info** sont agrégées, mais nous pouvons également afficher les métriques de chaque exécution en sélectionnant l&#39;onglet **Query history** :
 
+<div className="ch-image-sm">
+
 ![UI de Query Insights, informations sur la requête](/images/cloud/sqlconsole/insights_query_info.webp)
+
+</div>
 
 <br />
 

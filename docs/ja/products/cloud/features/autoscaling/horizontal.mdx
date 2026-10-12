@@ -27,11 +27,19 @@ ClickHouse Cloudの[public APIs](/ja/products/cloud/api-reference/service/instan
 
 クラスターを水平スケーリングするには、API 経由で `PATCH` リクエストを送信してレプリカ数を調整します。以下のスクリーンショットは、`3` レプリカのクラスターを `6` レプリカへスケールアウトする API 呼び出しと、それに対応するレスポンスを示しています。
 
+<div className="ch-image-lg">
+
 ![スケーリング PATCH リクエスト](/images/cloud/manage/scaling-patch-request.webp)
+
+</div>
 
 *`numReplicas` を更新する `PATCH` リクエスト*
 
+<div className="ch-image-md">
+
 ![スケーリング PATCH レスポンス](/images/cloud/manage/scaling-patch-response.webp)
+
+</div>
 
 *`PATCH` リクエストのレスポンス*
 
@@ -41,10 +49,18 @@ ClickHouse Cloudの[public APIs](/ja/products/cloud/api-reference/service/instan
 
 UI からサービスを水平スケーリングするには、**Settings** ページでそのサービスのレプリカ数を調整します。
 
+<div className="ch-image-md">
+
 ![スケーリング設定](/images/cloud/manage/scaling-configure.webp)
+
+</div>
 
 *ClickHouse Cloud Console のサービスのスケーリング設定*
 
 サービスのスケーリングが完了すると、ClickHouse Cloud Console のメトリクスダッシュボードに、そのサービスへの割り当てが正しく表示されます。以下のスクリーンショットでは、クラスターは合計メモリ `96 GiB` までスケールしており、これはそれぞれ `16 GiB` のメモリが割り当てられた `6` 個のレプリカに相当します。
 
+<div className="ch-image-md">
+
 ![スケーリング時のメモリ割り当て](/images/cloud/manage/scaling-memory-allocation.webp)
+
+</div>

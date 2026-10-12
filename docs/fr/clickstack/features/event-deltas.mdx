@@ -13,7 +13,11 @@ Event deltas associe une heatmap de latence à une analyse automatique des attri
 * **Mode de comparaison** : faites glisser un rectangle sur la heatmap pour comparer les spans à l’intérieur (Selection) à tout ce qui se trouve à l’extérieur (Background). Utile pour isoler les écarts.
 * **Drill-down itératif** : cliquez sur n’importe quelle barre pour filtrer (ou exclure) cette valeur. La heatmap est recalculée en fonction de la population filtrée, ce qui vous permet d’affiner progressivement jusqu’à ce que la cause devienne évidente.
 
+<div className="ch-image-lg">
+
 ![Vue d’ensemble d’Event deltas sur le service de paiement, avec la bande lumineuse qui monte au milieu de la fenêtre et aucune récupération visible dans le cadre](/images/clickstack/event-deltas/overview.webp)
+
+</div>
 
 Dans la capture d’écran ci-dessus, le bord droit de la heatmap se situe à environ 10 ms, et non plus au niveau de référence de 1 ms observé tout au long de la matinée. La dégradation est toujours en cours : nous observons donc l’incident en pleine évolution.
 
@@ -74,7 +78,11 @@ La forme du rectangle que vous tracez change la question que vous posez. Les deu
 
 Lorsque la heatmap montre une latence qui dérive à la hausse au fil du temps (la bande lente s’épaissit, la bande lumineuse monte, ou un point d’inflexion net sépare une période saine d’une période dégradée), faites glisser un rectangle depuis le point d’inflexion de la hausse jusqu’au bord droit de la fenêtre. Pour affiner la comparaison, placez le bas du rectangle sur la baseline saine plutôt qu’en bas de l’axe : cela isole les spans réellement plus lents que la normale dans la fenêtre dégradée, au lieu d’y inclure des spans rapides encore sains qui tombent simplement dans la même plage temporelle.
 
+<div className="ch-image-lg">
+
 ![Mode de comparaison sur le service de paiement avec le rectangle tracé depuis le point d’inflexion de la hausse jusqu’au bord droit, le bas reposant sur la baseline de 1 ms](/images/clickstack/event-deltas/before-after.webp)
+
+</div>
 
 Les barres d’attributs sous la heatmap sont triées en plaçant d’abord les plus grands écarts. Dans cet exemple, les graphiques de la rangée supérieure font ressortir les signaux les plus marqués : `SpanKind`, `SpanName` et `ScopeName` montrent chacun une nette séparation orange/vert entre la Selection lente et le Background sain. Pris ensemble, ils donnent une signature de ce qui a changé au point d’inflexion.
 
@@ -86,7 +94,11 @@ C’est la bonne forme si vous voulez poser la question « qu’est-ce qui a ch
 
 Lorsque la heatmap montre deux populations de latence nettement séparées sur l’axe de Duration, faites glisser un grand rectangle couvrant tout l’intervalle de temps, mais uniquement la bande supérieure bien distincte. La population lente devient la Selection ; la masse rapide devient le Background.
 
+<div className="ch-image-lg">
+
 ![Comparaison lent/rapide sur frontend-proxy avec un rectangle couvrant uniquement la bande supérieure nettement séparée, bien à l’écart de la masse dense](/images/clickstack/event-deltas/slow-vs-fast.webp)
+
+</div>
 
 Tracez le rectangle au plus près de la bande supérieure, en laissant un écart horizontal visible avec la masse dense. Un rectangle trop large qui empiète sur la population rapide atténue la divergence.
 
@@ -104,7 +116,11 @@ Les modes de comparaison et de distribution sont particulièrement puissants lor
 * **Exclure** : supprimer les spans ayant cette valeur
 * **Copier** : copier la valeur dans le presse-papiers
 
+<div className="ch-image-lg">
+
 ![Cliquer sur le popover d'une barre ScopeVersion affichant les pourcentages Selection vs Background et les actions filtrer, exclure, copier](/images/clickstack/event-deltas/drill-down.webp)
+
+</div>
 
 Après l&#39;application d&#39;un filtre ou d&#39;une exclusion, la sélection de la heatmap est effacée, la heatmap est recalculée pour la nouvelle population, puis le mode de distribution reprend sur cet ensemble filtré. Observez comment la heatmap évolue : un filtre efficace fait visiblement disparaître la bande lente, réduit la séparation bimodale ou atténue la dérive ascendante. Répétez l&#39;opération : repérez la valeur suspecte suivante, filtrez, examinez la nouvelle heatmap, puis les nouvelles distributions. Quelques itérations suffisent généralement à ramener une régression à un ou deux attributs.
 
@@ -120,7 +136,11 @@ Lorsque la population est suffisamment petite, basculez vers l&#39;onglet **Resu
 
 L’icône en forme d’engrenage en haut à droite du heatmap ouvre le drawer **Display Settings**.
 
+<div className="ch-image-lg">
+
 ![Drawer Display Settings avec les champs Scale, Value et Count](/images/clickstack/event-deltas/settings-drawer.webp)
+
+</div>
 
 | Paramètre | Par défaut       | Description                                                                                                                      |
 | --------- | ---------------- | -------------------------------------------------------------------------------------------------------------------------------- |

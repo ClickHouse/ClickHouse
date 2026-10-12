@@ -15,7 +15,11 @@ keywords: ['Проверка разработчика', 'macOS']
 
 При попытке выполнить любую команду `clickhouse` может появиться такая ошибка:
 
+<div className="ch-image-md">
+
 ![Диалог ошибки проверки разработчика в macOS](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
+
+</div>
 
 Чтобы обойти эту ошибку проверки, нужно снять с приложения карантин macOS: найти соответствующий параметр в окне «Системные настройки», воспользоваться терминалом или переустановить ClickHouse.
 
@@ -29,13 +33,21 @@ keywords: ['Проверка разработчика', 'macOS']
 
 2. Перейдите в раздел **Конфиденциальность и безопасность**:
 
+   <div className="ch-image-md">
+
    ![Стандартный вид настроек macOS «Конфиденциальность и безопасность»](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
+
+   </div>
 
 3. Прокрутите окно вниз и найдите сообщение: *«Использование &quot;clickhouse-macos-aarch64&quot; было заблокировано, так как программа не получена от идентифицированного разработчика»*.
 
 4. Нажмите **Все равно разрешить**.
 
+   <div className="ch-image-md">
+
    ![Настройки macOS «Конфиденциальность и безопасность» с кнопкой «Все равно разрешить»](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
+
+   </div>
 
 5. Введите пароль пользователя macOS.
 

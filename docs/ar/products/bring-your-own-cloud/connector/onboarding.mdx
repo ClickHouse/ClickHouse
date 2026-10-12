@@ -7,6 +7,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
+
 <PrivatePreviewBadge />
 
 تنقلك هذه الصفحة من رمز التسجيل إلى موصل متحقَّق منه في الوضع المُدار، حيث يطبّق executor دورة حياة الخدمة التي تديرها ClickHouse Cloud. يُثبَّت موصل على عنقود Kubernetes ‏(Helm) أو جهاز افتراضي يعمل بنظام Linux ‏(systemd). يُعد التسجيل بالرمز المسار القياسي. وعندما لا تستطيع بيئتك الوصول مباشرةً إلى نقطة نهاية موصل الخاصة بك، فراجع [عمليات التثبيت المعزولة شبكيًا والمنعكسة](#air-gapped-and-mirrored-installs). ولمراقبة ClickHouse الذي تشغّله بنفسك، دون executor، مرّر `--no-managed`.
@@ -86,7 +87,11 @@ import { PrivatePreviewBadge } from '/snippets/ar/components/PrivatePreviewBadge
   <Step title="سجّل الموصل وثبّته" id="enroll-and-install">
     يستهلك `init --enroll` الرمز الخاص بك، ويحصل على شهادة عميل موقّعة وعلى منحة الـ executor على مستوى العنقود، ثم يثبّت الـ connector ويتحقق منه.
 
+    <div className="ch-image-lg">
+
     ![مسار تسجيل ClickHouse Connector](/images/cloud/reference/byoc-connector-enrollment-flow.svg)
+
+    </div>
 
     في الطرفية، يسأل `init`: ‏`Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?` مع تحديد `yes` مسبقًا. مرّر `--managed` لتخطي الـ prompt، أو `--no-managed` لتثبيت للمراقبة فقط دون الـ executor. أي تثبيت جديد غير تفاعلي دون أيٍّ من هذين الـ flags يترك الوضع المُدار معطّلًا (إعادة التشغيل بـ `--force` تحافظ على وضعية الإعداد المُستبدَل)، لذا مرّر `--managed` دائمًا في النصوص البرمجية.
 

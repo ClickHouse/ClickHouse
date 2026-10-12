@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 プロンプトライブラリは、繰り返し入力する自然言語のプロンプトを保存して再利用できる場所です。チャットのコンポーザーで使うスニペットのようなものだと考えてください。同じ分析用の質問やフォーマットの指示を複数の会話で何度も使う場合に便利です。
@@ -25,7 +26,11 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 最後に、右下の **Create Prompt** をクリックします。
 
+<div className="ch-image-lg">
+
 ![左側で + ボタンが強調表示された プロンプト パネルと、右側で開かれた Create Prompt フォーム。Prompt Name、Text、Category、Special variables、Description、Command の各フィールドと、Create Prompt ボタンが表示されている](/images/cloud/agent-builder/prompts/create-prompt.webp)
+
+</div>
 
 <div id="use-a-prompt">
   ## プロンプトを使用する
@@ -33,11 +38,19 @@ import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
 
 プロンプト パネルで、プロンプトカードの **...** メニューを開き、**Preview** を選択します。
 
+<div className="ch-image-lg">
+
 ![プロンプト パネルでプロンプトが選択され、右側にその詳細が表示され、Preview と Edit オプションを含むコンテキストメニューが開かれている](/images/cloud/agent-builder/prompts/preview.webp)
+
+</div>
 
 プレビューには、プロンプトのテキストと、その著者および日付が表示されます。**Use Prompt** をクリックすると、本文がコンポーザーに挿入されます。プロンプトに変数がある場合は、先に入力してください。
 
+<div className="ch-image-md">
+
 ![プロンプトのタイトル、著者、日付、本文テキスト、Use Prompt ボタンが表示されたプロンプトのプレビューモーダル](/images/cloud/agent-builder/prompts/use-prompt-modal.webp)
+
+</div>
 
 <div id="share-prompts">
   ## プロンプトを共有

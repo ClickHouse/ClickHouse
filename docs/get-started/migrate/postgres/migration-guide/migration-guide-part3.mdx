@@ -26,9 +26,17 @@ To understand why using your OLTP primary key in ClickHouse isn't appropriate, y
 
 For more details, we recommend this [in-depth guide](/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
+<div className="ch-image-lg">
+
 ![PostgreSQL B-Tree Index](/images/migrations/postgres-b-tree.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![PostgreSQL Sparse Index](/images/migrations/postgres-sparse-index.webp)
+
+</div>
 
 The selected key in ClickHouse will determine not only the index but also the order in which data is written on disk. Because of this, it can dramatically impact compression levels, which can, in turn, affect query performance. An ordering key that causes the values of most columns to be written in a contiguous order will allow the selected compression algorithm (and codecs) to compress the data more effectively.
 
@@ -46,7 +54,11 @@ If you're coming from Postgres, you will be familiar with the concept of table p
 
 In ClickHouse, partitioning is specified on a table when it is initially defined via the `PARTITION BY` clause. This clause can contain a SQL expression on any columns, the results of which will define which partition a row is sent to.
 
+<div className="ch-image-md">
+
 ![PostgreSQL partitions to ClickHouse partitions](/images/migrations/postgres-partitions.webp)
+
+</div>
 
 The data parts are logically associated with each partition on disk and can be queried in isolation. For the example below, we partition the `posts` table by year using the expression `toYear(CreationDate)`. As rows are inserted into ClickHouse, this expression will be evaluated against each row and routed to the resulting partition if it exists (if the row is the first for a year, the partition will be created).
 
@@ -256,7 +268,11 @@ maintained as data is inserted. Furthermore, queries can just be sent to a singl
 table where the projections are exploited where possible to speed up the response
 time.
 
+<div className="ch-image-md">
+
 ![PostgreSQL projections in ClickHouse](/images/migrations/postgres-projections.webp)
+
+</div>
 
 This is in contrast to materialized views, where the user has to select the 
 appropriate optimized target table or rewrite their query, depending on the filters.

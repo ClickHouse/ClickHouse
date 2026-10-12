@@ -68,7 +68,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     1. ClickHouse Cloud 콘솔 → **Data Sources** → **Create ClickPipe**
     2. **Source**: Amazon S3
 
+    <div className="ch-image-lg">
+
     ![Clickpipe s3](/images/clickstack/cloudflare/clickpipe-s3.webp)
+
+    </div>
 
     **연결:**
 
@@ -84,7 +88,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     * **Continuous ingestion**을 켭니다
     * **Ordering**: 사전식 순서
 
+    <div className="ch-image-lg">
+
     ![Continuous ingestion](/images/clickstack/cloudflare/continuous-ingestion.webp)
+
+    </div>
 
     Cloudflare Logpush는 날짜 기반 이름(예: `20250127/...`)으로 파일을 기록하므로 자연스럽게 사전식 순서를 따릅니다. ClickPipes는 30초마다 새 파일을 폴링하고, 마지막으로 처리한 파일보다 이름이 큰 파일을 수집합니다.
 
@@ -92,7 +100,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
 
     **Parse information**을 클릭합니다. ClickPipes가 로그 파일을 샘플링해 스키마를 자동으로 감지합니다. 매핑된 컬럼을 검토하고 필요에 따라 타입을 조정합니다. 대상 테이블의 **정렬 키**를 정의합니다. Cloudflare logs에는 `(EdgeStartTimestamp, ClientCountry, EdgeResponseStatus)`가 적절한 선택입니다.
 
+    <div className="ch-image-lg">
+
     ![Parse information](/images/clickstack/cloudflare/parse-information.webp)
+
+    </div>
 
     **Complete Setup**을 클릭합니다.
 
@@ -106,11 +118,19 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
 
     1. HyperDX → **Team Settings** → **Sources**를 엽니다
 
+    <div className="ch-image-lg">
+
     ![소스 추가](/images/clickstack/cloudflare/add-source.webp)
+
+    </div>
 
     2. **Add source**를 클릭하고 다음 설정을 구성합니다. 모든 필드에 액세스하려면 **Configure Optional Fields**를 클릭합니다:
 
+    <div className="ch-image-lg">
+
     ![선택 필드 구성](/images/clickstack/cloudflare/configure-optional-fields.webp)
+
+    </div>
 
     | Setting                            | Value                                                                                                                                                                                                                                                                                                             |
     | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -129,7 +149,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
 
     3. **Save Source**를 클릭합니다
 
+    <div className="ch-image-lg">
+
     ![소스 저장](/images/clickstack/cloudflare/save-source.webp)
+
+    </div>
 
     이렇게 하면 데이터 변환이나 중복 없이 Cloudflare의 기본 컬럼이 HyperDX의 로그 뷰어에 직접 매핑됩니다. **Body**에는 `GET /api/v1/users 200`과 같은 요청 요약이 표시되며, 모든 Cloudflare 필드를 검색 가능한 속성으로 사용할 수 있습니다.
   </Step>
@@ -141,9 +165,17 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
     * HTTP 상태 코드에 따라 색으로 구분된 심각도 수준(2xx는 INFO, 4xx는 WARN, 5xx는 ERROR)
     * `http.status_code`, `client.country`, `cache.status`, `bot.score`와 같은 검색 가능한 속성
 
+    <div className="ch-image-lg">
+
     ![검색 보기](/images/clickstack/cloudflare/search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![로그 보기](/images/clickstack/cloudflare/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -182,9 +214,17 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
 
     요청 요약, 검색 가능한 Cloudflare 속성, HTTP 상태 코드를 기준으로 한 심각도 수준이 포함된 로그 항목이 표시되어야 합니다.
 
+    <div className="ch-image-lg">
+
     ![검색 뷰](/images/clickstack/cloudflare/search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![로그 뷰](/images/clickstack/cloudflare/log-view.webp)
+
+    </div>
 
     <Info>
       **시간대 표시**
@@ -206,15 +246,27 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/)는 HTTP 요�
   <Step title="대시보드 가져오기" id="import-dashboard">
     1. HyperDX → **Dashboards** → **Import Dashboard**
 
+    <div className="ch-image-lg">
+
     ![대시보드 가져오기](/images/clickstack/cloudflare/import-dashboard.webp)
+
+    </div>
 
     2. `cloudflare-logs-dashboard.json` 업로드 → **Finish Import**
 
+    <div className="ch-image-lg">
+
     ![대시보드 가져오기](/images/clickstack/cloudflare/finish-import.webp)
+
+    </div>
   </Step>
 
   <Step title="대시보드 보기" id="view-dashboard">
+    <div className="ch-image-lg">
+
     ![예시 대시보드](/images/clickstack/cloudflare/example-dashboard.webp)
+
+    </div>
 
     <Note>
       데모 데이터세트는 시간 범위를 **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되지 않습니다.

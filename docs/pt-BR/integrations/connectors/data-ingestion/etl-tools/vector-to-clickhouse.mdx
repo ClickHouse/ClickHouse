@@ -111,7 +111,11 @@ As etapas abaixo são semelhantes para monitorar qualquer tipo de arquivo de log
     SELECT * FROM nginxdb.access_logs
     ```
 
+    <div className="ch-image-lg">
+
     ![Veja os logs do ClickHouse em formato de tabela](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
+
+    </div>
   </Step>
 
   <Step title="Fazer o Parse dos Logs" id="4-parse-the-logs">
@@ -214,7 +218,11 @@ As etapas abaixo são semelhantes para monitorar qualquer tipo de arquivo de log
     SELECT * FROM nginxdb.access_logs_view
     ```
 
+    <div className="ch-image-lg">
+
     ![Veja os logs do ClickHouse já analisados em formato de tabela](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
+
+    </div>
 
     <Note>
       A lição acima armazenou os dados em duas tabelas, mas você pode alterar a tabela inicial `nginxdb.access_logs` para usar o motor de tabela [`Null`](/pt-BR/reference/engines/table-engines/special/null).

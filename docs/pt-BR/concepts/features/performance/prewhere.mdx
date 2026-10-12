@@ -17,7 +17,11 @@ Este guia explica como a cláusula PREWHERE funciona, como medir seu impacto e c
 
 Vamos começar mostrando como uma consulta na tabela [uk&#95;price&#95;paid&#95;simple](/pt-BR/concepts/core-concepts/parts) é processada sem usar PREWHERE:
 
+<div className="ch-image-md">
+
 ![Processamento de consultas sem a otimização PREWHERE](/images/guides/best-practices/prewhere_01.webp)
+
+</div>
 
 <br />
 
@@ -43,7 +47,11 @@ As animações a seguir mostram como a consulta acima é processada com uma clá
 
 As três primeiras etapas do processamento são iguais às anteriores:
 
+<div className="ch-image-md">
+
 ![Processamento da consulta com a otimização PREWHERE](/images/guides/best-practices/prewhere_02.webp)
+
+</div>
 
 <br />
 
@@ -64,7 +72,11 @@ O ClickHouse inicia o processamento do PREWHERE ① lendo os grânulos seleciona
 
 No nosso exemplo, todos os grânulos selecionados correspondem, então ② os grânulos correspondentes, alinhados posicionalmente, da próxima coluna de filtro — `date` — são selecionados para processamento:
 
+<div className="ch-image-md">
+
 ![Etapa 1: Filtragem por town](/images/guides/best-practices/prewhere_03.webp)
+
+</div>
 
 <br />
 
@@ -75,7 +87,11 @@ Em seguida, o ClickHouse ① lê os grânulos selecionados da coluna `date` para
 
 Nesse caso, dois dos três grânulos contêm linhas correspondentes, então ② apenas os grânulos correspondentes, alinhados posicionalmente, da próxima coluna de filtro — `price` — são selecionados para processamento adicional:
 
+<div className="ch-image-md">
+
 ![Etapa 2: Filtragem por date](/images/guides/best-practices/prewhere_04.webp)
+
+</div>
 
 <br />
 
@@ -86,7 +102,11 @@ Por fim, o ClickHouse ① lê os dois grânulos selecionados da coluna `price` p
 
 Apenas um dos dois grânulos contém linhas correspondentes, então ② somente o grânulo correspondente, alinhado posicionalmente, da coluna do `SELECT` — `street` — precisa ser carregado para processamento adicional:
 
+<div className="ch-image-md">
+
 ![Etapa 2: Filtragem por price](/images/guides/best-practices/prewhere_05.webp)
+
+</div>
 
 <br />
 

@@ -93,11 +93,19 @@ O SDK Browser também oferece suporte a [mascaramento de campos de entrada e tex
 
 Navegue até **Client Sessions** na barra lateral esquerda da UI do ClickStack (HyperDX). Essa visualização lista todas as sessões de navegador capturadas, com sua duração e contagem de eventos.
 
+<div className="ch-image-lg">
+
 ![Visualização de pesquisa de replay de sessão](/images/clickstack/session-replay/replay-search-view.webp)
+
+</div>
 
 Clique no botão de reprodução de qualquer sessão para reproduzi-la. A visualização do replay mostra, à direita, a experiência do usuário reconstruída, com uma linha do tempo dos eventos do navegador — solicitações de rede, logs do console e erros — à esquerda.
 
+<div className="ch-image-lg">
+
 ![Reprodução de replay de sessão](/images/clickstack/session-replay/session-replay.webp)
+
+</div>
 
 Alterne entre os modos **Highlighted** e **All Events** para ajustar o nível de detalhe exibido na linha do tempo. Os erros são destacados em vermelho, e clicar em qualquer evento leva a reprodução até esse ponto da sessão.
 
@@ -119,7 +127,11 @@ Isso funciona porque a configuração `tracePropagationTargets` vincula spans do
 
 A correlação também funciona no sentido inverso. Ao visualizar um trace na exibição **Busca**, clique nele para abrir os detalhes do trace e, em seguida, selecione a aba **replay de sessão** para ver exatamente o que o usuário estava fazendo no momento daquele trace. Isso é especialmente útil ao investigar erros ou requisições lentas — você pode começar pelo problema no backend e ver imediatamente a experiência do usuário.
 
+<div className="ch-image-lg">
+
 ![Visualização do trace na reprodução de sessão](/images/clickstack/session-replay/trace-to-replay.webp)
+
+</div>
 
 <div id="data-storage">
   ## Como os dados de sessão são armazenados

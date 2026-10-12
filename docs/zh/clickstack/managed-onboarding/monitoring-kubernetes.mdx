@@ -300,15 +300,27 @@ hide_advert: true
   <Step title="在 ClickStack UI 中确认" id="confirm-in-ui">
     在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud)中打开你的服务，然后从左侧菜单中选择 **ClickStack**。
 
+    <div className="ch-image-lg">
+
     ![启动 ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
+
+    </div>
 
     在 **搜索视图** 中，将数据源切换为 `Logs`，并将时间范围设为 **最近 15 分钟**。几秒钟内，你应该就能看到整个集群的容器日志，并附带 `k8s.namespace.name`、`k8s.pod.name` 和 `k8s.node.name` 等属性。
 
+    <div className="ch-image-lg">
+
     ![带有 Kubernetes 日志的 ClickStack 搜索视图](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
+
+    </div>
 
     若要结合上下文查看基础设施指标和事件，请通过 **仪表盘** -&gt; **Kubernetes** 打开内置的 **Kubernetes** 仪表盘。`Pods`、`Nodes` 和 `Namespaces` 选项卡中都应显示数据。
 
+    <div className="ch-image-lg">
+
     ![ClickStack Kubernetes 仪表盘](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
+
+    </div>
 
     如果没有显示任何内容：
 

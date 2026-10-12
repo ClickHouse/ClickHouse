@@ -15,7 +15,11 @@ import { BetaBadge } from "/snippets/components/BetaBadge/BetaBadge.jsx";
 
 Connect ClickHouse Cloud to your data catalogs to access your open table format tables. You can set up connections in the **Data sources** UI. For setup via SQL, use the [`DataLakeCatalog`](/reference/engines/database-engines/datalake) database engine in your SQL editor of choice.
 
+<div className="ch-image-md">
+
 ![ClickHouse Cloud UI with data catalog integrations](/images/cloud/features/data-catalogs-ui.png)
+
+</div>
 
 Once connected, catalog tables show up in the SQL console under the database name you choose. You can query them with standard ClickHouse SQL, join them with [MergeTree](/reference/engines/table-engines/mergetree-family/mergetree) tables, and use them as sources for [materialized views](/concepts/features/materialized-views).
 
@@ -36,7 +40,11 @@ Before you connect a catalog, confirm the following:
 2. Click **+ Add catalog** if you haven't set up any data sources. Otherwise, click **Add data source** > **Add data lake catalog**.
 3. In the **Connect your data catalog** flyout, select your catalog from the **Select catalog** dropdown. If the catalog supports multiple open table formats, choose the format in **Open table format**.
 
+<div className="ch-image-lg">
+
 ![Connect your data catalog flyout with Select catalog dropdown showing AWS Glue, BigLake Metastore, Microsoft OneLake, Polaris, REST Catalog, and Unity Catalog](/images/integrations/data-catalogs/catalog-flyout-select.png)
+
+</div>
 
 </Step>
 <Step title="Add your catalog connection" id="add-your-catalog-connection">
@@ -215,7 +223,11 @@ From the **Actions** menu on a linked catalog row, you can drop the catalog conn
 
 On the **Data sources** page, find your catalog in the **Linked catalogs** table and click **View tables**.
 
+<div className="ch-image-lg">
+
 ![Linked catalogs table with View tables action](/images/integrations/data-catalogs/linked-catalogs-table.png)
+
+</div>
 
 ClickHouse opens the SQL console with your catalog database selected and lists the available tables.
 
@@ -223,7 +235,11 @@ ClickHouse opens the SQL console with your catalog database selected and lists t
 Tables may not appear immediately after you connect a catalog. Depending on the catalog, it can take up to 3 minutes for all tables to be listed.
 </Note>
 
+<div className="ch-image-lg">
+
 ![SQL console table browser showing catalog tables](/images/integrations/data-catalogs/catalog-tables-browser.png)
+
+</div>
 
 </Step>
 <Step title="Run a query" id="run-a-query">
@@ -235,7 +251,11 @@ Write a query in the SQL editor and click **Run**. Wrap the full table name in b
 SELECT * FROM `identity_profiles.identity_profiles_iceberg`
 ```
 
+<div className="ch-image-lg">
+
 ![SQL query with results using backticks for dotted table name](/images/integrations/data-catalogs/catalog-sql-query.png)
+
+</div>
 
 </Step>
 </Steps>

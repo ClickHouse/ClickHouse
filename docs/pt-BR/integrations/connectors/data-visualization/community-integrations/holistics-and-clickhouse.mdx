@@ -53,7 +53,11 @@ GRANT SELECT ON system.* TO holistics_user;
 
     Você pode encontrar esses detalhes clicando no botão **Connect** no console do ClickHouse Cloud e selecionando **HTTPS**.
 
+    <div className="ch-image-md">
+
     ![Localização do botão Connect no console do ClickHouse Cloud](/images/integrations/data-visualization/holistics_01.webp)
+
+    </div>
   </Step>
 
   <Step title="Configure o acesso à rede" id="step-2-configure-network-access">
@@ -61,7 +65,11 @@ GRANT SELECT ON system.* TO holistics_user;
 
     1. **Conexão direta (recomendada):** Adicione os endereços IP do Holistics à lista de permissões no seu firewall ou na IP Access List do ClickHouse Cloud. Você pode encontrar a lista de IPs no guia de [IP Whitelisting](https://docs.holistics.io/docs/connect/ip-whitelisting).
 
+       <div className="ch-image-md">
+
        ![Exemplo de inclusão de IPs na lista de permissões no ClickHouse Cloud](/images/integrations/data-visualization/holistics_02.webp)
+
+       </div>
 
     2. **Túnel SSH reverso:** Se o seu banco de dados estiver em uma rede privada (VPC) e não puder ser exposto publicamente, use um [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel).
   </Step>
@@ -69,11 +77,19 @@ GRANT SELECT ON system.* TO holistics_user;
   <Step title="Adicione uma fonte de dados no Holistics" id="step-3-add-data-source-in-holistics">
     1. No Holistics, vá para **Settings → fontes de dados**.
 
+       <div className="ch-image-md">
+
        ![Navegando até fontes de dados nas configurações do Holistics](/images/integrations/data-visualization/holistics_03.webp)
+
+       </div>
 
     2. Clique em **Nova fonte de dados** e selecione **ClickHouse**.
 
+       <div className="ch-image-md">
+
        ![Selecionando ClickHouse na lista de novas fontes de dados](/images/integrations/data-visualization/holistics_04.webp)
+
+       </div>
 
     3. Preencha o formulário com os detalhes coletados na Etapa 1.
 
@@ -84,11 +100,19 @@ GRANT SELECT ON system.* TO holistics_user;
        | **Exigir SSL**             | Ative **ON** se estiver usando a porta 8443 (obrigatório para ClickHouse Cloud). |
        | **Nome do banco de dados** | `default` (ou seu banco de dados específico)                                     |
 
+       <div className="ch-image-md">
+
        ![Preenchendo os detalhes de conexão do ClickHouse no Holistics](/images/integrations/data-visualization/holistics_05.webp)
+
+       </div>
 
     4. Clique em **Test Connection**.
 
+       <div className="ch-image-md">
+
        ![Teste de conexão com ClickHouse bem-sucedido no Holistics](/images/integrations/data-visualization/holistics_06.webp)
+
+       </div>
 
        * **Sucesso:** Clique em **Save**.
        * **Falha:** Verifique seu nome de usuário/senha e confirme que os [IPs do Holistics estão na lista de permissões](https://docs.holistics.io/docs/connect/ip-whitelisting).

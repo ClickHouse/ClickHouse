@@ -35,7 +35,11 @@ Pour les exemples ci-dessous, nous utilisons le jeu de données distant disponib
   <Step title="Accéder à Chart Explorer" id="navigate-chart-explorer">
     Sélectionnez `Chart Explorer` dans le menu de gauche.
 
+    <div className="ch-image-lg">
+
     ![Chart Explorer](/images/use-cases/observability/clickstack-visualization-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Créer une visualisation" id="create-visualization">
@@ -49,17 +53,29 @@ Pour les exemples ci-dessous, nous utilisons le jeu de données distant disponib
     * Group By : `ServiceName`
     * Alias : `Average Time`
 
+    <div className="ch-image-lg">
+
     ![Visualisation simple](/images/use-cases/observability/clickstack-visualization-2.webp)
+
+    </div>
 
     Notez que vous pouvez filtrer les événements soit avec une clause SQL `WHERE`, soit avec la syntaxe Lucene, et définir la plage de temps sur laquelle les événements doivent être visualisés. Les visualisations avec plusieurs séries sont également prises en charge.
 
     Par exemple, filtrez sur le service `frontend` en ajoutant le filtre `ServiceName:\"frontend\"`. Ajoutez une deuxième série pour le nombre d&#39;événements au fil du temps avec l&#39;alias `Count` en cliquant sur `Add Series`.
 
+    <div className="ch-image-lg">
+
     ![Visualisation simple 2](/images/use-cases/observability/clickstack-visualization-3.webp)
+
+    </div>
 
     Pour créer une série semblable à une série existante, vous pouvez la dupliquer au lieu de repartir de zéro. Cliquez sur l&#39;icône de copie (`Duplicate series`) sur une ligne de série pour insérer une copie directement en dessous. La copie conserve les paramètres de la série source, tels que la métrique, la colonne et le filtre. Vous n&#39;avez ensuite plus qu&#39;à modifier les champs qui diffèrent (par exemple l&#39;agrégation) et à donner à la copie son propre alias. La duplication est disponible partout où plusieurs séries sont prises en charge. Elle est masquée pour les types de visualisation qui n&#39;autorisent qu&#39;une seule série, comme `Number`, `Pie` et `Heatmap`.
 
+    <div className="ch-image-lg">
+
     ![L'icône de copie Duplicate series et son infobulle sur une ligne de série de graphique](/images/use-cases/observability/clickstack-duplicate-series.webp)
+
+    </div>
 
     <Note>
       Les visualisations peuvent être créées à partir de n&#39;importe quelle source de données — métriques, traces ou logs. ClickStack traite tous ces éléments comme des événements wide. Toute **colonne numérique** peut être représentée sur un graphique dans le temps, et les colonnes **chaîne**, **date** ou **numériques** peuvent être utilisées pour les regroupements.
@@ -83,7 +99,11 @@ Nous créons ci-dessous un tableau de bord avec deux visualisations à l’aide 
   <Step title="Accéder aux tableaux de bord" id="navigate-dashboards">
     Sélectionnez `Dashboards` dans le menu de gauche. Cliquez ensuite sur `New Dashboard` pour créer un tableau de bord temporaire ou enregistré.
 
+    <div className="ch-image-lg">
+
     ![Créer un tableau de bord](/images/use-cases/observability/hyperdx-dashboard-1.webp)
+
+    </div>
   </Step>
 
   <Step title="Créer une visualisation – temps moyen des requêtes par service" id="create-a-tile">
@@ -100,11 +120,19 @@ Nous créons ci-dessous un tableau de bord avec deux visualisations à l’aide 
 
     Cliquez sur le bouton **play** avant de cliquer sur `Save`.
 
+    <div className="ch-image-lg">
+
     ![Créer une visualisation pour le tableau de bord](/images/use-cases/observability/hyperdx-dashboard-2.webp)
+
+    </div>
 
     Redimensionnez la visualisation pour qu’elle occupe toute la largeur du tableau de bord.
 
+    <div className="ch-image-lg">
+
     ![Tableau de bord avec des visualisations](/images/use-cases/observability/hyperdx-dashboard-3.webp)
+
+    </div>
   </Step>
 
   <Step title="Créer une visualisation – événements au fil du temps par service" id="create-a-tile-2">
@@ -120,11 +148,19 @@ Nous créons ci-dessous un tableau de bord avec deux visualisations à l’aide 
 
     Cliquez sur le bouton **play** avant de cliquer sur `Save`.
 
+    <div className="ch-image-lg">
+
     ![Visualisation du dashboard 2](/images/use-cases/observability/hyperdx-dashboard-4.webp)
+
+    </div>
 
     Redimensionnez la visualisation pour qu&#39;elle occupe toute la largeur du dashboard.
 
+    <div className="ch-image-lg">
+
     ![Dashboard avec visualisations 2](/images/use-cases/observability/hyperdx-dashboard-5.webp)
+
+    </div>
   </Step>
 
   <Step title="Ajouter une tuile Heatmap pour la durée des spans" id="create-a-tile-heatmap">
@@ -150,11 +186,19 @@ Nous créons ci-dessous un tableau de bord avec deux visualisations à l’aide 
 
     Cliquez sur `Run` pour prévisualiser le graphique, puis sur `Save`.
 
+    <div className="ch-image-lg">
+
     ![Éditeur de tuile Heatmap avec les valeurs par défaut de durée de span préremplies, le filtre ServiceName payment et le bouton Display Settings](/images/clickstack/dashboards/heatmap-tile-editor.webp)
+
+    </div>
 
     La tuile enregistrée s’affiche sous forme de heatmap sur le dashboard. Survolez n’importe quelle cellule pour voir les bornes du bucket et le nombre d’événements.
 
+    <div className="ch-image-lg">
+
     ![Tuile de dashboard Heatmap montrant la distribution de durée des spans du service payment sur 24 heures](/images/clickstack/dashboards/heatmap-tile-rendered.webp)
+
+    </div>
 
     <Tip>
       **Deux requêtes ClickHouse par heatmap**
@@ -166,7 +210,11 @@ Nous créons ci-dessous un tableau de bord avec deux visualisations à l’aide 
 
     Cliquez sur n’importe quelle cellule d’une tuile Heatmap affichée pour ouvrir l’action **View in Event Deltas**.
 
+    <div className="ch-image-lg">
+
     ![Clic sur une cellule de heatmap révélant l’action View in Event Deltas](/images/clickstack/dashboards/heatmap-tile-drilldown.webp)
+
+    </div>
 
     En la sélectionnant, vous ouvrez la vue [Event Deltas](/fr/clickstack/features/event-deltas) avec la source de données de la tuile, la clause `Where` et l’intervalle de temps conservés. Vous pouvez alors examiner la même distribution de manière interactive, la découper par attribute pour voir ce qui distingue les spans lents des rapides, et inspecter les spans individuels derrière n’importe quelle cellule, sans reconstruire la query à la main.
   </Step>
@@ -174,13 +222,21 @@ Nous créons ci-dessous un tableau de bord avec deux visualisations à l’aide 
   <Step title="Filtrer un tableau de bord" id="filter-dashboards">
     Des filtres Lucene ou SQL, ainsi que l’intervalle de temps, peuvent être appliqués au niveau du tableau de bord et seront automatiquement répercutés sur toutes les visualisations.
 
+    <div className="ch-image-lg">
+
     ![Tableau de bord avec filtrage](/images/use-cases/observability/hyperdx-dashboard-filter.webp)
+
+    </div>
 
     Pour illustrer cela, appliquez le filtre Lucene `ServiceName:"frontend"` au tableau de bord et modifiez la fenêtre temporelle pour qu’elle couvre les 3 dernières heures. Notez que les visualisations n’affichent désormais que les données du service `frontend`.
 
     Le tableau de bord sera enregistré automatiquement. Pour définir son nom, sélectionnez le titre et modifiez-le avant de cliquer sur `Save Name`.
 
+    <div className="ch-image-lg">
+
     ![Enregistrement du tableau de bord](/images/use-cases/observability/hyperdx-dashboard-save.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -190,7 +246,11 @@ Nous créons ci-dessous un tableau de bord avec deux visualisations à l’aide 
 
 Pour supprimer, modifier ou dupliquer une visualisation, survolez-la, puis utilisez les boutons d’action correspondants.
 
+<div className="ch-image-lg">
+
 ![Modifier le tableau de bord](/images/use-cases/observability/hyperdx-dashboard-edit.webp)
+
+</div>
 
 <div id="tile-display-settings">
   ### Paramètres d’affichage de la tuile
@@ -243,7 +303,11 @@ Les tuiles Number peuvent afficher un **graphique d’arrière-plan** : une min
 
 Avec une tuile Number sélectionnée, ouvrez **Paramètres d’affichage** et définissez **Graphique d’arrière-plan** sur **Ligne** ou **Zone** (ou **Aucun** pour le désactiver). La mini-courbe est dérivée d’une version de la requête de la tuile regroupée par intervalles de temps ; aucune configuration supplémentaire n’est donc nécessaire. Elle hérite par défaut de la couleur de la tuile ; définissez une **Couleur d’arrière-plan** pour la remplacer par une couleur précise de la palette.
 
+<div className="ch-image-lg">
+
 ![Volet Paramètres d’affichage pour une tuile Number, avec Graphique d’arrière-plan défini sur Zone](/images/clickstack/dashboards/number-tile-background-chart.webp)
+
+</div>
 
 Les graphiques d’arrière-plan s’appliquent aux tuiles Number créées avec le générateur de requêtes. Les tuiles Number en Raw SQL renvoient une valeur unique, sans dimension temporelle à regrouper, donc l’option apparaît mais reste désactivée pour elles.
 
@@ -251,7 +315,11 @@ Les tuiles de tableau peuvent alterner l’arrière-plan de leurs lignes avec **
 
 Avec une tuile de tableau sélectionnée, ouvrez **Paramètres d’affichage** et activez **Arrière-plan alterné des lignes**. Cette alternance est purement visuelle, elle fonctionne donc aussi bien sur les tuiles de tableau du générateur de requêtes que sur celles en Raw SQL.
 
+<div className="ch-image-lg">
+
 ![Volet Paramètres d’affichage pour une tuile de tableau, avec Arrière-plan alterné des lignes activé](/images/clickstack/dashboards/table-tile-display-settings.webp)
+
+</div>
 
 Les tuiles de tableau conservent également un séparateur entre la ligne d’en-tête et les données pendant le défilement, afin que les en-têtes de colonnes restent bien distincts.
 
@@ -303,7 +371,11 @@ Les tableaux de bord sont accessibles depuis la page des tableaux de bord. Ils s
 
 Les tableaux de bord peuvent être ajoutés aux favoris pour y accéder facilement depuis la barre latérale et en haut de la page de liste. Les favoris sont propres à chaque utilisateur.
 
+<div className="ch-image-lg">
+
 ![Recherche de tableau de bord](/images/use-cases/observability/hyperdx-dashboard-search.webp)
+
+</div>
 
 <div id="tagging">
   ## Tableaux de bord - ajout d’étiquettes
@@ -317,7 +389,11 @@ Les tableaux de bord peuvent être ajoutés aux favoris pour y accéder facileme
 
 En plus des [filtres en texte libre](#filter-dashboards) disponibles sur tous les tableaux de bord, les tableaux de bord enregistrés prennent en charge des filtres déroulants personnalisés alimentés par des données interrogées dans ClickHouse. Ils offrent des contrôles de filtrage réutilisables, utilisables en quelques clics, afin que les utilisateurs des tableaux de bord puissent filtrer sans avoir à écrire manuellement des expressions.
 
+<div className="ch-image-lg">
+
 ![Filtre déroulant des services affichant les noms de service disponibles](/images/clickstack/dashboards/filter-dropdown.webp)
+
+</div>
 
 Chaque filtre permet à l’utilisateur de choisir une ou plusieurs valeurs, puis effectue l’une ou les deux actions suivantes :
 
@@ -332,7 +408,11 @@ Les étapes suivantes montrent comment ajouter un filtre au tableau de bord cré
   <Step title="Ouvrir la boîte de dialogue Modifier les filtres" id="open-edit-filters">
     Ouvrez un tableau de bord enregistré et sélectionnez **Modifier les filtres et les variables** dans la barre d’outils.
 
+    <div className="ch-image-lg">
+
     ![Bouton Modifier les filtres et les variables dans la barre d’outils du tableau de bord](/images/clickstack/dashboards/edit-filters.webp)
+
+    </div>
   </Step>
 
   <Step title="Ajouter un nouveau filtre" id="add-new-filter">
@@ -340,25 +420,41 @@ Les étapes suivantes montrent comment ajouter un filtre au tableau de bord cré
 
     Par exemple, pour ajouter un filtre de service pour les données de traces, utilisez `ServiceName` comme expression de filtre avec la source de données `Traces`. Le champ « Dropdown values filter » est facultatif et permet de restreindre les valeurs affichées dans la liste déroulante.
 
+    <div className="ch-image-md">
+
     ![Boîte de dialogue Add filter avec les champs Display Name, Data source et Filter expression](/images/clickstack/dashboards/add-filter.webp)
+
+    </div>
 
     La même boîte de dialogue contrôle également si le filtre [diffuse](#broadcast-filters) sa valeur et s’il est [disponible en tant que variable](#dashboard-variables), deux fonctionnalités décrites ci-dessous.
 
     La fenêtre modale Filters affiche tous les filtres configurés pour le tableau de bord. Depuis cette fenêtre, vous pouvez modifier ou supprimer des filtres existants, ou en ajouter d’autres.
 
+    <div className="ch-image-md">
+
     ![Fenêtre modale Filters affichant un filtre Services configuré](/images/clickstack/dashboards/saved-filters.webp)
+
+    </div>
   </Step>
 
   <Step title="Utiliser le filtre" id="use-filter">
     Fermez la fenêtre modale Filters. Le nouveau filtre déroulant apparaît sous la barre de recherche. Cliquez dessus pour afficher les valeurs disponibles, puis sélectionnez-en une pour filtrer toutes les visualisations du tableau de bord.
 
+    <div className="ch-image-lg">
+
     ![Tableau de bord filtré sur le service frontend](/images/clickstack/dashboards/filtered-dashboard.webp)
+
+    </div>
   </Step>
 
   <Step title="(Facultatif) Enregistrer les valeurs du filtre par défaut" id="save-default-filters">
     Pour conserver une sélection de filtre comme valeur par défaut du tableau de bord, choisissez **Save Query &amp; Filters as Default** dans le menu du tableau de bord. Le tableau de bord s’ouvrira toujours avec les filtres sélectionnés appliqués. Pour réinitialiser, sélectionnez **Remove Default Query &amp; Filters** dans ce même menu.
 
+    <div className="ch-image-lg">
+
     ![Menu du tableau de bord affichant l’option Save Query and Filters as Default](/images/clickstack/dashboards/save-filter-values.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -454,7 +550,11 @@ Les tuiles de tableau de bord prennent en charge l’exploration détaillée ver
 * **Afficher tous les événements** — ouvre la page Search en affichant tous les événements de la fenêtre de temps sélectionnée.
 * **Filtrer par groupe** — ouvre la page Search avec un filtre appliqué à une série spécifique.
 
+<div className="ch-image-lg">
+
 ![Menu contextuel d’exploration détaillée affichant les options Afficher tous les événements et Filtrer par groupe](/images/clickstack/dashboards/drilldown.webp)
+
+</div>
 
 C’est utile pour examiner des pics ou anomalies spécifiques repérés dans un tableau de bord : vous pouvez rapidement passer d’une vue agrégée aux événements individuels sous-jacents.
 
@@ -470,7 +570,11 @@ HyperDX est fourni avec des tableaux de bord prêts à l’emploi.
 
 Ce tableau de bord propose des visualisations pour surveiller ClickHouse. Pour y accéder, sélectionnez-le dans le menu de gauche.
 
+<div className="ch-image-lg">
+
 ![Tableau de bord ClickHouse](/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp)
+
+</div>
 
 Ce tableau de bord utilise des onglets pour distinguer le suivi de **Selects**, **Inserts** et de **ClickHouse Infrastructure**.
 
@@ -498,7 +602,11 @@ Les noms des services sont détectés automatiquement à partir des données de 
 
 Les visualisations peuvent être filtrées à l’aide de la syntaxe Lucene ou SQL, et la fenêtre de temps peut être ajustée pour une analyse ciblée.
 
+<div className="ch-image-lg">
+
 ![Services ClickHouse](/images/use-cases/observability/hyperdx-dashboard-services.webp)
+
+</div>
 
 <div id="kubernetes-dashboard">
   ### Tableau de bord Kubernetes
@@ -508,4 +616,8 @@ Ce tableau de bord vous permet d’explorer les événements Kubernetes collect�
 
 Les données Kubernetes sont organisées en trois onglets pour faciliter la navigation : Pods, Nœuds et Espaces de noms.
 
+<div className="ch-image-lg">
+
 ![ClickHouse Kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</div>

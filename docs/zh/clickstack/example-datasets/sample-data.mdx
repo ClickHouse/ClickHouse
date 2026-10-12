@@ -17,13 +17,21 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
       <Step title="选择服务" id="select-your-service-managed">
         在 ClickHouse Cloud 主页面中，选择“托管 ClickStack”服务。
 
+        <div className="ch-image-lg">
+
         ![选择服务](/images/clickstack/select_service.webp)
+
+        </div>
       </Step>
 
       <Step title="前往 ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui-managed">
         在左侧菜单中选择 `ClickStack`，即可进入 ClickStack UI，系统会自动完成身份验证。
 
+        <div className="ch-image-lg">
+
         ![ClickStack UI](/images/use-cases/observability/hyperdx.webp)
+
+        </div>
       </Step>
 
       <Step title="下载示例数据" id="download-sample-data-managed">
@@ -63,7 +71,11 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
 
         返回 `Search` 视图后，你应该会看到数据已开始加载 (如果数据没有显示，请将时间范围调整为 `Last 1 hour`) ：
 
+        <div className="ch-image-lg">
+
         ![HyperDX search](/images/use-cases/observability/hyperdx-10.webp)
+
+        </div>
 
         数据加载需要几分钟。请等待加载完成后，再继续后续步骤。
       </Step>
@@ -73,7 +85,11 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
 
         从左侧菜单中选择 `Client Sessions`。
 
+        <div className="ch-image-lg">
+
         ![会话](/images/use-cases/observability/hyperdx-11.webp)
+
+        </div>
 
         此视图可让我们查看电商商店的前端会话。在用户结账并尝试完成购买之前，这些会话都会一直显示为 Anonymous。
 
@@ -81,7 +97,11 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
 
         选择一个失败且关联了电子邮件地址的 trace。随后出现的视图允许我们回放该用户的会话并查看其问题。按下 play 观看该会话。
 
+        <div className="ch-image-lg">
+
         ![会话回放](/images/use-cases/observability/hyperdx-12.webp)
+
+        </div>
 
         回放中可以看到用户浏览站点并将商品加入购物车。你可以直接跳到会话稍后的位置，查看他们尝试完成付款的过程。
 
@@ -91,7 +111,11 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
 
         用户未能成功下单，但没有明显的报错。滚动到左侧面板底部，这里包含来自用户浏览器的 Network 和 Console 事件。你会注意到，在发起 `/api/checkout` 调用时抛出了一个 500 错误。
 
+        <div className="ch-image-lg">
+
         ![会话中的错误](/images/use-cases/observability/hyperdx-13.webp)
+
+        </div>
 
         选择这个 `500` 错误。无论是 `Overview` 还是 `Column Values`，都没有指出问题的来源，只能看出这是一个意外错误，导致了 `Internal Error`。
       </Step>
@@ -99,19 +123,35 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
       <Step title="查看链路追踪" id="explore-traces-managed">
         导航到 `Trace` 选项卡，查看完整的分布式 trace。
 
+        <div className="ch-image-lg">
+
         ![会话 trace](/images/use-cases/observability/hyperdx-14.webp)
+
+        </div>
 
         向下滚动 trace，查看错误的源头——也就是 `checkout` 服务的 span。选择 `Payment` 服务的 span。
 
+        <div className="ch-image-lg">
+
         ![Span](/images/use-cases/observability/hyperdx-15.webp)
+
+        </div>
 
         选择 `Column Values` 选项卡并向下滚动。可以看到，问题与缓存已满有关。
 
+        <div className="ch-image-lg">
+
         ![列值](/images/use-cases/observability/hyperdx-16.webp)
+
+        </div>
 
         向上滚动并返回 trace 后，可以看到日志已与该 span 关联，这是我们先前配置的结果。这些日志提供了更多上下文。
 
+        <div className="ch-image-lg">
+
         ![关联的日志](/images/use-cases/observability/hyperdx-17.webp)
+
+        </div>
 
         我们已经确认，payment 服务中的缓存正在被填满，从而导致支付无法完成。
       </Step>
@@ -121,7 +161,11 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
 
         从数据源中选择 `Logs`，并为 `payment` 服务添加过滤条件。
 
+        <div className="ch-image-lg">
+
         ![日志](/images/use-cases/observability/hyperdx-18.webp)
+
+        </div>
 
         可以看到，虽然这个问题是最近才出现的，但受影响的支付笔数很多。此外，似乎是一个与 Visa 支付相关的缓存导致了问题。
       </Step>
@@ -131,7 +175,11 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
 
         选择 `Metrics` 作为数据源。完成图表构建器中的设置，绘制 `visa_validation_cache.size (Gauge)` 的 `Maximum`，然后点击 play 按钮。可以明显看出，缓存大小在达到最大值之前一直在增长，随后便开始出现错误。
 
+        <div className="ch-image-lg">
+
         ![指标](/images/use-cases/observability/hyperdx-19.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>
@@ -143,13 +191,21 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
       <Step title="前往 ClickStack UI (HyperDX)" id="navigate-to-the-hyperdx-ui">
         访问 [http://localhost:8080](http://localhost:8080) 即可进入 ClickStack UI。
 
+        <div className="ch-image-lg">
+
         ![ClickStack UI](/images/use-cases/observability/hyperdx.webp)
+
+        </div>
       </Step>
 
       <Step title="复制摄取 API key" id="copy-ingestion-api-key">
         前往 [`Team Settings`](http://localhost:8080/team)，在 `API Keys` 部分复制 `Ingestion API Key`。此 API key 可确保通过 OpenTelemetry collector 进行的数据摄取安全。
 
+        <div className="ch-image-lg">
+
         ![复制 API key](/images/use-cases/observability/copy_api_key.webp)
+
+        </div>
       </Step>
 
       <Step title="下载示例数据" id="download-sample-data">
@@ -196,7 +252,11 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
 
         返回 `Search` 视图后，你应该会看到数据已开始加载 (如果数据没有显示，请将时间范围调整为 `Last 1 hour`) ：
 
+        <div className="ch-image-lg">
+
         ![HyperDX search](/images/use-cases/observability/hyperdx-10.webp)
+
+        </div>
 
         数据加载需要几分钟。请等待加载完成后，再继续后续步骤。
       </Step>
@@ -206,7 +266,11 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
 
         从左侧菜单中选择 [`Client Sessions`](http://localhost:8080/sessions?from=1747312320000\&to=1747312920000\&sessionSource=l1324572572)。
 
+        <div className="ch-image-lg">
+
         ![会话](/images/use-cases/observability/hyperdx-11.webp)
+
+        </div>
 
         在此视图中，我们可以看到电商网站前端的会话。在用户结账并尝试完成购买之前，这些会话都会保持为 Anonymous。
 
@@ -214,7 +278,11 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
 
         选择一个失败且关联了电子邮件地址的 trace。随后出现的视图允许我们回放用户的会话并查看他们遇到的问题。按下 play 观看会话。
 
+        <div className="ch-image-lg">
+
         ![会话回放](/images/use-cases/observability/hyperdx-12.webp)
+
+        </div>
 
         回放显示用户浏览网站并将商品加入购物车。你也可以直接跳到会话后面的部分，查看他们尝试完成支付的过程。
 
@@ -224,7 +292,11 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
 
         用户未能成功下单，而且没有明显的报错。滚动到左侧面板底部，这里包含来自用户浏览器的网络和控制台事件。你会注意到，在调用 `/api/checkout` 时抛出了一个 500 错误。
 
+        <div className="ch-image-lg">
+
         ![会话中的错误](/images/use-cases/observability/hyperdx-13.webp)
+
+        </div>
 
         选择这个 `500` 错误。无论是 `Overview` 还是 `Column Values`，都无法看出问题的来源，只能知道这是一个意外错误，导致了 `Internal Error`。
       </Step>
@@ -232,19 +304,35 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
       <Step title="查看链路追踪" id="explore-traces">
         导航到 `Trace` 选项卡，查看完整的分布式 trace。
 
+        <div className="ch-image-lg">
+
         ![会话 trace](/images/use-cases/observability/hyperdx-14.webp)
+
+        </div>
 
         向下滚动 trace，查看错误的源头——也就是 `checkout` 服务的 span。选择 `Payment` 服务的 span。
 
+        <div className="ch-image-lg">
+
         ![Span](/images/use-cases/observability/hyperdx-15.webp)
+
+        </div>
 
         选择 `Column Values` 选项卡并向下滚动。可以看到，问题与缓存已满有关。
 
+        <div className="ch-image-lg">
+
         ![列值](/images/use-cases/observability/hyperdx-16.webp)
+
+        </div>
 
         向上滚动并返回 trace 后，可以看到日志已与该 span 关联，这是我们先前配置的结果。这些日志提供了更多上下文。
 
+        <div className="ch-image-lg">
+
         ![关联的日志](/images/use-cases/observability/hyperdx-17.webp)
+
+        </div>
 
         我们已经确认，payment 服务中的缓存正在被填满，从而导致支付无法完成。
       </Step>
@@ -254,7 +342,11 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
 
         从数据源中选择 `Logs`，并对 `payment` 服务应用过滤器。
 
+        <div className="ch-image-lg">
+
         ![日志](/images/use-cases/observability/hyperdx-18.webp)
+
+        </div>
 
         可以看到，虽然这是最近出现的问题，但受影响的支付数量很多。此外，似乎是一个与 Visa 支付相关的缓存导致了问题。
       </Step>
@@ -264,7 +356,11 @@ keywords: ['clickstack', '示例数据', '示例数据集', '日志', '可观测
 
         选择 `Metrics` 作为数据源。完成图表构建器中的设置，绘制 `visa_validation_cache.size (Gauge)` 的 `Maximum`，然后点击 play 按钮。可以明显看出，缓存大小在达到最大值之前一直在增长，随后便开始出现错误。
 
+        <div className="ch-image-lg">
+
         ![指标](/images/use-cases/observability/hyperdx-19.webp)
+
+        </div>
       </Step>
     </Steps>
   </Tab>

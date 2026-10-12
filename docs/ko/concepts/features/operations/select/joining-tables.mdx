@@ -12,7 +12,11 @@ ClickHouse는 다양한 조인 알고리즘과 함께 [포괄적인 `JOIN` 지�
 * ClickHouse 24.12부터는 쿼리 플래너가 최적의 성능을 위해 2개 테이블 조인의 순서를 자동으로 재정렬하여 더 작은 테이블을 오른쪽에 배치합니다. 25.9 버전에서는 이 기능이 확장되어 3개 이상의 테이블을 조인하는 쿼리의 조인 순서까지 최적화할 수 있게 되었습니다.
 * 쿼리에 Direct 조인, 즉 아래와 같은 `LEFT ANY JOIN`이 필요한 경우에는 가능하면 [Dictionaries](/ko/concepts/features/dictionaries/index)를 사용하는 것이 좋습니다.
 
+<div className="ch-image-sm">
+
 ![Left any join](/images/guides/joins-1.webp)
+
+</div>
 
 * inner join을 수행하는 경우에는 `IN` 절을 사용하는 서브쿼리로 작성하는 편이 더 효율적인 경우가 많습니다. 다음 쿼리를 살펴보십시오. 두 쿼리는 기능적으로 동일합니다. 둘 다 질문에는 ClickHouse가 언급되지 않았지만 `comments`에는 언급된 `posts`의 수를 찾습니다.
 
@@ -138,7 +142,11 @@ ClickHouse는 여러 [조인 알고리즘](https://clickhouse.com/blog/clickhous
 
 <br />
 
+<div className="ch-image-lg">
+
 ![조인의 메모리 대비 속도](/images/guides/joins-2.png)
+
+</div>
 
 <br />
 
@@ -148,7 +156,11 @@ ClickHouse는 여러 [조인 알고리즘](https://clickhouse.com/blog/clickhous
 
 <br />
 
+<div className="ch-image-lg">
+
 ![조인 기능](/images/guides/joins-3.webp)
+
+</div>
 
 <br />
 
@@ -164,7 +176,11 @@ ClickHouse는 여러 [조인 알고리즘](https://clickhouse.com/blog/clickhous
 
 <br />
 
+<div className="ch-image-lg">
+
 ![조인 흐름도](/images/guides/joins-4.webp)
+
+</div>
 
 <br />
 
@@ -190,7 +206,11 @@ Grace hash join은 세 가지 메모리 비제약 조인 알고리즘 중 가장
 
 <br />
 
+<div className="ch-image-lg">
+
 ![조인 메모리 최적화 의사결정 트리](/images/guides/joins-5.webp)
+
+</div>
 
 <br />
 

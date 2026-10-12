@@ -11,7 +11,11 @@ keywords: ['ClickHouse 客户端', '更改提示符']
 
 默认提示符是你的本地计算机名称，后跟 `:) `：
 
+<div className="ch-image-md">
+
 ![默认 ClickHouse 客户端提示符](/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp)
+
+</div>
 
 以下是在提示符中可用的变量：`{user}`、`{host}`
 
@@ -29,7 +33,11 @@ clickhouse --prompt 👉
 
 这会在笑脸前添加手指表情符号：
 
+<div className="ch-image-md">
+
 ![带有手指表情符号的 ClickHouse 客户端 提示符](/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp)
+
+</div>
 
 <div id="config-file---top-level">
   ## 配置文件 - 顶层
@@ -47,7 +55,11 @@ clickhouse --prompt 👉
 clickhouse
 ```
 
+<div className="ch-image-md">
+
 ![使用配置文件的 ClickHouse 客户端提示符](/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp)
+
+</div>
 
 我们可以使用任意名称的配置文件，并通过 `-C` 参数传入：
 
@@ -61,7 +73,11 @@ clickhouse
 clickhouse -C christmas.xml
 ```
 
+<div className="ch-image-md">
+
 ![带有圣诞树表情符号的 ClickHouse 客户端 提示符](/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp)
+
+</div>
 
 想用 YAML 编写配置文件？
 也完全可以：
@@ -74,7 +90,11 @@ prompt: 🟡
 clickhouse -C christmas.yaml
 ```
 
+<div className="ch-image-md">
+
 ![带黄色圆圈表情符号的 ClickHouse 客户端 提示符](/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp)
+
+</div>
 
 ## 配置文件 - connections_credentials {#config-file---connections_credentials}
 
@@ -110,7 +130,11 @@ clickhouse -C christmas.yaml
 clickhouse client -C connections.xml --connection dev
 ```
 
+<div className="ch-image-md">
+
 ![带有 Development 连接的 ClickHouse 客户端 提示符](/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp)
+
+</div>
 
 或者是 `prod`：
 
@@ -118,7 +142,11 @@ clickhouse client -C connections.xml --connection dev
 clickhouse client -C connections.xml --connection prod
 ```
 
+<div className="ch-image-md">
+
 ![带有生产环境连接的 ClickHouse 客户端提示符](/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp)
+
+</div>
 
 以下是 YAML 版本：
 
@@ -145,7 +173,11 @@ connections_credentials:
 clickhouse client -C connections.yaml --connection dev
 ```
 
+<div className="ch-image-md">
+
 ![使用 YAML 配置的 development 连接的 ClickHouse 客户端 提示符](/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp)
+
+</div>
 
 接下来是 `prod`：
 
@@ -153,4 +185,8 @@ clickhouse client -C connections.yaml --connection dev
 clickhouse client -C connections.yaml --connection prod
 ```
 
+<div className="ch-image-md">
+
 ![使用 YAML 配置生产环境连接的 ClickHouse 客户端 提示符](/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp)
+
+</div>

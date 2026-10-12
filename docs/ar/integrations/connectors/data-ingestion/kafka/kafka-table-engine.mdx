@@ -29,7 +29,11 @@ keywords: ['Kafka', 'محرك الجدول', 'التدفق', 'الوقت الف�
 
 وللاحتفاظ بهذه البيانات بعد قراءتها من محرك الجدول، نحتاج إلى وسيلة لالتقاطها وإدراجها في جدول آخر. وتوفّر العروض المادية المعتمدة على المشغّلات هذه الوظيفة بشكل أصيل. ويبدأ العرض المادي قراءةً من محرك الجدول، ثم يتلقى دفعات من المستندات. وتحدّد العبارة `TO` وجهة البيانات، والتي تكون عادةً جدولًا من [عائلة MergeTree](/ar/reference/engines/table-engines/mergetree-family/index). يوضّح الشكل التالي هذه العملية:
 
+<div className="ch-image-lg">
+
 ![مخطط معمارية محرك جدول Kafka](/images/integrations/data-ingestion/kafka/kafka_01.webp)
+
+</div>
 
 <div id="steps">
   #### الخطوات
@@ -353,7 +357,11 @@ LIMIT 10;
 
 يمكن توضيح هدفنا الأولي بأفضل شكل كما يلي:
 
+<div className="ch-image-lg">
+
 ![مخطط محرك جدول Kafka مع عمليات الإدراج](/images/integrations/data-ingestion/kafka/kafka_02.webp)
+
+</div>
 
 نفترض أنك أنشأت الجداول وطرق العرض ضمن خطوات [Kafka إلى ClickHouse](#kafka-to-clickhouse)، وأن الـ topic قد استُهلك بالكامل.
 
@@ -397,7 +405,11 @@ LIMIT 10;
   <Step title="استخدام العروض المادية" id="2-using-materialized-views">
     يمكننا استخدام العروض المادية لإرسال الرسائل إلى محرك Kafka (وإلى topic) عند إدراج المستندات في جدول. وعند إدراج صفوف في جدول GitHub، يتم تشغيل عرض مادي، ما يؤدي إلى إدراج الصفوف مرة أخرى في محرك Kafka وفي topic جديد. ويوضح الشكل التالي ذلك بشكل أفضل:
 
+    <div className="ch-image-lg">
+
     ![مخطط محرك جدول Kafka مع العروض المادية](/images/integrations/data-ingestion/kafka/kafka_03.webp)
+
+    </div>
 
     أنشئ Kafka topic جديدًا باسم `github_out` أو ما يعادله. وتأكد من أن محرك جدول Kafka باسم `github_out_queue` يشير إلى هذا الـ topic.
 
@@ -491,7 +503,11 @@ LIMIT 10;
 
 يمكن أيضًا تهيئة عدة مثيلات من ClickHouse للقراءة من topic واحد باستخدام معرّف مجموعة المستهلكين نفسه، والذي يُحدَّد عند إنشاء محرك جدول Kafka. وبذلك، سيقرأ كل مثيل من partition واحد أو أكثر، مع إدراج المقاطع في الجدول الهدف المحلي الخاص به. ويمكن بعد ذلك تهيئة الجداول الهدف لاستخدام ReplicatedMergeTree للتعامل مع تكرار البيانات. يتيح هذا النهج توسيع قراءات Kafka بالتوازي مع عنقود ClickHouse، شريطة توفّر عدد كافٍ من partitions Kafka.
 
+<div className="ch-image-lg">
+
 ![مخطط محرك جدول Kafka مع عنقود ClickHouse](/images/integrations/data-ingestion/kafka/kafka_04.webp)
+
+</div>
 
 <div id="tuning-performance">
   #### ضبط الأداء

@@ -71,7 +71,11 @@ CDC はプライベートプレビューでは**サポートされていませ�
 
 ClickPipes は、[サービスアカウントキー](https://docs.cloud.google.com/iam/docs/keys-create-delete)を使用して Google Cloud プロジェクトに認証します。ClickPipes が BigQuery からデータをエクスポートし、ステージング用の GCS バケットにロードしてから ClickHouse に読み込めるように、必要最小限の[権限](#permissions)のみを持つ専用のサービスアカウントを作成することを推奨します。
 
+<div className="ch-image-lg">
+
 ![BigQuery と Cloud ストレージ の権限を持つサービスアカウントキーの作成](/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp)
+
+</div>
 
 <div id="permissions">
   ### 権限

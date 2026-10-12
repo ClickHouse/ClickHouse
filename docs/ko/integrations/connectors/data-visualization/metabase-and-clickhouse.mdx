@@ -26,7 +26,11 @@ Metabase는 데이터를 쉽게 탐색하고 질문할 수 있는 사용하기 �
 
 이 가이드에서는 Metabase를 사용해 ClickHouse 데이터에 몇 가지 질문을 던지고, 그 답을 시각화합니다. 결과 중 하나는 다음과 같습니다.
 
+<div className="ch-image-md">
+
 ![ClickHouse 데이터를 보여주는 Metabase 파이 차트 시각화](/images/integrations/data-visualization/metabase_08.webp)
+
+</div>
 
 <p />
 
@@ -60,13 +64,21 @@ Metabase는 데이터를 쉽게 탐색하고 질문할 수 있는 사용하기 �
 
     3. 드라이버가 정상적으로 설치되었다면 **Database type** 드롭다운 메뉴에 **ClickHouse**가 표시됩니다:
 
+       <div className="ch-image-md">
+
        ![ClickHouse가 옵션으로 표시된 Metabase 데이터베이스 선택 화면](/images/integrations/data-visualization/metabase_01.webp)
+
+       </div>
 
     4. 데이터베이스의 **Display name**을 지정합니다. 이는 Metabase 설정이므로 원하는 이름을 사용하면 됩니다.
 
     5. ClickHouse 데이터베이스의 연결 정보를 입력합니다. ClickHouse 서버가 SSL을 사용하도록 구성되어 있다면 보안 연결을 활성화합니다. 예시는 다음과 같습니다:
 
+       <div className="ch-image-md">
+
        ![ClickHouse 데이터베이스용 Metabase 연결 정보 양식](/images/integrations/data-visualization/metabase_02.webp)
+
+       </div>
 
     6. **Save** 버튼을 클릭하면 Metabase가 데이터베이스를 스캔하여 테이블을 찾습니다.
   </Step>
@@ -76,25 +88,45 @@ Metabase는 데이터를 쉽게 탐색하고 질문할 수 있는 사용하기 �
 
     2. 오른쪽 상단에서 **+ New** 메뉴를 클릭하면 질문을 만들고, SQL 쿼리를 실행하고, 대시보드를 만들 수 있음을 확인할 수 있습니다:
 
+       <div className="ch-image-sm">
+
        ![질문, SQL 쿼리, dashboard 생성 옵션을 보여주는 Metabase New 메뉴](/images/integrations/data-visualization/metabase_03.webp)
+
+       </div>
 
     3. 예를 들어, 다음은 `uk_price_paid`라는 이름의 테이블에서 1995년부터 2022년까지 연도별 평균 거래 가격을 반환하는 SQL 쿼리입니다:
 
+       <div className="ch-image-md">
+
        ![UK price paid 데이터에 대한 쿼리를 보여주는 Metabase SQL Editor](/images/integrations/data-visualization/metabase_04.webp)
+
+       </div>
   </Step>
 
   <Step title="질문하기" id="5-ask-a-question">
     1. **+ New**를 클릭하고 **Question**을 선택합니다. 데이터베이스와 테이블에서 시작해 질문을 만들 수 있습니다. 예를 들어, 다음 질문은 `default` 데이터베이스의 `uk_price_paid`라는 이름의 테이블에 대해 수행됩니다. 다음은 Greater Manchester county 내에서 town별 평균 가격을 계산하는 간단한 질문입니다:
 
+       <div className="ch-image-md">
+
        ![UK 가격 데이터가 있는 Metabase 질문 작성기 interface](/images/integrations/data-visualization/metabase_06.webp)
+
+       </div>
 
     2. **Visualize** 버튼을 클릭하여 결과를 표 형식 보기로 확인합니다.
 
+       <div className="ch-image-md">
+
        ![town별 평균 가격의 표 형식 결과를 보여주는 Metabase visualization](/images/integrations/data-visualization/metabase_07.webp)
+
+       </div>
 
     3. 결과 아래에서 **Visualization** 버튼을 클릭하여 visualization을 막대 chart(또는 사용 가능한 다른 옵션)로 변경합니다:
 
+       <div className="ch-image-md">
+
        ![Greater Manchester의 town별 평균 가격을 보여주는 Metabase 파이 차트 visualization](/images/integrations/data-visualization/metabase_08.webp)
+
+       </div>
   </Step>
 </Steps>
 

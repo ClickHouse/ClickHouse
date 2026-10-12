@@ -24,7 +24,11 @@ integration:
 
 PITR 기능은 Google Cloud에서 MySQL의 바이너리 로깅 사용 여부를 결정합니다. Cloud Console에서 Cloud SQL 인스턴스를 편집한 뒤 아래 섹션으로 스크롤하여 설정할 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![Cloud SQL에서 PITR 활성화](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-pitr.webp)
+
+</div>
 
 복제 사용 사례에 따라 이 값을 충분히 길게 설정하는 것이 좋습니다.
 
@@ -36,11 +40,19 @@ PITR 기능은 Google Cloud에서 MySQL의 바이너리 로깅 사용 여부를 
 
 이렇게 하려면 인스턴스 개요 페이지 오른쪽 상단의 `Edit` 버튼을 클릭하십시오.
 
+<div className="ch-image-lg">
+
 ![GCP MySQL의 Edit 버튼](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-edit-button.webp)
+
+</div>
 
 그런 다음 `Flags` 섹션까지 스크롤한 뒤 위 플래그를 추가하십시오.
 
+<div className="ch-image-lg">
+
 ![GCP에서 바이너리 로그 플래그 설정](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-flags.webp)
+
+</div>
 
 <div id="configure-database-user-gcp">
   ## 데이터베이스 사용자 구성
@@ -74,7 +86,11 @@ Cloud SQL MySQL 인스턴스에 루트 사용자로 연결한 다음, 아래 명
 Cloud SQL 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 Cloud SQL MySQL 인스턴스의 허용 목록에 추가하십시오.
 이 작업은 인스턴스를 편집하거나 Cloud Console 사이드바의 `Connections` 탭으로 이동하여 수행할 수 있습니다.
 
+<div className="ch-image-lg">
+
 ![GCP MySQL에서 IP 허용 목록 설정](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-ip.webp)
+
+</div>
 
 <div id="download-root-ca-certificate-gcp-mysql">
   ## 루트 CA 인증서 다운로드 및 사용
@@ -87,8 +103,16 @@ Cloud SQL 인스턴스에 연결하려면 루트 CA 인증서를 다운로드해
 3. `Security` 탭을 클릭합니다.
 4. `Manage server CA certificates` 섹션에서 하단의 `DOWNLOAD CERTIFICATES` 버튼을 클릭합니다.
 
+<div className="ch-image-lg">
+
 ![GCP MySQL 인증서 다운로드](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/gcp-mysql-cert.webp)
+
+</div>
 
 5. ClickPipes UI에서 새 MySQL ClickPipe를 만들 때 다운로드한 인증서를 업로드합니다.
 
+<div className="ch-image-lg">
+
 ![GCP MySQL 인증서 사용](/images/integrations/data-ingestion/clickpipes/mysql/source/gcp/rootca.webp)
+
+</div>

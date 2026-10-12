@@ -17,7 +17,11 @@ doc_type: 'guide'
 
 **Обзор:** <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a> в сочетании с [табличной функцией jdbc](/ru/reference/functions/table-functions/jdbc) или [движком таблицы JDBC](/ru/reference/engines/table-engines/integrations/jdbc) позволяет ClickHouse получать доступ к данным из любого внешнего источника данных, для которого доступен <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">JDBC-драйвер</a>:
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![Диаграмма архитектуры ClickHouse JDBC Bridge](/images/integrations/data-ingestion/dbms/jdbc-01.webp)
+
+</div>
 
 Это удобно, когда для внешнего источника данных нет встроенного [движка интеграции](/ru/reference/engines/table-engines/integrations/index), табличной функции или внешнего словаря, но для этого источника доступен JDBC-драйвер.
 
@@ -45,7 +49,11 @@ ClickHouse JDBC Bridge можно использовать как для чте�
 
 Самый простой способ использовать ClickHouse JDBC Bridge — установить и запустить его на том же хосте, где работает ClickHouse:
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![Схема локального развертывания ClickHouse JDBC Bridge](/images/integrations/data-ingestion/dbms/jdbc-02.webp)
+
+</div>
 
 Для начала подключитесь к Unix shell на машине, где работает ClickHouse, и создайте локальную папку, в которую позже будет установлен ClickHouse JDBC Bridge (папку можно назвать как угодно и разместить где угодно):
 
@@ -147,7 +155,11 @@ wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0
 
 Для распределённого кластера ClickHouse (то есть кластера с более чем одним хостом ClickHouse) имеет смысл установить и запускать ClickHouse JDBC Bridge отдельно, на собственном хосте:
 
+<div className="ch-image-lg ch-image-background-white">
+
 ![Схема развертывания ClickHouse JDBC Bridge на отдельном хосте](/images/integrations/data-ingestion/dbms/jdbc-03.webp)
+
+</div>
 
 Преимущество такого подхода в том, что каждый хост ClickHouse сможет обращаться к JDBC Bridge. В противном случае JDBC Bridge пришлось бы устанавливать локально на каждом экземпляре ClickHouse, которому нужен доступ к внешним источникам данных через Bridge.
 

@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
+
 <PrivatePreviewBadge/>
 
 `WalShadow` is a native replication engine for ClickHouse Managed Postgres that reads directly from the PostgreSQL Write-Ahead Log (WAL). It is optimized for lower latency and high-throughput workloads, delivering sub-second replication lag from Postgres to ClickHouse. It is developed in the open at [ClickHouse/walshadow](https://github.com/ClickHouse/walshadow).
@@ -16,7 +17,11 @@ import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/Pr
 
 When `WalShadow` is available for your service, a **Private Preview** banner appears on the **Overview** page. Click **Configure WalShadow** to get started.
 
+<div className="ch-image-md">
+
 ![Postgres service overview page showing the WalShadow private preview banner with Learn more and Configure WalShadow links](/images/managed-postgres/walshadow/overview-banner.webp)
+
+</div>
 
 <Note>
 Before you proceed, ensure that your Postgres service is accessible to ClickHouse. `WalShadow` connects to your destination ClickHouse service directly, so you will need a ClickHouse user and password with permission to create databases and tables.
@@ -24,14 +29,22 @@ Before you proceed, ensure that your Postgres service is accessible to ClickHous
 
 To set up replication, click **Sync to ClickHouse** in the sidebar of your Postgres instance, then click **Replicate data in ClickHouse**.
 
+<div className="ch-image-md">
+
 ![Sync to ClickHouse landing page showing the ClickPipes and WalShadow replication methods](/images/managed-postgres/walshadow/sync-landing.webp)
+
+</div>
 
 <Steps>
 <Step title="Select the replication engine" id="select-replication-engine">
 
 Choose **WalShadow** as the replication engine, then click **Next**.
 
+<div className="ch-image-md">
+
 ![Select replication engine step showing ClickPipes and WalShadow options with WalShadow selected](/images/managed-postgres/walshadow/select-engine.webp)
+
+</div>
 
 </Step>
 <Step title="Configure the replication service" id="configure-replication-service">
@@ -45,7 +58,11 @@ Fill in the replication settings:
   - **Initial load only**: One-time import of existing data with no ongoing updates
   - **CDC only**: Skip the initial import and only capture new changes going forward
 
+<div className="ch-image-md">
+
 ![Configure replication service step showing ClickHouse service, Postgres database, and replication method options](/images/managed-postgres/walshadow/configure-service.webp)
+
+</div>
 
 Click **Next** to proceed.
 </Step>
@@ -57,7 +74,11 @@ Choose a destination database and select which tables to replicate:
 - **Tables**: Expand each schema and select individual tables, or toggle **Select all tables**. For each table you can customize the **Destination table name** and adjust **Column settings**.
 - **ClickHouse user** and **ClickHouse password**: `WalShadow` connects to the destination ClickHouse service directly, so it needs credentials with permission to create the target database and tables.
 
+<div className="ch-image-md">
+
 ![Select tables step showing schema and table selection, destination table names, and ClickHouse credentials](/images/managed-postgres/walshadow/select-tables.webp)
+
+</div>
 
 Click **Replicate data to ClickHouse** to start the replication.
 </Step>
@@ -65,7 +86,11 @@ Click **Replicate data to ClickHouse** to start the replication.
 
 After you start replication, `WalShadow` appears on the **Sync to ClickHouse** page. Its status is **Creating** while the pipeline is being provisioned and the initial load is prepared.
 
+<div className="ch-image-md">
+
 ![Sync to ClickHouse page showing WalShadow in the Creating state](/images/managed-postgres/walshadow/walshadow-creating.webp)
+
+</div>
 
 Once provisioning completes, the status changes to **Running**. The page reports live metrics for the replication:
 
@@ -77,7 +102,11 @@ Once provisioning completes, the status changes to **Running**. The page reports
 - **Uptime**: How long the pipeline has been running
 - **Last updated**: When the metrics were last reported
 
+<div className="ch-image-md">
+
 ![Sync to ClickHouse page showing WalShadow in the Running state with rows synced, lag, and uptime metrics](/images/managed-postgres/walshadow/walshadow-running.webp)
+
+</div>
 
 </Step>
 </Steps>

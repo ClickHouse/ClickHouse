@@ -32,14 +32,22 @@ SHOW  wal_level;
 
 1. В консоли Google Cloud перейдите на страницу AlloyDB [Clusters](https://console.cloud.google.com/alloydb/clusters). В меню **Actions** для основного экземпляра нажмите **Edit**.
 
+   <div className="ch-image-lg">
+
    ![Изменение конфигурации основного экземпляра](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp)
+
+   </div>
 
 2. Прокрутите страницу вниз до раздела **Advanced configuration options** и разверните его. В разделе **Flags** нажмите **Add a database flag**.
 
    * Добавьте флаг [`allowdb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) и установите для него значение `on`
    * Добавьте флаг [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) и установите для него значение `on`
 
+   <div className="ch-image-lg">
+
    ![Установка флагов allowdb.enable_pglogical и alloydb.logical_decoding в значение on](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp)
+
+   </div>
 
 3. Нажмите **Update instance**, чтобы сохранить изменения конфигурации. Важно: это действие **приводит к перезапуску основного экземпляра.**
 
@@ -51,7 +59,11 @@ SHOW  wal_level;
 
    Результат должен быть `logical`.
 
+   <div className="ch-image-lg">
+
    ![Проверка того, что логическая репликация включена](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp)
+
+   </div>
 
 <div id="create-a-clickpipes-user-and-manage-replication-permissions">
   ## Создайте пользователя ClickPipes и настройте разрешения для репликации
@@ -117,7 +129,11 @@ SHOW  wal_level;
 
     3. Установите флажок **Enable Public IP**, чтобы разрешить подключения к экземпляру через общедоступный интернет. В разделе **Authorized external networks** укажите [список статических IP-адресов ClickPipes](/ru/integrations/clickpipes/networking/static-ips) для региона, в котором развёрнут ваш сервис.
 
+       <div className="ch-image-lg">
+
        ![Настройка сети для публичного доступа со списком разрешённых IP-адресов](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp)
+
+       </div>
 
     <Note>
       AlloyDB ожидает, что адреса будут указаны в [нотации CIDR](https://cloud.google.com/alloydb/docs/connection-overview#public-ip). Вы можете привести предоставленный список статических IP-адресов ClickPipes к этому формату, добавив `/32` к каждому адресу.

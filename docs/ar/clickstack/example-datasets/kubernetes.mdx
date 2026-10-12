@@ -199,7 +199,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     أنشئ مستخدمًا، ووفّر اسم مستخدم وكلمة مرور يستوفيان متطلبات التعقيد.
 
+    <div className="ch-image-lg">
+
     ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
+
+    </div>
   </Step>
 
   <Step title="استرداد مفتاح API للإدخال" id="retrieve-ingestion-api-key">
@@ -207,7 +211,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     انتقل إلى [`Team Settings`](http://localhost:8080/team) وانسخ `Ingestion API Key` من قسم `API Keys`. يضمن مفتاح API هذا أمان إدخال البيانات عبر OpenTelemetry collector.
 
+    <div className="ch-image-lg">
+
     ![نسخ مفتاح API](/images/use-cases/observability/copy_api_key.webp)
+
+    </div>
   </Step>
 
   <Step title="إنشاء سر Kubernetes لمفتاح API" id="create-api-key-kubernetes-secret">
@@ -231,7 +239,11 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
 
     يُفترض أن تبدأ الآن بيانات التتبّع والسجلات من الخدمات التجريبية بالتدفّق إلى HyperDX.
 
+    <div className="ch-image-lg">
+
     ![بيانات HyperDX على Kubernetes](/images/use-cases/observability/hyperdx-kubernetes-data.webp)
+
+    </div>
   </Step>
 
   <Step title="أضف مستودع Helm الخاص بـ OpenTelemetry" id="add-otel-helm-repo">
@@ -482,4 +494,8 @@ import DemoArchitecture from '/snippets/ar/_demo.mdx';
   </Step>
 </Steps>
 
+<div className="ch-image-lg">
+
 ![ClickHouse على Kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)
+
+</div>

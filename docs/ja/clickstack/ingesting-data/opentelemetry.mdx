@@ -125,7 +125,11 @@ keywords: ['clickstack', 'opentelemetry', 'トレース', 'オブザーバビリ
 
     さらに、APIインジェストキーを含む Authorization ヘッダーが必要です。このキーは、HyperDX アプリの `Team Settings → API Keys` で確認できます。
 
+    <div className="ch-image-lg">
+
     ![インジェストキー](/images/use-cases/observability/ingestion-keys.webp)
+
+    </div>
 
     言語 SDK では、これは `init` 関数で設定することも、`OTEL_EXPORTER_OTLP_HEADERS` 環境変数で設定することもできます。例:
 

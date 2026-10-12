@@ -38,7 +38,11 @@ O ClickHouse usa o ClickHouse Keeper (implementação do ZooKeeper em C++; o Zoo
 
 O processo de replicação no ClickHouse (1) começa quando os dados são inseridos em qualquer réplica. Esses dados, em sua forma bruta de inserção, são (2) gravados em disco junto com seus checksums. Depois de gravados, a réplica (3) tenta registrar essa nova parte de dados no Keeper, alocando um número de bloco exclusivo e registrando os detalhes da nova parte. Outras réplicas, ao (4) detectar novas entradas no log de replicação, (5) baixam a parte de dados correspondente por meio de um protocolo HTTP interno, verificando-a em relação aos checksums listados no ZooKeeper. Esse método garante que todas as réplicas acabem mantendo dados consistentes e atualizados, apesar de velocidades de processamento diferentes ou possíveis atrasos. Além disso, o sistema é capaz de lidar com várias operações simultaneamente, otimizando os processos de gerenciamento de dados e permitindo escalabilidade e robustez diante de diferenças de hardware.
 
+<div className="ch-image-md">
+
 ![Consistência eventual](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
+
+</div>
 
 Observe que o ClickHouse Cloud usa um [mecanismo de replicação otimizado para a nuvem](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates) adaptado à sua arquitetura com separação entre armazenamento e compute. Ao armazenar dados em armazenamento de objetos compartilhado, os dados ficam automaticamente disponíveis para todos os nós de compute, sem a necessidade de replicá-los fisicamente entre os nós. Em vez disso, o Keeper é usado apenas para compartilhar metadados (quais dados existem e onde estão no armazenamento de objetos) entre os nós de compute.
 

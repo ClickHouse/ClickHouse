@@ -201,9 +201,17 @@ Se quiser testar a integração de logs do MySQL antes de configurar seu própri
     3. Filtre por `source:mysql-error` ou `source:mysql-slow` para ver logs específicos do MySQL
     4. Você deverá ver entradas de log estruturadas com campos como `level`, `error_code`, `message` (para logs de erro) e `query_time`, `rows_examined`, `query` (para logs de consultas lentas)
 
+    <div className="ch-image-lg">
+
     ![Visualização Busca](/images/clickstack/mysql/search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Visualização de logs](/images/clickstack/mysql/log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -326,9 +334,17 @@ Para usuários que desejam testar a integração de logs do MySQL antes de confi
       Se você não vir todos os 40 logs imediatamente, aguarde cerca de um minuto para o collector concluir o processamento. Se os logs ainda não aparecerem depois disso, execute `docker restart clickstack-demo` e verifique novamente após mais um minuto. Este é um problema conhecido do receiver filelog do OpenTelemetry ao carregar em massa arquivos preexistentes com `start_at: beginning`. Implantações em produção que usam `start_at: end` processam os logs à medida que são gravados em tempo real e não apresentam esse problema.
     </Note>
 
+    <div className="ch-image-lg">
+
     ![Tela de Busca](/images/clickstack/mysql/search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Visualização de logs](/images/clickstack/mysql/log-view.webp)
+
+    </div>
 
     <Info>
       **Exibição de fuso horário**
@@ -353,17 +369,29 @@ Para ajudar você a começar a monitorar o MySQL com o ClickStack, fornecemos vi
     1. Abra o HyperDX e vá para a seção Painéis
     2. Clique em **Importar painel** no canto superior direito, no menu de reticências
 
+    <div className="ch-image-lg">
+
     ![Botão de importação de painel](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. Faça upload do arquivo `mysql-logs-dashboard.json` e clique em **Finish Import**
 
+    <div className="ch-image-lg">
+
     ![Concluir importação](/images/clickstack/mysql/finish-import.webp)
+
+    </div>
   </Step>
 
   <Step title="Visualize o painel" id="created-dashboard">
     O painel será criado com todas as visualizações pré-configuradas.
 
+    <div className="ch-image-lg">
+
     ![Painel de exemplo](/images/clickstack/mysql/example-dashboard.webp)
+
+    </div>
 
     <Note>
       Para o conjunto de dados de demonstração, defina o intervalo de tempo como **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (ajuste conforme o seu fuso horário local). Por padrão, o painel importado não terá um intervalo de tempo definido.

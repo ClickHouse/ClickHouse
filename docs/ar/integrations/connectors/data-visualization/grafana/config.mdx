@@ -24,7 +24,11 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 مثال على شاشة التهيئة:
 
+<div className="ch-image-sm">
+
 ![مثال على تهيئة آمنة للبروتوكول الأصلي](/images/integrations/data-visualization/grafana/config_common.webp)
+
+</div>
 
 مثال على ملف YAML للإعدادات الشائعة:
 
@@ -58,7 +62,11 @@ secureJsonData:
 
 ستظهر إعدادات إضافية إذا اخترت الاتصال عبر بروتوكول HTTP.
 
+<div className="ch-image-md">
+
 ![خيارات إعداد HTTP إضافية](/images/integrations/data-visualization/grafana/config_http.webp)
+
+</div>
 
 <div id="http-path">
   #### مسار HTTP
@@ -106,7 +114,11 @@ secureJsonData:
 
 هذه الإعدادات الإضافية اختيارية.
 
+<div className="ch-image-sm">
+
 ![مثال لإعدادات إضافية](/images/integrations/data-visualization/grafana/config_additional.webp)
+
+</div>
 
 مثال YAML:
 
@@ -141,7 +153,11 @@ jsonData:
 
 مثال على شاشة تهيئة السجلات:
 
+<div className="ch-image-sm">
+
 ![إعداد السجلات](/images/integrations/data-visualization/grafana/config_logs.webp)
+
+</div>
 
 مثال على YAML لتهيئة السجلات:
 
@@ -179,7 +195,11 @@ jsonData:
 
 مثال على شاشة تهيئة التتبعات:
 
+<div className="ch-image-sm">
+
 ![إعداد التتبعات](/images/integrations/data-visualization/grafana/config_traces.webp)
+
+</div>
 
 مثال على YAML لتهيئة التتبعات:
 
@@ -282,11 +302,19 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 يمكننا بعد ذلك إعداد هذا الجدول لاستخدامه في Grafana. لاحظ أن الاسم يمكن أن يكون أي اسم، أو حتى يمكن تعريفه في قاعدة بيانات منفصلة:
 
+<div className="ch-image-md">
+
 ![مثال على إعداد جدول الأسماء المستعارة](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
+
+</div>
 
 سيعرض Grafana الآن نتائج جدول الأسماء المستعارة بدلًا من النتائج الناتجة عن `DESC example_table`:
 
+<div className="ch-image-md">
+
 ![مثال على استعلام جدول الأسماء المستعارة](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
+
+</div>
 
 يمكن استخدام كلا نوعَي الأسماء المستعارة لإجراء تحويلات معقدة للأنواع أو لاستخراج حقول JSON.
 

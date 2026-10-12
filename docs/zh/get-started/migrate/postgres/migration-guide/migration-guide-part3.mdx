@@ -30,9 +30,17 @@ doc_type: 'guide'
 
 如需更多细节，我们推荐阅读这篇[深入指南](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
 
+<div className="ch-image-lg">
+
 ![PostgreSQL B-Tree 索引](/images/migrations/postgres-b-tree.webp)
 
+</div>
+
+<div className="ch-image-lg">
+
 ![PostgreSQL 稀疏索引](/images/migrations/postgres-sparse-index.webp)
+
+</div>
 
 在 ClickHouse 中，所选的键不仅决定索引，还决定数据写入磁盘时的顺序。因此，它会显著影响压缩水平，而这又会进一步影响查询性能。一个能让大多数列的值按连续顺序写入的排序键，可以让所选压缩算法 (以及编解码器) 更高效地压缩数据。
 
@@ -54,7 +62,11 @@ doc_type: 'guide'
 
 在 ClickHouse 中，分区是在表初次定义时通过 `PARTITION BY` 子句指定的。该子句可以包含基于任意列的 SQL 表达式，其结果将决定某一行会被写入哪个分区。
 
+<div className="ch-image-md">
+
 ![PostgreSQL 分区到 ClickHouse 分区](/images/migrations/postgres-partitions.webp)
+
+</div>
 
 数据分区片段在磁盘上会按分区进行逻辑归属，并且可以单独查询。在下面的示例中，我们使用表达式 `toYear(CreationDate)` 按年份对 `posts` 表进行分区。当行被插入 ClickHouse 时，系统会对每一行计算该表达式，并将其路由到对应的分区 (如果某一年份的第一行数据到来时该分区尚不存在，则会创建该分区) 。
 
@@ -270,7 +282,11 @@ WHERE UserId = 8592047
 此外，查询只需发送到单个表上，系统会在可能的情况下利用PROJECTION来加快响应
 时间。
 
+<div className="ch-image-md">
+
 ![ClickHouse 中的 PostgreSQL PROJECTION](/images/migrations/postgres-projections.webp)
+
+</div>
 
 这与 materialized view 不同：使用 materialized view 时，用户必须根据过滤条件
 选择合适的优化目标表，或者重写查询。

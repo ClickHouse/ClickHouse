@@ -66,7 +66,11 @@ Text-to-Chart を使用するには、[Anthropic APIキー](https://console.anth
   <Step title="データソースを選択する" id="select-data-source">
     可視化したいデータソースを選択します。たとえば **ログ**、**トレース**、**メトリクス** などです。
 
+    <div className="ch-image-lg">
+
     ![Chart explorer](/images/clickstack/text-to-chart/chart-explorer.webp)
+
+    </div>
   </Step>
 
   <Step title="テキスト プロンプトを入力する" id="enter-text-prompt">
@@ -78,7 +82,11 @@ Text-to-Chart を使用するには、[Anthropic APIキー](https://console.anth
 
     ClickStack はプロンプトをクエリに変換し、自動的に可視化を表示します。
 
+    <div className="ch-image-lg">
+
     ![Text to chart](/images/clickstack/text-to-chart/text-to-chart.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -99,7 +107,11 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 * **Username**: `otel_demo`
 * **Password**: 空のままにします
 
+<div className="ch-image-lg">
+
 ![接続を作成](/images/clickstack/text-to-chart/create-connection.webp)
+
+</div>
 
 続いて、各ログソース — **ログ**、**トレース**、**メトリクス**、**Sessions** — が `otel_v2` データベースを使用するように変更します。ログソースの設定方法の詳細については、[リモートのデモデータセットガイド](/ja/clickstack/example-datasets/remote-demo-data)を参照してください。
 

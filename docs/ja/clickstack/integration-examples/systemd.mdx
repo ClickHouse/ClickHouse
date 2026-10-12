@@ -40,7 +40,11 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
     3. **Team Settings → API Keys** に移動します
     4. **インジェスト API key** をコピーします
 
+    <div className="ch-image-lg">
+
     ![ClickStack API Key](/images/clickstack/api-key.webp)
+
+    </div>
 
     5. 環境変数として設定します。
 
@@ -183,9 +187,17 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
     3. `service.name:systemd-logs` でフィルタします
     4. `unit`、`priority`、`MESSAGE`、`_HOSTNAME` などのフィールドを含む構造化されたログエントリが表示されるはずです
 
+    <div className="ch-image-lg">
+
     ![Log search view](/images/clickstack/systemd/systemd-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![Log view](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -264,9 +276,17 @@ OpenTelemetry Collector を journald receiver とともに実行すると、既�
     2. Searchビューに移動し、ソースを `Logs` に設定します
     3. 時間範囲を **2025-11-14 00:00:00 - 2025-11-17 00:00:00** に設定します
 
+    <div className="ch-image-lg">
+
     ![ログ検索ビュー](/images/clickstack/systemd/systemd-search-view.webp)
 
+    </div>
+
+    <div className="ch-image-lg">
+
     ![ログビュー](/images/clickstack/systemd/systemd-log-view.webp)
+
+    </div>
 
     <Info>
       **タイムゾーン表示**
@@ -291,11 +311,19 @@ ClickStack で systemd ログの監視をすぐに始められるように、sys
     1. HyperDX を開き、Dashboards セクションに移動します
     2. 右上の三点メニューから **Import Dashboard** をクリックします
 
+    <div className="ch-image-lg">
+
     ![ダッシュボードのインポートボタン](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. `systemd-logs-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
 
+    <div className="ch-image-lg">
+
     ![インポートの完了](/images/clickstack/systemd/finish-import-systemd.webp)
+
+    </div>
   </Step>
 
   <Step title="ダッシュボードを表示する" id="created-dashboard">
@@ -307,7 +335,11 @@ ClickStack で systemd ログの監視をすぐに始められるように、sys
     * サービス障害
     * エラー率
 
+    <div className="ch-image-lg">
+
     ![ダッシュボードの例](/images/clickstack/systemd/systemd-logs-dashboard.webp)
+
+    </div>
 
     <Note>
       デモデータセットを使用する場合は、時間範囲を **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。

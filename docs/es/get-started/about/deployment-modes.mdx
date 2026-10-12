@@ -31,7 +31,11 @@ Cada modo de implementación tiene sus propios puntos fuertes y casos de uso ide
 
 ClickHouse Server representa la arquitectura tradicional cliente/servidor y es ideal para implementaciones de producción. Este modo de implementación ofrece todas las capacidades de una base de datos OLAP, con consultas de alto rendimiento y baja latencia por las que ClickHouse es conocido.
 
+<div className="ch-image-sm">
+
 ![ClickHouse Server](/images/deployment-modes/ch-server.webp)
+
+</div>
 
 <br />
 
@@ -45,7 +49,11 @@ Este modo de implementación es la opción preferida para entornos de producció
 
 [ClickHouse Cloud](/es/products/cloud/getting-started/intro) es una versión totalmente gestionada de ClickHouse que elimina la carga operativa de ejecutar su propia implementación. Aunque conserva todas las capacidades principales de ClickHouse Server, mejora la experiencia con funciones adicionales diseñadas para agilizar el desarrollo y las operaciones.
 
+<div className="ch-image-sm">
+
 ![ClickHouse Cloud](/images/deployment-modes/ch-cloud.webp)
+
+</div>
 
 Una ventaja clave de ClickHouse Cloud es su conjunto de herramientas integrado. [ClickPipes](/es/get-started/setup/cloud#clickpipes) proporciona un sólido marco de ingestión de datos, que le permite conectar y transmitir datos fácilmente desde diversas fuentes sin tener que gestionar complejas canalizaciones de ETL. La plataforma también ofrece una [API de consultas](/es/products/cloud/guides/sql-console/query-endpoints) específica, lo que facilita considerablemente la creación de aplicaciones.
 
@@ -81,7 +89,11 @@ clickhousectl local client
 
 [clickhouse-local](/es/concepts/features/tools-and-utilities/clickhouse-local) es una potente herramienta de línea de comandos que ofrece toda la funcionalidad de ClickHouse en un ejecutable independiente. Es, en esencia, la misma base de datos que ClickHouse Server, pero empaquetada de forma que permite aprovechar todas las capacidades de ClickHouse directamente desde la línea de comandos sin ejecutar una instancia de servidor.
 
+<div className="ch-image-sm">
+
 ![clickhouse-local](/images/deployment-modes/ch-local.webp)
+
+</div>
 
 Esta herramienta destaca en el análisis de datos ad hoc, especialmente al trabajar con archivos locales o datos almacenados en servicios de almacenamiento en la nube. Puedes consultar directamente archivos en varios formatos (CSV, JSON, Parquet, etc.) usando el dialecto SQL de ClickHouse, lo que la convierte en una excelente opción para explorar datos rápidamente o realizar análisis puntuales.
 
@@ -95,7 +107,11 @@ La combinación de table functions remotas y acceso al sistema de archivos local
 
 [chDB](/es/chdb/index) es ClickHouse integrado como un motor de base de datos en el mismo proceso, con Python como implementación principal, aunque también está disponible para Go, Rust, NodeJS y Bun. Esta opción de implementación lleva las potentes capacidades OLAP de ClickHouse directamente al proceso de la aplicación, eliminando la necesidad de una instalación de base de datos independiente.
 
+<div className="ch-image-sm">
+
 ![chDB - ClickHouse integrado](/images/deployment-modes/chdb.webp)
+
+</div>
 
 chDB ofrece una integración fluida con el ecosistema de la aplicación. En Python, por ejemplo, está optimizado para funcionar de forma eficiente con herramientas habituales de ciencia de datos como Pandas y Arrow, minimizando la sobrecarga de copia de datos mediante memoryview de Python. Esto lo hace especialmente valioso para científicos de datos y analistas que quieren aprovechar el rendimiento de las consultas de ClickHouse dentro de sus flujos de trabajo actuales.
 

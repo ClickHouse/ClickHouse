@@ -19,25 +19,41 @@ Los roles personalizados pueden incluir una combinación de permisos de organiza
   <Step title="Acceda a la configuración de la organización y seleccione Users and roles" id="users-and-roles-1">
     En la página de servicios, seleccione el nombre de su organización. En el menú emergente, seleccione la opción `Users and roles`.
 
+    <div className="ch-image-lg">
+
     ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
+
+    </div>
   </Step>
 
   <Step title={<>Seleccione la pestaña <code>Roles</code></>} id="roles-tab">
     Seleccione la pestaña `Roles` en la parte superior central de la pantalla.
 
+    <div className="ch-image-lg">
+
     ![](/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp)
+
+    </div>
   </Step>
 
   <Step title={<>Seleccione <code>Create new role</code> en la esquina superior derecha</>} id="create-new-role">
     Seleccione el botón `Create new role` en la esquina superior derecha de la pantalla.
 
+    <div className="ch-image-lg">
+
     ![](/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp)
+
+    </div>
   </Step>
 
   <Step title="Asigne un nombre al rol" id="name-the-role">
     Introduzca un nombre descriptivo para el rol. Este será el nombre que verá al asignar roles a usuarios y claves de API.
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp)
+
+    </div>
   </Step>
 
   <Step title={<>Haga clic en <code>Allow</code> y seleccione el alcance de los permisos</>} id="scope-permissions">
@@ -53,13 +69,21 @@ Los roles personalizados pueden incluir una combinación de permisos de organiza
       Para acceder a la pestaña **Data Sources**, el rol requiere actualmente el permiso `Manage selected services`.
     </Info>
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp)
+
+    </div>
   </Step>
 
   <Step title="Revise su nuevo rol" id="review-role">
     Revise los permisos asignados a su nuevo rol antes de finalizar. Cuando haya terminado, haga clic en `Create role`.
 
+    <div className="ch-image-md">
+
     ![](/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -81,7 +105,11 @@ Al añadir una política `Data` a un rol personalizado, ClickHouse Cloud crea un
 
 Los roles personalizados de base de datos en un servicio dependen de la [autenticación con JWT](/es/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup) y no se aplican mientras esté deshabilitada. Antes de añadir una política `Data` a un rol, vaya al servicio, abra `Settings` y busque la tarjeta `JWT authentication` en la sección `Security`. Asegúrese de que el interruptor `SQL Console` esté habilitado.
 
+<div className="ch-image-lg">
+
 ![Tarjeta de autenticación con JWT con el interruptor SQL Console habilitado](/images/cloud/security/jwt/jwt-sql-console-toggle.png)
+
+</div>
 
 <Steps>
   <Step title="Abrir el cuadro de diálogo del rol" id="open-role-dialog">
@@ -109,7 +137,11 @@ Los roles personalizados de base de datos en un servicio dependen de la [autenti
   <Step title="Elegir el nivel de acceso" id="choose-data-access-level">
     Seleccione el acceso `Read-only`, `Admin` o `Custom`. Con el acceso `Custom`, defina permisos específicos de acceso a datos mediante sentencias [`GRANT`](/es/reference/statements/grant) de ClickHouse. El acceso `Custom` solo puede seleccionarse cuando la política se aplica a un único servicio; para definir permisos personalizados para varios servicios, añada una política `Data` independiente para cada servicio.
 
+    <div className="ch-image-md">
+
     ![Cuadro de diálogo para crear un rol con permisos de datos definidos mediante sentencias GRANT personalizadas](/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp)
+
+    </div>
   </Step>
 
   <Step title="Crear el rol" id="create-role-with-data-permissions">

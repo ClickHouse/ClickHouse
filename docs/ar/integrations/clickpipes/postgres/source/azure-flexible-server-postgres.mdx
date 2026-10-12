@@ -20,15 +20,27 @@ integration:
 
 1. انقر على قسم **Server parameters**
 
+<div className="ch-image-lg">
+
 ![Server Parameters في Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp)
+
+</div>
 
 2. عدّل قيمة `wal_level` إلى `logical`
 
+<div className="ch-image-lg">
+
 ![تغيير wal_level إلى logical في Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp)
+
+</div>
 
 3. سيتطلب هذا التغيير إعادة تشغيل الخادم، لذا أعد تشغيله عند مطالبتك بذلك.
 
+<div className="ch-image-lg">
+
 ![إعادة تشغيل الخادم بعد تغيير wal_level](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp)
+
+</div>
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## إنشاء مستخدمي ClickPipes ومنح الأذونات
@@ -85,7 +97,11 @@ integration:
 1. انتقل إلى علامة التبويب **Networking** وأضِف [ClickPipes IPs](/ar/integrations/clickpipes/networking/static-ips) إلى جدار الحماية
    الخاص بـ Azure Flexible Server Postgres أو Jump Server/Bastion إذا كنت تستخدم نفق SSH.
 
+<div className="ch-image-lg">
+
 ![أضِف ClickPipes IPs إلى جدار الحماية في Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp)
+
+</div>
 
 <div id="whats-next">
   ## ما الخطوة التالية؟

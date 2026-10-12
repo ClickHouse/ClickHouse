@@ -8,6 +8,7 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
+
 <BetaBadge />
 
 Web search permite que un agente obtenga información de la web pública durante una conversación. Úsalo para preguntas cuya respuesta deba estar al día: versiones recientes, documentación alojada fuera de tu servicio o una comprobación rápida en una fuente autorizada.
@@ -18,7 +19,11 @@ Web search permite que un agente obtenga información de la web pública durante
 
 En Agent Builder, habilita **Web Search** en la sección **Capabilities**. Una vez habilitado, el agente decide cuándo realizar una búsqueda en función de la pregunta del usuario y de las instrucciones del agente. La búsqueda se ejecuta, se recopilan los resultados y el contenido más relevante se incorpora de nuevo al contexto del modelo.
 
+<div className="ch-image-sm">
+
 ![Panel de Capabilities con la sección Web Search resaltada, que muestra la casilla de verificación de Web Search](/images/cloud/agent-builder/web-search/web-search.webp)
+
+</div>
 
 <div id="how-a-search-round-works">
   ## Cómo funciona una ronda de búsqueda

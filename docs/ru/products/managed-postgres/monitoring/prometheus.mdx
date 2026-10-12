@@ -8,6 +8,7 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
+
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.monitoring-prometheus-beta" />
@@ -122,7 +123,11 @@ scrape_configs:
 долю откатов, активность кортежей, I/O, хранилище по отдельным базам
 данных и взаимные блокировки.
 
+<div className="ch-image-md">
+
 ![Панель мониторинга Grafana для сервисов ClickHouse Managed Postgres](/images/managed-postgres/monitoring/grafana-dashboard.webp)
+
+</div>
 
 <div id="import-dashboard">
   ### Импорт панели мониторинга

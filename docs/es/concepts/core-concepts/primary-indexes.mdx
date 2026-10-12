@@ -30,7 +30,11 @@ Para ilustrar cómo se construye el índice primario disperso, usamos la tabla [
 
 Como [recordatorio](/es/concepts/core-concepts/parts), en nuestra tabla de ejemplo ① con la clave primaria (town, street), los datos ② insertados se ③ almacenan en disco, ordenados por los valores de las columnas de la clave primaria y comprimidos, en archivos separados para cada columna:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_01.webp)
+
+</div>
 
 <br />
 
@@ -40,7 +44,11 @@ Para su procesamiento, los datos de cada columna se ④ dividen lógicamente en 
 
 Esta estructura de gránulos también es lo que hace que el índice primario sea **disperso**: en lugar de indexar cada fila, ClickHouse almacena ⑤ los valores de la clave primaria de una sola fila por gránulo, concretamente la primera. Esto da como resultado una entrada de índice por gránulo:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_02.webp)
+
+</div>
 
 <br />
 
@@ -54,7 +62,11 @@ Gracias a su naturaleza dispersa, el índice primario es lo bastante pequeño co
 
 A continuación, mostramos de forma esquemática cómo se utiliza el índice primario disperso para acelerar las consultas con otra animación:
 
+<div className="ch-image-lg">
+
 ![](/images/managing-data/core-concepts/primary-index-light_03.webp)
+
+</div>
 
 <br />
 

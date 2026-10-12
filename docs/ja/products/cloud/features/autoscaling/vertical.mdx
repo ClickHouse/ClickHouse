@@ -23,7 +23,11 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
   単一レプリカの Scale サービスおよび標準の `1:4` プロファイルを持つ Enterprise サービスでは、垂直オートスケーリングがサポートされます。カスタムプロファイルを持つ Enterprise サービスでは、サポートによる垂直リサイズが必要です。Basic tier のサービスはサイズが固定されており、スケーリングできません。
 </Note>
 
+<div className="ch-image-lg">
+
 ![スケーリング設定ページ](/images/cloud/manage/AutoScaling.webp)
+
+</div>
 
 レプリカの **Maximum memory** は、**Minimum memory** より大きい値に設定してください。すると、サービスはその範囲内で必要に応じてスケーリングされます。これらの設定は、サービスの初回作成時にも指定できます。サービス内の各レプリカには、同じメモリおよび CPU リソースが割り当てられます。
 

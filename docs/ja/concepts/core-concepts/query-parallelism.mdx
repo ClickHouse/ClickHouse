@@ -19,7 +19,11 @@ ClickHouse は[高速化を前提に設計](/ja/get-started/about/why-clickhouse
 
 ClickHouse ① は、テーブルの主キーに対するフィルタを含む集計クエリを実行する際、② 処理が必要なグラニュールと安全にスキップできるグラニュールを特定するために、③ プライマリインデックスをメモリに読み込みます。
 
+<div className="ch-image-md">
+
 ![索引解析](/images/guides/best-practices/query-parallelism_01.webp)
+
+</div>
 
 <div id="distributing-work-across-processing-lanes">
   ### 処理レーン間での作業の分散
@@ -27,7 +31,11 @@ ClickHouse ① は、テーブルの主キーに対するフィルタを含む�
 
 選択したデータはその後、[動的に](#load-balancing-across-processing-lanes)`n` 本の並列[処理レーン](/ja/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization)に分散され、各レーンがデータを[ブロック](/ja/resources/develop-contribute/introduction/architecture#block)単位でストリーミング処理して、最終結果へとまとめます。
 
+<div className="ch-image-md">
+
 ![4 本の並列処理レーン](/images/guides/best-practices/query-parallelism_02.webp)
+
+</div>
 
 <br />
 
@@ -37,7 +45,11 @@ ClickHouse ① は、テーブルの主キーに対するフィルタを含む�
 
 `8` コアのマシンでは、より多くのレーンが並列にデータを処理できるため、クエリ処理のスループットはおおよそ 2 倍になります (ただし、それに応じてメモリ使用量も増加します) 。
 
+<div className="ch-image-md">
+
 ![8 本の並列処理レーン](/images/guides/best-practices/query-parallelism_03.webp)
+
+</div>
 
 <br />
 
@@ -51,7 +63,11 @@ CPU 使用率を最大化し、クエリ全体の実行時間を短縮するに�
 
 テーブルデータが複数のサーバーに[分片](/ja/guides/oss/deployment-and-scaling/shards)として分散されている場合、各サーバーはそれぞれの分片を並列に処理します。各サーバー内では、前述のとおり、ローカルデータが並列処理レーンを使って処理されます。
 
+<div className="ch-image-md">
+
 ![分散レーン](/images/guides/best-practices/query-parallelism_04.webp)
+
+</div>
 
 <br />
 
@@ -125,7 +141,11 @@ FROM
 
 ClickHouse&#39;s [組み込み web UI](/ja/concepts/features/interfaces/http) (`/play` エンドポイントで利用可能) では、上記の物理プランをグラフィカルに可視化できます。この例では、可視化をコンパクトに保つために `max_threads` を `4` に設定し、4 本の並列処理レーンだけを表示しています。
 
+<div className="ch-image-lg">
+
 ![クエリパイプライン](/images/guides/best-practices/query-parallelism_05.webp)
+
+</div>
 
 注: 可視化は左から右に向かって読んでください。各行は 1 本の並列処理レーンを表しており、データブロックをブロック単位でストリーミングしながら、フィルタリング、集約、最終処理ステージなどの変換を適用します。この例では、`max_threads = 4` の設定に対応する 4 本の並列レーンを確認できます。
 

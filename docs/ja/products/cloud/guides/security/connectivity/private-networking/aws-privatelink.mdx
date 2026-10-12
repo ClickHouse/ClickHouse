@@ -94,7 +94,11 @@ AWS PrivateLink 経由で ClickHouse Cloud サービスに接続するには、�
 
 ClickHouse Cloud コンソールで、PrivateLink 経由で接続するサービスを開き、**Settings** メニューに移動します。
 
+<div className="ch-image-md">
+
 ![プライベート エンドポイント](/images/cloud/security/aws-privatelink-pe-create.webp)
+
+</div>
 
 `Service name` と `DNS name` をメモしたら、[次のステップに進みます](#create-aws-endpoint)。
 
@@ -160,7 +164,11 @@ AWS コンソールを開き、**VPC** → **Endpoints** → **Create endpoints*
 
 **Endpoint services that use NLBs and GWLBs** を選択し、[Obtain Endpoint &quot;Service name&quot; ](#obtain-endpoint-service-info) の手順で取得した `Service name`<sup>console</sup> または `endpointServiceId`<sup>API</sup> を **Service Name** フィールドに入力します。続いて、**Verify service** をクリックします。
 
+<div className="ch-image-md">
+
 ![AWS PrivateLink エンドポイント設定](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
+
+</div>
 
 <Note>
   クロスリージョン接続の場合は、**Cross region endpoint** チェックボックスをオンにして、ClickHouse service が稼働しているリージョンを指定します。
@@ -170,7 +178,11 @@ AWS コンソールを開き、**VPC** → **Endpoints** → **Create endpoints*
 
 次に、使用する VPC とサブネットを選択します。
 
+<div className="ch-image-md">
+
 ![VPC とサブネットの選択](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
+
+</div>
 
 必要に応じて、セキュリティグループ/タグを割り当てます。
 
@@ -180,7 +192,11 @@ AWS コンソールを開き、**VPC** → **Endpoints** → **Create endpoints*
 
 VPC エンドポイント を作成したら、`Endpoint ID` の値を控えておいてください。後続の手順で必要になります。
 
+<div className="ch-image-md">
+
 ![VPC Endpoint ID](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
+
+</div>
 
 <div id="option-2-aws-cloudformation">
   #### オプション 2: AWS CloudFormation
@@ -256,7 +272,11 @@ VPC Endpoint を作成したら、`Endpoint ID` の値を控えておいてく�
   既存の PrivateLink 接続からのアクセスを許可する場合は、既存のエンドポイントのドロップダウン メニューを使用します。
 </Note>
 
+<div className="ch-image-md">
+
 ![プライベート エンドポイント フィルター](/images/cloud/security/aws-privatelink-pe-filters.webp)
+
+</div>
 
 削除するには、ClickHouse Cloud コンソール に移動してサービスを見つけ、そのサービスの **Settings** に進み、削除したいエンドポイントを見つけます。エンドポイントの一覧から削除します。
 
@@ -333,7 +353,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
 
 ClickHouse Cloud コンソール で **Settings** に移動します。**Set up private endpoint** ボタンをクリックします。表示された flyout で、**DNS Name** をコピーします。
 
+<div className="ch-image-md">
+
 ![プライベート エンドポイント DNS 名](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
+
+</div>
 
 <div id="option-2-api-3">
   ##### オプション 2: API

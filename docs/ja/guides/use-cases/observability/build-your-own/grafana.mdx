@@ -28,7 +28,11 @@ Logs の設定では、ログを正しく表示するために、time、log leve
 
 Traces の設定はやや複雑です (完全な一覧は [こちら](/ja/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) を参照してください) 。ここで必要となるカラムは、後続のクエリで完全なトレースプロファイルを構築する処理を抽象化できるようにするために必要です。これらのクエリは、データが OTel と同様の構造になっていることを前提としているため、標準スキーマから大きく外れている場合は、この機能を利用するためにビューを使用する必要があります。
 
+<div className="ch-image-sm">
+
 ![コネクタ設定](/images/use-cases/observability/observability-15.webp)
+
+</div>
 
 設定が完了したら、[Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) に移動して、ログとトレースの検索を開始できます。
 
@@ -42,7 +46,11 @@ Traces の設定はやや複雑です (完全な一覧は [こちら](/ja/refere
 SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
 ```
 
+<div className="ch-image-lg">
+
 ![コネクタのログ設定](/images/use-cases/observability/observability-16.webp)
+
+</div>
 
 クエリビルダーを使えば、SQL を書かずに簡単にクエリを変更できます。キーワードを含むログの検索を含む絞り込みは、クエリビルダーから実行できます。より複雑なクエリを記述したい場合は、SQL エディタに切り替えられます。必要なカラムが返され、クエリタイプとして `logs` が選択されていれば、結果はログとして表示されます。ログの表示に必要なカラムは [こちら](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format) に記載されています。
 
@@ -52,7 +60,11 @@ SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as t
 
 ログに トレース ID が含まれていれば、特定のログ行から対応するトレースへ移動できます。
 
+<div className="ch-image-lg">
+
 ![ログからトレースへ](/images/use-cases/observability/observability-17.webp)
+
+</div>
 
 <div id="traces">
   ## トレース
@@ -75,7 +87,11 @@ WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
 
 このクエリは、Grafana が想定するカラム名を返し、以下に示すようなトレースのテーブルを表示します。`duration` やその他のカラムでのフィルタリングは、SQL を記述しなくても行えます。
 
+<div className="ch-image-lg">
+
 ![トレース](/images/use-cases/observability/observability-18.webp)
+
+</div>
 
 より複雑なクエリを記述したい場合は、`SQL エディタ` に切り替えることができます。
 
@@ -113,7 +129,11 @@ LIMIT 1000
   上記のクエリでは、トレース ID のルックアップに materialized view `otel_traces_trace_id_ts` が使用されている点に注目してください。詳しくは、[クエリの高速化 - ルックアップに materialized view を使用する](/ja/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups)を参照してください。
 </Note>
 
+<div className="ch-image-lg">
+
 ![トレースの詳細](/images/use-cases/observability/observability-19.webp)
+
+</div>
 
 <div id="traces-to-logs">
   ### トレースからログへ
@@ -129,7 +149,11 @@ WHERE ( traceID = '<trace_id>' )
 ORDER BY timestamp ASC LIMIT 1000
 ```
 
+<div className="ch-image-lg">
+
 ![トレースからログへ](/images/use-cases/observability/observability-20.webp)
+
+</div>
 
 <div id="dashboards">
   ## ダッシュボード
@@ -139,7 +163,11 @@ Grafana では、ClickHouse データソースを使用してダッシュボー�
 
 このプラグインには、すぐに使えるダッシュボードがいくつか用意されており、その中には、OTel 仕様に準拠したログおよびトレーシングデータ向けのサンプルダッシュボード「Simple ClickHouse OTel dashboarding」も含まれています。これを利用するには、データが OTel のデフォルトのカラム名に従っている必要があり、このダッシュボードはデータソース設定からインストールできます。
 
+<div className="ch-image-lg">
+
 ![ダッシュボード](/images/use-cases/observability/observability-21.webp)
+
+</div>
 
 以下では、可視化を作成する際の簡単なヒントをいくつか紹介します。
 
@@ -162,7 +190,11 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
+<div className="ch-image-lg">
+
 ![時系列](/images/use-cases/observability/observability-22.webp)
+
+</div>
 
 <div id="multi-line-charts">
   ### 複数系列チャート
@@ -189,7 +221,11 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
+<div className="ch-image-lg">
+
 ![複数系列チャート](/images/use-cases/observability/observability-23.webp)
+
+</div>
 
 <div id="visualizing-geo-data">
   ### 地理データの可視化
@@ -215,4 +251,8 @@ FROM coords
 GROUP BY hash
 ```
 
+<div className="ch-image-lg">
+
 ![地理データの可視化](/images/use-cases/observability/observability-24.webp)
+
+</div>

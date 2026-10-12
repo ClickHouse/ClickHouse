@@ -56,7 +56,11 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
     3. **Team Settings → API Keys** に移動します
     4. **インジェスト API key** をコピーします
 
+    <div className="ch-image-lg">
+
     ![ClickStack API Key](/images/clickstack/api-key.webp)
+
+    </div>
 
     これを環境変数として保存します:
 
@@ -292,7 +296,11 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
     3. ログが表示されるまで 1～2 分待ちます (poll interval に応じます)
     4. CloudWatch ロググループのログを検索します
 
+    <div className="ch-image-lg">
+
     ![ログ検索ビュー](/images/clickstack/cloudwatch/log-search-view.webp)
+
+    </div>
 
     ログで次の主要な属性を確認します。
 
@@ -301,7 +309,11 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
     * `ResourceAttributes['cloudwatch.log.stream']`: ログストリーム名
     * `Body`: 実際のログメッセージの内容
 
+    <div className="ch-image-lg">
+
     ![エラーログのカラム値](/images/clickstack/cloudwatch/error-log-column-values.webp)
+
+    </div>
   </Step>
 </Steps>
 
@@ -356,7 +368,11 @@ AWS CloudWatch は、AWS のリソースやアプリケーションを監視す�
 
     複数の CloudWatchロググループ からのログが表示されるはずです。
 
+    <div className="ch-image-lg">
+
     ![デモ検索ビュー](/images/clickstack/cloudwatch/demo-search-view.webp)
+
+    </div>
 
     <Info>
       **タイムゾーン表示**
@@ -381,17 +397,29 @@ ClickStack で CloudWatch Logs を監視できるように、重要な可視化�
     1. HyperDX を開き、Dashboards セクションに移動します
     2. 右上の三点メニューにある **Import Dashboard** をクリックします
 
+    <div className="ch-image-lg">
+
     ![ダッシュボードをインポートするボタン](/images/clickstack/import-dashboard.webp)
+
+    </div>
 
     3. `cloudwatch-logs-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
 
+    <div className="ch-image-lg">
+
     ![インポート完了ダイアログ](/images/clickstack/cloudwatch/finish-import.webp)
+
+    </div>
   </Step>
 
   <Step title="ダッシュボードを表示する" id="created-dashboard">
     すべての可視化があらかじめ設定された状態でダッシュボードが作成されます。
 
+    <div className="ch-image-lg">
+
     ![CloudWatch Logs ダッシュボード](/images/clickstack/cloudwatch/logs-dashboard.webp)
+
+    </div>
 
     <Note>
       デモデータセットでは、時間範囲を **2025-12-07 00:00:00 - 2025-12-08 00:00:00 (UTC)** に設定してください (ローカルのタイムゾーンに応じて調整してください) 。インポートしたダッシュボードには、デフォルトでは時間範囲が指定されていません。

@@ -15,7 +15,11 @@ O Private Service Connect (PSC) é um recurso de rede do Google Cloud que permit
 
 Os provedores de serviços disponibilizam seus aplicativos aos consumidores criando serviços do Private Service Connect. Os consumidores acessam esses serviços do Private Service Connect diretamente por meio de um destes tipos do Private Service Connect.
 
+<div className="ch-image-lg">
+
 ![Visão geral do Private Service Connect](/images/cloud/security/gcp-psc-overview.webp)
+
+</div>
 
 <Warning>
   O Private Service Connect do GCP oferece suporte apenas a conexões iniciadas da sua VPC do GCP para o ClickHouse Cloud. Ele não pode ser usado para conexões iniciadas do ClickHouse Cloud para serviços na sua VPC, como um [banco de dados privado](#connecting-to-a-remote-database).
@@ -97,7 +101,11 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
 
 No console do ClickHouse Cloud, abra o service ao qual você deseja se conectar via Private Service Connect e, em seguida, abra o menu **Settings**. Clique no botão **Set up private endpoint**. Anote o **Service name** (`endpointServiceId`) e o **DNS name** (`privateDnsHostname`). Você vai usá-los nas próximas etapas.
 
+<div className="ch-image-lg">
+
 ![Endpoints privados](/images/cloud/security/gcp-privatelink-pe-create.webp)
+
+</div>
 
 <div id="option-2-api">
   ### Opção 2: API
@@ -145,7 +153,11 @@ Primeiro, crie uma Private Service Connection.
 
 No Console do Google Cloud, navegue até **Network services -&gt; Private Service Connect**.
 
+<div className="ch-image-lg">
+
 ![Abrir o Private Service Connect no Console do Google Cloud](/images/cloud/security/gcp-psc-open.webp)
+
+</div>
 
 Abra a caixa de diálogo de criação do Private Service Connect clicando no botão **Connect Endpoint**.
 
@@ -155,13 +167,21 @@ Abra a caixa de diálogo de criação do Private Service Connect clicando no bot
 * **Network/Subnetwork/IP address**: escolha a rede que deseja usar para a conexão. Você precisará criar um endereço IP ou usar um já existente para o endpoint do Private Service Connect. No nosso exemplo, criamos previamente um endereço com o nome **your-ip-address** e atribuímos o endereço IP `10.128.0.2`.
 * Para disponibilizar o endpoint em qualquer região, você pode marcar a caixa de seleção **Enable global access**.
 
+<div className="ch-image-md">
+
 ![Ativar o Global Access para o Private Service Connect](/images/cloud/security/gcp-psc-enable-global-access.webp)
+
+</div>
 
 Para criar o endpoint do PSC, use o botão **ADD ENDPOINT**.
 
 A coluna **Status** mudará de **Pending** para **Accepted** assim que a conexão for aprovada.
 
+<div className="ch-image-lg">
+
 ![Copiar o ID da conexão do PSC](/images/cloud/security/gcp-psc-copy-connection-id.webp)
+
+</div>
 
 Copie o ***PSC Connection ID***; você o usará como ***Endpoint ID*** nas próximas etapas.
 
@@ -245,7 +265,11 @@ Para adicionar um endpoint à sua organização, siga para a etapa [Adicionar &q
 
 Para remover um endpoint, abra **Organization details -&gt; Private Endpoints** e clique no botão de exclusão para removê-lo.
 
+<div className="ch-image-lg">
+
 ![Remover Private Endpoint do ClickHouse Cloud](/images/cloud/security/gcp-pe-remove-private-endpoint.webp)
+
+</div>
 
 <div id="option-2-api">
   ### Opção 2: API
@@ -314,7 +338,11 @@ No console do ClickHouse Cloud, abra o serviço ao qual você quer se conectar p
   Se você quiser permitir acesso por uma conexão existente do Private Service Connect, use o menu suspenso do endpoint existente.
 </Note>
 
+<div className="ch-image-lg">
+
 ![Filtro de Endpoints Privados](/images/cloud/security/gcp-privatelink-pe-filters.webp)
+
+</div>
 
 <div id="option-2-api">
   ### Opção 2: API
@@ -374,7 +402,11 @@ Cada serviço com o Private Service Connect habilitado tem um endpoint público 
 
 No console do ClickHouse Cloud, navegue até **Settings**. Clique no botão **Set up private endpoint**. No painel lateral aberto, copie o **DNS name**.
 
+<div className="ch-image-lg">
+
 ![Nome DNS do endpoint privado](/images/cloud/security/gcp-privatelink-pe-dns.webp)
+
+</div>
 
 <div id="option-2-api-3">
   #### Opção 2: API
