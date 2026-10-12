@@ -1,0 +1,25 @@
+-- arm 1: the data version a part still carries, hidden by a queued mutation
+1
+0	0
+1	100
+2	2
+3	300
+4	400
+5	5
+6	6
+7	7
+8	8
+9	9
+unapplied patch parts
+-- arm 2: the data version a queued mutation is going to assign
+1
+1
+1
+unapplied patch parts
+-- arm 3: an intermediate data version in a chain of queued entries
+2
+would span data version
+0
+-- arm 4: the same merge is allowed once no version is hidden
+1
+0

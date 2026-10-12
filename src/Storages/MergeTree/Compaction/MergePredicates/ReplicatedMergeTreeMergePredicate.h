@@ -17,6 +17,9 @@ public:
     PartsRange getPatchesToApplyOnMerge(const PartsRange & range) const override;
 
 protected:
+    /// Data versions that a merge of patch parts must not span. Requires queue.state_mutex.
+    DataVersionsByPartition collectDataVersionsNotToSpan() const;
+
     const ReplicatedMergeTreeQueue & queue;
 
     /// List of UUIDs for parts that have their identity "pinned".
