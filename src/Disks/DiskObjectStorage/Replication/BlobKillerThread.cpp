@@ -362,8 +362,13 @@ void BlobKillerThread::waitRound(int64_t expected_round)
 void BlobKillerThread::triggerAndWait()
 {
     /// The task is never scheduled for such a storage, so waiting for a round to finish would never return.
+    /// The wrapped storage of a cache layer may still have dead blobs of its own, so wait for it anyway.
     if (!metadata_storage->hasDeadBlobsQueue())
+    {
+        if (wrapped_blob_killer)
+            wrapped_blob_killer->triggerAndWait();
         return;
+    }
 
     int64_t expected_round = trigger();
 
