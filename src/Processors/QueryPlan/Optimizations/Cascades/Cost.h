@@ -52,7 +52,10 @@ struct CostConfig
 
     /// Per-operator constants of the model. The defaults are the model; overrides are for experiments.
     Float64 expression_cost_per_row = 0.1;   /// Expressions and filters do little work per row.
-    Float64 hash_table_build_factor = 2.0;   /// A hash table insert costs about two probes.
+    /// Work per row put into a hash table, besides its bytes. Measured on TPC-H joins, an insert takes about
+    /// twice the CPU of scanning a row, which is priced at its bytes (tens of units); with a small value a
+    /// broadcast of a large table looks cheaper than shuffling a much smaller join result.
+    Float64 hash_table_build_factor = 40.0;
     /// Source steps the model knows nothing about. Large enough to dominate typical plans, so
     /// an unknown leaf is avoided when a modeled alternative exists, but finite, so a plan that
     /// has to contain one can still be built.

@@ -335,6 +335,9 @@ funnels every row through one endpoint, so its transfer stays undivided and each
 also pays `funnel_sequential_cost_per_row`. A hash-table build counts as work, not as
 a sequential phase: `parallel_hash` shards the build across the threads of a node
 (a broadcast join still builds the full table on every node, a shuffle join `1/N`).
+Each built row costs `hash_table_build_factor` plus its bytes; an insert takes about
+twice the CPU of scanning a row, which costs its bytes, so the factor is about twice
+the bytes of a typical scanned row.
 `sequential_weight` is the per-node thread count: a serial phase holds one thread
 while work spreads over all of them, so one serial row costs about `threads` work
 rows (Brent's law).
