@@ -19,6 +19,7 @@
 #include <Common/typeid_cast.h>
 #include <Core/BlockNameMap.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
+#include <Processors/Transforms/EmptySetShortCircuitTransform.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <fmt/format.h>
@@ -217,6 +218,8 @@ QueryPipelineBuilderPtr JoinStep::updatePipeline(QueryPipelineBuilders pipelines
                 &processors);
         }
     }
+
+    addEmptySetShortCircuit(*joined_pipeline, empty_result_sets);
 
     if (!use_new_analyzer)
         return joined_pipeline;

@@ -12,6 +12,13 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 class ActionsDAG;
 class QueryConditionCache;
 
+class FutureSet;
+using FutureSetPtr = std::shared_ptr<FutureSet>;
+
+/// The sets of the `in` conjuncts of a filter that cannot change while the query runs: no row passes it when one of them is empty.
+std::vector<FutureSetPtr> getSetsRequiredByFilter(const ActionsDAG & dag, const String & filter_column_name);
+bool hasBuiltEmptySet(const std::vector<FutureSetPtr> & sets);
+
 /** Implements WHERE, HAVING operations.
   * Takes an expression, which adds to the block one ColumnUInt8 column containing the filtering conditions.
   * The expression is evaluated and result chunks contain only the filtered rows.

@@ -1,0 +1,16 @@
+<test>
+    <create_query>CREATE TABLE join_left_in_empty_set_l (c1 String, c2 Date, c3 String, c4 Int64) ENGINE = MergeTree ORDER BY c2</create_query>
+    <create_query>CREATE TABLE join_left_in_empty_set_r (c3 String, c5 Float64) ENGINE = MergeTree ORDER BY c3</create_query>
+    <create_query>CREATE TABLE join_left_in_empty_set_keys (c1 String) ENGINE = MergeTree ORDER BY c1</create_query>
+
+    <fill_query>INSERT INTO join_left_in_empty_set_l SELECT toString(number % 100000), toDate('2026-01-01') + number % 300, toString(number % 2000000), number FROM numbers(10000000)</fill_query>
+    <fill_query>INSERT INTO join_left_in_empty_set_r SELECT toString(number % 2000000), number FROM numbers(10000000)</fill_query>
+
+    <!-- The IN subquery returns no rows, so the join does not have to build its right side. -->
+    <query>SELECT * FROM (SELECT a.c1 AS c1, a.c2 AS c2, b.c6 AS c6, sum(a.c4) OVER (PARTITION BY a.c1, a.c2) AS c7 FROM join_left_in_empty_set_l AS a LEFT JOIN (SELECT c3, sum(c5) AS c6 FROM join_left_in_empty_set_r GROUP BY c3) AS b ON b.c3 = a.c3) WHERE c1 IN (SELECT c1 FROM join_left_in_empty_set_keys) ORDER BY c2 DESC LIMIT 200 FORMAT Null</query>
+    <query>SELECT count() FROM (SELECT c1, c2, row_number() OVER (PARTITION BY c1 ORDER BY c2) AS rn FROM (SELECT a.c1 AS c1, a.c2 AS c2 FROM join_left_in_empty_set_l AS a LEFT JOIN (SELECT c3, sum(c5) AS c6 FROM join_left_in_empty_set_r GROUP BY c3) AS b ON a.c3 = b.c3)) WHERE rn = 1 AND c2 >= '2026-01-01' AND c1 IN (SELECT c1 FROM join_left_in_empty_set_keys) FORMAT Null</query>
+
+    <drop_query>DROP TABLE IF EXISTS join_left_in_empty_set_l</drop_query>
+    <drop_query>DROP TABLE IF EXISTS join_left_in_empty_set_r</drop_query>
+    <drop_query>DROP TABLE IF EXISTS join_left_in_empty_set_keys</drop_query>
+</test>

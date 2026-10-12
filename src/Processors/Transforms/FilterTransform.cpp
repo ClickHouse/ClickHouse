@@ -72,40 +72,58 @@ static Block checkAndRemoveFilterColumn(Block result, const String & filter_colu
 }
 
 /// constant folding in prepare misses an empty set behind a Nullable argument - no constness at 0 rows
-static bool isAlwaysFalseByEmptySet(const ActionsDAG::Node * node)
+static void collectSetsRequiredByFilter(const ActionsDAG::Node * node, std::vector<FutureSetPtr> & sets)
 {
     while (node->type == ActionsDAG::ActionType::ALIAS)
         node = node->children.at(0);
 
     if (node->type != ActionsDAG::ActionType::FUNCTION)
-        return false;
+        return;
 
     const auto & function_name = node->function_base->getName();
 
     if (function_name == "and")
-        return std::any_of(node->children.begin(), node->children.end(), isAlwaysFalseByEmptySet);
+    {
+        for (const auto * child : node->children)
+            collectSetsRequiredByFilter(child, sets);
+        return;
+    }
 
-    /// notIn over an empty set is always true, and the -IgnoreSet variants must not fold
-    if (function_name != "in" && function_name != "globalIn")
-        return false;
+    /// notIn over an empty set is always true, and the -IgnoreSet variants must not fold; nullIn is 0 for every row of an empty set
+    if (function_name != "in" && function_name != "globalIn" && function_name != "nullIn" && function_name != "globalNullIn")
+        return;
 
     const IColumn * set_column = node->children[1]->column.get();
     if (!set_column)
-        return false;
+        return;
 
     if (const auto * const_column = typeid_cast<const ColumnConst *>(set_column))
         set_column = &const_column->getDataColumn();
 
     const auto * column_set = typeid_cast<const ColumnSet *>(set_column);
     if (!column_set)
-        return false;
+        return;
 
-    auto future_set = column_set->getData();
-    if (!future_set)
-        return false;
+    /// A set that can grow while the query runs (`ENGINE = Set`) must not end the filter for good.
+    if (auto future_set = column_set->getData(); future_set && !future_set->isMutableDuringQuery())
+        sets.push_back(std::move(future_set));
+}
 
-    auto set = future_set->get();
-    return set && set->getTotalRowCount() == 0;
+std::vector<FutureSetPtr> getSetsRequiredByFilter(const ActionsDAG & dag, const String & filter_column_name)
+{
+    std::vector<FutureSetPtr> sets;
+    if (const auto * node = dag.tryFindInOutputs(filter_column_name))
+        collectSetsRequiredByFilter(node, sets);
+    return sets;
+}
+
+bool hasBuiltEmptySet(const std::vector<FutureSetPtr> & sets)
+{
+    return std::ranges::any_of(sets, [](const FutureSetPtr & future_set)
+    {
+        auto set = future_set->get();
+        return set && set->getTotalRowCount() == 0;
+    });
 }
 
 Block FilterTransform::transformHeader(
@@ -198,7 +216,7 @@ IProcessor::Status FilterTransform::prepare()
         if (!always_false && expression && !on_totals)
         {
             const auto & actions_dag = expression->getActionsDAG();
-            always_false = isAlwaysFalseByEmptySet(&actions_dag.findInOutputs(filter_column_name));
+            always_false = hasBuiltEmptySet(getSetsRequiredByFilter(actions_dag, filter_column_name));
 
             if (!always_false)
             {

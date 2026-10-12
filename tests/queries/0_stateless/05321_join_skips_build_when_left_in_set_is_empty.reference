@@ -1,0 +1,57 @@
+window	0	0
+rn	0
+left hash	0
+left parallel_hash	0
+left grace_hash	0
+left partial_merge	0
+left full_sorting_merge	0
+left auto	0
+left default	0
+inner	0
+cross	0	
+left semi	0
+left anti	0
+prewhere	0
+where	0
+chain	0
+window chain	0	0
+null in	0
+left ie_join	0
+left full_sorting_merge swapped	0
+inner right filter	0
+left full_sorting_merge onfly	0
+filled chain	0
+memory prewhere	0
+row policy	0
+merge table	0
+right semi	0
+left semi swapped	0
+left semi ie_join	0
+filled semi chain	0
+runtime filter chain	0
+distinct	0
+array join	0
+array join element	0
+window subquery	0	0
+limit by	0
+group by	0
+merging aggregated	0
+totals dropped	0
+not in	100
+non-empty set	20	15
+right	5
+full	105
+totals
+
+	6
+totals left
+
+	0	
+right then left	5
+left, empty right	100
+filled right chain	7
+or	50
+right anti	10
+explain subquery set	1
+explain Set table	0
+explain not in	0

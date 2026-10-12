@@ -241,6 +241,7 @@ public:
     bool mayBeExpandedForParallelReplicas(const std::function<bool(const ReadFromMergeTree &)> & can_ship_read);
 
     void addFilter(FilterDAGInfo filter);
+    const std::vector<FilterDAGInfo> & getPushedDownFilters() const { return pushed_down_filters; }
 
 private:
     const size_t required_max_block_size;

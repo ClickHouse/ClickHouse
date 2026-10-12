@@ -11,6 +11,9 @@ namespace DB
 class IJoin;
 using JoinPtr = std::shared_ptr<IJoin>;
 
+class FutureSet;
+using FutureSetPtr = std::shared_ptr<FutureSet>;
+
 struct LogicalJoinInfo
 {
     String readable_relation_name;
@@ -63,6 +66,7 @@ public:
 
     const JoinPtr & getJoin() const { return join; }
     void setJoin(JoinPtr join_, bool swap_streams_ = false);
+    void setEmptyResultSets(std::vector<FutureSetPtr> sets) { empty_result_sets = std::move(sets); }
     void setLogicalJoinInfo(LogicalJoinInfo && logical_join_info);
     bool allowPushDownToRight() const;
 
@@ -111,6 +115,8 @@ private:
     String join_readable_relation_name;
 
     JoinPtr join;
+    /// Sets of `in` conjuncts such that the join returns no rows when one of them is empty.
+    std::vector<FutureSetPtr> empty_result_sets;
     JoinEstimation estimation;
     UInt64 cluster_id = 0;
     size_t max_block_size;

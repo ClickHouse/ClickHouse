@@ -980,6 +980,8 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
+
+    traverseQueryPlan(stack, root, [&](auto & frame_node) { setJoinEmptyResultSets(frame_node); });
 }
 
 void addStepsToBuildSets(

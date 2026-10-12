@@ -10,6 +10,7 @@
 #include <Processors/QueryPlan/IEJoinStep.h>
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Transforms/ColumnPermuteTransform.h>
+#include <Processors/Transforms/EmptySetShortCircuitTransform.h>
 #include <Processors/Transforms/IEJoinTransform.h>
 #include <QueryPipeline/QueryPipelineBuilder.h>
 #include <Common/JSONBuilder.h>
@@ -173,6 +174,7 @@ QueryPipelineBuilderPtr IEJoinStep::updatePipeline(QueryPipelineBuilders pipelin
         });
     }
 
+    addEmptySetShortCircuit(*pipeline, empty_result_sets);
     return pipeline;
 }
 

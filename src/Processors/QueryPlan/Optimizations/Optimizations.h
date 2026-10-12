@@ -321,6 +321,7 @@ bool optimizeLazyMaterialization2(QueryPlan::Node & root, QueryPlan & query_plan
 void optimizeLazyFinal(const Stack & stack, QueryPlan & query_plan, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
 bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes &, const QueryPlanOptimizationSettings &);
 void optimizeJoinByShards(QueryPlan::Node & root);
+void setJoinEmptyResultSets(QueryPlan::Node & node);
 /// Mark hash joins with a probe-side MergeTree read prunable by the join's runtime filter:
 /// the reading is then gated on the build completion seal which delivers the filter for
 /// primary key range pruning (see SealGatedReadTransform).

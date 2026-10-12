@@ -7,6 +7,9 @@
 namespace DB
 {
 
+class FutureSet;
+using FutureSetPtr = std::shared_ptr<FutureSet>;
+
 /// Joins two data streams by two inequality conditions with the IEJoin algorithm.
 /// The step speaks the query terms: conditions and join type refer to the query's left and
 /// right tables. Right-side SEMI/ANTI are executed as the left-side mirror internally: the
@@ -32,6 +35,10 @@ public:
     static bool isSupportedJoinType(JoinKind kind, JoinStrictness strictness);
 
     String getName() const override { return "IEJoin"; }
+
+    JoinKind getQueryKind() const { return query_kind; }
+    JoinStrictness getQueryStrictness() const { return query_strictness; }
+    void setEmptyResultSets(std::vector<FutureSetPtr> sets) { empty_result_sets = std::move(sets); }
 
     QueryPipelineBuilderPtr updatePipeline(QueryPipelineBuilders pipelines, const BuildQueryPipelineSettings &) override;
 
@@ -60,6 +67,9 @@ private:
     /// is an `IEJoinKind` and the column reports the `JoinKind` and the `JoinStrictness` separately.
     JoinKind query_kind;
     JoinStrictness query_strictness;
+
+    /// Sets of `in` conjuncts such that the join returns no rows when one of them is empty.
+    std::vector<FutureSetPtr> empty_result_sets;
 
     /// The planner pre-sorted each input by its first-condition key with a `SortingStep`
     /// (always ascending, NULLS LAST); selects the merge-based L1 build in the operator.
