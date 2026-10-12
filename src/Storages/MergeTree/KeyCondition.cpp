@@ -2655,6 +2655,18 @@ static bool castColumnWithoutNulls(
 }
 
 
+/// Whether the type contains a `Bool` leaf. `Bool` is a custom name over `UInt8`, so it hides from
+/// checks that look at the underlying type, and its serialization renders every nonzero byte as
+/// `true`, folding distinct values together.
+static bool typeContainsBool(const DataTypePtr & type)
+{
+    if (!type)
+        return false;
+
+    return anyInTypeTree(*type, [](const IDataType & node) { return node.getName() == "Bool"; });
+}
+
+
 /// Converts `in_column` to the type the transform DAG consumes and writes it to `out_column`/`out_type`,
 /// so the value the transform will see is observable before the transform runs.
 /// Returns false when the conversion cannot be applied accurately to every value in `in_column`.
@@ -2745,7 +2757,13 @@ static bool convertColumnForDeterministicDag(
                 && !castColumnWithoutNulls(out_column, out_type, cast_result_type, out_cast_is_exact))
                 return false;
 
-            return finalizeTransformedColumn(out_column, out_type);
+            if (!finalizeTransformedColumn(out_column, out_type))
+                return false;
+
+            if (typeContainsBool(out_type))
+                out_cast_is_exact = false;
+
+            return true;
         };
 
         /// The constant is normalized through the key column's type first: applying the `CAST` of the
@@ -2776,6 +2794,14 @@ static bool convertColumnForDeterministicDag(
 
     out_column = input_column;
     out_type = input_type;
+
+    /// `Bool` folds distinct values together - `Bool(1)` and `Bool(2)` both render as `true` - and the
+    /// fold is invisible above: `Bool` hides behind `UInt8` in `canBeSafelyCast`, and an equal-type pair
+    /// skips casting entirely. Mark the conversion inexact, so the caller reads more instead of pruning
+    /// by a value the transform has folded.
+    if (typeContainsBool(out_type))
+        out_cast_is_exact = false;
+
     return true;
 }
 

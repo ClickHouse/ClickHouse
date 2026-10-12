@@ -1,0 +1,27 @@
+2
+2
+2
+2
+false
+true
+Output: count()
+
+Aggregating
+│  Keys:
+│  Aggregates: count()
+│  Skip merging: 0
+└──Filter ((WHERE + Change column names to column identifiers))
+   │  Filter column: b NOT IN (2)
+   └──ReadFromMergeTree (default.t_bool_tostring_key)
+         Read type: Default
+         Parts: 2 | Granules: 2
+         Output: b
+         Indexes:
+           PrimaryKey
+             Keys:
+               toString(b)
+             Condition: (toString(b) notIn 1-element set)
+             Parts: 2/2
+             Granules: 2/2
+             Search Algorithm: generic exclusion search
+           Ranges: 2
