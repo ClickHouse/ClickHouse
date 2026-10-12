@@ -7,14 +7,13 @@ keywords: ['azure', 'private link', 'privatelink']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Azure Private Link"/>
 
 This guide shows how to use Azure Private Link to provide private connectivity via a virtual network between Azure (including customer-owned and Microsoft Partner services) and ClickHouse Cloud. Azure Private Link simplifies the network architecture and secures the connection between endpoints in Azure by eliminating data exposure to the public internet.
 
-<Image img="/images/cloud/security/azure-pe.webp" size="lg" alt="Overview of PrivateLink" background='white' />
+![Overview of PrivateLink](/images/cloud/security/azure-pe.webp)
 
 <Warning>
 Azure Private Link supports only connections initiated from your Azure VNet to ClickHouse Cloud. It can't be used for connections initiated from ClickHouse Cloud to services in your VNet, such as a private database.
@@ -50,7 +49,7 @@ Find Terraform examples at the ClickHouse [Terraform Provider repository](https:
 
 In the ClickHouse Cloud console, open the service that you would like to connect via PrivateLink, then open the **Settings** menu. Click on the **Set up private endpoint** button. Make a note of the `Service name` and `DNS name` which will be used for setting up Private Link.
 
-<Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="lg" alt="Private Endpoints" border />
+![Private Endpoints](/images/cloud/security/azure-privatelink-pe-create.webp)
 
 Make a note of the `Service name` and `DNS name`, they will be needed in the next steps.
 
@@ -105,11 +104,11 @@ In this section, we're going to create a Private Endpoint in Azure. You can use 
 
 In the Azure Portal, open **Private Link Center → Private Endpoints**.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Open Azure Private Center" border />
+![Open Azure Private Center](/images/cloud/security/azure-private-link-center.webp)
 
 Open the Private Endpoint creation dialog by clicking on the **Create** button.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Open Azure Private Center" border />
+![Open Azure Private Center](/images/cloud/security/azure-private-link-center.webp)
 
 ---
 
@@ -121,7 +120,7 @@ In the following screen, specify the following options:
 
 After you have completed the above steps, click the **Next: Resource** button.
 
-<Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Create Private Endpoint Basic" border />
+![Create Private Endpoint Basic](/images/cloud/security/azure-pe-create-basic.webp)
 
 ---
 
@@ -131,7 +130,7 @@ For the **Resource ID or alias**, use the `endpointServiceId` you have obtained 
 
 Click **Next: Virtual Network** button.
 
-<Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="Private Endpoint Resource Selection" border />
+![Private Endpoint Resource Selection](/images/cloud/security/azure-pe-resource.webp)
 
 ---
 
@@ -144,13 +143,13 @@ Optional:
 
 Click **Next: DNS** button.
 
-<Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="Private Endpoint Virtual Network Selection" border />
+![Private Endpoint Virtual Network Selection](/images/cloud/security/azure-pe-create-vnet.webp)
 
 Click the **Next: Tags** button.
 
 ---
 
-<Image img="/images/cloud/security/azure-pe-create-dns.webp" size="md" alt="Private Endpoint DNS Configuration" border />
+![Private Endpoint DNS Configuration](/images/cloud/security/azure-pe-create-dns.webp)
 
 Optionally, you can attach tags to your Private Endpoint.
 
@@ -158,17 +157,17 @@ Click the **Next: Review + create** button.
 
 ---
 
-<Image img="/images/cloud/security/azure-pe-create-tags.webp" size="md" alt="Private Endpoint Tags" border />
+![Private Endpoint Tags](/images/cloud/security/azure-pe-create-tags.webp)
 
 Finally, click the **Create** button.
 
-<Image img="/images/cloud/security/azure-pe-create-review.webp" size="md" alt="Private Endpoint Review" border />
+![Private Endpoint Review](/images/cloud/security/azure-pe-create-review.webp)
 
 The **Connection status** of the created Private Endpoint will be in **Pending** state. It will change to **Approved** state once you add this Private Endpoint to the service allow list.
 
 Open the network interface associated with Private Endpoint and copy the **Private IPv4 address**(10.0.0.4 in this example), you will need this information in the next steps.
 
-<Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="Private Endpoint IP Address" border />
+![Private Endpoint IP Address](/images/cloud/security/azure-pe-ip.webp)
 
 ### Option 2: Using Terraform to create a private endpoint in Azure {#option-2-using-terraform-to-create-a-private-endpoint-in-azure}
 
@@ -195,17 +194,17 @@ In order to use Private Link, you need to add the Private Endpoint connection Re
 
 The Private Endpoint Resource ID is exposed in the Azure Portal. Open the Private Endpoint created in the previous step and click **JSON View**:
 
-<Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="Private Endpoint View" border />
+![Private Endpoint View](/images/cloud/security/azure-pe-view.webp)
 
 Copy the top-level `id` field (the private endpoint's Resource ID, in the form `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`) — don't use the nested `id` fields inside the `properties` object:
 
 **Preferred method: Using Resource ID**
-<Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="Private Endpoint Resource ID" border />
+![Private Endpoint Resource ID](/images/cloud/security/azure-pe-resource-id.webp)
 
 **Legacy method: Using resourceGUID**
 You can still use the resourceGUID for backward compatibility. Find the `resourceGuid` field and copy this value:
 
-<Image img="/images/cloud/security/azure-pe-resource-guid.webp" size="lg" alt="Private Endpoint Resource GUID" border />
+![Private Endpoint Resource GUID](/images/cloud/security/azure-pe-resource-guid.webp)
 
 ## Setting up DNS for Private Link {#setting-up-dns-for-private-link}
 
@@ -240,7 +239,7 @@ Create a wildcard record and point to your Private Endpoint:
 4. For IP Address, type the IP address you see for Private Endpoint.
 5. Select **OK**.
 
-<Image img="/images/cloud/security/azure-pl-dns-wildcard.webp" size="lg" alt="Private Link DNS Wildcard Setup" border />
+![Private Link DNS Wildcard Setup](/images/cloud/security/azure-pl-dns-wildcard.webp)
 
 **Option 2: Using Terraform**
 
@@ -294,7 +293,7 @@ To add an endpoint to the organization, proceed to the [Add the Private Endpoint
 
 To remove an endpoint, open **Organization details -> Private Endpoints** and click the delete button to remove the endpoint.
 
-<Image img="/images/cloud/security/azure-pe-remove-private-endpoint.webp" size="lg" alt="Remove Private Endpoint" border />
+![Remove Private Endpoint](/images/cloud/security/azure-pe-remove-private-endpoint.webp)
 
 ### Option 2: API {#option-2-api-1}
 
@@ -366,7 +365,7 @@ In the ClickHouse Cloud console, open the service that you would like to connect
 If you want to allow access from an existing PrivateLink connection, use the existing endpoint drop-down menu.
 </Note>
 
-<Image img="/images/cloud/security/azure-privatelink-pe-filter.webp" size="lg" alt="Private Endpoints Filter" border />
+![Private Endpoints Filter](/images/cloud/security/azure-privatelink-pe-filter.webp)
 
 ### Option 2: API {#option-2-api-2}
 
@@ -427,7 +426,7 @@ Each service with Private Link enabled has a public and private endpoint. In ord
 
 In the ClickHouse Cloud console, navigate to **Settings**. Click on the **Set up private endpoint** button. In the opened flyout, copy the **DNS Name**.
 
-<Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="lg" alt="Private Endpoint DNS Name" border />
+![Private Endpoint DNS Name](/images/cloud/security/azure-privatelink-pe-dns.webp)
 
 #### Option 2: API {#option-2-api-3}
 

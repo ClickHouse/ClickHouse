@@ -6,8 +6,6 @@ description: 'В этом руководстве мы сначала рассм�
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="introduction">
   ## Введение
 </div>
@@ -31,7 +29,7 @@ ClickHouse обрабатывает запросы чрезвычайно быс
 каждый сегмент выполнит данный запрос. Сервер, на котором был выполнен запрос к distributed
 таблице, агрегирует данные и вернет ответ клиенту:
 
-<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="архитектура с сегментированием" />
+![архитектура с сегментированием](/images/deployment-guides/parallel-replicas-1.webp)
 
 На рисунке выше показано, что происходит, когда клиент выполняет запрос к distributed таблице:
 
@@ -72,7 +70,7 @@ ClickHouse обрабатывает запросы чрезвычайно быс
 
 На рисунке ниже показана архитектура ClickHouse Cloud:
 
-<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="архитектура без сегментирования" />
+![архитектура без сегментирования](/images/deployment-guides/parallel-replicas-2.webp)
 
 Эта архитектура позволяет почти мгновенно добавлять и удалять реплики,
 обеспечивая очень высокую масштабируемость кластера. Кластер ClickHouse
@@ -100,7 +98,7 @@ Keeper (показан справа) обеспечивает единый ис�
 
 Теперь посмотрим, как это работает на практике, с помощью схемы ниже:
 
-<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="Параллельные реплики" />
+![Параллельные реплики](/images/deployment-guides/parallel-replicas-3.webp)
 
 С параллельными репликами:
 
@@ -163,7 +161,7 @@ Keeper (показан справа) обеспечивает единый ис�
 Чтобы решить проблемы (1) и (2) из приведенного выше списка, мы ввели понятие
 уведомления. Давайте посмотрим, как это работает, на схеме ниже:
 
-<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="Уведомления" />
+![Уведомления](/images/deployment-guides/parallel-replicas-4.webp)
 
 <ol className="docs-ordered-list">
   <li>
@@ -207,7 +205,7 @@ Keeper (показан справа) обеспечивает единый ис�
 
 На рисунке ниже показано, как работает динамическая координация:
 
-<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="Динамическая координация — часть 1" />
+![Динамическая координация — часть 1](/images/deployment-guides/parallel-replicas-5.webp)
 
 <ol className="docs-ordered-list">
   <li>
@@ -220,7 +218,7 @@ Keeper (показан справа) обеспечивает единый ис�
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="Динамическая координация — часть 2" />
+![Динамическая координация — часть 2](/images/deployment-guides/parallel-replicas-6.webp)
 
 <ol className="docs-ordered-list">
   <li>
@@ -233,7 +231,7 @@ Keeper (показан справа) обеспечивает единый ис�
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="Динамическая координация — часть 3" />
+![Динамическая координация — часть 3](/images/deployment-guides/parallel-replicas-7.webp)
 
 <ol className="docs-ordered-list">
   <li>
@@ -507,7 +505,7 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN без parallel_replica" />
+![EXPLAIN без parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
 
 А теперь — с параллельной репликой:
 
@@ -522,4 +520,4 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN с parallel_replica" />
+![EXPLAIN с parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)

@@ -8,8 +8,6 @@ keywords: ['Elasticsearch']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="elastic-vs-clickstack">
   ## Elastic Stack مقابل ClickStack
 </div>
@@ -91,7 +89,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ### الفهرسة والتخزين
 </div>
 
-<Image img="/images/use-cases/observability/elasticsearch.webp" alt="Elasticsearch" size="lg" />
+![Elasticsearch](/images/use-cases/observability/elasticsearch.webp)
 
 يُعد مفهوم التقسيم إلى **شظايا** عنصرًا أساسيًا في نموذج قابلية التوسع في Elasticsearch. يُقسَّم كل ① [**فهرس**](https://www.elastic.co/blog/what-is-an-elasticsearch-index) إلى **شظايا**، وكل منها عبارة عن فهرس Lucene فعلي يُخزَّن على القرص على هيئة segments. ويمكن أن تحتوي الشظية على نسخة فعلية واحدة أو أكثر تُسمّى replica شظايا لتعزيز المرونة. ولتحقيق قابلية التوسع، يمكن توزيع الشظايا وreplicas على عدة عُقد. وتتكوّن الشظية الواحدة ② من segment واحدة أو أكثر غير قابلة للتغيير. وتمثّل segment البنية الأساسية للفهرسة في Lucene، وهي مكتبة Java التي توفّر إمكانات الفهرسة والبحث التي يستند إليها Elasticsearch.
 
@@ -111,7 +109,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 أما ClickHouse، فعلى النقيض، فهو **column-oriented** — إذ يُخزَّن كل عمود بشكل مستقل، لكنه يظل دائمًا مرتبًا وفقًا لـ primary/ordering key الخاص بالجدول. ويتيح هذا الترتيب استخدام [فهارس أساسية متناثرة](/ar/concepts/core-concepts/primary-indexes)، ما يسمح لـ ClickHouse بتخطّي البيانات بكفاءة أثناء تنفيذ الاستعلامات. وعندما تُصفّي الاستعلامات حسب حقول primary key، لا يقرأ ClickHouse إلا الأجزاء ذات الصلة من كل عمود، ما يقلل بدرجة كبيرة من disk I/O ويحسّن الأداء — حتى من دون فهرس كامل على كل عمود.
 
-<Image img="/images/use-cases/observability/clickhouse.webp" alt="ClickHouse" size="lg" />
+![ClickHouse](/images/use-cases/observability/clickhouse.webp)
 
 يدعم ClickHouse أيضًا [**skip indexes**](/ar/concepts/features/performance/skip-indexes/skipping-indexes)، التي تسرّع التصفية عبر الحساب المسبق لبيانات الفهرس لأعمدة محددة. ويجب تعريفها صراحةً، لكنها قد تحسّن الأداء بشكل ملحوظ. بالإضافة إلى ذلك، يتيح ClickHouse تحديد [compression codecs](/ar/guides/use-cases/observability/build-your-own/schema-design#using-codecs) وخوارزميات الضغط لكل عمود — وهو ما لا يدعمه Elasticsearch (إذ إن [الضغط](https://www.elastic.co/docs/reference/elasticsearch/index-settings/index-modules) فيه ينطبق فقط على تخزين JSON في `_source`).
 
@@ -184,7 +182,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 صُمّم ClickHouse لتحقيق أقصى كفاءة على العتاد الحديث. وبشكل افتراضي، يشغّل ClickHouse استعلام SQL باستخدام N من مسارات التنفيذ المتزامنة على جهاز يحتوي على N من أنوية CPU:
 
-<Image img="/images/use-cases/observability/clickhouse-execution.webp" alt="تنفيذ ClickHouse" size="lg" />
+![تنفيذ ClickHouse](/images/use-cases/observability/clickhouse-execution.webp)
 
 على عقدة واحدة، تقسّم مسارات التنفيذ البيانات إلى نطاقات مستقلة، مما يتيح معالجتها بالتوازي عبر خيوط CPU. ويشمل ذلك التصفية والتجميع والفرز. وفي النهاية، تُدمَج النتائج المحلية من كل مسار، ويُطبَّق عامل limit إذا كان الاستعلام يتضمن clause من نوع `LIMIT`.
 
@@ -199,7 +197,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 أما Elasticsearch، فعلى النقيض، فيخصّص خيطًا واحدًا لكل شظية لمعظم عمليات التجميع، بغض النظر عن عدد أنوية CPU المتاحة. وتعيد هذه الخيوط أفضل N من النتائج المحلية لكل شظية، ثم تُدمَج عند العقدة المنسِّقة. وقد يؤدي هذا النهج إلى عدم الاستفادة الكاملة من موارد النظام، كما قد يسبب بعض أوجه عدم الدقة في التجميع الشاملة، لا سيما عندما تكون المصطلحات المتكررة موزعة عبر عدة شظايا. ويمكن تحسين الدقة بزيادة parameter ‏`shard_size`، لكن ذلك يأتي على حساب ارتفاع memory usage وlatency للاستعلام.
 
-<Image img="/images/use-cases/observability/elasticsearch-execution.webp" alt="تنفيذ Elasticsearch" size="lg" />
+![تنفيذ Elasticsearch](/images/use-cases/observability/elasticsearch-execution.webp)
 
 باختصار، ينفّذ ClickHouse عمليات التجميع وqueries بدرجة أدق من التوازي وتحكمًا أكبر في موارد العتاد، بينما يعتمد Elasticsearch على تنفيذ قائم على شظية مع قيود أكثر صرامة.
 
@@ -241,7 +239,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يوضح المخطط التالي، بصورة تجريدية، كيفية عمل transforms (لاحظ أننا نستخدم اللون الأزرق لجميع المستندات التي تنتمي إلى bucket نفسه ونريد احتساب قيم التجميع له مسبقًا):
 
-<Image img="/images/use-cases/observability/es-transforms.webp" alt="تحويلات Elasticsearch" size="lg" />
+![تحويلات Elasticsearch](/images/use-cases/observability/es-transforms.webp)
 
 تستخدم transforms المستمرة [نقاط التحقق](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html) الخاصة بها استنادًا إلى فاصل زمني قابل للضبط للتحقق (أي [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html) الخاصة بـ transform، وقيمتها الافتراضية دقيقة واحدة). في المخطط أعلاه، نفترض أنه عند ① تُنشأ نقطة تحقق جديدة بعد انقضاء فاصل التحقق. بعد ذلك، يفحص Elasticsearch التغييرات في فهرس المصدر الخاص بـ transforms ويكتشف ثلاثة مستندات `blue` جديدة (11 و12 و13) ظهرت منذ نقطة التحقق السابقة. لذلك، يُفلتر فهرس المصدر ليشمل جميع مستندات `blue` الموجودة، ثم يُعاد احتساب قيم التجميع باستخدام [composite aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html) (للاستفادة من [pagination](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html) للنتائج)، ويُحدَّث فهرس الوجهة بمستند يحل محل المستند الذي كان يحتوي على قيم التجميع السابقة. وبالمثل، عند ② و③، تُعالَج نقاط تحقق جديدة عبر التحقق من التغييرات وإعادة احتساب قيم التجميع استنادًا إلى جميع مستندات `blue` الموجودة التي تنتمي إلى bucket نفسه.
 
@@ -251,7 +249,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 نوضح بصورة تجريدية آلية عمل العروض المادية التزايدية (لاحظ أننا نستخدم اللون الأزرق لجميع rows التي تنتمي إلى المجموعة نفسها ونريد احتساب قيم التجميع لها مسبقًا):
 
-<Image img="/images/use-cases/observability/ch-mvs.webp" alt="العروض المادية في ClickHouse" size="lg" />
+![العروض المادية في ClickHouse](/images/use-cases/observability/ch-mvs.webp)
 
 في المخطط أعلاه، يحتوي جدول المصدر الخاص بالعرض المادي بالفعل على data part يخزّن بعض rows `blue` (من 1 إلى 10) التي تنتمي إلى المجموعة نفسها. ولهذه المجموعة، توجد أيضًا data part بالفعل في جدول الهدف الخاص بالعرض، وتخزّن [حالة تجميع جزئية](https://www.youtube.com/watch?v=QDAJTKZT8y4) لمجموعة `blue`. وعندما تحدث عمليات إدراج عند ① ② ③ إلى جدول المصدر مع rows جديدة، تُنشأ source table data part مقابلة لكل إدراج، وبالتوازي، ولكل block من rows المُدرجة حديثًا فقط، تُحتسب حالة تجميع جزئية وتُدرج على شكل data part في جدول الهدف الخاص بالعرض المادي. وعند ④ أثناء عمليات دمج الأجزاء في الخلفية، تُدمَج حالات التجميع الجزئية، ما يؤدي إلى تجميع تزايدي للبيانات.
 

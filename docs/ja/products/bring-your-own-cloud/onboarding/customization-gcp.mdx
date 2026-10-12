@@ -7,8 +7,6 @@ description: '既存の GCP VPC に ClickHouse BYOC をデプロイします'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ## GCP 向けカスタマー管理 VPC (BYO-VPC) {#customer-managed-vpc-gcp}
 
 ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わりに、既存の VPC を使用して ClickHouse BYOC をデプロイする場合は、以下の手順に従ってください。この方法では、ネットワーク構成をより細かく制御できるほか、ClickHouse BYOC を既存のネットワークインフラストラクチャに統合できます。
@@ -23,7 +21,7 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
       [Private Service Connect](/ja/cloud/reference/byoc/onboarding/network-gcp#setup-psc) 経由でサービスを公開するには、この VPC 内に用途が `PRIVATE_SERVICE_CONNECT` の専用サブネットも必要です。これは今すぐ作成することも、プライベートリンクを有効にする前に後から作成することもできます。
     </Note>
 
-    <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Private Google Access が有効で、プライマリおよびセカンダリ IPv4 範囲が表示された BYOC GCP サブネットの詳細" />
+    ![Private Google Access が有効で、プライマリおよびセカンダリ IPv4 範囲が表示された BYOC GCP サブネットの詳細](/images/cloud/reference/byoc-gcp-subnet.webp)
   </Step>
 
   <Step title="ネットワーク接続を確保する" id="ensure-network-connectivity">
@@ -53,7 +51,7 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
     5. VPC が共有 VPC のホストプロジェクトにある場合は、**Shared VPC host project ID** を入力します。VPC がインフラストラクチャと同じプロジェクトにある場合は空のままにします。以下の[ホストプロジェクトからの共有 VPC](#shared-vpc-host-project) を参照してください。
     6. **Set up Infrastructure** をクリックして、プロビジョニングを開始します。
 
-    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="GCP 用に Use existing VPC が選択され、VPC network name、subnet name、secondary range names、Shared VPC host project ID の各フィールドが表示された ClickHouse Cloud BYOC セットアップ UI" />
+    ![GCP 用に Use existing VPC が選択され、VPC network name、subnet name、secondary range names、Shared VPC host project ID の各フィールドが表示された ClickHouse Cloud BYOC セットアップ UI](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
   </Step>
 </Steps>
 

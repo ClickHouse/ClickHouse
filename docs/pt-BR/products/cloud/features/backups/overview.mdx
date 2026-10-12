@@ -7,7 +7,6 @@ description: 'Apresenta uma visão geral dos recursos de backup no ClickHouse Cl
 doc_type: 'referência'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 Os backups do banco de dados foram projetados para permitir que você restaure um serviço a um estado anterior com base no último backup bem-sucedido.
@@ -24,7 +23,7 @@ Na captura de tela abaixo, os quadrados com linha contínua mostram os backups c
 
 No Dia 1, um backup completo é feito para iniciar a cadeia de backups. No Dia 2, um backup incremental é feito, e tanto os backups completos quanto os incrementais ficam disponíveis para restauração. Até o Dia 7, temos um backup completo e seis backups incrementais na cadeia, todos visíveis e disponíveis para restauração. No Dia 8, fazemos um novo backup completo e, no Dia 9, assim que temos dois backups na nova cadeia, a cadeia anterior é descartada.
 
-<Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="Exemplo de cadeia de backups no ClickHouse Cloud" />
+![Exemplo de cadeia de backups no ClickHouse Cloud](/images/cloud/manage/backup-chain.webp)
 
 ### Política de backup padrão {#default-backup-policy}
 

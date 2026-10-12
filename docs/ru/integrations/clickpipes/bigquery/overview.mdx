@@ -8,8 +8,6 @@ doc_type: 'guide'
 
 import IntroClickPipe from '/snippets/ru/_intro.mdx';
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <IntroClickPipe />
 
 <div id="features">
@@ -73,7 +71,7 @@ CDC **не поддерживается** в закрытой предварит
 
 ClickPipes аутентифицируется в вашем проекте Google Cloud с помощью [ключа сервисного аккаунта](https://docs.cloud.google.com/iam/docs/keys-create-delete). Мы рекомендуем создать отдельный сервисный аккаунт с минимально необходимым набором [разрешений](#permissions), чтобы ClickPipes мог экспортировать данные из BigQuery, загружать их в промежуточный GCS-бакет и считывать в ClickHouse.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp" alt="Создание ключа сервисного аккаунта с разрешениями для BigQuery и Cloud Storage" size="lg" border />
+![Создание ключа сервисного аккаунта с разрешениями для BigQuery и Cloud Storage](/images/integrations/data-ingestion/clickpipes/bigquery/cp_iam.webp)
 
 <div id="permissions">
   ### Разрешения

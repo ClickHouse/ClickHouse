@@ -8,8 +8,6 @@ doc_type: 'guide'
 keywords: ['index primaire', 'indexation', 'performances', 'optimisation des requêtes', 'bonnes pratiques']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="introduction">
   ## Introduction
 </div>
@@ -317,7 +315,7 @@ ClickHouse est un <a href="/fr/get-started/about/distinctive-features#true-colum
   * puis par `URL`,
   * et enfin par `EventTime` :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-01.webp" size="lg" alt="Sparse Primary Indices 01" />
+![Sparse Primary Indices 01](/images/guides/best-practices/sparse-primary-indexes-01.webp)
 
 `UserID.bin`, `URL.bin` et `EventTime.bin` sont les fichiers de données sur disque dans lesquels sont stockées les valeurs des colonnes `UserID`, `URL` et `EventTime`.
 
@@ -340,7 +338,7 @@ Cela signifie qu&#39;au lieu de lire des lignes individuelles, ClickHouse lit to
 Le schéma suivant montre comment les (valeurs de colonnes des) 8,87 millions de lignes de notre table
 sont organisées en 1083 granules, du fait que l&#39;instruction DDL de la table contient le paramètre `index_granularity` (défini sur sa valeur par défaut de 8192).
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-02.webp" size="lg" alt="index primaire clairsemé 02" />
+![index primaire clairsemé 02](/images/guides/best-practices/sparse-primary-indexes-02.webp)
 
 Les 8192 premières lignes (d&#39;après l&#39;ordre physique sur le disque) — et leurs valeurs de colonnes — appartiennent logiquement au granule 0, puis les 8192 lignes suivantes (et leurs valeurs de colonnes) appartiennent au granule 1, et ainsi de suite.
 
@@ -371,11 +369,11 @@ Par exemple
 * la première entrée d’index (« mark 0 » dans le schéma ci-dessous) stocke les valeurs des colonnes de clé de la première ligne du granule 0 dans le schéma ci-dessus,
 * la deuxième entrée d’index (« mark 1 » dans le schéma ci-dessous) stocke les valeurs des colonnes de clé de la première ligne du granule 1 dans le schéma ci-dessus, et ainsi de suite.
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-03a.webp" size="lg" alt="Index primaires clairsemés 03a" />
+![Index primaires clairsemés 03a](/images/guides/best-practices/sparse-primary-indexes-03a.webp)
 
 Au total, l’index comporte 1083 entrées pour notre table de 8,87 millions de lignes et 1083 granules :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-03b.webp" size="lg" alt="Index primaires clairsemés 03b" />
+![Index primaires clairsemés 03b](/images/guides/best-practices/sparse-primary-indexes-03b.webp)
 
 <Note>
   * Pour les tables avec [granularité d’index adaptative](/fr/resources/changelogs/oss/2019#experimental-features-1), une marque « finale » supplémentaire est également stockée dans l’index primaire, afin d’enregistrer les valeurs des colonnes de clé primaire de la dernière ligne de la table. Cependant, comme nous avons désactivé la granularité d’index adaptative (afin de simplifier les explications de ce guide et de rendre les schémas ainsi que les résultats reproductibles), l’index de notre table d’exemple n’inclut pas cette marque finale.
@@ -591,7 +589,7 @@ Nous examinons cette deuxième étape plus en détail dans la section suivante.
 
 Le schéma suivant illustre une partie du fichier d’index primaire de notre table.
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-04.webp" size="lg" alt="Index primaires clairsemés 04" />
+![Index primaires clairsemés 04](/images/guides/best-practices/sparse-primary-indexes-04.webp)
 
 Comme expliqué plus haut, grâce à une recherche binaire parmi les 1 083 marques UserID de l’index, la marque 176 a été identifiée. Le granule 176 correspondant peut donc potentiellement contenir des lignes dont la colonne UserID a la valeur 749.927.693.
 
@@ -609,7 +607,7 @@ Dans ClickHouse, les emplacements physiques de tous les granules de notre table 
 
 Le schéma suivant montre les trois fichiers de marks `UserID.mrk`, `URL.mrk` et `EventTime.mrk` qui stockent les emplacements physiques des granules pour les colonnes `UserID`, `URL` et `EventTime` de la table.
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-05.webp" size="lg" alt="Index primaires clairsemés 05" />
+![Index primaires clairsemés 05](/images/guides/best-practices/sparse-primary-indexes-05.webp)
 
 Nous avons vu que l’index primaire est un fichier tableau plat non compressé (primary.idx), contenant des index mark numérotés à partir de 0.
 
@@ -657,7 +655,7 @@ Les 8 192 lignes appartenant au granule décompressé ainsi localisé sont ens
 
 Le schéma suivant et le texte ci-dessous illustrent comment, pour notre requête d’exemple, ClickHouse localise le granule 176 dans le fichier de données UserID.bin.
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-06.webp" size="lg" alt="Index primaires clairsemés 06" />
+![Index primaires clairsemés 06](/images/guides/best-practices/sparse-primary-indexes-06.webp)
 
 Nous avons vu plus haut dans ce guide que ClickHouse a sélectionné le mark 176 de l’index primaire, et donc le granule 176, comme pouvant contenir des lignes correspondant à notre requête.
 
@@ -774,7 +772,7 @@ Dans les schémas ci-dessous, nous avons marqué en orange les valeurs des colon
 
 Supposons que UserID ait une faible cardinalité. Dans ce cas, il est probable que la même valeur UserID soit répartie sur plusieurs lignes de table et plusieurs granules, et donc sur plusieurs marques d’index. Pour les marques d’index ayant la même valeur UserID, les valeurs URL des marques d’index sont triées par ordre croissant (car les lignes de table sont d’abord triées par UserID, puis par URL). Cela permet un filtrage efficace, comme décrit ci-dessous :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-07.webp" size="lg" alt="Sparse Primary Indices 06" />
+![Sparse Primary Indices 06](/images/guides/best-practices/sparse-primary-indexes-07.webp)
 
 Il existe trois scénarios distincts pour le processus de sélection des granules dans nos données d’exemple abstraites du schéma ci-dessus :
 
@@ -788,7 +786,7 @@ Il existe trois scénarios distincts pour le processus de sélection des granule
 
 Lorsque UserID a une cardinalité élevée, il est peu probable que la même valeur UserID soit répartie sur plusieurs lignes de table et plusieurs granules. Cela signifie que les valeurs URL des marques d’index ne sont pas monotones croissantes :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-08.webp" size="lg" alt="Sparse Primary Indices 06" />
+![Sparse Primary Indices 06](/images/guides/best-practices/sparse-primary-indexes-08.webp)
 
 Comme on peut le voir dans le schéma ci-dessus, toutes les marques affichées dont les valeurs URL sont inférieures à W3 sont sélectionnées afin de transmettre en streaming les lignes du granule associé vers le moteur ClickHouse.
 
@@ -822,7 +820,7 @@ ALTER TABLE hits_UserID_URL MATERIALIZE INDEX url_skipping_index;
 
 ClickHouse a maintenant créé un index supplémentaire qui stocke — pour chaque groupe de 4 [granules](#data-is-organized-into-granules-for-parallel-data-processing) consécutives (notez la clause `GRANULARITY 4` dans l’instruction `ALTER TABLE` ci-dessus) — les valeurs minimale et maximale de l’URL :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-13a.webp" size="lg" alt="Indices primaires épars 13a" />
+![Indices primaires épars 13a](/images/guides/best-practices/sparse-primary-indexes-13a.webp)
 
 La première entrée d’index (&#39;mark 0&#39; dans le schéma ci-dessus) stocke les valeurs minimale et maximale de l’URL pour les [lignes appartenant aux 4 premières granules de notre table](#data-is-organized-into-granules-for-parallel-data-processing).
 
@@ -860,15 +858,15 @@ Cependant, elles diffèrent par le degré de transparence de cette table supplé
 
 Lorsqu’on crée une **deuxième table** avec une clé primaire différente, les requêtes doivent être envoyées explicitement vers la version de la table la mieux adaptée à la requête, et les nouvelles données doivent être insérées explicitement dans les deux tables afin de les garder synchronisées :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-09a.webp" size="lg" alt="Indices primaires clairsemés 09a" />
+![Indices primaires clairsemés 09a](/images/guides/best-practices/sparse-primary-indexes-09a.webp)
 
 Avec une **vue matérialisée**, la table supplémentaire est créée implicitement et les données sont automatiquement maintenues synchronisées entre les deux tables :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-09b.webp" size="lg" alt="Indices primaires clairsemés 09b" />
+![Indices primaires clairsemés 09b](/images/guides/best-practices/sparse-primary-indexes-09b.webp)
 
 La **projection** est l’option la plus transparente, car en plus de maintenir automatiquement synchronisée avec les modifications de données la table supplémentaire créée implicitement (et masquée), ClickHouse choisit automatiquement la version de la table la plus efficace pour les requêtes :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-09c.webp" size="lg" alt="Indices primaires clairsemés 09c" />
+![Indices primaires clairsemés 09c](/images/guides/best-practices/sparse-primary-indexes-09c.webp)
 
 Dans la suite, nous examinons plus en détail ces trois options permettant de créer et d’utiliser plusieurs index primaires, avec des exemples concrets.
 
@@ -916,11 +914,11 @@ OPTIMIZE TABLE hits_URL_UserID FINAL;
 
 Comme nous avons modifié l’ordre des colonnes dans la clé primaire, les lignes insérées sont désormais stockées sur le disque dans un ordre lexicographique différent (par rapport à notre [table d’origine](#a-table-with-a-primary-key)) et, par conséquent, les 1083 granules de cette table contiennent elles aussi des valeurs différentes de celles d’auparavant :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-10.webp" size="lg" alt="index primaire clairsemé 10" />
+![index primaire clairsemé 10](/images/guides/best-practices/sparse-primary-indexes-10.webp)
 
 Voici la clé primaire obtenue :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-11.webp" size="lg" alt="index primaire clairsemé 11" />
+![index primaire clairsemé 11](/images/guides/best-practices/sparse-primary-indexes-11.webp)
 
 Elle peut désormais être utilisée pour accélérer considérablement l’exécution de notre requête d’exemple, qui applique un filtre sur la colonne URL afin de calculer les 10 utilisateurs ayant le plus fréquemment cliqué sur l’URL &quot;http://public&#95;search&quot; :
 
@@ -1059,11 +1057,11 @@ Ok.
   * si de nouvelles lignes sont insérées dans la table source hits&#95;UserID&#95;URL, elles sont alors automatiquement insérées elles aussi dans la table créée implicitement
   * En pratique, la table créée implicitement a le même ordre de lignes et le même index primaire que la [table secondaire que nous avons créée explicitement](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables) :
 
-  <Image img="/images/guides/best-practices/sparse-primary-indexes-12b-1.webp" size="lg" alt="Index primaires clairsemés 12b1" />
+  ![Index primaires clairsemés 12b1](/images/guides/best-practices/sparse-primary-indexes-12b-1.webp)
 
   ClickHouse stocke les [fichiers de données de colonnes](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin), les [fichiers de marques](#mark-files-are-used-for-locating-granules) (*.mrk2) et l’[index primaire](#the-primary-index-has-one-entry-per-granule) (primary.idx) de la table créée implicitement dans un dossier spécial du répertoire de données du serveur ClickHouse :
 
-  <Image img="/images/guides/best-practices/sparse-primary-indexes-12b-2.webp" size="md" alt="Index primaires clairsemés 12b2" />
+  ![Index primaires clairsemés 12b2](/images/guides/best-practices/sparse-primary-indexes-12b-2.webp)
 </Note>
 
 La table créée implicitement (et son index primaire) qui sous-tend la vue matérialisée peut désormais être utilisée pour accélérer considérablement l’exécution de notre requête d’exemple filtrant sur la colonne URL :
@@ -1141,11 +1139,11 @@ ALTER TABLE hits_UserID_URL
   * veuillez noter que les projections ne rendent pas plus efficaces les requêtes qui utilisent `ORDER BY`, même si la clause `ORDER BY` correspond à celle de la projection (voir https://github.com/ClickHouse/ClickHouse/issues/47333)
   * En pratique, la table masquée créée implicitement a le même ordre de lignes et le même index primaire que la [table secondaire que nous avons créée explicitement](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables) :
 
-  <Image img="/images/guides/best-practices/sparse-primary-indexes-12c-1.webp" size="lg" alt="index primaire clairsemé 12c1" />
+  ![index primaire clairsemé 12c1](/images/guides/best-practices/sparse-primary-indexes-12c-1.webp)
 
   ClickHouse stocke les [fichiers de données de colonnes](#data-is-stored-on-disk-ordered-by-primary-key-columns) (*.bin), les [fichiers de marques](#mark-files-are-used-for-locating-granules) (*.mrk2) et l’[index primaire](#the-primary-index-has-one-entry-per-granule) (primary.idx) de la table masquée dans un dossier spécial (indiqué en orange dans la capture d’écran ci-dessous), à côté des fichiers de données, des fichiers de marques et des fichiers d’index primaire de la table source :
 
-  <Image img="/images/guides/best-practices/sparse-primary-indexes-12c-2.webp" size="sm" alt="index primaire clairsemé 12c2" />
+  ![index primaire clairsemé 12c2](/images/guides/best-practices/sparse-primary-indexes-12c-2.webp)
 </Note>
 
 La table masquée (et son index primaire) créée par la projection peut désormais être utilisée (implicitement) pour accélérer considérablement l’exécution de notre requête d’exemple qui filtre sur la colonne URL. Notez que la requête cible syntaxiquement la table source de la projection.
@@ -1421,7 +1419,7 @@ Nous allons maintenant illustrer pourquoi il est avantageux, pour le taux de com
 
 Le schéma ci-dessous représente l’ordre des lignes sur disque pour une clé primaire dont les colonnes clés sont ordonnées par cardinalité croissante :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-14a.webp" size="lg" alt="Sparse Primary Indices 14a" />
+![Sparse Primary Indices 14a](/images/guides/best-practices/sparse-primary-indexes-14a.webp)
 
 Nous avons vu que [les données des lignes de la table sont stockées sur disque dans l’ordre des colonnes de la clé primaire](#data-is-stored-on-disk-ordered-by-primary-key-columns).
 
@@ -1433,7 +1431,7 @@ et de la localité (plus les données se ressemblent, meilleur est le taux de co
 
 À l’inverse du schéma ci-dessus, le schéma ci-dessous représente l’ordre des lignes sur disque pour une clé primaire dont les colonnes clés sont ordonnées par cardinalité décroissante :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-14b.webp" size="lg" alt="Sparse Primary Indices 14b" />
+![Sparse Primary Indices 14b](/images/guides/best-practices/sparse-primary-indexes-14b.webp)
 
 À présent, les lignes de la table sont d’abord ordonnées selon leur valeur `ch`, et les lignes qui ont la même valeur `ch` sont ordonnées selon leur valeur `cl`.
 Mais comme la première colonne clé `ch` a une forte cardinalité, il est peu probable qu’il existe des lignes avec la même valeur `ch`. De ce fait, il est également peu probable que les valeurs `cl` soient ordonnées (localement — pour les lignes ayant la même valeur `ch`).
@@ -1474,7 +1472,7 @@ Le schéma suivant montre
 * l’ordre d’insertion des lignes lorsque le contenu change (par exemple à cause des frappes au clavier lors de la saisie du texte dans la zone de texte) et
 * l’ordre sur disque des données issues des lignes insérées lorsque la `PRIMARY KEY (hash)` est utilisée :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-15a.webp" size="lg" alt="Sparse Primary Indices 15a" />
+![Sparse Primary Indices 15a](/images/guides/best-practices/sparse-primary-indexes-15a.webp)
 
 Comme la colonne `hash` est utilisée comme colonne de clé primaire
 
@@ -1491,7 +1489,7 @@ Le schéma suivant montre
 * l’ordre d’insertion des lignes lorsque le contenu change (par exemple à cause des frappes au clavier lors de la saisie du texte dans la zone de texte) et
 * l’ordre sur disque des données issues des lignes insérées lorsque la `PRIMARY KEY (fingerprint, hash)` composite est utilisée :
 
-<Image img="/images/guides/best-practices/sparse-primary-indexes-15b.webp" size="lg" alt="Sparse Primary Indices 15b" />
+![Sparse Primary Indices 15b](/images/guides/best-practices/sparse-primary-indexes-15b.webp)
 
 Désormais, les lignes sur disque sont d’abord ordonnées par `fingerprint`, et pour les lignes ayant la même valeur de `fingerprint`, c’est leur valeur `hash` qui détermine l’ordre final.
 

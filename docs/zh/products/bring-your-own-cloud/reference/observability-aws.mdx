@@ -7,8 +7,6 @@ description: '使用内置仪表盘和 Prometheus 指标监控和观测 BYOC Cli
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 BYOC 部署提供全面的可观测性功能，使您能够通过专用的 Prometheus 监控栈以及 ClickHouse 服务器直接暴露的指标端点来监控您的 ClickHouse 服务。您的监控数据都会保留在您的云账户中，让您能够完全掌控自己的监控基础设施。[网络边界](/zh/products/bring-your-own-cloud/reference/network-security#outbound-connections)中列出的受限用量与健康状况遥测数据是唯一导出到 ClickHouse 的监控数据；此外，ClickHouse 的仪表盘以及在经过批准的处理流程后其工程师可通过 Tailscale 就地查询该栈，且不会在 ClickHouse 一侧留存任何数据 —— 参见 [ClickHouse 数据访问](/zh/products/bring-your-own-cloud/reference/clickhouse-data-access)。
 
 <div id="prometheus-monitoring">
@@ -205,19 +203,19 @@ scrape_configs:
 1. **在 Grafana 中将 Prometheus 添加为数据源**
    前往 Grafana 侧边栏中的“Data sources”，点击“Add data source”，然后选择“Prometheus”。输入你的 Prometheus 实例 URL 以及连接所需的凭据。
 
-<Image img="/images/cloud/reference/byoc-mixin-1.webp" size="lg" alt="BYOC Mixin 1" background="black" />
+![BYOC Mixin 1](/images/cloud/reference/byoc-mixin-1.webp)
 
-<Image img="/images/cloud/reference/byoc-mixin-2.webp" size="lg" alt="BYOC Mixin 2" background="black" />
+![BYOC Mixin 2](/images/cloud/reference/byoc-mixin-2.webp)
 
-<Image img="/images/cloud/reference/byoc-mixin-3.webp" size="lg" alt="BYOC Mixin 3" background="black" />
+![BYOC Mixin 3](/images/cloud/reference/byoc-mixin-3.webp)
 
 2. **导入 ClickHouse 仪表盘**
    在 Grafana 中，进入仪表盘区域并选择“Import”。你既可以上传仪表盘 JSON 文件，也可以直接粘贴其内容。从 ClickHouse mixin 仓库获取该 JSON 文件：
    [ClickHouse Mix-in Dashboard JSON](https://github.com/ClickHouse/clickhouse-mixin/blob/main/dashboard_byoc.json)
 
-<Image img="/images/cloud/reference/byoc-mixin-4.webp" size="lg" alt="BYOC Mixin 4" background="black" />
+![BYOC Mixin 4](/images/cloud/reference/byoc-mixin-4.webp)
 
 3. **查看你的指标**
    导入仪表盘并将其配置为使用你的 Prometheus 数据源后，你应该能看到来自 ClickHouse Cloud 服务的实时指标。
 
-<Image img="/images/cloud/reference/byoc-mixin-5.webp" size="lg" alt="BYOC Mixin 5" background="black" />
+![BYOC Mixin 5](/images/cloud/reference/byoc-mixin-5.webp)

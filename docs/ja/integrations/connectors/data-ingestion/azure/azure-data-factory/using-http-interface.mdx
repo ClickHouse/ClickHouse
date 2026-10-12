@@ -10,8 +10,6 @@ integration:
    - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 [`azureBlobStorage` Table Function](/ja/reference/functions/table-functions/azureBlobStorage)
 は、Azure Blob Storage から
 ClickHouse にデータをすばやく手軽に取り込む方法です。ただし、次の理由から
@@ -106,21 +104,21 @@ Service を設定し、
 
 1. [Microsoft Azure Portal](https://portal.azure.com/) にログインし、
    **Create a resource** をクリックします。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp" size="lg" alt="Azure Portal ホーム ページ" border />
+   ![Azure Portal ホーム ページ](/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp)
 
 2. 左側の Categories ペインで **Analytics** を選択し、
    人気のサービス一覧から **Data Factory** をクリックします。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp" size="lg" alt="Azure Portal の新しいリソース" border />
+   ![Azure Portal の新しいリソース](/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp)
 
 3. サブスクリプションとリソース グループを選択し、新しい Data
    Factory インスタンスの名前を入力して、リージョンを選択し、バージョンは V2 のままにします。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp" size="lg" alt="Azure Portal の新しい Data Factory" border />
+   ![Azure Portal の新しい Data Factory](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp)
 
 4. **Review + Create** をクリックし、続いて **Create** をクリックしてデプロイを開始します。
 
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp" size="lg" alt="Azure Portal の新しい Data Factory の確認" border />
+   ![Azure Portal の新しい Data Factory の確認](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp)
 
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp" size="lg" alt="Azure Portal の新しい Data Factory の作成成功" border />
+   ![Azure Portal の新しい Data Factory の作成成功](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp)
 
 デプロイが正常に完了したら、新しい Azure
 Data Factory インスタンスを使い始めることができます。
@@ -130,50 +128,50 @@ Data Factory インスタンスを使い始めることができます。
 </div>
 
 1. Microsoft Azure Portal にログインし、Data Factory インスタンスを開きます。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="Data Factory が表示された Azure Portal のホーム ページ" border />
+   ![Data Factory が表示された Azure Portal のホーム ページ](/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp)
 
 2. Data Factory の概要ページで、**Launch Studio** をクリックします。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Azure Portal の Data Factory ページ" border />
+   ![Azure Portal の Data Factory ページ](/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp)
 
 3. 左側のメニューで **Manage** を選択し、**Linked services** に移動して、
    **+ New** をクリックし、新しいリンク サービスを作成します。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Azure Data Factory の新しいリンク サービス ボタン" border />
+   ![Azure Data Factory の新しいリンク サービス ボタン](/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp)
 
 4. **New linked service search bar** に **REST** と入力し、**REST** を選択して **Continue** をクリックすると、
    [REST コネクタ](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)
    のインスタンスを作成できます。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Azure Data Factory の新しいリンク サービス検索" border />
+   ![Azure Data Factory の新しいリンク サービス検索](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp)
 
 5. リンク サービスの構成ペインで新しいサービスの名前を入力し、
    **Base URL** フィールドをクリックしてから **Add dynamic content** をクリックします (このリンクは
    フィールドを選択したときにのみ表示されます) 。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="新しいリンク サービス ペイン" border />
+   ![新しいリンク サービス ペイン](/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp)
 
 6. 動的コンテンツのペインでは、パラメーター化された URL を作成できます。これにより、
    後で異なるテーブル用のデータセットを作成するときにクエリを定義できるため、
    リンク サービスを再利用できるようになります。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="新しいリンク サービスの Base URL が空" border />
+   ![新しいリンク サービスの Base URL が空](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp)
 
 7. フィルター入力の横にある **&quot;+&quot;** をクリックして新しいパラメーターを追加し、
    名前を `pQuery`、型を String、デフォルト値を `SELECT 1` に設定します。
    **Save** をクリックします。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="新しいリンク サービスの Parameters" border />
+   ![新しいリンク サービスの Parameters](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp)
 
 8. expression フィールドに次を入力して **OK** をクリックします。`your-clickhouse-url.com` は、
    ご利用の ClickHouse インスタンスの実際のアドレスに置き換えてください。
    ```text
    @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
    ```
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="値が入力された新しいリンク サービスの Expression Field" border />
+   ![値が入力された新しいリンク サービスの Expression Field](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp)
 
 9. メイン フォームに戻り、basic authentication を選択して、ClickHouse HTTP インターフェイスへの接続に使用する username と
    password を入力し、**Test
    connection** をクリックします。すべてが正しく設定されていれば、成功
    メッセージが表示されます。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="新しいリンク サービスの接続確認" border />
+   ![新しいリンク サービスの接続確認](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp)
 
 10. **Create** をクリックして設定を完了します。
-    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="リンク サービスの一覧" border />
+    ![リンク サービスの一覧](/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp)
 
 これで、一覧に新しく登録された REST ベースのリンク サービスが表示されます。
 
@@ -206,19 +204,19 @@ Data](/ja/get-started/sample-datasets/environmental-sensors) の一部のデー�
 
 2. Azure Data Factory Studio で、左側のペインから Author を選択します。Dataset
    項目にカーソルを合わせ、三点アイコンをクリックして、New dataset を選択します。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp" size="lg" alt="新しいデータセット項目" border />
+   ![新しいデータセット項目](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp)
 
 3. 検索バーに **REST** と入力し、**REST** を選択して **Continue** をクリックします。
    データセット名を入力し、前の手順で作成した **リンク サービス** を選択します。
    **OK** をクリックしてデータセットを作成します。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp" size="lg" alt="新しいデータセット ページ" border />
+   ![新しいデータセット ページ](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp)
 
 4. 作成したデータセットが、左側の Factory Resources ペインの Datasets
    セクションに表示されます。データセットを選択して、そのプロパティを
    開きます。リンク サービスで定義した `pQuery` パラメーターが表示されるので、
    **Value** テキストフィールドをクリックし、続いて **Add dynamic**
    content をクリックします。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp" size="lg" alt="新しいデータセットのプロパティ" border />
+   ![新しいデータセットのプロパティ](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp)
 
 5. 開いたペインに、次のクエリを貼り付けます。
    ```sql
@@ -238,12 +236,12 @@ Data](/ja/get-started/sample-datasets/environmental-sensors) の一部のデー�
   記述する必要があります。
 </Danger>
 
-<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp" size="xl" alt="新しいデータセット クエリ" border />
+![新しいデータセット クエリ](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp)
 
 6. **OK** をクリックして式を保存します。**Test connection** をクリックします。
    すべてが正しく設定されていれば、Connection successful メッセージが表示
    されます。ページ上部の **Publish all** をクリックして変更を保存します。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp" size="xl" alt="新しいデータセット接続成功" border />
+   ![新しいデータセット接続成功](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp)
 
 <div id="setting-up-an-example-dataset">
   ### 例として使用するデータセットの準備
@@ -275,14 +273,14 @@ ClickHouse の `sensors` テーブルにデータを転送します。
 
 1. **Azure Data Factory Studio** を開き、**Author** タブに移動します。
    **Factory Resources** ペインで **Pipeline** にカーソルを合わせ、三点アイコンをクリックして、**New pipeline** を選択します。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp" size="lg" alt="ADF の新しいパイプライン項目" border />
+   ![ADF の新しいパイプライン項目](/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp)
 
 2. **Activities** ペインで **Move and transform** セクションを展開し、
    **Copy data** アクティビティをキャンバスにドラッグします。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp" size="lg" alt="新しい Copy Data 項目" border />
+   ![新しい Copy Data 項目](/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp)
 
 3. **Source** タブを選択し、先ほど作成したソースデータセットを選択します。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp" size="lg" alt="Copy Data のソース" border />
+   ![Copy Data のソース](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp)
 
 4. **Sink** タブに移動し、
    `sensors` テーブル用に作成した ClickHouse データセットを選択します。**Request method** は POST に設定します。**HTTP compression
@@ -301,12 +299,12 @@ ClickHouse の `sensors` テーブルにデータを転送します。
   を参照してください。
 </Info>
 
-<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp" size="lg" alt="POST を選択した Copy Data のシンク" border />
+![POST を選択した Copy Data のシンク](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp)
 
 5. キャンバス上部の **Debug** をクリックして、パイプラインを実行します。しばらくすると、
    アクティビティがキューに入り実行されます。すべてが正しく設定されていれば、
    タスクは **Success** ステータスで完了するはずです。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp" size="lg" alt="Copy Data の Debug 成功" border />
+   ![Copy Data の Debug 成功](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp)
 
 6. 完了したら、**Publish all** をクリックして、パイプラインとデータセットの変更を保存します。
 

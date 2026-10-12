@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack 내장', 'ClickHouse 내장', 'ClickStack ClickHouse 서버', '내장 관측성']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickStack는 ClickHouse 서버 바이너리에 직접 포함되어 있습니다. 즉, 추가 구성 요소를 배포하지 않고도 ClickHouse 인스턴스에서 ClickStack UI (HyperDX)에 액세스할 수 있습니다. 이 배포 방식은 [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com)의 공개 데모와 유사하지만, 사용자의 ClickHouse 인스턴스와 데이터를 사용한다는 점이 다릅니다.
 
 <div id="suitable-for">
@@ -59,7 +57,7 @@ ClickStack는 ClickHouse 서버 바이너리에 직접 포함되어 있습니다
 
         로컬 인스턴스에 연결하려면 사용자 이름 `default`와 비밀번호 `password`를 입력합니다.
 
-        <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="인증" size="lg" />
+        ![인증](/images/clickstack/deployment/embedded/authenticate.webp)
       </Step>
 
       <Step title="소스 생성" id="create-a-source-docker">
@@ -67,7 +65,7 @@ ClickStack는 ClickHouse 서버 바이너리에 직접 포함되어 있습니다
 
         새로 설치한 경우 소스를 생성하라는 안내가 표시됩니다. **Table** 필드에 적절한 테이블 이름(예: `otel_logs`)을 입력하고 **Save New Source**를 클릭합니다.
 
-        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="소스 생성" size="lg" />
+        ![소스 생성](/images/clickstack/deployment/embedded/inferred-source.webp)
 
         아직 데이터가 없다면 [데이터 수집](/ko/clickstack/ingesting-data/overview)에서 사용 가능한 옵션을 확인하십시오.
       </Step>
@@ -140,7 +138,7 @@ ClickStack는 ClickHouse 서버 바이너리에 직접 포함되어 있습니다
 
         아직 데이터가 없다면 [데이터 수집](/ko/clickstack/ingesting-data/overview)에서 사용 가능한 옵션을 확인하십시오.
 
-        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="소스 생성" size="lg" />
+        ![소스 생성](/images/clickstack/deployment/embedded/inferred-source.webp)
       </Step>
     </Steps>
   </Tab>

@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['Private Service Connect']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="GCP PSC" />
@@ -16,7 +15,7 @@ Private Service Connect (PSC) は Google Cloud のネットワーク機能で、
 
 サービスプロデューサーは、Private Service Connect サービスを作成して、自社のアプリケーションをコンシューマーに公開します。サービスコンシューマーは、これらの Private Service Connect タイプのいずれかを通じて、それらの Private Service Connect サービスに直接アクセスします。
 
-<Image img="/images/cloud/security/gcp-psc-overview.webp" size="lg" alt="Private Service Connect の概要" border />
+![Private Service Connect の概要](/images/cloud/security/gcp-psc-overview.webp)
 
 <Warning>
   GCP Private Service Connect は、お客様の GCP VPC から ClickHouse Cloud への接続開始のみをサポートします。そのため、[プライベートデータベース](#connecting-to-a-remote-database) など、お客様の VPC 内のサービスへ ClickHouse Cloud から開始する接続には使用できません。
@@ -98,7 +97,7 @@ jq ".result[] | select (.region==\"${REGION:?}\" and .provider==\"${PROVIDER:?}\
 
 ClickHouse Cloud コンソールで、Private Service Connect 経由で接続するサービスを開き、**Settings** メニューを開きます。**Set up private endpoint** ボタンをクリックします。**Service name** (`endpointServiceId`) と **DNS name** (`privateDnsHostname`) を控えておいてください。これらは次の手順で使用します。
 
-<Image img="/images/cloud/security/gcp-privatelink-pe-create.webp" size="lg" alt="Private Endpoints" border />
+![Private Endpoints](/images/cloud/security/gcp-privatelink-pe-create.webp)
 
 <div id="option-2-api">
   ### オプション 2: API
@@ -146,7 +145,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 Google Cloud console で、**Network services -&gt; Private Service Connect** に移動します。
 
-<Image img="/images/cloud/security/gcp-psc-open.webp" size="lg" alt="Google Cloud console で Private Service Connect を開く" border />
+![Google Cloud console で Private Service Connect を開く](/images/cloud/security/gcp-psc-open.webp)
 
 **Connect Endpoint** ボタンをクリックして、Private Service Connect の作成ダイアログを開きます。
 
@@ -156,13 +155,13 @@ Google Cloud console で、**Network services -&gt; Private Service Connect** �
 * **Network/Subnetwork/IP address**: 接続に使用するネットワークを選択します。Private Service Connect endpoint 用に IP アドレスを新規作成するか、既存のものを使用する必要があります。この例では、**your-ip-address** という名前のアドレスを事前に作成し、IP アドレス `10.128.0.2` を割り当てています。
 * endpoint をどの Region からでも利用できるようにするには、**Enable global access** チェックボックスを有効にします。
 
-<Image img="/images/cloud/security/gcp-psc-enable-global-access.webp" size="md" alt="Private Service Connect の Global Access を有効にする" border />
+![Private Service Connect の Global Access を有効にする](/images/cloud/security/gcp-psc-enable-global-access.webp)
 
 PSC Endpoint を作成するには、**ADD ENDPOINT** ボタンを使用します。
 
 接続が承認されると、**Status** カラムは **Pending** から **Accepted** に変わります。
 
-<Image img="/images/cloud/security/gcp-psc-copy-connection-id.webp" size="lg" alt="PSC Connection ID をコピーする" border />
+![PSC Connection ID をコピーする](/images/cloud/security/gcp-psc-copy-connection-id.webp)
 
 ***PSC Connection ID*** をコピーします。これは次の手順で ***Endpoint ID*** として使用します。
 
@@ -246,7 +245,7 @@ output "psc_connection_id" {
 
 エンドポイントを削除するには、**Organization details -&gt; Private Endpoints** を開き、削除ボタンをクリックしてエンドポイントを削除します。
 
-<Image img="/images/cloud/security/gcp-pe-remove-private-endpoint.webp" size="lg" alt="ClickHouse Cloud からプライベート エンドポイントを削除" border />
+![ClickHouse Cloud からプライベート エンドポイントを削除](/images/cloud/security/gcp-pe-remove-private-endpoint.webp)
 
 <div id="option-2-api">
   ### オプション 2: API
@@ -315,7 +314,7 @@ ClickHouse Cloud コンソール で、Private Service Connect 経由で接続�
   既存の Private Service Connect 接続からのアクセスを許可する場合は、既存のエンドポイントのドロップダウン メニューを使用します。
 </Note>
 
-<Image img="/images/cloud/security/gcp-privatelink-pe-filters.webp" size="lg" alt="プライベート エンドポイント フィルター" border />
+![プライベート エンドポイント フィルター](/images/cloud/security/gcp-privatelink-pe-filters.webp)
 
 <div id="option-2-api">
   ### オプション 2: API
@@ -375,7 +374,7 @@ Private Service Connect が有効な各サービスには、パブリック エ�
 
 ClickHouse Cloud コンソール で **Settings** に移動します。**Set up private endpoint** ボタンをクリックします。開いたフライアウトで、**DNS Name** をコピーします。
 
-<Image img="/images/cloud/security/gcp-privatelink-pe-dns.webp" size="lg" alt="プライベート エンドポイントの DNS 名" border />
+![プライベート エンドポイントの DNS 名](/images/cloud/security/gcp-privatelink-pe-dns.webp)
 
 <div id="option-2-api-3">
   #### オプション 2: API

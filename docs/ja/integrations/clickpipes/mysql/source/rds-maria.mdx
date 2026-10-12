@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.mdx";
 
 これは、MySQL ClickPipe 経由でデータをレプリケーションするために、RDS MariaDB インスタンスを設定する手順をまとめたガイドです。
@@ -31,7 +30,7 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
   <Step title="自動バックアップでバイナリログを有効にする" id="enable-binlog-logging-rds">
     自動バックアップ機能によって、MySQL のバイナリログを有効にするかどうかが決まります。これは AWS コンソールで設定できます。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS で自動バックアップを有効にする" size="lg" border />
+    ![RDS で自動バックアップを有効にする](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
 
     レプリケーションのユースケースに応じて、バックアップ保持期間を十分長く設定することをお勧めします。
   </Step>
@@ -53,25 +52,25 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
 
 パラメータグループは、RDS Console で MariaDB インスタンスをクリックし、`Configurations` タブに移動すると確認できます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp" alt="RDS でパラメータグループを確認する場所" size="lg" border />
+![RDS でパラメータグループを確認する場所](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
 
 パラメータグループのリンクをクリックすると、パラメータグループのページに移動します。右上に `Edit` ボタンがあります。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="パラメータグループを編集" size="lg" border />
+![パラメータグループを編集](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
 
 `binlog_format`、`binlog_row_metadata`、`binlog_row_image` は次のように設定する必要があります。
 
 1. `binlog_format` を `ROW` に設定します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Binlog format を ROW に設定" size="lg" border />
+![Binlog format を ROW に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
 
 2. `binlog_row_metadata` を `FULL` に設定します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Binlog row metadata を FULL に設定" size="lg" border />
+![Binlog row metadata を FULL に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
 
 3. `binlog_row_image` を `FULL` に設定します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Binlog row image を FULL に設定" size="lg" border />
+![Binlog row image を FULL に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
 
 次に、右上の `Save Changes` をクリックします。変更を反映するには、インスタンスの再起動が必要になる場合があります。RDS インスタンスの `Configurations` タブで、パラメータグループのリンクの横に `Pending reboot` と表示されている場合は、インスタンスの再起動が必要である可能性が高いことを示しています。
 
@@ -132,9 +131,9 @@ Global Transaction Identifiers (GTID) は、MySQL/MariaDB でコミットされ�
 
 RDS インスタンスへのトラフィックを制限する場合は、RDS のセキュリティグループの `Inbound rules` に、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を追加してください。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="RDS でセキュリティグループはどこにありますか？" size="lg" border />
+![RDS でセキュリティグループはどこにありますか？](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="上記のセキュリティグループのインバウンドルールを編集" size="lg" border />
+![上記のセキュリティグループのインバウンドルールを編集](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
 
 <div id="private-access-via-aws-privatelink">
   ### AWS PrivateLink 経由のプライベートアクセス

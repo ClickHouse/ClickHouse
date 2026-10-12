@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Управляемый ClickStack', 'начало работы', 'ClickHouse Cloud']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import ExampleOTelConfig from '/snippets/ru/clickstack/_config_example_otel.mdx';
 
 Разверните Управляемый ClickStack в ClickHouse Cloud, отправьте тестовое событие через конвейер ингестии и убедитесь, что оно доступно в интерфейсе ClickStack.
@@ -51,7 +49,7 @@ ClickHouse Cloud управляет backend ClickHouse, а вы сохраняе
     <Step title="Выберите источник для ингестии и настройте коллектор" id="choose-an-ingestion-source">
       В сервисе ClickHouse Cloud запустите ClickStack. На странице ClickStack **Начало работы** выберите **Начать ингестию**.
 
-      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="Начать ингестию" border />
+      ![Начать ингестию](/images/clickstack/getting-started/start_ingestion.webp)
 
       На странице **Выберите источник ингестии** выберите [OpenTelemetry](https://opentelemetry.io/).
 
@@ -61,7 +59,7 @@ ClickHouse Cloud управляет backend ClickHouse, а вы сохраняе
         OpenTelemetry предоставляет преднастроенные схемы для журналов, трассировок, метрик и сеансов.
       </Info>
 
-      <Image img="/images/clickstack/getting-started/select_source_toggle.webp" size="lg" alt="Выберите OpenTelemetry в качестве источника ингестии" border />
+      ![Выберите OpenTelemetry в качестве источника ингестии](/images/clickstack/getting-started/select_source_toggle.webp)
 
       <Tabs>
         <Tab title="Запустить новый коллектор">
@@ -167,7 +165,7 @@ ClickHouse Cloud управляет backend ClickHouse, а вы сохраняе
 
       В результатах должно отображаться тестовое событие с именем сервиса `clickstack-docs-test`.
 
-      <Image img="/images/clickstack/getting-started/clickstack_ingestion_test.webp" size="lg" alt="Представление журналов ClickStack с тестовым событием ингестии ClickStack" border />
+      ![Представление журналов ClickStack с тестовым событием ингестии ClickStack](/images/clickstack/getting-started/clickstack_ingestion_test.webp)
     </Step>
   </Steps>
 </View>
@@ -183,11 +181,11 @@ ClickHouse Cloud управляет backend ClickHouse, а вы сохраняе
     <Step title="Выберите Vector и настройте приём данных" id="choose-an-ingestion-source-vector">
       В своём сервисе ClickHouse Cloud запустите ClickStack. На странице ClickStack **Getting Started** выберите **Start ingestion**.
 
-      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="Начните приём данных" border />
+      ![Начните приём данных](/images/clickstack/getting-started/start_ingestion.webp)
 
       На странице **Choose an ingestion source** выберите [Vector](https://vector.dev/).
 
-      <Image img="/images/clickstack/getting-started/select_source_vector_toggle.webp" size="lg" alt="Выберите Vector в качестве источника для ингестии" border />
+      ![Выберите Vector в качестве источника для ингестии](/images/clickstack/getting-started/select_source_vector_toggle.webp)
 
       [Vector](https://vector.dev) — это высокопроизводительный, независимый от вендоров конвейер данных обсервабилити, особенно популярный для приёма логов благодаря своей гибкости и низкому потреблению ресурсов.
 
@@ -332,7 +330,7 @@ ClickHouse Cloud управляет backend ClickHouse, а вы сохраняе
     <Step title="Начните работу и подтвердите приём данных" id="open-clickstack-and-confirm-ingestion-vector">
       После создания источника данных выберите **Start exploring**, чтобы открыть представление **Search**. Выберите источник данных для своей таблицы и убедитесь, что в нём есть отправленное вами событие.
 
-      <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="Журналы в интерфейсе ClickStack" />
+      ![Журналы в интерфейсе ClickStack](/images/clickstack/getting-started/clickstack_managed_ui.webp)
     </Step>
   </Steps>
 </View>

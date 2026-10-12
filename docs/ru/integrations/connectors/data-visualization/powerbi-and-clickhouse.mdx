@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -74,7 +72,7 @@ Microsoft Power BI может выполнять запросы к данным 
 
 Запустите скачанный установщик `.msi` и следуйте указаниям мастера установки.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_install.webp" alt="Мастер установки ODBC-драйвера ClickHouse с вариантами установки" border />
+![Мастер установки ODBC-драйвера ClickHouse с вариантами установки](/images/integrations/data-visualization/powerbi_odbc_install.webp)
 
 <br />
 
@@ -90,13 +88,13 @@ Microsoft Power BI может выполнять запросы к данным 
 
 Найдите ODBC в меню «Пуск» и выберите &quot;ODBC Data Sources **(64-bit)**&quot;.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="Поиск Windows с параметром ODBC Data Sources (64-bit)" border />
+![Поиск Windows с параметром ODBC Data Sources (64-bit)](/images/integrations/data-visualization/powerbi_odbc_search.webp)
 
 <br />
 
 Убедитесь, что ClickHouse Driver присутствует в списке.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_verify.webp" alt="Администратор источников данных ODBC с драйверами ClickHouse на вкладке Drivers" border />
+![Администратор источников данных ODBC с драйверами ClickHouse на вкладке Drivers](/images/integrations/data-visualization/powerbi_odbc_verify.webp)
 
 <br />
 
@@ -110,13 +108,13 @@ Microsoft Power BI может выполнять запросы к данным 
 
 На стартовом экране Power BI Desktop нажмите &quot;Get Data&quot;.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="Стартовый экран Power BI Desktop с кнопкой Get Data" border />
+![Стартовый экран Power BI Desktop с кнопкой Get Data](/images/integrations/data-visualization/powerbi_get_data.webp)
 
 <br />
 
 Введите &quot;ClickHouse&quot; в строке поиска
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_search_clickhouse.webp" alt="Диалоговое окно Power BI Get Data с запросом ClickHouse в строке поиска" border />
+![Диалоговое окно Power BI Get Data с запросом ClickHouse в строке поиска](/images/integrations/data-visualization/powerbi_search_clickhouse.webp)
 
 <br />
 
@@ -133,7 +131,7 @@ Microsoft Power BI может выполнять запросы к данным 
   на [странице ClickHouse ODBC в GitHub](https://github.com/ClickHouse/clickhouse-odbc#configuration)
 * Data Connectivity mode — DirectQuery
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_connect_db.webp" alt="Диалог подключения ClickHouse с полями Host, Port, Database и режимом подключения" border />
+![Диалог подключения ClickHouse с полями Host, Port, Database и режимом подключения](/images/integrations/data-visualization/powerbi_connect_db.webp)
 
 <br />
 
@@ -145,7 +143,7 @@ Microsoft Power BI может выполнять запросы к данным 
 
 * Укажите имя пользователя и пароль
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_connect_user.webp" alt="Диалог учетных данных подключения ClickHouse для имени пользователя и пароля" border />
+![Диалог учетных данных подключения ClickHouse для имени пользователя и пароля](/images/integrations/data-visualization/powerbi_connect_user.webp)
 
 <br />
 
@@ -156,7 +154,7 @@ Microsoft Power BI может выполнять запросы к данным 
 Наконец, в представлении Navigator должны отображаться базы данных и таблицы. Выберите нужную таблицу и нажмите &quot;Load&quot;, чтобы
 импортировать данные из ClickHouse.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_table_navigation.webp" alt="Окно Navigator в Power BI, в котором показаны таблицы базы данных ClickHouse и примеры данных" border />
+![Окно Navigator в Power BI, в котором показаны таблицы базы данных ClickHouse и примеры данных](/images/integrations/data-visualization/powerbi_table_navigation.webp)
 
 <br />
 
@@ -186,25 +184,25 @@ Microsoft Power BI может выполнять запросы к данным 
 
 После завершения установки драйвера можно создать источник данных ODBC. Найдите ODBC в меню «Пуск» и выберите &quot;ODBC Data Sources (64-bit)&quot;.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="Поиск Windows с вариантом ODBC Data Sources (64-bit)" border />
+![Поиск Windows с вариантом ODBC Data Sources (64-bit)](/images/integrations/data-visualization/powerbi_odbc_search.webp)
 
 <br />
 
 Здесь нужно добавить новый User DSN. Нажмите кнопку &quot;Add&quot; слева.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_add_dsn.webp" alt="Администратор источников данных ODBC с выделенной кнопкой Add для создания нового DSN" border />
+![Администратор источников данных ODBC с выделенной кнопкой Add для создания нового DSN](/images/integrations/data-visualization/powerbi_add_dsn.webp)
 
 <br />
 
 Выберите версию ODBC-драйвера с поддержкой Unicode.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_select_unicode.webp" alt="Диалог Create New Data Source с выбранным ClickHouse Unicode Driver" border />
+![Диалог Create New Data Source с выбранным ClickHouse Unicode Driver](/images/integrations/data-visualization/powerbi_select_unicode.webp)
 
 <br />
 
 Заполните сведения о подключении.
 
-<Image size="sm" img="/images/integrations/data-visualization/powerbi_connection_details.webp" alt="Диалог настройки ODBC-драйвера ClickHouse с параметрами подключения" border />
+![Диалог настройки ODBC-драйвера ClickHouse с параметрами подключения](/images/integrations/data-visualization/powerbi_connection_details.webp)
 
 <br />
 
@@ -224,19 +222,19 @@ Microsoft Power BI может выполнять запросы к данным 
 
 На стартовом экране Power BI Desktop нажмите &quot;Get Data&quot;.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="Главный экран Power BI Desktop с кнопкой Get Data" border />
+![Главный экран Power BI Desktop с кнопкой Get Data](/images/integrations/data-visualization/powerbi_get_data.webp)
 
 <br />
 
 Выберите &quot;Other&quot; -&gt; &quot;ODBC&quot;.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_select_odbc.webp" alt="Диалог Get Data в Power BI с выбранным пунктом ODBC в категории Other" border />
+![Диалог Get Data в Power BI с выбранным пунктом ODBC в категории Other](/images/integrations/data-visualization/powerbi_select_odbc.webp)
 
 <br />
 
 Выберите из списка ранее созданный источник данных.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_select_dsn.webp" alt="Диалог выбора драйвера ODBC с настроенным ClickHouse DSN" border />
+![Диалог выбора драйвера ODBC с настроенным ClickHouse DSN](/images/integrations/data-visualization/powerbi_select_dsn.webp)
 
 <br />
 
@@ -244,13 +242,13 @@ Microsoft Power BI может выполнять запросы к данным 
   Если при создании источника данных вы не указали учетные данные, вам будет предложено ввести имя пользователя и пароль.
 </Note>
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_dsn_credentials.webp" alt="Диалог учетных данных для подключения к ODBC DSN" border />
+![Диалог учетных данных для подключения к ODBC DSN](/images/integrations/data-visualization/powerbi_dsn_credentials.webp)
 
 <br />
 
 В итоге вы должны увидеть базы данных и таблицы в представлении Navigator. Выберите нужную таблицу и нажмите &quot;Load&quot;, чтобы импортировать данные из ClickHouse.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_table_navigation.webp" alt="Представление Navigator в Power BI с таблицами базы данных ClickHouse и примером данных" border />
+![Представление Navigator в Power BI с таблицами базы данных ClickHouse и примером данных](/images/integrations/data-visualization/powerbi_table_navigation.webp)
 
 <br />
 
@@ -316,7 +314,7 @@ PowerBI автоматически генерирует SQL-запросы с в
 &quot;Transform Data&quot; открывает Power Query Editor, где можно переназначить тип столбца, задав, например,
 Text.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_16.webp" alt="Power Query Editor с преобразованием типа данных для столбца UInt64" border />
+![Power Query Editor с преобразованием типа данных для столбца UInt64](/images/integrations/data-visualization/powerbi_16.webp)
 
 <br />
 

@@ -6,8 +6,6 @@ description: 'مراقبة JVM باستخدام ClickStack'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -41,7 +39,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     3. انتقل إلى **إعدادات الفريق → مفاتيح API**
     4. انسخ **مفتاح API لإدخال البيانات** الخاص بك
 
-    <Image img="/images/clickstack/api-key.webp" alt="مفتاح API لـ ClickStack" />
+    ![مفتاح API لـ ClickStack](/images/clickstack/api-key.webp)
   </Step>
 
   <Step title="تنزيل وكيل OpenTelemetry لـ Java" id="download-agent">
@@ -210,17 +208,17 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
     2. انقر على **Import لوحة معلومات** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
+    ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
 
     3. حمّل الملف `jvm-metrics-dashboard.json` ثم انقر على **Finish Import**
 
-    <Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="إنهاء الاستيراد" />
+    ![إنهاء الاستيراد](/images/clickstack/jvm/jvm-metrics-import.webp)
   </Step>
 
   <Step title="عرض لوحة المعلومات" id="created-dashboard">
     سيتم إنشاء لوحة المعلومات مع تهيئة جميع التصورات مسبقًا:
 
-    <Image img="/images/clickstack/jvm/jvm-metrics-dashboard.webp" alt="لوحة معلومات مقاييس Kafka" />
+    ![لوحة معلومات مقاييس Kafka](/images/clickstack/jvm/jvm-metrics-dashboard.webp)
 
     <Note>
       بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**. وعدّل ذلك وفقًا لمنطقتك الزمنية المحلية.

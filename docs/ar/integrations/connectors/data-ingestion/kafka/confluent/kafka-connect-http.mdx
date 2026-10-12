@@ -9,8 +9,6 @@ keywords: ['Confluent HTTP Sink Connector', 'HTTP Sink ClickHouse', 'موصل Ka
 ---
 
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 إن موصل HTTP Sink لا يعتمد على نوع بيانات محدد، لذا لا يحتاج إلى مخطط Kafka، كما يدعم أنواع بيانات خاصة بـ ClickHouse مثل Maps وArrays. وتأتي هذه المرونة الإضافية مقابل زيادة طفيفة في تعقيد الإعداد.
 
 فيما يلي نشرح عملية تثبيت بسيطة، مع سحب الرسائل من topic واحد في Kafka وإدراج صفوف في جدول ClickHouse.
@@ -61,7 +59,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="تكوين HTTP Sink" id="4-configure-http-sink">
     أنشئ Kafka topic ومثيلاً من موصل HTTP Sink:
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp" size="sm" alt="واجهة Confluent Cloud تعرض كيفية إنشاء موصل HTTP Sink" border />
+    ![واجهة Confluent Cloud تعرض كيفية إنشاء موصل HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
 
     <br />
 
@@ -78,7 +76,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       هذا `HTTP Url` عرضة لوقوع الأخطاء. تأكد من أن التحويلات الهروبية دقيقة لتجنب المشكلات.
     </Note>
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="واجهة Confluent Cloud تعرض إعدادات المصادقة لموصل HTTP Sink" border />
+    ![واجهة Confluent Cloud تعرض إعدادات المصادقة لموصل HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
 
     <br />
 
@@ -92,13 +90,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
         * `Retry on HTTP codes` - 400-500، ولكن عدّله حسب الحاجة. على سبيل المثال، قد يتغير ذلك إذا كان لديك HTTP proxy أمام ClickHouse.
         * `Maximum Reties` - القيمة الافتراضية (10) مناسبة، لكن لا تتردد في تعديلها للحصول على retries أكثر موثوقية.
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="واجهة Confluent Cloud تعرض خيارات التكوين المتقدمة لموصل HTTP Sink" border />
+    ![واجهة Confluent Cloud تعرض خيارات التكوين المتقدمة لموصل HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
   </Step>
 
   <Step title="اختبار الاتصال" id="5-testing-the-connectivity">
     أنشئ رسالة في topic الذي أعددته لـ HTTP Sink
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp" size="md" alt="واجهة Confluent Cloud تعرض كيفية إنشاء رسالة اختبار في Kafka topic" border />
+    ![واجهة Confluent Cloud تعرض كيفية إنشاء رسالة اختبار في Kafka topic](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
 
     <br />
 

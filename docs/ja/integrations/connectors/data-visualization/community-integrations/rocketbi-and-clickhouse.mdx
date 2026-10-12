@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -19,7 +17,7 @@ import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaint
 このガイドでは、Rocket.BI をインストールし、シンプルなダッシュボードを作成します。
 これがそのダッシュボードです。
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_01.webp" alt="チャートと KPI を含む売上メトリクスを表示する Rocket BI のダッシュボード" border />
+![チャートと KPI を含む売上メトリクスを表示する Rocket BI のダッシュボード](/images/integrations/data-visualization/rocketbi_01.webp)
 
 <br />
 
@@ -54,7 +52,7 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 **無制限にダッシュボード**を作成でき、1 つのダッシュボードに **無制限のチャート** を作成できます。
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_02.webp" alt="Rocket BI で新しいチャートを作成する手順を示すアニメーション" border />
+![Rocket BI で新しいチャートを作成する手順を示すアニメーション](/images/integrations/data-visualization/rocketbi_02.webp)
 
 <br />
 
@@ -70,13 +68,13 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 Tab フィルターで、使用するメトリクスフィールドを選択します。集計設定も必ず確認してください。
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_03.webp" alt="選択したフィールドと集計設定を表示する Rocket BI のメトリクスコントロール設定パネル" border />
+![選択したフィールドと集計設定を表示する Rocket BI のメトリクスコントロール設定パネル](/images/integrations/data-visualization/rocketbi_03.webp)
 
 <br />
 
 フィルター名を変更し、コントロールをダッシュボードに保存します
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_04.webp" alt="フィルター名を変更し、ダッシュボードに保存する準備ができたメトリクスコントロール" border />
+![フィルター名を変更し、ダッシュボードに保存する準備ができたメトリクスコントロール](/images/integrations/data-visualization/rocketbi_04.webp)
 
 <div id="create-a-date-type-control">
   #### 日付型コントロールを作成する
@@ -84,19 +82,19 @@ Tab フィルターで、使用するメトリクスフィールドを選択し�
 
 Dateフィールドをメインの日付カラムとして選択します。
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_05.webp" alt="利用可能な日付カラムを表示している Rocket BI の日付フィールド選択インターフェイス" border />
+![利用可能な日付カラムを表示している Rocket BI の日付フィールド選択インターフェイス](/images/integrations/data-visualization/rocketbi_05.webp)
 
 <br />
 
 ルックアップ範囲の異なる複製バリアントを追加します。たとえば、年別、月別、日別、曜日別です。
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_06.webp" alt="年、月、日などのさまざまな期間オプションを示す日付範囲の設定" border />
+![年、月、日などのさまざまな期間オプションを示す日付範囲の設定](/images/integrations/data-visualization/rocketbi_06.webp)
 
 <br />
 
 フィルター名を変更し、コントロールをダッシュボードに保存します
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_07.webp" alt="名前を変更したフィルターを備え、ダッシュボードに保存する準備ができた日付範囲コントロール" border />
+![名前を変更したフィルターを備え、ダッシュボードに保存する準備ができた日付範囲コントロール](/images/integrations/data-visualization/rocketbi_07.webp)
 
 <div id="now-let-build-the-charts">
   ### では、チャートを作成しましょう
@@ -108,25 +106,25 @@ Dateフィールドをメインの日付カラムとして選択します。
 
 「Adding new chart」を選択し、次に「Pie Chart」を選択します。
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_08.webp" alt="円グラフのオプションが強調表示されたチャートタイプ選択パネル" border />
+![円グラフのオプションが強調表示されたチャートタイプ選択パネル](/images/integrations/data-visualization/rocketbi_08.webp)
 
 <br />
 
 まず、Dataset からカラム「Region」を Legend Field にドラッグ＆ドロップします。
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_09.webp" alt="Region カラムが凡例フィールドに追加されるドラッグ＆ドロップインターフェイス" border />
+![Region カラムが凡例フィールドに追加されるドラッグ＆ドロップインターフェイス](/images/integrations/data-visualization/rocketbi_09.webp)
 
 <br />
 
 次に、チャートコントロール タブに切り替えます。
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_10.webp" alt="可視化の設定オプションを表示している チャートコントロール タブのインターフェイス" border />
+![可視化の設定オプションを表示している チャートコントロール タブのインターフェイス](/images/integrations/data-visualization/rocketbi_10.webp)
 
 <br />
 
 メトリクスコントロールを Value Field にドラッグ＆ドロップします。
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_11.webp" alt="円グラフの値フィールドにメトリクスコントロールが追加されている様子" border />
+![円グラフの値フィールドにメトリクスコントロールが追加されている様子](/images/integrations/data-visualization/rocketbi_11.webp)
 
 <br />
 
@@ -134,19 +132,19 @@ Dateフィールドをメインの日付カラムとして選択します。
 
 さらにカスタマイズするには、Chart Setting に移動します。
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_12.webp" alt="円グラフのカスタマイズオプションを表示しているチャート設定パネル" border />
+![円グラフのカスタマイズオプションを表示しているチャート設定パネル](/images/integrations/data-visualization/rocketbi_12.webp)
 
 <br />
 
 たとえば、Data label を Percentage に変更します。
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_13.webp" alt="円グラフ上に割合を表示するように Data label の設定を変更している様子" border />
+![円グラフ上に割合を表示するように Data label の設定を変更している様子](/images/integrations/data-visualization/rocketbi_13.webp)
 
 <br />
 
 Chart を保存して ダッシュボード に追加します。
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_14.webp" alt="他のコントロールとともに新しく追加された円グラフを表示しているダッシュボード画面" border />
+![他のコントロールとともに新しく追加された円グラフを表示しているダッシュボード画面](/images/integrations/data-visualization/rocketbi_14.webp)
 
 <div id="use-date-control-in-a-time-series-chart">
   #### 時系列チャートで日付コントロールを使用する
@@ -154,25 +152,25 @@ Chart を保存して ダッシュボード に追加します。
 
 積み上げ縦棒チャートを使います
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_15.webp" alt="時系列データを使用した積み上げ縦棒チャートの作成インターフェイス" border />
+![時系列データを使用した積み上げ縦棒チャートの作成インターフェイス](/images/integrations/data-visualization/rocketbi_15.webp)
 
 <br />
 
 チャートコントロール で、Y 軸にメトリクスコントロール、X 軸に Date Range を設定します
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_16.webp" alt="Y 軸にメトリクス、X 軸に日付範囲を設定した チャートコントロール" border />
+![Y 軸にメトリクス、X 軸に日付範囲を設定した チャートコントロール](/images/integrations/data-visualization/rocketbi_16.webp)
 
 <br />
 
 Breakdown に Region カラムを追加します
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_17.webp" alt="積み上げ縦棒チャートの内訳ディメンションとして Region カラムを追加している様子" border />
+![積み上げ縦棒チャートの内訳ディメンションとして Region カラムを追加している様子](/images/integrations/data-visualization/rocketbi_17.webp)
 
 <br />
 
 KPI として Number チャートを追加し、ダッシュボードを見栄えよく整えます
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_18.webp" alt="KPI の Number チャート、円グラフ、時系列可視化を含む完成したダッシュボード" border />
+![KPI の Number チャート、円グラフ、時系列可視化を含む完成したダッシュボード](/images/integrations/data-visualization/rocketbi_18.webp)
 
 <br />
 

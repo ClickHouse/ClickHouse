@@ -7,12 +7,11 @@ doc_type: 'guide'
 keywords: ['마이그레이션', 'ClickHouse Cloud', 'OSS', '자가 관리형에서 Cloud로 마이그레이션']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import AddARemoteSystem from '/snippets/ko/_add_remote_ip_access_list_detail.mdx';
 
 import CompatibilityNote from '/snippets/ko/compatibility.mdx';
 
-<Image img="/images/integrations/migration/self-managed-01.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
+![자가 관리형 ClickHouse 마이그레이션](/images/integrations/migration/self-managed-01.webp)
 
 이 가이드에서는 자가 관리형 ClickHouse 서버에서 ClickHouse Cloud로 마이그레이션하는 방법과 ClickHouse Cloud 서비스 간에 마이그레이션하는 방법을 설명합니다.
 [`remoteSecure`](/ko/reference/functions/table-functions/remote) 함수는 원격 ClickHouse 서버에 액세스할 수 있도록 `SELECT` 및 `INSERT` 쿼리에서 사용됩니다. 이를 통해 `SELECT`가 포함된 `INSERT INTO` 쿼리만 작성하면 테이블을 간단히 마이그레이션할 수 있습니다.
@@ -21,7 +20,7 @@ import CompatibilityNote from '/snippets/ko/compatibility.mdx';
   ## 자가 관리형 ClickHouse에서 ClickHouse Cloud로 마이그레이션하기
 </div>
 
-<Image img="/images/integrations/migration/self-managed-02.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
+![자가 관리형 ClickHouse 마이그레이션](/images/integrations/migration/self-managed-02.webp)
 
 원본 테이블이 세그먼트로 나뉘어 있거나 복제되어 있는지와 관계없이, ClickHouse Cloud에서는 대상 테이블만 생성하면 됩니다(이 테이블의 Engine 매개변수는 생략할 수 있으며, `SharedMergeTree`가 테이블 엔진으로 자동 선택됩니다).
 또한 ClickHouse Cloud가 수직 및 수평 스케일링을 자동으로 처리합니다.
@@ -95,7 +94,7 @@ CREATE TABLE db.table ...
 
 * `remoteSecure` 함수를 사용해 자가 관리형 소스에서 데이터를 가져옵니다
 
-<Image img="/images/integrations/migration/self-managed-03.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
+![자가 관리형 ClickHouse 마이그레이션](/images/integrations/migration/self-managed-03.webp)
 
 ```sql
 INSERT INTO db.table SELECT * FROM
@@ -108,7 +107,7 @@ remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
 
 * `remoteSecure` 함수를 사용하여 데이터를 ClickHouse Cloud 서비스로 push합니다
 
-<Image img="/images/integrations/migration/self-managed-04.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
+![자가 관리형 ClickHouse 마이그레이션](/images/integrations/migration/self-managed-04.webp)
 
 <Tip>
   **원격 시스템을 ClickHouse Cloud 서비스의 IP 액세스 목록에 추가하십시오**
@@ -128,7 +127,7 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
   ## ClickHouse Cloud 서비스 간 마이그레이션
 </div>
 
-<Image img="/images/integrations/migration/self-managed-05.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
+![자가 관리형 ClickHouse 마이그레이션](/images/integrations/migration/self-managed-05.webp)
 
 ClickHouse Cloud 서비스 간에 데이터를 마이그레이션하는 일반적인 예시는 다음과 같습니다:
 
@@ -137,7 +136,7 @@ ClickHouse Cloud 서비스 간에 데이터를 마이그레이션하는 일반�
 
 이 예시에서는 2개의 ClickHouse Cloud 서비스가 있으며, 이를 각각 *source*와 *destination*이라고 합니다. 데이터는 source에서 destination으로 Pull됩니다. 원하는 경우 Push 방식도 사용할 수 있지만, 여기서는 읽기 전용 사용자를 사용하는 Pull 방식을 보여줍니다.
 
-<Image img="/images/integrations/migration/self-managed-06.webp" size="lg" alt="자가 관리형 ClickHouse 마이그레이션" />
+![자가 관리형 ClickHouse 마이그레이션](/images/integrations/migration/self-managed-06.webp)
 
 마이그레이션은 다음 단계로 진행됩니다:
 

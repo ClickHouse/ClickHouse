@@ -7,8 +7,6 @@ sidebarTitle: 'Cloud Console'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse Cloud의 서비스에는 사용자가 대시보드와 알림을 이용할 수 있도록 하는 기본 제공 모니터링 구성 요소가 포함되어 있습니다. 기본적으로 Cloud Console의 모든 사용자는 이러한 대시보드에 액세스할 수 있습니다.
 
 <div id="dashboards">
@@ -68,7 +66,7 @@ Infrastructure 대시보드는 ClickHouse 프로세스가 사용 중인 리소�
 
 이 대시보드는 [기본 제공 고급 관측성 대시보드](/ko/products/cloud/features/monitoring/advanced-dashboard)를 수정한 버전으로, 각 시리즈는 레플리카별 메트릭을 나타냅니다. ClickHouse 관련 문제를 모니터링하고 문제를 해결할 때 유용합니다.
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="ClickHouse Cloud의 Advanced dashboard" border />
+![ClickHouse Cloud의 Advanced dashboard](/images/cloud/manage/monitoring/advanced_dashboard.webp)
 
 <Note>
   ClickHouse Cloud는 이 대시보드에 표시되는 메트릭을 시스템 테이블에서 스크레이프해 저장하므로, 서비스가 유휴 상태여도 확인할 수 있습니다. 이러한 메트릭에 액세스해도 기본 서비스에 쿼리가 실행되지 않으며, 유휴 상태의 서비스가 다시 활성화되지도 않습니다.
@@ -115,7 +113,7 @@ Infrastructure 대시보드는 ClickHouse 프로세스가 사용 중인 리소�
 
 서비스를 선택한 후 왼쪽 사이드바에서 **모니터링** 탐색 항목을 펼치면 **쿼리 인사이트** 하위 항목이 표시됩니다:
 
-<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="쿼리 인사이트 UI 개요" border />
+![쿼리 인사이트 UI 개요](/images/cloud/sqlconsole/insights_overview.webp)
 
 <div id="top-level-metrics">
   ### 상위 메트릭
@@ -123,7 +121,7 @@ Infrastructure 대시보드는 ClickHouse 프로세스가 사용 중인 리소�
 
 상단의 통계 상자는 선택한 시간 범위의 기본 쿼리 메트릭을 나타냅니다. 그 아래의 시계열 차트는 쿼리 유형(select, insert, other)별 쿼리 수, 지연 시간, 오류율을 보여줍니다. 지연 시간 차트는 p50, p90, p99 지연 시간을 표시하도록 조정할 수 있습니다:
 
-<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="쿼리 인사이트 지연 시간 차트" border />
+![쿼리 인사이트 지연 시간 차트](/images/cloud/sqlconsole/insights_latency.webp)
 
 <div id="recent-queries">
   ### 최근 쿼리
@@ -131,7 +129,7 @@ Infrastructure 대시보드는 ClickHouse 프로세스가 사용 중인 리소�
 
 테이블에는 선택한 시간 윈도우 동안 정규화된 쿼리 해시와 사용자별로 그룹화된 쿼리 로그 항목이 표시됩니다. 최근 쿼리는 사용 가능한 모든 필드로 필터링하고 정렬할 수 있으며, 테이블, p90 및 p99 지연 시간과 같은 추가 필드의 표시 여부도 구성할 수 있습니다:
 
-<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="쿼리 인사이트 최근 쿼리 테이블" border />
+![쿼리 인사이트 최근 쿼리 테이블](/images/cloud/sqlconsole/insights_recent.webp)
 
 <div id="query-drill-down">
   ### 쿼리 드릴다운
@@ -139,11 +137,11 @@ Infrastructure 대시보드는 ClickHouse 프로세스가 사용 중인 리소�
 
 최근 쿼리 테이블에서 쿼리를 선택하면, 선택한 쿼리와 관련된 메트릭 및 정보가 포함된 플라이아웃이 열립니다:
 
-<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="쿼리 인사이트 UI 쿼리 드릴다운" border />
+![쿼리 인사이트 UI 쿼리 드릴다운](/images/cloud/sqlconsole/insights_drilldown.webp)
 
 **쿼리 정보** 탭의 모든 메트릭은 집계 메트릭이지만, **쿼리 이력** 탭을 선택하면 개별 실행의 메트릭도 확인할 수 있습니다:
 
-<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="쿼리 인사이트 UI 쿼리 정보" border />
+![쿼리 인사이트 UI 쿼리 정보](/images/cloud/sqlconsole/insights_query_info.webp)
 
 이 패널에서 각 쿼리 실행의 `Settings` 및 `Profile Events` 항목을 펼쳐 추가 정보를 확인할 수 있습니다.
 

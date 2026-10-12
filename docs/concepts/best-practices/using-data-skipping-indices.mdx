@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Data skipping indices should be considered when previous best practices have been followed i.e. types are optimized, a good primary key has been selected and materialized views have been exploited. If you're new to skipping indices, [this guide](/concepts/features/performance/skip-indexes/skipping-indexes) is a good place to start.
 
 These types of indices can be used to accelerate query performance if used carefully with an understanding of how they work.
@@ -189,7 +187,7 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 The following animation illustrates how our minmax skipping index is built for the example table, tracking the minimum and maximum `ViewCount` values for each block of rows (granule) in the table:
 
-<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="Building skipping indices"/>
+![Building skipping indices](/images/bestpractices/building_skipping_indices.webp)
 
 Repeating our earlier query shows significant performance improvements. Notice the reduced number of rows scanned:
 
@@ -254,7 +252,7 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 We also show an animation how the minmax skipping index prunes all row blocks that can't possibly contain matches for the `ViewCount` > 10,000,000 predicate in our example query:
 
-<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="Using skipping indices"/>
+![Using skipping indices](/images/bestpractices/using_skipping_indices.webp)
 
 ## Related docs {#related-docs}
 - [Data skipping indices guide](/concepts/features/performance/skip-indexes/skipping-indexes)

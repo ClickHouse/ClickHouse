@@ -6,13 +6,11 @@ keywords: ['vue matérialisée actualisable', 'actualisation', 'vues matérialis
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Les [vues matérialisées actualisables](/fr/reference/statements/create/view#refreshable-materialized-view) sont, d’un point de vue conceptuel, similaires aux vues matérialisées des bases de données OLTP traditionnelles : elles stockent le résultat d’une requête donnée afin d’en accélérer la récupération et d’éviter de réexécuter sans cesse des requêtes gourmandes en ressources. Contrairement aux [vues matérialisées incrémentielles](/fr/concepts/features/materialized-views/incremental-materialized-view) de ClickHouse, elles nécessitent l’exécution périodique de la requête sur l’ensemble du jeu de données ; les résultats sont ensuite stockés dans une table cible pour être interrogés. En théorie, ce jeu de résultats doit être plus petit que le jeu de données d’origine, ce qui permet d’exécuter plus rapidement les requêtes suivantes.
 
 Le diagramme ci-dessous montre le fonctionnement des vues matérialisées actualisables :
 
-<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="Diagramme d’une vue matérialisée actualisable" />
+![Diagramme d’une vue matérialisée actualisable](/images/materialized-view/refreshable-materialized-view-diagram.webp)
 
 Vous pouvez également consulter la vidéo suivante :
 

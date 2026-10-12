@@ -6,8 +6,6 @@ description: 'ClickStack으로 Redis 로그 모니터링'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -167,9 +165,9 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   <Step title="HyperDX에서 logs 확인하기" id="verifying-logs">
     구성이 완료되면 HyperDX에 로그인한 후 logs가 정상적으로 유입되는지 확인합니다:
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="Log view" />
+    ![Log view](/images/clickstack/redis/redis-log-view.webp)
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="Log" />
+    ![Log](/images/clickstack/redis/redis-log.webp)
   </Step>
 </Steps>
 
@@ -260,9 +258,9 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
       HyperDX는 브라우저의 로컬 시간대로 타임스탬프를 표시합니다. 데모 데이터의 범위는 **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**입니다. 넓은 시간 범위를 설정하면 위치와 관계없이 데모 로그를 확인할 수 있습니다. 로그가 표시되면 더 명확한 시각화를 위해 범위를 24시간으로 좁힐 수 있습니다.
     </Info>
 
-    <Image img="/images/clickstack/redis/redis-log-view.webp" alt="Log view" />
+    ![Log view](/images/clickstack/redis/redis-log-view.webp)
 
-    <Image img="/images/clickstack/redis/redis-log.webp" alt="Log" />
+    ![Log](/images/clickstack/redis/redis-log.webp)
   </Step>
 </Steps>
 
@@ -281,11 +279,11 @@ ClickStack으로 Redis 모니터링을 시작할 수 있도록 Redis 로그용 �
     1. HyperDX를 열고 대시보드 섹션으로 이동합니다.
     2. 오른쪽 상단의 줄임표 메뉴에서 &quot;Import Dashboard&quot;를 클릭합니다.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Import Dashboard" />
+    ![Import Dashboard](/images/clickstack/import-dashboard.webp)
 
     3. redis-logs-dashboard.json 파일을 업로드한 다음 finish import를 클릭합니다.
 
-    <Image img="/images/clickstack/redis/redis-import-dashboard.webp" alt="Finish Import" />
+    ![Finish Import](/images/clickstack/redis/redis-import-dashboard.webp)
   </Step>
 
   <Step title="모든 시각화가 사전 구성된 상태로 대시보드가 생성됩니다" id="created-dashboard">
@@ -293,7 +291,7 @@ ClickStack으로 Redis 모니터링을 시작할 수 있도록 Redis 로그용 �
       데모 데이터세트의 경우 시간 범위를 **2025-10-27 10:00:00 - 2025-10-28 10:00:00 (UTC)**로 설정하십시오(로컬 시간대에 맞게 조정). 가져온 대시보드에는 기본적으로 시간 범위가 지정되어 있지 않습니다.
     </Note>
 
-    <Image img="/images/clickstack/redis/redis-logs-dashboard.webp" alt="Example Dashboard" />
+    ![Example Dashboard](/images/clickstack/redis/redis-logs-dashboard.webp)
   </Step>
 </Steps>
 

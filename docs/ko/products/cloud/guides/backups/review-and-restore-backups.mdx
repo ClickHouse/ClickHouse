@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import { CloudNotSupportedBadge } from "/snippets/ko/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 가이드에서는 ClickHouse Cloud의 백업 작동 방식, 서비스 백업을 구성할 때 사용할 수 있는 옵션, 그리고 백업에서 복원하는 방법을 설명합니다.
 
 **사전 요구 사항**
@@ -21,7 +19,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 백업은 기본 일일 일정이든 사용자가 선택한 [사용자 지정 일정](/ko/products/cloud/guides/backups/configurable-backups)이든 서비스에 구성된 일정에 따라 실행됩니다. 사용 가능한 모든 백업은 서비스의 **Backups** 탭에서 확인할 수 있습니다. 여기에서 백업 상태, 소요 시간, 백업 크기를 확인할 수 있습니다. 또한 **Actions** 컬럼에서 특정 백업을 복원할 수 있습니다.
 
-<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud의 백업 상태 목록" border />
+![ClickHouse Cloud의 백업 상태 목록](/images/cloud/manage/backup-status-list.webp)
 
 ## Backup 비용 이해하기 {#understanding-backup-cost}
 
@@ -29,7 +27,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 Backup 비용을 파악하려면 사용량 화면에서 서비스별 Backup 비용을 확인할 수 있습니다(아래 그림 참조). 사용자 지정 일정으로 며칠 동안 Backup을 실행해 보면 비용 수준을 가늠할 수 있으며, 이를 바탕으로 월간 Backup 비용을 추정할 수 있습니다.
 
-<Image img="/images/cloud/manage/backup-usage.webp" size="md" alt="ClickHouse Cloud의 Backup 사용량 차트" border />
+![ClickHouse Cloud의 Backup 사용량 차트](/images/cloud/manage/backup-usage.webp)
 
 Backup의 총비용을 추정하려면 일정을 설정해야 합니다. 일정을 설정하기 전에는 다음 입력값을 제공해 [요금 계산기](https://clickhouse.com/pricing)에서 월별 비용 추정치를 확인할 수 있습니다.
 
@@ -48,11 +46,11 @@ Backup의 총비용을 추정하려면 일정을 설정해야 합니다. 일정�
 
 **복원** 백업 아이콘을 클릭한 후 생성할 새 서비스의 이름을 지정하고 이 백업을 복원할 수 있습니다:
 
-<Image img="/images/cloud/manage/backup-restore.webp" size="md" alt="ClickHouse Cloud에서 백업 복원" />
+![ClickHouse Cloud에서 백업 복원](/images/cloud/manage/backup-restore.webp)
 
 새 서비스는 준비될 때까지 서비스 목록에 `Provisioning` 상태로 표시됩니다:
 
-<Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="서비스 프로비저닝 진행 중" border />
+![서비스 프로비저닝 진행 중](/images/cloud/manage/backup-service-provisioning.webp)
 
 <div id="working-with-your-restored-service">
   ## 복원된 서비스 사용하기

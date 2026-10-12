@@ -7,15 +7,13 @@ description: 'Despliega ClickHouse en tu propia infraestructura en la nube'
 doc_type: 'referencia'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="key-concepts">
   ## Conceptos clave
 </div>
 
 El diagrama siguiente muestra cómo se relacionan entre sí las organizaciones de ClickHouse Cloud, las cuentas en la nube y la infraestructura BYOC.
 
-<Image img="/images/cloud/reference/byoc-organization-hierarchy.svg" size="lg" alt="Jerarquía de la organización BYOC" />
+![Jerarquía de la organización BYOC](/images/cloud/reference/byoc-organization-hierarchy.svg)
 
 * **Organización de ClickHouse Cloud:** La entidad de nivel superior de ClickHouse Cloud que administra usuarios, facturación y servicios de ClickHouse que no son BYOC. Los usuarios de una organización pueden acceder tanto a los servicios estándar de Cloud como a los servicios BYOC.
 * **Organización BYOC de ClickHouse:** Una organización independiente dedicada a administrar implementaciones de BYOC. Comparte usuarios con la organización de Cloud, pero está vinculada a una o más cuentas en la nube donde se implementa la infraestructura BYOC.
@@ -41,7 +39,7 @@ En su **VPC BYOC del cliente**, ClickHouse aprovisiona un cluster de Kubernetes 
 
 <br />
 
-<Image img="/images/cloud/reference/byoc-architecture.svg" size="lg" alt="Arquitectura de BYOC: el plano de control de ClickHouse en la VPC de ClickHouse gestiona un plano de datos de Kubernetes dentro de la cuenta en la nube del cliente; los datos de ClickHouse, las copias de seguridad, los logs y los datos de monitorización permanecen en la cuenta del cliente y solo se exporta un conjunto acotado de telemetría operativa." />
+![Arquitectura de BYOC: el plano de control de ClickHouse en la VPC de ClickHouse gestiona un plano de datos de Kubernetes dentro de la cuenta en la nube del cliente; los datos de ClickHouse, las copias de seguridad, los logs y los datos de monitorización permanecen en la cuenta del cliente y solo se exporta un conjunto acotado de telemetría operativa.](/images/cloud/reference/byoc-architecture.svg)
 
 <br />
 

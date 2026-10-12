@@ -12,8 +12,6 @@ integration:
 
 import MySQLCloudSetup from '/snippets/_clickhouse_mysql_cloud_setup.mdx';
 import MySQLOnPremiseSetup from '/snippets/_clickhouse_mysql_on_premise_setup.mdx';
-import { Image } from "/snippets/components/Image.jsx";
-
 Tableau Online can connect to ClickHouse Cloud or on-premise ClickHouse setup via MySQL interface using the official MySQL data source.
 
 ## ClickHouse Cloud setup {#clickhouse-cloud-setup}
@@ -26,22 +24,22 @@ Tableau Online can connect to ClickHouse Cloud or on-premise ClickHouse setup vi
 
 Login to your Tableau Cloud site and add a new Published Data Source.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_01.webp" alt="Tableau Online interface showing the 'New' button to create a published data source" border />
+![Tableau Online interface showing the 'New' button to create a published data source](/images/integrations/data-visualization/tableau_online_01.webp)
 <br/>
 
 Select "MySQL" from the list of available connectors.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_02.webp" alt="Tableau Online connector selection screen with MySQL option highlighted" border />
+![Tableau Online connector selection screen with MySQL option highlighted](/images/integrations/data-visualization/tableau_online_02.webp)
 <br/>
 
 Specify your connection details gathered during the ClickHouse setup.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_03.webp" alt="Tableau Online MySQL connection configuration screen with server, port, database and credential fields" border />
+![Tableau Online MySQL connection configuration screen with server, port, database and credential fields](/images/integrations/data-visualization/tableau_online_03.webp)
 <br/>
 
 Tableau Online will introspect the database and provide a list of available tables. Drag the desired table to the canvas on the right. Additionally, you can click "Update Now" to preview the data, as well as fine-tune the introspected field types or names.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_04.webp" alt="Tableau Online data source page showing database tables on the left and canvas on the right with drag-and-drop functionality" border />
+![Tableau Online data source page showing database tables on the left and canvas on the right with drag-and-drop functionality](/images/integrations/data-visualization/tableau_online_04.webp)
 <br/>
 
 After that, all that remains is to click "Publish As" in the top right corner, and you should be able to use a newly created dataset in Tableau Online as usual.
@@ -58,7 +56,7 @@ Likely, it will be required to install the MySQL driver on your machine first.
 You can do that by following the setup guide that is displayed [here](https://www.tableau.com/support/drivers) if you select MySQL from the Data Source drop-down. 
 If you have an M1 Mac, check [this troubleshooting thread](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac) for a driver installation workaround.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_01.webp" alt="Tableau Desktop interface showing the Connect menu with MySQL option highlighted" border />
+![Tableau Desktop interface showing the Connect menu with MySQL option highlighted](/images/integrations/data-visualization/tableau_desktop_01.webp)
 <br/>
 
 <Note>
@@ -69,23 +67,23 @@ You can download this root cert [here](https://letsencrypt.org/certs/isrgrootx1.
 
 Provide your ClickHouse Cloud instance MySQL user credentials and the path to the downloaded root certificate.
 
-<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_02.webp" alt="Tableau Desktop MySQL connection dialog with SSL option enabled and fields for server, username, password and certificate" border />
+![Tableau Desktop MySQL connection dialog with SSL option enabled and fields for server, username, password and certificate](/images/integrations/data-visualization/tableau_desktop_02.webp)
 <br/>
 
 Choose the desired tables as usual (similarly to Tableau Online), 
 and select "Server" -> "Publish Data Source" -> Tableau Cloud.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_03.webp" alt="Tableau Desktop showing Server menu with Publish Data Source option highlighted" border />
+![Tableau Desktop showing Server menu with Publish Data Source option highlighted](/images/integrations/data-visualization/tableau_desktop_03.webp)
 <br/>
 
 IMPORTANT: you need to select "Embedded password" in "Authentication" options.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_04.webp" alt="Tableau Desktop publish dialog showing Authentication options with Embedded password selected" border />
+![Tableau Desktop publish dialog showing Authentication options with Embedded password selected](/images/integrations/data-visualization/tableau_desktop_04.webp)
 <br/>
 
 Additionally, choose "Update workbook to use the published data source".
 
-<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_05.webp" alt="Tableau Desktop publish dialog with 'Update workbook to use the published data source' option checked" border />
+![Tableau Desktop publish dialog with 'Update workbook to use the published data source' option checked](/images/integrations/data-visualization/tableau_desktop_05.webp)
 <br/>
 
 Finally, click "Publish", and your datasource with embedded credentials will be opened automatically in Tableau Online.

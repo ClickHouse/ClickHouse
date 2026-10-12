@@ -12,8 +12,6 @@ integration:
 keywords: ['vector', 'сбор журналов', 'обсервабилити', 'ингестия данных', 'конвейер']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -113,7 +111,7 @@ ClickHouse отлично подходит для хранения и анали
     SELECT * FROM nginxdb.access_logs
     ```
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="Просмотр журналов ClickHouse в табличном формате" />
+    ![Просмотр журналов ClickHouse в табличном формате](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
   </Step>
 
   <Step title="Разбор журналов" id="4-parse-the-logs">
@@ -216,7 +214,7 @@ ClickHouse отлично подходит для хранения и анали
     SELECT * FROM nginxdb.access_logs_view
     ```
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/vector_02.webp" size="lg" border alt="Просмотр разобранных журналов ClickHouse в табличном формате" />
+    ![Просмотр разобранных журналов ClickHouse в табличном формате](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
 
     <Note>
       В уроке выше данные сохранялись в двух таблицах, но вы можете изменить исходную таблицу `nginxdb.access_logs`, чтобы использовать для неё движок таблицы [`Null`](/ru/reference/engines/table-engines/special/null).

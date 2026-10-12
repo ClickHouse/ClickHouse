@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/clickpipes/_iam_authentication.mdx";
 
 ## Supported Postgres versions {#supported-postgres-versions}
@@ -37,17 +36,17 @@ If not already configured, follow these steps:
 1. Create a new parameter group for your Aurora PostgreSQL version with the required setting:
     - Set `rds.logical_replication` to 1
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="Where to find Parameter groups in Aurora" size="lg" border/>
+![Where to find Parameter groups in Aurora](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="Changing rds.logical_replication" size="lg" border/>
+![Changing rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
 
 2. Apply the new parameter group to your Aurora PostgreSQL cluster
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="Modifying Aurora PostgreSQL with new parameter group" size="lg" border/>
+![Modifying Aurora PostgreSQL with new parameter group](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
 
 3. Reboot your Aurora cluster to apply the changes
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="Reboot Aurora PostgreSQL" size="lg" border/>
+![Reboot Aurora PostgreSQL](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
 
 ## Configure database user {#configure-database-user}
 
@@ -107,9 +106,9 @@ Connect to your Aurora PostgreSQL writer instance as an admin user and execute t
 
 If you want to restrict traffic to your Aurora cluster, please add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the `Inbound rules` of your Aurora security group.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Where to find security group in Aurora PostgreSQL?" size="lg" border/>
+![Where to find security group in Aurora PostgreSQL?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Edit inbound rules for the above security group" size="lg" border/>
+![Edit inbound rules for the above security group](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
 
 ### Private access via AWS PrivateLink {#private-access-via-aws-privatelink}
 

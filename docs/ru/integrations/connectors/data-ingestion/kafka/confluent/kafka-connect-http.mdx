@@ -9,8 +9,6 @@ keywords: ['Confluent коннектор HTTP Sink', 'HTTP Sink ClickHouse', 'к
 ---
 
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Коннектор HTTP Sink не зависит от типа данных, поэтому ему не требуется схема Kafka; кроме того, он поддерживает специфичные для ClickHouse типы данных, такие как Map и Array. За эту дополнительную гибкость приходится платить небольшим усложнением конфигурации.
 
 Ниже мы опишем простую установку: получение сообщений из одного топика Kafka и вставку строк в таблицу ClickHouse.
@@ -61,7 +59,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Настройка HTTP Sink" id="4-configure-http-sink">
     Создайте Kafka топик и экземпляр коннектора HTTP Sink:
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp" size="sm" alt="Интерфейс Confluent Cloud, показывающий, как создать коннектор HTTP Sink" border />
+    ![Интерфейс Confluent Cloud, показывающий, как создать коннектор HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
 
     <br />
 
@@ -78,7 +76,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
       В этом HTTP Url легко допустить ошибку. Убедитесь, что экранирование выполнено корректно, чтобы избежать проблем.
     </Note>
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="Интерфейс Confluent Cloud, показывающий настройки аутентификации для коннектора HTTP Sink" border />
+    ![Интерфейс Confluent Cloud, показывающий настройки аутентификации для коннектора HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
 
     <br />
 
@@ -92,13 +90,13 @@ import { Image } from "/snippets/ru/components/Image.jsx";
         * `Retry on HTTP codes` - 400-500, но при необходимости скорректируйте; например, это может измениться, если перед ClickHouse используется HTTP proxy.
         * `Maximum Reties` - значение по умолчанию (10) подходит, но при необходимости вы можете увеличить его для более надёжных повторных попыток.
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="Интерфейс Confluent Cloud, показывающий дополнительные параметры конфигурации для коннектора HTTP Sink" border />
+    ![Интерфейс Confluent Cloud, показывающий дополнительные параметры конфигурации для коннектора HTTP Sink](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
   </Step>
 
   <Step title="Проверка подключения" id="5-testing-the-connectivity">
     Создайте сообщение в топике, настроенном для вашего HTTP Sink
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp" size="md" alt="Интерфейс Confluent Cloud, показывающий, как создать тестовое сообщение в топике Kafka" border />
+    ![Интерфейс Confluent Cloud, показывающий, как создать тестовое сообщение в топике Kafka](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
 
     <br />
 

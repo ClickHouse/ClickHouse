@@ -9,8 +9,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 <Note>
@@ -250,7 +248,7 @@ On-Demand Compute — это основа. Что уже в работе или 
 
 Пока воркер арендован вашим сервисом, платформа разрешает сетевой трафик между этим воркером и вашим сервисом и блокирует всё остальное. Ограничение применяется на сетевом уровне, а не в движке запросов, поэтому оно не зависит ни от самого запроса, ни от его настроек, ни от плана, который строит оптимизатор.
 
-<Image img="/images/cloud/reference/on-demand-compute-worker-isolation.svg" size="lg" alt="Диаграмма, объясняющая сетевую изоляцию" />
+![Диаграмма, объясняющая сетевую изоляцию](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
 
 * **Доступ к вашим воркерам есть только у вашего сервиса.** Путь существует на время текущей аренды воркера и только для этого сервиса.
 * **Неназначенные воркеры недоступны.** У воркера, ожидающего в пуле, нет сетевого пути ни к одному сервису и обратно, пока он не арендован.

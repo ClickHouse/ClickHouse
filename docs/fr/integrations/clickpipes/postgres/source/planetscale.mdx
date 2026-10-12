@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <Info>
   PlanetScale for Postgres est actuellement disponible en [accès anticipé](https://planetscale.com/postgres).
 </Info>
@@ -40,7 +38,7 @@ ClickPipes prend en charge Postgres à partir de la version 12.
 
    Le résultat devrait être `logical` par défaut. Sinon, connectez-vous à la console PlanetScale, accédez à `Cluster configuration->Parameters`, puis faites défiler jusqu’à `Write-ahead log` pour le modifier.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp" alt="Modification de wal_level dans la console PlanetScale" size="md" border />
+![Modification de wal_level dans la console PlanetScale](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_wal_level_logical.webp)
 
 <Warning>
   Modifier ce paramètre dans la console PlanetScale DÉCLENCHERA un redémarrage.
@@ -48,7 +46,7 @@ ClickPipes prend en charge Postgres à partir de la version 12.
 
 2. De plus, il est recommandé d’augmenter la valeur du paramètre `max_slot_wal_keep_size` au-delà de sa valeur par défaut de 4GB. Cela se fait également via la console PlanetScale, en allant dans `Cluster configuration->Parameters`, puis en faisant défiler jusqu’à `Write-ahead log`. Pour vous aider à déterminer la nouvelle valeur, consultez [cette section](/fr/integrations/clickpipes/postgres/faq#recommended-max_slot_wal_keep_size-settings).
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp" alt="Modification de max_slot_wal_keep_size dans la console PlanetScale" size="md" border />
+![Modification de max_slot_wal_keep_size dans la console PlanetScale](/images/integrations/data-ingestion/clickpipes/postgres/source/planetscale/planetscale_max_slot_wal_keep_size.webp)
 
 <div id="creating-a-user-with-permissions-and-publication">
   ## Créer un utilisateur avec des permissions et une publication

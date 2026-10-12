@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge/>
@@ -47,7 +45,7 @@ The most flexible query type is the table query. This is a catch-all for the oth
 | Limit | Appends a [LIMIT](/reference/statements/select/limit) statement to the end of the query. If set to `0` then it will be excluded. Some visualizations might need this set to `0` to show all the data. |
 | Filters | A list of filters to be applied in the `WHERE` clause. |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="Example aggregate table query" border />
+![Example aggregate table query](/images/integrations/data-visualization/grafana/demo_table_query.webp)
 
 This query type will render the data as a table.
 
@@ -75,13 +73,13 @@ The logs query type supports [data links](#data-links).
 | Filters | A list of filters to be applied in the `WHERE` clause. |
 | Message Filter | A text input for conveniently filtering logs using a `LIKE %value%`. Excluded when input is empty. |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="Example OTel logs query" border />
+![Example OTel logs query](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
 
 <br/>
 This query type will render the data in the logs panel along with a logs histogram panel at the top.
 
 Extra columns that are selected in the query can be viewed in the expanded log row:
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Example of extra fields on logs query" border />
+![Example of extra fields on logs query](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
 
 ### Time series {#time-series}
 
@@ -112,7 +110,7 @@ Try removing the `LIMIT` clause by setting it to `0` (if your dataset allows).
 | Limit | Appends a [LIMIT](/reference/statements/select/limit) statement to the end of the query. If set to `0` then it will be excluded, this is recommended for some time series datasets in order to show the full visualization. |
 | Filters | A list of filters to be applied in the `WHERE` clause. |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="Example time series query" border />
+![Example time series query](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
 
 This query type will render the data with the time series panel.
 
@@ -149,7 +147,7 @@ The trace query type supports [data links](#data-links).
 | Filters | A list of filters to be applied in the `WHERE` clause. |
 | Trace ID | The Trace ID to filter by. Only used in Trace ID mode, and when opening a trace ID [data link](#data-links). |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="Example OTel trace query" border />
+![Example OTel trace query](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
 
 This query type will render the data with the table view for Trace Search mode, and the trace panel for Trace ID mode.
 
@@ -165,7 +163,7 @@ The SQL editor can be opened by selecting "SQL Editor" at the top of the query e
 You can switch between query types to get a visualization that best fits your query.
 This switch also has an effect even in dashboard view, notably with time series data.
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="Example raw SQL query" border />
+![Example raw SQL query](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
 
 ## Data links {#data-links}
 
@@ -175,12 +173,12 @@ This feature has been enabled within the ClickHouse plugin for linking a trace t
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   Example of trace links in a table
-  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="Trace links in table" border />
+  ![Trace links in table](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Example of trace links in logs
-  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="Trace links in logs" border />
+  ![Trace links in logs](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
 </div>
 
 ### How to make a data link {#how-to-make-a-data-link}
@@ -204,7 +202,7 @@ Having defaults configured for both [logs](/integrations/connectors/data-visuali
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Example of viewing a trace (right panel) from a logs query (left panel)
-  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="Example of data links linking" border />
+  ![Example of data links linking](/images/integrations/data-visualization/grafana/demo_data_links.webp)
 </div>
 
 ## Macros {#macros}

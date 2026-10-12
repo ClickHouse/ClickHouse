@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Temporal', 'métricas', 'OTEL', 'ClickStack']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -154,7 +152,7 @@ En esta sección se explica cómo configurar ClickStack mediante la configuraci�
     2. Busca métricas que empiecen por `temporal` (p. ej., `temporal_cloud_v1_workflow_success_count`, `temporal_cloud_v1_poll_timeout_count`)
     3. Deberías ver puntos de datos de métricas según el intervalo de recopilación configurado
 
-    <Image img="/images/clickstack/temporal/temporal-metrics.webp" alt="Métricas de Temporal" size="md" />
+    ![Métricas de Temporal](/images/clickstack/temporal/temporal-metrics.webp)
   </Step>
 </Steps>
 
@@ -173,17 +171,17 @@ Para ayudarte a empezar a monitorear Temporal Cloud con ClickStack, proporcionam
     1. Abre HyperDX y ve a la sección Dashboards
     2. Haz clic en **Import Dashboard** en la esquina superior derecha, dentro del menú de tres puntos
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Botón Import Dashboard" />
+    ![Botón Import Dashboard](/images/clickstack/import-dashboard.webp)
 
     3. Sube el archivo `temporal-metrics-dashboard.json` y haz clic en **Finish Import**
 
-    <Image img="/images/clickstack/temporal/import-temporal-metrics-dashboard.webp" alt="Diálogo Finish Import" />
+    ![Diálogo Finish Import](/images/clickstack/temporal/import-temporal-metrics-dashboard.webp)
   </Step>
 
   <Step title="Ver el dashboard" id="created-dashboard">
     El dashboard se creará con todas las visualizaciones ya configuradas:
 
-    <Image img="/images/clickstack/temporal/temporal-metrics-dashboard.webp" alt="Dashboard de métricas de Temporal" />
+    ![Dashboard de métricas de Temporal](/images/clickstack/temporal/temporal-metrics-dashboard.webp)
   </Step>
 </Steps>
 

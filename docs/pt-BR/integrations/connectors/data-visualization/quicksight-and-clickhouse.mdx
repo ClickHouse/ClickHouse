@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -118,44 +116,44 @@ Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
 
 Antes de tudo, acesse [https://quicksight.aws.amazon.com](https://quicksight.aws.amazon.com), vá até Datasets e clique em &quot;New dataset&quot;:
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_01.webp" alt="Painel do Amazon QuickSight mostrando o botão New dataset na seção Datasets" border />
+![Painel do Amazon QuickSight mostrando o botão New dataset na seção Datasets](/images/integrations/data-visualization/quicksight_01.webp)
 
 <br />
 
 Procure o conector oficial do MySQL disponível no QuickSight (chamado simplesmente de **MySQL**):
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_02.webp" alt="Tela de seleção de fonte de dados do QuickSight com MySQL destacado nos resultados da busca" border />
+![Tela de seleção de fonte de dados do QuickSight com MySQL destacado nos resultados da busca](/images/integrations/data-visualization/quicksight_02.webp)
 
 <br />
 
 Informe os detalhes da conexão. Observe que a porta da interface MySQL é 9004 por padrão
 e pode ser diferente, dependendo da configuração do seu servidor.
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_03.webp" alt="Formulário de configuração da conexão MySQL do QuickSight com campos de hostname, porta, banco de dados e credenciais" border />
+![Formulário de configuração da conexão MySQL do QuickSight com campos de hostname, porta, banco de dados e credenciais](/images/integrations/data-visualization/quicksight_03.webp)
 
 <br />
 
 Agora, você tem duas opções para buscar os dados do ClickHouse. Primeiro, pode selecionar uma tabela na lista:
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_04.webp" alt="Interface de seleção de tabela do QuickSight mostrando as tabelas do banco de dados disponíveis no ClickHouse" border />
+![Interface de seleção de tabela do QuickSight mostrando as tabelas do banco de dados disponíveis no ClickHouse](/images/integrations/data-visualization/quicksight_04.webp)
 
 <br />
 
 Como alternativa, você pode informar um SQL personalizado para buscar seus dados:
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_05.webp" alt="Editor de SQL personalizado do QuickSight para buscar dados do ClickHouse" border />
+![Editor de SQL personalizado do QuickSight para buscar dados do ClickHouse](/images/integrations/data-visualization/quicksight_05.webp)
 
 <br />
 
 Ao clicar em &quot;Edit/Preview data&quot;, você poderá ver a estrutura da tabela identificada automaticamente ou ajustar seu SQL personalizado, caso tenha decidido acessar os dados dessa forma:
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_06.webp" alt="Pré-visualização de dados do QuickSight mostrando a estrutura da tabela com colunas e dados de exemplo" border />
+![Pré-visualização de dados do QuickSight mostrando a estrutura da tabela com colunas e dados de exemplo](/images/integrations/data-visualization/quicksight_06.webp)
 
 <br />
 
 Certifique-se de que o modo &quot;Direct Query&quot; esteja selecionado no canto inferior esquerdo da interface:
 
-<Image size="md" img="/images/integrations/data-visualization/quicksight_07.webp" alt="Interface do QuickSight com a opção de modo Direct Query destacada no canto inferior" border />
+![Interface do QuickSight com a opção de modo Direct Query destacada no canto inferior](/images/integrations/data-visualization/quicksight_07.webp)
 
 <br />
 

@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 在某些情况下，将特定表从 Postgres ClickPipe 中排除是有意义的——例如，如果某个表不是分析工作负载所需的，跳过它可以降低 ClickHouse 中的存储和复制成本。
 
 <div id="remove-tables-steps">
@@ -27,7 +25,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
 
 5. 点击 Update。
 6. 更新成功后，在 **Metrics** 选项卡中，状态将显示为 **Running**。该表将不再由此 ClickPipe 复制。

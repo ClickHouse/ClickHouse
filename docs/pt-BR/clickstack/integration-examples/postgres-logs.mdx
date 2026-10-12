@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'logs', 'OTEL', 'ClickStack', 'monitoramento de banco de dados']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/pt-BR/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -199,9 +197,9 @@ Se quiser testar a integração de logs do PostgreSQL antes de configurar seu pr
     3. Filtre por `source:postgresql` para ver logs específicos do PostgreSQL
     4. Você deverá ver entradas de log estruturadas com campos como `user_name`, `database_name`, `error_severity`, `message`, `query` etc.
 
-    <Image img="/images/clickstack/postgres/postgres-logs-search-view.webp" alt="Search view de logs" />
+    ![Search view de logs](/images/clickstack/postgres/postgres-logs-search-view.webp)
 
-    <Image img="/images/clickstack/postgres/postgres-log-view.webp" alt="Log view" />
+    ![Log view](/images/clickstack/postgres/postgres-log-view.webp)
   </Step>
 </Steps>
 
@@ -291,9 +289,9 @@ Para usuários que querem testar a integração de logs do PostgreSQL antes de c
       O HyperDX exibe os timestamps no fuso horário local do navegador. Os dados de demonstração cobrem **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)**. O intervalo amplo garante que você verá os logs de demonstração independentemente da sua localização. Depois que os logs aparecerem, você pode restringir o intervalo para um período de 24 horas e obter visualizações mais claras.
     </Info>
 
-    <Image img="/images/clickstack/postgres/postgres-logs-search-view.webp" alt="Search view de logs" />
+    ![Search view de logs](/images/clickstack/postgres/postgres-logs-search-view.webp)
 
-    <Image img="/images/clickstack/postgres/postgres-log-view.webp" alt="Log view" />
+    ![Log view](/images/clickstack/postgres/postgres-log-view.webp)
   </Step>
 </Steps>
 
@@ -312,17 +310,17 @@ Para ajudar você a começar a monitorar o PostgreSQL com o ClickStack, fornecem
     1. Abra o HyperDX e navegue até a seção Dashboards
     2. Clique em **Import Dashboard** no canto superior direito, no menu de reticências
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Botão de importar dashboard" />
+    ![Botão de importar dashboard](/images/clickstack/import-dashboard.webp)
 
     3. Faça upload do arquivo `postgresql-logs-dashboard.json` e clique em **Finish Import**
 
-    <Image img="/images/clickstack/postgres/import-logs-dashboard.webp" alt="Concluir importação" />
+    ![Concluir importação](/images/clickstack/postgres/import-logs-dashboard.webp)
   </Step>
 
   <Step title="Visualize o dashboard" id="created-dashboard">
     O dashboard será criado com todas as visualizações pré-configuradas:
 
-    <Image img="/images/clickstack/postgres/postgres-logs-dashboard.webp" alt="Dashboard de logs" />
+    ![Dashboard de logs](/images/clickstack/postgres/postgres-logs-dashboard.webp)
 
     <Note>
       Para o dataset de demonstração, defina o intervalo de tempo como **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (ajuste com base no seu fuso horário local). Por padrão, o dashboard importado não terá um intervalo de tempo especificado.

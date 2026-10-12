@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse est un système de base de données polyvalent qui peut être déployé de différentes manières selon vos besoins. À la base, toutes les options de déploiement **utilisent le même puissant moteur de base de données ClickHouse** — ce qui change, c&#39;est la manière dont vous interagissez avec lui et l&#39;environnement dans lequel il s&#39;exécute.
 
 Que vous exécutiez des charges d&#39;analytics à grande échelle en production, réalisiez des analyses de données en local ou développiez des applications, il existe une option de déploiement adaptée à votre cas d&#39;usage. La cohérence du moteur sous-jacent vous garantit les mêmes performances élevées et la même compatibilité SQL dans tous les modes de déploiement.
@@ -33,7 +31,7 @@ Chaque mode de déploiement a ses propres points forts et cas d&#39;usage privil
 
 ClickHouse Server repose sur l&#39;architecture client-serveur traditionnelle et convient parfaitement aux déploiements en production. Ce mode de déploiement offre toutes les capacités d&#39;une base de données OLAP, avec un débit élevé et des requêtes à faible latence qui font la réputation de ClickHouse.
 
-<Image img="/images/deployment-modes/ch-server.webp" alt="ClickHouse Server" size="sm" />
+![ClickHouse Server](/images/deployment-modes/ch-server.webp)
 
 <br />
 
@@ -47,7 +45,7 @@ Ce mode de déploiement s&#39;impose comme le choix de référence pour les envi
 
 [ClickHouse Cloud](/fr/products/cloud/getting-started/intro) est une version entièrement gérée de ClickHouse qui vous évite la charge opérationnelle liée à l’exécution de votre propre déploiement. Tout en conservant toutes les capacités essentielles de ClickHouse Server, elle enrichit l’expérience avec des fonctionnalités supplémentaires conçues pour simplifier le développement et les opérations.
 
-<Image img="/images/deployment-modes/ch-cloud.webp" alt="ClickHouse Cloud" size="sm" />
+![ClickHouse Cloud](/images/deployment-modes/ch-cloud.webp)
 
 L’un des principaux avantages de ClickHouse Cloud réside dans son outillage intégré. [ClickPipes](/fr/get-started/setup/cloud#clickpipes) fournit un framework robuste d’ingestion de données, qui vous permet de connecter facilement diverses sources et d’en diffuser les données sans avoir à gérer des pipelines ETL complexes. La plateforme propose également une [API de requêtes](/fr/products/cloud/guides/sql-console/query-endpoints) dédiée, ce qui facilite nettement la création d’applications.
 
@@ -83,7 +81,7 @@ clickhousectl local client
 
 [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) est un puissant outil en ligne de commande qui offre l’ensemble des fonctionnalités de ClickHouse dans un exécutable autonome. Il s’agit essentiellement de la même base de données que ClickHouse Server, mais empaquetée de façon à vous permettre d’exploiter directement toutes les capacités de ClickHouse depuis la ligne de commande, sans exécuter d’instance serveur.
 
-<Image img="/images/deployment-modes/ch-local.webp" alt="clickhouse-local" size="sm" />
+![clickhouse-local](/images/deployment-modes/ch-local.webp)
 
 Cet outil est particulièrement performant pour l’analyse ponctuelle de données, notamment lorsque vous travaillez avec des fichiers locaux ou des données stockées dans des services de stockage cloud. Vous pouvez interroger directement des fichiers dans différents formats (CSV, JSON, Parquet, etc.) à l’aide du dialecte SQL de ClickHouse, ce qui en fait un excellent choix pour explorer rapidement des données ou réaliser des analyses ponctuelles.
 
@@ -97,7 +95,7 @@ La combinaison des fonctions de table distantes et de l’accès au système de 
 
 [chDB](/fr/chdb/index) est ClickHouse intégré sous forme de moteur de base de données in-process, Python en étant l’implémentation principale, bien qu’il soit également disponible pour Go, Rust, NodeJS et Bun. Cette option de déploiement intègre directement les puissantes capacités OLAP de ClickHouse au processus de votre application, sans nécessiter d’installation distincte d’une base de données.
 
-<Image img="/images/deployment-modes/chdb.webp" alt="chDB - ClickHouse intégré" size="sm" />
+![chDB - ClickHouse intégré](/images/deployment-modes/chdb.webp)
 
 chDB offre une intégration transparente avec l’écosystème de votre application. En Python, par exemple, il est optimisé pour fonctionner efficacement avec des outils courants de data science comme Pandas et Arrow, en réduisant au minimum le surcoût lié à la copie des données grâce au memoryview de Python. Il est donc particulièrement utile aux data scientists et aux analystes qui souhaitent tirer parti des performances des requêtes de ClickHouse dans leurs workflows existants.
 

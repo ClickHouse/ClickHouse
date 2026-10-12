@@ -7,8 +7,6 @@ doc_type: 'دليل'
 keywords: ['clickstack', 'text-to-chart', 'AI', 'التصور البياني', 'Chart Explorer', 'اللغة الطبيعية', 'observability']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تتيح لك ميزة Text-to-Chart في ClickStack إنشاء تصورات مرئية من خلال وصف ما تريد رؤيته بنص عادي. وبدلًا من تحديد المقاييس وعوامل التصفية وحقول group-by يدويًا، يمكنك كتابة موجّه مثل &quot;معدلات الخطأ حسب الخدمة خلال آخر 24 ساعة&quot;، وسينشئ ClickStack المخطط المقابل تلقائيًا.
 
 تستخدم هذه الميزة نموذج لغة كبيرًا (LLM) لتحويل موجّهك النصي إلى استعلام، ثم تُنشئ التصور المرئي في [Chart Explorer](/ar/clickstack/features/dashboards/overview#navigate-chart-explorer). وهي تعمل مع أي مصدر بيانات مُعدّ.
@@ -68,7 +66,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="تحديد مصدر بيانات" id="select-data-source">
     اختر مصدر البيانات الذي تريد عرضه بصريًا — على سبيل المثال، **السجلات** أو **التتبعات** أو **المقاييس**.
 
-    <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="مستكشف المخططات" />
+    ![مستكشف المخططات](/images/clickstack/text-to-chart/chart-explorer.webp)
   </Step>
 
   <Step title="إدخال موجّه نصي" id="enter-text-prompt">
@@ -80,7 +78,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     يحوّل ClickStack الموجّه إلى استعلام ويعرض التصوّر تلقائيًا.
 
-    <Image img="/images/clickstack/text-to-chart/text-to-chart.webp" alt="تحويل النص إلى مخطط" />
+    ![تحويل النص إلى مخطط](/images/clickstack/text-to-chart/text-to-chart.webp)
   </Step>
 </Steps>
 
@@ -101,7 +99,7 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 * **اسم المستخدم**: `otel_demo`
 * **كلمة المرور**: اتركه فارغًا
 
-<Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="إنشاء اتصال" />
+![إنشاء اتصال](/images/clickstack/text-to-chart/create-connection.webp)
 
 ثم عدّل كل مصدر من المصادر — **سجل** و**تتبّع** و**مقياس** و**Sessions** — لاستخدام قاعدة البيانات `otel_v2`. للاطلاع على التفاصيل الكاملة حول تهيئة المصادر، راجع [دليل مجموعة بيانات العرض التجريبي البعيدة](/ar/clickstack/example-datasets/remote-demo-data).
 

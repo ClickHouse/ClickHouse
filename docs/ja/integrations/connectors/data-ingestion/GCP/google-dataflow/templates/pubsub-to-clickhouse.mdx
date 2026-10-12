@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'ストリーミング', 'デッドレター']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 Pub/Sub to ClickHouse テンプレートは、Pub/Sub サブスクリプションから JSON エンコードされたメッセージを読み取り、ClickHouse テーブルに書き込むストリーミング パイプラインです。
 パースに失敗したメッセージ、またはターゲット スキーマにマッピングできなかったメッセージは、デッドレターの宛先 (ClickHouse テーブル、Pub/Sub トピック、またはその両方) にルーティングされます。
 
@@ -163,7 +161,7 @@ Pub/Sub to ClickHouse テンプレートは、Google Cloud Console から利用�
 Google Cloud Console にサインインし、Dataflow を検索します。
 
 1. `CREATE JOB FROM TEMPLATE` ボタンをクリックします。
-   <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="Dataflow コンソール" />
+   ![Dataflow コンソール](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
 
 2. テンプレートのフォームが開いたら、ジョブ名を入力し、使用するリージョンを選択します。
 
@@ -190,7 +188,7 @@ Google Cloud Console にサインインし、Dataflow を検索します。
 
 ジョブのステータスを監視するには、Google Cloud Console の [Dataflow Jobs タブ](https://console.cloud.google.com/dataflow/jobs) に移動します。ここでは、進行状況やエラーを含むジョブの詳細を確認できます。
 
-<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="実行中の Pub/Sub to ClickHouse ジョブが表示された Dataflow コンソール" />
+![実行中の Pub/Sub to ClickHouse ジョブが表示された Dataflow コンソール](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
 
 このテンプレートは、`PubSubToClickHouse` ネームスペース配下に次のカスタムメトリクスも出力します。これらは Dataflow のジョブページで確認できます。
 

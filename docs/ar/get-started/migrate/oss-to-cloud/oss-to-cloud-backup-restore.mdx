@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['الترحيل', 'ClickHouse Cloud', 'OSS', 'ترحيل ClickHouse ذاتي الإدارة إلى Cloud', 'BACKUP', 'RESTORE']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="overview-migration-approaches">
   ## نظرة عامة
 </div>
@@ -277,19 +275,19 @@ FROM s3(
   </Step>
 
   <Step title="أنشئ خدمة جديدة" id="create-new-service">
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="أنشئ خدمة جديدة" />
+    ![أنشئ خدمة جديدة](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
   </Step>
 
   <Step title="اضبط الإعدادات وأنشئ خدمة" id="configure-and-create">
     اختر المنطقة والتكوين المطلوبين، ثم انقر على `Create service`
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="إعداد تفضيلات الخدمة" />
+    ![إعداد تفضيلات الخدمة](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
   </Step>
 
   <Step title="أنشئ دور وصول" id="create-an-access-role">
     افتح SQL Console
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="إعداد تفضيلات الخدمة" />
+    ![إعداد تفضيلات الخدمة](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
 
     ### إعداد الوصول إلى S3
 
@@ -393,7 +391,7 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 
 إذا تفقدت حاوية S3 التي كانت فارغة سابقًا، فسترى الآن ظهور بعض المجلدات:
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="النسخة الاحتياطية والبيانات والبيانات الوصفية" />
+![النسخة الاحتياطية والبيانات والبيانات الوصفية](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
 
 إذا كنت تُجري ترحيلًا كاملًا، فيمكنك تشغيل الأمر التالي لإنشاء نسخة احتياطية من الخادم بالكامل:
 

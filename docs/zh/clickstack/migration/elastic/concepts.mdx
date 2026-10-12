@@ -8,8 +8,6 @@ keywords: ['Elasticsearch']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="elastic-vs-clickstack">
   ## Elastic Stack vs ClickStack
 </div>
@@ -91,7 +89,7 @@ Elasticsearch 支持 JSON (以及[有限的 CSV](https://www.elastic.co/docs/ref
   ### 索引与存储
 </div>
 
-<Image img="/images/use-cases/observability/elasticsearch.webp" alt="Elasticsearch" size="lg" />
+![Elasticsearch](/images/use-cases/observability/elasticsearch.webp)
 
 分片是 Elasticsearch 可扩展性模型中的核心概念。每个 ① [**索引**](https://www.elastic.co/blog/what-is-an-elasticsearch-index) 都会被拆分为多个 **分片**，而每个分片本身都是一个物理 Lucene 索引，并以分段的形式存储在磁盘上。一个分片可以有一个或多个称为副本分片的物理副本，以增强容错能力。为了实现扩展，分片和副本可以分布在多个节点上。单个分片 ② 由一个或多个不可变分段组成。分段是 Lucene 的基本索引结构；Lucene 是一个 Java 库，提供了 Elasticsearch 所依赖的索引和搜索功能。
 
@@ -111,7 +109,7 @@ Elasticsearch 会将所有字段索引到 [**倒排索引**](https://www.elastic
 
 相比之下，ClickHouse 是**列式存储**的——每一列都独立存储，但始终按表的主键/排序键排序。这种排序方式使得 [稀疏主索引](/zh/concepts/core-concepts/primary-indexes) 成为可能，从而让 ClickHouse 能在查询执行期间高效跳过部分数据。当查询按主键字段过滤时，ClickHouse 只读取每一列中相关的部分，显著减少磁盘 I/O 并提升性能——即使没有为每一列都建立完整索引也是如此。
 
-<Image img="/images/use-cases/observability/clickhouse.webp" alt="ClickHouse" size="lg" />
+![ClickHouse](/images/use-cases/observability/clickhouse.webp)
 
 ClickHouse 还支持 [**跳过索引**](/zh/concepts/features/performance/skip-indexes/skipping-indexes)，可通过为选定列预计算索引数据来加速过滤。这些索引必须显式定义，但可以显著提升性能。此外，ClickHouse 允许你按列指定 [压缩编解码器](/zh/guides/use-cases/observability/build-your-own/schema-design#using-codecs) 和压缩算法——而 Elasticsearch 不支持这一点 (它的[压缩](https://www.elastic.co/docs/reference/elasticsearch/index-settings/index-modules)仅适用于 `_source` JSON 存储) 。
 
@@ -184,7 +182,7 @@ ClickHouse 没有 size 限制。你可以在大型数据集上执行无界的 gr
 
 ClickHouse 在设计时就以充分发挥现代硬件的效率为目标。默认情况下，在一台拥有 N 个 CPU 核心的机器上，ClickHouse 会使用 N 条并发执行通道来运行一条 SQL 查询：
 
-<Image img="/images/use-cases/observability/clickhouse-execution.webp" alt="ClickHouse 执行" size="lg" />
+![ClickHouse 执行](/images/use-cases/observability/clickhouse-execution.webp)
 
 在单节点上，执行通道会将数据划分为相互独立的范围，从而支持跨 CPU 线程并发处理。这包括过滤、聚合和排序。每条通道的本地结果最终都会被合并；如果查询中包含 LIMIT 子句，还会应用 limit 算子。
 
@@ -199,7 +197,7 @@ ClickHouse 在设计时就以充分发挥现代硬件的效率为目标。默认
 
 相比之下，Elasticsearch 对于大多数聚合会为每个分片分配一个线程，而不管可用的 CPU 核心有多少。这些线程会返回分片本地的 Top-N 结果，然后在协调节点上进行合并。这种方式可能无法充分利用系统资源，并可能在全局聚合中引入精度问题，尤其是在高频术语分散在多个分片中时。可以通过增大 `shard_size` 参数来提高准确性，但代价是更高的内存使用量和查询延迟。
 
-<Image img="/images/use-cases/observability/elasticsearch-execution.webp" alt="Elasticsearch 执行" size="lg" />
+![Elasticsearch 执行](/images/use-cases/observability/elasticsearch-execution.webp)
 
 总之，ClickHouse 以更细粒度的并行方式执行聚合和查询，并能更充分地利用硬件资源；而 Elasticsearch 则依赖基于分片的执行模型，限制也更为严格。
 
@@ -241,7 +239,7 @@ ClickHouse 通过 `MergeTree` 等原生表引擎支持 **分层存储**，可根
 
 下图从抽象层面展示了 transforms 的工作方式 (注意：我们用蓝色表示属于同一个桶、需要为其预先计算聚合值的所有文档) ：
 
-<Image img="/images/use-cases/observability/es-transforms.webp" alt="Elasticsearch transforms" size="lg" />
+![Elasticsearch transforms](/images/use-cases/observability/es-transforms.webp)
 
 连续 transform 使用基于可配置检查间隔的 transform [checkpoints](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html) (即 transform [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html)，默认值为 1 分钟) 。在上图中，我们假设 ① 在检查间隔结束后创建了一个新的 checkpoint。此时，Elasticsearch 会检查 transform 源索引中的变更，并检测到自上一个 checkpoint 以来新增了 3 个 `blue` 文档 (11、12 和 13) 。因此，系统会过滤源索引中所有现有的 `blue` 文档，然后通过 [composite aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html) (以利用结果的[分页](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html)能力) 重新计算聚合值 (并更新目标索引中的文档，用新的聚合结果替换包含先前聚合值的文档) 。同样，在 ② 和 ③ 处，也会通过检查变更并基于同一 `blue` 桶中所有现有文档重新计算聚合值，来处理新的 checkpoint。
 
@@ -251,7 +249,7 @@ ClickHouse 采用的是一种根本不同的方法。ClickHouse 不会周期性�
 
 下面我们从抽象层面说明增量 materialized view 的工作机制 (注意：我们用蓝色表示属于同一分组、需要为其预先计算聚合值的所有行) ：
 
-<Image img="/images/use-cases/observability/ch-mvs.webp" alt="ClickHouse Materialized Views" size="lg" />
+![ClickHouse Materialized Views](/images/use-cases/observability/ch-mvs.webp)
 
 在上图中，materialized view 的源表中已经包含一个数据分区片段，其中存储了一些属于同一分组的 `blue` 行 (1 到 10) 。对于这个分组，view 的目标表中也已经存在一个数据分区片段，其中存储了 `blue` 分组的一个[部分聚合状态](https://www.youtube.com/watch?v=QDAJTKZT8y4)。当 ① ② ③ 向源表写入新行时，每次写入都会在源表中创建一个对应的数据分区片段；同时，并行地，仅针对每个新写入行块，计算一个部分聚合状态，并以数据分区片段的形式写入 materialized view 的目标表。④ 在后台数据分区片段合并期间，这些部分聚合状态会被合并，从而实现增量数据聚合。
 

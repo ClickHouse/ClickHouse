@@ -7,8 +7,6 @@ keywords: ['ML', 'Jupyer', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 في هذا الدليل، ستتعلّم كيفية استكشاف مجموعة بيانات من بيانات ClickHouse Cloud داخل Jupyter notebook بمساعدة [chDB](/ar/chdb/index) — وهو محرّك SQL ‏OLAP سريع يعمل داخل العملية ومدعوم من ClickHouse.
 
 **المتطلبات الأساسية**:
@@ -39,15 +37,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 في القائمة الجانبية اليسرى، انقر على `Data sources`، ثم انقر على `Predefined sample data`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="إضافة مجموعة بيانات تجريبية" />
+![إضافة مجموعة بيانات تجريبية](/images/use-cases/AI_ML/jupyter/1.webp)
 
 حدِّد `Get started` في بطاقة بيانات أسعار العقارات المدفوعة في المملكة المتحدة (4GB):
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="تحديد مجموعة بيانات أسعار العقارات المدفوعة في المملكة المتحدة" />
+![تحديد مجموعة بيانات أسعار العقارات المدفوعة في المملكة المتحدة](/images/use-cases/AI_ML/jupyter/2.webp)
 
 ثم انقر على `Import dataset`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="استيراد مجموعة بيانات أسعار العقارات المدفوعة في المملكة المتحدة" />
+![استيراد مجموعة بيانات أسعار العقارات المدفوعة في المملكة المتحدة](/images/use-cases/AI_ML/jupyter/3.webp)
 
 سينشئ ClickHouse تلقائيًا الجدول `pp_complete` في قاعدة البيانات `default` ويملأه بـ 28.92 مليون صف من بيانات نقاط الأسعار.
 
@@ -80,12 +78,12 @@ jupyter notebook
 يُفترض أن تُفتح نافذة متصفح جديدة تعرض واجهة Jupyter على `localhost:8888`.
 انقر على `File` &gt; `New` &gt; `Notebook` لإنشاء دفتر ملاحظات جديد.
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/4.webp" alt="أنشئ دفتر ملاحظات جديدًا" />
+![أنشئ دفتر ملاحظات جديدًا](/images/use-cases/AI_ML/jupyter/4.webp)
 
 سيُطلب منك اختيار نواة.
 اختر أي نواة بايثون متاحة لديك، وفي هذا المثال سنختار `ipykernel`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/5.webp" alt="اختر النواة" />
+![اختر النواة](/images/use-cases/AI_ML/jupyter/5.webp)
 
 في خلية فارغة، يمكنك كتابة الأمر التالي لتثبيت chDB، والذي سنستخدمه للاتصال بمثيل ClickHouse Cloud البعيد:
 
@@ -165,7 +163,7 @@ df.head()
 
 يعرض `df.head` الصفوف القليلة الأولى فقط من البيانات المُعادة:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/6.webp" alt="معاينة DataFrame" />
+![معاينة DataFrame](/images/use-cases/AI_ML/jupyter/6.webp)
 
 شغّل الأمر التالي في خلية جديدة للتحقق من أنواع الأعمدة:
 
@@ -202,7 +200,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/7.webp" alt="معاينة إطار البيانات" />
+![معاينة إطار البيانات](/images/use-cases/AI_ML/jupyter/7.webp)
 
 وربما ليس من المستغرب أن أسعار العقارات في لندن قد ارتفعت بشكل كبير بمرور الوقت.
 
@@ -258,7 +256,7 @@ df_2.head()
   ```
 </Accordion>
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/8.webp" alt="معاينة إطار البيانات" />
+![معاينة إطار البيانات](/images/use-cases/AI_ML/jupyter/8.webp)
 
 على الرغم من أن البيانات غير متوفرة لدينا بدءًا من عام 2020، يمكننا رسم مجموعتي البيانات مقابل بعضهما البعض للسنوات من 1995 إلى 2019.
 في خلية جديدة، شغّل الأمر التالي:
@@ -304,7 +302,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/9.webp" alt="رسم بياني لمجموعة بيانات بعيدة ومجموعة بيانات محلية" />
+![رسم بياني لمجموعة بيانات بعيدة ومجموعة بيانات محلية](/images/use-cases/AI_ML/jupyter/9.webp)
 
 من البيانات المرسومة، نرى أن المبيعات بدأت عند نحو 160,000 في عام 1995 ثم ارتفعت بسرعة، لتبلغ ذروتها عند نحو 540,000 في عام 1999.
 بعد ذلك، تراجع حجم المبيعات بشكل حاد خلال منتصف العقد الأول من الألفية، وانخفض بشدة أثناء الأزمة المالية في 2007-2008 ليصل إلى نحو 140,000.

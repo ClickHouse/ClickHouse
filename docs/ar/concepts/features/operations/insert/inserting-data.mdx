@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="inserting-into-clickhouse-vs-oltp-databases">
   ## إدراج البيانات في ClickHouse مقارنةً بقواعد بيانات OLTP
 </div>
@@ -76,7 +74,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 مع الإدراج غير المتزامن، تُدرج البيانات أولًا في مخزن مؤقت، ثم تُكتب لاحقًا إلى مساحة تخزين قاعدة البيانات عبر 3 خطوات، كما يوضح المخطط أدناه:
 
-<Image img="/images/guides/postgres-inserts.webp" size="md" alt="عمليات إدراج في Postgres" />
+![عمليات إدراج في Postgres](/images/guides/postgres-inserts.webp)
 
 عند تمكين الإدراج غير المتزامن، يقوم ClickHouse بما يلي:
 

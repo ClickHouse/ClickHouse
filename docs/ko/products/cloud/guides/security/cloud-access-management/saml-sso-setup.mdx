@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'SAML', 'SSO', 'single sign-on', 'IdP', 'Okta', 'Google']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/ko/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <EnterprisePlanFeatureBadge feature="SAML SSO" />
@@ -50,7 +48,7 @@ SAML SSO가 구성되면 사용자는 서비스 제공자 시작(service-provide
   <Step title="SAML Single Sign-On 사용 설정" id="enable-saml-sso">
     `Enable SAML single sign-on` 옆의 토글을 클릭하세요. 설정 과정에서 이 화면을 여러 번 다시 확인하게 되므로 열린 상태로 유지하세요.
 
-    <Image img="/images/cloud/security/saml-self-serve-1.webp" size="lg" alt="SAML 설정 시작" force />
+    ![SAML 설정 시작](/images/cloud/security/saml-self-serve-1.webp)
   </Step>
 
   <Step title="IdP(Identity Provider)에서 애플리케이션 만들기" id="create-idp-application">
@@ -65,19 +63,19 @@ SAML SSO가 구성되면 사용자는 서비스 제공자 시작(service-provide
       ClickHouse는 IdP(Identity Provider)에서 시작되는 로그인을 지원하지 않습니다. 사용자가 ClickHouse Cloud에 쉽게 액세스할 수 있도록, 다음 형식의 로그인 URL을 북마크로 설정하십시오: `https://console.clickhouse.cloud/?connection={orgId}`. 여기서 `{orgID}`는 Organization details 페이지에 있는 조직 ID입니다.
     </Tip>
 
-    <Image img="/images/cloud/security/saml-self-serve-2.webp" size="lg" alt="아이덴티티 공급자 애플리케이션 만들기" force />
+    ![아이덴티티 공급자 애플리케이션 만들기](/images/cloud/security/saml-self-serve-2.webp)
   </Step>
 
   <Step title="메타데이터 URL을 SAML 구성에 추가" id="add-metadata-url">
     SAML 제공업체에서 `Metadata URL`을 가져오십시오. ClickHouse Cloud로 돌아가 `다음: 메타데이터 URL 제공`을 클릭한 다음 텍스트 상자에 URL을 붙여넣으십시오.
 
-    <Image img="/images/cloud/security/saml-self-serve-3.webp" size="lg" alt="메타데이터 URL 추가" force />
+    ![메타데이터 URL 추가](/images/cloud/security/saml-self-serve-3.webp)
   </Step>
 
   <Step title="도메인 확인 코드 가져오기" id="get-domain-verification-code">
     `Next: Verify your domains`를 클릭하십시오. 텍스트 상자에 도메인을 입력한 다음 `Check domain`을 클릭하십시오. 그러면 DNS 제공업체의 TXT 레코드에 추가할 임의의 확인 코드가 생성됩니다.
 
-    <Image img="/images/cloud/security/saml-self-serve-4.webp" size="lg" alt="확인할 도메인 추가" force />
+    ![확인할 도메인 추가](/images/cloud/security/saml-self-serve-4.webp)
   </Step>
 
   <Step title="도메인 확인" id="verify-your-domain">
@@ -87,7 +85,7 @@ SAML SSO가 구성되면 사용자는 서비스 제공자 시작(service-provide
       DNS 레코드가 업데이트되고 확인되기까지 몇 분 정도 걸릴 수 있습니다. 설정 페이지를 나갔다가 나중에 돌아와도 처음부터 다시 시작하지 않고 프로세스를 완료할 수 있습니다. 확인 값은 처음 생성된 시점부터 48시간 동안 유효합니다.
     </Note>
 
-    <Image img="/images/cloud/security/saml-self-serve-5.webp" size="lg" alt="도메인 확인" force />
+    ![도메인 확인](/images/cloud/security/saml-self-serve-5.webp)
   </Step>
 
   <Step title="기본 역할 및 세션 timeout 업데이트" id="update-defaults">
@@ -197,7 +195,7 @@ SAML SSO가 구성되면 사용자는 서비스 제공자 시작(service-provide
 
     1. Google Admin 콘솔(admin.google.com)로 이동합니다.
 
-       <Image img="/images/cloud/security/saml-google-app.webp" size="md" alt="Google SAML 앱" force />
+       ![Google SAML 앱](/images/cloud/security/saml-google-app.webp)
 
     2. **Apps**를 클릭한 다음, 왼쪽에서 **Web and mobile apps**를 클릭합니다.
 
@@ -251,7 +249,7 @@ SAML SSO가 구성되면 사용자는 서비스 제공자 시작(service-provide
 
     5. 이름을 입력하고 **Integrate any other application you don&#39;t find in the gallery (Non-gallery)**를 선택한 다음 **Create**를 클릭합니다.
 
-       <Image img="/images/cloud/security/saml-azure-app.webp" size="md" alt="Azure 비갤러리 애플리케이션" force />
+       ![Azure 비갤러리 애플리케이션](/images/cloud/security/saml-azure-app.webp)
 
     6. 왼쪽에서 **Users and groups**를 클릭하고 사용자를 할당합니다.
 
@@ -277,7 +275,7 @@ SAML SSO가 구성되면 사용자는 서비스 제공자 시작(service-provide
         | (A) email                            | Basic         | user.mail        |
         | (U) /identity/claims/name            | Omitted       | user.mail        |
 
-        <Image img="/images/cloud/security/saml-azure-claims.webp" size="md" alt="속성 및 클레임" force />
+        ![속성 및 클레임](/images/cloud/security/saml-azure-claims.webp)
 
     11. 메타데이터 URL을 복사한 다음 [SAML 구성에 메타데이터 URL 추가](#add-metadata-url)로 돌아가 계속 진행합니다.
   </Tab>

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'release markers', 'deployment tracking', 'service.version', 'annotations', 'observability']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 The first question about a latency or error spike is usually whether something shipped. Dashboard time charts can answer it in place: turn on release markers and each tile draws a dashed vertical line at the moment a version of a service first appeared in its telemetry.
 
 The versions come from the telemetry you already send, read through an expression on the tile's source. There's no CI integration to wire up and nothing to push at deploy time.
@@ -17,7 +15,7 @@ The versions come from the telemetry you already send, read through an expressio
 
 Release markers are off by default. Open a dashboard's overflow menu and select **Show release markers**.
 
-<Image img="/images/clickstack/dashboards/release-markers-menu.webp" alt="Dashboard overflow menu with the Show release markers item under the View section, below Show alert annotations" size="sm"/>
+![Dashboard overflow menu with the Show release markers item under the View section, below Show alert annotations](/images/clickstack/dashboards/release-markers-menu.webp)
 
 The toggle adds `releaseMarkers=true` to the dashboard URL, so a link you share opens with markers already on. It's view state rather than dashboard configuration: it isn't saved with the dashboard, and turning it off removes the parameter again.
 
@@ -29,7 +27,7 @@ By default, ClickStack reads `ResourceAttributes['service.version']`, the OpenTe
 
 To read the version from somewhere else, set **Service Version Expression** on the log or trace source. Edit the source under **Team Settings → Sources**. On a log source the field sits behind **Configure Optional Fields**; on a trace source it appears directly in the form, below **Service Name Expression**.
 
-<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="Service Version Expression field in a log source's optional fields, showing the default placeholder ResourceAttributes['service.version']" size="lg"/>
+![Service Version Expression field in a log source's optional fields, showing the default placeholder ResourceAttributes\['service.version'\]](/images/clickstack/dashboards/service-version-expression.webp)
 
 The value is a SQL expression, not an attribute name, which covers two common cases:
 
@@ -70,7 +68,7 @@ In the third case a marker's service has no line to match on the chart, so marke
 
 Hover a marker's label to list every release at that point, each with the service that shipped it, its version, and the time.
 
-<Image img="/images/clickstack/dashboards/release-marker-tooltip.webp" alt="Hover tooltip on a release marker naming the service frontend and version 2.0.2 with the time the version first appeared, on a chart of two services" size="sm"/>
+![Hover tooltip on a release marker naming the service frontend and version 2.0.2 with the time the version first appeared, on a chart of two services](/images/clickstack/dashboards/release-marker-tooltip.webp)
 
 Color ties a marker to its series, but a chart legend shows at most four entries before collapsing the rest behind "+N more", at which point there's nothing on screen to resolve the color against. The tooltip names the service outright, so it works regardless of how many series the tile charts.
 

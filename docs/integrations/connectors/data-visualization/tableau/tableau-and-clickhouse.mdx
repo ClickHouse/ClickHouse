@@ -12,8 +12,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
-import { Image } from "/snippets/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge/>
@@ -53,7 +51,7 @@ source in Tableau that connects to the **TPCD** database in ClickHouse.
 
 2. From the left-side menu, click on **More** under the **To a Server** section. Search for **ClickHouse by ClickHouse** in the available connectors list:
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_connecttoserver.webp" alt="Tableau connection screen showing the connector selection menu with ClickHouse by ClickHouse option highlighted" border />
+![Tableau connection screen showing the connector selection menu with ClickHouse by ClickHouse option highlighted](/images/integrations/data-visualization/tableau_connecttoserver.webp)
 <br/>
 
 <Note>
@@ -63,13 +61,13 @@ To solve that, consider upgrading your Tableau Desktop application, or [install 
 
 3. Click on **ClickHouse by ClickHouse**  and the following dialog will pop up:
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_connector_details.webp" alt="Tableau connector installation dialog showing ClickHouse JDBC connector details and install button" border />
+![Tableau connector installation dialog showing ClickHouse JDBC connector details and install button](/images/integrations/data-visualization/tableau_connector_details.webp)
 <br/>
  
 4. Click **Install and Restart Tableau**. Restart the application.
 5. After restarting, the connector will have its full name: `ClickHouse JDBC by ClickHouse, Inc.`. When clicking it, the following dialog will pop up:
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_connector_dialog.webp" alt="ClickHouse connection dialog in Tableau showing fields for server, port, database, username and password" border />
+![ClickHouse connection dialog in Tableau showing fields for server, port, database, username and password](/images/integrations/data-visualization/tableau_connector_dialog.webp)
 <br/>
 
 6. Enter your connection details:
@@ -95,12 +93,12 @@ could change, but for now you must use **default** as the database.)
 
 7. Click the **Sign In** button and you should see a new Tableau workbook:
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_newworkbook.webp" alt="New Tableau workbook showing the initial connection screen with database selection options" border />
+![New Tableau workbook showing the initial connection screen with database selection options](/images/integrations/data-visualization/tableau_newworkbook.webp)
 <br/>
 
 8. Select **TPCD** from the **Schema** dropdown and you should see the list of tables in **TPCD**:
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_tpcdschema.webp" alt="Tableau schema selection showing TPCD database tables including CUSTOMER, LINEITEM, NATION, ORDERS, and others" border />
+![Tableau schema selection showing TPCD database tables including CUSTOMER, LINEITEM, NATION, ORDERS, and others](/images/integrations/data-visualization/tableau_tpcdschema.webp)
 <br/>
 
 You're now ready to build some visualizations in Tableau!
@@ -111,27 +109,27 @@ Now that we have a ClickHouse data source configured in Tableau, let's visualize
 
 1. Drag the **CUSTOMER** table onto the workbook. Notice the columns appear, but the data table is empty:
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_workbook1.webp" alt="Tableau workbook with CUSTOMER table dragged to canvas showing column headers but no data" border />
+![Tableau workbook with CUSTOMER table dragged to canvas showing column headers but no data](/images/integrations/data-visualization/tableau_workbook1.webp)
 <br/>
 
 2. Click the **Update Now** button and 100 rows from **CUSTOMER** will populate the table.
 
 3. Drag the **ORDERS** table into the workbook, then set **Custkey** as the relationship field between the two tables:
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_workbook2.webp" alt="Tableau relationship editor showing connection between CUSTOMER and ORDERS tables using Custkey field" border />
+![Tableau relationship editor showing connection between CUSTOMER and ORDERS tables using Custkey field](/images/integrations/data-visualization/tableau_workbook2.webp)
 <br/>
 
 4. You now have the **ORDERS** and **LINEITEM** tables associated with each other as your data source, so you can use
    this relationship to answer questions about the data. Select the **Sheet 1** tab at the bottom of the workbook.
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_workbook3.webp" alt="Tableau worksheet showing the dimensions and measures from ClickHouse tables available for analysis" border />
+![Tableau worksheet showing the dimensions and measures from ClickHouse tables available for analysis](/images/integrations/data-visualization/tableau_workbook3.webp)
 <br/>
 
 5. Suppose you want to know how many specific items were ordered each year. Drag **OrderDate** from **ORDERS** into the
    **Columns** section (the horizontal field), then drag **Quantity** from **LINEITEM** into the **Rows**. Tableau will
    generate the following line chart:
 
-<Image size="sm" img="/images/integrations/data-visualization/tableau_workbook4.webp" alt="Tableau line chart showing quantity ordered by year from ClickHouse data" border />
+![Tableau line chart showing quantity ordered by year from ClickHouse data](/images/integrations/data-visualization/tableau_workbook4.webp)
 <br/>
 
 Not a very exciting line chart, but the dataset was generated by a script and built for testing query performance, so
@@ -146,19 +144,19 @@ you will notice there isn't a lot of variations in the simulated orders of the T
 
 You should see the following:
 
-<Image size="sm" img="/images/integrations/data-visualization/tableau_workbook5.webp" alt="Tableau crosstab view with quarters as columns and shipment modes as rows" border />
+![Tableau crosstab view with quarters as columns and shipment modes as rows](/images/integrations/data-visualization/tableau_workbook5.webp)
 <br/>
 
 7. The **Abc** values are just filling in the space until you drag a metric onto the table. Drag **Totalprice** from *
    *ORDERS** onto the table. Notice the default calculation is to **SUM** the **Totalprices**:
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_workbook6.webp" alt="Tableau crosstab showing sum of total price by quarter and shipment mode" border />
+![Tableau crosstab showing sum of total price by quarter and shipment mode](/images/integrations/data-visualization/tableau_workbook6.webp)
 <br/>
 
 8. Click on **SUM** and change the **Measure** to **Average**. From the same dropdown menu, select **Format** change the
    **Numbers** to **Currency (Standard)**:
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_workbook7.webp" alt="Tableau crosstab showing average order price by quarter and shipment mode with currency formatting" border />
+![Tableau crosstab showing average order price by quarter and shipment mode with currency formatting](/images/integrations/data-visualization/tableau_workbook7.webp)
 <br/>
 
 Well done! You have successfully connected Tableau to ClickHouse, and you have opened up a whole world of possibilities

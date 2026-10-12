@@ -6,8 +6,6 @@ keywords: ['слияние']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="what-are-part-merges-in-clickhouse">
   ## Что такое слияния частей в ClickHouse?
 </div>
@@ -26,7 +24,7 @@ ClickHouse [работает быстро](/ru/get-started/about/why-clickhouse-
 
 Следующая диаграмма схематично показывает этот фоновый процесс слияния:
 
-<Image img="/images/managing-data/core-concepts/merges_01.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
+![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_01.webp)
 
 <br />
 
@@ -69,7 +67,7 @@ ORDER BY name ASC;
 
 В ClickHouse 24.10 во встроенные [панели мониторинга](https://clickhouse.com/blog/common-issues-you-can-solve-using-advanced-monitoring-dashboards) была добавлена новая [панель мониторинга слияний](https://presentations.clickhouse.com/2024-release-24.10/index.html#17). Она доступна как в OSS, так и в Cloud через HTTP-обработчик `/merges` и позволяет визуализировать все слияния частей для таблицы из нашего примера:
 
-<Image img="/images/managing-data/core-concepts/merges-dashboard.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
+![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges-dashboard.webp)
 
 <br />
 
@@ -87,7 +85,7 @@ ORDER BY name ASC;
 
 Один сервер ClickHouse использует несколько фоновых [потоков слияния](/ru/reference/settings/server-settings/settings/background#background_pool_size) для выполнения параллельных слияний частей:
 
-<Image img="/images/managing-data/core-concepts/merges_02.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
+![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_02.webp)
 
 <br />
 
@@ -121,7 +119,7 @@ ClickHouse не обязательно загружает в память все
 
 Диаграмма ниже показывает, как один фоновый [поток слияния](/ru/concepts/core-concepts/merges#concurrent-merges) в ClickHouse объединяет части (по умолчанию без [вертикального слияния](/ru/concepts/core-concepts/merges#memory-optimized-merges)):
 
-<Image img="/images/managing-data/core-concepts/merges_03.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
+![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_03.webp)
 
 <br />
 
@@ -157,7 +155,7 @@ ClickHouse не обязательно загружает в память все
 
 На схеме ниже показано, как выполняется слияние частей в стандартной таблице [MergeTree](/ru/reference/engines/table-engines/mergetree-family/mergetree):
 
-<Image img="/images/managing-data/core-concepts/merges_04.webp" size="lg" alt="СЛИЯНИЯ ЧАСТЕЙ" />
+![СЛИЯНИЯ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_04.webp)
 
 <br />
 
@@ -171,7 +169,7 @@ DDL-оператор на схеме выше создаёт таблицу `Mer
 
 Слияния частей в таблице [ReplacingMergeTree](/ru/reference/engines/table-engines/mergetree-family/replacingmergetree) работают аналогично [стандартным слияниям](/ru/concepts/core-concepts/merges#standard-merges), но сохраняется только самая новая версия каждой строки, а более старые версии отбрасываются:
 
-<Image img="/images/managing-data/core-concepts/merges_05.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
+![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_05.webp)
 
 <br />
 
@@ -189,7 +187,7 @@ DDL-оператор на диаграмме выше создаёт табли�
 
 Числовые данные автоматически суммируются при слиянии частей таблицы [SummingMergeTree](/ru/reference/engines/table-engines/mergetree-family/summingmergetree):
 
-<Image img="/images/managing-data/core-concepts/merges_06.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
+![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_06.webp)
 
 <br />
 
@@ -203,7 +201,7 @@ DDL-оператор на схеме выше определяет таблиц�
 
 Пример таблицы `SummingMergeTree`, приведённый выше, — это специализированный вариант таблицы [AggregatingMergeTree](/ru/reference/engines/table-engines/mergetree-family/aggregatingmergetree), который позволяет выполнять [автоматическое инкрементальное преобразование данных](https://www.youtube.com/watch?v=QDAJTKZT8y4), применяя любую из [90+](/ru/reference/functions/aggregate-functions/reference-index) функций агрегации при слиянии частей:
 
-<Image img="/images/managing-data/core-concepts/merges_07.webp" size="lg" alt="СЛИЯНИЕ ЧАСТЕЙ" />
+![СЛИЯНИЕ ЧАСТЕЙ](/images/managing-data/core-concepts/merges_07.webp)
 
 <br />
 

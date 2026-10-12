@@ -7,8 +7,6 @@ title: 'Query API endpoints'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Créer des applications interactives axées sur les données nécessite non seulement une base de données rapide, des données bien structurées et des requêtes optimisées.
 Votre front-end et vos microservices ont également besoin d’un moyen simple d’exploiter les données renvoyées par ces requêtes, de préférence via des API bien structurées.
 
@@ -27,11 +25,11 @@ Pour limiter les clients autorisés à appeler vos Query API endpoints :
   <Step title="Ouvrir les paramètres de la clé API" id="open-settings">
     1. Accédez à ClickHouse Cloud Console → **Organization** → **API Keys**
 
-    <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="Clés API" />
+    ![Clés API](/images/cloud/guides/query-endpoints/console-api-keys.webp)
 
     2. Cliquez sur **Edit** à côté de la clé API utilisée pour les Query API endpoints
 
-    <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="Modifier" />
+    ![Modifier](/images/cloud/guides/query-endpoints/api-key-edit.webp)
   </Step>
 
   <Step title="Ajouter des adresses IP autorisées" id="add-ips">
@@ -39,7 +37,7 @@ Pour limiter les clients autorisés à appeler vos Query API endpoints :
     2. Saisissez des adresses IP ou des plages CIDR (par ex. `203.0.113.1` ou `203.0.113.0/24`)
     3. Ajoutez autant d’entrées que nécessaire
 
-    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="Emplacements spécifiques" />
+    ![Emplacements spécifiques](/images/cloud/guides/query-endpoints/specific-locations.webp)
 
     La création de Query API endpoints nécessite un rôle Admin dans la Console et une clé API disposant des autorisations appropriées.
   </Step>

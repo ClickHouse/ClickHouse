@@ -6,8 +6,6 @@ keywords: ['shard', 'shards', 'sharding', 'replica', 'replicas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 <br/>
 <Note>
 This topic doesn't apply to ClickHouse Cloud, where [Parallel Replicas](/products/cloud/features/infrastructure/parallel-replicas) function like multiple shards in traditional shared-nothing ClickHouse clusters, and object storage [replaces](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates#shared-object-storage-for-data-availability) replicas, ensuring high availability and fault tolerance.
@@ -16,13 +14,13 @@ This topic doesn't apply to ClickHouse Cloud, where [Parallel Replicas](/product
 ## What are table shards in ClickHouse? {#what-are-table-shards-in-clickhouse}
 In traditional [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) ClickHouse clusters, sharding is used when ① the data is too large for a single server or ② a single server is too slow for processing the data. The next figure illustrates case ①, where the [uk_price_paid_simple](/concepts/core-concepts/parts) table exceeds a single machine's capacity:
 
-<Image img="/images/managing-data/core-concepts/shards_01.webp" size="lg" alt='SHARDS'/>
+![](/images/managing-data/core-concepts/shards_01.webp)
 
 <br/>
 
 In such a case the data can be split over multiple ClickHouse servers in the form of table shards:
 
-<Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt='SHARDS'/>
+![](/images/managing-data/core-concepts/shards_02.webp)
 
 <br/>
 
@@ -49,7 +47,7 @@ For the [distributed engine parameters](/reference/engines/table-engines/special
 ## INSERT routing {#insert-routing}
 The diagram below illustrates how INSERTs into a distributed table are processed in ClickHouse:
 
-<Image img="/images/managing-data/core-concepts/shards_03.webp" size="lg" alt='SHARDS'/>
+![](/images/managing-data/core-concepts/shards_03.webp)
 
 <br/>
 
@@ -62,7 +60,7 @@ The next section explains how SELECT forwarding works.
 ## SELECT forwarding {#select-forwarding}
 This diagram shows how SELECT queries are processed with a distributed table in ClickHouse:
 
-<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt='SHARDS'/>
+![](/images/managing-data/core-concepts/shards_04.webp)
 
 <br/>
 
@@ -79,7 +77,7 @@ Note that replication requires a [Keeper](https://clickhouse.com/clickhouse/keep
 
 The following diagram illustrates a ClickHouse cluster with six servers, where the two table shards `Shard-1` and `Shard-2` introduced earlier each have three replicas. A query is sent to this cluster:
 
-<Image img="/images/managing-data/core-concepts/shards_replicas_01.webp" size="lg" alt='SHARDS'/>
+![](/images/managing-data/core-concepts/shards_replicas_01.webp)
 
 <br/>
 

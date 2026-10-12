@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 > На этой странице мы используем термины &quot;ключ упорядочивания&quot; и &quot;первичный ключ&quot; как взаимозаменяемые. Строго говоря, [в ClickHouse это разные понятия](/ru/reference/engines/table-engines/mergetree-family/mergetree#choosing-a-primary-key-that-differs-from-the-sorting-key), но в рамках этого документа их можно считать взаимозаменяемыми; при этом под ключом упорядочивания имеются в виду столбцы, указанные в `ORDER BY` таблицы.
 
 Обратите внимание, что первичный ключ в ClickHouse работает [совсем иначе](/ru/get-started/migrate/postgres/migration-guide/migration-guide-part3#primary-ordering-keys-in-clickhouse), чем аналогичные понятия в OLTP-базах данных, таких как Postgres.
@@ -122,7 +120,7 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 Следующая анимация показывает, как создается оптимизированный разреженный первичный индекс для таблицы постов Stack Overflow. Вместо индексации отдельных строк индекс строится по блокам строк:
 
-<Image img="/images/bestpractices/create_primary_key.webp" size="lg" alt="Первичный ключ" />
+![Первичный ключ](/images/bestpractices/create_primary_key.webp)
 
 Если повторить тот же запрос для таблицы с этим ключом упорядочивания:
 
@@ -170,7 +168,7 @@ WHERE (CreationDate >= '2024-01-01') AND (PostTypeId = 'Question')
 
 Кроме того, мы наглядно показываем, как разреженный индекс отсекает все блоки строк, которые заведомо не могут содержать совпадения для нашего примера запроса:
 
-<Image img="/images/bestpractices/primary_key.webp" size="lg" alt="Первичный ключ" />
+![Первичный ключ](/images/bestpractices/primary_key.webp)
 
 <Note>
   Все столбцы в таблице будут отсортированы по значению указанного ключа упорядочивания, независимо от того, входят ли они в сам ключ. Например, если в качестве ключа используется `CreationDate`, порядок значений во всех остальных столбцах будет соответствовать порядку значений в столбце `CreationDate`. Можно указать несколько ключей упорядочивания — в этом случае сортировка будет выполняться с той же семантикой, что и в предложении `ORDER BY` запроса `SELECT`.

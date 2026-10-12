@@ -7,8 +7,6 @@ title: 'Интеграция ClickHouse с Databricks'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -53,9 +51,9 @@ import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupp
    * Выберите **DBFS** или **Workspace** → Перейдите к загруженному JAR-файлу
    * Нажмите **Install**
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp" alt="Вкладка Libraries в Databricks" />
+![Вкладка Libraries в Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-libraries-tab.webp)
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp" alt="Установка библиотеки из тома рабочего пространства" />
+![Установка библиотеки из тома рабочего пространства](/images/integrations/data-ingestion/apache-spark/databricks/databricks-install-from-volume.webp)
 
 4. Перезапустите кластер, чтобы загрузить библиотеку
 
@@ -90,7 +88,7 @@ databricks libraries install \
 com.clickhouse.spark:clickhouse-spark-runtime-{{ spark_binary_version }}_{{ scala_binary_version }}:{{ stable_version }}
 ```
 
-<Image img="/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp" alt="Настройка библиотек Maven в Databricks" />
+![Настройка библиотек Maven в Databricks](/images/integrations/data-ingestion/apache-spark/databricks/databricks-maven-tab.webp)
 
 3. Нажмите **Install** и перезапустите кластер, чтобы загрузить библиотеку
 

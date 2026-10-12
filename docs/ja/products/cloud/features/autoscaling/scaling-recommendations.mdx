@@ -7,8 +7,6 @@ title: 'スケーリングの推奨事項'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="introduction">
   ## はじめに
 </div>
@@ -95,7 +93,7 @@ ClickHouse Cloud では、単一のウィンドウではなく、時間範囲の
 各ウィンドウは、メモリと CPU の両方を分析し、それぞれ独立して推奨値を生成します。
 その後、以下の図に示すように、各ウィンドウが示すスケーリングの方向に基づいて、システムがこれらの推奨値を統合します。
 
-<Image img="/images/cloud/features/autoscaling/two-window-recommender.webp" size="lg" alt="2 ウィンドウレコメンダーの統合ロジック" />
+![2 ウィンドウレコメンダーの統合ロジック](/images/cloud/features/autoscaling/two-window-recommender.webp)
 
 レコメンダーの設計上の判断について詳しくは、[&quot;Smarter Auto-Scaling for ClickHouse: The Two-Window Approach
 &quot;](https://clickhouse.com/blog/smarter-auto-scaling#the-two-window-solution) を参照してください。

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['migration', 'ClickHouse Cloud', 'OSS', 'Migrer d’un ClickHouse autogéré vers ClickHouse Cloud', 'BACKUP', 'RESTORE']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="overview-migration-approaches">
   ## Vue d’ensemble
 </div>
@@ -277,19 +275,19 @@ Suivez les étapes ci-dessous pour créer un nouveau service Cloud.
   </Step>
 
   <Step title="Créer un nouveau service" id="create-new-service">
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="créer un nouveau service" />
+    ![créer un nouveau service](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
   </Step>
 
   <Step title="Configurer et créer un service" id="configure-and-create">
     Choisissez la région et la configuration souhaitées, puis cliquez sur `Create service`
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="configurer les préférences du service" />
+    ![configurer les préférences du service](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
   </Step>
 
   <Step title="Créer un rôle d'accès" id="create-an-access-role">
     Ouvrez la SQL Console
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="configurer les préférences du service" />
+    ![configurer les préférences du service](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
 
     ### Configurer l’accès à S3
 
@@ -393,7 +391,7 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 
 Si vous examinez votre bucket S3, qui était auparavant vide, vous verrez maintenant que des dossiers sont apparus :
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="sauvegarde, données et métadonnées" />
+![sauvegarde, données et métadonnées](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
 
 Si vous effectuez une migration complète, vous pouvez exécuter la commande suivante pour sauvegarder l’intégralité du serveur :
 

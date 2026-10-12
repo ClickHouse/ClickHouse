@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['سجلات المضيف', 'systemd', 'syslog', 'OTEL', 'ClickStack', 'مراقبة النظام', 'سجلات الخادم']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -249,9 +247,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     3. صفِّ باستخدام `source:host-logs` لعرض السجلات الخاصة بالمضيف
     4. ينبغي أن ترى إدخالات سجل منظَّمة تتضمن حقولًا مثل `unit` و`hostname` و`pid` و`message` وغيرها.
 
-    <Image img="/images/clickstack/host-logs/search-view.webp" alt="عرض البحث" />
+    ![عرض البحث](/images/clickstack/host-logs/search-view.webp)
 
-    <Image img="/images/clickstack/host-logs/log-view.webp" alt="عرض السجل" />
+    ![عرض السجل](/images/clickstack/host-logs/log-view.webp)
   </Step>
 </Steps>
 
@@ -346,9 +344,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     2. انتقل إلى Search view واضبط المصدر على `Logs`
     3. اضبط النطاق الزمني على **2025-11-10 00:00:00 - 2025-11-13 00:00:00**
 
-    <Image img="/images/clickstack/host-logs/search-view.webp" alt="Search view" />
+    ![Search view](/images/clickstack/host-logs/search-view.webp)
 
-    <Image img="/images/clickstack/host-logs/log-view.webp" alt="Log view" />
+    ![Log view](/images/clickstack/host-logs/log-view.webp)
 
     <Info>
       **عرض المنطقة الزمنية**
@@ -373,17 +371,17 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     1. افتح HyperDX وانتقل إلى قسم لوحات المعلومات
     2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى ضمن قائمة النقاط الثلاث
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="زر استيراد لوحة المعلومات" />
+    ![زر استيراد لوحة المعلومات](/images/clickstack/import-dashboard.webp)
 
     3. ارفع الملف `host-logs-dashboard.json` وانقر على **إتمام الاستيراد**
 
-    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="إتمام الاستيراد" />
+    ![إتمام الاستيراد](/images/clickstack/host-logs/import-dashboard.webp)
   </Step>
 
   <Step title="اعرض لوحة المعلومات" id="created-dashboard">
     ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا:
 
-    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="لوحة معلومات السجلات" />
+    ![لوحة معلومات السجلات](/images/clickstack/host-logs/host-logs-dashboard.webp)
 
     تشمل التصورات الرئيسية ما يلي:
 

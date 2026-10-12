@@ -6,8 +6,6 @@ keywords: ['materialized views', '数据回填', '插入数据', '可靠数据�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 无论你是刚开始接触 ClickHouse，还是负责现有部署，都会不可避免地需要用历史数据回填表。在某些情况下，这项工作相对简单；但如果还需要填充 materialized view，复杂度就会增加。本指南整理了完成这项任务的一些流程，你可以根据自己的使用场景加以应用。
 
 <Note>
@@ -478,7 +476,7 @@ materialized view 的查询通常会更复杂 (这并不少见，否则用户也
 
 需要注意的是，任何关联到该表引擎的 materialized views 在数据插入时仍会按数据块执行，并将结果发送到目标表。这些块的大小可以配置。更大的块虽然可能更高效 (处理速度也更快) ，但也会消耗更多资源 (主要是内存) 。使用这种表引擎意味着我们可以以增量方式构建 materialized view，即一次处理一个块，从而避免将整个聚合保存在内存中。
 
-<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="ClickHouse 中的反规范化" />
+![ClickHouse 中的反规范化](/images/data-modeling/null_table_mv.webp)
 
 <br />
 

@@ -11,8 +11,6 @@ hidden: true
 
 import { CloudNotSupportedBadge } from "/snippets/ar/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تشرح هذه الصفحة كيفية إعداد CDC من DynamoDB إلى ClickHouse باستخدام ClickPipes. ويتكوّن هذا التكامل من عنصرين:
 
 1. اللقطة الأولية عبر S3 ClickPipes
@@ -28,14 +26,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     أولاً، ستحتاج إلى تمكين Kinesis Stream على جدول DynamoDB لديك لالتقاط التغييرات في الوقت الفعلي. نريد القيام بذلك قبل إنشاء اللقطة حتى لا نفقد أي بيانات.
     اطّلع على دليل AWS [هنا](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
 
-    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp" size="lg" alt="DynamoDB Kinesis Stream" border />
+    ![DynamoDB Kinesis Stream](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
   </Step>
 
   <Step title="أنشئ اللقطة" id="2-create-the-snapshot">
     بعد ذلك، سننشئ لقطة من جدول DynamoDB. ويمكن إجراء ذلك عبر تصدير من AWS إلى S3. يمكنك العثور على دليل AWS [هنا](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html).
     **ستحتاج إلى إجراء &quot;تصدير كامل&quot; بتنسيق DynamoDB JSON.**
 
-    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp" size="md" alt="تصدير DynamoDB إلى S3" border />
+    ![تصدير DynamoDB إلى S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
   </Step>
 
   <Step title="حمّل بيانات اللقطة إلى ClickHouse" id="3-load-the-snapshot-into-clickhouse">
@@ -128,7 +126,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       * `ApproximateCreationDateTime`: `version`
       * اربط الحقول الأخرى بأعمدة الوجهة المناسبة كما هو موضح أدناه
 
-    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp" size="md" alt="ربط أعمدة DynamoDB" border />
+    ![ربط أعمدة DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
   </Step>
 
   <Step title="التنظيف (اختياري)" id="5-cleanup-optional">

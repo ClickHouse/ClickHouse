@@ -6,13 +6,11 @@ keywords: ['view materializada atualizável', 'atualização', 'visões material
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 [Views materializadas atualizáveis](/pt-BR/reference/statements/create/view#refreshable-materialized-view) são conceitualmente semelhantes às visões materializadas em bancos de dados OLTP tradicionais: armazenam o resultado de uma consulta especificada para recuperação rápida e reduzem a necessidade de executar repetidamente consultas que consomem muitos recursos. Diferentemente das [views materializadas incrementais](/pt-BR/concepts/features/materialized-views/incremental-materialized-view) do ClickHouse, elas exigem a execução periódica da consulta sobre todo o conjunto de dados — e os resultados são armazenados em uma tabela de destino para consulta. Em teoria, esse conjunto de resultados deve ser menor que o conjunto de dados original, permitindo que a consulta subsequente seja executada mais rapidamente.
 
 O diagrama explica como as views materializadas atualizáveis funcionam:
 
-<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="Diagrama de view materializada atualizável" />
+![Diagrama de view materializada atualizável](/images/materialized-view/refreshable-materialized-view-diagram.webp)
 
 Você também pode assistir ao vídeo a seguir:
 

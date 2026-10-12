@@ -6,14 +6,12 @@ tags: ['الإعدادات', 'العملاء الأصليون والواجهات
 keywords: ['عميل ClickHouse', 'تغيير موجّه الأوامر']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 إذا لم يعجبك شكل عرض `clickhouse client` وclickhouse-local لموجّه الأوامر في نافذة الطرفية، فيمكنك تغييره بإضافة بادئة.
 تشرح هذه المقالة كيفية تغيير موجّه الأوامر إلى أي قيمة تريدها.
 
 موجّه الأوامر الافتراضي هو اسم جهازك المحلي متبوعًا بـ `:) `:
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="موجّه عميل ClickHouse الافتراضي" />
+![موجّه عميل ClickHouse الافتراضي](/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp)
 
 فيما يلي المتغيرات التي يمكنك استخدامها في موجّه الأوامر: `{user}`، `{host}`
 
@@ -31,7 +29,7 @@ clickhouse --prompt 👉
 
 سيضيف هذا إيموجي الإصبع قبل الوجه المبتسم:
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="موجّه عميل ClickHouse مع إيموجي الإصبع" />
+![موجّه عميل ClickHouse مع إيموجي الإصبع](/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp)
 
 <div id="config-file---top-level">
   ## ملف التهيئة - المستوى الأعلى
@@ -49,7 +47,7 @@ clickhouse --prompt 👉
 clickhouse
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع ملف إعدادات" />
+![موجّه الأوامر لعميل ClickHouse مع ملف إعدادات](/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp)
 
 يمكننا استخدام ملف إعدادات بأي اسم نشاء وتمريره باستخدام الخيار `-C`:
 
@@ -63,7 +61,7 @@ clickhouse
 clickhouse -C christmas.xml
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع رمز تعبيري لشجرة عيد الميلاد" />
+![موجّه الأوامر لعميل ClickHouse مع رمز تعبيري لشجرة عيد الميلاد](/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp)
 
 هل تفضّل أن تكون ملفات الإعداد لديك بصيغة YAML؟
 هذا ممكن أيضًا:
@@ -76,7 +74,7 @@ prompt: 🟡
 clickhouse -C christmas.yaml
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع إيموجي دائرة صفراء" />
+![موجّه الأوامر لعميل ClickHouse مع إيموجي دائرة صفراء](/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp)
 
 ## ملف التهيئة - connections_credentials {#config-file---connections_credentials}
 
@@ -112,7 +110,7 @@ clickhouse -C christmas.yaml
 clickhouse client -C connections.xml --connection dev
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع اتصال التطوير" />
+![موجّه الأوامر لعميل ClickHouse مع اتصال التطوير](/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp)
 
 أو الخاص بـ `prod`:
 
@@ -120,7 +118,7 @@ clickhouse client -C connections.xml --connection dev
 clickhouse client -C connections.xml --connection prod
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع اتصال ببيئة الإنتاج" />
+![موجّه الأوامر لعميل ClickHouse مع اتصال ببيئة الإنتاج](/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp)
 
 وإليك نسخة YAML:
 
@@ -147,7 +145,7 @@ connections_credentials:
 clickhouse client -C connections.yaml --connection dev
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse لاتصال التطوير باستخدام YAML" />
+![موجّه الأوامر لعميل ClickHouse لاتصال التطوير باستخدام YAML](/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp)
 
 والآن `prod`:
 
@@ -155,4 +153,4 @@ clickhouse client -C connections.yaml --connection dev
 clickhouse client -C connections.yaml --connection prod
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp" size="md" alt="موجّه الأوامر لعميل ClickHouse مع اتصال ببيئة الإنتاج باستخدام YAML" />
+![موجّه الأوامر لعميل ClickHouse مع اتصال ببيئة الإنتاج باستخدام YAML](/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp)

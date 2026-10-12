@@ -35,15 +35,15 @@ Neste ambiente, temos o seguinte:
 
 * Exemplo de ambiente AD e estrutura de UO:
 
-<Image img={ad_env} size="md" alt="Exemplo de ambiente AD e estrutura de UO" />
+![Exemplo de ambiente AD e estrutura de UO](/images/knowledgebase/windows-ad-ch-roles/AD_Env_and_UO_structure.webp)
 
 * Exemplo de configuração de grupo de segurança do AD:
 
-<Image img={ad_group} size="md" alt="Exemplo de configuração de grupo de segurança do AD" />
+![Exemplo de configuração de grupo de segurança do AD](/images/knowledgebase/windows-ad-ch-roles/AD_Group_clickhouse_ad_db1_users.webp)
 
 * Exemplo de configuração de usuário do AD:
 
-<Image img={ad_user} size="md" alt="Exemplo de configuração de usuário do AD" />
+![Exemplo de configuração de usuário do AD](/images/knowledgebase/windows-ad-ch-roles/AD_user_clickhouse_db1_user.webp)
 
 1. Em Usuários e Grupos do Windows AD, adicione cada usuário ao(s) respectivo(s) grupo(s); eles serão mapeados para as roles do ClickHouse (exemplo na próxima etapa).
 
@@ -56,7 +56,7 @@ Neste ambiente, temos o seguinte:
 
 * Exemplo de associação de usuários a grupos:
 
-<Image img={ad_user_group} size="md" alt="Exemplo de associação de usuários a grupos" />
+![Exemplo de associação de usuários a grupos](/images/knowledgebase/windows-ad-ch-roles/AD_user_to_group.webp)
 
 2. No `config.xml` do ClickHouse, adicione a configuração `ldap_servers` a cada nó do ClickHouse.
 

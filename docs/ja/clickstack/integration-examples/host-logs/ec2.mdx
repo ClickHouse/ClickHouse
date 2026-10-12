@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['EC2', 'AWS', 'ホストログ', 'systemd', 'syslog', 'OTel', 'ClickStack', 'システム監視', 'クラウドメタデータ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -292,9 +290,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
        * `host.type` (インスタンスタイプ)
        * `cloud.availability_zone`
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view.webp" alt="EC2 ログの Search view" />
+    ![EC2 ログの Search view](/images/clickstack/host-logs/ec2/search-view.webp)
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view.webp" alt="メタデータが表示された EC2 ログの詳細" />
+    ![メタデータが表示された EC2 ログの詳細](/images/clickstack/host-logs/ec2/log-view.webp)
   </Step>
 </Steps>
 
@@ -417,9 +415,9 @@ import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTra
     4. `source:ec2-demo` で絞り込みます
     5. ログエントリを展開し、リソース属性に含まれる EC2 メタデータを確認します
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view-demo.webp" alt="EC2 ログの検索ビュー" />
+    ![EC2 ログの検索ビュー](/images/clickstack/host-logs/ec2/search-view-demo.webp)
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view-demo.webp" alt="メタデータ付きの EC2 ログ詳細" />
+    ![メタデータ付きの EC2 ログ詳細](/images/clickstack/host-logs/ec2/log-view-demo.webp)
 
     <Info>
       **タイムゾーン表示**
@@ -451,17 +449,17 @@ ClickStack で EC2 ホストログの監視をすぐに始められるよう、�
     1. HyperDX を開き、Dashboards セクションに移動します
     2. 右上の三点メニューから **Import Dashboard** をクリックします
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="ダッシュボードのインポートボタン" />
+    ![ダッシュボードのインポートボタン](/images/clickstack/import-dashboard.webp)
 
     3. `host-logs-dashboard.json` ファイルをアップロードし、**Finish Import** をクリックします
 
-    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="インポートの完了" />
+    ![インポートの完了](/images/clickstack/host-logs/import-dashboard.webp)
   </Step>
 
   <Step title="ダッシュボードを表示する" id="created-dashboard">
     ダッシュボードは、すべての可視化があらかじめ設定された状態で作成されます。
 
-    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="EC2 ログダッシュボード" />
+    ![EC2 ログダッシュボード](/images/clickstack/host-logs/host-logs-dashboard.webp)
 
     ダッシュボードの可視化は、EC2 コンテキストで絞り込めます。
 

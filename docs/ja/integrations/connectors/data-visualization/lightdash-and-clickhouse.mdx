@@ -11,7 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -29,7 +28,7 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
 このガイドでは、**Lightdash** を **ClickHouse** に接続して dbt モデルを確認し、インタラクティブなダッシュボードを作成する方法を紹介します。
 以下は、ClickHouse のデータを基にした完成済みのダッシュボードの例です。
 
-<Image size="md" img="/images/integrations/data-visualization/lightdash_02.webp" alt="Lightdash ダッシュボードの例" border />
+![Lightdash ダッシュボードの例](/images/integrations/data-visualization/lightdash_02.webp)
 
 <Steps>
   <Step title="接続情報を準備する" id="connection-data-required">
@@ -56,7 +55,7 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
 
     たとえば、次のようになります。
 
-    <Image size="md" img="/images/integrations/data-visualization/lightdash_01.webp" alt="lightdash-clickhouse プロジェクト用の profiles.yml 設定例" border />
+    ![lightdash-clickhouse プロジェクト用の profiles.yml 設定例](/images/integrations/data-visualization/lightdash_01.webp)
 
     <br />
   </Step>
@@ -88,7 +87,7 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
   <Step title="Lightdash でメトリクスと次元を定義する" id="defining-metrics-and-dimensions-in-lightdash">
     Lightdash では、すべての**メトリクス**と**次元**を dbt モデルの `.yml` ファイル内で直接定義します。これにより、ビジネスロジックをバージョン管理でき、一貫性を保ちながら、内容の透明性も高められます。
 
-    <Image size="md" img="/images/integrations/data-visualization/lightdash_03.webp" alt=".yml ファイルでメトリクスが定義されている例" border />
+    ![.yml ファイルでメトリクスが定義されている例](/images/integrations/data-visualization/lightdash_03.webp)
 
     <br />
 
@@ -114,7 +113,7 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
     4. **Results** — ClickHouse データベースから返された生データを表示する
     5. **SQL** — 結果の背後で生成された SQL クエリを確認する
 
-    <Image size="lg" img="/images/integrations/data-visualization/lightdash_04.webp" alt="次元、フィルター、チャート、結果、SQL を表示する Lightdash の Explore ビュー" border />
+    ![次元、フィルター、チャート、結果、SQL を表示する Lightdash の Explore ビュー](/images/integrations/data-visualization/lightdash_04.webp)
 
     ここでは、フィールドをドラッグ＆ドロップしたり、フィルターを追加したり、テーブル、棒グラフ、時系列などの可視化タイプを切り替えたりしながら、対話的にクエリを作成・調整できます。
 
@@ -138,7 +137,7 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
     3. チャートビルダーで可視化を作成します
     4. 保存すると、ダッシュボードの下部に表示されます
 
-    <Image size="lg" img="/images/integrations/data-visualization/lightdash_05.webp" alt="Lightdash ダッシュボード内でチャートを作成して整理する" border />
+    ![Lightdash ダッシュボード内でチャートを作成して整理する](/images/integrations/data-visualization/lightdash_05.webp)
 
     ダッシュボードの作成と整理について詳しくは、こちらをご覧ください:
     [ダッシュボードの作成 → Lightdash Docs](https://docs.lightdash.com/get-started/exploring-data/dashboards?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
@@ -152,7 +151,7 @@ Lightdash は、オープンなアーキテクチャ、バージョン管理さ�
 
     dbt で利用しているのと同じセマンティックレイヤーを基盤としているため、あらゆる回答はガバナンスが保たれ、説明可能で、高速です。これらはすべて ClickHouse によって支えられています。
 
-    <Image size="lg" img="/images/integrations/data-visualization/lightdash_06.webp" alt="dbt のメトリクスを基盤にした自然言語クエリを表示する Lightdash の Ask AI インターフェイス" border />
+    ![dbt のメトリクスを基盤にした自然言語クエリを表示する Lightdash の Ask AI インターフェイス](/images/integrations/data-visualization/lightdash_06.webp)
 
     <Tip>
       AI Agents の詳細はこちら: [AI Agents → Lightdash Docs](https://docs.lightdash.com/guides/ai-agents?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)

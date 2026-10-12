@@ -6,8 +6,6 @@ doc_type: 'landing-page'
 keywords: ['agentic data stack', 'agentic analytics', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'AI']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse에서 에이전트형 분석을 실행하는 가장 쉬운 방법은 ClickHouse Cloud의 [ClickHouse Agents](/ko/products/cloud/features/ai-ml/agents)를 사용하는 것입니다. 완전 관리형이므로 직접 운영할 인프라가 필요 없습니다. 사용자는 자연어로 질문하면 되고, AI 에이전트가 데이터베이스를 직접 쿼리하여 답변합니다.
 
 자체 호스팅하려면 **에이전트형 데이터 스택**을 사용할 수 있습니다. 이 스택은 조합 가능한 오픈소스 스택입니다. 직접 실행하고, 자체 모델을 연결하며, 채팅과 데이터를 자체 환경에 유지할 수 있습니다. 이 스택은 [ClickHouse](/ko/get-started/setup/install), [ClickHouse MCP 서버](/ko/products/agentic-data-stack/components/mcp-server), [LibreChat](/ko/products/agentic-data-stack/components/librechat), [Langfuse](/ko/products/agentic-data-stack/components/langfuse)로 구성됩니다.
@@ -32,7 +30,7 @@ ClickHouse에서 에이전트형 분석을 실행하는 가장 쉬운 방법은 
   ## 에이전트형 데이터 스택이 어떻게 함께 작동하는지
 </div>
 
-<Image img="/images/agentic-data-stack/01-architecture.webp" alt="에이전트형 데이터 스택 아키텍처: 사용자는 LibreChat와 상호작용하고, LibreChat은 LLM, MCP 서버를 통해 ClickHouse, 그리고 tracing을 위한 Langfuse에 연결됩니다" size="md" />
+![에이전트형 데이터 스택 아키텍처: 사용자는 LibreChat와 상호작용하고, LibreChat은 LLM, MCP 서버를 통해 ClickHouse, 그리고 tracing을 위한 Langfuse에 연결됩니다](/images/agentic-data-stack/01-architecture.webp)
 
 사용자가 LibreChat에서 질문하면 모델이 응답 계획을 세우고, MCP 서버를 통해 도구를 호출해 ClickHouse를 탐색하고 쿼리합니다. 결과가 다시 돌아오면 에이전트가 답변을 구성합니다. OpenTelemetry를 기반으로 하는 Langfuse는 prompt부터 도구 호출, 응답에 이르기까지 각 실행을 기록하고, 자동 또는 사람의 검토를 통해 출력을 평가할 수 있게 하며, 품질, 비용, 지연 시간을 추적합니다.
 

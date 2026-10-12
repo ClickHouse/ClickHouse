@@ -12,8 +12,6 @@ import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 import OtelLogsSchema from '/snippets/ko/clickstack/_schema_otel_logs.mdx';
 import OtelTracesSchema from '/snippets/ko/clickstack/_schema_otel_traces.mdx';
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="introduction">
   ## 소개
 </div>
@@ -115,7 +113,7 @@ Kubernetes 메타데이터가 `ResourceAttributes`에 저장되는 기본 ClickS
 
 Lucene 구문을 사용해 트레이스를 필터링할 수 있습니다. 예: `ResourceAttributes.k8s.pod.name:"checkout-675775c4cc-f2p9c"`:
 
-<Image img="/images/clickstack/performance_guide/trace_filtering.webp" size="lg" alt="트레이스 필터링" />
+![트레이스 필터링](/images/clickstack/performance_guide/trace_filtering.webp)
 
 그러면 다음과 유사한 SQL 프레디케이트가 생성됩니다:
 
@@ -139,7 +137,7 @@ MATERIALIZED ResourceAttributes['k8s.pod.name']
 
 이제 Lucene 구문을 사용해, 예를 들어 `PodName:"checkout-675775c4cc-f2p9c"`와 같이 파드 이름을 효율적으로 조회할 수 있습니다.
 
-<Image img="/images/clickstack/performance_guide/trace_filtering_v2.webp" size="lg" alt="트레이스 필터링 v2" />
+![트레이스 필터링 v2](/images/clickstack/performance_guide/trace_filtering_v2.webp)
 
 새로 삽입되는 데이터에서는 이렇게 하면 맵에 전혀 접근하지 않아도 되므로 I/O가 크게 줄어듭니다.
 
@@ -760,7 +758,7 @@ has(LogAttributeItems, concat('k8s.pod.name', '=', 'checkout'))
   <Step title="Merge 테이블에서 읽도록 ClickStack UI 업데이트" id="update-clickstack-ui-to-read-from-merge-tree">
     ClickStack UI가 로그 데이터 소스의 테이블로 `otel_logs_merge`를 사용하도록 구성합니다.
 
-    <Image img="/images/clickstack/performance_guide/select_merge_table.webp" size="lg" alt="Merge 테이블 선택" />
+    ![Merge 테이블 선택](/images/clickstack/performance_guide/select_merge_table.webp)
 
     이 시점에는 원래 프라이머리 키를 사용하는 `otel_logs`로 계속 쓰기가 이루어지고, 읽기에는 Merge 테이블이 사용됩니다. 사용자에게 보이는 변경 사항은 없으며 수집에도 영향이 없습니다.
   </Step>

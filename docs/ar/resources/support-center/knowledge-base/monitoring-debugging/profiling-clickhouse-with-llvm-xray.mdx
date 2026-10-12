@@ -5,8 +5,6 @@ description: "تعرّف على كيفية تنميط ClickHouse باستخدا�
 tags: ['الأداء والتحسينات', 'الأدوات والبرامج المساعدة']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="types-of-profilers">
   ## أنواع أدوات التنميط
 </div>
@@ -54,7 +52,7 @@ Chrome](/ar/reference/system-tables/trace_log#chrome-event-trace-format) لتص�
 [Perfetto](https://ui.perfetto.dev). لاحظ query&#95;id و cpu&#95;id و stacktrace في
 كل إدخال.
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="الترتيب الزمني" />
+![الترتيب الزمني](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
 
 <div id="profiling-a-native-application-using-xray">
   ## تنميط تطبيق أصلي باستخدام XRay
@@ -164,19 +162,19 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
   #### الترتيب حسب الزمن
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="الترتيب حسب الزمن" />
+![الترتيب حسب الزمن](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
 
 <div id="left-heavy">
   #### مرجّح إلى اليسار
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="مرجّح-إلى-اليسار" />
+![مرجّح-إلى-اليسار](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
 
 <div id="sandwitch">
   #### ساندويتش
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="ساندويتش" />
+![ساندويتش](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
 
 <div id="check-out-the-docs">
   ## اطّلع على الوثائق

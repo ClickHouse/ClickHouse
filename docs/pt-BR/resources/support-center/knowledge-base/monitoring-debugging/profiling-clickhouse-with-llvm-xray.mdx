@@ -5,8 +5,6 @@ description: "Aprenda a fazer profiling do ClickHouse usando o profiler de instr
 tags: ['Desempenho e otimizações', 'Ferramentas e utilitários']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <div id="types-of-profilers">
   ## Tipos de profiler
 </div>
@@ -54,7 +52,7 @@ Chrome](/pt-BR/reference/system-tables/trace_log#chrome-event-trace-format) para
 visualizá-los no [Perfetto](https://ui.perfetto.dev). Observe o query&#95;id, o cpu&#95;id e o stacktrace de
 cada registro.
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="time-order" />
+![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
 
 <div id="profiling-a-native-application-using-xray">
   ## Fazendo profiling de uma aplicação nativa usando o XRay
@@ -163,19 +161,19 @@ para gerar um flamegraph e uma visualização tipo sanduíche dos seus dados.
   #### Ordem cronológica
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="time-order" />
+![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
 
 <div id="left-heavy">
   #### Pesado à esquerda
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="pesado-à-esquerda" />
+![pesado-à-esquerda](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
 
 <div id="sandwitch">
   #### Sanduíche
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="sanduíche" />
+![sanduíche](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
 
 <div id="check-out-the-docs">
   ## Confira a documentação

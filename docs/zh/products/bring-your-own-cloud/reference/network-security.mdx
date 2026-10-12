@@ -7,8 +7,6 @@ description: '在您自有的云基础设施中部署 ClickHouse'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ## ClickHouse 控制平面与您的 BYOC VPC 之间的连接 {#connection-between-clickhouse-and-byoc}
 
 ClickHouse Cloud 控制平面会维护多种类型的连接，以运行和支持您的 BYOC 部署：
@@ -62,7 +60,7 @@ Tailscale 会在 ClickHouse 控制平面 (位于 ClickHouse 的 VPC 中) 与您�
 
 ### BYOC 中 Tailscale 的工作原理 {#how-tailscale-works}
 
-<Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
+![BYOC Tailscale](/images/cloud/reference/byoc-tailscale-1.webp)
 
 对于每个需要通过 Tailscale 访问的服务或端点，ClickHouse BYOC 会部署：
 

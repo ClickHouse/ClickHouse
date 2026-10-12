@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['IP filters', 'IP access list']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Setting IP filters {#setting-ip-filters}
 
 IP access lists filter traffic to ClickHouse services or API keys by specifying which source addresses are permitted to connect.  These lists are configurable for each service and each API key.  Lists can be configured during service or API key creation, or afterward.
@@ -59,7 +57,7 @@ If you only want traffic from PrivateLink, set `DenyAll` in IP Allow list.
 
 This screenshot shows an access list which allows traffic from a range of IP addresses, described as "NY Office range":
   
-<Image img="/images/cloud/security/ip-filtering-after-provisioning.webp" size="md" alt="Existing access list in ClickHouse Cloud" border/>
+![Existing access list in ClickHouse Cloud](/images/cloud/security/ip-filtering-after-provisioning.webp)
 
 ### Possible actions {#possible-actions}
 
@@ -67,7 +65,7 @@ This screenshot shows an access list which allows traffic from a range of IP add
 
   This example adds a single IP address, with a description of `London server`:
 
-<Image img="/images/cloud/security/ip-filter-add-single-ip.webp" size="md" alt="Adding a single IP to the access list in ClickHouse Cloud" border/>
+![Adding a single IP to the access list in ClickHouse Cloud](/images/cloud/security/ip-filter-add-single-ip.webp)
 
 2. Delete an existing entry
 

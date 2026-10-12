@@ -6,8 +6,6 @@ keywords: ['сегмент', 'сегменты', 'сегментирование
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <br />
 
 <Note>
@@ -20,13 +18,13 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В традиционных кластерах ClickHouse с архитектурой [shared-nothing](https://en.wikipedia.org/wiki/Shared-nothing_architecture) разбиение на сегменты используется, когда ① данные слишком велики для одного сервера или ② один сервер слишком медленно обрабатывает данные. На следующем рисунке показан случай ①, когда таблица [uk&#95;price&#95;paid&#95;simple](/ru/concepts/core-concepts/parts) превышает возможности одной машины:
 
-<Image img="/images/managing-data/core-concepts/shards_01.webp" size="lg" alt="SHARDS" />
+![SHARDS](/images/managing-data/core-concepts/shards_01.webp)
 
 <br />
 
 В таком случае данные можно распределить между несколькими серверами ClickHouse в виде сегментов таблицы:
 
-<Image img="/images/managing-data/core-concepts/shards_02.webp" size="lg" alt="SHARDS" />
+![SHARDS](/images/managing-data/core-concepts/shards_02.webp)
 
 <br />
 
@@ -59,7 +57,7 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 На диаграмме ниже показано, как в ClickHouse обрабатываются INSERT-запросы в distributed таблицу:
 
-<Image img="/images/managing-data/core-concepts/shards_03.webp" size="lg" alt="SHARDS" />
+![SHARDS](/images/managing-data/core-concepts/shards_03.webp)
 
 <br />
 
@@ -75,7 +73,7 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 Эта диаграмма показывает, как в ClickHouse обрабатываются запросы SELECT с distributed таблицей:
 
-<Image img="/images/managing-data/core-concepts/shards_04.webp" size="lg" alt="SHARDS" />
+![SHARDS](/images/managing-data/core-concepts/shards_04.webp)
 
 <br />
 
@@ -95,7 +93,7 @@ ENGINE = Distributed('test_cluster', 'uk', 'uk_price_paid_simple', rand())
 
 На следующей диаграмме показан кластер ClickHouse с шестью серверами, где два сегмента таблицы `Shard-1` и `Shard-2`, представленные ранее, имеют по три реплики. В этот кластер отправляется запрос:
 
-<Image img="/images/managing-data/core-concepts/shards_replicas_01.webp" size="lg" alt="СЕГМЕНТЫ" />
+![СЕГМЕНТЫ](/images/managing-data/core-concepts/shards_replicas_01.webp)
 
 <br />
 

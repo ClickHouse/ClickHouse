@@ -9,7 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import GatherCredentials from '/snippets/pt-BR/clickstack/_gather_credentials.mdx';
 import CreateIngestionUser from '/snippets/pt-BR/clickstack/_create_ingestion_user.mdx';
 
@@ -211,7 +210,7 @@ A aplicação que instrumentaremos é o [HackerNews Analyzer](https://github.com
 
     Abra [http://localhost:5001](http://localhost:5001). Você verá um seletor de ano, estatísticas resumidas, um gráfico de atividade, tabelas com os principais usuários e domínios e um campo de busca. Explore a interface: alterne entre os anos e abra as histórias para ver mais detalhes.
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="O aplicativo HackerNews Analyzer em execução localmente" />
+    ![O aplicativo HackerNews Analyzer em execução localmente](/images/clickstack/getting-started/hackernews_main.webp)
 
     Neste ponto, o aplicativo está em execução, mas sem instrumentação. O ClickStack não mostra nenhum dado: ele está aguardando telemetria. Este é o estado &quot;antes&quot;.
   </Step>
@@ -300,31 +299,31 @@ A aplicação que instrumentaremos é o [HackerNews Analyzer](https://github.com
   <Step title="Inicie o ClickStack e explore sua telemetria" id="launch-clickstack">
     Abra seu serviço no [ClickHouse Cloud console](https://console.clickhouse.cloud) e selecione **ClickStack** no menu à esquerda; em seguida, **Start Ingestion**.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-first-time.webp" size="lg" alt="Iniciar o ClickStack" border />
+    ![Iniciar o ClickStack](/images/use-cases/observability/clickstack-cloud-first-time.webp)
 
     A próxima etapa pode ser ignorada, pois você já configurou seu coletor. Clique em **Launch ClickStack** para continuar.
 
     O ClickStack será aberto em uma nova guia, e você deverá ser direcionado automaticamente para a página **Getting Started**. Caso isso não aconteça, selecione **Getting Started** no menu à esquerda e clique em **Start Ingestion**; depois, em **Next**.
 
-    <Image img="/images/use-cases/observability/clickstack-start-ingestion.webp" size="lg" alt="ClickStack Start Ingestion" border />
+    ![ClickStack Start Ingestion](/images/use-cases/observability/clickstack-start-ingestion.webp)
 
     O ClickStack deve detectar automaticamente suas tabelas e seus dados de telemetria, permitindo que você prossiga. Selecione **Start Exploring** para começar a explorar seus dados.
 
-    <Image img="/images/use-cases/observability/clickstack-start-exploring.webp" size="lg" alt="ClickStack Start Exploring" border />
+    ![ClickStack Start Exploring](/images/use-cases/observability/clickstack-start-exploring.webp)
 
     Agora, visualize os dados que a aplicação está produzindo:
 
     1. Vá para **Busca** e filtre pelos últimos 5 minutos. Os logs de `hn-analyzer-api` começarão a aparecer.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_logs.webp" alt="Logs do ClickStack" />
+    ![Logs do ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_logs.webp)
 
     2. Clique em uma requisição e suba pelo trace. Você verá o span do handler do Express, um span HTTP filho apontando para o ClickHouse cluster com a duração real da rede e registros `console.log` correlacionados no mesmo trace.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_traces.webp" alt="Traces do ClickStack" />
+    ![Traces do ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_traces.webp)
 
     3. Abra **Session Replay** para reproduzir um vídeo navegável de uma sessão do navegador, sincronizado com a linha do tempo do trace.
 
-    <Image img="/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp" alt="Sessões do ClickStack" />
+    ![Sessões do ClickStack](/images/clickstack/getting-started/instrument_app_clickstack_sessions.webp)
 
     Logs, métricas, traces e session replays ficam todos na mesma UI, compartilham a mesma linguagem de consulta e são correlacionados automaticamente.
 

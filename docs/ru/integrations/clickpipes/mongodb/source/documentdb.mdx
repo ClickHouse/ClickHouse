@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickpipes', 'mongodb', 'documentdb', 'cdc', 'ингестия данных', 'синхронизация в реальном времени']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="supported-documentdb-versions">
   ## Поддерживаемые версии DocumentDB
 </div>
@@ -27,17 +25,17 @@ ClickPipes поддерживает версию 5.0 DocumentDB.
 
 1. В левой панели нажмите `Parameter groups`, затем найдите группу параметров, используемую вашим кластером DocumentDB (если вы используете группу параметров по умолчанию, сначала потребуется создать новую, чтобы можно было вносить изменения).
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp" alt="Выбор группы параметров" size="lg" border />
+![Выбор группы параметров](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-select-parameter-group.webp)
 
 2. Найдите `change_stream_log_retention_duration`, выберите этот параметр и измените его значение на `259200` (72 часа)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp" alt="Изменение группы параметров" size="lg" border />
+![Изменение группы параметров](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-modify-parameter-group.webp)
 
 3. Нажмите `Apply Changes`, чтобы немедленно применить изменённую группу параметров к кластеру DocumentDB. Статус группы параметров должен сначала измениться на `applying`, а после применения изменения — на `in-sync`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp" alt="Применение группы параметров" size="lg" border />
+![Применение группы параметров](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-apply-parameter-group.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp" alt="Статус группы параметров" size="lg" border />
+![Статус группы параметров](/images/integrations/data-ingestion/clickpipes/mongodb/docdb-parameter-group-status.webp)
 
 <div id="update-change-stream-log-retention-via-aws-cli">
   ### Обновление срока хранения журнала change stream через AWS CLI

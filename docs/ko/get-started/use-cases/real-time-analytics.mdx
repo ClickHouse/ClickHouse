@@ -7,8 +7,6 @@ sidebarTitle: '실시간 분석'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -36,7 +34,7 @@ export const ExclusiveGroup = ({ name, children }) => {
 * **변환 및 준비까지 걸리는 시간**: 쿼리가 실제로 참조하는 구조(materialized view, 롤업, 인덱스)를 정제하고, 보강하고, 조인하고, 사전 집계하거나, 갱신하는 데 얼마나 걸립니까?
 * **쿼리까지 걸리는 시간**: 데이터를 사용할 수 있게 된 뒤 읽기 작업을 계획하고 실행하는 데 얼마나 걸립니까?
 
-<Image img="/images/use-cases/rta-considerations.webp" alt="실시간 분석: 수집, 변환, 쿼리까지 걸리는 시간" />
+![실시간 분석: 수집, 변환, 쿼리까지 걸리는 시간](/images/use-cases/rta-considerations.webp)
 
 <div id="clickhouse-rta">
   ## ClickHouse가 실시간 분석을 지원하는 방식
@@ -44,7 +42,7 @@ export const ExclusiveGroup = ({ name, children }) => {
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="ClickHouse가 실시간 분석을 지원하는 방식" />
+    ![ClickHouse가 실시간 분석을 지원하는 방식](/images/use-cases/real-time-analytics-architecture.webp)
   </div>
 
   <ExclusiveGroup name="rta-arch">

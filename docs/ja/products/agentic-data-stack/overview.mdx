@@ -6,8 +6,6 @@ doc_type: 'landing-page'
 keywords: ['agentic data stack', 'エージェント型アナリティクス', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'AI']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse でエージェント型アナリティクスを実行する最も簡単な方法は、ClickHouse Cloud の [ClickHouse Agents](/ja/products/cloud/features/ai-ml/agents) です。完全マネージド型のため、実行するインフラストラクチャは不要です。ユーザーは自然な言葉で質問し、AIエージェントがデータベースに直接クエリして回答します。
 
 セルフホストする場合、**Agentic Data Stack** は柔軟に組み合わせられるオープンソースのスタックです。自分で運用し、独自のモデルを接続し、チャットやデータを自分の環境内に保持できます。これは [ClickHouse](/ja/get-started/setup/install)、[ClickHouse MCP server](/ja/products/agentic-data-stack/components/mcp-server)、[LibreChat](/ja/products/agentic-data-stack/components/librechat)、および [Langfuse](/ja/products/agentic-data-stack/components/langfuse) で構成されています。
@@ -32,7 +30,7 @@ ClickHouse でエージェント型アナリティクスを実行する最も簡
   ## スタック全体の構成
 </div>
 
-<Image img="/images/agentic-data-stack/01-architecture.webp" alt="Agentic Data Stack のアーキテクチャ: ユーザーは LibreChat を通じて操作し、LibreChat は LLM、MCPサーバー経由の ClickHouse、そしてトレーシング用の Langfuse に接続する" size="md" />
+![Agentic Data Stack のアーキテクチャ: ユーザーは LibreChat を通じて操作し、LibreChat は LLM、MCPサーバー経由の ClickHouse、そしてトレーシング用の Langfuse に接続する](/images/agentic-data-stack/01-architecture.webp)
 
 ユーザーは LibreChat で質問します。モデルは応答を組み立てるための計画を立て、MCPサーバーを介してツールを呼び出し、ClickHouse を調べたりクエリを実行したりします。結果が返ると、エージェントが回答を作成します。OpenTelemetry を基盤とする Langfuse は、プロンプトからツール呼び出し、応答に至るまで各実行を記録し、自動または人によるレビューで出力を評価できるようにするとともに、品質、コスト、レイテンシを追跡します。
 

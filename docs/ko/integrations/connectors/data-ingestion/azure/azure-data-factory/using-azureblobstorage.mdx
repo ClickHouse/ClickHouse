@@ -10,8 +10,6 @@ integration:
    - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이는 Azure Blob Storage 또는 Azure Data Lake Storage에서 ClickHouse로 데이터를
 복사하는 가장 효율적이고 간단한 방법 중 하나입니다. 이 테이블
 함수를 사용하면 ClickHouse가 Azure 스토리지에 직접 연결해
@@ -38,11 +36,11 @@ ClickHouse에서 Azure Blob Storage에 액세스하려면 액세스 키가 포�
 
 2. 왼쪽 메뉴에서 **Security +
    networking** 섹션 아래의 **Access keys**를 선택합니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="Azure 데이터 저장소 설정" border />
+   ![Azure 데이터 저장소 설정](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
 
 3. **key1** 또는 **key2** 중 하나를 선택한 다음,
    **Connection string** 필드 옆의 **Show** 버튼을 클릭합니다.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="Azure 데이터 저장소 액세스 키" border />
+   ![Azure 데이터 저장소 액세스 키](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
 
 4. 연결 문자열을 복사합니다. 이 값은 `azureBlobStorage` 테이블 함수의 매개변수로 사용합니다.
 

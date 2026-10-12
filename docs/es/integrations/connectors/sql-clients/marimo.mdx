@@ -10,15 +10,13 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [marimo](https://marimo.io/) es un notebook reactivo de código abierto para Python con SQL integrado. Cuando ejecutas una celda o interactúas con un elemento de la UI, marimo ejecuta automáticamente las celdas afectadas (o las marca como desactualizadas), manteniendo el código y los resultados coherentes y evitando errores antes de que ocurran. Cada notebook de marimo se almacena como Python puro, se puede ejecutar como script y desplegar como aplicación.
 
-<Image img="/images/integrations/sql-clients/marimo/clickhouse-connect.webp" size="md" border alt="Conectar a ClickHouse" />
+![Conectar a ClickHouse](/images/integrations/sql-clients/marimo/clickhouse-connect.webp)
 
 <Steps>
   <Step title="Instala marimo con soporte SQL" id="install-marimo-sql">
@@ -33,21 +31,21 @@ import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaint
   <Step title="Conectarse a ClickHouse." id="connect-to-clickhouse">
     Ve al panel de orígenes de datos en el lado izquierdo del editor de marimo y haz clic en &#39;Add database&#39;.
 
-    <Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="Agregar una nueva base de datos" />
+    ![Agregar una nueva base de datos](/images/integrations/sql-clients/marimo/panel-arrow.webp)
 
     Se te pedirá que completes los datos de la base de datos.
 
-    <Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="Completa los datos de la base de datos" />
+    ![Completa los datos de la base de datos](/images/integrations/sql-clients/marimo/add-db-details.webp)
 
     A continuación tendrás una celda que puedes ejecutar para establecer una conexión.
 
-    <Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="Ejecuta la celda para conectarte a ClickHouse" />
+    ![Ejecuta la celda para conectarte a ClickHouse](/images/integrations/sql-clients/marimo/run-cell.webp)
   </Step>
 
   <Step title="Ejecuta SQL" id="run-sql">
     Una vez que hayas configurado una conexión, puedes crear una nueva celda SQL y elegir el motor de ClickHouse.
 
-    <Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="Elegir motor SQL" />
+    ![Elegir motor SQL](/images/integrations/sql-clients/marimo/choose-sql-engine.webp)
 
     Para esta guía, usaremos el conjunto de datos New York Taxi.
 
@@ -105,16 +103,16 @@ import { CommunityMaintainedBadge } from "/snippets/es/components/CommunityMaint
     SELECT * FROM trips LIMIT 1000;
     ```
 
-    <Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="Resultados en un DataFrame" />
+    ![Resultados en un DataFrame](/images/integrations/sql-clients/marimo/results.webp)
 
     Ahora puedes ver los resultados en un DataFrame. Quiero visualizar los trayectos más caros desde un punto de recogida determinado. marimo ofrece varios componentes de la UI para ayudarte. Usaré un menú desplegable para seleccionar la ubicación y altair para crear gráficos.
 
-    <Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="Combinación de menú desplegable, tabla y gráfico" />
+    ![Combinación de menú desplegable, tabla y gráfico](/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp)
 
     El modelo de ejecución reactivo de marimo también se aplica a las consultas SQL, por lo que los cambios en tu SQL desencadenarán automáticamente los cálculos posteriores de las celdas dependientes (o, de forma opcional, marcarán las celdas como desactualizadas si los cálculos son costosos). Por eso, el gráfico y la tabla cambian cuando se actualiza la consulta.
 
     También puedes cambiar a App View para tener una interfaz más limpia con la que explorar tus datos.
 
-    <Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="Ejecutar vista de aplicación" />
+    ![Ejecutar vista de aplicación](/images/integrations/sql-clients/marimo/run-app-view.webp)
   </Step>
 </Steps>

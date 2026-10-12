@@ -6,7 +6,6 @@ keywords: ['partitions', 'partition by']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import { RunnableCode } from "/snippets/components/RunnableCode/RunnableCode.jsx";
 
 ## What are table partitions in ClickHouse? {#what-are-table-partitions-in-clickhouse}
@@ -37,7 +36,7 @@ You can [query this table](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB
 ### Structure on disk {#structure-on-disk}
 Whenever a set of rows is inserted into the table, instead of creating (at [least](/reference/settings/session-settings/max-insert#max_insert_block_size)) one single data part containing all the inserted rows (as described [here](/concepts/core-concepts/parts)), ClickHouse creates one new data part for each unique partition key value among the inserted rows:
 
-<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg"  alt='INSERT PROCESSING' />
+![](/images/managing-data/core-concepts/partitions.webp)
 
 <br/>
 
@@ -49,7 +48,7 @@ Note that with partitioning enabled, ClickHouse automatically creates [MinMax in
 ### Per partition merges {#per-partition-merges}
 With partitioning enabled, ClickHouse only [merges](/concepts/core-concepts/merges) data parts within, but not across partitions. We sketch that for our example table from above:
 
-<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg"  alt='PART MERGES' />
+![](/images/managing-data/core-concepts/merges_with_partitions.webp)
 
 <br/>
 
@@ -130,7 +129,7 @@ The query runs over our example table from above and [calculates](https://sql.cl
 
 ClickHouse processes that query by applying a sequence of pruning techniques to avoid evaluating irrelevant data:
 
-<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg"  alt='PART MERGES 2' />
+![](/images/managing-data/core-concepts/partition-pruning.webp)
 
 <br/>
 

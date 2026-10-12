@@ -6,8 +6,6 @@ keywords: ['денормализация данных', 'денормализо�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Денормализация данных — это метод в ClickHouse, при котором используются плоские таблицы, чтобы минимизировать задержку выполнения запросов, избегая операций JOIN.
 
 <div id="comparing-normalized-vs-denormalized-schemas">
@@ -18,7 +16,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Этот подход снижает потребность в сложных JOIN во время выполнения запроса и может значительно ускорить операции чтения, поэтому он хорошо подходит для приложений с высокой нагрузкой на чтение и сложными запросами. Однако он может усложнить запись и сопровождение данных, поскольку любые изменения в дублируемых данных нужно распространять на все экземпляры, чтобы сохранять согласованность.
 
-<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="Денормализация в ClickHouse" />
+![Денормализация в ClickHouse](/images/data-modeling/denormalization-diagram.webp)
 
 <br />
 
@@ -147,7 +145,7 @@ LIMIT 5
 
 Теперь рассмотрим наши `Users` и `Badges`:
 
-<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="схема Users и Badges" />
+![схема Users и Badges](/images/data-modeling/denormalization-schema.webp)
 
 <p />
 

@@ -6,8 +6,6 @@ title: 'Amazon S3 と ClickHouse Cloud の統合'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 S3 ClickPipe は、Amazon S3 および S3 互換オブジェクトストアから ClickHouse Cloud にデータを取り込むための、フルマネージドかつ高い耐障害性を備えた手段を提供します。**一回限り** と **継続的インジェスト** の両方を、exactly-once セマンティクスでサポートしています。
 
 S3 ClickPipes は、ClickPipes UI を使用して手動でデプロイおよび管理できるほか、[OpenAPI](/ja/integrations/clickpipes/programmatic-access/openapi) や [Terraform](/ja/integrations/clickpipes/programmatic-access/terraform) を使用してプログラムから管理することもできます。
@@ -189,7 +187,7 @@ S3 ClickPipe は、パブリックバケットとプライベートバケット�
 
 [アクセスキー](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html)を使用して認証するには、ClickPipe 接続の設定時に **Authentication method** で `Credentials` を選択します。次に、アクセスキー ID (例: `AKIAIOSFODNN7EXAMPLE`) とシークレットアクセスキー (例: `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) を、それぞれ `Access key` と `Secret key` に入力します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp" alt="S3 ClickPipes の IAM 認証情報" size="lg" border />
+![S3 ClickPipes の IAM 認証情報](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp)
 
 <div id="iam-role">
   #### IAM role
@@ -197,7 +195,7 @@ S3 ClickPipe は、パブリックバケットとプライベートバケット�
 
 [ロールベースのアクセス制御](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html)を使用して認証するには、ClickPipe 接続の設定時に **Authentication method** で `IAM role` を選択します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp" alt="S3 ClickPipes の IAM 認証" size="lg" border />
+![S3 ClickPipes の IAM 認証](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp)
 
 S3 へのアクセスに必要な信頼ポリシーを持つ[ロールを作成する](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role)には、[このガイド](/ja/products/cloud/guides/data-sources/accessing-s3-data-securely)に従ってください。次に、`IAM role ARN` に IAM role の ARN を入力します。
 
@@ -242,7 +240,7 @@ ClickPipes には、ほとんどのユースケースの要件を満たす適切
 | `Parallel view processing`           | false   | アタッチされたビューへのプッシュを[順次ではなく並列で](/ja/reference/settings/session-settings/parallel#parallel_view_processing)有効にするかどうか。             |
 | `Use cluster function`               | true    | 複数のノードにまたがってファイルを並列処理するかどうか。                                                                                                  |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes の高度な設定" size="lg" border />
+![ClickPipes の高度な設定](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
 
 <div id="scaling">
   ### スケーリング

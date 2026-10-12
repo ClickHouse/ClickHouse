@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.security-beta" />
 
 ClickHouse Managed Postgres には、データを保護し、コンプライアンス要件を満たすためのエンタープライズレベルのセキュリティ機能が備わっています。このページでは、ネットワークセキュリティ、暗号化、バックアップ保持期間のポリシーについて説明します。
@@ -18,7 +16,7 @@ ClickHouse Managed Postgres には、データを保護し、コンプライア�
 
 IP フィルタは、ClickHouse Managed Postgres インスタンスへの接続を許可する送信元 IP アドレスを制御し、未承認の接続からデータベースを保護するためのネットワークレベルのアクセス制御を提供します。
 
-<Image img="/images/managed-postgres/ip-filters.webp" alt="IP Access List の設定" size="md" border />
+![IP Access List の設定](/images/managed-postgres/ip-filters.webp)
 
 <div id="configuring-ip-filters">
   ### IP フィルタの設定

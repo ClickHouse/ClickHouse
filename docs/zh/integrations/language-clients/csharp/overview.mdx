@@ -11,8 +11,6 @@ integration:
   - website: 'https://github.com/ClickHouse/clickhouse-cs'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 用于连接 ClickHouse 的官方 C# 客户端。
 该客户端的源代码可在 [GitHub 仓库](https://github.com/ClickHouse/clickhouse-cs) 中获取。
 最初由 [Oleg V. Kozlyuk](https://github.com/DarkWanderer) 开发。
@@ -310,11 +308,11 @@ await client.InsertBinaryAsync("my_table", columns, batch2, options);
 
 选择一个服务并点击 **Connect**：
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud 服务连接按钮" border />
+![ClickHouse Cloud 服务连接按钮](/images/_snippets/cloud-connect-button.webp)
 
 选择 **C#**。连接详细信息会显示在下方。
 
-<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="ClickHouse Cloud C# 连接详细信息" border />
+![ClickHouse Cloud C# 连接详细信息](/images/_snippets/connection-details-csharp.webp)
 
 如果你使用的是自管理 ClickHouse，连接详细信息由你的 ClickHouse 管理员提供。
 

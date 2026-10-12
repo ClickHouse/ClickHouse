@@ -9,8 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ja/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 このガイドでは、OpenTelemetry の [`awscloudwatch` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) を使用して AWS CloudWatch Logs を Managed ClickStack に転送し、ClickStack UI で表示する方法を説明します。
@@ -257,11 +255,11 @@ ClickStack collector は、**Docker コンテナー** としてデプロイす�
   <Step title="ClickStack UIで確認する" id="confirm-in-ui">
     [ClickHouse Cloud console](https://console.clickhouse.cloud) でサービスを開き、左側のメニューから **ClickStack** を選択します。
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="ClickStackを起動" border />
+    ![ClickStackを起動](/images/use-cases/observability/clickstack-cloud-v2.webp)
 
     **Search** ビューで、ソースを `Logs` に切り替え、時間範囲を **Last 15 minutes** に設定します。CloudWatch のイベントは、通常は数回のポーリング間隔以内に表示されます。
 
-    <Image img="/images/clickstack/cloudwatch/log-search-view-clickstack.webp" size="lg" alt="CloudWatch logs を表示した ClickStack Search ビュー" />
+    ![CloudWatch logs を表示した ClickStack Search ビュー](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
 
     各イベントには、送信元のロググループとログストリームがリソース属性として含まれます:
 
@@ -272,11 +270,11 @@ ClickStack collector は、**Docker コンテナー** としてデプロイす�
 
     これらの属性を含めるには、検索を `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body` に変更します。
 
-    <Image img="/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp" size="lg" alt="CloudWatch logs と属性を表示した ClickStack Search ビュー" />
+    ![CloudWatch logs と属性を表示した ClickStack Search ビュー](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
 
     ログエントリを選択して、そのメタデータを確認します。
 
-    <Image img="/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp" size="lg" alt="ログ詳細ビュー内の CloudWatch 属性" />
+    ![ログ詳細ビュー内の CloudWatch 属性](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
 
     何も表示されない場合:
 
@@ -291,11 +289,11 @@ ClickStack collector は、**Docker コンテナー** としてデプロイす�
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">`cloudwatch-logs-dashboard.json`をダウンロード</TrackedLink>し、ClickStack UIで **Dashboards** に移動して **Import** をクリックします。
 
-    <Image img="/images/clickstack/clickstack-import-dashboard.webp" size="lg" alt="ダッシュボードのインポートボタン" />
+    ![ダッシュボードのインポートボタン](/images/clickstack/clickstack-import-dashboard.webp)
 
     JSONファイルをアップロードし、**Finish Import** をクリックします。
 
-    <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="インポート完了ダイアログ" />
+    ![インポート完了ダイアログ](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
   </Step>
 
   <Step title="関連情報" id="further-reading">

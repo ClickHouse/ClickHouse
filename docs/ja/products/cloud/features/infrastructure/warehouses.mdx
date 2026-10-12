@@ -6,7 +6,6 @@ description: 'ClickHouse Cloud のコンピュート分離'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="コンピュート分離" />
@@ -21,7 +20,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 * サービスに接続するためのエンドポイント (または ClickHouse Cloud の UI コンソールから作成された複数のエンドポイント) 。ローカル接続やサードパーティアプリからの接続に使用します (例: `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
 * サービスがすべてのデータとメタデータの一部を保存するオブジェクトストレージ フォルダー:
 
-<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="ClickHouse Cloud 内の単一サービス" />
+![ClickHouse Cloud 内の単一サービス](/images/cloud/reference/compute-compute-1.webp)
 
 <br />
 
@@ -35,7 +34,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureB
 
 また、コンピュート分離を使うことで、読み取り処理と書き込み処理を分離し、相互に干渉しないようにすることもできます。
 
-<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="ClickHouse Cloud におけるコンピュート分離" />
+![ClickHouse Cloud におけるコンピュート分離](/images/cloud/reference/compute-compute-2.webp)
 
 <br />
 
@@ -52,7 +51,7 @@ ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有す
 * プライマリ サービス `DWH Prod`
 * セカンダリ サービス `DWH Prod Subservice`
 
-<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="プライマリ サービスとセカンダリ サービスを含む ウェアハウス の例" background="white" />
+![プライマリ サービスとセカンダリ サービスを含む ウェアハウス の例](/images/cloud/reference/compute-compute-8.webp)
 
 <br />
 
@@ -77,7 +76,7 @@ ClickHouse Cloud では、*ウェアハウス* とは同じデータを共有す
 つまり、Service 1 で作成されたすべてのデータベースユーザーは、同じ権限 (テーブルやビューなどに対する grants) で Service 2 も利用でき、その逆も同様です。
 各サービスで使用するエンドポイントは異なりますが、ユーザー名とパスワードはすべてのサービスで共通です。つまり、以下の図に示すように、**同じストレージを使用するサービス間ではユーザーが共有されます**。
 
-<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="同じデータを共有するサービス間でのユーザーアクセス" />
+![同じデータを共有するサービス間でのユーザーアクセス](/images/cloud/reference/compute-compute-3.webp)
 
 <br />
 
@@ -93,7 +92,7 @@ IP フィルタリング設定はサービスごとに個別に適用できる�
 
 以下の例では、Alice は ウェアハウス 内のサービス 2 へのアクセスを制限されています。
 
-<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="ネットワークアクセス制御の設定" />
+![ネットワークアクセス制御の設定](/images/cloud/reference/compute-compute-4.webp)
 
 <br />
 
@@ -120,7 +119,7 @@ IP フィルタリング設定はサービスごとに個別に適用できる�
 重要な読み取りワークロードを、書き込みやマージのオーバーヘッドから切り離すために、サービスを読み取り専用にしたい場合があります。
 これは 2 つ目のサービスと、それ以降に作成する追加サービスで設定できます。ただし、最初のサービスは常に読み書きサービスです。以下の図を参照してください。
 
-<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="ウェアハウス内の読み書きサービスと読み取り専用サービス" />
+![ウェアハウス内の読み書きサービスと読み取り専用サービス](/images/cloud/reference/compute-compute-5.webp)
 
 <br />
 
@@ -211,7 +210,7 @@ SETTINGS distributed_ddl_task_timeout=0
 
 ウェアハウスを作成するには、既存のサービスとデータを共有する 2 つ目のサービスを作成する必要があります。これは、既存のサービスのいずれかにあるプラス記号をクリックして行えます。
 
-<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="ウェアハウス内で新しいサービスを作成" />
+![ウェアハウス内で新しいサービスを作成](/images/cloud/reference/compute-compute-7.webp)
 
 <br />
 

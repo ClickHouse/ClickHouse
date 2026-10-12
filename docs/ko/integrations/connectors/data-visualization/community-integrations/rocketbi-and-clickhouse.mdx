@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -19,7 +17,7 @@ import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaint
 이 가이드에서는 Rocket.BI를 설치한 후 간단한 대시보드를 만들어 봅니다.
 다음은 완성된 대시보드입니다:
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_01.webp" alt="차트와 KPI로 판매 메트릭을 보여주는 Rocket BI 대시보드" border />
+![차트와 KPI로 판매 메트릭을 보여주는 Rocket BI 대시보드](/images/integrations/data-visualization/rocketbi_01.webp)
 
 <br />
 
@@ -54,7 +52,7 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 **무제한 대시보드**를 만들고, 각 대시보드에 **무제한 차트**를 추가할 수 있습니다.
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_02.webp" alt="Rocket BI에서 새 차트를 만드는 과정을 보여주는 애니메이션" border />
+![Rocket BI에서 새 차트를 만드는 과정을 보여주는 애니메이션](/images/integrations/data-visualization/rocketbi_02.webp)
 
 <br />
 
@@ -70,13 +68,13 @@ wget https://raw.githubusercontent.com/datainsider-co/rocket-bi/main/docker/.cli
 
 Tab 필터에서 사용할 메트릭 필드를 선택합니다. 집계 설정이 체크된 상태로 유지되는지 확인하십시오.
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_03.webp" alt="선택한 필드와 집계 설정이 표시된 Rocket BI 메트릭 컨트롤 구성 패널" border />
+![선택한 필드와 집계 설정이 표시된 Rocket BI 메트릭 컨트롤 구성 패널](/images/integrations/data-visualization/rocketbi_03.webp)
 
 <br />
 
 필터 이름을 변경하고 컨트롤을 대시보드에 저장합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_04.webp" alt="필터 이름을 변경해 대시보드에 저장할 준비가 된 메트릭 컨트롤" border />
+![필터 이름을 변경해 대시보드에 저장할 준비가 된 메트릭 컨트롤](/images/integrations/data-visualization/rocketbi_04.webp)
 
 <div id="create-a-date-type-control">
   #### 날짜 유형 컨트롤 만들기
@@ -84,19 +82,19 @@ Tab 필터에서 사용할 메트릭 필드를 선택합니다. 집계 설정이
 
 Date 필드를 Main Date 컬럼으로 선택하세요:
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_05.webp" alt="Rocket BI에서 사용 가능한 날짜 컬럼을 보여주는 Date 필드 선택 인터페이스" border />
+![Rocket BI에서 사용 가능한 날짜 컬럼을 보여주는 Date 필드 선택 인터페이스](/images/integrations/data-visualization/rocketbi_05.webp)
 
 <br />
 
 조회 범위가 다른 복제 항목을 추가합니다. 예를 들어 Year, Monthly, Daily date 또는 Day of Week입니다.
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_06.webp" alt="연, 월, 일과 같은 다양한 시간 범위 옵션을 보여주는 날짜 범위 구성" border />
+![연, 월, 일과 같은 다양한 시간 범위 옵션을 보여주는 날짜 범위 구성](/images/integrations/data-visualization/rocketbi_06.webp)
 
 <br />
 
 필터 이름을 변경하고 컨트롤을 대시보드에 저장합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_07.webp" alt="이름이 변경된 필터가 적용되어 대시보드에 저장할 준비가 된 날짜 범위 컨트롤" border />
+![이름이 변경된 필터가 적용되어 대시보드에 저장할 준비가 된 날짜 범위 컨트롤](/images/integrations/data-visualization/rocketbi_07.webp)
 
 <div id="now-let-build-the-charts">
   ### 이제 차트를 만들어 보겠습니다
@@ -108,25 +106,25 @@ Date 필드를 Main Date 컬럼으로 선택하세요:
 
 Adding new chart를 선택한 다음 Pie Chart를 선택합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_08.webp" alt="파이 차트 옵션이 강조 표시된 차트 유형 선택 패널" border />
+![파이 차트 옵션이 강조 표시된 차트 유형 선택 패널](/images/integrations/data-visualization/rocketbi_08.webp)
 
 <br />
 
 먼저 Dataset에서 &quot;Region&quot; 컬럼을 Legend Field로 드래그 앤 드롭합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_09.webp" alt="Region 컬럼을 범례 필드에 추가하는 드래그 앤 드롭 인터페이스" border />
+![Region 컬럼을 범례 필드에 추가하는 드래그 앤 드롭 인터페이스](/images/integrations/data-visualization/rocketbi_09.webp)
 
 <br />
 
 그런 다음 Chart Control 탭으로 전환합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_10.webp" alt="시각화 구성 옵션을 보여주는 Chart Control 탭 인터페이스" border />
+![시각화 구성 옵션을 보여주는 Chart Control 탭 인터페이스](/images/integrations/data-visualization/rocketbi_10.webp)
 
 <br />
 
 메트릭 컨트롤을 Value Field로 드래그 앤 드롭합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_11.webp" alt="파이 차트의 값 필드에 추가되는 메트릭 컨트롤" border />
+![파이 차트의 값 필드에 추가되는 메트릭 컨트롤](/images/integrations/data-visualization/rocketbi_11.webp)
 
 <br />
 
@@ -134,19 +132,19 @@ Adding new chart를 선택한 다음 Pie Chart를 선택합니다
 
 추가 사용자 지정을 위해 Chart Setting으로 이동합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_12.webp" alt="파이 차트의 사용자 지정 옵션을 보여주는 차트 설정 패널" border />
+![파이 차트의 사용자 지정 옵션을 보여주는 차트 설정 패널](/images/integrations/data-visualization/rocketbi_12.webp)
 
 <br />
 
 예를 들어, Data label을 Percentage로 변경합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_13.webp" alt="파이 차트에 백분율이 표시되도록 변경되는 데이터 레이블 설정" border />
+![파이 차트에 백분율이 표시되도록 변경되는 데이터 레이블 설정](/images/integrations/data-visualization/rocketbi_13.webp)
 
 <br />
 
 차트를 저장한 다음 대시보드에 추가합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_14.webp" alt="새로 추가된 파이 차트와 다른 컨트롤이 표시된 대시보드 보기" border />
+![새로 추가된 파이 차트와 다른 컨트롤이 표시된 대시보드 보기](/images/integrations/data-visualization/rocketbi_14.webp)
 
 <div id="use-date-control-in-a-time-series-chart">
   #### 시계열 차트에서 날짜 컨트롤 사용하기
@@ -154,25 +152,25 @@ Adding new chart를 선택한 다음 Pie Chart를 선택합니다
 
 누적 컬럼 차트를 사용합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_15.webp" alt="시계열 데이터가 포함된 누적 컬럼 차트 생성 인터페이스" border />
+![시계열 데이터가 포함된 누적 컬럼 차트 생성 인터페이스](/images/integrations/data-visualization/rocketbi_15.webp)
 
 <br />
 
 Chart Control에서 Y축은 메트릭 컨트롤로, X축은 Date Range로 설정합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_16.webp" alt="Y축에 메트릭, X축에 날짜 범위가 설정된 Chart Control 구성" border />
+![Y축에 메트릭, X축에 날짜 범위가 설정된 Chart Control 구성](/images/integrations/data-visualization/rocketbi_16.webp)
 
 <br />
 
 Breakdown에 Region 컬럼을 추가합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_17.webp" alt="누적 컬럼 차트에서 Breakdown 차원으로 추가되는 Region 컬럼" border />
+![누적 컬럼 차트에서 Breakdown 차원으로 추가되는 Region 컬럼](/images/integrations/data-visualization/rocketbi_17.webp)
 
 <br />
 
 KPI로 Number Chart를 추가해 대시보드를 더 돋보이게 합니다
 
-<Image size="md" img="/images/integrations/data-visualization/rocketbi_18.webp" alt="KPI Number Chart, 파이 차트, 시계열 시각화가 포함된 완성된 대시보드" border />
+![KPI Number Chart, 파이 차트, 시계열 시각화가 포함된 완성된 대시보드](/images/integrations/data-visualization/rocketbi_18.webp)
 
 <br />
 

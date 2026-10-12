@@ -6,8 +6,6 @@ title: 'Создайте свой первый ClickPipe для Azure Blob Stora
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 **Предварительные требования**
 
 Чтобы воспользоваться этим руководством, вам понадобятся:
@@ -22,15 +20,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     На главной странице вашего сервиса нажмите **Data sources** в меню слева.
     Раскройте выпадающий список **ClickPipes** и нажмите **Create ClickPipe**
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp" alt="Перейти к источникам данных" size="md" />
+    ![Перейти к источникам данных](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp)
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp" alt="Создать ClickPipe" size="md" />
+    ![Создать ClickPipe](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp)
   </Step>
 
   <Step title="Выберите источник данных" id="select-data-source">
     Выберите **Azure Blob Storage** в качестве типа данных
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp" alt="Выбрать Azure Blob Storage" size="md" />
+    ![Выбрать Azure Blob Storage](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp)
   </Step>
 
   <Step title="Настройте подключение ClickPipe" id="setup-connection">
@@ -44,7 +42,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Затем нажмите **Incoming data**
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp" alt="Сведения о конфигурации" size="md" />
+    ![Сведения о конфигурации](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp)
   </Step>
 
   <Step title="Выберите формат данных" id="select-data-format">
@@ -53,7 +51,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     3. Заполните дополнительные параметры формата, например разделитель для форматов с разделением запятыми
     4. Нажмите **Parse information**
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp" alt="Выбрать формат данных" size="md" />
+    ![Выбрать формат данных](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp)
   </Step>
 
   <Step title="Настройте таблицу, схему и параметры" id="configure-table-schema">
@@ -65,7 +63,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     4. Определите сопоставления между исходным файлом и целевой таблицей: имя столбца, тип столбца, значение по умолчанию и допустимость `NULL`
     5. Наконец, укажите расширенные настройки, такие как тип движка, выражение для партиционирования и первичный ключ
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp" alt="Разобрать информацию" size="md" />
+    ![Разобрать информацию](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp)
 
     Когда закончите настройку таблицы, схемы и параметров, нажмите **Details and settings**
   </Step>
@@ -75,7 +73,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Вы можете выбрать роль для этого пользователя.
     Для доступа к materialized view или словарю из целевой таблицы выберите &quot;Full access&quot;.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp" alt="Настроить разрешения" size="md" />
+    ![Настроить разрешения](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp)
   </Step>
 
   <Step title="Завершите настройку" id="complete-setup">

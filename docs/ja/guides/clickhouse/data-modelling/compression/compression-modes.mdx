@@ -6,8 +6,6 @@ keywords: ['圧縮', 'codec', '符号化', 'モード']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouseプロトコルは、チェックサム付きの**データブロック**圧縮をサポートしています。
 どのモードを選べばよいかわからない場合は、`LZ4` を使用してください。
 &#96;&#96;
@@ -46,7 +44,7 @@ LZ4 と ZSTD はどちらも同じ著者によるものですが、トレード�
 | mode                | byte    | 圧縮モード                                                                                      |
 | compressed&#95;data | binary  | 圧縮データのブロック                                                                                 |
 
-<Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="ClickHouse の圧縮ブロック構造を示す図" />
+![ClickHouse の圧縮ブロック構造を示す図](/images/data-compression/ch_compression_block.webp)
 
 ヘッダーは (raw&#95;size + data&#95;size + mode) で、元のサイズは len(header + compressed&#95;data) に相当します。
 

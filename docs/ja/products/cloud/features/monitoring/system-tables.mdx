@@ -7,8 +7,6 @@ sidebarTitle: 'システムテーブル'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 すべての ClickHouse インスタンスには、`system` データベース内に [システムテーブル](/ja/reference/system-tables/overview) 一式が用意されており、次のような情報が含まれています。
 
 * サーバーの状態、プロセス、実行環境
@@ -58,7 +56,7 @@ ORDER BY
 
 ClickHouse には組み込みの高度なオブザーバビリティダッシュボード機能があり、`system.dashboards` に含まれる Cloud Overview のメトリクスを表示できます。アクセス先は `$HOST:$PORT/dashboard` で、ユーザー名とパスワードが必要です。
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="ネイティブの高度なオブザーバビリティダッシュボード" border />
+![ネイティブの高度なオブザーバビリティダッシュボード](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
 
 <Note>
   このダッシュボードでは ClickHouse インスタンスへの直接認証が必要です。追加の認証なしで Cloud Console UI からアクセスできる [Cloud Console 高度なダッシュボード](/ja/products/cloud/features/monitoring/cloud-console#advanced-dashboard) とは別のものです。

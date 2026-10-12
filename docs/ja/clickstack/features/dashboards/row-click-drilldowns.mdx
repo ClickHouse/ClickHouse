@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'drilldown', 'table', 'row click', 'inspection', 'observability']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 テーブルタイルは、多くの場合 **カタログ** として機能します。サービス、ホスト、エンドポイント、またはエラーグループごとに1行があり、それぞれを評価するためのカラムがいくつか表示されます。行クリックアクションを使うと、このカタログが調査ワークフローになります。カタログを見て重要な行を見つけてクリックすると、ClickStack がその行の値をフィルターとして引き継ぎます。すると宛先は、その項目にあらかじめ絞り込まれた状態で開くため、クエリを手作業で組み直す必要はありません。
 
 クリック先は次の2つのいずれかです。
@@ -40,7 +38,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     `Requests` の降順で並べ替え、最もトラフィックの多いサービスが上位に来るようにします。このテーブルがカタログとなり、各サービスが1行ずつ RED で評価されます。
 
-    <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="各サービスについて RED のカラム（Requests、Errors、P95 Duration）を表示し、リクエスト量順に並べたサービス一覧テーブル。その上に requests-over-time のトレンドを表示" size="lg" />
+    ![各サービスについて RED のカラム（Requests、Errors、P95 Duration）を表示し、リクエスト量順に並べたサービス一覧テーブル。その上に requests-over-time のトレンドを表示](/images/clickstack/dashboards/row-click-catalog.webp)
 
     <Tip>
       **group-by カラムを先頭に置く**
@@ -63,7 +61,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step title="行をクリックする" id="click-dashboard">
     行にホバーすると、テーブル右端にリンク用の操作要素が表示され、操作内容を示すヒント (`Open dashboard "Service Detail"`) が表示されます。行をクリックすると、`Service` フィルターがクリックした値に設定された状態で `Service Detail` ダッシュボードが開き、すべてのタイル (RED の主要指標、レイテンシのパーセンタイル、エンドポイントごとの内訳) が、その1つのサービスに絞り込まれます。
 
-    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="行クリック後の Service Detail ダッシュボード。Service フィルターがクリックしたサービスに設定され、RED の主要指標、レイテンシのパーセンタイル、エンドポイントごとの内訳がすべてそのサービスにスコープされている" size="lg" />
+    ![行クリック後の Service Detail ダッシュボード。Service フィルターがクリックしたサービスに設定され、RED の主要指標、レイテンシのパーセンタイル、エンドポイントごとの内訳がすべてそのサービスにスコープされている](/images/clickstack/dashboards/row-click-drilldown.webp)
   </Step>
 </Steps>
 
@@ -88,7 +86,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step title="行をクリックする" id="click-search">
     これでサービスの行をクリックすると、そのトレースソースの Search ページが開き、`ServiceName = <service>` で絞り込まれるため、同じ時間範囲内でそのサービスの span だけを表示できます。
 
-    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="行クリック後にトレースソースの Search ページが開き、クリックしたサービスで絞り込まれた状態" size="lg" />
+    ![行クリック後にトレースソースの Search ページが開き、クリックしたサービスで絞り込まれた状態](/images/clickstack/dashboards/row-click-search-drilldown.webp)
   </Step>
 </Steps>
 
@@ -100,7 +98,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 行クリックアクションはテーブルタイル上で設定します。専用の設定ページはありません。タイルを追加または編集し、visualization type を **Table** に設定します。すると、エディタのツールバーで **Display Settings** の横に **Row Click Action** ボタンが表示されます。このボタンはテーブルタイルでのみ表示され、ラベルには現在のアクションが反映されます: `Row Click Action: Default`、`Row Click Action: Search`、`Row Click Action: Dashboard`。クリックするとドロワーが開きます。
 
-<Image img="/images/clickstack/dashboards/row-click-drawer.webp" alt="Dashboard モードの Row Click Action ドロワー。宛先として Service Detail ダッシュボードが選択され、クリックした行の ServiceName フィルタがテンプレート化されている" size="lg" />
+![Dashboard モードの Row Click Action ドロワー。宛先として Service Detail ダッシュボードが選択され、クリックした行の ServiceName フィルタがテンプレート化されている](/images/clickstack/dashboards/row-click-drawer.webp)
 
 このドロワーでは 3 つのアクションを選択できます。
 

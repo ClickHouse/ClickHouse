@@ -8,8 +8,6 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 Elastic Stack では、アプリケーションをインストルメントするための言語別 SDK が 2 種類提供されています。
 
 1. **[Elastic Official APM agents](https://www.elastic.co/docs/reference/apm-agents/)** – これらは Elastic Stack での利用に特化して作られています。現時点では、これらの SDK から直接移行する方法はありません。これらを使用しているアプリケーションは、対応する [ClickStack SDKs](/ja/clickstack/ingesting-data/sdks/index) を使用して再度インストルメントする必要があります。
@@ -50,4 +48,4 @@ export OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>"
 
 インジェスト API key は HyperDX アプリケーションで生成され、Team Settings → API Keys から確認できます。
 
-<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="インジェスト API keys" size="lg" />
+![インジェスト API keys](/images/use-cases/observability/ingestion-keys.webp)

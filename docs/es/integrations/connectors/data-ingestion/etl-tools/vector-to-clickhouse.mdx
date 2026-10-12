@@ -12,8 +12,6 @@ integration:
 keywords: ['vector', 'recopilación de logs', 'observabilidad', 'ingestión de datos', 'pipeline']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -113,7 +111,7 @@ Los pasos siguientes son similares para seguir cualquier tipo de archivo de logs
     SELECT * FROM nginxdb.access_logs
     ```
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="Ver los logs de ClickHouse en formato tabular" />
+    ![Ver los logs de ClickHouse en formato tabular](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
   </Step>
 
   <Step title="Procesar los logs" id="4-parse-the-logs">
@@ -216,7 +214,7 @@ Los pasos siguientes son similares para seguir cualquier tipo de archivo de logs
     SELECT * FROM nginxdb.access_logs_view
     ```
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/vector_02.webp" size="lg" border alt="Ver los logs de ClickHouse analizados en formato de tabla" />
+    ![Ver los logs de ClickHouse analizados en formato de tabla](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
 
     <Note>
       La lección anterior almacenó los datos en dos tablas, pero podrías cambiar la tabla inicial `nginxdb.access_logs` para que use el motor de tabla [`Null`](/es/reference/engines/table-engines/special/null).

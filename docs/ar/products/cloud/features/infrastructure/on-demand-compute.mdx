@@ -9,8 +9,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ar/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 <Note>
@@ -250,7 +248,7 @@ SETTINGS
 
 أثناء استئجار worker لصالح خدمتك، تسمح المنصة بمرور حركة الشبكة بين ذلك الـ worker وخدمتك، وتحجب كل ما عدا ذلك. ويُطبَّق هذا التقييد على مستوى طبقة الشبكة لا داخل محرك الاستعلام، لذا فهو لا يعتمد على الاستعلام أو إعداداته أو خطة التنفيذ التي يُنتجها المُحسِّن.
 
-<Image img="/images/cloud/reference/on-demand-compute-worker-isolation.svg" size="lg" alt="Network isolation explanation diagram" />
+![Network isolation explanation diagram](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
 
 * **خدمتك وحدها تستطيع الوصول إلى الـ workers الخاصة بك.** فالمسار قائم طوال مدة الاستئجار الحالي للـ worker، ولتلك الخدمة وحدها.
 * **لا يمكن الوصول إلى الـ workers غير المُخصَّصة.** فالـ worker الذي ينتظر في المجموعة (pool) لا يملك أي مسار شبكي من أي خدمة أو إليها إلى أن يتم استئجاره.

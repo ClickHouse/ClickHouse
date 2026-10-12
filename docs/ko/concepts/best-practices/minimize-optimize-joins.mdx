@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse는 매우 다양한 조인 유형과 알고리즘을 지원하며, 최근 릴리스에서 조인 성능도 크게 개선되었습니다. 그러나 조인은 본질적으로 단일 비정규화 테이블에서 쿼리하는 것보다 비용이 더 많이 듭니다. 비정규화는 계산 작업을 쿼리 시점에서 삽입 또는 전처리 시점으로 옮기므로, 런타임 지연 시간을 크게 줄이는 경우가 많습니다. 실시간 또는 지연 시간에 민감한 분석 쿼리에는 **비정규화를 강력히 권장합니다**.
 
 일반적으로 다음과 같은 경우 비정규화를 고려하십시오:
@@ -56,7 +54,7 @@ ClickHouse는 속도와 메모리 사용량 사이의 절충이 서로 다른 �
 * **Partial Merge 조인:** 메모리 사용량을 최소화하지만 더 느립니다—메모리가 제한된 환경에서 대규모 테이블을 조인할 때 가장 적합합니다.
 * **Grace Hash 조인:** 유연하고 메모리 사용량을 조정할 수 있어, 성능 특성을 조절해야 하는 대규모 데이터셋에 적합합니다.
 
-<Image img="/images/bestpractices/joins-speed-memory.png" size="md" alt="조인 — 속도 대 메모리" />
+![조인 — 속도 대 메모리](/images/bestpractices/joins-speed-memory.png)
 
 <Note>
   각 알고리즘이 지원하는 조인 유형은 서로 다릅니다. 각 알고리즘에서 지원하는 조인 유형의 전체 목록은 [여기](/ko/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)에서 확인할 수 있습니다.

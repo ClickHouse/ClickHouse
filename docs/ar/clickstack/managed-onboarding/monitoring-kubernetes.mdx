@@ -9,8 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يأخذك هذا الدليل خطوة بخطوة خلال جمع السجلات، ومقاييس البنية التحتية، وأحداث Kubernetes من عنقود إلى Managed ClickStack، ثم عرضها في لوحة معلومات Kubernetes المضمّنة.
 
 النمط هنا هو نمط OpenTelemetry القياسي: مُجمِّعان منشوران عبر [مخطط Helm الخاص بـ OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)، يوجّه كلٌّ منهما البيانات إلى مُجمِّع بوابة ClickStack لديك عبر OTLP. تعمل **مجموعة DaemonSet** على كل عقدة لجمع سجلات الحاويات ومقاييس kubelet. وتجمع **عملية نشر** ذات نُسخة متماثلة واحدة أحداث Kubernetes والمقاييس على مستوى العنقود. ولمزيد من المعلومات حول دور البوابة، راجع [أدوار المُجمِّع](/ar/clickstack/ingesting-data/collector#collector-roles).
@@ -302,15 +300,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="تحقّق في واجهة ClickStack" id="confirm-in-ui">
     افتح خدمتك في [وحدة تحكم ClickHouse Cloud](https://console.clickhouse.cloud) ثم اختر **ClickStack** من القائمة الجانبية اليسرى.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="تشغيل ClickStack" border />
+    ![تشغيل ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
 
     في عرض **Search**، بدّل المصدر إلى `Logs` واضبط النطاق الزمني على **آخر 15 دقيقة**. يجب أن تظهر سجلات الحاويات من مختلف أنحاء العنقود خلال ثوانٍ قليلة، مع إغنائها بسمات مثل `k8s.namespace.name` و`k8s.pod.name` و`k8s.node.name`.
 
-    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="عرض Search في ClickStack مع سجلات Kubernetes" />
+    ![عرض Search في ClickStack مع سجلات Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
 
     للاطّلاع على مقاييس البنية التحتية والأحداث ضمن سياقها، افتح لوحة المعلومات المضمّنة **Kubernetes** بالانتقال إلى **Dashboards** -&gt; **Kubernetes**. يجب أن تكون علامات التبويب `Pods` و`Nodes` و`Namespaces` جميعها مليئة بالبيانات.
 
-    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="لوحة معلومات Kubernetes في ClickStack" border />
+    ![لوحة معلومات Kubernetes في ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
 
     إذا لم يظهر شيء:
 

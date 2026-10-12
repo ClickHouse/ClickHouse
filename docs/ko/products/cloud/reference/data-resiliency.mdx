@@ -7,8 +7,6 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', '데이터 복원력', '재해 복구']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 페이지에서는 ClickHouse Cloud의 재해 복구 권장 사항과 장애 발생 시 고객이 복구할 수 있도록 지침을 제공합니다.
 현재 ClickHouse Cloud는 자동 장애 조치 또는 여러 지리적 리전 간 자동 동기화를 지원하지 않습니다.
 
@@ -104,7 +102,7 @@ Backup 및 복원 소요 시간은 데이터 크기, 스키마 복잡성, 테이
 2. 복원할 Backup의 &quot;Actions&quot; 아래에 있는 점 3개를 클릭합니다.
 3. 새 서비스의 이름을 지정하고 이 Backup에서 복원합니다.
 
-<Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="Backup에서 복원" />
+![Backup에서 복원](/images/cloud/guides/restore_backup.webp)
 
 <div id="primary-region-downtime">
   ### 프라이머리 리전 장애

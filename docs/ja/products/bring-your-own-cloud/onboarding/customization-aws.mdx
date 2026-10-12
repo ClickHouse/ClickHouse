@@ -7,8 +7,6 @@ description: '既存の AWS VPC に ClickHouse BYOC をデプロイする'
 doc_type: 'リファレンス'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="customer-managed-vpc-aws">
   ## AWS 向けの顧客管理 VPC (BYO-VPC)
 </div>
@@ -22,15 +20,15 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
     3. 各サブネットの CIDR 範囲が少なくとも `/25` (例: 10.0.0.0/25) であることを確認します。`/25` では、アベイラビリティゾーンごとにおよそ 10 台の ClickHouse server ノードをサポートできます。ほとんどのデプロイメントには `/24` を推奨し、拡張が見込まれるデプロイメントにはより大きなサブネットを使用してください。ポッドの IP アドレスはサブネット自体から割り当てられるため、各レプリカがサブネットアドレスを消費します。
     4. ロードバランサーが適切に設定されるよう、各サブネットに `kubernetes.io/role/internal-elb=1` と `clickhouse-byoc="true"` のタグを追加します。
 
-    <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="BYOC VPC サブネット" />
+    ![BYOC VPC サブネット](/images/cloud/reference/byoc-subnet-1.webp)
 
-    <Image img="/images/cloud/reference/byoc-subnet-2.webp" size="lg" alt="BYOC VPC サブネットタグ" />
+    ![BYOC VPC サブネットタグ](/images/cloud/reference/byoc-subnet-2.webp)
   </Step>
 
   <Step title="S3 ゲートウェイエンドポイントを設定する" id="configure-s3-endpoint">
     VPC に S3 ゲートウェイエンドポイントがまだ設定されていない場合は、VPC と Amazon S3 の間で安全かつプライベートに通信できるよう、これを作成する必要があります。このエンドポイントを使用すると、ClickHouse のサービスはパブリックインターネットを経由せずに S3 にアクセスできます。設定例については、以下のスクリーンショットを参照してください。
 
-    <Image img="/images/cloud/reference/byoc-s3-endpoint.webp" size="lg" alt="BYOC S3 エンドポイント" />
+    ![BYOC S3 エンドポイント](/images/cloud/reference/byoc-s3-endpoint.webp)
   </Step>
 
   <Step title="ネットワーク接続を確認する" id="ensure-network-connectivity">
@@ -95,7 +93,7 @@ ClickHouse Cloud に新しい VPC をプロビジョニングさせる代わり�
     4. 構成上パブリック向けロードバランサーが必要な場合は、必要に応じて **Public subnet IDs** を入力します。
     5. **Set up Infrastructure** をクリックしてプロビジョニングを開始します。
 
-    <Image img="/images/cloud/reference/byoc-aws-existing-vpc-ui.webp" size="lg" alt="ClickHouse Cloud BYOC setup UI with Use existing VPC selected" />
+    ![ClickHouse Cloud BYOC setup UI with Use existing VPC selected](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
 
     <Note>
       新しいリージョンのセットアップには最大 40 分かかる場合があります。

@@ -6,8 +6,6 @@ description: 'دليل خطوة بخطوة لتهيئة الوضع غير الم
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 بشكل افتراضي، يفترض S3 ClickPipe أن الملفات تُضاف إلى الحاوية بترتيب [معجمي](/ar/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-lexicographical-order). ويمكن تهيئة S3 ClickPipe لإدخال الملفات التي لا تتبع ترتيبًا ضمنيًا، وذلك من خلال إعداد قائمة انتظار [Amazon SQS](https://aws.amazon.com/sqs/) متصلة بالحاوية، مع استخدام [Amazon EventBridge](https://aws.amazon.com/eventbridge/) اختياريًا كموجّه للأحداث. يتيح ذلك لـ ClickPipes الاستماع إلى أحداث `ObjectCreated:*` وإدخال أي ملفات جديدة بغض النظر عن اصطلاح تسمية الملفات.
 
 <Note>
@@ -44,11 +42,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       <Tab title="عبر EventBridge">
         **a.** في خصائص حاوية S3، انتقل إلى **Event notifications &gt; Amazon EventBridge** ومكّن إرسال الإشعارات إلى EventBridge. انقر على **Save changes**.
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp" alt="تمكين إشعارات Amazon EventBridge في خصائص حاوية S3" size="lg" border />
+        ![تمكين إشعارات Amazon EventBridge في خصائص حاوية S3](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp)
 
         **b.** في AWS Console، انتقل إلى **Amazon EventBridge &gt; Rules &gt; Create rule**. سمِّ القاعدة (مثلًا `S3ObjectCreated`)، واختر ناقل الأحداث **default**، ثم انقر على **Next**. في خطوة **Build event pattern**، حدِّد **AWS events or EventBridge partner events** كمصدر للأحداث، ثم أدخل نمط الحدث التالي يدويًا، مع استبدال `<bucket-name>` باسم الحاوية:
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp" alt="تحديد اسم قاعدة EventBridge وناقل الأحداث" size="lg" border />
+        ![تحديد اسم قاعدة EventBridge وناقل الأحداث](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp)
 
         ```json
         {
@@ -66,9 +64,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
         **c.** في خطوة **Select target(s)**، اختر **AWS service** كنوع الهدف، ثم حدِّد **SQS queue**. اختر قائمة الانتظار التي أُنشئت في الخطوة السابقة. اترك خيار **Use execution role (recommended)** محددًا للسماح لـ EventBridge بإنشاء IAM role المطلوب تلقائيًا، ثم انقر على **Next** وأكمل المعالج.
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="تعيين قائمة انتظار SQS كهدف لقاعدة EventBridge" size="lg" border />
+        ![تعيين قائمة انتظار SQS كهدف لقاعدة EventBridge](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp)
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="تم إنشاء قاعدة EventBridge بنجاح" size="lg" border />
+        ![تم إنشاء قاعدة EventBridge بنجاح](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp)
 
         **d.** عدّل سياسة الوصول الخاصة بقائمة انتظار SQS للسماح لـ EventBridge بإرسال الرسائل إليها. استبدل `<sqs-queue-arn>` و`<eventbridge-rule-arn>` بالقيم المناسبة:
 

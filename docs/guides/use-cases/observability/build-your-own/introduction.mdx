@@ -7,15 +7,13 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Introduction {#introduction}
 
 This guide is designed for if you're looking to build your own SQL-based Observability solution using ClickHouse, focusing on logs and traces. This covers all aspects of building your own solution including considerations for ingestion, optimizing schemas for your access patterns and extracting structure from unstructured logs.
 
 ClickHouse alone isn't an out-of-the-box solution for Observability. It can, however, be used as a highly efficient storage engine for Observability data, capable of unrivaled compression rates and lightning-fast query response times. In order for you to use ClickHouse within an Observability solution, both a user interface and data collection framework are required. We currently recommend using **Grafana** for visualization of Observability signals and **OpenTelemetry** for data collection (both are officially supported integrations).
 
-<Image img="/images/use-cases/observability/observability-1.webp" alt="Simple OTel" size="md"/>
+![Simple OTel](/images/use-cases/observability/observability-1.webp)
 
 <br />
 
@@ -93,6 +91,6 @@ Each trace consists of several spans, with the initial span associated with the 
 
 Most observability vendors visualize this information as a waterfall, with relative timing shown using horizontal bars of proportional size. For example, in Grafana:
 
-<Image img="/images/use-cases/observability/observability-2.webp" alt="Example trace" size="lg" border/>
+![Example trace](/images/use-cases/observability/observability-2.webp)
 
 For users needing to familiarize themselves deeply with the concepts of logs and traces, we highly recommend the [OpenTelemetry documentation](https://opentelemetry.io/docs/concepts/).

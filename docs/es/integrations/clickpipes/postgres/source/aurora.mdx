@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/es/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
@@ -42,17 +41,17 @@ Si todavía no está configurado, siga estos pasos:
 1. Cree un nuevo grupo de parámetros para su versión de Aurora PostgreSQL con la configuración requerida:
    * Establezca `rds.logical_replication` en 1
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="Dónde encontrar los grupos de parámetros en Aurora" size="lg" border />
+![Dónde encontrar los grupos de parámetros en Aurora](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="Cambiar rds.logical_replication" size="lg" border />
+![Cambiar rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
 
 2. Aplique el nuevo grupo de parámetros a su clúster de Aurora PostgreSQL
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="Modificar Aurora PostgreSQL con el nuevo grupo de parámetros" size="lg" border />
+![Modificar Aurora PostgreSQL con el nuevo grupo de parámetros](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
 
 3. Reinicie su clúster de Aurora para aplicar los cambios
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="Reiniciar Aurora PostgreSQL" size="lg" border />
+![Reiniciar Aurora PostgreSQL](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
 
 <div id="configure-database-user">
   ## Configurar el usuario de la base de datos
@@ -120,9 +119,9 @@ La publicación `clickpipes` define el conjunto de tablas cuyos eventos de cambi
 
 Si desea restringir el tráfico a su clúster de Aurora, añada las [IP estáticas de NAT documentadas](/es/integrations/clickpipes/networking/static-ips) a las `Inbound rules` de su grupo de seguridad de Aurora.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="¿Dónde encontrar el grupo de seguridad en Aurora PostgreSQL?" size="lg" border />
+![¿Dónde encontrar el grupo de seguridad en Aurora PostgreSQL?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Editar las reglas de entrada del grupo de seguridad anterior" size="lg" border />
+![Editar las reglas de entrada del grupo de seguridad anterior](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
 
 <div id="private-access-via-aws-privatelink">
   ### Acceso privado mediante AWS PrivateLink

@@ -9,8 +9,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/es/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 <Note>
@@ -250,7 +248,7 @@ La forma de acceder a ClickHouse no cambia en absoluto. Los clients siguen conec
 
 Mientras un worker está arrendado a tu service, la plataforma permite el tráfico de red entre ese worker y tu service, y bloquea todo lo demás. La restricción se aplica en la capa de red y no en el query engine, por lo que no depende de la consulta, de sus settings ni del plan que genere el optimizer.
 
-<Image img="/images/cloud/reference/on-demand-compute-worker-isolation.svg" size="lg" alt="Network isolation explanation diagram" />
+![Network isolation explanation diagram](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
 
 * **Solo tu service puede alcanzar tus workers.** El path existe para el lease actual del worker y únicamente para ese service.
 * **Los workers sin asignar son inalcanzables.** Un worker que espera en el grupo no tiene ninguna ruta de red hacia o desde ningún service hasta que se arrienda.

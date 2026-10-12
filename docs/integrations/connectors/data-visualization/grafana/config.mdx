@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge/>
@@ -25,7 +23,7 @@ For a quick overview of all the options, a full list of config options can be fo
 ## Common settings {#common-settings}
 
 Example configuration screen:
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="Example secure native config" border />
+![Example secure native config](/images/integrations/data-visualization/grafana/config_common.webp)
 
 Example configuration YAML for common settings:
 ```yaml
@@ -56,7 +54,7 @@ Note that a `version` property is added when the configuration is saved from the
 
 More settings will be displayed if you choose to connect via the HTTP protocol.
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="Extra HTTP config options" border />
+![Extra HTTP config options](/images/integrations/data-visualization/grafana/config_http.webp)
 
 #### HTTP path {#http-path}
 
@@ -99,7 +97,7 @@ secureJsonData:
 
 These additional settings are optional.
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="Example additional settings" border />
+![Example additional settings](/images/integrations/data-visualization/grafana/config_additional.webp)
 
 Example YAML:
 ```yaml
@@ -130,7 +128,7 @@ This will automatically override the default columns to use the selected OTel sc
 While OpenTelemetry isn't required for logs, using a single logs/trace dataset helps to enable a smoother observability workflow with [data linking](/integrations/connectors/data-visualization/grafana/query-builder#data-links).
 
 Example logs configuration screen:
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="Logs config" border />
+![Logs config](/images/integrations/data-visualization/grafana/config_logs.webp)
 
 Example logs config YAML:
 ```yaml
@@ -166,7 +164,7 @@ This will automatically override the default columns to use the selected OTel sc
 While OpenTelemetry isn't required, this feature works best when using its schema for traces.
 
 Example trace configuration screen:
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="Traces config" border />
+![Traces config](/images/integrations/data-visualization/grafana/config_traces.webp)
 
 Example trace config YAML:
 ```yaml
@@ -260,10 +258,10 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 ```
 
 We can then configure this table to be used in Grafana. Note that the name can be anything, or even defined in a separate database:
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="Example alias table config" border />
+![Example alias table config](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
 
 Now Grafana will see the results of the alias table instead of the results from `DESC example_table`:
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="Example alias table select" border />
+![Example alias table select](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
 
 Both types of aliasing can be used to perform complex type conversions or JSON field extraction.
 

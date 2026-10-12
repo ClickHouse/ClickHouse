@@ -8,8 +8,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'rbac', 'الأدوار', 'الأذونات', 'التحكم في الوصول', 'الأمان']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يتضمن ClickStack التحكم بالوصول المستند إلى الأدوار (RBAC)، ما يتيح لك تعريف أدوار مخصصة بأذونات دقيقة لـ [لوحات المعلومات](/ar/clickstack/features/dashboards/overview)، و[عمليات البحث المحفوظة](/ar/clickstack/features/search)، والمصادر، و[التنبيهات](/ar/clickstack/features/alerts)، وwebhooks، ودفاتر الملاحظات. تعمل الأذونات على مستويين: الوصول على مستوى المورد (عدم الوصول، أو القراءة، أو الإدارة لكل نوع من الموارد) وقواعد دقيقة اختيارية تقيّد الوصول إلى الموارد الفردية بحسب الاسم أو العلامة أو المعرّف. يأتي ClickStack مع ثلاثة أدوار مدمجة، ويمكنك إنشاء أدوار مخصصة لتناسب احتياجات فريقك.
 
 <Info>
@@ -37,11 +35,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <Tabs>
   <Tab title="Cloud Users and roles">
-    <Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="صفحة Users and roles في ClickHouse Cloud" size="lg" />
+    ![صفحة Users and roles في ClickHouse Cloud](/images/clickstack/rbac/team-page-cloud.webp)
   </Tab>
 
   <Tab title="ClickStack Team Settings">
-    <Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="صفحة إعدادات الفريق في ClickStack التي تعرض أعضاء الفريق وأدوارهم" size="lg" />
+    ![صفحة إعدادات الفريق في ClickStack التي تعرض أعضاء الفريق وأدوارهم](/images/clickstack/rbac/team-page-clickstack.webp)
   </Tab>
 </Tabs>
 
@@ -84,7 +82,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="الانتقال إلى إعدادات الفريق" id="step-navigate">
     افتح **إعدادات الفريق** ثم مرّر لأسفل إلى **RBAC Roles**.
 
-    <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
+    ![RBAC Roles](/images/clickstack/rbac/rbac-section.webp)
   </Step>
 
   <Step title="إضافة دور جديد" id="step-add-role">
@@ -94,7 +92,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="إعداد الأذونات وحفظها" id="step-configure">
     اضبط أذونات الدور، ثم انقر على **Create Role**.
 
-    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="نافذة Add Role المنبثقة" size="md" />
+    ![نافذة Add Role المنبثقة](/images/clickstack/rbac/add-role-modal.webp)
   </Step>
 </Steps>
 
@@ -151,7 +149,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 للتبديل بين الوضعين، انقر على رمز السهم لتوسيع نوع مورد في محرر الدور، ثم بدّل **وضع التحكم في الوصول**.
 
-<Image img="/images/clickstack/rbac/default-vs-fine-grained.webp" alt="وضعا الوصول الافتراضي وعناصر التحكم الدقيقة في محرر الدور" size="md" />
+![وضعا الوصول الافتراضي وعناصر التحكم الدقيقة في محرر الدور](/images/clickstack/rbac/default-vs-fine-grained.webp)
 
 <div id="configuring-access-rules">
   #### تهيئة قواعد الوصول
@@ -159,7 +157,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 تتكوّن كل قاعدة وصول من **شرط** و**مستوى وصول**. وتُطابِق الشروط الموارد استنادًا إلى خصائصها:
 
-<Image img="/images/clickstack/rbac/condition-tip.webp" alt="تلميح الشرط: طابِق الموارد حسب الاسم أو الوسم (كما يظهر في العنوان) أو حسب المعرّف (الموجود في عنوان URL)" size="md" />
+![تلميح الشرط: طابِق الموارد حسب الاسم أو الوسم (كما يظهر في العنوان) أو حسب المعرّف (الموجود في عنوان URL)](/images/clickstack/rbac/condition-tip.webp)
 
 | حقل الشرط   | المعاملات        | ما الذي يطابقه                                                                                                                                       | مثال                                                                                              |
 | ----------- | ---------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------- |
@@ -169,11 +167,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 تُظهر لقطة الشاشة التالية معرّف لوحة المعلومات مميزًا في شريط عنوان URL، ووسم &quot;TESTING&quot; ظاهرًا في لوحة الوسوم (أعلى اليمين).
 
-<Image img="/images/clickstack/rbac/dashboard-id-and-tag-example.webp" alt="لوحة معلومات تُظهر معرّف المورد في شريط عنوان URL ووسمًا في الزاوية العلوية اليمنى" size="lg" />
+![لوحة معلومات تُظهر معرّف المورد في شريط عنوان URL ووسمًا في الزاوية العلوية اليمنى](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
 
 يمكنك إضافة قواعد متعددة لكل نوع مورد. ويُتحقق من كل قاعدة بشكل مستقل باستخدام منطق OR — ويكون المورد متاحًا إذا طابق **أي** قاعدة. أما الموارد التي لا تطابق أي قاعدة فلن تكون متاحة.
 
-<Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="تلميح لقواعد الوصول باستخدام منطق OR" size="md" />
+![تلميح لقواعد الوصول باستخدام منطق OR](/images/clickstack/rbac/access-rules-tip.webp)
 
 **مثال**: لمنح دورٍ ما وصولًا للقراءة فقط إلى لوحات معلومات الاختبار، وسّع لوحات معلومات، وبدّل إلى Fine-Grained Controls، ثم أضف قاعدتين:
 
@@ -182,7 +180,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 تكون لوحة المعلومات التي تطابق أيًّا من القاعدتين متاحة.
 
-<Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="قاعدتا وصول تفصيليتان موصولتان بـ OR: الاسم يحتوي على testing مع وصول Read، والوسم يساوي testing مع وصول Read" size="md" />
+![قاعدتا وصول تفصيليتان موصولتان بـ OR: الاسم يحتوي على testing مع وصول Read، والوسم يساوي testing مع وصول Read](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
 
 <div id="security-policies">
   ## سياسات الأمان
@@ -194,4 +192,4 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يتيح لك **الذكاء الاصطناعي التوليدي** تمكين الميزات المعتمدة على نماذج اللغة الكبيرة أو تعطيلها (مثل إنشاء الاستعلامات باللغة الطبيعية) باستخدام Anthropic أو Amazon Bedrock. وعند تعطيله، لا تُرسَل أي بيانات إلى موفّري خدمات الذكاء الاصطناعي.
 
-<Image img="/images/clickstack/rbac/security-policies.webp" alt="سياسات الأمان" size="lg" />
+![سياسات الأمان](/images/clickstack/rbac/security-policies.webp)

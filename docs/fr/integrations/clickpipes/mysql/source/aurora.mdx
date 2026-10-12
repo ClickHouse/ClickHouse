@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/fr/clickpipes/_iam_authentication.mdx";
 
 Ce guide pas à pas explique comment configurer Amazon Aurora MySQL pour répliquer des données dans ClickHouse Cloud à l’aide de [MySQL ClickPipe](/fr/integrations/clickpipes/mysql/index). Pour les questions fréquentes sur MySQL CDC, consultez la [page FAQ MySQL](/fr/integrations/clickpipes/mysql/faq).
@@ -25,7 +24,7 @@ Le journal binaire est un ensemble de fichiers de log contenant des informations
   <Step title="Activer la journalisation binaire via la sauvegarde automatisée" id="enable-binlog-logging">
     La fonctionnalité de sauvegardes automatisées détermine si la journalisation binaire est activée ou désactivée pour MySQL. Les sauvegardes automatisées peuvent être configurées pour votre instance dans la RDS Console en accédant à **Modify** &gt; **Additional configuration** &gt; **Backup** et en cochant la case **Enable automated backups** (si elle n’est pas déjà cochée).
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Activation des sauvegardes automatisées dans Aurora" size="lg" border />
+    ![Activation des sauvegardes automatisées dans Aurora](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
 
     Nous recommandons de définir la **Backup retention period** sur une valeur suffisamment longue, en fonction du cas d’usage de la réplication.
   </Step>
@@ -57,13 +56,13 @@ Vous trouverez le groupe de paramètres en cliquant sur votre instance MySQL dan
   Si vous avez un cluster MySQL, les paramètres ci-dessous se trouvent dans le groupe de paramètres du [cluster DB](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) plutôt que dans le groupe de l’instance DB.
 </Tip>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/aurora_config.webp" alt="Où trouver le groupe de paramètres dans Aurora" size="lg" border />
+![Où trouver le groupe de paramètres dans Aurora](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/aurora_config.webp)
 
 <br />
 
 Cliquez sur le lien du groupe de paramètres pour accéder à sa page dédiée. Vous devriez voir un bouton **Edit** en haut à droite.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="Modifier le groupe de paramètres" size="lg" border />
+![Modifier le groupe de paramètres](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
 
 <br />
 
@@ -71,15 +70,15 @@ Les paramètres suivants doivent être définis comme suit :
 
 1. `binlog_format` sur `ROW`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Format du binlog sur ROW" size="lg" border />
+![Format du binlog sur ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
 
 2. `binlog_row_metadata` sur `FULL`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Métadonnées de ligne du binlog" size="lg" border />
+![Métadonnées de ligne du binlog](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
 
 3. `binlog_row_image` sur `FULL`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Image de ligne du binlog" size="lg" border />
+![Image de ligne du binlog](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
 
 <br />
 
@@ -106,7 +105,7 @@ La réplication basée sur GTID est prise en charge pour Amazon Aurora MySQL v2 
 7. Cliquez sur **Save Changes** dans le coin supérieur droit.
 8. Redémarrez votre instance pour appliquer les modifications.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp" alt="GTID activé" size="lg" border />
+![GTID activé](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
 
 <div id="configure-database-user">
   ## Configurer un utilisateur de base de données
@@ -149,9 +148,9 @@ Connectez-vous à votre instance Aurora MySQL en tant qu&#39;utilisateur admin, 
 
 Pour limiter le trafic vers votre instance Aurora MySQL, ajoutez les [adresses IP NAT statiques documentées](/fr/integrations/clickpipes/networking/static-ips) aux **Inbound rules** de votre groupe de sécurité Aurora.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Où trouver le groupe de sécurité dans Aurora MySQL ?" size="lg" border />
+![Où trouver le groupe de sécurité dans Aurora MySQL ?](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Modifier les Inbound rules pour le groupe de sécurité ci-dessus" size="lg" border />
+![Modifier les Inbound rules pour le groupe de sécurité ci-dessus](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
 
 <div id="private-access-via-aws-privatelink">
   ### Accès privé via AWS PrivateLink

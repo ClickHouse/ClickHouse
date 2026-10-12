@@ -10,7 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import ClickPipesConnectors from '/snippets/_clickpipes_connectors.mdx';
 
 ## Overview {#overview}
@@ -47,7 +46,7 @@ Steps:
 1. create a custom role `CREATE ROLE my_clickpipes_role SETTINGS ...`. See [CREATE ROLE](/reference/statements/create/role) syntax for details.
 2. add the custom role to ClickPipes user on step `Details and Settings` during the ClickPipes creation.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp" alt="Assign a custom role" size="lg" border/>
+![Assign a custom role](/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp)
 
 ## Adjusting ClickPipes advanced settings {#clickpipes-advanced-settings}
 ClickPipes provides sensible defaults that cover the requirements of most use cases. If your use case requires additional fine-tuning, you can adjust the following settings:
@@ -67,7 +66,7 @@ ClickPipes provides sensible defaults that cover the requirements of most use ca
 | `Parallel view processing`         | false         | Whether to enable pushing to attached views [concurrently instead of sequentially](/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`             | true          | Whether to process files in parallel across multiple nodes. |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Advanced settings for ClickPipes" size="lg" border/>
+![Advanced settings for ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
 
 ### Streaming ClickPipes {#clickpipes-advanced-settings-streaming}
 

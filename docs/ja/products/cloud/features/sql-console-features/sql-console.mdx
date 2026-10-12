@@ -7,8 +7,6 @@ title: 'SQL Console'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 SQL Console は、ClickHouse Cloud でデータベースの探索やクエリの実行を最もすばやく簡単に行える方法です。SQL Console では、次のことができます。
 
 * ClickHouse Cloud サービスに接続する
@@ -26,11 +24,11 @@ SQL Console は、ClickHouse Cloud でデータベースの探索やクエリの
 
 ClickHouseインスタンスに含まれるテーブルの概要は、左側のサイドバーで確認できます。左側のバー上部にあるデータベースセレクターを使用すると、特定のデータベース内のテーブルを表示できます
 
-<Image img="/images/cloud/sqlconsole/table-list-and-schema.webp" size="md" alt="テーブル一覧とスキーマ" />
+![テーブル一覧とスキーマ](/images/cloud/sqlconsole/table-list-and-schema.webp)
 
 一覧内のテーブルは展開して、カラムと型を表示することもできます
 
-<Image img="/images/cloud/sqlconsole/view-columns.webp" size="md" alt="カラムを表示" />
+![カラムを表示](/images/cloud/sqlconsole/view-columns.webp)
 
 <div id="exploring-table-data">
   ### テーブルデータの確認
@@ -38,7 +36,7 @@ ClickHouseインスタンスに含まれるテーブルの概要は、左側の�
 
 リスト内のテーブルをクリックすると、新しいタブで開きます。Table View では、データの表示、選択、コピーを簡単に行えます。Microsoft Excel や Google Sheets などのスプレッドシートアプリケーションにコピー＆ペーストする場合でも、構造とフォーマットは保持されます。フッターのナビゲーションを使って、テーブルデータのページ (30行ごとにページ分割) を切り替えられます。
 
-<Image img="/images/cloud/sqlconsole/abc.webp" size="md" alt="abc" />
+![abc](/images/cloud/sqlconsole/abc.webp)
 
 <div id="inspecting-cell-data">
   ### セルデータの確認
@@ -46,7 +44,7 @@ ClickHouseインスタンスに含まれるテーブルの概要は、左側の�
 
 Cell Inspectorツールを使用すると、1つのセルに含まれる大量のデータを表示できます。開くには、セルを右クリックして「Inspect Cell」を選択します。Cell Inspectorの内容は、インスペクタの右上にあるコピーアイコンをクリックするとコピーできます。
 
-<Image img="/images/cloud/sqlconsole/inspecting-cell-content.webp" size="md" alt="セル内容の確認" />
+![セル内容の確認](/images/cloud/sqlconsole/inspecting-cell-content.webp)
 
 <div id="filtering-and-sorting-tables">
   ## テーブルの絞り込みとソート
@@ -58,7 +56,7 @@ Cell Inspectorツールを使用すると、1つのセルに含まれる大量�
 
 SQL Consoleでテーブルをソートするには、テーブルを開き、ツールバーの「Sort」ボタンを選択します。このボタンをクリックするとメニューが開き、ソートを設定できます。ソート対象のカラムを選択し、並び順 (昇順または降順) を設定できます。テーブルをソートするには、「Apply」を選択するか、Enter キーを押します。
 
-<Image img="/images/cloud/sqlconsole/sort-descending-on-column.webp" size="md" alt="カラムを降順でソート" />
+![カラムを降順でソート](/images/cloud/sqlconsole/sort-descending-on-column.webp)
 
 SQL Consoleでは、テーブルに複数のソート条件を追加することもできます。別のソート条件を追加するには、再度「Sort」ボタンをクリックします。
 
@@ -72,11 +70,11 @@ SQL Consoleでは、テーブルに複数のソート条件を追加すること
 
 SQL Console でテーブルをフィルタリングするには、テーブルを開いて &#39;Filter&#39; ボタンを選択します。ソートと同様に、このボタンをクリックするとフィルタを設定するメニューが開きます。フィルタリングに使用するカラムを選択し、必要な条件を指定できます。SQL Console は、そのカラムに含まれるデータ型に応じたフィルタオプションを自動的に表示します。
 
-<Image img="/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp" size="md" alt="radio カラムが GSM に等しい条件でフィルタリング" />
+![radio カラムが GSM に等しい条件でフィルタリング](/images/cloud/sqlconsole/filter-on-radio-column-equal-gsm.webp)
 
 フィルタの設定が完了したら、&#39;Apply&#39; を選択してデータをフィルタリングできます。以下のように、追加のフィルタを加えることもできます。
 
-<Image img="/images/cloud/sqlconsole/add-more-filters.webp" size="md" alt="範囲が 2000 より大きい条件のフィルタを追加" />
+![範囲が 2000 より大きい条件のフィルタを追加](/images/cloud/sqlconsole/add-more-filters.webp)
 
 ソート機能と同様に、フィルタの横にある &#39;x&#39; ボタンをクリックすると削除できます。
 
@@ -86,7 +84,7 @@ SQL Console でテーブルをフィルタリングするには、テーブル�
 
 SQL Consoleでは、テーブルに対してフィルタとソートを同時に適用できます。これを行うには、上記の手順に従って必要なフィルタとソートをすべて追加し、[Apply] ボタンをクリックします。
 
-<Image img="/images/cloud/sqlconsole/filtering-and-sorting-together.webp" size="md" alt="2000 より大きい範囲にフィルタを追加する" />
+![2000 より大きい範囲にフィルタを追加する](/images/cloud/sqlconsole/filtering-and-sorting-together.webp)
 
 <div id="creating-a-query-from-filters-and-sorts">
   ### フィルタとソートからクエリを作成する
@@ -94,7 +92,7 @@ SQL Consoleでは、テーブルに対してフィルタとソートを同時に
 
 SQL Console では、設定したソート条件やフィルタ条件をワンクリックでそのままクエリに変換できます。ツールバーで任意のソートおよびフィルタのパラメーターを指定し、[Create Query] ボタンを選択するだけです。[Create query] をクリックすると、テーブルビューに表示されているデータに対応する SQL コマンドがあらかじめ入力された新しいクエリタブが開きます。
 
-<Image img="/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp" size="md" alt="ソートとフィルタからクエリを作成する" />
+![ソートとフィルタからクエリを作成する](/images/cloud/sqlconsole/create-a-query-from-sorts-and-filters.webp)
 
 <Note>
   &#91;Create Query&#93; 機能の使用時に、フィルタやソートの設定は必須ではありません。
@@ -115,7 +113,7 @@ SQL Console で新しいクエリを作成する方法は 2 つあります。
 * タブバーの「+」ボタンをクリックします
 * 左側のサイドバーのクエリ一覧から「New Query」ボタンを選択します
 
-<Image img="/images/cloud/sqlconsole/creating-a-query.webp" size="md" alt="クエリの作成" />
+![クエリの作成](/images/cloud/sqlconsole/creating-a-query.webp)
 
 <div id="running-a-query">
   ### クエリの実行
@@ -131,17 +129,17 @@ SQL Console で新しいクエリを作成する方法は 2 つあります。
 
 選択したコマンドを実行するには、目的のコマンドまたは一連のコマンドを選択して [Run] ボタンをクリックします (または `cmd / ctrl + enter` ショートカットを使用します)。選択範囲がある場合は、SQL エディタのコンテキストメニュー (エディタ内の任意の場所を右クリックして開きます) から [Run selected] を選択することもできます。
 
-<Image img="/images/cloud/sqlconsole/run-selected-query.webp" size="md" alt="選択したクエリを実行" />
+![選択したクエリを実行](/images/cloud/sqlconsole/run-selected-query.webp)
 
 現在のカーソル位置のコマンドは、次の 2 つの方法で実行できます。
 
 * 拡張実行オプションメニューから [At Cursor] を選択する (または、対応する `cmd / ctrl + shift + enter` キーボードショートカットを使用する
 
-<Image img="/images/cloud/sqlconsole/run-at-cursor-2.webp" size="md" alt="カーソル位置で実行" />
+![カーソル位置で実行](/images/cloud/sqlconsole/run-at-cursor-2.webp)
 
 * SQL エディタのコンテキストメニューから [Run at cursor] を選択する
 
-<Image img="/images/cloud/sqlconsole/run-at-cursor.webp" size="md" alt="カーソル位置で実行" />
+![カーソル位置で実行](/images/cloud/sqlconsole/run-at-cursor.webp)
 
 <Note>
   実行時には、カーソル位置にあるコマンドが黄色く点滅します。
@@ -153,7 +151,7 @@ SQL Console で新しいクエリを作成する方法は 2 つあります。
 
 クエリの実行中は、Query Editor ツールバーの &#39;Run&#39; ボタンが &#39;Cancel&#39; ボタンに変わります。クエリをキャンセルするには、このボタンをクリックするか、`Esc` キーを押します。注: すでに返された結果は、キャンセル後もそのまま表示されます。
 
-<Image img="/images/cloud/sqlconsole/cancel-a-query.webp" size="md" alt="クエリのキャンセル" />
+![クエリのキャンセル](/images/cloud/sqlconsole/cancel-a-query.webp)
 
 <div id="saving-a-query">
   ### クエリの保存
@@ -167,11 +165,11 @@ SQL Console で新しいクエリを作成する方法は 2 つあります。
   ショートカット `cmd / ctrl` + s を使って、現在のクエリタブでの作業内容を保存することもできます。
 </Note>
 
-<Image img="/images/cloud/sqlconsole/sql-console-save-query.webp" size="md" alt="クエリを保存" />
+![クエリを保存](/images/cloud/sqlconsole/sql-console-save-query.webp)
 
 また、ツールバーの &quot;Untitled Query&quot; をクリックして名前を変更し、Enter キーを押すことで、クエリに名前を付けるのと同時に保存することもできます。
 
-<Image img="/images/cloud/sqlconsole/sql-console-rename.webp" size="md" alt="クエリ名を変更" />
+![クエリ名を変更](/images/cloud/sqlconsole/sql-console-rename.webp)
 
 <div id="query-sharing">
   ### クエリの共有
@@ -186,21 +184,21 @@ SQL Console では、チームメンバーとクエリを簡単に共有でき�
 
 クエリを保存したら、ツールバーの「Share」ボタンをクリックします。共有オプションを設定できるモーダルが表示されます。
 
-<Image img="/images/cloud/sqlconsole/sql-console-share.webp" size="md" alt="Share query" />
+![Share query](/images/cloud/sqlconsole/sql-console-share.webp)
 
 サービスにアクセスできる組織内のすべてのメンバーに対するクエリのアクセス権を調整するには、最上部のアクセスレベルセレクターを変更します。
 
-<Image img="/images/cloud/sqlconsole/sql-console-edit-access.webp" size="md" alt="Edit access" />
+![Edit access](/images/cloud/sqlconsole/sql-console-edit-access.webp)
 
 これを適用すると、そのサービスの SQL Console にアクセスできるすべてのチームメンバーが、そのクエリを表示 (および実行) できるようになります。
 
 特定のメンバーに対するクエリのアクセス権を調整するには、「Add a team member」セレクターから対象のチームメンバーを選択します。
 
-<Image img="/images/cloud/sqlconsole/sql-console-add-team.webp" size="md" alt="Add team member" />
+![Add team member](/images/cloud/sqlconsole/sql-console-add-team.webp)
 
 チームメンバーを選択すると、アクセスレベルセレクターを含む新しい項目が表示されます。
 
-<Image img="/images/cloud/sqlconsole/sql-console-edit-member.webp" size="md" alt="Edit team member access" />
+![Edit team member access](/images/cloud/sqlconsole/sql-console-edit-member.webp)
 
 <div id="accessing-shared-queries">
   ### 共有されたクエリにアクセスする
@@ -208,7 +206,7 @@ SQL Console では、チームメンバーとクエリを簡単に共有でき�
 
 クエリが共有されている場合は、SQL Console の左側のサイドバーにある「Queries」タブに表示されます。
 
-<Image img="/images/cloud/sqlconsole/sql-console-access-queries.webp" size="md" alt="クエリへのアクセス" />
+![クエリへのアクセス](/images/cloud/sqlconsole/sql-console-access-queries.webp)
 
 <div id="linking-to-a-query-permalinks">
   ### クエリへのリンク (パーマリンク)
@@ -228,11 +226,11 @@ SQL Console では、チームメンバーとクエリを簡単に共有でき�
 
 クエリを実行すると、結果ペインの検索入力を使って、返された結果セットをすばやく検索できます。この機能は、追加の `WHERE` 句を適用した場合の結果をプレビューしたり、特定のデータが結果セットに含まれていることを確認したりするのに役立ちます。検索入力に値を入力すると、結果ペインが更新され、入力した値に一致するエントリを含むレコードが返されます。この例では、`ClickHouse` を含むコメントについて、`hackernews` テーブル内の `breakfast` のすべての出現箇所を探します (大文字と小文字は区別されません) :
 
-<Image img="/images/cloud/sqlconsole/search-hn.webp" size="md" alt="Hacker News データを検索" />
+![Hacker News データを検索](/images/cloud/sqlconsole/search-hn.webp)
 
 注: 入力した値に一致するフィールドがあるレコードは返されます。たとえば、上のスクリーンショットの 3 番目のレコードは `by` フィールドでは &#39;breakfast&#39; に一致していませんが、`text` フィールドでは一致しています:
 
-<Image img="/images/cloud/sqlconsole/match-in-body.webp" size="md" alt="本文内で一致" />
+![本文内で一致](/images/cloud/sqlconsole/match-in-body.webp)
 
 <div id="adjusting-pagination-settings">
   ### ページネーション設定の調整
@@ -240,11 +238,11 @@ SQL Console では、チームメンバーとクエリを簡単に共有でき�
 
 デフォルトでは、クエリ結果ペインにすべての結果レコードが1ページに表示されます。結果セットが大きい場合は、見やすくするために結果をページ分けして表示する方が適していることがあります。これは、結果ペインの右下にあるページネーションセレクターを使用して設定できます。
 
-<Image img="/images/cloud/sqlconsole/pagination.webp" size="md" alt="ページネーションのオプション" />
+![ページネーションのオプション](/images/cloud/sqlconsole/pagination.webp)
 
 ページサイズを選択すると、結果セットにすぐにページネーションが適用され、ナビゲーションオプションが結果ペインのフッター中央に表示されます
 
-<Image img="/images/cloud/sqlconsole/pagination-nav.webp" size="md" alt="ページネーションのナビゲーション" />
+![ページネーションのナビゲーション](/images/cloud/sqlconsole/pagination-nav.webp)
 
 <div id="exporting-query-result-data">
   ### クエリ結果データのエクスポート
@@ -252,7 +250,7 @@ SQL Console では、チームメンバーとクエリを簡単に共有でき�
 
 クエリ結果は、SQL Consoleから直接CSV形式で簡単にエクスポートできます。操作するには、結果ペインのツールバー右側にある`•••`メニューを開き、&#39;Download as CSV&#39; を選択します。
 
-<Image img="/images/cloud/sqlconsole/download-as-csv.webp" size="md" alt="CSVとしてダウンロード" />
+![CSVとしてダウンロード](/images/cloud/sqlconsole/download-as-csv.webp)
 
 <div id="visualizing-query-data">
   ## クエリデータの可視化
@@ -274,7 +272,7 @@ ORDER BY
    1 ASC
 ```
 
-<Image img="/images/cloud/sqlconsole/tabular-query-results.webp" size="md" alt="表形式のクエリ結果" />
+![表形式のクエリ結果](/images/cloud/sqlconsole/tabular-query-results.webp)
 
 可視化しないと、これらの結果は解釈しづらくなります。チャートにしてみましょう。
 
@@ -284,15 +282,15 @@ ORDER BY
 
 可視化の作成を始めるには、クエリ結果ペインのツールバーで「Chart」オプションを選択します。チャート設定ペインが表示されます。
 
-<Image img="/images/cloud/sqlconsole/switch-from-query-to-chart.webp" size="md" alt="クエリからチャートに切り替える" />
+![クエリからチャートに切り替える](/images/cloud/sqlconsole/switch-from-query-to-chart.webp)
 
 まず、`week` ごとの `trip_total` を表すシンプルな棒グラフを作成します。そのために、`week` フィールドを x 軸に、`trip_total` フィールドを y 軸にドラッグします。
 
-<Image img="/images/cloud/sqlconsole/trip-total-by-week.webp" size="md" alt="週ごとの trip total" />
+![週ごとの trip total](/images/cloud/sqlconsole/trip-total-by-week.webp)
 
 ほとんどのチャートタイプでは、数値軸に複数のフィールドを設定できます。これを示すため、fare&#95;total フィールドを y 軸にドラッグします。
 
-<Image img="/images/cloud/sqlconsole/bar-chart.webp" size="md" alt="棒グラフ" />
+![棒グラフ](/images/cloud/sqlconsole/bar-chart.webp)
 
 <div id="customizing-charts">
   ### チャートのカスタマイズ
@@ -300,11 +298,11 @@ ORDER BY
 
 SQL Console では、チャート設定ペインのチャートタイプセレクターから 10 種類のチャートタイプを選択できます。たとえば、前のチャートタイプを Bar から Area に簡単に変更できます。
 
-<Image img="/images/cloud/sqlconsole/change-from-bar-to-area.webp" size="md" alt="Bar チャートから Area に変更" />
+![Bar チャートから Area に変更](/images/cloud/sqlconsole/change-from-bar-to-area.webp)
 
 チャートのタイトルは、データを提供するクエリ名に対応しています。クエリ名を変更すると、チャートのタイトルも更新されます。
 
-<Image img="/images/cloud/sqlconsole/update-query-name.webp" size="md" alt="クエリ名を更新" />
+![クエリ名を更新](/images/cloud/sqlconsole/update-query-name.webp)
 
 さらに高度なチャートの設定も、チャート設定ペインの「Advanced」セクションで調整できます。まずは、次の設定を変更してみましょう。
 
@@ -314,8 +312,8 @@ SQL Console では、チャート設定ペインのチャートタイプセレ�
 
 これに応じて、チャートも更新されます。
 
-<Image img="/images/cloud/sqlconsole/update-subtitle-etc.webp" size="md" alt="サブタイトルなどを更新" />
+![サブタイトルなどを更新](/images/cloud/sqlconsole/update-subtitle-etc.webp)
 
 場合によっては、各フィールドの軸スケールを個別に調整する必要があります。これは、チャート設定ペインの「Advanced」セクションで、軸の範囲に最小値と最大値を指定することで行えます。たとえば、上のチャートは見やすく表示されていますが、`trip_total` フィールドと `fare_total` フィールドの相関を示すには、軸の範囲を少し調整する必要があります。
 
-<Image img="/images/cloud/sqlconsole/adjust-axis-scale.webp" size="md" alt="軸スケールを調整" />
+![軸スケールを調整](/images/cloud/sqlconsole/adjust-axis-scale.webp)

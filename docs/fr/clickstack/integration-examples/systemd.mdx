@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['systemd', 'journald', 'journal', 'OTEL', 'ClickStack', 'logs système', 'systemctl']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -42,7 +40,7 @@ Si vous souhaitez d’abord tester cette intégration sans modifier votre config
     3. Accédez à **Team Settings → API Keys**
     4. Copiez votre **Ingestion API Key**
 
-    <Image img="/images/clickstack/api-key.webp" alt="Clé API ClickStack" />
+    ![Clé API ClickStack](/images/clickstack/api-key.webp)
 
     5. Définissez-la comme variable d&#39;environnement :
 
@@ -185,9 +183,9 @@ Si vous souhaitez d’abord tester cette intégration sans modifier votre config
     3. Filtrez sur `service.name:systemd-logs`
     4. Vous devriez voir des entrées de log structurées avec des champs comme `unit`, `priority`, `MESSAGE`, `_HOSTNAME`
 
-    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="Vue de recherche des logs" />
+    ![Vue de recherche des logs](/images/clickstack/systemd/systemd-search-view.webp)
 
-    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="Vue des logs" />
+    ![Vue des logs](/images/clickstack/systemd/systemd-log-view.webp)
   </Step>
 </Steps>
 
@@ -266,9 +264,9 @@ Pour les utilisateurs qui souhaitent tester l’intégration des logs systemd av
     2. Accédez à la vue Search et définissez la source sur `Logs`
     3. Définissez l’intervalle de temps sur **2025-11-14 00:00:00 - 2025-11-17 00:00:00**
 
-    <Image img="/images/clickstack/systemd/systemd-search-view.webp" alt="Vue de recherche des logs" />
+    ![Vue de recherche des logs](/images/clickstack/systemd/systemd-search-view.webp)
 
-    <Image img="/images/clickstack/systemd/systemd-log-view.webp" alt="Vue des logs" />
+    ![Vue des logs](/images/clickstack/systemd/systemd-log-view.webp)
 
     <Info>
       **Affichage du fuseau horaire**
@@ -293,11 +291,11 @@ Pour vous aider à démarrer la surveillance des logs systemd avec ClickStack, n
     1. Ouvrez HyperDX et accédez à la section Dashboards
     2. Cliquez sur **Import Dashboard** dans l’angle supérieur droit, sous les points de suspension
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Bouton d’import du tableau de bord" />
+    ![Bouton d’import du tableau de bord](/images/clickstack/import-dashboard.webp)
 
     3. Téléversez le fichier `systemd-logs-dashboard.json`, puis cliquez sur **Finish Import**
 
-    <Image img="/images/clickstack/systemd/finish-import-systemd.webp" alt="Terminer l’importation" />
+    ![Terminer l’importation](/images/clickstack/systemd/finish-import-systemd.webp)
   </Step>
 
   <Step title="Afficher le tableau de bord" id="created-dashboard">
@@ -309,7 +307,7 @@ Pour vous aider à démarrer la surveillance des logs systemd avec ClickStack, n
     * Les défaillances de service
     * Les taux d’erreur
 
-    <Image img="/images/clickstack/systemd/systemd-logs-dashboard.webp" alt="Exemple de tableau de bord" />
+    ![Exemple de tableau de bord](/images/clickstack/systemd/systemd-logs-dashboard.webp)
 
     <Note>
       Pour le jeu de données de démonstration, définissez l’intervalle de temps sur **2025-11-15 00:00:00 - 2025-11-16 00:00:00 (UTC)** (à ajuster selon votre fuseau horaire local).

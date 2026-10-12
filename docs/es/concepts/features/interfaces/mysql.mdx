@@ -7,8 +7,6 @@ title: 'Interfaz MySQL'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickHouse admite el MySQL wire protocol. Esto permite que ciertos clientes que no disponen de conectores nativos de ClickHouse utilicen en su lugar el protocolo MySQL, y se ha validado con las siguientes herramientas de BI:
 
 * [Looker Studio](/es/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
@@ -37,23 +35,23 @@ Si tu caso de uso implica una herramienta concreta que no tiene un driver nativo
 
 <br />
 
-<Image img="/images/interfaces/mysql0.webp" alt="Pantalla de credenciales - Prompt" size="md" />
+![Pantalla de credenciales - Prompt](/images/interfaces/mysql0.webp)
 
 2. Cambia el menú desplegable `Connect with` a `MySQL`.
 
 <br />
 
-<Image img="/images/interfaces/mysql1.webp" alt="Pantalla de credenciales - MySQL seleccionado" size="md" />
+![Pantalla de credenciales - MySQL seleccionado](/images/interfaces/mysql1.webp)
 
 3. Activa el interruptor para habilitar la interfaz MySQL en este servicio específico. Esto expondrá el puerto `3306` para este servicio y te mostrará la pantalla de conexión MySQL, que incluye tu nombre de usuario MySQL único. La contraseña será la misma que la del usuario predeterminado del servicio.
 
 <br />
 
-<Image img="/images/interfaces/mysql2.webp" alt="Pantalla de credenciales - MySQL habilitado" size="md" />
+![Pantalla de credenciales - MySQL habilitado](/images/interfaces/mysql2.webp)
 
 Copia la cadena de conexión MySQL que se muestra.
 
-<Image img="/images/interfaces/mysql3.webp" alt="Pantalla de credenciales - Cadena de conexión" size="md" />
+![Pantalla de credenciales - Cadena de conexión](/images/interfaces/mysql3.webp)
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
   ## Crear varios usuarios MySQL en ClickHouse Cloud

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'observability', 'التنبيهات', 'search-alerts', 'الإشعارات', 'العتبات', 'slack', 'email', 'pagerduty', 'مراقبة-الأخطاء', 'مراقبة-الأداء', 'أحداث-المستخدم']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يتضمن ClickStack دعمًا مدمجًا للتنبيهات، ما يتيح للفرق اكتشاف المشكلات والاستجابة لها في الوقت الفعلي عبر السجلات والمقاييس والتتبعات.
 
 يمكن إنشاء التنبيهات مباشرةً من واجهة HyperDX، كما أنها تتكامل مع أنظمة الإشعارات الشائعة مثل Slack وPagerDuty.
@@ -37,7 +35,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="فتح مربع حوار إنشاء التنبيه" id="open-dialog">
     ابدأ بإدخال [بحث](/ar/clickstack/features/search) ثم انقر على زر `Alerts` في الزاوية العلوية اليمنى من صفحة `Search`.
 
-    <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="طريقة عرض البحث للتنبيهات" size="lg" />
+    ![طريقة عرض البحث للتنبيهات](/images/use-cases/observability/alerts_search_view.webp)
   </Step>
 
   <Step title="إنشاء التنبيه" id="create-the-alert">
@@ -50,13 +48,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     قبل الحفظ، يعرض ClickStack تمثيلًا مرئيًا لشرط العتبة حتى تتمكن من التأكد من أنه سيعمل كما هو متوقع.
 
-    <Image img="/images/use-cases/observability/search_alert.webp" alt="تنبيهات البحث" size="lg" />
+    ![تنبيهات البحث](/images/use-cases/observability/search_alert.webp)
   </Step>
 </Steps>
 
 لاحظ أنه يمكن إضافة عدة تنبيهات إلى بحث واحد. وإذا كررت العملية المذكورة أعلاه، فستظهر التنبيهات الحالية على شكل علامات تبويب في أعلى مربع حوار تعديل التنبيه، مع تخصيص رقم لكل تنبيه.
 
-<Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="تنبيهات متعددة" size="md" />
+![تنبيهات متعددة](/images/use-cases/observability/multiple_search_alerts.webp)
 
 <div id="dashboard-alerts">
   ### 2. تنبيهات مخططات لوحة المعلومات
@@ -80,19 +78,19 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="افتح مربع حوار تحرير المخطط" id="open-chart-dialog">
     افتح قائمة إعدادات المخطط وحدد زر التنبيه. سيؤدي ذلك إلى عرض مربع حوار تحرير المخطط.
 
-    <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="تحرير تنبيه المخطط" size="lg" />
+    ![تحرير تنبيه المخطط](/images/use-cases/observability/edit_chart_alert.webp)
   </Step>
 
   <Step title="أضف التنبيه" id="add-chart-alert">
     حدد **إضافة تنبيه**.
 
-    <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="إضافة تنبيه إلى المخطط" size="lg" />
+    ![إضافة تنبيه إلى المخطط](/images/use-cases/observability/add_chart_alert.webp)
   </Step>
 
   <Step title="حدّد شروط التنبيه" id="define-alert-conditions">
     حدّد الشرط (`>=`, `>`, `<=`, `<`, `=`, `!=`, `<= x >=`, `> or <`) والعتبة والمدة وwebhook. كما تحدد المدة هنا أيضًا عدد مرات تشغيل التنبيه.
 
-    <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="إنشاء تنبيه للمخطط" size="lg" />
+    ![إنشاء تنبيه للمخطط](/images/use-cases/observability/create_chart_alert.webp)
 
     يمكنك إضافة webhook جديد مباشرةً من هذه الواجهة. راجع [إضافة webhook](#add-webhook) لمزيد من التفاصيل.
   </Step>
@@ -108,11 +106,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 على سبيل المثال، لنلقِ نظرة على إنشاء تنبيه لمخطط مخطط أدناه. قبل تحديد webhook، يمكن للمستخدم اختيار `Add New Webhook`.
 
-<Image img="/images/use-cases/observability/add_new_webhook.webp" alt="إضافة webhook جديد" size="lg" />
+![إضافة webhook جديد](/images/use-cases/observability/add_new_webhook.webp)
 
 يؤدي ذلك إلى فتح مربع حوار إنشاء webhook، حيث يمكنك إنشاء webhook جديد:
 
-<Image img="/images/use-cases/observability/add_webhook_dialog.webp" alt="إنشاء webhook" size="md" />
+![إنشاء webhook](/images/use-cases/observability/add_webhook_dialog.webp)
 
 اسم webhook مطلوب، بينما يكون الوصف اختياريًا. أما Settings الأخرى المطلوب إكمالها فتعتمد على نوع الخدمة.
 
@@ -160,11 +158,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يمكن إدارة التنبيهات مركزيًا من خلال لوحة التنبيهات على الجانب الأيسر من HyperDX.
 
-<Image img="/images/use-cases/observability/manage_alerts.webp" alt="إدارة التنبيهات" size="lg" />
+![إدارة التنبيهات](/images/use-cases/observability/manage_alerts.webp)
 
 من هذا العرض، يمكنك رؤية جميع التنبيهات التي تم إنشاؤها والمفعّلة حاليًا في ClickStack.
 
-<Image img="/images/use-cases/observability/alerts_view.webp" alt="عرض التنبيهات" size="lg" />
+![عرض التنبيهات](/images/use-cases/observability/alerts_view.webp)
 
 يعرض هذا العرض أيضًا سجل تقييم التنبيهات. تُقيَّم التنبيهات على فاصل زمني متكرر (يُحدَّد بحسب الفترة/المدة التي ضُبطت عند إنشاء التنبيه). وأثناء كل تقييم، يستعلم HyperDX عن بياناتك للتحقق مما إذا كان شرط التنبيه قد تحقق:
 
@@ -184,7 +182,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 لإزالة تنبيه، افتح مربع حوار التعديل لصفحة البحث أو المخطط المرتبط، ثم اختر **إزالة التنبيه**.
 في المثال أدناه، سيؤدي الزر `Remove Alert` إلى إزالة التنبيه من المخطط.
 
-<Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="إزالة تنبيه من المخطط" size="lg" />
+![إزالة تنبيه من المخطط](/images/use-cases/observability/remove_chart_alert.webp)
 
 <div id="sql-based-alerts">
   ## تنبيهات المخططات المستندة إلى SQL
@@ -218,7 +216,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     اختر **خطي** أو **شريط متراكم** أو **رقم** كنوع العرض.
 
-    <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="إنشاء مخطط SQL" size="lg" />
+    ![إنشاء مخطط SQL](/images/use-cases/observability/open_sql_chart_mode.webp)
   </Step>
 
   <Step title="أضف التنبيه" id="add-sql-alert">
@@ -229,7 +227,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     * **Interval**: عدد مرات تقييم التنبيه (1m أو 5m أو 15m أو 30m أو 1h أو 6h أو 12h أو 1d). ويحدِّد هذا أيضًا النافذة الزمنية لكل تقييم.
     * **Webhook**: قناة الإشعارات التي تُستخدم عند انطلاق التنبيه. راجع [إضافة webhook](#add-webhook).
 
-    <Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="تحرير تنبيه المخطط" size="lg" />
+    ![تحرير تنبيه المخطط](/images/use-cases/observability/add_raw_sql_alert.webp)
 
     <Warning>
       **النطاق الزمني للتنبيه**

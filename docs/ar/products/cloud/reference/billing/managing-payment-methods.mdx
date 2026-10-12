@@ -7,8 +7,6 @@ keywords: ['الفوترة']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 توضّح هذه الوثيقة كيفية إدارة وتحديث طريقة فوترة مؤسستك في ClickHouse Cloud، بما في ذلك التبديل بين بطاقة الائتمان والفوترة عبر Marketplace، وإضافة بطاقة ائتمان احتياطية، ومشاركة اشتراك Marketplace بين عدة مؤسسات.
 
 <div id="prerequisites">
@@ -38,11 +36,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 1. انتقل إلى **Billing** في وحدة تحكم ClickHouse Cloud.
 2. إذا كنت ترغب في إضافة بطاقة ائتمانية، فانقر على زر **إضافة طريقة الدفع** أعلى الصفحة.
 
-<Image img="/images/cloud/reference/billing/01-add-payment-method.webp" alt="إضافة طريقة الدفع" size="lg" />
+![إضافة طريقة الدفع](/images/cloud/reference/billing/01-add-payment-method.webp)
 
 3. إذا كنت ترغب في تعديل بطاقتك الائتمانية، فانقر على زر **تعديل بطاقتك الائتمانية** أعلى الصفحة.
 
-<Image img="/images/cloud/reference/billing/02-edit-credit-card.webp" alt="تعديل بطاقتك الائتمانية" size="lg" />
+![تعديل بطاقتك الائتمانية](/images/cloud/reference/billing/02-edit-credit-card.webp)
 
 4. في كلتا الحالتين، اتبع التعليمات لإضافة تفاصيل عنوان الفوترة الخاص ببطاقتك الائتمانية أو تحديثها.
 
@@ -62,7 +60,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 1. انتقل إلى صفحة **Billing** في وحدة تحكم ClickHouse Cloud.
 2. انقر على أيقونة التعديل بجوار **طريقة الدفع**.
 
-<Image img="/images/cloud/reference/billing/03-edit-payment-method.webp" alt="تعديل طريقة الدفع" size="lg" />
+![تعديل طريقة الدفع](/images/cloud/reference/billing/03-edit-payment-method.webp)
 
 3. في مربع الحوار **تعديل طريقة الدفع**، سترى بطاقة الائتمان الحالية مُدرجة باعتبارها طريقة الدفع الأساسية.
 4. أسفل بطاقة الائتمان، ستظهر اشتراكات Marketplace المؤهلة من مؤسساتك الأخرى. ويعرض كل إدخال نوع Marketplace (مثل AWS Marketplace) واسم المؤسسة المرتبطة.
@@ -76,7 +74,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 1. انتقل إلى صفحة **Billing** في وحدة تحكم ClickHouse Cloud.
 2. انقر على أيقونة التعديل بجوار **طريقة الدفع**.
 
-<Image img="/images/cloud/reference/billing/04-edit-payment-method.webp" alt="تعديل طريقة الدفع" size="lg" />
+![تعديل طريقة الدفع](/images/cloud/reference/billing/04-edit-payment-method.webp)
 
 3. في مربع الحوار **تعديل طريقة الدفع**، سترى اشتراك marketplace الحالي مُدرجًا كطريقة للدفع.
 4. أسفل اشتراك marketplace الحالي، ستظهر اشتراكات marketplace المؤهلة الأخرى من مؤسساتك الأخرى. ويعرض كل إدخال نوع marketplace (مثل AWS Marketplace) واسم المؤسسة المرتبطة به.
@@ -101,7 +99,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 2. سيظهر في أعلى صفحة Billing أن طريقة الدفع الأساسية لديك هي اشتراك Marketplace، وأن طريقة الدفع الاحتياطية هي **None**.
 3. انقر على زر **add credit card** لإعداد طريقة دفع احتياطية.
 
-<Image img="/images/cloud/reference/billing/05-add-backup.webp" alt="إضافة بطاقة ائتمان احتياطية" size="lg" />
+![إضافة بطاقة ائتمان احتياطية](/images/cloud/reference/billing/05-add-backup.webp)
 
 4. اتبع التعليمات لإضافة تفاصيل عنوان الفوترة الخاص ببطاقتك الائتمانية أو تحديثها. بعد الحفظ، ستعرض صفحة **Billing** بطاقة الائتمان الاحتياطية إلى جانب اشتراك Marketplace الأساسي.
 

@@ -8,8 +8,6 @@ doc_type: 'guide'
 keywords: ['sensores ambientales', 'Sensor.Community', 'datos de calidad del aire', 'datos ambientales', 'primeros pasos']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 [Sensor.Community](https://sensor.community/en/) es una red global de sensores impulsada por la comunidad que crea Open Environmental Data. Los datos se recopilan a partir de sensores de todo el mundo. Cualquiera puede comprar un sensor y colocarlo donde quiera. Las API para descargar los datos están en [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs) y los datos están disponibles libremente bajo la [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/).
 
 <Warning>
@@ -158,7 +156,7 @@ ORDER BY date ASC;
 
 Podemos crear un gráfico en la SQL Console para visualizar los resultados:
 
-<Image img="/images/getting-started/example-datasets/sensors_01.webp" size="md" alt="Número de eventos por día" />
+![Número de eventos por día](/images/getting-started/example-datasets/sensors_01.webp)
 
 6. Esta consulta cuenta el número de días demasiado calurosos y húmedos:
 
@@ -173,4 +171,4 @@ ORDER BY day ASC;
 
 A continuación se muestra una visualización del resultado:
 
-<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="Días calurosos y húmedos" />
+![Días calurosos y húmedos](/images/getting-started/example-datasets/sensors_02.webp)

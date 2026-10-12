@@ -8,8 +8,6 @@ toc_max_heading_level: 2
 keywords: ['ClickStack', '프로덕션', '배포', '모범 사례', '운영']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import ResourceEstimation from '/snippets/ko/_resource_estimation.mdx';
 
 프로덕션 환경에 ClickStack을 배포할 때는 보안, 안정성, 올바른 구성을 보장하기 위해 추가로 고려해야 할 사항이 몇 가지 있습니다. 이러한 사항은 사용 중인 배포 형태인 Open Source 또는 Managed에 따라 달라집니다.
@@ -132,7 +130,7 @@ import ResourceEstimation from '/snippets/ko/_resource_estimation.mdx';
 
     모든 데이터 수집은 OpenTelemetry (OTel) collector의 ClickStack 배포판이 노출하는 OTLP 포트를 통해 이루어져야 합니다. 기본적으로 시작 시 생성되는 보안 수집 API key가 필요합니다. 이 key는 OTel 포트로 데이터를 전송할 때 필요하며, HyperDX UI의 `Team Settings → API Keys`에서 확인할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="수집 키" size="lg" />
+    ![수집 키](/images/use-cases/observability/ingestion-keys.webp)
 
     또한 OTLP 엔드포인트에 TLS를 활성화하는 것을 권장합니다.
 

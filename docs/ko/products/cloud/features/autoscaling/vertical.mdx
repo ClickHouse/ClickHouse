@@ -7,8 +7,6 @@ title: '수직 자동 스케일링'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="자동 수직 스케일링" />
@@ -25,7 +23,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureB
   단일 레플리카 Scale 서비스와 표준 `1:4` 프로필을 사용하는 Enterprise 서비스는 수직 자동 스케일링을 지원합니다. 사용자 지정 프로필을 사용하는 Enterprise 서비스는 지원팀의 도움을 받아 수직 크기를 조정해야 합니다. Basic 티어 서비스는 크기가 고정되어 있어 스케일링할 수 없습니다.
 </Note>
 
-<Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="스케일링 설정 페이지" border />
+![스케일링 설정 페이지](/images/cloud/manage/AutoScaling.webp)
 
 레플리카의 **최대 메모리**는 **최소 메모리**보다 큰 값으로 설정하십시오. 그러면 서비스가 해당 범위 내에서 필요에 따라 스케일링됩니다. 이러한 설정은 서비스 최초 생성 과정에서도 지정할 수 있습니다. 서비스의 각 레플리카에는 동일한 메모리 및 CPU 리소스가 할당됩니다.
 

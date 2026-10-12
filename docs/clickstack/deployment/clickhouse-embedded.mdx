@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack embedded', 'ClickHouse embedded', 'ClickStack ClickHouse server', 'built-in observability']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ClickStack is bundled directly into the ClickHouse server binary. This means you can access the ClickStack UI (HyperDX) from your ClickHouse instance without deploying any additional components. This deployment is similar to the public demo at [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), but running against your own ClickHouse instance and data.
 
 ### Suitable for {#suitable-for}
@@ -55,7 +53,7 @@ Open [http://localhost:8123](http://localhost:8123) in your browser and click **
 
 Enter the username `default` and the password `password` to connect to the local instance.
 
-<Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="Authenticate" size="lg"/>
+![Authenticate](/images/clickstack/deployment/embedded/authenticate.webp)
 </Step>
 <Step title="Create a source" id="create-a-source-docker">
 
@@ -63,7 +61,7 @@ If you have existing OpenTelemetry tables, ClickStack will detect them and creat
 
 On a fresh installation, you will be prompted to create a source. Complete the **Table** field with the appropriate table name (e.g. `otel_logs`) and click **Save New Source**.
 
-<Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="Create Source" size="lg"/>
+![Create Source](/images/clickstack/deployment/embedded/inferred-source.webp)
 
 If you don't have data yet, see [Ingesting data](/clickstack/ingesting-data/overview) for available options.
 </Step>
@@ -138,7 +136,7 @@ If you have existing OpenTelemetry tables, ClickStack will detect them and creat
 
 If you don't have data yet, see [Ingesting data](/clickstack/ingesting-data/overview) for available options.
 
-<Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="Create Source" size="lg"/>
+![Create Source](/images/clickstack/deployment/embedded/inferred-source.webp)
 </Step>
 </Steps>
 

@@ -12,7 +12,6 @@ integration:
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ru/clickpipes/_changing_tls_settings.mdx';
 import PostgresClickPipeCli from '/snippets/ru/clickpipes/_postgres_clickpipe_cli.mdx';
 import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.mdx';
@@ -65,15 +64,15 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     1. В консоли ClickHouse Cloud перейдите к своему сервису ClickHouse Cloud.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Сервис ClickPipes" size="lg" border />
+    ![Сервис ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
 
     2. Нажмите кнопку `Data Sources` в меню слева и выберите &quot;Set up a ClickPipe&quot;
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Выбор импортов" size="lg" border />
+    ![Выбор импортов](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
 
     3. Выберите плитку `Postgres CDC`
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="Выберите Postgres" size="lg" border />
+       ![Выберите Postgres](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
 
 ### Добавление подключения к исходной базе данных Postgres
 
@@ -84,7 +83,7 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
       Дополнительную информацию см. в руководствах по настройке исходного Postgres, ссылки на которые приведены [в начале этой страницы](#prerequisites).
     </Info>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="Введите сведения о подключении" size="lg" border />
+    ![Введите сведения о подключении](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
 
 #### (Опционально) Настройка AWS Private Link
 
@@ -104,7 +103,7 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     2. Укажите сведения о подключении по SSH.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH tunneling" size="lg" border />
+       ![SSH tunneling](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
 
     3. Чтобы использовать аутентификацию на основе ключей, нажмите &quot;Revoke and generate key pair&quot; для генерации новой пары ключей и скопируйте полученный открытый ключ на ваш SSH-сервер в файл `~/.ssh/authorized_keys`.
 
@@ -120,7 +119,7 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     5. Обязательно выберите в выпадающем списке слот репликации, созданный вами на шаге предварительных требований.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="Выбор слота репликации" size="lg" border />
+       ![Выбор слота репликации](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
 
 #### Расширенная настройка
 
@@ -136,7 +135,7 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     6. Здесь вы можете выбрать базу данных назначения для вашего ClickPipe. Можно либо выбрать существующую базу данных, либо создать новую.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg" alt="Выбор базы данных назначения" size="lg" border />
+       ![Выбор базы данных назначения](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
 
     7. Вы можете выбрать таблицы, которые хотите реплицировать из исходной базы данных Postgres. При выборе таблиц вы также можете переименовать их в целевой базе данных ClickHouse и исключить отдельные столбцы.
 
@@ -150,7 +149,7 @@ import SettingPartitionBy from '/snippets/ru/clickpipes/_target_ch_partition_by.
 
     9. Выберите роль &quot;Full access&quot; в выпадающем списке разрешений и нажмите &quot;Complete Setup&quot;.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Проверка разрешений" size="lg" border />
+       ![Проверка разрешений](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
 
 ## Что дальше?
 

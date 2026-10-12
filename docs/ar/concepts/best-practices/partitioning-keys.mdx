@@ -7,8 +7,6 @@ keywords: ['مفتاح التقسيم']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <Info>
   **أسلوب لإدارة البيانات**
 
@@ -34,7 +32,7 @@ PARTITION BY toStartOfMonth(date)
 
 كلما أُدرجت مجموعة من الصفوف في الجدول، فبدلاً من إنشاء (على[ الأقل](/ar/reference/settings/session-settings/max-insert#max_insert_block_size)) جزء بيانات واحد يحتوي على جميع الصفوف المُدرجة (كما هو موضح [هنا](/ar/concepts/core-concepts/parts))، ينشئ ClickHouse جزء بيانات جديدًا لكل قيمة فريدة لمفتاح التقسيم بين الصفوف المُدرجة:
 
-<Image img="/images/bestpractices/partitions.webp" size="lg" alt="الأقسام" />
+![الأقسام](/images/bestpractices/partitions.webp)
 
 يقوم خادم ClickHouse أولاً بتقسيم الصفوف في مثال الإدراج ذي الصفوف الأربعة الموضَّح في المخطط أعلاه وفقًا لقيمة مفتاح التقسيم `toStartOfMonth(date)`. ثم، لكل قسم تم تحديده، تُعالَج الصفوف كالمعتاد[ هنا](/ar/concepts/core-concepts/parts) عبر تنفيذ عدة خطوات متسلسلة (① الفرز، ② التقسيم إلى أعمدة، ③ الضغط، ④ الكتابة إلى القرص).
 
@@ -42,7 +40,7 @@ PARTITION BY toStartOfMonth(date)
 
 عند تمكين التقسيم، لا يدمج ClickHouse [أجزاء البيانات](/ar/concepts/core-concepts/merges) إلا داخل الأقسام نفسها، وليس عبر الأقسام المختلفة. نوضّح ذلك تخطيطيًا لجدول المثال أعلاه:
 
-<Image img="/images/bestpractices/merges_with_partitions.webp" size="md" alt="الأقسام" />
+![الأقسام](/images/bestpractices/merges_with_partitions.webp)
 
 <div id="applications-of-partitioning">
   ## تطبيقات التقسيم

@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Este documento describe cómo gestionar la sincronización de un ClickPipe para MySQL cuando el ClickPipe está en **modo CDC (Running)**.
 
 <div id="overview">
@@ -53,15 +51,15 @@ Cuando se ejecuta una transacción en la base de datos de origen, ClickPipe espe
 Puedes establecer el intervalo de sincronización y el tamaño del lote de extracción al crear un ClickPipe o al editar uno existente.
 Al crear un ClickPipe, esta opción aparece en el segundo paso del asistente de creación, como se muestra a continuación:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="Crear ajustes de sincronización" size="md" />
+![Crear ajustes de sincronización](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
 
 Al editar un ClickPipe existente, ve a la pestaña **Settings** del pipe, pausa el pipe y luego haz clic en **Configure** aquí:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="Botón Edit sync" size="md" />
+![Botón Edit sync](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
 
 Se abrirá un panel lateral con los ajustes de sincronización, donde puedes cambiar el intervalo de sincronización y el tamaño del lote de extracción:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="Editar ajustes de sincronización" size="md" />
+![Editar ajustes de sincronización](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
 
 <div id="monitoring">
   ### Supervisión del comportamiento del control de sincronización
@@ -69,4 +67,4 @@ Se abrirá un panel lateral con los ajustes de sincronización, donde puedes cam
 
 Puedes ver cuánto tarda cada lote en la tabla **Sincronizaciones de CDC** de la pestaña **Métricas** de ClickPipe. Ten en cuenta que la duración aquí incluye el tiempo de envío y que, si no llegan filas, ClickPipe espera, por lo que ese tiempo de espera también se incluye en la duración.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="tabla de sincronizaciones de CDC" size="md" />
+![tabla de sincronizaciones de CDC](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)

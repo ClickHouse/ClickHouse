@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Voici un guide expliquant comment configurer Supabase Postgres pour l&#39;utiliser avec ClickPipes.
 
 <Note>
@@ -84,7 +82,7 @@ Rendez-vous dans `Project Settings` -&gt; `Database` de votre projet Supabase (s
 
 **Important** : désactivez `Display connection pooler` sur cette page, puis accédez à la section `Connection parameters` et notez ou copiez les paramètres.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg" size="lg" border alt="Localiser les informations de connexion Supabase" border />
+![Localiser les informations de connexion Supabase](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/supabase/supabase-connection-details.jpg)
 
 <Info>
   Le pooler de connexions n’est pas pris en charge pour la réplication basée sur le CDC. Il doit donc être désactivé.

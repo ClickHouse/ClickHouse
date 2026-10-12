@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -73,7 +72,7 @@ ProbeDeck — клиент для iOS и iPadOS, предназначенный 
     ClickHouse Cloud использует ключи уровня организации со страницы **API Keys** для Cloud API и
     эндпоинтов Query API. При SQL-подключении ProbeDeck эти ключи не используются.
 
-    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="Форма подключения ProbeDeck, настроенная для HTTPS на порту 8443 с именем пользователя ClickHouse" />
+    ![Форма подключения ProbeDeck, настроенная для HTTPS на порту 8443 с именем пользователя ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
   </Step>
 </Steps>
 
@@ -149,11 +148,11 @@ ProbeDeck хранит секреты соединения и импортиро
 | Метрики памяти и сервера                                             | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | Исторические скорости запросов и диска                               | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
-<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="Панель мониторинга ProbeDeck с выполняющимися запросами, репликацией, дисками, частями, мутациями, слияниями, скоростью запросов и памятью" />
+![Панель мониторинга ProbeDeck с выполняющимися запросами, репликацией, дисками, частями, мутациями, слияниями, скоростью запросов и памятью](/images/integrations/sql-clients/probedeck-dashboard.png)
 
 Нажмите **Выполняющиеся запросы**, чтобы отсортировать активные запросы по времени выполнения и просмотреть использование памяти и количество прочитанных строк.
 
-<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="Список выполняющихся запросов ProbeDeck, отсортированный по времени выполнения" />
+![Список выполняющихся запросов ProbeDeck, отсортированный по времени выполнения](/images/integrations/sql-clients/probedeck-running-queries.png)
 
 <div id="query-the-uk-property-price-dataset">
   ## Выполнение запроса к набору данных о ценах на недвижимость в Великобритании

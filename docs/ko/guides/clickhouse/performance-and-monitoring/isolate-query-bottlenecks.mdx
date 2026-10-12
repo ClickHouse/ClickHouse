@@ -9,7 +9,6 @@ doc_type: 'guide'
 keywords: ['쿼리 최적화', '쿼리 병목 현상', '성능', '벤치마킹']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/ko/_nyc_taxi_example_dataset.mdx';
 
 한 번에 쿼리의 한 부분만 변경하고 결과를 안정적인 기준값과 비교하면 쿼리 최적화가 수월해집니다. 이 가이드에서는 쿼리를 점진적으로 단순화하고 실행 결과 간의 차이를 통해 어떤 작업이 실행 시간에 가장 큰 영향을 미치는지 파악하는 방법을 설명합니다. 그런 다음 최적화를 선택하기 전에 의심되는 병목 현상을 검증할 수 있습니다.
@@ -71,7 +70,7 @@ SET optimize_use_implicit_projections = 0;
 
 이 워크플로는 통제된 쿼리 실행과 쿼리 로그의 측정값을 결합합니다.
 
-<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="쿼리 로그에서 후보 쿼리를 식별하고 격리된 환경에서 변경 사항을 테스트하는 워크플로" />
+![쿼리 로그에서 후보 쿼리를 식별하고 격리된 환경에서 변경 사항을 테스트하는 워크플로](/images/guides/best-practices/query_optimization_diagram_1.webp)
 
 다음과 같이 각 실행의 측정값을 수집합니다.
 

@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Les index de saut de données doivent être envisagés une fois les bonnes pratiques précédentes appliquées, c.-à-d. lorsque les types sont optimisés, qu’une bonne clé primaire a été choisie et que les vues matérialisées ont été exploitées. Si vous découvrez les indices de saut, [ce guide](/fr/concepts/features/performance/skip-indexes/skipping-indexes) constitue un bon point de départ.
 
 Ces types d’indices peuvent être utilisés pour améliorer les performances des requêtes, à condition de les employer avec précaution et d’en comprendre le fonctionnement.
@@ -192,7 +190,7 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 L’animation suivante illustre comment est construit notre index minmax de saut de données pour la table d’exemple, en enregistrant les valeurs minimale et maximale de `ViewCount` pour chaque bloc de lignes (granule) de la table :
 
-<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="Construction des index de saut de données" />
+![Construction des index de saut de données](/images/bestpractices/building_skipping_indices.webp)
 
 En répétant la requête précédente, on observe de nettes améliorations des performances. Remarquez la diminution du nombre de lignes analysées :
 
@@ -257,7 +255,7 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 Nous montrons également une animation illustrant comment l’index minmax de saut de données écarte tous les blocs de lignes qui ne peuvent pas contenir de résultats correspondant au prédicat `ViewCount` &gt; 10,000,000 dans notre requête d’exemple :
 
-<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="Utilisation des index de saut" />
+![Utilisation des index de saut](/images/bestpractices/using_skipping_indices.webp)
 
 <div id="related-docs">
   ## Documentation connexe

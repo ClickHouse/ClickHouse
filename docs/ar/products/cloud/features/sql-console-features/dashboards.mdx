@@ -8,8 +8,6 @@ keywords: ['ClickHouse Cloud', 'لوحات المعلومات', 'تصور الب
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تتيح لك ميزة لوحات المعلومات في SQL Console جمع التصورات من الاستعلامات المحفوظة ومشاركتها. ابدأ بحفظ الاستعلامات وإنشاء تصورات لها، ثم أضف تصورات الاستعلامات إلى لوحة معلومات واجعلها تفاعلية باستخدام معلمات الاستعلام.
 
 <div id="core-concepts">
@@ -48,17 +46,17 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 افتح علامة تبويب استعلام جديدة. لنكتب استعلامًا لحساب حجم الاستعلامات حسب اليوم على خدمة باستخدام جداول النظام في ClickHouse:
 
-<Image img="/images/cloud/dashboards/2_dashboards.webp" size="md" alt="إنشاء استعلام محفوظ" border />
+![إنشاء استعلام محفوظ](/images/cloud/dashboards/2_dashboards.webp)
 
 يمكننا عرض نتائج الاستعلام بتنسيق جدول أو البدء في إنشاء تصورات من عرض المخطط. في الخطوة التالية، سنمضي قدمًا ونحفظ الاستعلام باسم `queries over time`:
 
-<Image img="/images/cloud/dashboards/3_dashboards.webp" size="md" alt="حفظ الاستعلام" border />
+![حفظ الاستعلام](/images/cloud/dashboards/3_dashboards.webp)
 
 يمكن العثور على مزيد من الوثائق حول الاستعلامات المحفوظة في [قسم Saving a Query](/ar/products/cloud/features/sql-console-features/sql-console#saving-a-query).
 
 يمكننا إنشاء استعلام آخر وحفظه، وهو `query count by query kind`، لحساب عدد الاستعلامات حسب نوع الاستعلام. إليك تصورًا على شكل مخطط شريطي للبيانات في SQL Console.
 
-<Image img="/images/cloud/dashboards/4_dashboards.webp" size="md" alt="تصور بمخطط شريطي لنتائج استعلام" border />
+![تصور بمخطط شريطي لنتائج استعلام](/images/cloud/dashboards/4_dashboards.webp)
 
 الآن بعد أن أصبح لدينا استعلامان، لننشئ لوحة معلومات لعرض هذه الاستعلامات وتجميعها.
 
@@ -68,7 +66,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 انتقل إلى لوحة لوحات المعلومات، ثم انقر على “New Dashboard”. بعد تسمية اللوحة، تكون قد أنشأت أول لوحة معلومات بنجاح!
 
-<Image img="/images/cloud/dashboards/5_dashboards.webp" size="md" alt="إنشاء لوحة معلومات جديدة" border />
+![إنشاء لوحة معلومات جديدة](/images/cloud/dashboards/5_dashboards.webp)
 
 <div id="add-a-visualization">
   ### إضافة تصور
@@ -76,13 +74,13 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 هناك استعلامان محفوظان، `queries over time` و`query count by query kind`. لنعرض الأول كمخطط خطي. امنح التصور عنوانًا وعنوانًا فرعيًا، وحدد الاستعلام المطلوب عرضه. بعد ذلك، اختر نوع المخطط “Line”، وعيّن المحورين x وy.
 
-<Image img="/images/cloud/dashboards/6_dashboards.webp" size="md" alt="إضافة تصور" border />
+![إضافة تصور](/images/cloud/dashboards/6_dashboards.webp)
 
 هنا، يمكنك أيضًا إجراء تغييرات إضافية على النمط، مثل تنسيق الأرقام، وتخطيط وسيلة الإيضاح، وتسميات المحاور.
 
 بعد ذلك، لنعرض الاستعلام الثاني في جدول، ثم ضعه أسفل المخطط الخطي.
 
-<Image img="/images/cloud/dashboards/7_dashboards.webp" size="md" alt="عرض نتائج الاستعلام في جدول" border />
+![عرض نتائج الاستعلام في جدول](/images/cloud/dashboards/7_dashboards.webp)
 
 لقد أنشأت أول لوحة معلومات لك عبر عرض استعلامين محفوظين!
 
@@ -94,18 +92,18 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 انقر على النقاط الثلاث بجوار المخطط الخطي، ثم انقر على زر القلم بجوار الاستعلام لفتح محرر الاستعلام المضمن. هنا، يمكننا تعديل الاستعلام المحفوظ الأساسي مباشرةً من لوحة المعلومات.
 
-<Image img="/images/cloud/dashboards/8_dashboards.webp" size="md" alt="حرّر الاستعلام الأساسي" border />
+![حرّر الاستعلام الأساسي](/images/cloud/dashboards/8_dashboards.webp)
 
 الآن، عند الضغط على زر تشغيل الاستعلام الأصفر، سترى الاستعلام نفسه من الخطوة السابقة بعد تصفيته لعرض استعلامات insert فقط. انقر على زر الحفظ لتحديث الاستعلام. وعندما تعود إلى إعدادات المخطط، ستتمكن من تصفية المخطط الخطي.
 
 الآن، باستخدام Global Filters في الشريط العلوي، يمكنك تشغيل عامل التصفية أو إيقافه بتغيير قيمة الإدخال.
 
-<Image img="/images/cloud/dashboards/9_dashboards.webp" size="md" alt="اضبط عوامل التصفية العامة" border />
+![اضبط عوامل التصفية العامة](/images/cloud/dashboards/9_dashboards.webp)
 
 لنفترض أنك تريد ربط عامل تصفية المخطط الخطي بالجدول. يمكنك القيام بذلك بالعودة إلى إعدادات التصور، وتغيير مصدر قيمة معلمة الاستعلام query&#95;kind إلى جدول، ثم تحديد العمود query&#95;kind بوصفه الحقل المراد ربطه.
 
-<Image img="/images/cloud/dashboards/10_dashboards.webp" size="md" alt="تغيير معلمة الاستعلام" border />
+![تغيير معلمة الاستعلام](/images/cloud/dashboards/10_dashboards.webp)
 
 الآن، يمكنك التحكم في عامل التصفية على المخطط الخطي مباشرةً من جدول queries by kind لجعل لوحة المعلومات تفاعلية.
 
-<Image img="/images/cloud/dashboards/11_dashboards.webp" size="md" alt="تحكم في عامل التصفية على المخطط الخطي" border />
+![تحكم في عامل التصفية على المخطط الخطي](/images/cloud/dashboards/11_dashboards.webp)

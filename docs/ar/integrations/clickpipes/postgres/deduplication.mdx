@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تؤدي التحديثات وعمليات الحذف المنسوخة من Postgres إلى ClickHouse إلى ظهور صفوف مكررة في ClickHouse بسبب بنية تخزين البيانات فيه وعملية النسخ المتماثل. تشرح هذه الصفحة سبب حدوث ذلك والاستراتيجيات التي يمكن استخدامها في ClickHouse للتعامل مع الصفوف المكررة.
 
 <div id="how-does-data-get-replicated">
@@ -64,7 +62,7 @@ ORDER BY id;
 
 يوضح الشكل أدناه مثالًا أساسيًا على مزامنة جدول `users` بين PostgreSQL وClickHouse باستخدام ClickPipes.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="التحميل الأوّلي في ClickPipes" size="lg" />
+![التحميل الأوّلي في ClickPipes](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
 
 توضح **الخطوة 1** اللقطة الأولية للصفّين في PostgreSQL، وكيف يجري ClickPipes التحميل الأوّلي لهذين الصفّين إلى ClickHouse. وكما تلاحظ، يُنسخ الصفّان إلى ClickHouse كما هما.
 

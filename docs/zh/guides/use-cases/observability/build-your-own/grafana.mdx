@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 Grafana 是在 ClickHouse 中可观测性数据的首选可视化工具。这是通过 Grafana 官方提供的 ClickHouse 插件实现的。你可以按照[此处](/zh/integrations/connectors/data-visualization/grafana/index)的安装说明进行操作。
 
 该插件的 V4 版本在全新的 查询构建器 体验中，将 日志 和链路追踪 作为一等支持的能力。这大大减少了 SRE 编写 SQL 查询的需求，并简化了基于 SQL 的可观测性，推动这一新兴范式进一步发展。
@@ -30,7 +28,7 @@ Grafana 是在 ClickHouse 中可观测性数据的首选可视化工具。这是
 
 “链路追踪”配置会稍微复杂一些 (完整列表见[这里](/zh/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)) 。这里要求的列是为了便于抽象后续用于构建完整 trace 概况的查询。这些查询假定数据结构与 OTel 类似，因此，如果用户与标准 schema 偏离较大，则需要使用视图才能受益于此功能。
 
-<Image img="/images/use-cases/observability/observability-15.webp" alt="连接器配置" size="sm" />
+![连接器配置](/images/use-cases/observability/observability-15.webp)
 
 配置完成后，你可以前往 [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) 并开始搜索日志和链路追踪。
 
@@ -44,7 +42,7 @@ Grafana 是在 ClickHouse 中可观测性数据的首选可视化工具。这是
 SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
 ```
 
-<Image img="/images/use-cases/observability/observability-16.webp" alt="连接器日志配置" size="lg" border />
+![连接器日志配置](/images/use-cases/observability/observability-16.webp)
 
 查询构建器提供了一种无需编写 SQL 即可轻松修改查询的方式。你可以直接在查询构建器中进行过滤，包括查找包含关键字的日志。需要编写更复杂查询的用户可以切换到 SQL 编辑器。只要返回了相应的列，并将 Query Type 选择为 `logs`，结果就会以日志形式呈现。日志渲染所需的列见[此处](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format)。
 
@@ -54,7 +52,7 @@ SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as t
 
 如果日志中包含 trace ID，您就可以从特定的日志行直接跳转到相应的 trace。
 
-<Image img="/images/use-cases/observability/observability-17.webp" alt="从日志跳转到链路追踪" size="lg" border />
+![从日志跳转到链路追踪](/images/use-cases/observability/observability-17.webp)
 
 <div id="traces">
   ## 链路追踪
@@ -77,7 +75,7 @@ WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
 
 此查询会返回 Grafana 所需的列名，并渲染出如下所示的链路追踪表。无需编写 SQL，即可按耗时或其他列进行过滤。
 
-<Image img="/images/use-cases/observability/observability-18.webp" alt="链路追踪" size="lg" border />
+![链路追踪](/images/use-cases/observability/observability-18.webp)
 
 想要编写更复杂查询的用户可以切换到 `SQL 编辑器`。
 
@@ -115,7 +113,7 @@ LIMIT 1000
   请注意，上述查询使用 materialized view `otel_traces_trace_id_ts` 来执行 trace ID 检索。更多详情，请参见[加速查询：使用 Materialized views 进行快速查找](/zh/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups)。
 </Note>
 
-<Image img="/images/use-cases/observability/observability-19.webp" alt="Trace 详情" size="lg" border />
+![Trace 详情](/images/use-cases/observability/observability-19.webp)
 
 <div id="traces-to-logs">
   ### 从 trace 查看日志
@@ -131,7 +129,7 @@ WHERE ( traceID = '<trace_id>' )
 ORDER BY timestamp ASC LIMIT 1000
 ```
 
-<Image img="/images/use-cases/observability/observability-20.webp" alt="从链路追踪到日志" size="lg" border />
+![从链路追踪到日志](/images/use-cases/observability/observability-20.webp)
 
 <div id="dashboards">
   ## 仪表盘
@@ -141,7 +139,7 @@ ORDER BY timestamp ASC LIMIT 1000
 
 该插件提供了多个开箱即用的仪表盘，其中包括一个示例仪表盘“Simple ClickHouse OTel dashboarding”，适用于符合 OTel 规范的日志和链路追踪数据。这要求用户遵循 OTel 的默认列名，并且可通过数据源配置进行安装。
 
-<Image img="/images/use-cases/observability/observability-21.webp" alt="仪表盘" size="lg" border />
+![仪表盘](/images/use-cases/observability/observability-21.webp)
 
 下面提供一些构建可视化的简单建议。
 
@@ -164,7 +162,7 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
-<Image img="/images/use-cases/observability/observability-22.webp" alt="时间序列" size="lg" border />
+![时间序列](/images/use-cases/observability/observability-22.webp)
 
 <div id="multi-line-charts">
   ### 多折线图
@@ -191,7 +189,7 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
-<Image img="/images/use-cases/observability/observability-23.webp" alt="多折线图" size="lg" border />
+![多折线图](/images/use-cases/observability/observability-23.webp)
 
 <div id="visualizing-geo-data">
   ### 可视化地理数据
@@ -217,4 +215,4 @@ FROM coords
 GROUP BY hash
 ```
 
-<Image img="/images/use-cases/observability/observability-24.webp" alt="地理数据可视化" size="lg" border />
+![地理数据可视化](/images/use-cases/observability/observability-24.webp)

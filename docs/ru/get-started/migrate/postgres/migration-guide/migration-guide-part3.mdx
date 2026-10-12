@@ -8,8 +8,6 @@ sidebarTitle: 'Часть 3'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 > Это **Часть 3** руководства по миграции с PostgreSQL на ClickHouse. На практическом примере здесь показано, как моделировать данные в ClickHouse при миграции с PostgreSQL.
 
 Мы рекомендуем пользователям, переходящим с Postgres, прочитать [руководство по моделированию данных в ClickHouse](/ru/guides/clickhouse/data-modelling/schema-design). В этом руководстве используется тот же набор данных Stack Overflow и рассматриваются несколько подходов с использованием возможностей ClickHouse.
@@ -32,9 +30,9 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 За дополнительными подробностями рекомендуем обратиться к этому [подробному руководству](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
-<Image img="/images/migrations/postgres-b-tree.webp" size="lg" alt="Индекс B-Tree в PostgreSQL" />
+![Индекс B-Tree в PostgreSQL](/images/migrations/postgres-b-tree.webp)
 
-<Image img="/images/migrations/postgres-sparse-index.webp" size="lg" alt="Разреженный индекс в PostgreSQL" />
+![Разреженный индекс в PostgreSQL](/images/migrations/postgres-sparse-index.webp)
 
 Выбранный ключ в ClickHouse определяет не только индекс, но и порядок, в котором данные записываются на диск. Поэтому он может существенно влиять на степень сжатия, а это, в свою очередь, сказывается на производительности запросов. Ключ сортировки, при котором значения большинства столбцов записываются подряд, позволяет выбранному алгоритму сжатия (и кодекам) эффективнее сжимать данные.
 
@@ -56,7 +54,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В ClickHouse партиционирование задается для таблицы при ее первоначальном определении с помощью предложения `PARTITION BY`. Это предложение может содержать SQL-выражение по любым столбцам, результат которого определяет, в какую партицию будет отправлена строка.
 
-<Image img="/images/migrations/postgres-partitions.webp" size="md" alt="Партиции PostgreSQL в партиции ClickHouse" />
+![Партиции PostgreSQL в партиции ClickHouse](/images/migrations/postgres-partitions.webp)
 
 Части данных на диске логически связаны с каждой партицией и могут запрашиваться изолированно. В примере ниже мы партиционируем таблицу `posts` по годам с помощью выражения `toYear(CreationDate)`. По мере вставки строк в ClickHouse это выражение будет вычисляться для каждой строки, и строка будет направляться в соответствующую партицию, если она уже существует (если строка для данного года первая, партиция будет создана).
 
@@ -274,7 +272,7 @@ WHERE UserId = 8592047
 таблице, а проекции по возможности будут использоваться для сокращения
 времени отклика.
 
-<Image img="/images/migrations/postgres-projections.webp" size="md" alt="Проекции PostgreSQL в ClickHouse" />
+![Проекции PostgreSQL в ClickHouse](/images/migrations/postgres-projections.webp)
 
 В отличие от materialized views, здесь пользователю не нужно выбирать
 подходящую оптимизированную целевую таблицу или переписывать запрос в зависимости от фильтров.

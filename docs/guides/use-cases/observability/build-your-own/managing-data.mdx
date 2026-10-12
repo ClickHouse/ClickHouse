@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Deployments of ClickHouse for Observability invariably involve large datasets, which need to be managed. ClickHouse offers a number of features to assist with data management.
 
 <Tip>
@@ -26,7 +24,7 @@ Partitioning in ClickHouse allows data to be logically separated on disk accordi
 
 Partitioning is specified on a table when it is initially defined via the `PARTITION BY` clause. This clause can contain a SQL expression on any column/s, the results of which will define which partition a row is sent to.
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="Partitions" size="md"/>
+![Partitions](/images/use-cases/observability/observability-14.webp)
 
 The data parts are logically associated (via a common folder name prefix) with each partition on the disk and can be queried in isolation. For the example below, default `otel_logs` schema partitions by day using the expression `toDate(Timestamp)`. As rows are inserted into ClickHouse, this expression will be evaluated against each row and routed to the resulting partition if it exists (if the row is the first for a day, the partition will be created).
 

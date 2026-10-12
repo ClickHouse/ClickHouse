@@ -12,7 +12,6 @@ integration:
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/es/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
@@ -51,15 +50,15 @@ Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún n
 
 1. En la consola de ClickHouse Cloud, ve a tu servicio de ClickHouse Cloud.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Servicio de ClickPipes" size="lg" border />
+![Servicio de ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
 
 2. Selecciona el botón `Data Sources` en el menú lateral izquierdo y haz clic en &quot;Set up a ClickPipe&quot;.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
+![Seleccionar importaciones](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
 
 3. Selecciona la tarjeta `MongoDB CDC`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="Seleccionar MongoDB" size="lg" border />
+![Seleccionar MongoDB](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp)
 
 <div id="add-your-source-mongodb-database-connection">
   ### Agrega la conexión a tu base de datos MongoDB de origen
@@ -72,7 +71,7 @@ Asegúrate de haber iniciado sesión en tu cuenta de ClickHouse Cloud. Si aún n
   Para obtener más información, consulta las guías de configuración de MongoDB de origen enlazadas [al inicio de esta página](#prerequisites).
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="Completa los datos de conexión" size="lg" border />
+![Completa los datos de conexión](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp)
 
 <div id="optional-changing-tls-settings">
   #### (Opcional) Cambiar la configuración de TLS
@@ -90,7 +89,7 @@ Puede especificar los detalles de la tunelización SSH si su base de datos Mongo
 
 2. Complete los detalles de la conexión SSH.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="Tunelización SSH" size="lg" border />
+   ![Tunelización SSH](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
 
 3. Para usar autenticación basada en claves, haga clic en &quot;Revocar y generar par de claves&quot; para generar un nuevo par de claves y copie la clave pública generada en su servidor SSH, en `~/.ssh/authorized_keys`.
 
@@ -118,7 +117,7 @@ Puede configurar los ajustes avanzados si es necesario. A continuación, se ofre
 
 5. Aquí puedes seleccionar la base de datos de destino para tu ClickPipe. Puedes seleccionar una base de datos existente o crear una nueva.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp" alt="Selecciona la base de datos de destino" size="lg" border />
+   ![Selecciona la base de datos de destino](/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp)
 
 6. Puedes seleccionar las tablas que quieres replicar desde la base de datos MongoDB de origen. Al seleccionar las tablas, también puedes optar por cambiarles el nombre en la base de datos de destino de ClickHouse.
 
@@ -128,7 +127,7 @@ Puede configurar los ajustes avanzados si es necesario. A continuación, se ofre
 
 7. Selecciona el rol &quot;Acceso completo&quot; en el menú desplegable de permisos y haz clic en &quot;Completar configuración&quot;.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="Revisar permisos" size="lg" border />
+   ![Revisar permisos](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
 
 <div id="whats-next">
   ## ¿Qué sigue?

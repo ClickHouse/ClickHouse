@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Kafka', 'metrics', 'OTEL', 'ClickStack', 'JMX']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -39,7 +37,7 @@ The JMX Metric Gatherer sends data to ClickStack's OTLP endpoint, which requires
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
 
-<Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
+![ClickStack API Key](/images/clickstack/api-key.webp)
 
 5. Set it as an environment variable:
 ```bash
@@ -262,17 +260,17 @@ To help you get started monitoring Kafka with ClickStack, we provide essential v
 1. Open HyperDX and navigate to the Dashboards section
 2. Click **Import Dashboard** in the upper right corner under the ellipses
 
-<Image img="/images/clickstack/import-dashboard.webp" alt="Import dashboard button"/>
+![Import dashboard button](/images/clickstack/import-dashboard.webp)
 
 3. Upload the `kafka-metrics-dashboard.json` file and click **Finish Import**
 
-<Image img="/images/clickstack/kafka/import-kafka-dashboard.webp" alt="Finish import dialog"/>
+![Finish import dialog](/images/clickstack/kafka/import-kafka-dashboard.webp)
 </Step>
 <Step title="View the dashboard" id="created-dashboard">
 
 The dashboard will be created with all visualizations pre-configured:
 
-<Image img="/images/clickstack/kafka/kafka-metrics-dashboard.webp" alt="Kafka Metrics dashboard"/>
+![Kafka Metrics dashboard](/images/clickstack/kafka/kafka-metrics-dashboard.webp)
 
 <Note>
 For the demo dataset, set the time range to **2025-11-05 16:00:00 - 2025-11-06 16:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.

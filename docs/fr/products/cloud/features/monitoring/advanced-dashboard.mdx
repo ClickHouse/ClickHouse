@@ -8,8 +8,6 @@ title: 'Tableau de bord avancé dans ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Surveiller votre système de base de données dans un environnement de production est essentiel pour
 évaluer l’état de santé de votre déploiement et ainsi prévenir ou résoudre les pannes.
 
@@ -30,7 +28,7 @@ Pour accéder au tableau de bord avancé, accédez à :
 * Panneau latéral gauche
   * `Monitoring` → `Advanced dashboard`
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Tableau de bord avancé" />
+![Tableau de bord avancé](/images/cloud/manage/monitoring/advanced_dashboard.webp)
 
 <div id="accessing-the-native-advanced-dashboard">
   ## Accéder au tableau de bord avancé natif
@@ -45,12 +43,12 @@ Vous pouvez accéder au tableau de bord avancé natif en allant dans :
 Cela ouvrira le tableau de bord avancé natif dans un nouvel onglet. Vous devrez vous
 authentifier pour accéder au tableau de bord.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="Tableau de bord avancé" />
+![Tableau de bord avancé](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
 
 Chaque visualisation est associée à une requête SQL qui l&#39;alimente. Vous pouvez
 modifier cette requête en cliquant sur l&#39;icône en forme de stylo.
 
-<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="Tableau de bord avancé" />
+![Tableau de bord avancé](/images/cloud/manage/monitoring/edit_visualization.webp)
 
 <div id="out-of-box-visualizations">
   ## Visualisations prêtes à l’emploi
@@ -136,7 +134,7 @@ de fusion.
 Les métriques clés pour repérer des insertions non optimisées sont **Ligne inséré** et
 **Nombre maximal de part par partition**
 
-<Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="Insertions non regroupées" />
+![Insertions non regroupées](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
 
 L’exemple ci-dessus montre deux pics de **Ligne inséré** et de **Nombre maximal de part par partition**
 entre 13h et 14h. Cela indique que nous ingérons les données à un rythme raisonnable.
@@ -161,7 +159,7 @@ que vous exécutez, cela peut être normal, mais il est utile de pouvoir les rep
 Vous trouverez ci-dessous un exemple où l&#39;utilisation du CPU atteint un pic sans modifier de manière significative le
 nombre de requêtes exécutées par seconde.
 
-<Image img="/images/cloud/manage/monitoring/resource_intensive_query.webp" size="lg" alt="Requête gourmande en ressources" />
+![Requête gourmande en ressources](/images/cloud/manage/monitoring/resource_intensive_query.webp)
 
 <div id="bad-primary-key-design">
   ### Mauvaise conception de la clé primaire
@@ -177,7 +175,7 @@ est **Lignes sélectionnées par seconde**. Un pic soudain du nombre de lignes s
 indiquer à la fois une augmentation générale du débit global des requêtes, ainsi que des requêtes qui
 sélectionnent un grand nombre de lignes pour être exécutées.
 
-<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="Requête gourmande en ressources" />
+![Requête gourmande en ressources](/images/cloud/manage/monitoring/selected_rows_sec.webp)
 
 En utilisant l’horodatage comme filtre, vous pouvez trouver les requêtes exécutées au moment
 du pic dans la table `system.query_log`.

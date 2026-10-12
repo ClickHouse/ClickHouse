@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['journal d’audit']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Les activités de la Console sont consignées dans le journal d’audit. Les utilisateurs disposant d’un accès peuvent consulter ce journal et l’intégrer à leurs systèmes de journalisation. L’accès au journal d’audit est régi par la permission **View audit logs** (`control-plane:organization:view-activities`) :
 
 * Les utilisateurs ayant le rôle Admin au niveau de l’organisation y ont accès par défaut.
@@ -23,7 +21,7 @@ Pour une description de toutes les permissions, consultez [Rôles et permissions
   <Step title="Sélectionnez l’organisation" id="select-org">
     Dans ClickHouse Cloud, accédez aux détails de votre organisation.
 
-    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="Onglet Activity de ClickHouse Cloud" border />
+    ![Onglet Activity de ClickHouse Cloud](/images/cloud/security/activity_log1.webp)
 
     <br />
   </Step>
@@ -38,7 +36,7 @@ Pour une description de toutes les permissions, consultez [Rôles et permissions
     * **IP Address :** Le cas échéant, ce champ indique l’adresse IP de l’utilisateur à l’origine de l’événement
     * **Time :** L’horodatage de l’événement
 
-    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="Tableau Activity de ClickHouse Cloud" border />
+    ![Tableau Activity de ClickHouse Cloud](/images/cloud/security/activity_log2.webp)
 
     <br />
   </Step>
@@ -49,7 +47,7 @@ Pour une description de toutes les permissions, consultez [Rôles et permissions
 </Steps>
 
 <div class="eighty-percent">
-  <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="Export CSV d’Activity dans ClickHouse Cloud" border />
+  ![Export CSV d’Activity dans ClickHouse Cloud](/images/cloud/security/activity_log3.webp)
 </div>
 
 <div id="console-audit-log-api">

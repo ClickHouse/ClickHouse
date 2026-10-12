@@ -12,8 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
 import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <CommunityMaintainedBadge />
 
 [Chartbrew](https://chartbrew.com) est une plateforme de visualisation de données qui vous permet de créer des tableaux de bord et de surveiller vos données en temps réel. Elle prend en charge plusieurs sources de données, dont ClickHouse, et fournit une interface no-code pour créer des graphiques et des rapports.
@@ -24,7 +22,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 Dans ce guide, vous allez connecter Chartbrew à ClickHouse, exécuter une requête SQL et créer une visualisation. À la fin, votre tableau de bord devrait ressembler à ceci :
 
-<Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="Tableau de bord Chartbrew" />
+![Tableau de bord Chartbrew](/images/integrations/data-visualization/chartbrew_01.webp)
 
 <Tip>
   **Ajoutez des données**
@@ -42,7 +40,7 @@ Dans ce guide, vous allez connecter Chartbrew à ClickHouse, exécuter une requ�
 
     2. Cliquez sur **Créer une connexion** et sélectionnez **ClickHouse** parmi les bases de données disponibles.
 
-       <Image img="/images/integrations/data-visualization/chartbrew_02.webp" size="lg" alt="Sélectionner une connexion ClickHouse dans Chartbrew" />
+       ![Sélectionner une connexion ClickHouse dans Chartbrew](/images/integrations/data-visualization/chartbrew_02.webp)
 
     3. Saisissez les informations de connexion de votre base de données ClickHouse :
 
@@ -53,20 +51,20 @@ Dans ce guide, vous allez connecter Chartbrew à ClickHouse, exécuter une requ�
        * **Nom d’utilisateur** : votre nom d’utilisateur ClickHouse.
        * **Mot de passe** : votre mot de passe ClickHouse.
 
-       <Image img="/images/integrations/data-visualization/chartbrew_03.webp" size="lg" alt="Paramètres de connexion ClickHouse dans Chartbrew" />
+       ![Paramètres de connexion ClickHouse dans Chartbrew](/images/integrations/data-visualization/chartbrew_03.webp)
 
     4. Cliquez sur **Tester la connexion** pour vérifier que Chartbrew peut se connecter à ClickHouse.
 
     5. Si le test réussit, cliquez sur **Enregistrer la connexion**. Chartbrew récupérera automatiquement le schéma de ClickHouse.
 
-       <Image img="/images/integrations/data-visualization/chartbrew_04.webp" size="lg" alt="Schéma JSON ClickHouse dans Chartbrew" />
+       ![Schéma JSON ClickHouse dans Chartbrew](/images/integrations/data-visualization/chartbrew_04.webp)
   </Step>
 
   <Step title="Créer un jeu de données et exécuter une requête SQL" id="3-create-a-dataset-and-run-a-sql-query">
     1. Cliquez sur le bouton **Créer un jeu de données** ou accédez à l’onglet **Datasets** pour en créer un.
     2. Sélectionnez la connexion ClickHouse que vous avez créée précédemment.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_05.webp" size="lg" alt="Sélectionner une connexion ClickHouse pour le jeu de données" />
+    ![Sélectionner une connexion ClickHouse pour le jeu de données](/images/integrations/data-visualization/chartbrew_05.webp)
 
     Rédigez une requête SQL pour récupérer les données que vous souhaitez visualiser. Par exemple, cette requête calcule le prix moyen payé pour chaque année à partir du jeu de données `uk_price_paid` :
 
@@ -77,13 +75,13 @@ Dans ce guide, vous allez connecter Chartbrew à ClickHouse, exécuter une requ�
     ORDER BY year;
     ```
 
-    <Image img="/images/integrations/data-visualization/chartbrew_07.webp" size="lg" alt="Requête SQL ClickHouse dans Chartbrew" />
+    ![Requête SQL ClickHouse dans Chartbrew](/images/integrations/data-visualization/chartbrew_07.webp)
 
     Cliquez sur **Exécuter la requête** pour récupérer les données.
 
     Si vous ne savez pas comment rédiger la requête, vous pouvez utiliser **l’assistant IA de Chartbrew** pour générer des requêtes SQL à partir du schéma de votre base de données.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_06.webp" size="lg" alt="Assistant IA SQL ClickHouse dans Chartbrew" />
+    ![Assistant IA SQL ClickHouse dans Chartbrew](/images/integrations/data-visualization/chartbrew_06.webp)
 
     Une fois les données récupérées, cliquez sur **Configurer le jeu de données** pour définir les paramètres de visualisation.
   </Step>
@@ -94,11 +92,11 @@ Dans ce guide, vous allez connecter Chartbrew à ClickHouse, exécuter une requ�
     3. Choisissez un type de graphique (par ex., graphique en courbes, graphique en barres, diagramme circulaire) et ajoutez-le à votre tableau de bord.
     4. Cliquez sur **Terminer le jeu de données** pour finaliser la configuration.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_08.webp" size="lg" alt="Tableau de bord Chartbrew avec des données ClickHouse" />
+    ![Tableau de bord Chartbrew avec des données ClickHouse](/images/integrations/data-visualization/chartbrew_08.webp)
 
     Vous pouvez créer autant de jeux de données que vous le souhaitez pour visualiser différents aspects de vos données. À l’aide de ces jeux de données, vous pouvez créer plusieurs tableaux de bord afin de suivre différentes métriques.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_01.webp" size="lg" alt="Tableau de bord Chartbrew avec des données ClickHouse" />
+    ![Tableau de bord Chartbrew avec des données ClickHouse](/images/integrations/data-visualization/chartbrew_01.webp)
   </Step>
 
   <Step title="Automatiser les mises à jour des données" id="5-automate-data-updates">
@@ -108,7 +106,7 @@ Dans ce guide, vous allez connecter Chartbrew à ClickHouse, exécuter une requ�
     2. Configurez l’intervalle de mise à jour (par ex., toutes les heures, tous les jours).
     3. Enregistrez les paramètres pour activer l’actualisation automatique.
 
-    <Image img="/images/integrations/data-visualization/chartbrew_09.webp" size="lg" alt="Paramètres d’actualisation du jeu de données dans Chartbrew" />
+    ![Paramètres d’actualisation du jeu de données dans Chartbrew](/images/integrations/data-visualization/chartbrew_09.webp)
   </Step>
 </Steps>
 

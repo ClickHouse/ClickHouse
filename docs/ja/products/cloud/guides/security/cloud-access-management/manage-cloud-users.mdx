@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['クラウドユーザー', 'アクセス管理', 'セキュリティ', '権限', 'チーム管理']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 このガイドは、ClickHouse Cloud で Admin ロールを持つユーザー向けです。
@@ -27,25 +25,25 @@ import { EnterprisePlanFeatureBadge } from "/snippets/ja/components/EnterprisePl
   <Step title="組織設定にアクセスし、`Users and roles` を選択する" id="users-and-roles-1">
     サービスページで組織名を選択します。ポップアップメニューから `Users and roles` を選択します。
 
-    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+    ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
   </Step>
 
   <Step title="左上の `Invite members` を選択する" id="invite-members">
     左上の `Invite members` ボタンをクリックします。
 
-    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
+    ![](/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp)
   </Step>
 
   <Step title="新しいメンバーのメールアドレスを入力し、ロールを割り当てる" id="add-email-and-roles">
     招待画面の上部にメールアドレスを入力します。ユーザーに割り当てるロールを1つ以上選択します。
 
-    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
+    ![](/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp)
   </Step>
 
   <Step title={<>`Send invites` をクリックする</>} id="send-invites">
     画面下部の `Send invites` をクリックします。ユーザーにはメールが送信され、そのメールから組織に参加できます。招待の承諾について詳しくは、[Manage my account](/ja/products/cloud/guides/security/cloud-access-management/manage-my-account)を参照してください。
 
-    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
+    ![](/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp)
   </Step>
 </Steps>
 
@@ -77,19 +75,19 @@ Admin ロールが割り当てられているユーザーは、いつでも他�
   <Step title="組織設定にアクセスして `Users and roles` を選択する" id="users-and-roles-2">
     サービスページで、組織名を選択します。ポップアップメニューから `Users and roles` メニュー項目を選択します。
 
-    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+    ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
   </Step>
 
   <Step title="更新するユーザーを選択し、Edit を選択する" id="select-user-to-update">
     アクセスを変更するユーザーの行の末尾にあるメニューを選択します。ポップアップメニューから `Edit` を選択します。
 
-    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
+    ![](/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp)
   </Step>
 
   <Step title="権限を更新する" id="update-permissions">
     `Roles` ボックスをクリックしてメニューを展開します。チェックボックスを選択して、そのユーザーにロールを追加または削除します。ロールと関連する権限の一覧については、[Console roles and permissions](/ja/products/cloud/reference/security/console-roles) を参照してください。
 
-    <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
+    ![](/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp)
   </Step>
 
   <Step title="変更を保存する" id="save-changes">

@@ -7,8 +7,6 @@ title: 'Query واجهة برمجة تطبيقات endpoints'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يتطلب بناء تطبيقات تفاعلية قائمة على البيانات أكثر من مجرد قاعدة بيانات سريعة، وبيانات منظَّمة جيدًا، واستعلامات محسَّنة.
 فواجهتك الأمامية والخدمات المصغّرة تحتاج أيضًا إلى طريقة سهلة لاستهلاك البيانات التي تُرجعها تلك الاستعلامات، ويفضَّل أن يكون ذلك عبر واجهات برمجة تطبيقات منظَّمة جيدًا.
 
@@ -27,11 +25,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="افتح إعدادات مفتاح واجهة برمجة تطبيقات" id="open-settings">
     1. انتقل إلى ClickHouse Cloud Console → **Organization** → **واجهة برمجة تطبيقات Keys**
 
-    <Image img="/images/cloud/guides/query-endpoints/console-api-keys.webp" size="md" alt="مفاتيح واجهة برمجة تطبيقات" />
+    ![مفاتيح واجهة برمجة تطبيقات](/images/cloud/guides/query-endpoints/console-api-keys.webp)
 
     2. انقر على **Edit** بجوار مفتاح واجهة برمجة تطبيقات المستخدم لـ Query واجهة برمجة تطبيقات endpoints
 
-    <Image img="/images/cloud/guides/query-endpoints/api-key-edit.webp" size="md" alt="تحرير" />
+    ![تحرير](/images/cloud/guides/query-endpoints/api-key-edit.webp)
   </Step>
 
   <Step title="أضف عناوين IP المسموح بها" id="add-ips">
@@ -39,7 +37,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     2. أدخل عناوين IP أو نطاقات CIDR (على سبيل المثال، `203.0.113.1` أو `203.0.113.0/24`)
     3. أضف عدة إدخالات حسب الحاجة
 
-    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="مواقع محددة" />
+    ![مواقع محددة](/images/cloud/guides/query-endpoints/specific-locations.webp)
 
     يتطلب إنشاء Query واجهة برمجة تطبيقات endpoints دور Admin في Console ومفتاح واجهة برمجة تطبيقات يملك الأذونات المناسبة.
   </Step>

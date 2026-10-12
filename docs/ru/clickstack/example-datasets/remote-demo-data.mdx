@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'пример данных', 'пример набора данных', 'журналы', 'обсервабилити']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
 **В этом руководстве предполагается, что вы развернули ClickStack с открытым исходным кодом, следуя [инструкциям для образа all-in-one](/ru/clickstack/getting-started/oss) или [Local Mode Only](/ru/clickstack/deployment/local-mode-only), и завершили первоначальное создание пользователя. Либо можно пропустить всю локальную настройку и просто подключиться к нашей хостинговой демоверсии ClickStack [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com), в которой используется этот набор данных.**
@@ -62,7 +60,7 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Перейдите в `Team Settings` и нажмите `Edit` у `Local Connection`:
 
-    <Image img="/images/use-cases/observability/edit_connection.webp" alt="Редактирование подключения" size="lg" />
+    ![Редактирование подключения](/images/use-cases/observability/edit_connection.webp)
 
     Переименуйте подключение в `Demo` и заполните следующую форму, указав сведения о подключении к демо-серверу:
 
@@ -71,7 +69,7 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
     * `Username`: `otel_demo`
     * `Password`: оставьте пустым
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/edit_demo_connection.webp" alt="Редактирование демо-подключения" size="lg" />
+    ![Редактирование демо-подключения](/images/use-cases/observability/hyperdx-demo/edit_demo_connection.webp)
   </Step>
 
   <Step title="Измените источники" id="modify-sources">
@@ -83,7 +81,7 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Прокрутите вверх до `Sources` и измените каждый из источников — `Logs`, `Traces`, `Metrics` и `Sessions` — так, чтобы они использовали базу данных `otel_v2`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp" alt="Редактирование демонстрационного источника" size="lg" />
+    ![Редактирование демонстрационного источника](/images/use-cases/observability/hyperdx-demo/edit_demo_source.webp)
 
     <Note>
       Возможно, потребуется перезагрузить страницу, чтобы в каждом источнике отображался полный список баз данных.
@@ -93,7 +91,7 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
   <Step title="Измените временной диапазон" id="adjust-the-timeframe">
     Настройте временной диапазон так, чтобы отображались все данные за предыдущий `1 day`, используя селектор времени в правом верхнем углу.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_2.webp" alt="Шаг 2" size="lg" />
+    ![Шаг 2](/images/use-cases/observability/hyperdx-demo/step_2.webp)
 
     Вы можете заметить небольшое изменение в количестве ошибок на столбчатой диаграмме в разделе Overview: в нескольких идущих подряд столбцах красная часть немного увеличится.
 
@@ -107,7 +105,7 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Ошибка должна стать более заметной:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_3.webp" alt="Шаг 3" size="lg" />
+    ![Шаг 3](/images/use-cases/observability/hyperdx-demo/step_3.webp)
   </Step>
 
   <Step title="Выявите шаблоны ошибок" id="identify-error-patterns">
@@ -115,7 +113,7 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Кластеры ошибок показывают проблемы, связанные с неуспешными платежами, в том числе шаблон с названием `Failed to place order`. Дополнительные кластеры также указывают на проблемы со списанием средств с карт и на переполненные кэши.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_4.webp" alt="Шаг 4" size="lg" />
+    ![Шаг 4](/images/use-cases/observability/hyperdx-demo/step_4.webp)
 
     Обратите внимание, что эти кластеры ошибок, вероятно, связаны с разными сервисами.
   </Step>
@@ -125,13 +123,13 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     После этого отобразится список всех случаев этой ошибки, связанных с сервисом `frontend`:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_5.webp" alt="Шаг 5" size="lg" />
+    ![Шаг 5](/images/use-cases/observability/hyperdx-demo/step_5.webp)
 
     Выберите любую из найденных ошибок. Подробно отобразятся метаданные журналов. Просмотр разделов `Overview` и `Column Values` указывает на проблему со списанием средств с карт из-за кэша:
 
     `failed to charge card: could not charge the card: rpc error: code = Unknown desc = Visa cache full: cannot add new item.`
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_6.webp" alt="Шаг 6" size="lg" />
+    ![Шаг 6](/images/use-cases/observability/hyperdx-demo/step_6.webp)
   </Step>
 
   <Step title="Ознакомьтесь с инфраструктурой" id="explore-the-infrastructure">
@@ -141,7 +139,7 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Выберите вкладку `Infrastructure`, чтобы просмотреть метрики, связанные с базовыми подами сервиса `frontend`, и расширьте временной диапазон до `1d`:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_7.webp" alt="Шаг 7" size="lg" />
+    ![Шаг 7](/images/use-cases/observability/hyperdx-demo/step_7.webp)
 
     Похоже, проблема не связана с инфраструктурой — за этот период метрики заметно не менялись ни до, ни после ошибки. Закройте вкладку `Infrastructure`.
   </Step>
@@ -151,11 +149,11 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Выберите `Trace`, чтобы визуализировать связанный трейс. Прокрутив открывшееся представление вниз, можно увидеть, как HyperDX визуализирует распределённый трейс между микросервисами, связывая спаны в каждом сервисе. Платёжный процесс явно затрагивает несколько микросервисов, включая те, которые отвечают за оформление заказа и конвертацию валют.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_8.webp" alt="Шаг 8" size="lg" />
+    ![Шаг 8](/images/use-cases/observability/hyperdx-demo/step_8.webp)
 
     Прокрутив представление до самого низа, мы увидим, что ошибку вызывает сервис `payment`, после чего она распространяется обратно вверх по цепочке вызовов.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_9.webp" alt="Шаг 9" size="lg" />
+    ![Шаг 9](/images/use-cases/observability/hyperdx-demo/step_9.webp)
   </Step>
 
   <Step title="Поиск трассировок" id="searching-traces">
@@ -163,25 +161,25 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Переключитесь в основное представление Search, выбрав `Search`. Смените источник данных на `Traces` и выберите представление `Results table`. **Убедитесь, что временной диапазон по-прежнему охватывает последний день.**
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_10.webp" alt="Шаг 10" size="lg" />
+    ![Шаг 10](/images/use-cases/observability/hyperdx-demo/step_10.webp)
 
     В этом представлении показаны все трассировки за последний день. Мы знаем, что проблема возникает в нашем сервисе payment, поэтому примените к `ServiceName` фильтр `payment`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_11.webp" alt="Шаг 11" size="lg" />
+    ![Шаг 11](/images/use-cases/observability/hyperdx-demo/step_11.webp)
 
     Если применить к трассировкам кластеризацию событий, выбрав `Шаблоны событий`, мы сразу увидим проблему с кэшем в сервисе `payment`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_12.webp" alt="Шаг 12" size="lg" />
+    ![Шаг 12](/images/use-cases/observability/hyperdx-demo/step_12.webp)
   </Step>
 
   <Step title="Просмотрите инфраструктуру, связанную с трейсом" id="explore-infrastructure-for-a-trace">
     Перейдите в представление результатов, нажав `Results table`. Отфильтруйте записи с ошибками с помощью фильтра `StatusCode` и значения `Error`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_13.webp" alt="Шаг 13" size="lg" />
+    ![Шаг 13](/images/use-cases/observability/hyperdx-demo/step_13.webp)
 
     Выберите ошибку `Error: Visa cache full: cannot add new item.`, перейдите на вкладку `Infrastructure` и расширьте временной диапазон до `1d`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_14.webp" alt="Шаг 14" size="lg" />
+    ![Шаг 14](/images/use-cases/observability/hyperdx-demo/step_14.webp)
 
     Сопоставив трейсы с метриками, видно, что потребление памяти и CPU сервисом `payment` выросло, а затем упало до `0` (вероятно, из-за перезапуска пода), что указывает на проблемы с ресурсами, вызванные переполнением cache. Можно ожидать, что это повлияло на время обработки платежей.
   </Step>
@@ -193,17 +191,17 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Вернитесь к представлению таблицы результатов и выберите период времени, в который есть ошибки, чтобы ограничить объём данных. Обязательно захватите несколько часов до появления ошибок и, если возможно, после них (проблема может всё ещё сохраняться):
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_15.webp" alt="Шаг 15" size="lg" />
+    ![Шаг 15](/images/use-cases/observability/hyperdx-demo/step_15.webp)
 
     Удалите фильтр ошибок и выберите `Event Deltas` в левом меню `Analysis Mode`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_16.webp" alt="Шаг 16" size="lg" />
+    ![Шаг 16](/images/use-cases/observability/hyperdx-demo/step_16.webp)
 
     Верхняя панель показывает распределение по длительности, где цвета обозначают плотность событий (количество спанов). Обычно стоит исследовать события, находящиеся вне основной концентрации.
 
     Если выбрать события с длительностью больше `1ms` и применить фильтр `Filter by selection`, можно проанализировать различия между &quot;обычными&quot; событиями и группой высокой плотности спанов с длительностью около ~0ms:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_17.webp" alt="Шаг 17" size="lg" />
+    ![Шаг 17](/images/use-cases/observability/hyperdx-demo/step_17.webp)
 
     После анализа этого подмножества данных видно, что спаны &quot;background&quot; вне выделения — это в основном транзакции visa, связанные с ответами 0ms из-за ошибок кэша.
   </Step>
@@ -232,11 +230,11 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Нажатие `▶️` покажет, как со временем ухудшалась производительность обработки платежей.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_18.webp" alt="Шаг 18" size="lg" />
+    ![Шаг 18](/images/use-cases/observability/hyperdx-demo/step_18.webp)
 
     Если задать `Group By` как `SpanAttributes['app.payment.card_type']` (просто введите `card` для автодополнения), можно увидеть, как производительность сервиса для транзакций Visa ухудшилась по сравнению с Mastercard:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_19.webp" alt="Шаг 19" size="lg" />
+    ![Шаг 19](/images/use-cases/observability/hyperdx-demo/step_19.webp)
 
     Обратите внимание: после возникновения ошибки ответы возвращаются за `0s`.
   </Step>
@@ -254,7 +252,7 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Мы видим, что размер кэша рос в течение 4–5 часов (вероятно, после развертывания), прежде чем достиг максимального значения `100,000`. По данным `Sample Matched Events` видно, что наши ошибки коррелируют с тем, что кэш достигает этого предела, после чего его размер фиксируется как `0`, а ответы также начинают возвращаться за `0s`.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_20.webp" alt="Шаг 20" size="lg" />
+    ![Шаг 20](/images/use-cases/observability/hyperdx-demo/step_20.webp)
 
     В итоге, исследовав журналы, трейсы и, наконец, метрики, мы пришли к следующим выводам:
 
@@ -274,11 +272,11 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Перейдите на вкладку `Client Sessions` в левом меню, предварительно убедившись, что в качестве источника данных выбрано `Sessions`, а временной период установлен на `Last 1 day`:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_21.webp" alt="Шаг 21" size="lg" />
+    ![Шаг 21](/images/use-cases/observability/hyperdx-demo/step_21.webp)
 
     Найдите `SpanAttributes.userEmail: Ronny.Windler`, чтобы найти сеанс нашего клиента. При выборе сеанса слева отобразятся события браузера и связанные спаны этого сеанса, а справа — воспроизведенная картина действий пользователя в браузере:
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_22.webp" alt="Шаг 22" size="lg" />
+    ![Шаг 22](/images/use-cases/observability/hyperdx-demo/step_22.webp)
   </Step>
 
   <Step title="Воспроизведение сеансов" id="replaying-sessions">
@@ -286,11 +284,11 @@ import DemoArchitecture from '/snippets/ru/_demo.mdx';
 
     Если прокрутить список спанов до конца, можно увидеть ошибку `500`, связанную с `/api/checkout`. Нажатие кнопки ▶️ для этого конкретного спана перемещает воспроизведение к этой точке сеанса, позволяя нам подтвердить впечатления клиента: похоже, что оплата просто не работает, и при этом никакая ошибка не отображается.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_23.webp" alt="Шаг 23" size="lg" />
+    ![Шаг 23](/images/use-cases/observability/hyperdx-demo/step_23.webp)
 
     Выбрав этот спан, мы можем подтвердить, что причиной была внутренняя ошибка. Перейдя на вкладку `Trace` и просмотрев связанные спаны, мы можем убедиться, что клиент действительно столкнулся с нашей проблемой кэша.
 
-    <Image img="/images/use-cases/observability/hyperdx-demo/step_24.webp" alt="Шаг 24" size="lg" />
+    ![Шаг 24](/images/use-cases/observability/hyperdx-demo/step_24.webp)
   </Step>
 </Steps>
 

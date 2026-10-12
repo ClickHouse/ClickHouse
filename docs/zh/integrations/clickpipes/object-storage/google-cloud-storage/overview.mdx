@@ -6,8 +6,6 @@ title: 'Google Cloud Storage 与 ClickHouse Cloud 集成'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 GCS ClickPipe 提供了一种完全托管且具备高弹性的 Google Cloud Storage (GCS) 数据摄取方式。它支持 **一次性** 和 **持续摄取** 两种模式，并具备精确一次语义。
 
 GCS ClickPipes 既可以通过 ClickPipes UI 手动部署和管理，也可以借助 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
@@ -157,7 +155,7 @@ ClickPipes 使用的服务账号必须在存储桶级别具备以下权限：
 
 要使用 [HMAC 密钥](https://docs.cloud.google.com/storage/docs/authentication/hmackeys)进行身份验证，请在设置 ClickPipe 连接时，在 **身份验证方法** 中选择 `Credentials`。然后，分别在 `Access key` 和 `Secret key` 中填写访问密钥 (例如 `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) 和秘密密钥 (例如 `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`)。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp" alt="GCS ClickPipes 的 HMAC 凭据" size="lg" border />
+![GCS ClickPipes 的 HMAC 凭据](/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp)
 
 请按照[本指南](/zh/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret)创建带有 HMAC 密钥的服务账号。
 
@@ -195,7 +193,7 @@ ClickPipes 提供了合理的默认设置，能够满足大多数使用场景的
 | `Parallel view processing`           | false   | 是否启用以[并发而非顺序](/zh/reference/settings/session-settings/parallel#parallel_view_processing)方式推送到已附加视图。                           |
 | `Use cluster function`               | true    | 是否在多个节点间并行处理文件。                                                                                                            |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="ClickPipes 的高级设置" size="lg" border />
+![ClickPipes 的高级设置](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
 
 <div id="scaling">
   ### 扩缩容

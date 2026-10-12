@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['kafka', 'table engine', 'streaming', 'real-time', 'message queue']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 The Kafka table engine can be used to [**read** data from](#kafka-to-clickhouse) and [**write** data to](#clickhouse-to-kafka) Apache Kafka and other Kafka API-compatible brokers (e.g., Redpanda, Amazon MSK).
 
 ### Kafka to ClickHouse {#kafka-to-clickhouse}
@@ -27,7 +25,7 @@ The Kafka table engine allows ClickHouse to read from a Kafka topic directly. Wh
 
 To persist this data from a read of the table engine, we need a means of capturing the data and inserting it into another table. Trigger-based materialized views natively provide this functionality. A materialized view initiates a read on the table engine, receiving batches of documents. The TO clause determines the destination of the data - typically a table of the [Merge Tree family](/reference/engines/table-engines/mergetree-family/index). This process is visualized below:
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_01.webp" size="lg" alt="Kafka table engine architecture diagram" style={{width: '80%'}} />
+![Kafka table engine architecture diagram](/images/integrations/data-ingestion/kafka/kafka_01.webp)
 
 #### Steps {#steps}
 
@@ -336,7 +334,7 @@ Although a rarer use case, ClickHouse data can also be persisted in Kafka. For e
 
 Our initial objective is best illustrated:
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="Kafka table engine with inserts diagram" />
+![Kafka table engine with inserts diagram](/images/integrations/data-ingestion/kafka/kafka_02.webp)
 
 We assume you have the tables and views created under steps for [Kafka to ClickHouse](#kafka-to-clickhouse) and that the topic has been fully consumed.
 
@@ -380,7 +378,7 @@ You should see 100 additional rows:
 
 We can utilize materialized views to push messages to a Kafka engine (and a topic) when documents are inserted into a table. When rows are inserted into the GitHub table, a materialized view is triggered, which causes the rows to be inserted back into a Kafka engine and into a new topic. Again this is best illustrated:
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="Kafka table engine with materialized views diagram"/>
+![Kafka table engine with materialized views diagram](/images/integrations/data-ingestion/kafka/kafka_03.webp)
 
 Create a new Kafka topic `github_out` or equivalent. Ensure a Kafka table engine `github_out_queue` points to this topic.
 
@@ -471,7 +469,7 @@ Through Kafka consumer groups, multiple ClickHouse instances can potentially rea
 
 Multiple ClickHouse instances can all be configured to read from a topic using the same consumer group id - specified during the Kafka table engine creation. Therefore, each instance will read from one or more partitions, inserting segments to their local target table. The target tables can, in turn, be configured to use a ReplicatedMergeTree to handle duplication of the data. This approach allows Kafka reads to be scaled with the ClickHouse cluster, provided there are sufficient Kafka partitions.
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="Kafka table engine with ClickHouse clusters diagram"/>
+![Kafka table engine with ClickHouse clusters diagram](/images/integrations/data-ingestion/kafka/kafka_04.webp)
 
 #### Tuning performance {#tuning-performance}
 

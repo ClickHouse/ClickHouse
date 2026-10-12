@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import AsyncInserts from '/snippets/pt-BR/_async_inserts.mdx';
 import BulkInserts from '/snippets/pt-BR/_bulk_inserts.mdx';
 
@@ -33,7 +31,7 @@ Por padrão, as inserções no ClickHouse são síncronas.  Cada consulta de ins
 
 A seguir, analisamos brevemente como funcionam as inserções do MergeTree no ClickHouse:
 
-<Image img="/images/bestpractices/insert_process.webp" size="lg" alt="Processos de inserção" background="black" />
+![Processos de inserção](/images/bestpractices/insert_process.webp)
 
 <div id="client-side-steps">
   #### Etapas no lado do cliente

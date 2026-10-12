@@ -6,8 +6,6 @@ keywords: ['materialized view', 'バックフィル', 'データの挿入', '耐
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse を初めて使う場合でも、既存のデプロイメントを担当している場合でも、テーブルに履歴データをバックフィルする必要は必ず出てきます。これが比較的簡単に済む場合もありますが、materialized view へのデータ投入も必要になると、複雑さが増すことがあります。このガイドでは、この作業を進めるためのいくつかの手順を説明します。これらは、それぞれのユースケースに応じて適用できます。
 
 <Note>
@@ -478,7 +476,7 @@ materialized view のクエリは、より複雑になりがちで (そうでな
 
 重要なのは、この table engine に関連付けられた materialized view は、挿入時にデータのブロック単位で引き続き実行され、その結果をターゲットテーブルに送ることです。これらのブロックのサイズは設定可能です。ブロックが大きいほど効率が上がり (処理も速くなり) 得る一方で、消費するリソースも増えます (主にメモリ) 。この table engine を使えば、materialized view をインクリメンタルに、つまり 1 回に 1 ブロックずつ構築できるため、集約全体をメモリ上に保持する必要を避けられます。
 
-<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="ClickHouse における非正規化" />
+![ClickHouse における非正規化](/images/data-modeling/null_table_mv.webp)
 
 <br />
 

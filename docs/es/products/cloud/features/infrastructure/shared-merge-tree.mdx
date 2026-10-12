@@ -7,8 +7,6 @@ description: 'Describe el motor de tabla SharedMergeTree'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 La familia de motores de tabla SharedMergeTree es un reemplazo nativo de la nube para los motores ReplicatedMergeTree, optimizado para funcionar sobre almacenamiento compartido (p. ej., Amazon S3, Google Cloud Storage, MinIO, Azure Blob Storage). Existe un equivalente de SharedMergeTree para cada tipo específico de motor MergeTree; es decir, SharedReplacingMergeTree sustituye a ReplicatedReplacingMergeTree.
 
 La familia de motores de tabla SharedMergeTree es la base de ClickHouse Cloud. Para el usuario final, no hace falta cambiar nada para empezar a usar la familia de motores SharedMergeTree en lugar de los motores basados en ReplicatedMergeTree. Ofrece las siguientes ventajas adicionales:
@@ -21,11 +19,11 @@ La familia de motores de tabla SharedMergeTree es la base de ClickHouse Cloud. P
 
 Una mejora significativa que aporta SharedMergeTree es que proporciona una separación más marcada entre cómputo y almacenamiento en comparación con ReplicatedMergeTree. A continuación puede ver cómo ReplicatedMergeTree separa el cómputo y el almacenamiento:
 
-<Image img="/images/cloud/reference/shared-merge-tree-1.png" alt="Diagrama de ReplicatedMergeTree" size="md" />
+![Diagrama de ReplicatedMergeTree](/images/cloud/reference/shared-merge-tree-1.png)
 
 Como puede ver, aunque los datos almacenados en ReplicatedMergeTree están en almacenamiento de objetos, los metadatos siguen residiendo en cada uno de los clickhouse-servers. Esto significa que, para cada operación replicada, los metadatos también deben replicarse en todas las réplicas.
 
-<Image img="/images/cloud/reference/shared-merge-tree-2.png" alt="Diagrama de ReplicatedMergeTree con metadatos" size="md" />
+![Diagrama de ReplicatedMergeTree con metadatos](/images/cloud/reference/shared-merge-tree-2.png)
 
 A diferencia de ReplicatedMergeTree, SharedMergeTree no requiere que las réplicas se comuniquen entre sí. En su lugar, toda la comunicación se realiza a través del almacenamiento compartido y clickhouse-keeper. SharedMergeTree implementa replicación asíncrona sin líder y utiliza clickhouse-keeper para la coordinación y el almacenamiento de metadatos. Esto significa que los metadatos no necesitan replicarse a medida que el servicio escala y reduce su tamaño. Esto se traduce en operaciones más rápidas de replicación, mutación, fusión y escalado. SharedMergeTree permite cientos de réplicas por tabla, lo que hace posible escalar dinámicamente sin segmentos. En ClickHouse Cloud se utiliza un enfoque de ejecución distribuida de consultas para aprovechar más recursos de cómputo en una consulta.
 

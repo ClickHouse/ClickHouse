@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack Open Source', 'primeiros passos', 'implantação com Docker', 'OpenTelemetry', 'implantação local']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Execute o ClickStack Open Source localmente, envie um evento de teste por meio do OpenTelemetry Collector e confirme se o evento está disponível na interface do ClickStack.
 
 Com o ClickStack Open Source, você executa e gerencia o backend do ClickHouse, a interface do ClickStack e o pipeline de ingestão. A imagem all-in-one agrupa esses componentes e o MongoDB em um único contêiner Docker para avaliação e testes locais.
@@ -127,7 +125,7 @@ Para workloads contínuos ou de produção, consulte as [opções de implantaç�
 
     O resultado deve incluir o evento de teste com o nome de serviço `clickstack-docs-test`.
 
-    <Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="Visualização de logs do ClickStack Open Source mostrando o evento de teste de ingestão do ClickStack" border />
+    ![Visualização de logs do ClickStack Open Source mostrando o evento de teste de ingestão do ClickStack](/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp)
   </Step>
 </Steps>
 

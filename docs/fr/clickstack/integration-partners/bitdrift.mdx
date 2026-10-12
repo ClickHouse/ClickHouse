@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['bitdrift', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'observabilité mobile', 'traçage']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -39,7 +37,7 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
 
 bitdrift conserve la télémétrie mobile en périphérie jusqu’à ce qu’elle soit demandée, afin que les équipes puissent récupérer la session complète non échantillonnée ayant conduit à un crash ou à un problème de performances, plutôt que de travailler à partir d’un ensemble fixe de signaux prééchantillonnés. La plateforme bitdrift Capture est disponible sous forme de SaaS hébergé par bitdrift ou en déploiement dans votre propre Cloud (ou bucket), au sein de votre compte AWS.
 
-<Image img="/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png" alt="Un tableau de bord bitdrift User Journey affichant les parcours menant à un ANR" size="lg" />
+![Un tableau de bord bitdrift User Journey affichant les parcours menant à un ANR](/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png)
 
 *Un tableau de bord bitdrift User Journey affichant les parcours empruntés par les utilisateurs jusqu’à un ANR.*
 
@@ -85,7 +83,7 @@ Pour connaître les détails propres à chaque plateforme pour chacune de ces é
 
 Une fois la configuration effectuée, les lignes de log de la chronologie bitdrift et les vues de span affichent un lien **View Trace** qui transmet l’ID de trace capturé à l’UI ClickStack (HyperDX).
 
-<Image img="/images/clickstack/bitdrift/bitdrift-view-trace.jpg" alt="Une trace bitdrift renvoyant vers une trace distribuée dans l’UI ClickStack" size="lg" />
+![Une trace bitdrift renvoyant vers une trace distribuée dans l’UI ClickStack](/images/clickstack/bitdrift/bitdrift-view-trace.jpg)
 
 *Suivi d’un lien View Trace depuis une session bitdrift vers une trace distribuée dans l’UI ClickStack (HyperDX).*
 

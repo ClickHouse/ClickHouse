@@ -7,8 +7,6 @@ title: 'Стриминг данных из SQL Server в ClickHouse для бы�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В этой статье мы разберем, как организовать стриминг данных из SQL Server в ClickHouse. ClickHouse — отличный выбор, если вам нужна сверхбыстрая аналитика для внутренней панели мониторинга или клиентских панелей мониторинга. Мы пошагово покажем, как настроить обе базы данных, как соединить их между собой и, наконец, как использовать [Streamkap](https://streamkap.com) для стриминга данных. Если SQL Server обеспечивает ваши повседневные операции, а для аналитики вам нужны скорость и возможности ClickHouse, вы попали по адресу.
 
 <div id="why-stream-data-from-sql-server-to-clickhouse">
@@ -79,11 +77,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     * Имя пользователя и пароль
     * Имя базы данных
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+    ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
 
     #### Что происходит в фоновом режиме
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+    ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
 
     После настройки Streamkap подключится к вашему SQL Server и обнаружит таблицы. Для этой демонстрации мы выберем таблицу, в которую уже поступают данные, например events или transactions.
   </Step>
@@ -148,7 +146,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     #### Нужна ли вам дозагрузка?
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+    ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
 
     У вас может возникнуть вопрос: нужно ли дозагружать старые данные?
 

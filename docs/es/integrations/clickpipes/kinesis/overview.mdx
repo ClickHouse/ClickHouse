@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Los ClickPipes de Kinesis se pueden implementar y gestionar manualmente mediante la UI de ClickPipes, así como mediante programación con [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
 
 <div id="prerequisite">
@@ -24,37 +22,37 @@ Debe haberse familiarizado con la [introducción a ClickPipes](/es/integrations/
 
 1. Acceda a la SQL Console de su servicio de ClickHouse Cloud.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="Servicio de ClickPipes" size="lg" border />
+![Servicio de ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
 
 2. Seleccione el botón `Data Sources` en el menú lateral izquierdo y haga clic en &quot;Set up a ClickPipe&quot;
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Seleccionar importaciones" size="lg" border />
+![Seleccionar importaciones](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
 
 3. Seleccione su fuente de datos.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="Seleccionar tipo de fuente de datos" size="lg" border />
+![Seleccionar tipo de fuente de datos](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
 
 4. Complete el formulario proporcionando a su ClickPipe un nombre, una descripción (opcional), su rol de IAM o sus credenciales, y otros detalles de conexión.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Completar los detalles de la conexión" size="lg" border />
+![Completar los detalles de la conexión](/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp)
 
 5. Seleccione el stream de Kinesis, **Data format** y el offset inicial. Para `Protobuf`, cargue un archivo `.proto` o un `FileDescriptorSet` serializado (máximo 768 KiB). No se requiere ningún schema registry.
 
    La UI muestra datos de ejemplo del stream seleccionado. **Use Kinesis Enhanced Fan-Out** está habilitado de forma predeterminada. Consulte la [documentación de Amazon Kinesis](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) para más detalles.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Configurar formato de datos y topic" size="lg" border />
+![Configurar formato de datos y topic](/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp)
 
 6. En el siguiente paso, puede seleccionar si desea ingestar datos en una nueva tabla de ClickHouse o reutilizar una existente. Siga las instrucciones en pantalla para modificar el nombre de la tabla, el esquema y la configuración. Puede ver una vista previa en tiempo real de sus cambios en la tabla de ejemplo de la parte superior.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Configurar tabla, esquema y settings" size="lg" border />
+![Configurar tabla, esquema y settings](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
 
 También puede personalizar la configuración avanzada usando los controles proporcionados
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Configurar controles avanzados" size="lg" border />
+![Configurar controles avanzados](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
 
 7. Como alternativa, puede decidir ingestar sus datos en una tabla de ClickHouse existente. En ese caso, la UI le permitirá mapear campos de la fuente a los campos de ClickHouse en la tabla de destino seleccionada.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Usar una tabla existente" size="lg" border />
+![Usar una tabla existente](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
 
 8. Por último, puede configurar los permisos para el usuario interno de ClickPipes.
 
@@ -63,21 +61,21 @@ También puede personalizar la configuración avanzada usando los controles prop
 * `Full access`: con acceso completo al clúster. Puede resultar útil si usa una vista materializada o un Diccionario con la tabla de destino.
   * `Only destination table`: solo con permisos `INSERT` sobre la tabla de destino.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permisos" border />
+![Permisos](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
 
 9. Al hacer clic en &quot;Complete Setup&quot;, el sistema registrará su ClickPipe y podrá verlo en la tabla de resumen.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Aviso de éxito" size="sm" border />
+![Aviso de éxito](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Aviso de eliminación" size="lg" border />
+![Aviso de eliminación](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
 
 La tabla de resumen ofrece controles para mostrar datos de ejemplo de la fuente o de la tabla de destino en ClickHouse
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="Ver destino" size="lg" border />
+![Ver destino](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
 
 Así como controles para eliminar el ClickPipe y mostrar un resumen del trabajo de ingestión.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="Ver resumen" size="lg" border />
+![Ver resumen](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
 
 10. **¡Enhorabuena!** Ha configurado correctamente su primer ClickPipe. Si se trata de un ClickPipe de streaming, se ejecutará continuamente e ingestará datos en tiempo real desde su fuente de datos remota. De lo contrario, ingestará el lote y finalizará.
 

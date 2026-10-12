@@ -8,19 +8,17 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.read-replicas-beta" />
 
 As réplicas de leitura permitem criar uma ou mais cópias do seu banco de dados primário do ClickHouse Managed Postgres. Essas réplicas acompanham continuamente o banco de dados primário usando a replicação nativa do PostgreSQL para permanecerem atualizadas com as alterações.
 
 Para gerenciar réplicas de leitura, clique no ícone de edição no seu warehouse:
 
-<Image img="/images/managed-postgres/warehouse-view.webp" alt="Visualização do warehouse com ícone de edição" size="md" border />
+![Visualização do warehouse com ícone de edição](/images/managed-postgres/warehouse-view.webp)
 
 Isso abre a caixa de diálogo do warehouse, onde você pode ver os serviços existentes e criar novas réplicas de leitura:
 
-<Image img="/images/managed-postgres/read-replica-dialog.webp" alt="Caixa de diálogo de gerenciamento de réplicas de leitura" size="md" border />
+![Caixa de diálogo de gerenciamento de réplicas de leitura](/images/managed-postgres/read-replica-dialog.webp)
 
 ## Gerenciando réplicas de leitura {#managing-read-replicas}
 
@@ -28,11 +26,11 @@ A página de **réplicas de leitura** oferece duas visualizações, alternadas p
 
 A visualização **Flow** exibe a topologia de replicação — sua **instância primária** no topo, com setas descendo até cada réplica associada, mostrando tier, região e status de forma resumida:
 
-<Image img="/images/managed-postgres/read-replicas-flow.webp" alt="Visualização Flow de réplicas de leitura mostrando a topologia da primária e das réplicas" size="lg" border />
+![Visualização Flow de réplicas de leitura mostrando a topologia da primária e das réplicas](/images/managed-postgres/read-replicas-flow.webp)
 
 A visualização **Table** lista cada réplica com seu nome de serviço, provedor de Cloud e região, status do serviço, horário de criação e uma ação **Detach service**:
 
-<Image img="/images/managed-postgres/read-replicas-table.webp" alt="Visualização Table de réplicas de leitura" size="lg" border />
+![Visualização Table de réplicas de leitura](/images/managed-postgres/read-replicas-table.webp)
 
 Para criar uma nova réplica, clique em **Create réplica de leitura** no canto superior direito de qualquer uma das visualizações.
 

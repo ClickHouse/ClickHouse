@@ -7,12 +7,11 @@ doc_type: 'guide'
 keywords: ['migration', 'ClickHouse Cloud', 'OSS', 'Migration d’un ClickHouse autogéré vers Cloud']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import AddARemoteSystem from '/snippets/fr/_add_remote_ip_access_list_detail.mdx';
 
 import CompatibilityNote from '/snippets/fr/compatibility.mdx';
 
-<Image img="/images/integrations/migration/self-managed-01.webp" size="lg" alt="Migration de ClickHouse autogéré" />
+![Migration de ClickHouse autogéré](/images/integrations/migration/self-managed-01.webp)
 
 Ce guide explique comment migrer d’un serveur ClickHouse autogéré vers ClickHouse Cloud, ainsi que comment migrer entre des services ClickHouse Cloud.
 La fonction [`remoteSecure`](/fr/reference/functions/table-functions/remote) est utilisée dans les requêtes `SELECT` et `INSERT` afin d’accéder à des serveurs ClickHouse distants, ce qui rend la migration des tables aussi simple que de rédiger une requête `INSERT INTO` avec un `SELECT` imbriqué.
@@ -21,7 +20,7 @@ La fonction [`remoteSecure`](/fr/reference/functions/table-functions/remote) est
   ## Migration de ClickHouse autogéré vers ClickHouse Cloud
 </div>
 
-<Image img="/images/integrations/migration/self-managed-02.webp" size="lg" alt="Migration de ClickHouse autogéré" />
+![Migration de ClickHouse autogéré](/images/integrations/migration/self-managed-02.webp)
 
 Que votre table source soit partitionnée et/ou répliquée, dans ClickHouse Cloud il vous suffit de créer une table de destination (vous pouvez omettre le paramètre Engine pour cette table, `SharedMergeTree` sera automatiquement sélectionné comme moteur de table),
 et ClickHouse Cloud gérera automatiquement la mise à l’échelle verticale et horizontale.
@@ -95,7 +94,7 @@ CREATE TABLE db.table ...
 
 * Utilisez la fonction `remoteSecure` pour récupérer les données depuis la source auto-gérée
 
-<Image img="/images/integrations/migration/self-managed-03.webp" size="lg" alt="Migration d’un ClickHouse auto-géré" />
+![Migration d’un ClickHouse auto-géré](/images/integrations/migration/self-managed-03.webp)
 
 ```sql
 INSERT INTO db.table SELECT * FROM
@@ -108,7 +107,7 @@ remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
 
 * Utilisez la fonction `remoteSecure` pour pousser les données vers le service ClickHouse Cloud
 
-<Image img="/images/integrations/migration/self-managed-04.webp" size="lg" alt="Migration d’un ClickHouse autogéré" />
+![Migration d’un ClickHouse autogéré](/images/integrations/migration/self-managed-04.webp)
 
 <Tip>
   **Ajoutez le système distant à la liste d’accès IP de votre service ClickHouse Cloud**
@@ -128,7 +127,7 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
   ## Migration entre services ClickHouse Cloud
 </div>
 
-<Image img="/images/integrations/migration/self-managed-05.webp" size="lg" alt="Migration de ClickHouse autogéré" />
+![Migration de ClickHouse autogéré](/images/integrations/migration/self-managed-05.webp)
 
 Voici quelques cas d’usage de migration de données entre services ClickHouse Cloud :
 
@@ -137,7 +136,7 @@ Voici quelques cas d’usage de migration de données entre services ClickHouse 
 
 Dans cet exemple, il y a deux services ClickHouse Cloud, désignés par *source* et *destination*. Les données seront récupérées depuis la source vers la destination. Même s’il est également possible d’utiliser un envoi direct, la récupération est présentée ici, car elle repose sur un utilisateur en lecture seule.
 
-<Image img="/images/integrations/migration/self-managed-06.webp" size="lg" alt="Migration de ClickHouse autogéré" />
+![Migration de ClickHouse autogéré](/images/integrations/migration/self-managed-06.webp)
 
 La migration se déroule en quelques étapes :
 

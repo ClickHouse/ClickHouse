@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
 ClickHouse Managed Postgres предоставляет возможности гибкого масштабирования в соответствии с требованиями вашей рабочей нагрузки. Доступно более 50 типов инстансов с NVMe-накопителями, поэтому вы можете независимо масштабировать CPU, память и хранилище, чтобы оптимизировать производительность и стоимость под свой сценарий использования.
@@ -22,7 +20,7 @@ ClickHouse Managed Postgres предлагает широкий выбор ти�
 * **NVMe-хранилище** на всех типах инстансов обеспечивает стабильно высокую производительность дискового ввода-вывода
 * **Независимое масштабирование ресурсов**: выбирайте оптимальный баланс CPU, памяти и хранилища в зависимости от вашей рабочей нагрузки
 
-<Image img="/images/managed-postgres/instance-types.webp" alt="Типы инстансов" size="md" border />
+![Типы инстансов](/images/managed-postgres/instance-types.webp)
 
 <div id="choosing-instance">
   ### Выбор подходящего типа инстанса
@@ -44,7 +42,7 @@ ClickHouse Managed Postgres предлагает широкий выбор ти�
 
 При смене типа инстанса ClickHouse Managed Postgres выполняет вертикальное масштабирование: подготавливает новую инфраструктуру и переносит вашу базу данных с минимальным простоем.
 
-<Image img="/images/managed-postgres/scaling-settings.webp" alt="Настройки масштабирования" size="md" border />
+![Настройки масштабирования](/images/managed-postgres/scaling-settings.webp)
 
 <div id="scaling-process">
   ### Процесс масштабирования

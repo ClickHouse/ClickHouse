@@ -9,7 +9,6 @@ doc_type: 'guide'
 keywords: ['optimisation des requêtes', 'goulots d’étranglement des requêtes', 'performance', 'tests de performance']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/fr/_nyc_taxi_example_dataset.mdx';
 
 L’optimisation des requêtes est plus facile lorsque vous modifiez un seul élément d’une requête à la fois et comparez les résultats à une référence stable. Ce guide explique comment simplifier progressivement une requête et utiliser les différences entre les exécutions pour identifier les opérations qui contribuent le plus à sa durée. Vous pouvez ensuite confirmer le goulot d’étranglement suspecté avant de choisir une optimisation.
@@ -71,7 +70,7 @@ SET optimize_use_implicit_projections = 0;
 
 Le workflow combine des exécutions de requêtes contrôlées et des mesures issues du journal des requêtes :
 
-<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Workflow permettant d’identifier les requêtes candidates dans les journaux de requêtes et de tester les modifications de manière isolée" />
+![Workflow permettant d’identifier les requêtes candidates dans les journaux de requêtes et de tester les modifications de manière isolée](/images/guides/best-practices/query_optimization_diagram_1.webp)
 
 Collectez les mesures pour chaque exécution comme suit :
 

@@ -7,8 +7,6 @@ slug: /guides/working-with-joins
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickHouse полностью поддерживает стандартные SQL JOIN, обеспечивая эффективный анализ данных.
 В этом руководстве вы познакомитесь с некоторыми распространёнными типами JOIN и узнаете, как использовать их с помощью диаграмм Венна и примеров запросов к нормализованному набору данных [IMDB](https://en.wikipedia.org/wiki/IMDb) из [репозитория реляционных наборов данных](https://relational.fit.cvut.cz/dataset/IMDb).
 
@@ -22,7 +20,7 @@ ClickHouse полностью поддерживает стандартные SQ
 
 Вы будете использовать следующие четыре таблицы из демонстрационного набора данных:
 
-<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="Схема IMDB" />
+![Схема IMDB](/images/starter_guides/joins/imdb_schema.webp)
 
 Эти четыре таблицы содержат данные о фильмах, у которых может быть один или несколько жанров.
 Роли в фильмах исполняют актёры.
@@ -56,7 +54,7 @@ ClickHouse поддерживает следующие типы JOIN:
 `INNER JOIN` возвращает для каждой пары строк, совпадающих по ключам JOIN, значения столбцов строки из левой таблицы, объединённые со значениями столбцов строки из правой таблицы.
 Если для строки находится более одного совпадения, возвращаются все совпадения (то есть для строк с совпадающими ключами JOIN формируется [декартово произведение](https://en.wikipedia.org/wiki/Cartesian_product)).
 
-<Image img="/images/starter_guides/joins/inner_join.webp" alt="INNER JOIN" />
+![INNER JOIN](/images/starter_guides/joins/inner_join.webp)
 
 Этот запрос находит жанры для каждого фильма, объединяя таблицу `movies` с таблицей `genres`:
 
@@ -104,7 +102,7 @@ LIMIT 10;
 
 Запрос `FULL OUTER JOIN` объединяет `LEFT` и `RIGHT OUTER JOIN` и возвращает значения из несовпадающих строк левой и правой таблиц вместе со значениями по умолчанию для столбцов правой и левой таблиц соответственно.
 
-<Image img="/images/starter_guides/joins/outer_join.webp" alt="OUTER JOIN" />
+![OUTER JOIN](/images/starter_guides/joins/outer_join.webp)
 
 <Note>
   ClickHouse можно [настроить](/ru/reference/settings/session-settings/join#join_use_nulls) так, чтобы он возвращал [NULL](/ru/reference/syntax#null) вместо значений по умолчанию (однако по [соображениям производительности](/ru/reference/data-types/nullable#storage-features) это не рекомендуется).
@@ -149,7 +147,7 @@ LIMIT 10;
 `CROSS JOIN` создает полное декартово произведение двух таблиц без учета ключей JOIN.
 Каждая строка из левой таблицы объединяется с каждой строкой из правой таблицы.
 
-<Image img="/images/starter_guides/joins/cross_join.webp" alt="Cross Join" />
+![Cross Join](/images/starter_guides/joins/cross_join.webp)
 
 Таким образом, следующий запрос объединяет каждую строку из таблицы `movies` с каждой строкой из таблицы `genres`:
 
@@ -249,7 +247,7 @@ ALL
 
 Запрос `RIGHT SEMI JOIN` работает аналогично и возвращает значения для всех строк из правой таблицы, у которых есть хотя бы одно совпадение в левой таблице, но возвращается только первое найденное совпадение.
 
-<Image img="/images/starter_guides/joins/semi_join.webp" alt="Semi Join" />
+![Semi Join](/images/starter_guides/joins/semi_join.webp)
 
 Этот запрос находит всех актёров и актрис, сыгравших в фильме в 2023 году.
 Обратите внимание: при обычном (`INNER`) JOIN один и тот же актёр или актриса может появиться несколько раз, если в 2023 году у него или у неё было больше одной роли:
@@ -288,7 +286,7 @@ LIMIT 10;
 
 Аналогично, `RIGHT ANTI JOIN` возвращает значения столбцов для всех несовпадающих строк правой таблицы.
 
-<Image img="/images/starter_guides/joins/anti_join.webp" alt="Anti Join" />
+![Anti Join](/images/starter_guides/joins/anti_join.webp)
 
 Альтернативный вариант запроса из предыдущего примера с outer JOIN — использовать anti JOIN, чтобы найти фильмы, у которых в наборе данных не указан жанр:
 
@@ -328,7 +326,7 @@ LIMIT 10;
 
 А `INNER ANY JOIN` — это `INNER JOIN` с отключённым декартовым произведением.
 
-<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+![Any Join](/images/starter_guides/joins/any_join.webp)
 
 Следующий пример показывает `LEFT ANY JOIN` на абстрактном примере с использованием двух временных таблиц (`left_table` и `right_table`), созданных с помощью [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [табличной функции](/ru/reference/functions/table-functions/index):
 
@@ -403,14 +401,14 @@ INNER ANY JOIN right_table AS r ON l.c = r.c;
 
 Это особенно полезно для анализа временных рядов и может значительно снизить сложность запроса.
 
-<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+![Asof Join](/images/starter_guides/joins/asof_join.webp)
 
 В следующем примере выполняется анализ временных рядов на данных фондового рынка.
 Таблица `quotes` содержит котировки тикеров акций для определённых моментов времени в течение дня.
 В примере цена обновляется каждые 10 секунд.
 Таблица `trades` содержит сделки по тикерам: определённый объём акций был куплен в определённое время:
 
-<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+![Asof Example](/images/starter_guides/joins/asof_example.webp)
 
 Чтобы вычислить фактическую стоимость каждой сделки, нужно сопоставить сделки с ближайшим временем котировки.
 

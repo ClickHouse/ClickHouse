@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', '生存时间 (TTL)', '数据保留', '生命周期', '存储管理']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import OtelLogsSchema from '/snippets/zh/clickstack/_schema_otel_logs.mdx';
 
 <div id="ttl-clickstack">
@@ -26,7 +25,7 @@ ClickHouse 中的分区允许根据某个列或 SQL 表达式，在磁盘上对�
 
 如上例所示，分区是在表初始定义时通过 `PARTITION BY` 子句指定的。该子句可包含基于任意列的 SQL 表达式，其结果决定某一行会被写入哪个分区。这会使数据在逻辑上与磁盘上的各个分区相关联 (通过共同的文件夹名称前缀)，从而可以单独查询这些分区。对于上面的示例，默认的 `otel_logs` schema 使用表达式 `toDate(Timestamp)` 按天分区。当行被插入到 ClickHouse 时，系统会针对每一行计算该表达式，并将其路由到对应的分区 (如果该分区存在；如果该行是某一天的第一行，则会创建该分区)。有关分区及其其他用途的更多详细信息，请参阅[“表分区”](/zh/concepts/core-concepts/partitions)。
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="分区" size="lg" />
+![分区](/images/use-cases/observability/observability-14.webp)
 
 表的 schema 还包含 `TTL toDateTime(Timestamp) + ${TABLES_TTL}` 以及设置 `ttl_only_drop_parts = 1`。前一个子句可确保数据在超过已配置的生存时间 (TTL) 后被删除 (默认 3 天)。设置 `ttl_only_drop_parts = 1` 会强制仅在整个数据 parts 中的数据都已过期时才删除该数据 parts (而不是尝试部分删除行)。由于分区可确保不同日期的数据永远不会被“merged”，因此可以高效地删除数据。
 

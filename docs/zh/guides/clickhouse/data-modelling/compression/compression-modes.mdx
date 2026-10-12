@@ -6,8 +6,6 @@ keywords: ['压缩', 'codec', '编码', '模式']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickHouse 协议支持对**数据块**进行带校验和的压缩。
 如果不确定该选择哪种模式，请使用 `LZ4`。
 &#96;&#96;
@@ -46,7 +44,7 @@ LZ4 和 ZSTD 都出自同一位作者，但取舍各不相同。
 | mode                | byte    | 压缩模式                                                                    |
 | compressed&#95;data | binary  | 压缩数据块                                                                   |
 
-<Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="说明 ClickHouse 压缩块结构的示意图" />
+![说明 ClickHouse 压缩块结构的示意图](/images/data-compression/ch_compression_block.webp)
 
 请求头为 (raw&#95;size + data&#95;size + mode)，raw&#95;size 的值为 len(请求头 + compressed&#95;data)。
 

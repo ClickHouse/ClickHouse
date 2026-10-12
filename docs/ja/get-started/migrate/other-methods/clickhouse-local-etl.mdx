@@ -7,11 +7,9 @@ description: 'clickhouse-local を使用して ClickHouse へ移行するため�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import AddARemoteSystem from '/snippets/ja/_add_remote_ip_access_list_detail.mdx';
 
-<Image img="/images/integrations/migration/ch-local-01.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+![セルフマネージド ClickHouse の移行](/images/integrations/migration/ch-local-01.webp)
 
 現在使用しているデータベースシステムに対して、ClickHouse が提供する [Integration engine](/ja/reference/engines/table-engines/index#integration-engines) または [テーブル関数](/ja/reference/functions/table-functions/index) のいずれか、あるいはベンダー提供の JDBC driver または ODBC ドライバが利用できる場合は、
 ClickHouse、より正確には [`clickhouse-local`](/ja/concepts/features/tools-and-utilities/clickhouse-local) を、現在のデータベースシステムから ClickHouse Cloud へデータを移行するための ETL ツールとして使用できます。
@@ -25,7 +23,7 @@ ClickHouse は、[MySQL](/ja/reference/engines/table-engines/integrations/mysql)
   ## clickhouse-local とは？
 </div>
 
-<Image img="/images/integrations/migration/ch-local-02.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+![セルフマネージド ClickHouse の移行](/images/integrations/migration/ch-local-02.webp)
 
 通常、ClickHouse はクラスターとして実行され、複数の ClickHouse データベースエンジンのインスタンスが異なるサーバー上で分散して稼働します。
 
@@ -93,7 +91,7 @@ ClickHouse は、[MySQL](/ja/reference/engines/table-engines/integrations/mysql)
 ソースの MySQL データベースからデータを読み取るために、[integration table engine](/ja/reference/engines/table-engines/integrations/mysql) ([mysql テーブル関数](/ja/reference/functions/table-functions/mysql) によってその場で作成されます) を使用し、データをお使いの ClickHouse Cloud サービス上の宛先テーブルに書き込むために [remoteSecure テーブル関数](/ja/reference/functions/table-functions/remote)
 を使用します。
 
-<Image img="/images/integrations/migration/ch-local-03.webp" size="lg" alt="セルフマネージド ClickHouse の移行" />
+![セルフマネージド ClickHouse の移行](/images/integrations/migration/ch-local-03.webp)
 
 <div id="on-the-destination-clickhouse-cloud-service">
   ### 宛先のClickHouse Cloud サービスで:

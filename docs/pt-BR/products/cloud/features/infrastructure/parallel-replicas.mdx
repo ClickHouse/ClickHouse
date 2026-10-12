@@ -6,8 +6,6 @@ description: 'Neste guia, discutiremos primeiro como o ClickHouse distribui uma 
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <div id="introduction">
   ## Introdução
 </div>
@@ -31,7 +29,7 @@ no shard especificado, ou ela pode ser enviada para a tabela distribuída e, nes
 caso, cada shard executará a consulta. O servidor no qual a tabela distribuída
 foi consultada agregará os dados e responderá ao cliente:
 
-<Image img="/images/deployment-guides/parallel-replicas-1.webp" size="md" alt="arquitetura com shards" />
+![arquitetura com shards](/images/deployment-guides/parallel-replicas-1.webp)
 
 A figura acima mostra o que acontece quando um cliente consulta uma tabela distribuída:
 
@@ -72,7 +70,7 @@ virtualmente infinita de armazenamento, a necessidade de shards se torna menos i
 
 A figura abaixo mostra a arquitetura do ClickHouse Cloud:
 
-<Image img="/images/deployment-guides/parallel-replicas-2.webp" size="md" alt="arquitetura sem sharding" />
+![arquitetura sem sharding](/images/deployment-guides/parallel-replicas-2.webp)
 
 Essa arquitetura nos permite adicionar e remover réplicas quase
 instantaneamente, garantindo uma escalabilidade muito alta do cluster. O cluster ClickHouse
@@ -99,7 +97,7 @@ como unidade de trabalho.
 
 Agora, vamos ver como isso funciona na prática com a ajuda da figura abaixo:
 
-<Image img="/images/deployment-guides/parallel-replicas-3.webp" size="md" alt="Parallel replicas" />
+![Parallel replicas](/images/deployment-guides/parallel-replicas-3.webp)
 
 Com réplicas paralelas:
 
@@ -164,7 +162,7 @@ Veremos como esses fatores são contornados nas seções a seguir.
 Para abordar (1) e (2) da lista acima, introduzimos o conceito de
 anúncio. Vamos visualizar como isso funciona usando a figura abaixo:
 
-<Image img="/images/deployment-guides/parallel-replicas-4.webp" size="md" alt="Anúncios" />
+![Anúncios](/images/deployment-guides/parallel-replicas-4.webp)
 
 <ol className="docs-ordered-list">
   <li>
@@ -208,7 +206,7 @@ um anúncio com todas as partes.
 
 A figura abaixo mostra como a coordenação dinâmica funciona:
 
-<Image img="/images/deployment-guides/parallel-replicas-5.webp" size="md" alt="Coordenação dinâmica - parte 1" />
+![Coordenação dinâmica - parte 1](/images/deployment-guides/parallel-replicas-5.webp)
 
 <ol className="docs-ordered-list">
   <li>
@@ -221,7 +219,7 @@ A figura abaixo mostra como a coordenação dinâmica funciona:
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-6.webp" size="md" alt="Coordenação dinâmica - parte 2" />
+![Coordenação dinâmica - parte 2](/images/deployment-guides/parallel-replicas-6.webp)
 
 <ol className="docs-ordered-list">
   <li>
@@ -234,7 +232,7 @@ A figura abaixo mostra como a coordenação dinâmica funciona:
   </li>
 </ol>
 
-<Image img="/images/deployment-guides/parallel-replicas-7.webp" size="md" alt="Coordenação dinâmica - parte 3" />
+![Coordenação dinâmica - parte 3](/images/deployment-guides/parallel-replicas-7.webp)
 
 <ol className="docs-ordered-list">
   <li>
@@ -508,7 +506,7 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=0
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-8.webp" size="lg" alt="EXPLAIN sem parallel_replica" />
+![EXPLAIN sem parallel_replica](/images/deployment-guides/parallel-replicas-8.webp)
 
 E agora, com réplica paralela:
 
@@ -523,4 +521,4 @@ SETTINGS allow_experimental_parallel_reading_from_replicas=2
 FORMAT TSV;
 ```
 
-<Image img="/images/deployment-guides/parallel-replicas-9.webp" size="lg" alt="EXPLAIN com parallel_replica" />
+![EXPLAIN com parallel_replica](/images/deployment-guides/parallel-replicas-9.webp)

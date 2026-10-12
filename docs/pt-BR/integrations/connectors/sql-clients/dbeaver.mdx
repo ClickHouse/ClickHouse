@@ -11,8 +11,6 @@ integration:
 keywords: ['DBeaver', 'gerenciamento de banco de dados', 'cliente SQL', 'conexão JDBC', 'multiplataforma']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/pt-BR/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -40,29 +38,29 @@ O DBeaver está disponível em várias versões. Neste guia, usamos o [DBeaver C
   <Step title="Adicione um banco de dados" id="3-add-a-database">
     * Use o menu **Database &gt; New Database Connection** ou o ícone **New Database Connection** no **Database Navigator** para abrir a caixa de diálogo **Connect to a database**:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-add-database.webp" size="md" border alt="Adicionar um novo banco de dados" />
+    ![Adicionar um novo banco de dados](/images/integrations/sql-clients/dbeaver-add-database.webp)
 
     * Selecione **Analytical** e, em seguida, **ClickHouse**:
 
     * Monte a URL JDBC. Na guia **Main**, defina Host, Port, Username, Password e Database:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-host-port.webp" size="md" border alt="Defina o hostname, a porta, o usuário, a senha e o nome do banco de dados" />
+    ![Defina o hostname, a porta, o usuário, a senha e o nome do banco de dados](/images/integrations/sql-clients/dbeaver-host-port.webp)
 
     * Por padrão, a propriedade **SSL &gt; Use SSL** não estará ativada. Se você estiver se conectando ao ClickHouse Cloud ou a um servidor que exige SSL na porta HTTP, ative **SSL &gt; Use SSL**:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-use-ssl.webp" size="md" border alt="Ative SSL, se necessário" />
+    ![Ative SSL, se necessário](/images/integrations/sql-clients/dbeaver-use-ssl.webp)
 
     * Teste a conexão:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="Teste a conexão" />
+    ![Teste a conexão](/images/integrations/sql-clients/dbeaver-test-connection.webp)
 
     Se o DBeaver detectar que você não tem o driver do ClickHouse instalado, ele oferecerá baixá-lo para você:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-download-driver.webp" size="md" border alt="Baixe o driver do ClickHouse" />
+    ![Baixe o driver do ClickHouse](/images/integrations/sql-clients/dbeaver-download-driver.webp)
 
     * Após baixar o driver, **Test** a conexão novamente:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="Teste a conexão" />
+    ![Teste a conexão](/images/integrations/sql-clients/dbeaver-test-connection.webp)
   </Step>
 
   <Step title="Faça consultas no ClickHouse" id="4-query-clickhouse">
@@ -70,11 +68,11 @@ O DBeaver está disponível em várias versões. Neste guia, usamos o [DBeaver C
 
     * Clique com o botão direito na sua conexão e escolha **SQL Editor &gt; Open SQL Script** para abrir um editor de consultas:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-sql-editor.webp" size="md" border alt="Abra o editor SQL" />
+    ![Abra o editor SQL](/images/integrations/sql-clients/dbeaver-sql-editor.webp)
 
     * Exemplo de consulta em `system.query_log`:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-query-log-select.webp" size="md" border alt="Uma consulta de exemplo" />
+    ![Uma consulta de exemplo](/images/integrations/sql-clients/dbeaver-query-log-select.webp)
   </Step>
 </Steps>
 

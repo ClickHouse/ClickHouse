@@ -9,8 +9,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 <Note>
@@ -250,7 +248,7 @@ ClickHouse への接続方法は一切変わりません。クライアントは
 
 worker が service に lease されている間、プラットフォームはその worker と service 間のネットワークトラフィックのみを許可し、それ以外はすべて遮断します。この制限は query engine ではなくネットワーク layer で適用されるため、クエリやその設定、optimizer が生成する plan に左右されることはありません。
 
-<Image img="/images/cloud/reference/on-demand-compute-worker-isolation.svg" size="lg" alt="Network isolation explanation diagram" />
+![Network isolation explanation diagram](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
 
 * **worker に到達できるのは自分の service のみです。** path は、その worker の現在の lease と、その 1 つの service に対してのみ存在します。
 * **未割り当ての worker には到達できません。** pool で待機中の worker は、lease されるまで、いずれの service との間にもネットワーク path を持ちません。

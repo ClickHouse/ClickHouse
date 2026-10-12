@@ -9,14 +9,13 @@ doc_type: 'guide'
 keywords: ['数据目录', '数据湖', 'iceberg', 'unity catalog', 'glue', 'delta lake', 'onelake', 'polaris', 'biglake', 'clickhouse cloud']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
 
 <BetaBadge />
 
 将 ClickHouse Cloud 连接到您的数据目录，以访问其中的开放表格式表。您可以在 **数据源** UI 中配置连接。若要通过 SQL 进行设置，请在您常用的 SQL 编辑器中使用 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 数据库引擎。
 
-<Image img="/images/cloud/features/data-catalogs-ui.png" size="md" alt="显示数据目录集成的 ClickHouse Cloud UI" />
+![显示数据目录集成的 ClickHouse Cloud UI](/images/cloud/features/data-catalogs-ui.png)
 
 连接后，目录中的表会显示在 SQL 控制台中您指定的数据库下。您可以使用标准 ClickHouse SQL 查询这些表，将其与 [MergeTree](/zh/reference/engines/table-engines/mergetree-family/mergetree) 表进行联接，并将其作为 [materialized views](/zh/concepts/features/materialized-views) 的源表。
 
@@ -40,7 +39,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
     2. 如果尚未设置任何数据源，请点击 **+ 添加目录**；否则，点击 **添加数据源** &gt; **添加数据湖目录**。
     3. 在 **连接您的数据目录** 弹出面板中，从 **选择目录** 下拉列表中选择目录。如果该目录支持多种开放表格式，请在 **开放表格式** 中选择相应格式。
 
-    <Image img="/images/integrations/data-catalogs/catalog-flyout-select.png" alt="“连接您的数据目录”弹出面板，其中“选择目录”下拉列表显示 AWS Glue、BigLake Metastore、Microsoft OneLake、Polaris、REST Catalog 和 Unity Catalog" size="lg" />
+    ![“连接您的数据目录”弹出面板，其中“选择目录”下拉列表显示 AWS Glue、BigLake Metastore、Microsoft OneLake、Polaris、REST Catalog 和 Unity Catalog](/images/integrations/data-catalogs/catalog-flyout-select.png)
   </Step>
 
   <Step title="添加您的 catalog 连接" id="add-your-catalog-connection">
@@ -206,7 +205,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
   <Step title="查看目录中的表" id="view-tables">
     在 **数据源** 页面中，找到 **关联的目录** 表中的目录，然后点击 **查看表**。
 
-    <Image img="/images/integrations/data-catalogs/linked-catalogs-table.png" alt="“关联的目录”表，其中包含“查看表”操作" size="lg" />
+    ![“关联的目录”表，其中包含“查看表”操作](/images/integrations/data-catalogs/linked-catalogs-table.png)
 
     ClickHouse 将打开 SQL 控制台，选中您的目录数据库并列出可用表。
 
@@ -214,7 +213,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
       连接目录后，表可能不会立即显示。具体取决于目录，最多可能需要 3 分钟才会列出所有表。
     </Note>
 
-    <Image img="/images/integrations/data-catalogs/catalog-tables-browser.png" alt="显示目录表的 SQL 控制台表浏览器" size="lg" />
+    ![显示目录表的 SQL 控制台表浏览器](/images/integrations/data-catalogs/catalog-tables-browser.png)
   </Step>
 
   <Step title="运行查询" id="run-a-query">
@@ -224,7 +223,7 @@ import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
     SELECT * FROM `identity_profiles.identity_profiles_iceberg`
     ```
 
-    <Image img="/images/integrations/data-catalogs/catalog-sql-query.png" alt="使用反引号引用带点号表名并显示结果的 SQL 查询" size="lg" />
+    ![使用反引号引用带点号表名并显示结果的 SQL 查询](/images/integrations/data-catalogs/catalog-sql-query.png)
   </Step>
 </Steps>
 

@@ -11,7 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -29,7 +28,7 @@ Lightdash — это **BI-платформа нового поколения с 
 В этом руководстве показано, как **Lightdash** подключается к **ClickHouse**, чтобы изучать ваши модели dbt и создавать интерактивные панели мониторинга.
 В примере ниже показана готовая панель мониторинга на основе данных из ClickHouse.
 
-<Image size="md" img="/images/integrations/data-visualization/lightdash_02.webp" alt="Пример панели мониторинга в Lightdash" border />
+![Пример панели мониторинга в Lightdash](/images/integrations/data-visualization/lightdash_02.webp)
 
 <Steps>
   <Step title="Подготовьте данные для подключения" id="connection-data-required">
@@ -56,7 +55,7 @@ Lightdash — это **BI-платформа нового поколения с 
 
     Например:
 
-    <Image size="md" img="/images/integrations/data-visualization/lightdash_01.webp" alt="Пример конфигурации profiles.yml для проекта lightdash-clickhouse" border />
+    ![Пример конфигурации profiles.yml для проекта lightdash-clickhouse](/images/integrations/data-visualization/lightdash_01.webp)
 
     <br />
   </Step>
@@ -88,7 +87,7 @@ Lightdash — это **BI-платформа нового поколения с 
   <Step title="Определите метрики и измерения в Lightdash" id="defining-metrics-and-dimensions-in-lightdash">
     В Lightdash все **метрики** и **измерения** задаются напрямую в `.yml`-файлах ваших моделей dbt. Это позволяет держать бизнес-логику под контролем версий, поддерживать согласованность и обеспечивает полную прозрачность.
 
-    <Image size="md" img="/images/integrations/data-visualization/lightdash_03.webp" alt="Пример определения метрик в файле .yml" border />
+    ![Пример определения метрик в файле .yml](/images/integrations/data-visualization/lightdash_03.webp)
 
     <br />
 
@@ -114,7 +113,7 @@ Lightdash — это **BI-платформа нового поколения с 
     4. **Results** — показывает необработанные данные, возвращаемые из базы данных ClickHouse
     5. **SQL** — позволяет просмотреть сгенерированный SQL-запрос, лежащий в основе результатов
 
-    <Image size="lg" img="/images/integrations/data-visualization/lightdash_04.webp" alt="Представление Explore в Lightdash с измерениями, фильтрами, диаграммой, результатами и SQL" border />
+    ![Представление Explore в Lightdash с измерениями, фильтрами, диаграммой, результатами и SQL](/images/integrations/data-visualization/lightdash_04.webp)
 
     Здесь вы можете интерактивно создавать и настраивать запросы — перетаскивать поля, добавлять фильтры и переключаться между типами визуализации, такими как таблицы, столбчатые диаграммы и временные ряды.
 
@@ -138,7 +137,7 @@ Lightdash — это **BI-платформа нового поколения с 
     3. Создайте визуализацию в конструкторе диаграмм
     4. Сохраните её — она появится в нижней части панели мониторинга
 
-    <Image size="lg" img="/images/integrations/data-visualization/lightdash_05.webp" alt="Создание и организация диаграмм в панели мониторинга Lightdash" border />
+    ![Создание и организация диаграмм в панели мониторинга Lightdash](/images/integrations/data-visualization/lightdash_05.webp)
 
     Подробнее о том, как создавать и организовывать панели мониторинга, читайте здесь:
     [Создание панелей мониторинга → Документация Lightdash](https://docs.lightdash.com/get-started/exploring-data/dashboards?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
@@ -152,7 +151,7 @@ Lightdash — это **BI-платформа нового поколения с 
 
     В основе лежит тот же семантический слой, который вы используете в dbt, а это значит, что каждый ответ остаётся управляемым, объяснимым и быстрым — и всё это на базе ClickHouse.
 
-    <Image size="lg" img="/images/integrations/data-visualization/lightdash_06.webp" alt="Интерфейс Lightdash Ask AI с запросом на естественном языке на основе метрик dbt" border />
+    ![Интерфейс Lightdash Ask AI с запросом на естественном языке на основе метрик dbt](/images/integrations/data-visualization/lightdash_06.webp)
 
     <Tip>
       Подробнее об AI Agents читайте здесь: [AI Agents → документация Lightdash](https://docs.lightdash.com/guides/ai-agents?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)

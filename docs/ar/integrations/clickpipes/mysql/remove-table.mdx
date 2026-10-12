@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 في بعض الحالات، قد يكون من المنطقي استبعاد جداول معيّنة من MySQL ClickPipe - على سبيل المثال، إذا لم يكن جدول معيّن مطلوبًا لعبء عمل التحليلات لديك، فإن تخطّيه قد يقلّل تكاليف التخزين والنسخ المتماثل في ClickHouse.
 
 <div id="remove-tables-steps">
@@ -27,7 +25,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
 
 5. انقر على Update.
 6. عند نجاح التحديث، ستكون الحالة في علامة تبويب **Metrics** هي **Running**. ولن يعود هذا الجدول يُنسخ بواسطة ClickPipe هذا.

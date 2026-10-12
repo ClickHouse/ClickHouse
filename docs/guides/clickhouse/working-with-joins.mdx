@@ -7,8 +7,6 @@ slug: /guides/working-with-joins
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ClickHouse fully supports standard SQL joins, enabling efficient data analysis.
 In this guide, you'll explore some of the available commonly used join types and how to use them with the help of Venn diagrams and example queries on a normalized [IMDB](https://en.wikipedia.org/wiki/IMDb) dataset originating from the [relational dataset repository](https://relational.fit.cvut.cz/dataset/IMDb).
 
@@ -20,7 +18,7 @@ the tables locally.
 
 You'll use the following four tables from the example dataset:
 
-<Image img="/images/starter_guides/joins/imdb_schema.webp" alt="IMDB Schema" />
+![IMDB Schema](/images/starter_guides/joins/imdb_schema.webp)
 
 The data in these four tables represent movies which can have one or many genres.
 The roles in a movie are played by actors.
@@ -50,7 +48,7 @@ You'll write example queries for each of the JOIN types above in the following s
 The `INNER JOIN` returns, for each pair of rows matching on join keys, the column values of the row from the left table, combined with the column values of the row from the right table.
 If a row has more than one match, then all matches are returned (meaning that the [cartesian product](https://en.wikipedia.org/wiki/Cartesian_product) is produced for rows with matching join keys).
 
-<Image img="/images/starter_guides/joins/inner_join.webp" alt="Inner Join" />
+![Inner Join](/images/starter_guides/joins/inner_join.webp)
 
 This query finds the genres for each movie by joining the `movies` table with the `genres` table:
 
@@ -96,7 +94,7 @@ A `RIGHT OUTER JOIN` query is similar and also returns values from non-matching 
 
 A `FULL OUTER JOIN` query combines the `LEFT` and `RIGHT OUTER JOIN` and returns values from non-matching rows from the left and the right table, together with default values for the columns of the right and left table, respectively.
 
-<Image img="/images/starter_guides/joins/outer_join.webp" alt="Outer Join" />
+![Outer Join](/images/starter_guides/joins/outer_join.webp)
 
 <Note>
 ClickHouse can be [configured](/reference/settings/session-settings/join#join_use_nulls) to return [NULL](/reference/syntax#null)s instead of default values (however, for [performance reasons](/reference/data-types/nullable#storage-features), that is less recommended).
@@ -139,7 +137,7 @@ The `OUTER` keyword can be omitted.
 The `CROSS JOIN` produces the full cartesian product of the two tables without considering join keys.
 Each row from the left table is combined with each row from the right table.
 
-<Image img="/images/starter_guides/joins/cross_join.webp" alt="Cross Join" />
+![Cross Join](/images/starter_guides/joins/cross_join.webp)
 
 The following query, therefore, is combing each row from the `movies` table with each row from the `genres` table:
 
@@ -237,7 +235,7 @@ Only the first found match is returned (the cartesian product is disabled).
 
 A `RIGHT SEMI JOIN` query is similar and returns values for all rows from the right table with at least one match in the left table, but only the first found match is returned.
 
-<Image img="/images/starter_guides/joins/semi_join.webp" alt="Semi Join" />
+![Semi Join](/images/starter_guides/joins/semi_join.webp)
 
 This query finds all actors/actresses that performed in a movie in 2023.
 Note that with a normal (`INNER`) join, the same actor/actress would show up more than one time if they had more than one role in 2023:
@@ -274,7 +272,7 @@ A `LEFT ANTI JOIN` returns column values for all non-matching rows from the left
 
 Similarly, the `RIGHT ANTI JOIN` returns column values for all non-matching right table rows.
 
-<Image img="/images/starter_guides/joins/anti_join.webp" alt="Anti Join" />
+![Anti Join](/images/starter_guides/joins/anti_join.webp)
 
 An alternative formulation of the previous outer join example query is using an anti join for finding movies that have no genre in the dataset:
 
@@ -312,7 +310,7 @@ Similarly, the `RIGHT ANY JOIN` is the combination of the `RIGHT OUTER JOIN` + t
 
 And the `INNER ANY JOIN` is the `INNER JOIN` with a disabled cartesian product.
 
-<Image img="/images/starter_guides/joins/any_join.webp" alt="Any Join" />
+![Any Join](/images/starter_guides/joins/any_join.webp)
 
 The following example demonstrates the `LEFT ANY JOIN` with an abstract example using two temporary tables (`left_table` and `right_table`) constructed with the [values](https://github.com/ClickHouse/ClickHouse/blob/23.2/src/TableFunctions/TableFunctionValues.h) [table function](/reference/functions/table-functions/index):
 
@@ -385,14 +383,14 @@ If a row from the left table doesn’t have an exact match in the right table, t
 
 This is particularly useful for time-series analytics and can drastically reduce query complexity.
 
-<Image img="/images/starter_guides/joins/asof_join.webp" alt="Asof Join" />
+![Asof Join](/images/starter_guides/joins/asof_join.webp)
 
 The following example performs time-series analytics of stock market data.
 A `quotes` table contains stock symbol quotes based on specific times of the day.
 The price is updated every 10 seconds in the example data.
 A `trades` table lists symbol trades - a specific volume of a symbol got bought at a specific time:
 
-<Image img="/images/starter_guides/joins/asof_example.webp" alt="Asof Example" />
+![Asof Example](/images/starter_guides/joins/asof_example.webp)
 
 In order to calculate the concrete cost of each trade, we need to match the trades with their closest quote time.
 

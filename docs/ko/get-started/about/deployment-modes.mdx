@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse는 필요에 따라 여러 방식으로 배포할 수 있는 유연한 데이터베이스 시스템입니다. 모든 배포 옵션의 핵심은 **동일한 강력한 ClickHouse 데이터베이스 엔진**을 사용한다는 점이며, 차이는 상호작용 방식과 실행 위치에 있습니다.
 
 프로덕션 환경에서 대규모 분석을 수행하든, 로컬에서 데이터를 분석하든, 애플리케이션을 개발하든, 각 사용 사례에 맞는 배포 옵션이 마련되어 있습니다. 기반 엔진이 일관되므로 모든 배포 모드에서 동일한 고성능과 SQL 호환성을 활용할 수 있습니다.
@@ -33,7 +31,7 @@ ClickHouse는 필요에 따라 여러 방식으로 배포할 수 있는 유연�
 
 ClickHouse 서버는 전통적인 클라이언트/서버 아키텍처를 기반으로 하며, 프로덕션 배포에 적합합니다. 이 배포 모드는 ClickHouse의 강점으로 잘 알려진 고처리량과 낮은 지연 시간의 쿼리를 비롯해, OLAP 데이터베이스의 전체 기능을 제공합니다.
 
-<Image img="/images/deployment-modes/ch-server.webp" alt="ClickHouse 서버" size="sm" />
+![ClickHouse 서버](/images/deployment-modes/ch-server.webp)
 
 <br />
 
@@ -47,7 +45,7 @@ ClickHouse 서버는 전통적인 클라이언트/서버 아키텍처를 기반�
 
 [ClickHouse Cloud](/ko/products/cloud/getting-started/intro)는 자체 배포를 운영할 때 따르는 운영 부담을 없애 주는 완전 관리형 ClickHouse 버전입니다. ClickHouse 서버의 모든 핵심 기능을 유지하면서도, 개발과 운영을 간소화하도록 설계된 추가 기능을 제공해 전반적인 사용 경험을 향상합니다.
 
-<Image img="/images/deployment-modes/ch-cloud.webp" alt="ClickHouse Cloud" size="sm" />
+![ClickHouse Cloud](/images/deployment-modes/ch-cloud.webp)
 
 ClickHouse Cloud의 주요 장점 중 하나는 통합 도구 세트입니다. [ClickPipes](/ko/get-started/setup/cloud#clickpipes)는 강력한 데이터 수집 프레임워크를 제공하므로 복잡한 ETL 파이프라인을 관리하지 않고도 다양한 소스의 데이터를 손쉽게 연결하고 스트리밍할 수 있습니다. 또한 이 플랫폼은 전용 [쿼리 API](/ko/products/cloud/guides/sql-console/query-endpoints)도 제공하므로 애플리케이션을 훨씬 더 쉽게 구축할 수 있습니다.
 
@@ -83,7 +81,7 @@ clickhousectl local client
 
 [clickhouse-local](/ko/concepts/features/tools-and-utilities/clickhouse-local)은 독립 실행형 실행 파일에서 ClickHouse의 전체 기능을 제공하는 강력한 명령줄 도구입니다. 본질적으로는 ClickHouse 서버와 동일한 데이터베이스(database)이지만, 서버 인스턴스를 실행하지 않고도 명령줄에서 직접 ClickHouse의 모든 기능을 활용할 수 있도록 패키징되어 있습니다.
 
-<Image img="/images/deployment-modes/ch-local.webp" alt="clickhouse-local" size="sm" />
+![clickhouse-local](/images/deployment-modes/ch-local.webp)
 
 이 도구는 특히 로컬 파일이나 클라우드 스토리지 서비스에 저장된 데이터를 다룰 때 애드혹 데이터 분석에 매우 적합합니다. ClickHouse의 SQL 방언을 사용해 다양한 포맷의 파일(CSV, JSON, Parquet 등)을 직접 쿼리할 수 있으므로, 빠른 데이터 탐색이나 일회성 분석 작업에 탁월한 선택입니다.
 
@@ -97,7 +95,7 @@ clickhouse-local에는 ClickHouse의 모든 기능이 포함되어 있으므로,
 
 [chDB](/ko/chdb/index)는 ClickHouse를 프로세스 내 데이터베이스 엔진으로 내장한 형태이며, Python이 주요 구현체이지만 Go, Rust, NodeJS, Bun에서도 사용할 수 있습니다. 이 배포 옵션은 ClickHouse의 강력한 OLAP 기능을 애플리케이션 프로세스에 직접 제공하므로 별도의 데이터베이스 설치가 필요 없습니다.
 
-<Image img="/images/deployment-modes/chdb.webp" alt="chDB - 내장 ClickHouse" size="sm" />
+![chDB - 내장 ClickHouse](/images/deployment-modes/chdb.webp)
 
 chDB는 애플리케이션 생태계와 자연스럽게 통합됩니다. 예를 들어 Python에서는 Pandas, Arrow와 같은 널리 사용되는 데이터 과학 도구와 효율적으로 연동되도록 최적화되어 있으며, Python memoryview를 통해 데이터 복사 오버헤드를 최소화합니다. 따라서 기존 워크플로에서 ClickHouse의 쿼리 성능을 활용하려는 데이터 과학자와 분석가에게 특히 유용합니다.
 

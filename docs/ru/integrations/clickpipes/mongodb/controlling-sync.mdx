@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В этом документе описано, как управлять синхронизацией ClickPipe для MongoDB, когда ClickPipe находится в режиме **CDC (Running)**.
 
 <div id="overview">
@@ -47,15 +45,15 @@ ClickPipes для баз данных имеют архитектуру, сос�
 Вы можете задать интервал синхронизации и размер pull-батча при создании ClickPipe или изменить эти параметры в уже существующем.
 При создании ClickPipe эти параметры отображаются на втором шаге мастера создания, как показано ниже:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="Создание параметров синхронизации" size="md" />
+![Создание параметров синхронизации](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
 
 Чтобы изменить параметры существующего ClickPipe, перейдите на вкладку **Settings** этого пайпа, приостановите пайп, а затем нажмите **Configure** здесь:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="Кнопка редактирования синхронизации" size="md" />
+![Кнопка редактирования синхронизации](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
 
 Откроется выдвижная панель с параметрами синхронизации, где можно изменить интервал синхронизации и размер pull-батча:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="Редактирование параметров синхронизации" size="md" />
+![Редактирование параметров синхронизации](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
 
 <div id="monitoring">
   ### Мониторинг работы управления синхронизацией
@@ -63,4 +61,4 @@ ClickPipes для баз данных имеют архитектуру, сос�
 
 В таблице **CDC Syncs** на вкладке **Metrics** в ClickPipe можно увидеть, сколько времени занимает каждый батч. Обратите внимание: в эту продолжительность входит время отправки, а также время ожидания ClickPipe, если новые строки не поступают.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="Таблица CDC Syncs" size="md" />
+![Таблица CDC Syncs](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)

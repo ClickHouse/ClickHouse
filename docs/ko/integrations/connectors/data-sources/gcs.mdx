@@ -8,8 +8,6 @@ keywords: ['Google Cloud Storage ClickHouse', 'GCS ClickHouse 통합', 'GCS 기�
 ---
 
 import BucketDetails from '/snippets/ko/_GCS_authentication_and_bucket.mdx';
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <Note>
   [Google Cloud](https://cloud.google.com)에서 ClickHouse Cloud를 사용 중이라면 서비스가 이미 [Google Cloud Storage](https://cloud.google.com/storage)를 사용하므로 이 페이지는 해당되지 않습니다. GCS에서 데이터를 `SELECT`하거나 `INSERT`하려면 [`gcs` 테이블 함수](/ko/reference/functions/table-functions/gcs)를 참조하십시오.
 </Note>
@@ -685,10 +683,10 @@ formatReadableSize(total_bytes): 36.42 MiB
   #### 레플리카 1용 버킷
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp" size="lg" border alt="데이터 파티션이 포함된 폴더 구조를 보여주는 Google Cloud Storage의 레플리카 1용 버킷" />
+![데이터 파티션이 포함된 폴더 구조를 보여주는 Google Cloud Storage의 레플리카 1용 버킷](/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp)
 
 <div id="bucket-for-replica-two">
   #### 레플리카 2용 버킷
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp" size="lg" border alt="데이터 파티션이 있는 폴더 구조를 보여주는 Google Cloud Storage의 레플리카 2 버킷" />
+![데이터 파티션이 있는 폴더 구조를 보여주는 Google Cloud Storage의 레플리카 2 버킷](/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp)

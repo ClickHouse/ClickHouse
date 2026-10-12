@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Node.js', 'traces', 'OTEL', 'ClickStack', 'distributed tracing']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -43,7 +41,7 @@ An API key to send traces to ClickStack's OTLP endpoint.
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
 
-<Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
+![ClickStack API Key](/images/clickstack/api-key.webp)
 </Step>
 <Step title="Run your application" id="run-application">
 
@@ -72,11 +70,11 @@ for i in {1..100}; do curl -s http://localhost:3000/ > /dev/null; done
 
 Once configured, log into HyperDX and verify traces are flowing. You should see something like this. If you don't see traces, try adjusting your time range:
 
-<Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Traces search view"/>
+![Traces search view](/images/clickstack/nodejs/traces-search-view.webp)
 
 Click on any trace to see the detailed view with spans, timing, and attributes:
 
-<Image img="/images/clickstack/nodejs/trace-view.webp" alt="Individual trace view"/>
+![Individual trace view](/images/clickstack/nodejs/trace-view.webp)
 </Step>
 </Steps>
 
@@ -113,7 +111,7 @@ An API key to send traces to ClickStack's OTLP endpoint.
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
 
-<Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
+![ClickStack API Key](/images/clickstack/api-key.webp)
 
 Set your API key as an environment variable:
 
@@ -138,9 +136,9 @@ You should see a response like `{"partialSuccess":{}}` indicating the traces wer
 2. Navigate to the **Search** view and set the source to **Traces**
 3. Set the time range to **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
 
-<Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Traces search view"/>
+![Traces search view](/images/clickstack/nodejs/traces-search-view.webp)
 
-<Image img="/images/clickstack/nodejs/trace-view.webp" alt="Individual trace view"/>
+![Individual trace view](/images/clickstack/nodejs/trace-view.webp)
 
 <Info>
 **Timezone Display**
@@ -164,15 +162,15 @@ To help you get started monitoring Node.js application performance, we provide a
 1. Open HyperDX and navigate to the **Dashboards** section
 2. Click **Import Dashboard** in the upper right corner (under the ellipses)
 
-<Image img="/images/clickstack/import-dashboard.webp" alt="Import Dashboard"/>
+![Import Dashboard](/images/clickstack/import-dashboard.webp)
 
 3. Upload the `nodejs-traces-dashboard.json` file and click **Finish Import**
 
-<Image img="/images/clickstack/nodejs/finish-import.webp" alt="Finish import"/>
+![Finish import](/images/clickstack/nodejs/finish-import.webp)
 </Step>
 <Step title="The dashboard will be created with all visualizations pre-configured" id="created-dashboard">
 
-<Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="Example dashboard"/>
+![Example dashboard](/images/clickstack/nodejs/example-traces-dashboard.webp)
 
 <Note>
 For the demo dataset, set the time range to **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (adjust based on your local timezone). The imported dashboard won't have a time range specified by default.

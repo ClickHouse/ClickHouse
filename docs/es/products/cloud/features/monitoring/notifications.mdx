@@ -7,8 +7,6 @@ sidebarTitle: 'Notificaciones'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 ClickHouse Cloud envía notificaciones sobre eventos críticos relacionados con su servicio o su organización. Hay algunos conceptos que conviene tener en cuenta para entender cómo se envían y configuran las notificaciones:
 
 1. **Categoría de notificación**: Se refiere a grupos de notificaciones, como las notificaciones de facturación, las notificaciones relacionadas con el servicio, etc. Dentro de cada categoría, hay varias notificaciones cuyo modo de entrega se puede configurar.
@@ -21,9 +19,9 @@ ClickHouse Cloud envía notificaciones sobre eventos críticos relacionados con 
 
 Las notificaciones pueden recibirse a través de varios canales. ClickHouse Cloud admite la recepción de notificaciones por correo electrónico, la UI de ClickHouse Cloud y Slack. Puede hacer clic en el icono de la campana del menú superior izquierdo para ver las notificaciones actuales; esto abrirá un panel desplegable. Al hacer clic en el botón **View All** en la parte inferior del panel desplegable, accederá a una página que muestra un registro de actividad de todas las notificaciones.
 
-<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="panel desplegable de notificaciones de ClickHouse Cloud" border />
+![panel desplegable de notificaciones de ClickHouse Cloud](/images/cloud/manage/notifications-1.webp)
 
-<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="registro de actividad de notificaciones de ClickHouse Cloud" border />
+![registro de actividad de notificaciones de ClickHouse Cloud](/images/cloud/manage/notifications-2.webp)
 
 <div id="customizing-notifications">
   ## Personalizar las notificaciones
@@ -35,9 +33,9 @@ Puedes personalizar las notificaciones enviadas a través de la UI de Cloud, y e
 
 Para configurar la entrega de una notificación concreta, haz clic en el icono del lápiz para modificar los canales de entrega de la notificación.
 
-<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="Pantalla de configuración de notificaciones de ClickHouse Cloud" border />
+![Pantalla de configuración de notificaciones de ClickHouse Cloud](/images/cloud/manage/notifications-3.webp)
 
-<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="Configuración de entrega de notificaciones de ClickHouse Cloud" border />
+![Configuración de entrega de notificaciones de ClickHouse Cloud](/images/cloud/manage/notifications-4.webp)
 
 <Note>
   Algunas notificaciones **obligatorias**, como **Pago fallido**, no se pueden configurar.

@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Это руководство по настройке Neon Postgres, который можно использовать для репликации в ClickPipes.
 Убедитесь, что перед началом настройки вы вошли в [консоль Neon](https://console.neon.tech/app/projects).
 
@@ -68,11 +66,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 В Neon логическую репликацию можно включить в интерфейсе. Это необходимо, чтобы CDC в ClickPipes могла реплицировать данные.
 Перейдите на вкладку **Settings**, а затем в раздел **Logical Replication**.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp" alt="Включите логическую репликацию" border />
+![Включите логическую репликацию](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp)
 
 Нажмите **Enable**, чтобы завершить этот шаг. После включения должно появиться приведённое ниже сообщение об успешном выполнении.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp" alt="Логическая репликация включена" border />
+![Логическая репликация включена](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp)
 
 Проверим указанные ниже настройки в вашем экземпляре Neon Postgres:
 
@@ -89,7 +87,7 @@ SHOW max_replication_slots; -- should be 10
 Если у вас план Neon Enterprise, вы можете добавить [IP-адреса ClickPipes](/ru/integrations/clickpipes/networking/static-ips) в список разрешённых, чтобы разрешить репликацию из ClickPipes в ваш экземпляр Neon Postgres.
 Для этого откройте вкладку **Settings** и перейдите в раздел **IP Allow**.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp" alt="Экран IP Allow" border />
+![Экран IP Allow](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp)
 
 <div id="copy-connection-details">
   ## Скопируйте сведения о подключении
@@ -99,7 +97,7 @@ SHOW max_replication_slots; -- should be 10
 Перейдите на **Панель мониторинга** и в текстовом поле, где отображается строка подключения,
 переключите режим просмотра на **Только параметры**. Эти параметры понадобятся на следующем шаге.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp" alt="Сведения о подключении" border />
+![Сведения о подключении](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp)
 
 <div id="whats-next">
   ## Что дальше?

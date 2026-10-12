@@ -11,8 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -37,19 +35,19 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
   <Step title={<>Adicione o Controller Service <code>DBCPConnectionPool</code> e configure suas propriedades</>} id="4-add-dbcpconnectionpool-controller-service-and-configure-its-properties">
     1. Para configurar um Controller Service no Apache NiFi, acesse a página NiFi Flow Configuration clicando no botão de &quot;engrenagem&quot;
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_01.webp" size="sm" border alt="Página NiFi Flow Configuration com o botão de engrenagem destacado" />
+       ![Página NiFi Flow Configuration com o botão de engrenagem destacado](/images/integrations/data-ingestion/etl-tools/nifi_01.webp)
 
     2. Selecione a aba Controller Services e adicione um novo Controller Service clicando no botão `+` no canto superior direito
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_02.webp" size="lg" border alt="Aba Controller Services com o botão de adicionar destacado" />
+       ![Aba Controller Services com o botão de adicionar destacado](/images/integrations/data-ingestion/etl-tools/nifi_02.webp)
 
     3. Procure por `DBCPConnectionPool` e clique no botão &quot;Add&quot;
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_03.webp" size="lg" border alt="Caixa de diálogo de seleção de Controller Service com DBCPConnectionPool destacado" />
+       ![Caixa de diálogo de seleção de Controller Service com DBCPConnectionPool destacado](/images/integrations/data-ingestion/etl-tools/nifi_03.webp)
 
     4. O `DBCPConnectionPool` recém-adicionado ficará no estado Invalid por padrão. Clique no botão de &quot;engrenagem&quot; para iniciar a configuração
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_04.webp" size="lg" border alt="Lista de Controller Services mostrando o DBCPConnectionPool inválido com o botão de engrenagem destacado" />
+       ![Lista de Controller Services mostrando o DBCPConnectionPool inválido com o botão de engrenagem destacado](/images/integrations/data-ingestion/etl-tools/nifi_04.webp)
 
     5. Na seção &quot;Properties&quot;, insira os seguintes valores
 
@@ -63,25 +61,25 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
 
     6. Na seção Settings, altere o nome do Controller Service para &quot;ClickHouse JDBC&quot; para facilitar a identificação
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_05.webp" size="lg" border alt="Caixa de diálogo de configuração do DBCPConnectionPool mostrando as propriedades preenchidas" />
+       ![Caixa de diálogo de configuração do DBCPConnectionPool mostrando as propriedades preenchidas](/images/integrations/data-ingestion/etl-tools/nifi_05.webp)
 
     7. Ative o Controller Service `DBCPConnectionPool` clicando no botão de &quot;raio&quot; e depois no botão &quot;Enable&quot;
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_06.webp" size="lg" border alt="Lista de Controller Services com o botão de raio destacado" />
+       ![Lista de Controller Services com o botão de raio destacado](/images/integrations/data-ingestion/etl-tools/nifi_06.webp)
 
        <br />
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_07.webp" size="lg" border alt="Caixa de diálogo de confirmação para ativar o Controller Service" />
+       ![Caixa de diálogo de confirmação para ativar o Controller Service](/images/integrations/data-ingestion/etl-tools/nifi_07.webp)
 
     8. Verifique a aba Controller Services e confirme que o Controller Service está ativado
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_08.webp" size="lg" border alt="Lista de Controller Services mostrando o serviço ClickHouse JDBC ativado" />
+       ![Lista de Controller Services mostrando o serviço ClickHouse JDBC ativado](/images/integrations/data-ingestion/etl-tools/nifi_08.webp)
   </Step>
 
   <Step title={<>Ler dados de uma tabela usando o processador <code>ExecuteSQL</code></>} id="5-read-from-a-table-using-the-executesql-processor">
     1. Adicione um processador `ExecuteSQL`, junto com os processadores upstream e downstream apropriados
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_09.webp" size="md" border alt="Canvas do NiFi mostrando o processador ExecuteSQL em um fluxo de trabalho" />
+       ![Canvas do NiFi mostrando o processador ExecuteSQL em um fluxo de trabalho](/images/integrations/data-ingestion/etl-tools/nifi_09.webp)
 
     2. Na seção &quot;Properties&quot; do processador `ExecuteSQL`, insira os seguintes valores
 
@@ -92,15 +90,15 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
 
     3. Inicie o processador `ExecuteSQL`
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_10.webp" size="lg" border alt="Configuração do processador ExecuteSQL com as propriedades preenchidas" />
+       ![Configuração do processador ExecuteSQL com as propriedades preenchidas](/images/integrations/data-ingestion/etl-tools/nifi_10.webp)
 
     4. Para confirmar que a consulta foi processada com sucesso, inspecione um dos `FlowFile` na fila de saída
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_11.webp" size="lg" border alt="Caixa de diálogo de listagem da fila mostrando FlowFiles prontos para inspeção" />
+       ![Caixa de diálogo de listagem da fila mostrando FlowFiles prontos para inspeção](/images/integrations/data-ingestion/etl-tools/nifi_11.webp)
 
     5. Mude a visualização para &quot;formatted&quot; para ver o resultado do `FlowFile` de saída
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_12.webp" size="lg" border alt="Visualizador de conteúdo do FlowFile mostrando os resultados da consulta na visualização formatada" />
+       ![Visualizador de conteúdo do FlowFile mostrando os resultados da consulta na visualização formatada](/images/integrations/data-ingestion/etl-tools/nifi_12.webp)
   </Step>
 
   <Step title={<>Grave em uma tabela usando <code>MergeRecord</code> e <code>PutDatabaseRecord</code> processor</>} id="6-write-to-a-table-using-mergerecord-and-putdatabaserecord-processor">
@@ -119,11 +117,11 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
 
        Entrada
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_13.webp" size="sm" border alt="Entrada do processador MergeRecord mostrando registros individuais" />
+       ![Entrada do processador MergeRecord mostrando registros individuais](/images/integrations/data-ingestion/etl-tools/nifi_13.webp)
 
        Saída
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_14.webp" size="sm" border alt="Saída do processador MergeRecord mostrando array mesclado de registros" />
+       ![Saída do processador MergeRecord mostrando array mesclado de registros](/images/integrations/data-ingestion/etl-tools/nifi_14.webp)
 
     4. Na seção &quot;Properties&quot; do processador `PutDatabaseRecord`, insira os seguintes valores
 
@@ -139,7 +137,7 @@ import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMa
 
     5. Para confirmar que cada insert contém várias linhas, verifique se a contagem de linhas na tabela está aumentando em pelo menos o valor de &quot;Número mínimo de registros&quot; definido em `MergeRecord`.
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/nifi_15.webp" size="sm" border alt="Resultados da consulta mostrando a contagem de linhas na tabela de destino" />
+       ![Resultados da consulta mostrando a contagem de linhas na tabela de destino](/images/integrations/data-ingestion/etl-tools/nifi_15.webp)
 
     6. Parabéns - você carregou seus dados no ClickHouse com sucesso usando o Apache NiFi !
   </Step>

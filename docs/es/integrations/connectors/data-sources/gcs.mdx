@@ -8,8 +8,6 @@ keywords: ['Google Cloud Storage ClickHouse', 'integración entre GCS y ClickHou
 ---
 
 import BucketDetails from '/snippets/es/_GCS_authentication_and_bucket.mdx';
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <Note>
   Si usas ClickHouse Cloud en [Google Cloud](https://cloud.google.com), esta página no aplica, ya que tus servicios ya usarán [Google Cloud Storage](https://cloud.google.com/storage). Si buscas hacer `SELECT` o `INSERT` de datos desde GCS, consulta la [table function `gcs`](/es/reference/functions/table-functions/gcs).
 </Note>
@@ -685,10 +683,10 @@ Al examinar los buckets, verá que se creó una carpeta en cada bucket con el no
   #### Bucket de la réplica 1
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp" size="lg" border alt="Bucket de la réplica 1 en Google Cloud Storage con la estructura de carpetas y las particiones de datos" />
+![Bucket de la réplica 1 en Google Cloud Storage con la estructura de carpetas y las particiones de datos](/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp)
 
 <div id="bucket-for-replica-two">
   #### Bucket para la réplica dos
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp" size="lg" border alt="Bucket de la segunda réplica en Google Cloud Storage que muestra la estructura de carpetas con particiones de datos" />
+![Bucket de la segunda réplica en Google Cloud Storage que muestra la estructura de carpetas con particiones de datos](/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp)

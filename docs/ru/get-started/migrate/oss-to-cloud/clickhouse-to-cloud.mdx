@@ -7,12 +7,11 @@ doc_type: 'guide'
 keywords: ['миграция', 'ClickHouse Cloud', 'OSS', 'Миграция из самоуправляемого ClickHouse в Cloud']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import AddARemoteSystem from '/snippets/ru/_add_remote_ip_access_list_detail.mdx';
 
 import CompatibilityNote from '/snippets/ru/compatibility.mdx';
 
-<Image img="/images/integrations/migration/self-managed-01.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+![Миграция самоуправляемого ClickHouse](/images/integrations/migration/self-managed-01.webp)
 
 В этом руководстве показано, как выполнить миграцию с самоуправляемого сервера ClickHouse в ClickHouse Cloud, а также как переносить данные между сервисами ClickHouse Cloud.
 Функция [`remoteSecure`](/ru/reference/functions/table-functions/remote) используется в запросах `SELECT` и `INSERT` для доступа к удалённым серверам ClickHouse, что позволяет переносить таблицы так же просто, как выполнить запрос `INSERT INTO` со встроенным `SELECT`.
@@ -21,7 +20,7 @@ import CompatibilityNote from '/snippets/ru/compatibility.mdx';
   ## Миграция с самоуправляемого ClickHouse в ClickHouse Cloud
 </div>
 
-<Image img="/images/integrations/migration/self-managed-02.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+![Миграция самоуправляемого ClickHouse](/images/integrations/migration/self-managed-02.webp)
 
 Независимо от того, разбита ли ваша исходная таблица на сегменты и/или реплицируется ли она, в ClickHouse Cloud вам нужно только создать целевую таблицу (параметр Engine для этой таблицы можно не указывать — `SharedMergeTree` будет автоматически выбран в качестве движка таблицы),
 а ClickHouse Cloud автоматически позаботится о вертикальном и горизонтальном масштабировании.
@@ -95,7 +94,7 @@ CREATE TABLE db.table ...
 
 * Используйте функцию `remoteSecure`, чтобы pull данные из самоуправляемого источника
 
-<Image img="/images/integrations/migration/self-managed-03.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+![Миграция самоуправляемого ClickHouse](/images/integrations/migration/self-managed-03.webp)
 
 ```sql
 INSERT INTO db.table SELECT * FROM
@@ -108,7 +107,7 @@ remoteSecure('source-hostname', db, table, 'exporter', 'password-here')
 
 * Используйте функцию `remoteSecure`, чтобы push данные в сервис ClickHouse Cloud
 
-<Image img="/images/integrations/migration/self-managed-04.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+![Миграция самоуправляемого ClickHouse](/images/integrations/migration/self-managed-04.webp)
 
 <Tip>
   **Добавьте удалённую систему в IP Access List сервиса ClickHouse Cloud**
@@ -128,7 +127,7 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
   ## Миграция между сервисами ClickHouse Cloud
 </div>
 
-<Image img="/images/integrations/migration/self-managed-05.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+![Миграция самоуправляемого ClickHouse](/images/integrations/migration/self-managed-05.webp)
 
 Вот несколько примеров, когда может потребоваться миграция данных между сервисами ClickHouse Cloud:
 
@@ -137,7 +136,7 @@ remoteSecure('HOSTNAME.clickhouse.cloud:9440', 'db.table',
 
 В этом примере используются два сервиса ClickHouse Cloud, которые далее будут называться *источник* и *пункт назначения*. Данные будут переноситься из источника в пункт назначения по схеме pull. При желании можно использовать и push, но здесь показан pull, так как в этом случае используется пользователь только для чтения.
 
-<Image img="/images/integrations/migration/self-managed-06.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+![Миграция самоуправляемого ClickHouse](/images/integrations/migration/self-managed-06.webp)
 
 Миграция состоит из нескольких шагов:
 

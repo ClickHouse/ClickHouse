@@ -9,8 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 本指南将引导你使用 OpenTelemetry 的 [`awscloudwatch` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) 将 AWS CloudWatch 日志转发到托管 ClickStack，然后在 ClickStack UI 中查看这些日志。
@@ -257,11 +255,11 @@ ClickStack collector 既可以部署为 **Docker 容器** (参见 [Setting up yo
   <Step title="在 ClickStack UI 中确认" id="confirm-in-ui">
     在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud)中打开你的服务，然后从左侧菜单中选择 **ClickStack**。
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="启动 ClickStack" border />
+    ![启动 ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
 
     在 **搜索** 视图中，将数据源切换为 `Logs`，并将时间范围设置为 **最近 15 分钟**。CloudWatch 事件应会在几个轮询间隔内出现。
 
-    <Image img="/images/clickstack/cloudwatch/log-search-view-clickstack.webp" size="lg" alt="显示 CloudWatch 日志的 ClickStack 搜索视图" />
+    ![显示 CloudWatch 日志的 ClickStack 搜索视图](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
 
     每个事件都会将源组和 stream 作为资源属性一并携带：
 
@@ -272,11 +270,11 @@ ClickStack collector 既可以部署为 **Docker 容器** (参见 [Setting up yo
 
     将搜索内容修改为 `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body` 以包含这些属性：
 
-    <Image img="/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp" size="lg" alt="带有 CloudWatch 日志和属性的 ClickStack 搜索视图" />
+    ![带有 CloudWatch 日志和属性的 ClickStack 搜索视图](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
 
     选择一条日志条目以查看其元数据：
 
-    <Image img="/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp" size="lg" alt="日志详细视图中的 CloudWatch 属性" />
+    ![日志详细视图中的 CloudWatch 属性](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
 
     如果没有显示任何内容：
 
@@ -291,11 +289,11 @@ ClickStack collector 既可以部署为 **Docker 容器** (参见 [Setting up yo
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">下载 `cloudwatch-logs-dashboard.json`</TrackedLink>，然后在 ClickStack UI 中进入 **仪表盘**，点击 **导入**。
 
-    <Image img="/images/clickstack/clickstack-import-dashboard.webp" size="lg" alt="导入仪表盘按钮" />
+    ![导入仪表盘按钮](/images/clickstack/clickstack-import-dashboard.webp)
 
     上传 JSON 文件，然后点击 **完成导入**。
 
-    <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="完成导入对话框" />
+    ![完成导入对话框](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
   </Step>
 
   <Step title="延伸阅读" id="further-reading">

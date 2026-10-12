@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Este documento descreve como controlar a sincronização de um ClickPipe do Postgres quando ele está no **modo CDC (em execução)**.
 
 <div id="overview">
@@ -53,15 +51,15 @@ Quando uma transação está em execução no banco de dados de origem, o ClickP
 Você pode definir o intervalo de sincronização e o tamanho do lote de extração ao criar um ClickPipe ou editar um já existente.
 Ao criar um ClickPipe, essas opções aparecem na segunda etapa do assistente de criação, como mostrado abaixo:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="Criar configurações de sincronização" size="md" />
+![Criar configurações de sincronização](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
 
 Ao editar um ClickPipe existente, vá até a guia **Settings** do pipe, pause-o e clique em **Configure** aqui:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="Botão para editar a sincronização" size="md" />
+![Botão para editar a sincronização](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
 
 Isso abrirá um painel lateral com as configurações de sincronização, onde você pode alterar o intervalo de sincronização e o tamanho do lote de extração:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="Editar configurações de sincronização" size="md" />
+![Editar configurações de sincronização](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
 
 <div id="tweaking">
   ### Ajustando as configurações de sincronização para ajudar a conter o crescimento do slot de replicação
@@ -77,4 +75,4 @@ Ao aumentar tanto o intervalo de sincronização quanto o tamanho do lote de ext
 
 Você pode ver quanto tempo cada lote leva na tabela **CDC Syncs**, na aba **Métricas** do ClickPipe. Observe que a duração aqui inclui o tempo de envio e, se não houver linhas chegando, o ClickPipe fica aguardando — esse tempo de espera também é incluído na duração.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="tabela CDC Syncs" size="md" />
+![tabela CDC Syncs](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)

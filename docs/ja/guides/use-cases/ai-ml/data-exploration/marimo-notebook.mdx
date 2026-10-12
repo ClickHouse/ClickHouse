@@ -7,8 +7,6 @@ keywords: ['ML', 'Marimo', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このガイドでは、ClickHouse を基盤とする高速なインプロセス SQL OLAP Engine である [chDB](/ja/chdb/index) を使って、Marimo ノートブックで ClickHouse Cloud 上のデータセットを探索する方法を学びます。
 
 **前提条件:**
@@ -44,15 +42,15 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 左側のメニューで `Data sources` をクリックし、次に `Predefined sample data` をクリックします。
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="サンプルデータセットを追加" />
+![サンプルデータセットを追加](/images/use-cases/AI_ML/jupyter/1.webp)
 
 UK property price paid data (4GB) のカードで `Get started` を選択します。
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="UK price paid データセットを選択" />
+![UK price paid データセットを選択](/images/use-cases/AI_ML/jupyter/2.webp)
 
 次に `Import dataset` をクリックします。
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="UK price paid データセットをインポート" />
+![UK price paid データセットをインポート](/images/use-cases/AI_ML/jupyter/3.webp)
 
 ClickHouse は `default` データベースに `pp_complete` テーブルを自動的に作成し、2,892 万行の価格データを取り込みます。
 
@@ -93,7 +91,7 @@ marimo edit clickhouse_exploration.py
 
 localhost:2718 で Marimo インターフェイスを表示した新しいブラウザーウィンドウが開くはずです。
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/4.webp" alt="Marimo interface" />
+![Marimo interface](/images/use-cases/AI_ML/Marimo/4.webp)
 
 Marimo のノートブックは純粋な Python ファイルとして保存されるため、バージョン管理しやすく、他のユーザーとも簡単に共有できます。
 
@@ -124,7 +122,7 @@ result
 
 先ほど実行したセルの下に、次のような結果が表示されます。
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/5.webp" alt="Marimo hello world" />
+![Marimo hello world](/images/use-cases/AI_ML/Marimo/5.webp)
 
 <div id="exploring-the-data">
   ## データの探索
@@ -206,7 +204,7 @@ fig
 
 おそらく予想どおり、ロンドンの不動産価格は時間の経過とともに大幅に上昇しています。
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/6.webp" alt="Marimoのデータ可視化" />
+![Marimoのデータ可視化](/images/use-cases/AI_ML/Marimo/6.webp)
 
 Marimoの強みの1つは、リアクティブな実行モデルにあります。さまざまな町を動的に選択できるインタラクティブなウィジェットを作成してみましょう。
 
@@ -267,7 +265,7 @@ fig_reactive
 
 これで、ドロップダウンから町を選ぶと、チャートが動的に更新されます。
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/7.webp" alt="Marimo の動的チャート" />
+![Marimo の動的チャート](/images/use-cases/AI_ML/Marimo/7.webp)
 
 <div id="exploring-price-distributions">
   ### インタラクティブな箱ひげ図で価格の分布を調べる
@@ -343,7 +341,7 @@ fig_box
 コードを非表示にできます。
 スライダーを動かすと、Marimo のリアクティブ実行によって、プロットが自動的に更新されます。
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/8.webp" alt="Marimo の動的チャート" />
+![Marimo の動的チャート](/images/use-cases/AI_ML/Marimo/8.webp)
 
 <div id="summary">
   ## まとめ

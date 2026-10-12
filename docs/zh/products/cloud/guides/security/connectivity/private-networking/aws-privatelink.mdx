@@ -6,7 +6,6 @@ keywords: ['PrivateLink']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="AWS PrivateLink" />
@@ -95,7 +94,7 @@ ClickHouse 会尝试将您的服务分组，以便在同一 AWS 区域内复用�
 
 在 ClickHouse Cloud 控制台中，打开要通过 PrivateLink 连接的服务，然后前往 **设置** 菜单。
 
-<Image img="/images/cloud/security/aws-privatelink-pe-create.webp" size="md" alt="专用终结点" border />
+![专用终结点](/images/cloud/security/aws-privatelink-pe-create.webp)
 
 记下 `Service name` 和 `DNS name`，然后[进入下一步](#create-aws-endpoint)。
 
@@ -161,7 +160,7 @@ jq .result
 
 选择 **Endpoint services that use NLBs and GWLBs**，然后在 **Service Name** 字段中填入您在 [获取 Endpoint“Service name”](#obtain-endpoint-service-info) 步骤中获得的 `Service name`<sup>console</sup> 或 `endpointServiceId`<sup>API</sup>。点击 **Verify service**：
 
-<Image img="/images/cloud/security/aws-privatelink-endpoint-settings.webp" size="md" alt="AWS PrivateLink 端点设置" border />
+![AWS PrivateLink 端点设置](/images/cloud/security/aws-privatelink-endpoint-settings.webp)
 
 <Note>
   对于跨区域连接，请启用 **Cross region endpoint** 复选框，并指定 ClickHouse 服务所在的区域。
@@ -171,7 +170,7 @@ jq .result
 
 接下来，选择您的 VPC 和子网：
 
-<Image img="/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp" size="md" alt="选择 VPC 和子网" border />
+![选择 VPC 和子网](/images/cloud/security/aws-privatelink-select-vpc-and-subnets.webp)
 
 作为可选步骤，分配安全组 (Security Group) /标签：
 
@@ -181,7 +180,7 @@ jq .result
 
 创建 VPC 端点后，请记下 `Endpoint ID` 的值；后续步骤中会用到它。
 
-<Image img="/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp" size="md" alt="VPC Endpoint ID" border />
+![VPC Endpoint ID](/images/cloud/security/aws-privatelink-vpc-endpoint-id.webp)
 
 <div id="option-2-aws-cloudformation">
   #### 选项 2：AWS CloudFormation
@@ -257,7 +256,7 @@ resource "aws_vpc_endpoint" "this" {
   如果你想允许来自现有 PrivateLink 连接的访问，请使用现有端点下拉菜单。
 </Note>
 
-<Image img="/images/cloud/security/aws-privatelink-pe-filters.webp" size="md" alt="专用终结点过滤器" border />
+![专用终结点过滤器](/images/cloud/security/aws-privatelink-pe-filters.webp)
 
 如需移除，请前往 ClickHouse Cloud 控制台，找到相应服务，然后进入该服务的 **设置**，找到要移除的端点，并将其从端点列表中删除。
 
@@ -334,7 +333,7 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" \
 
 在 ClickHouse Cloud 控制台中，前往 **设置**。点击 **Set up private endpoint** 按钮。在打开的弹出面板中，复制 **DNS Name**。
 
-<Image img="/images/cloud/security/aws-privatelink-pe-dns-name.webp" size="md" alt="专用终结点 DNS 名称" border />
+![专用终结点 DNS 名称](/images/cloud/security/aws-privatelink-pe-dns-name.webp)
 
 <div id="option-2-api-3">
   ##### 选项 2：API

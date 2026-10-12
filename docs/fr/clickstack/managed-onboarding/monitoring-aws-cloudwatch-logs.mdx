@@ -9,8 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 Ce guide vous explique comment acheminer des logs AWS CloudWatch vers Managed ClickStack à l’aide du [receiver `awscloudwatch`](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) d’OpenTelemetry, puis comment les consulter dans la ClickStack UI.
@@ -257,11 +255,11 @@ Le ClickStack collector peut être déployé soit sous forme de **conteneur Dock
   <Step title="Vérifier dans l’interface ClickStack" id="confirm-in-ui">
     Ouvrez votre service dans la [console ClickHouse Cloud](https://console.clickhouse.cloud) et sélectionnez **ClickStack** dans le menu de gauche.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Lancer ClickStack" border />
+    ![Lancer ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
 
     Dans la vue **Search**, basculez la source sur `Logs` et définissez l’intervalle de temps sur **15 dernières minutes**. Les événements CloudWatch devraient apparaître au bout de quelques cycles d’interrogation.
 
-    <Image img="/images/clickstack/cloudwatch/log-search-view-clickstack.webp" size="lg" alt="Vue Search de ClickStack avec les logs CloudWatch" />
+    ![Vue Search de ClickStack avec les logs CloudWatch](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
 
     Chaque événement comporte le groupe source et le flux comme attributs de ressource :
 
@@ -272,11 +270,11 @@ Le ClickStack collector peut être déployé soit sous forme de **conteneur Dock
 
     Modifiez la recherche en `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body` pour inclure ces attributs :
 
-    <Image img="/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp" size="lg" alt="Vue Search de ClickStack avec les logs CloudWatch et les attributs" />
+    ![Vue Search de ClickStack avec les logs CloudWatch et les attributs](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
 
     Sélectionnez une entrée de log pour inspecter ses métadonnées :
 
-    <Image img="/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp" size="lg" alt="Attributs CloudWatch dans la vue détaillée du log" />
+    ![Attributs CloudWatch dans la vue détaillée du log](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
 
     Si rien ne s’affiche :
 
@@ -291,11 +289,11 @@ Le ClickStack collector peut être déployé soit sous forme de **conteneur Dock
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">Télécharger `cloudwatch-logs-dashboard.json`</TrackedLink>, puis, dans la ClickStack UI, accédez à **Dashboards** et cliquez sur **Import**.
 
-    <Image img="/images/clickstack/clickstack-import-dashboard.webp" size="lg" alt="Bouton d’importation du dashboard" />
+    ![Bouton d’importation du dashboard](/images/clickstack/clickstack-import-dashboard.webp)
 
     Téléversez le fichier JSON, puis cliquez sur **Finish Import**.
 
-    <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="Boîte de dialogue de finalisation de l’importation" />
+    ![Boîte de dialogue de finalisation de l’importation](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
   </Step>
 
   <Step title="Pour en savoir plus" id="further-reading">

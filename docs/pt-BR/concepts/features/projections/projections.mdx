@@ -8,7 +8,6 @@ sidebar_order: 1
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { RunnableCode } from "/snippets/pt-BR/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
@@ -54,7 +53,7 @@ o ClickHouse faz automaticamente uma amostragem das chaves primárias e escolhe 
 gerar o mesmo resultado correto, mas exigindo a menor quantidade possível de dados a serem
 lidos, como mostrado na figura abaixo:
 
-<Image img="/images/data-modeling/projections_1.webp" size="md" alt="Projeções no ClickHouse" />
+![Projeções no ClickHouse](/images/data-modeling/projections_1.webp)
 
 <div id="smarter_storage_with_part_offset">
   ### Armazenamento mais inteligente com `_part_offset`
@@ -326,7 +325,7 @@ SETTINGS mutations_sync = 1
 A figura abaixo mostra uma visualização da tabela principal `uk_price_paid_with_projections`
 e de suas duas projeções:
 
-<Image img="/images/data-modeling/projections_2.webp" size="md" alt="Visualização da tabela principal uk_price_paid_with_projections e de suas duas projeções" />
+![Visualização da tabela principal uk_price_paid_with_projections e de suas duas projeções](/images/data-modeling/projections_2.webp)
 
 Se agora executarmos novamente a consulta que lista os condados de Londres com os três
 maiores preços pagos, veremos uma melhora no desempenho da consulta:

@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'observability', 'API', 'API REST', 'tableaux de bord', 'alertes', 'HyperDX']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickStack met à disposition une API REST pour gérer de façon programmatique les tableaux de bord, les alertes et les sources de données. L’API est disponible à la fois pour les déploiements **Managed ClickStack** (ClickHouse Cloud) et **ClickStack Open Source**, bien que les points de terminaison et l’authentification diffèrent entre les deux.
 
 <div id="api-docs">
@@ -74,7 +72,7 @@ ClickStack met à disposition une API REST pour gérer de façon programmatique 
     3. Accédez à **Team Settings → API Keys**
     4. Copiez votre **Personal API Access Key**
 
-    <Image img="/images/clickstack/api-key-personal.webp" alt="Clé API ClickStack" />
+    ![Clé API ClickStack](/images/clickstack/api-key-personal.webp)
 
     <Note>
       Elle est différente de la **clé API d’ingestion** disponible dans Team Settings, qui sert à authentifier les données de télémétrie envoyées au collector OpenTelemetry.

@@ -10,15 +10,13 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
 
 [marimo](https://marimo.io/) هو دفتر ملاحظات تفاعلي مفتوح المصدر لـ بايثون مع دعم SQL مدمج. عند تشغيل خلية أو التفاعل مع عنصر في واجهة المستخدم، يشغّل marimo تلقائيًا الخلايا المتأثرة (أو يوسمها بأنها غير محدّثة)، مما يحافظ على اتساق الشيفرة والمخرجات ويمنع الأخطاء قبل وقوعها. يُحفَظ كل دفتر ملاحظات في marimo بصيغة بايثون خالصة، ويكون قابلاً للتنفيذ كبرنامج نصي، وقابلاً للنشر كتطبيق.
 
-<Image img="/images/integrations/sql-clients/marimo/clickhouse-connect.webp" size="md" border alt="الاتصال بـ ClickHouse" />
+![الاتصال بـ ClickHouse](/images/integrations/sql-clients/marimo/clickhouse-connect.webp)
 
 <Steps>
   <Step title="تثبيت marimo مع دعم SQL" id="install-marimo-sql">
@@ -33,21 +31,21 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
   <Step title="الاتصال بـ ClickHouse." id="connect-to-clickhouse">
     انتقل إلى لوحة مصادر البيانات على الجانب الأيسر من محرر marimo وانقر على &quot;Add database&quot;.
 
-    <Image img="/images/integrations/sql-clients/marimo/panel-arrow.webp" size="sm" border alt="إضافة قاعدة بيانات جديدة" />
+    ![إضافة قاعدة بيانات جديدة](/images/integrations/sql-clients/marimo/panel-arrow.webp)
 
     سيُطلب منك إدخال تفاصيل قاعدة البيانات.
 
-    <Image img="/images/integrations/sql-clients/marimo/add-db-details.webp" size="md" border alt="املأ تفاصيل قاعدة البيانات" />
+    ![املأ تفاصيل قاعدة البيانات](/images/integrations/sql-clients/marimo/add-db-details.webp)
 
     بعد ذلك، ستظهر لك خلية يمكن تشغيلها لإنشاء اتصال.
 
-    <Image img="/images/integrations/sql-clients/marimo/run-cell.webp" size="md" border alt="شغّل الخلية للاتصال بـ ClickHouse" />
+    ![شغّل الخلية للاتصال بـ ClickHouse](/images/integrations/sql-clients/marimo/run-cell.webp)
   </Step>
 
   <Step title="تشغيل SQL" id="run-sql">
     بمجرد إعداد اتصال، يمكنك إنشاء خلية SQL جديدة واختيار محرك ClickHouse.
 
-    <Image img="/images/integrations/sql-clients/marimo/choose-sql-engine.webp" size="md" border alt="اختر محرك SQL" />
+    ![اختر محرك SQL](/images/integrations/sql-clients/marimo/choose-sql-engine.webp)
 
     في هذا الدليل، سنستخدم مجموعة بيانات New York Taxi.
 
@@ -105,16 +103,16 @@ import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaint
     SELECT * FROM trips LIMIT 1000;
     ```
 
-    <Image img="/images/integrations/sql-clients/marimo/results.webp" size="lg" border alt="النتائج في إطار بيانات" />
+    ![النتائج في إطار بيانات](/images/integrations/sql-clients/marimo/results.webp)
 
     الآن يمكنك عرض النتائج في إطار بيانات. أودّ تصور أعلى نقاط النزول تكلفةً انطلاقًا من موقع التقاط معيّن. يوفّر marimo عدة مكوّنات لواجهة المستخدم لمساعدتك. سأستخدم قائمة منسدلة لاختيار الموقع وaltair لإنشاء المخططات.
 
-    <Image img="/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp" size="lg" border alt="مزيج من قائمة منسدلة وجدول ومخطط" />
+    ![مزيج من قائمة منسدلة وجدول ومخطط](/images/integrations/sql-clients/marimo/dropdown-cell-chart.webp)
 
     يمتد نموذج التنفيذ التفاعلي في marimo إلى استعلامات SQL أيضًا، لذا فإن التغييرات التي تُجريها على SQL ستُشغّل تلقائيًا العمليات الحسابية اللاحقة للخلايا التابعة (أو يمكن اختياريًا تمييز الخلايا على أنها غير محدّثة في حال كانت العمليات الحسابية مكلفة). لذلك يتغير المخطط والجدول عند تحديث الاستعلام.
 
     يمكنك أيضًا تبديل App View للحصول على واجهة نظيفة لاستكشاف بياناتك.
 
-    <Image img="/images/integrations/sql-clients/marimo/run-app-view.webp" size="md" border alt="تشغيل عرض التطبيق" />
+    ![تشغيل عرض التطبيق](/images/integrations/sql-clients/marimo/run-app-view.webp)
   </Step>
 </Steps>

@@ -8,8 +8,6 @@ doc_type: 'مرجع'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <BetaBadge />
 
 يستخدم ClickHouse Agents نموذج أذونات متعدد الطبقات: تتحكم الأدوار في الميزات التي يمكن للمستخدمين استخدامها أساسًا، وتتحكم قوائم الوصول على مستوى المورد في من يمكنه استخدام وكيل معيّن أو أي مورد آخر، وتتحكم أذونات المسؤول في من يدير كل شيء.
@@ -55,11 +53,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 انقر على أيقونة **Share** في أسفل Agent Builder. تُظهر الشارة على الأيقونة عدد المستخدمين أو المجموعات الذين لديهم حق الوصول حاليًا.
 
-<Image img="/images/cloud/agent-builder/sharing/sharing.webp" alt="الجزء السفلي من لوحة Agent Builder مع تمييز أيقونة Share وشارة تُظهر جهة واحدة تمت مشاركتها معها" size="sm" />
+![الجزء السفلي من لوحة Agent Builder مع تمييز أيقونة Share وشارة تُظهر جهة واحدة تمت مشاركتها معها](/images/cloud/agent-builder/sharing/sharing.webp)
 
 تُفتح نافذة **Share**. ابحث عن مستخدم أو مجموعة بالاسم أو البريد الإلكتروني، واختر مستوى الوصول (**عارض** أو **محرر** أو **مالك**)، ثم انقر على **Save Changes**. ولمشاركة الوكيل على مستوى المؤسسة بالكامل، فعِّل زر التبديل **Share with everyone in ClickHouse**.
 
-<Image img="/images/cloud/agent-builder/sharing/share-agent-modal.webp" alt="نافذة Share مع قسم أذونات المستخدمين والمجموعات، وحقل بحث، ومستخدم موجود بدور مالك، وزر تبديل Share with everyone in ClickHouse، وزري Cancel وSave Changes" size="md" />
+![نافذة Share مع قسم أذونات المستخدمين والمجموعات، وحقل بحث، ومستخدم موجود بدور مالك، وزر تبديل Share with everyone in ClickHouse، وزري Cancel وSave Changes](/images/cloud/agent-builder/sharing/share-agent-modal.webp)
 
 سيرى المستلم الوكيل في قائمة الوكلاء المتاحين لديه في المرة التالية التي يُحدِّث فيها القائمة. ولإلغاء الوصول، احذف الصف من النافذة نفسها. يفقد المستلم حق الوصول فورًا؛ وتُستكمل المحادثات الجارية، لكن لن تُفتح محادثات جديدة.
 

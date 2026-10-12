@@ -8,13 +8,11 @@ sidebarTitle: 'Migration guide'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Why use ClickHouse Cloud over BigQuery? {#why-use-clickhouse-cloud-over-bigquery}
 
 TLDR: Because ClickHouse is faster, cheaper, and more powerful than BigQuery for modern data analytics:
 
-<Image img="/images/migrations/bigquery-2.webp" size="md" alt="ClickHouse vs BigQuery"/>
+![ClickHouse vs BigQuery](/images/migrations/bigquery-2.webp)
 
 ## Loading data from BigQuery to ClickHouse Cloud {#loading-data-from-bigquery-to-clickhouse-cloud}
 
@@ -22,7 +20,7 @@ TLDR: Because ClickHouse is faster, cheaper, and more powerful than BigQuery for
 
 As an example dataset to show a typical migration from BigQuery to ClickHouse Cloud, we use the Stack Overflow dataset documented [here](/get-started/sample-datasets/stackoverflow). This contains every `post`, `vote`, `user`, `comment`, and `badge` that has occurred on Stack Overflow from 2008 to Apr 2024. The BigQuery schema for this data is shown below:
 
-<Image img="/images/migrations/bigquery-3.webp" size="lg" alt="Schema"/>
+![Schema](/images/migrations/bigquery-3.webp)
 
 For users who wish to populate this dataset into a BigQuery instance to test migration steps, we have provided data for these tables in Parquet format in a GCS bucket and  DDL commands to create and load the tables in BigQuery are available [here](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==).
 
@@ -41,7 +39,7 @@ BigQuery supports exporting data to Google's object store (GCS). For our example
 
 2. Import the data into ClickHouse Cloud. For that we can use the [gcs table function](/reference/functions/table-functions/gcs). The DDL and import queries are available [here](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==). Note that because a ClickHouse Cloud instance consists of multiple compute nodes, instead of the `gcs` table function, we're using the [s3Cluster table function](/reference/functions/table-functions/s3Cluster) instead. This function also works with gcs buckets and [utilizes all nodes of a ClickHouse Cloud service](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers) to load the data in parallel.
 
-<Image img="/images/migrations/bigquery-4.webp" size="md" alt="Bulk loading"/>
+![Bulk loading](/images/migrations/bigquery-4.webp)
 
 This approach has a number of advantages:
 
@@ -143,7 +141,7 @@ In contrast to BigQuery, ClickHouse automatically creates [a (sparse) primary in
 - Memory and disk efficiency are paramount to the scale at which ClickHouse is often used. Data is written to ClickHouse tables in chunks known as parts, with rules applied for merging the parts in the background. In ClickHouse, each part has its own primary index. When parts are merged, then the merged part's primary indexes are also merged. Not that these indexes aren't built for each row. Instead, the primary index for a part has one index entry per group of rows - this technique is called sparse indexing.
 - Sparse indexing is possible because ClickHouse stores the rows for a part on disk ordered by a specified key. Instead of directly locating single rows (like a B-Tree-based index), the sparse primary index allows it to quickly (via a binary search over index entries) identify groups of rows that could possibly match the query. The located groups of potentially matching rows are then, in parallel, streamed into the ClickHouse engine in order to find the matches. This index design allows for the primary index to be small (it completely fits into the main memory) while still significantly speeding up query execution times, especially for range queries that are typical in data analytics use cases. For more details, we recommend [this in-depth guide](/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
-<Image img="/images/migrations/bigquery-5.webp" size="md" alt="ClickHouse Primary keys"/>
+![ClickHouse Primary keys](/images/migrations/bigquery-5.webp)
 
 The selected primary key in ClickHouse will determine not only the index but also the order in which data is written on disk. Because of this, it can dramatically impact compression levels, which can, in turn, affect query performance. An ordering key that causes the values of most columns to be written in a contiguous order will allow the selected compression algorithm (and codecs) to compress the data more effectively.
 
@@ -165,7 +163,7 @@ Partitioning helps with improving query performance by enabling faster data acce
 
 In ClickHouse, partitioning is specified on a table when it is initially defined via the [`PARTITION BY`](/reference/engines/table-engines/mergetree-family/custom-partitioning-key) clause. This clause can contain a SQL expression on any column/s, the results of which will define which partition a row is sent to.
 
-<Image img="/images/migrations/bigquery-6.webp" size="md" alt="Partitions"/>
+![Partitions](/images/migrations/bigquery-6.webp)
 
 The data parts are logically associated with each partition on disk and can be queried in isolation. For the example below, we partition the posts table by year using the expression [`toYear(CreationDate)`](/reference/functions/regular-functions/date-time-functions#toYear). As rows are inserted into ClickHouse, this expression will be evaluated against each row – rows are then routed to the resulting partition in the form of new data parts belonging to that partition.
 
@@ -373,7 +371,7 @@ maintained as data is inserted. Furthermore, queries can just be sent to a singl
 table where the projections are exploited where possible to speed up the response
 time.
 
-<Image img="/images/migrations/bigquery-7.webp" size="md" alt="Projections"/>
+![Projections](/images/migrations/bigquery-7.webp)
 
 This is in contrast to materialized views, where the user has to select the 
 appropriate optimized target table or rewrite their query, depending on the filters.
@@ -397,7 +395,7 @@ The following provides example queries comparing BigQuery to ClickHouse. This li
 
 _BigQuery_
 
-<Image img="/images/migrations/bigquery-8.webp" size="sm" alt="Rewriting BigQuery queries" border/>
+![Rewriting BigQuery queries](/images/migrations/bigquery-8.webp)
 
 _ClickHouse_
 
@@ -432,7 +430,7 @@ _BigQuery_
 
 <br />
 
-<Image img="/images/migrations/bigquery-9.webp" size="sm" alt="BigQuery 1" border/>
+![BigQuery 1](/images/migrations/bigquery-9.webp)
 
 _ClickHouse_
 
@@ -466,9 +464,9 @@ Where possible, you should exploit ClickHouse aggregate functions. Below, we sho
 
 _BigQuery_
 
-<Image img="/images/migrations/bigquery-10.webp" border size="sm" alt="Aggregate functions 1"/>
+![Aggregate functions 1](/images/migrations/bigquery-10.webp)
 
-<Image img="/images/migrations/bigquery-11.webp" border size="sm" alt="Aggregate functions 2"/>
+![Aggregate functions 2](/images/migrations/bigquery-11.webp)
 
 _ClickHouse_
 
@@ -522,7 +520,7 @@ Conditional and array functions make queries significantly simpler. The followin
 
 _BigQuery_
 
-<Image img="/images/migrations/bigquery-12.webp" size="sm" border alt="Conditionals and Arrays"/>
+![Conditionals and Arrays](/images/migrations/bigquery-12.webp)
 
 _ClickHouse_
 

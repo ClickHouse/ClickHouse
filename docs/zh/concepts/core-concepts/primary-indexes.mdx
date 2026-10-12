@@ -6,8 +6,6 @@ keywords: ['稀疏主索引', '主索引', '索引']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <Tip>
   **想了解更高级的索引详情？**
 
@@ -32,7 +30,7 @@ ClickHouse 中的稀疏主索引有助于高效识别可能包含与查询在表
 
 [回顾一下](/zh/concepts/core-concepts/parts)，在我们的 ① 示例表中，主键为 (town, street)，② 插入的数据会 ③ 按主键列值排序后存储到磁盘上，并按列分别压缩保存到独立文件中：
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_01.webp" size="lg" />
+![](/images/managing-data/core-concepts/primary-index-light_01.webp)
 
 <br />
 
@@ -42,7 +40,7 @@ ClickHouse 中的稀疏主索引有助于高效识别可能包含与查询在表
 
 这种粒度结构也是主索引之所以是**稀疏**的原因：ClickHouse 不会为每一行建立索引，而是 ⑤ 每个粒度只存储一行的主键值——更准确地说，是该粒度的第一行。因此，每个粒度都会对应一个索引条目：
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_02.webp" size="lg" />
+![](/images/managing-data/core-concepts/primary-index-light_02.webp)
 
 <br />
 
@@ -56,7 +54,7 @@ ClickHouse 中的稀疏主索引有助于高效识别可能包含与查询在表
 
 我们通过另一个动画来说明稀疏主索引如何用于加速查询：
 
-<Image img="/images/managing-data/core-concepts/primary-index-light_03.webp" size="lg" />
+![](/images/managing-data/core-concepts/primary-index-light_03.webp)
 
 <br />
 

@@ -7,8 +7,6 @@ description: 'Развертывание ClickHouse в собственной о
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="connection-between-clickhouse-and-byoc">
   ## Соединения между плоскостью управления ClickHouse и вашей VPC BYOC
 </div>
@@ -64,7 +62,7 @@ Tailscale создает зашифрованный частный сетево�
 
 ### Как работает Tailscale в BYOC {#how-tailscale-works}
 
-<Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
+![BYOC Tailscale](/images/cloud/reference/byoc-tailscale-1.webp)
 
 Для каждого сервиса или конечной точки, к которым нужен доступ через Tailscale, ClickHouse BYOC развертывает:
 

@@ -12,8 +12,6 @@ integration:
 
 import BucketDetails from '/snippets/ar/_S3_authentication_and_bucket.mdx';
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يمكنك إدراج البيانات من S3 إلى ClickHouse، كما يمكنك استخدام S3 أيضًا كوجهة للتصدير، مما يتيح التفاعل مع معماريات &quot;بحيرة البيانات&quot;. علاوة على ذلك، يمكن أن يوفّر S3 طبقات تخزين &quot;باردة&quot; ويساعد في فصل التخزين عن موارد المعالجة. في الأقسام التالية، نستخدم مجموعة بيانات سيارات الأجرة في مدينة نيويورك لشرح عملية نقل البيانات بين S3 وClickHouse، بالإضافة إلى تحديد معلمات التكوين الرئيسية وتقديم إرشادات لتحسين الأداء.
 
 ## دوال الجداول S3 {#s3-table-functions}
@@ -859,7 +857,7 @@ SELECT * FROM s3_table1;
 6. في وحدة تحكم AWS، انتقل إلى الحاويات وحدد الحاوية الجديدة والمجلد.
    ينبغي أن ترى شيئًا مشابهًا لما يلي:
 
-<Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="عرض حاوية S3 في وحدة تحكم AWS يوضح ملفات بيانات ClickHouse المخزنة في S3" />
+![عرض حاوية S3 في وحدة تحكم AWS يوضح ملفات بيانات ClickHouse المخزنة في S3](/images/integrations/data-ingestion/s3/s3-j.webp)
 
 <div id="s3-multi-region">
   ## تكرار شظية واحدة عبر منطقتين في AWS باستخدام تخزين الكائنات في S3
@@ -1298,9 +1296,9 @@ sudo service clickhouse-server start
 
   تحقّق من بيانات S3 في كل حاوية S3 (لا تظهر القيم الإجمالية، لكن كلتا الحاويتين تحتويان على نحو 36 MiB من البيانات المخزَّنة بعد عمليات الإدراج):
 
-<Image img="/images/integrations/data-ingestion/s3/bucket1.webp" size="lg" border alt="حجم البيانات في حاوية S3 الأولى مع إظهار مقاييس استخدام التخزين" />
+![حجم البيانات في حاوية S3 الأولى مع إظهار مقاييس استخدام التخزين](/images/integrations/data-ingestion/s3/bucket1.webp)
 
-<Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="حجم البيانات في حاوية S3 الثانية مع إظهار مقاييس استخدام التخزين" />
+![حجم البيانات في حاوية S3 الثانية مع إظهار مقاييس استخدام التخزين](/images/integrations/data-ingestion/s3/bucket2.webp)
 
 <div id="s3express">
   ## S3Express

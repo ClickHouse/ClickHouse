@@ -7,7 +7,6 @@ description: 'ClickHouse Cloud 백업 기능의 개요를 제공합니다'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 데이터베이스 백업은 마지막으로 성공한 백업을 통해 서비스를 이전 상태로 복원할 수 있도록 설계되었습니다.
@@ -24,7 +23,7 @@ ClickHouse Cloud 백업은 &quot;전체&quot; 백업과 &quot;증분&quot; 백�
 
 1일 차에는 백업 체인을 시작하기 위해 전체 백업이 수행됩니다. 2일 차에는 증분 백업이 수행되며, 전체 백업과 증분 백업 모두에서 복원할 수 있습니다. 7일 차가 되면 체인에는 전체 백업 1개와 증분 백업 6개가 있으며, 모두 표시되고 복원에 사용할 수 있습니다. 8일 차에는 새 전체 백업이 수행되고, 9일 차에는 새 체인에 백업 2개가 쌓이면 이전 체인이 폐기됩니다.
 
-<Image img="/images/cloud/manage/backup-chain.webp" size="lg" alt="ClickHouse Cloud의 백업 체인 예시" />
+![ClickHouse Cloud의 백업 체인 예시](/images/cloud/manage/backup-chain.webp)
 
 <div id="default-backup-policy">
   ### 기본 백업 정책

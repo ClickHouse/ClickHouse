@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 This document explains parallelized snapshot/initial load in the Postgres ClickPipe works and talks about the snapshot parameters that can be used to control it.
 
 ## Overview {#overview-pg-snapshot}
@@ -27,7 +25,7 @@ The Postgres ClickPipe uses the CTID column to logically partition source tables
 
 Let's talk about the below settings:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp" alt="Snapshot parameters" size="md"/>
+![Snapshot parameters](/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp)
 
 #### Snapshot number of rows per partition {#numrows-pg-snapshot}
 

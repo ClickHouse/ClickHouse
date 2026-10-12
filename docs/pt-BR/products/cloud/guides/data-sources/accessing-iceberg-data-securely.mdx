@@ -7,8 +7,6 @@ keywords: ['Iceberg', 'RBAC', 'Amazon S3', 'autenticação']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O ClickHouse Cloud oferece suporte ao acesso seguro baseado em funções a dados do Iceberg armazenados em armazenamento de objetos (normalmente no S3) por meio de uma relação de confiança do AWS IAM baseada em ARN. Este guia segue o mesmo padrão de configuração segura de [Acessando dados do S3 com segurança](/pt-BR/products/cloud/guides/data-sources/accessing-s3-data-securely) e adiciona a configuração específica do Iceberg no ClickHouse.
 
 <div id="overview">
@@ -36,7 +34,7 @@ O ClickHouse Cloud oferece suporte ao acesso seguro baseado em funções a dados
   <Step title={<>5. Copie o valor de <strong>ID da função de serviço (IAM)</strong>.</>} id="service-role-iam-value">
     Esse ARN é necessário para a política de confiança da função do IAM da AWS que acessará seus dados do Iceberg.
 
-    <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Como obter o ARN da função do IAM do serviço ClickHouse" border />
+    ![Como obter o ARN da função do IAM do serviço ClickHouse](/images/cloud/security/secures3_arn.webp)
   </Step>
 </Steps>
 

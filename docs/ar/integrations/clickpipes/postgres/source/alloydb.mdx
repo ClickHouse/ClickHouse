@@ -6,8 +6,6 @@ title: 'دليل إعداد AlloyDB Postgres كمصدر'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="supported-versions">
   ## الإصدارات المدعومة
 </div>
@@ -34,14 +32,14 @@ SHOW  wal_level;
 
 1. في Google Cloud Console، انتقل إلى صفحة [Clusters](https://console.cloud.google.com/alloydb/clusters) الخاصة بـ AlloyDB. من قائمة **Actions** للمثيل الأساسي، انقر على **Edit**.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp" alt="تحرير تكوين المثيل الأساسي" size="lg" border />
+   ![تحرير تكوين المثيل الأساسي](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp)
 
 2. مرّر إلى أسفل حتى **Advanced configuration options** ثم وسّع هذا القسم. ضمن **Flags**، انقر على **Add a database flag**.
 
    * أضف العلامة [`allowdb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) واضبط قيمتها على `on`
    * أضف العلامة [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) واضبط قيمتها على `on`
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp" alt="ضبط علامتي allowdb.enable_pglogical و alloydb.logical_decoding على on" size="lg" border />
+   ![ضبط علامتي allowdb.enable_pglogical و alloydb.logical_decoding على on](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp)
 
 3. انقر على **Update instance** لحفظ تغييرات التكوين. ومن المهم ملاحظة أن هذا الإجراء **يؤدي إلى إعادة تشغيل المثيل الأساسي.**
 
@@ -53,7 +51,7 @@ SHOW  wal_level;
 
    يجب أن تكون النتيجة `logical`.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp" alt="التحقق من أن النسخ المتماثل المنطقي مُمكَّن" size="lg" border />
+   ![التحقق من أن النسخ المتماثل المنطقي مُمكَّن](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp)
 
 <div id="create-a-clickpipes-user-and-manage-replication-permissions">
   ## أنشئ مستخدم ClickPipes وأدر أذونات النسخ المتماثل
@@ -119,7 +117,7 @@ SHOW  wal_level;
 
     3. حدِّد مربع الاختيار **Enable Public IP** للسماح بالاتصال بالمثيل عبر الإنترنت العام. ضمن **Authorized external networks**، أدخل [قائمة عناوين IP الثابتة الخاصة بـ ClickPipes](/ar/integrations/clickpipes/networking/static-ips) للمنطقة التي نُشرت فيها خدمتك.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="تهيئة الشبكة للوصول العام باستخدام قائمة سماح لعناوين IP" size="lg" border />
+       ![تهيئة الشبكة للوصول العام باستخدام قائمة سماح لعناوين IP](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp)
 
     <Note>
       يتطلب AlloyDB تحديد العناوين باستخدام [تنسيق CIDR](https://cloud.google.com/alloydb/docs/connection-overview#public-ip). يمكنك تكييف قائمة عناوين IP الثابتة الخاصة بـ ClickPipes لتتوافق مع هذا التنسيق عبر إضافة `/32` إلى كل عنوان.

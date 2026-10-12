@@ -7,8 +7,6 @@ sidebarTitle: 'مستودعات البيانات'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -44,7 +42,7 @@ export const ExclusiveGroup = ({ name, children }) => {
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="بنية ClickHouse لمستودعات البيانات" />
+    ![بنية ClickHouse لمستودعات البيانات](/images/cloud/onboard/discover/use_cases/data-warehousing.webp)
   </div>
 
   <ExclusiveGroup name="dw-arch">

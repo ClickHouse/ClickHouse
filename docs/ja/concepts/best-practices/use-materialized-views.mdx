@@ -8,19 +8,17 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouseは、[**インクリメンタル**](/ja/concepts/features/materialized-views/incremental-materialized-view)と[**リフレッシャブル**](/ja/concepts/features/materialized-views/refreshable-materialized-view)という2種類のmaterialized viewをサポートしています。どちらも、結果を事前に計算して保存することでクエリを高速化するためのものですが、基になるクエリがいつ・どのように実行されるか、どのようなワークロードに適しているか、またデータの鮮度をどう扱うかという点で大きく異なります。
 
 **materialized viewは、[データ型](/ja/concepts/best-practices/select-data-type)や[主キーの最適化](/ja/concepts/best-practices/choosing-a-primary-key)に関する従来のベストプラクティスを実施したうえで、高速化したい特定のクエリパターンに対して利用を検討してください。**
 
 **インクリメンタルmaterialized view**はリアルタイムで更新されます。新しいデータがソーステーブルに挿入されると、ClickHouseはmaterialized viewのクエリを新しいdata blockに自動的に適用し、その結果を別のターゲットテーブルに書き込みます。時間の経過とともに、ClickHouseはこれらの部分的な結果をmergeし、完全で最新のビューを生成します。このアプローチは、計算コストをinsert timeに移し、新しいデータだけを処理するため、非常に効率的です。その結果、ターゲットテーブルに対する`SELECT`クエリは高速かつ軽量になります。インクリメンタルビューはすべてのaggregation関数をサポートし、各クエリが挿入されるdatasetのうち小さく直近のsubsetだけを対象に実行されるため、PB規模のデータにも適切にスケールします。
 
-<Image img="/images/bestpractices/incremental_materialized_view.webp" size="lg" alt="materialized view" />
+![materialized view](/images/bestpractices/incremental_materialized_view.webp)
 
 **リフレッシュ可能なマテリアライズドビュー**は、これとは対照的に、スケジュールに基づいて更新されます。これらのビューは定期的にクエリ全体を再実行し、その結果でターゲットテーブルを上書きします。これは、Postgresのような従来のOLTPデータベースにおけるmaterialized viewに似ています。
 
-<Image img="/images/bestpractices/refreshable_materialized_view.webp" size="lg" alt="リフレッシュ可能なマテリアライズドビューの図" />
+![リフレッシュ可能なマテリアライズドビューの図](/images/bestpractices/refreshable_materialized_view.webp)
 
 インクリメンタルmaterialized viewとリフレッシュ可能なマテリアライズドビューのどちらを選ぶかは、主にクエリの性質、データがどの程度の頻度で変化するか、さらにビューの更新で各行の挿入をその都度反映する必要があるのか、それとも定期的なrefreshで十分なのかによって決まります。こうしたトレードオフを理解することは、ClickHouseで高性能かつスケーラブルなmaterialized viewを設計するうえで重要です。
 

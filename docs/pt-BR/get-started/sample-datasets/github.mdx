@@ -9,8 +9,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Este conjunto de dados contém todos os commits e as alterações do repositório ClickHouse. Ele pode ser gerado usando a ferramenta `git-import` nativa fornecida com o ClickHouse.
 
 Os dados gerados incluem um arquivo `tsv` para cada uma das seguintes tabelas:
@@ -572,11 +570,11 @@ Esses dados podem ser visualizados com facilidade. Abaixo, usamos o Superset.
 
 **Para linhas adicionadas e removidas:**
 
-<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="Para linhas adicionadas e removidas" size="md" />
+![Para linhas adicionadas e removidas](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
 
 **Para commits e autores:**
 
-<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="Para commits e autores" size="md" />
+![Para commits e autores](/images/getting-started/example-datasets/superset-commits-authors.webp)
 
 <div id="list-files-with-maximum-number-of-authors">
   ### Liste os arquivos com o maior número de autores
@@ -1365,11 +1363,11 @@ LIMIT 100
 
 Um gráfico de Sankey (SuperSet) permite visualizar isso de forma bem clara. Observe que aumentamos nosso `LIMIT BY` para 3, para obter os 3 principais responsáveis pela remoção de código de cada autor e dar mais variedade à visualização.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="Matriz de autores do Superset" size="md" />
+![Matriz de autores do Superset](/images/getting-started/example-datasets/superset-authors-matrix.webp)
 
 Alexey claramente gosta de remover código de outras pessoas. Vamos excluí-lo para ter uma visão mais equilibrada da remoção de código.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="Matriz de autores do Superset v2" size="md" />
+![Matriz de autores do Superset v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
   ### Quem tem a maior porcentagem de contribuição por dia da semana?

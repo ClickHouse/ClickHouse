@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'MCP', 'Model Context Protocol', 'AI', 'オブザーバビリティ', 'HyperDX', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickStack には、AIアシスタントがオブザーバビリティデータを操作できる組み込みの [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) サーバーが含まれています。接続すると、AIアシスタントは自然言語ですべて操作でき、ログ、トレース、メトリクスのクエリ実行、ダッシュボードやアラートの管理、データソースの確認、保存済み検索の利用が可能です。
 
 これにより、[Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Cursor](https://www.cursor.com/)、または任意の MCP 対応クライアントを使って、開発環境を離れることなく、インシデントの調査、ダッシュボードの作成、オブザーバビリティ環境の管理を行えます。
@@ -155,7 +153,7 @@ Open Source および BYOC のデプロイメントでは、ClickStack インス
 * 稼働中の ClickStack インスタンス (セットアップ方法については [デプロイメント](/ja/clickstack/deployment/overview) を参照してください)
 * **Personal API Access Key** — HyperDX の **Team Settings → API Keys → Personal API Access Key** で確認できます
 
-<Image img="/images/clickstack/api-key-personal.webp" alt="Team Settings 内の Personal API Access Key" size="md" border />
+![Team Settings 内の Personal API Access Key](/images/clickstack/api-key-personal.webp)
 
 <Note>
   Personal API Access Key は、Team Settings にある **インジェスト API key** とは異なります。インジェスト API key は、OpenTelemetry Collector に送信されるテレメトリー データの認証に使用されます。

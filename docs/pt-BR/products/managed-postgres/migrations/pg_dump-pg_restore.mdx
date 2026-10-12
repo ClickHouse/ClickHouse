@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Este guia fornece instruções passo a passo sobre como migrar seu banco de dados PostgreSQL para o ClickHouse Managed Postgres usando os utilitários `pg_dump` e `pg_restore`.
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pg_dump-pg_restore-beta" />
@@ -27,7 +25,7 @@ Este guia fornece instruções passo a passo sobre como migrar seu banco de dado
 
 Para seguir as etapas, vamos usar como exemplo um banco de dados Postgres no RDS como banco de dados de origem. Algo assim:
 
-<Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="Configuração do banco de dados PostgreSQL de origem" size="xl" border />
+![Configuração do banco de dados PostgreSQL de origem](/images/managed-postgres/pg_dump_restore/source-setup.webp)
 
 Eis o ambiente com que vamos trabalhar:
 
@@ -62,7 +60,7 @@ Aqui:
 
 Veja como é a execução desse comando:
 
-<Image img="/images/managed-postgres/pg_dump_restore/dump-command.webp" alt="Execução do comando pg_dump" size="xl" border />
+![Execução do comando pg_dump](/images/managed-postgres/pg_dump_restore/dump-command.webp)
 
 <div id="migration-pgdump-pg-restore-restore">
   ## Migre o dump para o ClickHouse Managed Postgres
@@ -76,7 +74,7 @@ Agora que temos o arquivo de dump, podemos restaurá-lo na nossa instância do C
 
 Primeiro, certifique-se de ter uma instância do ClickHouse Managed Postgres pronta, de preferência na mesma região da instância de origem. Você pode seguir o guia rápido [aqui](/pt-BR/products/managed-postgres/quickstart#create-postgres-database). Veja o que vamos provisionar neste guia:
 
-<Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="Criar instância do ClickHouse Managed Postgres" size="md" border />
+![Criar instância do ClickHouse Managed Postgres](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
 
 <div id="migration-pgdump-pg-restore-restore-dump">
   ### Restauração do dump
@@ -100,7 +98,7 @@ Aqui também há algumas flags que vale a pena observar:
 
 No nosso caso, fica assim:
 
-<Image img="/images/managed-postgres/pg_dump_restore/restore-command.webp" alt="Execução do comando pg_restore" size="xl" border />
+![Execução do comando pg_restore](/images/managed-postgres/pg_dump_restore/restore-command.webp)
 
 <div id="migration-pgdump-pg-restore-verify">
   ## Verifique a migração
@@ -109,7 +107,7 @@ No nosso caso, fica assim:
 Quando o processo de restauração for concluído, você poderá se conectar à sua instância do ClickHouse Managed Postgres e verificar se todos os seus dados e objetos foram migrados com sucesso. Você pode usar qualquer cliente PostgreSQL para se conectar e executar consultas.
 Veja como fica nossa configuração do ClickHouse Managed Postgres após a migração:
 
-<Image img="/images/managed-postgres/pg_dump_restore/target-setup.webp" alt="Configuração do banco de dados de destino do ClickHouse Managed Postgres" size="xl" border />
+![Configuração do banco de dados de destino do ClickHouse Managed Postgres](/images/managed-postgres/pg_dump_restore/target-setup.webp)
 
 Vemos que todas as nossas tabelas, índices, views e sequências estão intactos, e que as contagens de dados correspondem.
 

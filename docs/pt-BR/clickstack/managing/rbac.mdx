@@ -8,8 +8,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'rbac', 'funções', 'permissões', 'controle de acesso', 'segurança']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O ClickStack inclui controle de acesso baseado em funções (RBAC), para que você possa definir funções personalizadas com permissões detalhadas sobre [dashboards](/pt-BR/clickstack/features/dashboards/overview), [Saved searches](/pt-BR/clickstack/features/search), Sources, [alertas](/pt-BR/clickstack/features/alerts), webhooks e notebooks. As permissões funcionam em dois níveis: acesso no nível do recurso (sem acesso, leitura ou gerenciamento por tipo de recurso) e regras detalhadas opcionais que restringem o acesso a recursos individuais por nome, tag ou ID. O ClickStack inclui três funções integradas, e você pode criar funções personalizadas para atender às necessidades da sua equipe.
 
 <Info>
@@ -37,11 +35,11 @@ Quando um usuário tem acesso ao Cloud, ele aparece na página **Team Settings**
 
 <Tabs>
   <Tab title="Usuários e funções do Cloud">
-    <Image img="/images/clickstack/rbac/team-page-cloud.webp" alt="Página de usuários e funções do ClickHouse Cloud" size="lg" />
+    ![Página de usuários e funções do ClickHouse Cloud](/images/clickstack/rbac/team-page-cloud.webp)
   </Tab>
 
   <Tab title="Team Settings do ClickStack">
-    <Image img="/images/clickstack/rbac/team-page-clickstack.webp" alt="Página Team Settings do ClickStack mostrando os membros da equipe e suas funções" size="lg" />
+    ![Página Team Settings do ClickStack mostrando os membros da equipe e suas funções](/images/clickstack/rbac/team-page-clickstack.webp)
   </Tab>
 </Tabs>
 
@@ -84,7 +82,7 @@ Você pode definir uma função padrão para novos usuários em [Políticas de s
   <Step title="Navegue até Team Settings" id="step-navigate">
     Abra **Team Settings** e role até **RBAC Roles**.
 
-    <Image img="/images/clickstack/rbac/rbac-section.webp" alt="RBAC Roles" size="lg" />
+    ![RBAC Roles](/images/clickstack/rbac/rbac-section.webp)
   </Step>
 
   <Step title="Adicione uma nova função" id="step-add-role">
@@ -94,7 +92,7 @@ Você pode definir uma função padrão para novos usuários em [Políticas de s
   <Step title="Configure as permissões e salve" id="step-configure">
     Defina as permissões da função e, em seguida, clique em **Create Role**.
 
-    <Image img="/images/clickstack/rbac/add-role-modal.webp" alt="modal Add Role" size="md" />
+    ![modal Add Role](/images/clickstack/rbac/add-role-modal.webp)
   </Step>
 </Steps>
 
@@ -151,7 +149,7 @@ Cada tipo de recurso tem um **Modo de controle de acesso**:
 
 Para alternar entre os modos, clique na seta para expandir um tipo de recurso no editor da função e, em seguida, alterne o **Modo de controle de acesso**.
 
-<Image img="/images/clickstack/rbac/default-vs-fine-grained.webp" alt="Modos de Acesso padrão vs. Controles granulares no editor da função" size="md" />
+![Modos de Acesso padrão vs. Controles granulares no editor da função](/images/clickstack/rbac/default-vs-fine-grained.webp)
 
 <div id="configuring-access-rules">
   #### Configurando regras de acesso
@@ -159,7 +157,7 @@ Para alternar entre os modos, clique na seta para expandir um tipo de recurso no
 
 Cada regra de acesso consiste em uma **condição** e um **nível de acesso**. As condições correspondem aos recursos com base em suas propriedades:
 
-<Image img="/images/clickstack/rbac/condition-tip.webp" alt="Dica da condição: corresponda recursos por Nome ou Tag (mostrado no título) ou por ID (encontrado na URL)" size="md" />
+![Dica da condição: corresponda recursos por Nome ou Tag (mostrado no título) ou por ID (encontrado na URL)](/images/clickstack/rbac/condition-tip.webp)
 
 | Campo da condição | Operadores       | O que corresponde                                                                                                                                                   | Exemplo                                                                                             |
 | ----------------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------- |
@@ -169,11 +167,11 @@ Cada regra de acesso consiste em uma **condição** e um **nível de acesso**. A
 
 A captura de tela a seguir mostra o ID do dashboard destacado na barra de URL e uma tag &quot;TESTING&quot; visível no painel de tags (canto superior direito).
 
-<Image img="/images/clickstack/rbac/dashboard-id-and-tag-example.webp" alt="Dashboard mostrando o ID do recurso na barra de URL e uma tag no canto superior direito" size="lg" />
+![Dashboard mostrando o ID do recurso na barra de URL e uma tag no canto superior direito](/images/clickstack/rbac/dashboard-id-and-tag-example.webp)
 
 Você pode adicionar várias regras por tipo de recurso. Cada regra é verificada de forma independente usando lógica OR — um recurso fica acessível se corresponder a **qualquer** regra. Recursos que não correspondem a nenhuma regra não ficam acessíveis.
 
-<Image img="/images/clickstack/rbac/access-rules-tip.webp" alt="Dica das regras de acesso com lógica OR" size="md" />
+![Dica das regras de acesso com lógica OR](/images/clickstack/rbac/access-rules-tip.webp)
 
 **Exemplo**: Para conceder a uma função acesso somente leitura a dashboards de teste, expanda Dashboards, mude para Fine-Grained Controls e adicione duas regras:
 
@@ -182,7 +180,7 @@ Você pode adicionar várias regras por tipo de recurso. Cada regra é verificad
 
 Um dashboard que corresponda a qualquer uma das regras fica acessível.
 
-<Image img="/images/clickstack/rbac/dashboard-fine-grained-example.webp" alt="Duas regras de acesso granular unidas por OR: Name contains testing com acesso Read e Tag is testing com acesso Read" size="md" />
+![Duas regras de acesso granular unidas por OR: Name contains testing com acesso Read e Tag is testing com acesso Read](/images/clickstack/rbac/dashboard-fine-grained-example.webp)
 
 <div id="security-policies">
   ## Políticas de segurança
@@ -194,4 +192,4 @@ A seção **Security Policies** em **Team Settings** oferece controles adicionai
 
 **Generative AI** permite ativar ou desativar recursos baseados em LLM (como a geração de consultas em linguagem natural) viabilizados pela Anthropic ou pelo Amazon Bedrock. Quando desativada, nenhum dado é enviado a provedores de IA.
 
-<Image img="/images/clickstack/rbac/security-policies.webp" alt="Políticas de segurança" size="lg" />
+![Políticas de segurança](/images/clickstack/rbac/security-policies.webp)

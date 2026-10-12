@@ -6,14 +6,12 @@ tags: ['설정', '네이티브 클라이언트 및 인터페이스']
 keywords: ['ClickHouse Client', '프롬프트 변경']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 `clickhouse client` 및 clickhouse-local이 터미널 창에 프롬프트를 표시하는 방식이 마음에 들지 않는다면, 접두사를 추가하도록 변경할 수 있습니다.
 이 문서에서는 프롬프트를 원하는 대로 변경하는 방법을 설명합니다.
 
 기본 프롬프트는 로컬 컴퓨터 이름 뒤에 `:) `가 붙는 형식입니다:
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp" size="md" alt="기본 ClickHouse client 프롬프트" />
+![기본 ClickHouse client 프롬프트](/images/knowledgebase/change-the-prompt-in-clickhouse-client/0_prompt.webp)
 
 프롬프트에 사용할 수 있는 변수는 다음과 같습니다: `{user}`, `{host}`
 
@@ -31,7 +29,7 @@ clickhouse --prompt 👉
 
 이렇게 하면 스마일 이모지 앞에 손가락 이모지가 추가됩니다:
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp" size="md" alt="손가락 이모지가 추가된 ClickHouse client 프롬프트" />
+![손가락 이모지가 추가된 ClickHouse client 프롬프트](/images/knowledgebase/change-the-prompt-in-clickhouse-client/1_prompt.webp)
 
 <div id="config-file---top-level">
   ## 구성 파일 - 최상위
@@ -49,7 +47,7 @@ clickhouse --prompt 👉
 clickhouse
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp" size="md" alt="구성 파일이 적용된 ClickHouse client 프롬프트" />
+![구성 파일이 적용된 ClickHouse client 프롬프트](/images/knowledgebase/change-the-prompt-in-clickhouse-client/2_prompt.webp)
 
 원하는 이름의 구성 파일을 사용한 뒤 `-C` 플래그로 전달할 수 있습니다:
 
@@ -63,7 +61,7 @@ clickhouse
 clickhouse -C christmas.xml
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp" size="md" alt="크리스마스트리 이모지가 있는 ClickHouse client 프롬프트" />
+![크리스마스트리 이모지가 있는 ClickHouse client 프롬프트](/images/knowledgebase/change-the-prompt-in-clickhouse-client/3_prompt.webp)
 
 구성 파일을 YAML로 사용하고 싶다면?
 이 방법도 가능합니다:
@@ -76,7 +74,7 @@ prompt: 🟡
 clickhouse -C christmas.yaml
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp" size="md" alt="노란 원형 이모지가 표시된 clickhouse client 프롬프트" />
+![노란 원형 이모지가 표시된 clickhouse client 프롬프트](/images/knowledgebase/change-the-prompt-in-clickhouse-client/4_prompt.webp)
 
 ## 구성 파일 - connections_credentials {#config-file---connections_credentials}
 
@@ -112,7 +110,7 @@ clickhouse -C christmas.yaml
 clickhouse client -C connections.xml --connection dev
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp" size="md" alt="개발 연결이 설정된 ClickHouse client 프롬프트" />
+![개발 연결이 설정된 ClickHouse client 프롬프트](/images/knowledgebase/change-the-prompt-in-clickhouse-client/5_prompt.webp)
 
 또는 `prod` 연결:
 
@@ -120,7 +118,7 @@ clickhouse client -C connections.xml --connection dev
 clickhouse client -C connections.xml --connection prod
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp" size="md" alt="프로덕션 연결이 있는 ClickHouse client 프롬프트" />
+![프로덕션 연결이 있는 ClickHouse client 프롬프트](/images/knowledgebase/change-the-prompt-in-clickhouse-client/6_prompt.webp)
 
 그리고 YAML 버전은 다음과 같습니다:
 
@@ -147,7 +145,7 @@ connections_credentials:
 clickhouse client -C connections.yaml --connection dev
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp" size="md" alt="YAML 기반 개발 연결을 사용하는 ClickHouse client 프롬프트" />
+![YAML 기반 개발 연결을 사용하는 ClickHouse client 프롬프트](/images/knowledgebase/change-the-prompt-in-clickhouse-client/7_prompt.webp)
 
 이제 `prod`를 보겠습니다:
 
@@ -155,4 +153,4 @@ clickhouse client -C connections.yaml --connection dev
 clickhouse client -C connections.yaml --connection prod
 ```
 
-<Image img="/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp" size="md" alt="YAML을 사용한 프로덕션 연결이 포함된 ClickHouse client 프롬프트" />
+![YAML을 사용한 프로덕션 연결이 포함된 ClickHouse client 프롬프트](/images/knowledgebase/change-the-prompt-in-clickhouse-client/8_prompt.webp)

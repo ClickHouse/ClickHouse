@@ -7,8 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 На этой странице описан процесс от token регистрации до проверенного коннектора в управляемом режиме, в котором исполнитель применяет жизненный цикл сервиса, управляемый ClickHouse Cloud. Коннектор устанавливается на кластер Kubernetes (Helm) или ВМ Linux (systemd). Регистрация по токену — стандартный процесс. Если ваша среда не может напрямую обращаться к конечной точке вашего коннектора, см. раздел [установки в изолированной от интернета среде и с зеркалированием](#air-gapped-and-mirrored-installs). Чтобы наблюдать за ClickHouse, который вы запускаете самостоятельно, без исполнителя, передайте `--no-managed`.
@@ -88,7 +86,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Зарегистрируйте и установите коннектор" id="enroll-and-install">
     `init --enroll` погашает ваш токен, получает подписанный клиентский сертификат и cluster-wide grant исполнителя, после чего устанавливает и проверяет connector.
 
-    <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="Процесс регистрации коннектора ClickHouse" />
+    ![Процесс регистрации коннектора ClickHouse](/images/cloud/reference/byoc-connector-enrollment-flow.svg)
 
     В терминале `init` задает вопрос `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?`, где предварительно выбран вариант `yes`. Передайте `--managed`, чтобы пропустить этот промпт, или `--no-managed` — для установки только в режиме наблюдения, без исполнителя. При автоматической установке «с нуля» без обоих этих флагов управляемый режим останется выключенным (при повторном запуске с `--force` сохраняется состояние заменяемой конфигурации), поэтому в скриптах всегда передавайте `--managed`.
 

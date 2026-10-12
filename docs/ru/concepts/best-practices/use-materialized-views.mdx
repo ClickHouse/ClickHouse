@@ -8,19 +8,17 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickHouse поддерживает два типа materialized views: [**incremental**](/ru/concepts/features/materialized-views/incremental-materialized-view) и [**refreshable**](/ru/concepts/features/materialized-views/refreshable-materialized-view). Хотя оба типа предназначены для ускорения запросов за счет предварительного вычисления и хранения результатов, они существенно различаются тем, как и когда выполняются лежащие в их основе запросы, для каких рабочих нагрузок они подходят и как обеспечивается актуальность данных.
 
 **Materialized views стоит использовать для конкретных шаблонов запросов, которые нужно ускорить, при условии, что ранее уже были применены лучшие практики [по выбору типа данных](/ru/concepts/best-practices/select-data-type) и [оптимизации первичного ключа](/ru/concepts/best-practices/choosing-a-primary-key).**
 
 **Incremental materialized views** обновляются в реальном времени. Когда новые данные вставляются в исходную таблицу, ClickHouse автоматически применяет запрос materialized view к новому блоку данных и записывает результаты в отдельную целевую таблицу. Со временем ClickHouse объединяет эти частичные результаты, формируя полное и актуальное представление. Такой подход очень эффективен, поскольку переносит вычислительные затраты на момент вставки и обрабатывает только новые данные. В результате запросы `SELECT` к целевой таблице выполняются быстро и с минимальными затратами ресурсов. Incremental views поддерживают все функции агрегации и хорошо масштабируются — вплоть до PB данных, — поскольку каждый запрос работает с небольшим свежим подмножеством вставляемого набора данных.
 
-<Image img="/images/bestpractices/incremental_materialized_view.webp" size="lg" alt="Materialized Views" />
+![Materialized Views](/images/bestpractices/incremental_materialized_view.webp)
 
 **Refreshable materialized views**, напротив, обновляются по расписанию. Эти views периодически заново выполняют полный запрос и перезаписывают результат в целевой таблице. Это похоже на materialized views в традиционных OLTP-базах данных, таких как Postgres.
 
-<Image img="/images/bestpractices/refreshable_materialized_view.webp" size="lg" alt="Схема refreshable materialized view" />
+![Схема refreshable materialized view](/images/bestpractices/refreshable_materialized_view.webp)
 
 Выбор между incremental и refreshable materialized views во многом зависит от характера запроса, частоты изменения данных и того, должны ли обновления view отражать каждую строку по мере ее вставки или допустимо периодическое обновление. Понимание этих компромиссов — ключ к проектированию производительных и масштабируемых materialized views в ClickHouse.
 

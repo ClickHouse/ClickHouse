@@ -8,8 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <BetaBadge />
 
 Генерация изображений позволяет агенту создавать новые изображения по текстовому промпту или редактировать изображения, загруженные пользователем. Агент выбирает между генерацией и редактированием в зависимости от запроса и доступного контекста.
@@ -20,7 +18,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Генерация изображений настраивается через модальное окно **Add Tools** в Конструкторе агентов (а не в разделе Capabilities). Нажмите **Add Tools** в нижней части панели Конструктора агентов, затем добавьте один из инструментов для генерации изображений — например, **OpenAI Image Tools**, **DALL-E-3** или **Stable Diffusion**. Агент сам выберет подходящий инструмент на основе запроса, либо вы можете ограничить выбор в инструкциях.
 
-<Image img="/images/cloud/agent-builder/tools-modal.webp" alt="Модальное окно Agent Tools с интеграциями для генерации изображений, включая OpenAI Image Tools, DALL-E-3 и Stable Diffusion, а также другие сторонние инструменты" size="md" />
+![Модальное окно Agent Tools с интеграциями для генерации изображений, включая OpenAI Image Tools, DALL-E-3 и Stable Diffusion, а также другие сторонние инструменты](/images/cloud/agent-builder/tools-modal.webp)
 
 <div id="generation">
   ## Генерация

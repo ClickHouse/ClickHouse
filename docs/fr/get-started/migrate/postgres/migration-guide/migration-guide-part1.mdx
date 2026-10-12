@@ -8,8 +8,6 @@ sidebarTitle: 'Partie 1'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 > Il s’agit de la **Partie 1** d’un guide sur la migration de PostgreSQL vers ClickHouse. À l’aide d’un exemple concret, ce guide montre comment mener efficacement cette migration à l’aide d’une approche de réplication en temps réel (CDC). Bon nombre des concepts abordés s’appliquent également aux transferts manuels de données en masse de PostgreSQL vers ClickHouse.
 
 <div id="dataset">
@@ -18,7 +16,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 Comme jeu de données d’exemple pour illustrer une migration typique de Postgres vers ClickHouse, nous utilisons le jeu de données Stack Overflow documenté [ici](/fr/get-started/sample-datasets/stackoverflow). Il contient tous les `post`, `vote`, `user`, `comment` et `badge` de Stack Overflow de 2008 à avril 2024. Le schéma PostgreSQL de ces données est présenté ci-dessous :
 
-<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="Schéma PostgreSQL de Stack Overflow" />
+![Schéma PostgreSQL de Stack Overflow](/images/migrations/postgres-stackoverflow-schema.webp)
 
 *Les commandes DDL permettant de créer les tables dans PostgreSQL sont disponibles [ici](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==).*
 

@@ -9,8 +9,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 <Note>
@@ -250,7 +248,7 @@ Rien ne change dans la façon dont vous accédez à ClickHouse. Les clients cont
 
 Tant qu&#39;un worker est loué à votre service, la plateforme autorise le trafic réseau entre ce worker et votre service, et bloque tout le reste. La restriction s&#39;applique au niveau de la couche réseau plutôt que dans le query engine : elle ne dépend donc ni de la query, ni de ses paramètres, ni du plan produit par l&#39;optimizer.
 
-<Image img="/images/cloud/reference/on-demand-compute-worker-isolation.svg" size="lg" alt="Schéma explicatif de l'isolation réseau" />
+![Schéma explicatif de l'isolation réseau](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
 
 * **Seul votre service peut atteindre vos workers.** Le chemin n&#39;existe que pour la location en cours du worker, et pour ce seul service.
 * **Les workers non attribués sont injoignables.** Un worker en attente dans le pool n&#39;a aucun chemin réseau vers ou depuis un service tant qu&#39;il n&#39;est pas loué.

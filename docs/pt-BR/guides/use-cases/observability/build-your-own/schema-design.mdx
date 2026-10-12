@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Recomendamos que os usuários sempre criem seu próprio schema para logs e traces pelos seguintes motivos:
 
 * **Escolhendo uma chave primária** - Os schemas padrão usam um `ORDER BY` otimizado para padrões de acesso específicos. É improvável que os seus padrões de acesso estejam alinhados com isso.
@@ -256,7 +254,7 @@ Peak memory usage: 3.16 MiB.
 
 As visões materializadas permitem transferir o custo de computação do tempo de consulta para o momento da inserção. Uma visão materializada no ClickHouse é apenas um gatilho que executa uma consulta em blocos de dados à medida que eles são inseridos em uma tabela. Os resultados dessa consulta são inseridos em uma segunda tabela de &quot;destino&quot;.
 
-<Image img="/images/use-cases/observability/observability-10.webp" alt="Visão materializada" size="md" />
+![Visão materializada](/images/use-cases/observability/observability-10.webp)
 
 <Info>
   **Atualizações em tempo real**
@@ -411,7 +409,7 @@ FROM otel_logs
 
 O que foi mostrado acima é exibido abaixo:
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="Otel MV" size="md" />
+![Otel MV](/images/use-cases/observability/observability-11.webp)
 
 Se agora reiniciarmos a configuração do collector usada em [&quot;Exportando para o ClickHouse&quot;](/pt-BR/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse), os dados aparecerão em `otel_logs_v2` no formato desejado. Observe o uso de funções tipadas de extração de JSON.
 
@@ -645,7 +643,7 @@ Além disso, embora os timestamps se beneficiem da codificação delta em termos
 
 [Dicionários](/pt-BR/reference/statements/create/dictionary) são um [recurso essencial](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse) do ClickHouse, fornecendo uma representação [chave-valor](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) em memória de dados de várias [fontes](/pt-BR/reference/statements/create/dictionary/sources/overview#dictionary-sources) internas e externas, otimizada para consultas de busca com latência ultrabaixa.
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="Observabilidade e dicionários" size="md" />
+![Observabilidade e dicionários](/images/use-cases/observability/observability-12.webp)
 
 Isso é útil em vários cenários, desde enriquecer dados ingeridos em tempo real sem desacelerar o processo de ingestão até melhorar o desempenho das consultas em geral, com benefício especial para as JOINs.
 Embora junções raramente sejam necessárias em casos de uso de observabilidade, os dicionários ainda podem ser úteis para fins de enriquecimento, tanto no tempo de inserção quanto no tempo de consulta. Fornecemos exemplos de ambos abaixo.
@@ -1473,7 +1471,7 @@ Em teoria, essa capacidade pode ser usada para fornecer múltiplas chaves de ord
   As projeções oferecem muitos dos mesmos recursos que as visões materializadas, mas devem ser usadas com parcimônia, sendo as visões materializadas geralmente a opção preferida. Você deve entender as desvantagens e quando elas são apropriadas. Por exemplo, embora as projeções possam ser usadas para pré-computar agregações, recomendamos que os usuários usem visões materializadas para isso.
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="Observabilidade e projeções" size="md" />
+![Observabilidade e projeções](/images/use-cases/observability/observability-13.webp)
 
 Considere a seguinte consulta, que filtra nossa tabela `otel_logs_v2` por códigos de erro 500. Esse provavelmente é um padrão de acesso comum em logs, já que os usuários costumam querer filtrar por códigos de erro:
 

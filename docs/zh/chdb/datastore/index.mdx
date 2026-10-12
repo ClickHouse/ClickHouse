@@ -7,8 +7,6 @@ keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', '惰性求值']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 DataStore 是 chDB 的与 pandas 兼容的 API，将熟悉的 pandas DataFrame 接口与 SQL 查询优化能力结合在一起，让你既能编写 pandas 风格的代码，又能获得 ClickHouse 级别的性能。
 
 <div id="key-features">
@@ -25,7 +23,7 @@ DataStore 是 chDB 的与 pandas 兼容的 API，将熟悉的 pandas DataFrame �
   ## 架构
 </div>
 
-<Image size="md" img="/images/chdb/datastore_architecture.png" alt="DataStore 架构" />
+![DataStore 架构](/images/chdb/datastore_architecture.png)
 
 DataStore 采用 **惰性求值** 和 **双引擎执行**：
 

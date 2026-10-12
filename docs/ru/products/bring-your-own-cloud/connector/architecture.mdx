@@ -7,8 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 ## Компоненты {#components}
@@ -21,7 +19,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В Kubernetes Helm-чарт `clicklink-connector` развертывает демонов в выбранном вами пространстве имен (по умолчанию `clicklink`). Исполнитель — это Развертывание с одной репликой, которое хранит состояние своих команд на постоянном томе. На Linux ВМ демоны работают как юниты systemd `clicklink-scraper`, `clicklink-troubleshooter` и `clicklink-executor` от имени непривилегированного системного пользователя `clicklink`.
 
-<Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="Архитектура коннектора ClickHouse" />
+![Архитектура коннектора ClickHouse](/images/cloud/reference/byoc-connector-architecture.svg)
 
 ## Соединения {#connections}
 
@@ -57,7 +55,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 ## Поток данных {#data-flow}
 
-<Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="Поток данных коннектора ClickHouse" />
+![Поток данных коннектора ClickHouse](/images/cloud/reference/byoc-connector-data-flow.svg)
 
 ### Какие данные покидают вашу среду {#what-leaves}
 

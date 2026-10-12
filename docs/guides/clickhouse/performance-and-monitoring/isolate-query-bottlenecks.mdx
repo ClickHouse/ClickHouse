@@ -9,7 +9,6 @@ doc_type: 'guide'
 keywords: ['query optimization', 'query bottlenecks', 'performance', 'benchmarking']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/_nyc_taxi_example_dataset.mdx';
 
 Query optimization is easier when you change one part of a query at a time and compare the results with a stable baseline. This guide shows how to progressively simplify a query and use the differences between runs to identify which operations contribute most to its duration. You can then validate the suspected bottleneck before choosing an optimization.
@@ -65,7 +64,7 @@ These `SET` statements apply only to the current session. Run all comparison que
 
 The workflow combines controlled query runs with measurements from the query log:
 
-<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Workflow for identifying candidate queries in query logs and testing changes in isolation"/>
+![Workflow for identifying candidate queries in query logs and testing changes in isolation](/images/guides/best-practices/query_optimization_diagram_1.webp)
 
 Collect measurements for each run as follows:
 

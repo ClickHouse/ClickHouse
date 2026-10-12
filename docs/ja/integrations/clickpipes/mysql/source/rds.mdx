@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.mdx";
 
 このガイドでは、[MySQL ClickPipe](/ja/integrations/clickpipes/mysql/index) を使用して、Amazon RDS MySQL から ClickHouse Cloud にデータをレプリケートできるように設定する方法を説明します。MySQL CDC (変更データキャプチャ) に関するよくある質問については、[MySQL のよくある質問ページ](/ja/integrations/clickpipes/mysql/faq) を参照してください。
@@ -25,7 +24,7 @@ import { IAMAuthentication } from "/snippets/ja/clickpipes/_iam_authentication.m
   <Step title="自動バックアップでバイナリログを有効にする" id="enable-binlog-logging">
     MySQL でバイナリログを有効にするかどうかは、自動バックアップ機能によって決まります。自動バックアップは、RDS Console で **Modify** &gt; **Additional configuration** &gt; **Backup** の順に移動し、**Enable automated backups** チェックボックスをオンにすることで (まだ選択されていない場合) 、インスタンスに対して設定できます。
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="RDS で自動バックアップを有効にする" size="lg" border />
+    ![RDS で自動バックアップを有効にする](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
 
     レプリケーションのユースケースに応じて、**Backup retention period** を十分に長い値に設定することを推奨します。
   </Step>
@@ -57,27 +56,27 @@ RDS Console で MySQL インスタンスをクリックし、**Configuration** �
   MySQL クラスターを使用している場合、以下のパラメータは DB インスタンスグループではなく、[DB cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) のパラメータグループで確認できます。
 </Tip>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp" alt="RDS でパラメータグループを確認する場所" size="lg" border />
+![RDS でパラメータグループを確認する場所](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
 
 <br />
 
 パラメータグループのリンクをクリックすると、専用ページに移動します。右上に **Edit** ボタンが表示されるはずです。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="パラメータグループを編集" size="lg" border />
+![パラメータグループを編集](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
 
 以下のパラメータを次のように設定する必要があります。
 
 1. `binlog_format` を `ROW` に設定します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Binlog format を ROW に設定" size="lg" border />
+![Binlog format を ROW に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
 
 2. `binlog_row_metadata` を `FULL` に設定します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Binlog row metadata を FULL に設定" size="lg" border />
+![Binlog row metadata を FULL に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
 
 3. `binlog_row_image` を `FULL` に設定します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Binlog row image を FULL に設定" size="lg" border />
+![Binlog row image を FULL に設定](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
 
 <br />
 
@@ -104,7 +103,7 @@ GTID ベースのレプリケーションは、Amazon RDS for MySQL バージョ
 7. 右上の **Save Changes** をクリックします。
 8. 変更を反映するため、インスタンスを再起動します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp" alt="GTID を有効化" size="lg" border />
+![GTID を有効化](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
 
 <br />
 
@@ -153,9 +152,9 @@ GTID ベースのレプリケーションは、Amazon RDS for MySQL バージョ
 
 Aurora MySQL インスタンスへのトラフィックを制限するには、[ドキュメントに記載されている固定 NAT IP](/ja/integrations/clickpipes/networking/static-ips) を、RDS のセキュリティグループの **Inbound rules** に追加します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="RDS MySQL でセキュリティグループを見つける場所" size="lg" border />
+![RDS MySQL でセキュリティグループを見つける場所](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="上記のセキュリティグループのインバウンドルールを編集" size="lg" border />
+![上記のセキュリティグループのインバウンドルールを編集](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
 
 <div id="private-access-via-aws-privatelink">
   ### AWS PrivateLink 経由のプライベートアクセス

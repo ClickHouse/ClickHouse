@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يدعم ClickHouse طيفًا واسعًا من أنواع JOIN وخوارزمياته، وقد تحسّن أداء JOIN بشكل ملحوظ في الإصدارات الأخيرة. ومع ذلك، تظل عمليات JOIN بطبيعتها أعلى كلفة من الاستعلام من جدول واحد غير مُطبَّع. وتنقل إزالة التطبيع العبء الحاسوبي من وقت الاستعلام إلى وقت الإدراج أو المعالجة المسبقة، ما يؤدي غالبًا إلى خفض كبير في زمن الاستجابة أثناء التشغيل. وبالنسبة إلى الاستعلامات التحليلية الفورية أو الحساسة لزمن الاستجابة، **يُنصح بشدة بإزالة التطبيع**.
 
 بوجه عام، استخدم إزالة التطبيع عندما:
@@ -56,7 +54,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 * **Partial Merge JOIN:** يقلّل استهلاك الذاكرة إلى الحد الأدنى، لكنه أبطأ — وهو الأنسب لربط الجداول الكبيرة عند محدودية الذاكرة.
 * **Grace Hash JOIN:** مرن وقابل لضبط الذاكرة، ومناسب لمجموعات البيانات الكبيرة مع إمكانية ضبط خصائص الأداء.
 
-<Image img="/images/bestpractices/joins-speed-memory.png" size="md" alt="Joins — السرعة مقابل الذاكرة" />
+![Joins — السرعة مقابل الذاكرة](/images/bestpractices/joins-speed-memory.png)
 
 <Note>
   يختلف دعم كل خوارزمية لأنواع JOIN. ويمكن العثور على قائمة كاملة بأنواع JOIN المدعومة لكل خوارزمية [هنا](/ar/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).

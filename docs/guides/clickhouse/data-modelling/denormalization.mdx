@@ -6,8 +6,6 @@ keywords: ['data denormalization', 'denormalize', 'query optimization']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Data denormalization is a technique in ClickHouse to use flattened tables to help minimize query latency by avoiding joins.
 
 ## Comparing Normalized vs. Denormalized Schemas {#comparing-normalized-vs-denormalized-schemas}
@@ -16,7 +14,7 @@ Denormalizing data involves intentionally reversing the normalization process to
 
 This process reduces the need for complex joins at query time and can significantly speed up read operations, making it ideal for applications with heavy read requirements and complex queries. However, it can increase the complexity of write operations and maintenance, as any changes to the duplicated data must be propagated across all instances to maintain consistency.
 
-<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="Denormalization in ClickHouse"/>
+![Denormalization in ClickHouse](/images/data-modeling/denormalization-diagram.webp)
 
 <br />
 
@@ -135,7 +133,7 @@ The main observation here is that aggregated vote statistics for each post would
 
 Now let's consider our `Users` and `Badges`:
 
-<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="Users and Badges schema"/>
+![Users and Badges schema](/images/data-modeling/denormalization-schema.webp)
 
 <p></p>
 We first insert the data with the following command:

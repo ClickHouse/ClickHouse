@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
-import { Image } from "/snippets/components/Image.jsx";
-
 This guide covers how backups work in ClickHouse Cloud, what options you have to configure backups for your service, and how to restore from a backup.
 
 **Prerequisites**
@@ -20,7 +18,7 @@ This guide covers how backups work in ClickHouse Cloud, what options you have to
 
 Backups run according to the schedule configured for your service, whether that is the default daily schedule or a [custom schedule](/products/cloud/guides/backups/configurable-backups) you have picked. All available restore points can be viewed from the **Backups** tab of the service. From here, you can see the status of the backup, the duration, as well as the size of the backup. You can also restore a specific backup using the **Actions** column.
 
-<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="List of backup statuses in ClickHouse Cloud" border/>
+![List of backup statuses in ClickHouse Cloud](/images/cloud/manage/backup-status-list.webp)
 
 ## Understanding backup cost {#understanding-backup-cost}
 
@@ -30,7 +28,7 @@ The restore points displayed in the console are not the billing boundary. A rest
 
 To understand the backup cost, you can view the backup cost per service from the usage screen (as shown below). Once you have backups running for a few days with a customized schedule, you can get an idea of the cost and extrapolate to get the monthly cost for backups.
 
-<Image img="/images/cloud/manage/backup-usage.webp" size="md" alt="Backup usage chart in ClickHouse Cloud" border/>
+![Backup usage chart in ClickHouse Cloud](/images/cloud/manage/backup-usage.webp)
 
 Estimating the total cost for your backups requires you to set a schedule. Before setting a schedule, you can use the [pricing calculator](https://clickhouse.com/pricing) to obtain a monthly cost estimate by providing the following inputs:
 - Size of the full and incremental backups
@@ -48,11 +46,11 @@ Backups are restored to a new ClickHouse Cloud service, not to the existing serv
 
 After clicking on the **Restore** backup icon, you can specify the service name of the new service that will be created, and then restore this backup:
 
-<Image img="/images/cloud/manage/backup-restore.webp" size="md" alt="Restoring a backup in ClickHouse Cloud" />
+![Restoring a backup in ClickHouse Cloud](/images/cloud/manage/backup-restore.webp)
 
 The new service will show in the services list as `Provisioning` until it is ready:
 
-<Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="Provisioning service in progress" border/>
+![Provisioning service in progress](/images/cloud/manage/backup-service-provisioning.webp)
 
 ## Working with your restored service {#working-with-your-restored-service}
 

@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <Note>
   [こちら](https://clickhouse.com/cloud/clickpipes#pubsub-private-preview)からプライベートプレビューのウェイトリストに登録できます。
 </Note>
@@ -30,19 +28,19 @@ Pub/Sub ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 
 1. ClickHouse Cloud サービスの SQL Console にアクセスします。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes サービス" size="lg" border />
+![ClickPipes サービス](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
 
 2. 左側のメニューで `Data Sources` ボタンを選択し、「Set up a ClickPipe」をクリックします。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="インポートを選択" size="lg" border />
+![インポートを選択](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
 
 3. データソースとして **GCP Pub/Sub** を選択します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step1_pubsub.webp" alt="データソースとして GCP Pub/Sub を選択" size="lg" border />
+![データソースとして GCP Pub/Sub を選択](/images/integrations/data-ingestion/clickpipes/cp_step1_pubsub.webp)
 
 4. ClickPipe 名、**GCP Project ID**、および Pub/Sub へのアクセス権が付与されたサービスアカウントの **サービスアカウント JSON ファイル** を指定して、フォームに入力します。Project ID は 6～30 文字で、小文字、数字、ハイフンを使用でき、英字で始まり、ハイフンで終わることはできません。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_pubsub.webp" alt="接続の詳細を入力" size="lg" border />
+![接続の詳細を入力](/images/integrations/data-ingestion/clickpipes/cp_step2_pubsub.webp)
 
 5. 取り込む **Pub/Sub トピック** を選択します。認証情報の検証が完了すると、GCP プロジェクト内のトピックがドロップダウンに自動的に表示され (アルファベット順にソート) 、選択できるようになります。
 
@@ -51,19 +49,19 @@ Pub/Sub ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
    * **フィルタ式 (任意) 。** メッセージ属性に対する Pub/Sub の [subscription filter](https://cloud.google.com/pubsub/docs/subscription-message-filter) です。たとえば `attributes.type = "telemetry"` のように指定します。フィルタは payload ではなくメッセージ属性にのみ適用され、パイプの作成後に変更することはできません (変更するにはパイプを再作成する必要があります) 。
    * UI には選択した トピック のサンプルメッセージが表示され、**Flatten object** トグルを使って、ネストされた JSON が宛先側でどのようにフラット化されるかをプレビューできます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp" alt="Pub/Sub topic、フォーマット、開始オフセットを設定" size="lg" border />
+![Pub/Sub topic、フォーマット、開始オフセットを設定](/images/integrations/data-ingestion/clickpipes/cp_step3_pubsub.webp)
 
 6. 次のステップでは、新しい ClickHouse table にデータを取り込むか、既存のものを再利用するかを選択できます。画面の指示に従って、table 名、スキーマ、設定を変更してください。上部のサンプル table で、変更内容をリアルタイムにプレビューできます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="table、スキーマ、設定を指定" size="lg" border />
+![table、スキーマ、設定を指定](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
 
 用意されているコントロールを使って、詳細設定をカスタマイズすることもできます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="詳細設定を指定" size="lg" border />
+![詳細設定を指定](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
 
 7. あるいは、既存の ClickHouse table にデータを取り込むこともできます。その場合、UI ではソースのフィールドを、選択した宛先 table の ClickHouse フィールドにマッピングできます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="既存の table を使用" size="lg" border />
+![既存の table を使用](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
 
 8. 最後に、内部 ClickPipes ユーザーの権限を設定できます。
 
@@ -72,21 +70,21 @@ Pub/Sub ClickPipes は、ClickPipes UI を使用して手動でデプロイお�
 * `Full access`: クラスターへのフルアクセス権です。宛先 table で materialized view や Dictionary を使用する場合に役立つことがあります。
   * `Only destination table`: 宛先 table に対する `INSERT` 権限のみです。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="権限" border />
+![権限](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
 
 9. 「Complete Setup」をクリックすると、システムに ClickPipe が登録され、概要 table に一覧表示されるようになります。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="成功通知" size="sm" border />
+![成功通知](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="削除通知" size="lg" border />
+![削除通知](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
 
 サマリーテーブルには、ClickHouse 内のソースまたは宛先テーブルのサンプルデータを表示するためのコントロールがあります
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="宛先を表示" size="lg" border />
+![宛先を表示](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
 
 また、ClickPipe を削除したり、インジェストジョブの概要を表示したりするためのコントロールもあります。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="概要を表示" size="lg" border />
+![概要を表示](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
 
 10. **おめでとうございます！** 最初の Pub/Sub ClickPipe の設定が正常に完了しました。今後は継続的に実行され、Pub/Sub トピック から ClickHouse Cloud サービス にデータがリアルタイムで取り込まれます。
 

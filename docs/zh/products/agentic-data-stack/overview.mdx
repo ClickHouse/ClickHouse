@@ -6,8 +6,6 @@ doc_type: 'landing-page'
 keywords: ['agentic data stack', 'agentic analytics', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'AI']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 在 ClickHouse 上运行智能体分析，最简单的方式是使用 ClickHouse Cloud 中的 [ClickHouse 智能体](/zh/products/cloud/features/ai-ml/agents)：完全托管，无需自行运维基础设施。用户只需用自然语言提问，AI agent 就会通过直接查询数据库给出答案。
 
 如果要自托管，**Agentic Data Stack** 是一个可组合的开源技术栈。你可以自行运行它，接入自己的模型，并将聊天记录和数据保留在自己的环境中。它由 [ClickHouse](/zh/get-started/setup/install)、[ClickHouse MCP 服务器](/zh/products/agentic-data-stack/components/mcp-server)、[LibreChat](/zh/products/agentic-data-stack/components/librechat) 和 [Langfuse](/zh/products/agentic-data-stack/components/langfuse) 组成。
@@ -32,7 +30,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   ## 技术栈如何协同工作
 </div>
 
-<Image img="/images/agentic-data-stack/01-architecture.webp" alt="Agentic Data Stack 架构：用户与 LibreChat 交互，LibreChat 连接到 LLM，并通过 MCP 服务器连接到 ClickHouse，还连接到 Langfuse 进行追踪" size="md" />
+![Agentic Data Stack 架构：用户与 LibreChat 交互，LibreChat 连接到 LLM，并通过 MCP 服务器连接到 ClickHouse，还连接到 Langfuse 进行追踪](/images/agentic-data-stack/01-architecture.webp)
 
 用户在 LibreChat 中提出问题。模型会规划如何回答，并通过 MCP 服务器调用工具来浏览和查询 ClickHouse。结果返回后，agent 会组织生成最终答案。Langfuse 基于 OpenTelemetry 构建，可记录每次运行从提示词到工具调用再到响应的全过程，支持自动或人工审核对输出进行评分，并跟踪质量、成本和延迟。
 

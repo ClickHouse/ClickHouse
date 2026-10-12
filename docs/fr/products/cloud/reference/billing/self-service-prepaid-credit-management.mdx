@@ -6,8 +6,6 @@ title: 'Gestion en self-service des crédits prépayés'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Si vous achetez des crédits prépayés dans le cadre d&#39;un contrat d&#39;engagement, vous pouvez gérer la répartition de ces crédits entre vos organisations ClickHouse.
 Utilisez la page **Prepaid credits** pour consulter les soldes et transférer des crédits d&#39;une organisation à une autre.
 
@@ -15,7 +13,7 @@ Utilisez la page **Prepaid credits** pour consulter les soldes et transférer de
 
 Dans la console ClickHouse Cloud, ouvrez **Settings**, puis sélectionnez **Prepaid credits** sous **Account**.
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-navigation.png" alt="Crédits prépayés sous Account dans la barre latérale Settings" size="sm" />
+![Crédits prépayés sous Account dans la barre latérale Settings](/images/cloud/reference/billing/prepaid-credits-navigation.png)
 
 Pour consulter les soldes de crédits prépayés, vous devez disposer d&#39;au moins l&#39;un des rôles suivants dans une organisation à laquelle des crédits de contrat engagé ont été alloués :
 
@@ -63,7 +61,7 @@ Chaque ligne du tableau situé sous le récapitulatif correspond à une organisa
 | **Spent**              | Tous les soldes prépayés de l&#39;organisation ont été consommés mais ne sont pas expirés. Ce statut a préséance sur **Active**.                                               |
 | **No Prepaid Credits** | L&#39;organisation ne dispose d&#39;aucun crédit prépayé.                                                                                                                      |
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="Métriques récapitulatives et soldes des crédits prépayés par organisation" size="lg" />
+![Métriques récapitulatives et soldes des crédits prépayés par organisation](/images/cloud/reference/billing/prepaid-credits-balances.png)
 
 ## Transférer des crédits {#transfer-credits}
 
@@ -77,7 +75,7 @@ Pour transférer des crédits, vous devez disposer de la permission [Manage bill
 4. Saisissez le montant à transférer.
 5. Vérifiez les soldes obtenus, puis cliquez sur **Transfer credits**.
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="Panneau de transfert de crédits avec l'allocation source, l'organisation cible, le montant du transfert et les soldes obtenus" size="md" />
+![Panneau de transfert de crédits avec l'allocation source, l'organisation cible, le montant du transfert et les soldes obtenus](/images/cloud/reference/billing/prepaid-credits-transfer.png)
 
 ### Règles de transfert {#transfer-rules}
 

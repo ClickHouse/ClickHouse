@@ -8,15 +8,13 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
 每个 ClickHouse Managed Postgres 实例都内置了面向任意 ClickHouse 服务的 CDC (变更数据捕获) 能力。借助该能力，你可以将 Postgres 实例上的部分或全部数据迁移到 ClickHouse，并让 Postgres 上的数据变更持续、近乎实时地同步到 ClickHouse。其底层由 [ClickPipes](/zh/integrations/clickpipes/home) 提供支持。
 
 要使用该功能，请在 Postgres 实例的侧边栏中点击 **Sync to ClickHouse**。
 
-<Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="在侧边栏中显示集成选项的 ClickHouse 集成落地页" size="md" border />
+![在侧边栏中显示集成选项的 ClickHouse 集成落地页](/images/managed-postgres/clickhouse-integration-intro.webp)
 
 <Note>
   在继续之前，请确保 ClickPipes 服务能够访问你的 Postgres 服务。默认情况下应当如此，但如果你限制了 IP 访问，则可能需要根据 **ClickHouse 服务**所在的区域，从[此列表](/zh/integrations/clickpipes/networking/static-ips)中为相应的源 IP 授予访问权限。
@@ -36,7 +34,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       * **Initial load only**：对现有数据做一次性 snapshot，不进行后续同步
       * **CDC (变更数据捕获)  only**：跳过初始 snapshot，仅捕获此后产生的新变更
 
-    <Image img="/images/managed-postgres/replication-service-step.webp" alt="复制服务配置界面，显示集成名称、目标端 service 和复制方式选项" size="md" border />
+    ![复制服务配置界面，显示集成名称、目标端 service 和复制方式选项](/images/managed-postgres/replication-service-step.webp)
 
     点击 **Next** 继续。
   </Step>
@@ -50,7 +48,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     * **Snapshot number of rows per partition**：初始 snapshot 期间每个分区的行数 (默认值：100000)
     * **Snapshot number of tables in parallel**：并发执行 snapshot 的表数量 (默认值：1)
 
-    <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="复制设置步骤，显示同步间隔、并行线程数、拉取批次大小和 snapshot 配置选项" size="md" border />
+    ![复制设置步骤，显示同步间隔、并行线程数、拉取批次大小和 snapshot 配置选项](/images/managed-postgres/integration-replication-settings.webp)
 
     点击 **Next** 继续。
   </Step>
@@ -65,7 +63,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     展开 schema 并选择需要复制的具体表。你还可以自定义目标端表名和列设置。
 
-    <Image img="/images/managed-postgres/select-tables-step.webp" alt="选择表步骤，显示数据库选择、复制选项以及按 schema 分组的表选择器" size="md" border />
+    ![选择表步骤，显示数据库选择、复制选项以及按 schema 分组的表选择器](/images/managed-postgres/select-tables-step.webp)
 
     点击 **Replicate data to ClickHouse** 开始复制。
   </Step>
@@ -73,7 +71,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="监控你的 ClickPipe" id="monitor-clickpipe">
     ClickPipe 启动后，你会在同一菜单中看到它。全部数据的初始 snapshot 可能需要一段时间，具体取决于表的规模。
 
-    <Image img="/images/managed-postgres/integration-running.webp" alt="ClickHouse 集成列表，显示一个正在运行的 ClickPipe 及其目标端 service 和状态" size="md" border />
+    ![ClickHouse 集成列表，显示一个正在运行的 ClickPipe 及其目标端 service 和状态](/images/managed-postgres/integration-running.webp)
 
     点击集成名称即可查看详细状态、监控进度、查看错误并管理该 ClickPipe。参见 [Postgres ClickPipe 的生命周期](/zh/integrations/clickpipes/postgres/lifecycle)，了解 ClickPipe 可能处于的各种状态。
   </Step>

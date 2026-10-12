@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このドキュメントでは、ClickPipe が **CDC (変更データキャプチャ) (Running) モード** の場合に、MySQL ClickPipe の同期を制御する方法を説明します。
 
 <div id="overview">
@@ -53,15 +51,15 @@ Pull バッチサイズは、ClickPipe がソースデータベースから 1 �
 ClickPipe の作成時または既存の ClickPipe の編集時に、同期間隔と Pull バッチサイズを設定できます。
 ClickPipe の作成時には、以下のように作成ウィザードの 2 番目のステップで表示されます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="同期設定を作成" size="md" />
+![同期設定を作成](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
 
 既存の ClickPipe を編集する場合は、パイプの **Settings** タブに移動し、パイプを一時停止してから、ここで **Configure** をクリックします。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="同期編集ボタン" size="md" />
+![同期編集ボタン](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
 
 すると、同期設定を表示するフライアウトが開き、そこで同期間隔と Pull バッチサイズを変更できます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="同期設定を編集" size="md" />
+![同期設定を編集](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
 
 <div id="monitoring">
   ### 同期制御の挙動を監視する
@@ -69,4 +67,4 @@ ClickPipe の作成時には、以下のように作成ウィザードの 2 番�
 
 各バッチにかかる時間は、ClickPipe の **Metrics** タブにある **CDC Syncs** テーブルで確認できます。ここでの所要時間には、送信にかかる時間に加え、受信する行がない場合に ClickPipe が待機する時間も含まれます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="CDC Syncs テーブル" size="md" />
+![CDC Syncs テーブル](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)

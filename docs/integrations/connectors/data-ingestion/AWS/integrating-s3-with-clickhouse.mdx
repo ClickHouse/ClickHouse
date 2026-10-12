@@ -12,8 +12,6 @@ integration:
 
 import BucketDetails from '/snippets/_S3_authentication_and_bucket.mdx';
 
-import { Image } from "/snippets/components/Image.jsx";
-
 You can insert data from S3 into ClickHouse and also use S3 as an export destination, thus allowing interaction with "Data Lake" architectures. Furthermore, S3 can provide "cold" storage tiers and assist with separating storage and compute. In the sections below we use the New York City taxi dataset to demonstrate the process of moving data between S3 and ClickHouse, as well as identifying key configuration parameters and providing hints on optimizing performance.
 
 ## S3 table functions {#s3-table-functions}
@@ -812,7 +810,7 @@ SELECT * FROM s3_table1;
 6.  In the AWS console, navigate to the buckets, and select the new one and the folder.
 You should see something like the following:
 
-<Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="S3 bucket view in AWS console showing ClickHouse data files stored in S3" />
+![S3 bucket view in AWS console showing ClickHouse data files stored in S3](/images/integrations/data-ingestion/s3/s3-j.webp)
 
 ## Replicating a single shard across two AWS regions using S3 Object Storage {#s3-multi-region}
 
@@ -1205,9 +1203,9 @@ These tests will verify that data is being replicated across the two servers, an
 
   Check the S3 data in each S3 Bucket (the totals aren't shown, but both buckets have approximately 36 MiB stored after the inserts):
 
-<Image img="/images/integrations/data-ingestion/s3/bucket1.webp" size="lg" border alt="Size of data in first S3 bucket showing storage usage metrics" />
+![Size of data in first S3 bucket showing storage usage metrics](/images/integrations/data-ingestion/s3/bucket1.webp)
 
-<Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="Size of data in second S3 bucket showing storage usage metrics" />
+![Size of data in second S3 bucket showing storage usage metrics](/images/integrations/data-ingestion/s3/bucket2.webp)
 
 ## S3Express {#s3express}
 

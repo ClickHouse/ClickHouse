@@ -7,8 +7,6 @@ sidebarTitle: 'Notifications'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ClickHouse Cloud sends notifications about critical events related to your service or organization. There are a few concepts to keep in mind to understand how notifications are sent and configured:
 
 1. **Notification category**: Refers to groups of notifications such as billing notifications, service related notifications etc. Within each category, there are multiple notifications for which the delivery mode can be configured.
@@ -19,9 +17,9 @@ ClickHouse Cloud sends notifications about critical events related to your servi
 
 Notifications can be received via various channels. ClickHouse Cloud supports receiving notifications through email, ClickHouse Cloud UI, and Slack. You can click on the bell icon in the top left menu to view current notifications, which opens a flyout. Clicking the button **View All** at the bottom of the flyout will take you to a page that shows an activity log of all notifications.
 
-<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="ClickHouse Cloud notifications flyout" border/>
+![ClickHouse Cloud notifications flyout](/images/cloud/manage/notifications-1.webp)
 
-<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="ClickHouse Cloud notifications activity log" border/>
+![ClickHouse Cloud notifications activity log](/images/cloud/manage/notifications-2.webp)
 
 ## Customizing notifications {#customizing-notifications}
 
@@ -31,9 +29,9 @@ You can customize notifications delivered via the Cloud UI, and these customizat
 
 To configure delivery for a specific notification, click on the pencil icon to modify the notification delivery channels.
 
-<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="ClickHouse Cloud notifications settings screen" border/>
+![ClickHouse Cloud notifications settings screen](/images/cloud/manage/notifications-3.webp)
 
-<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="ClickHouse Cloud notification delivery settings" border/>
+![ClickHouse Cloud notification delivery settings](/images/cloud/manage/notifications-4.webp)
 
 <Note>
 Certain **required** notifications such as **Payment failed** aren't configurable.

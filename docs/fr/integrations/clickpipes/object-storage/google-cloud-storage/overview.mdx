@@ -6,8 +6,6 @@ title: 'Intégrer Google Cloud Storage à ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Le ClickPipe GCS offre une solution entièrement gérée et résiliente pour ingérer des données depuis Google Cloud Storage (GCS). Il prend en charge l’**ingestion ponctuelle** et l’**ingestion continue**, avec une sémantique d’exactly-once.
 
 Les GCS ClickPipes peuvent être déployés et gérés manuellement via l’interface utilisateur de ClickPipes, ainsi que de façon programmatique à l’aide d’[OpenAPI](/fr/integrations/clickpipes/programmatic-access/openapi) et de [Terraform](/fr/integrations/clickpipes/programmatic-access/terraform).
@@ -157,7 +155,7 @@ L’authentification via un compte de service est requise lors de l’utilisatio
 
 Pour utiliser des [clés HMAC](https://docs.cloud.google.com/storage/docs/authentication/hmackeys) pour vous authentifier, sélectionnez `Credentials` sous **Méthode d’authentification** lors de la configuration de votre connexion ClickPipe. Renseignez ensuite la clé d’accès (par exemple, `GOOGTS7C7FUP3AIRVJTE2BCDKINBTES3HC2GY5CBFJDCQ2SYHV6A6XXVTJFSA`) et la clé secrète (par exemple, `bGoa+V7g/yqDXvKRqq+JTFn4uQZbPiQJo4pf9RzJ`) dans `Access key` et `Secret key`, respectivement.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp" alt="Identifiants HMAC pour ClickPipes GCS" size="lg" border />
+![Identifiants HMAC pour ClickPipes GCS](/images/integrations/data-ingestion/clickpipes/object-storage/google-cloud-storage/cp_credentials.webp)
 
 Suivez [ce guide](/fr/integrations/connectors/data-sources/gcs#create-a-service-account-hmac-key-and-secret) pour créer un compte de service avec une clé HMAC.
 
@@ -195,7 +193,7 @@ ClickPipes propose des valeurs par défaut adaptées à la plupart des cas d’u
 | `Parallel view processing`           | false             | Indique s’il faut activer l’envoi vers les vues attachées [de manière concurrente plutôt que séquentielle](/fr/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`               | true              | Indique s’il faut traiter les fichiers en parallèle sur plusieurs nœuds.                                                                                                               |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Paramètres avancés de ClickPipes" size="lg" border />
+![Paramètres avancés de ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
 
 <div id="scaling">
   ### Mise à l&#39;échelle

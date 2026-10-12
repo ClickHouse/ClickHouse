@@ -6,8 +6,6 @@ keywords: ['part']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## What are table parts in ClickHouse? {#what-are-table-parts-in-clickhouse}
 
 <br />
@@ -32,7 +30,7 @@ You can [query this table](https://sql.clickhouse.com/?query=U0VMRUNUICogRlJPTSB
 
 A data part is created whenever a set of rows is inserted into the table. The following diagram sketches this:
 
-<Image img="/images/managing-data/core-concepts/part.webp" size="lg" />
+![](/images/managing-data/core-concepts/part.webp)
 
 <br />
 
@@ -61,7 +59,7 @@ Data parts are self-contained, including all metadata needed to interpret their 
 
 To manage the number of parts per table, a [background merge](/concepts/core-concepts/merges) job periodically combines smaller parts into larger ones until they reach a [configurable](/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) compressed size (typically ~150 GB). Merged parts are marked as inactive and deleted after a [configurable](/reference/settings/merge-tree-settings/other#old_parts_lifetime) time interval. Over time, this process creates a hierarchical structure of merged parts, which is why it's called a MergeTree table:
 
-<Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
+![](/images/managing-data/core-concepts/merges.webp)
 
 <br />
 

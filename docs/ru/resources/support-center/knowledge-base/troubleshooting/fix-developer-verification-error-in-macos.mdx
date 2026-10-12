@@ -6,8 +6,6 @@ tags: ['Ошибки и исключения']
 keywords: ['Проверка разработчика', 'macOS']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="fix-the-developer-verification-error-in-macos">
   ## Устранение ошибки проверки разработчика в macOS
 </div>
@@ -17,7 +15,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 При попытке выполнить любую команду `clickhouse` может появиться такая ошибка:
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="Диалог ошибки проверки разработчика в macOS" border />
+![Диалог ошибки проверки разработчика в macOS](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
 
 Чтобы обойти эту ошибку проверки, нужно снять с приложения карантин macOS: найти соответствующий параметр в окне «Системные настройки», воспользоваться терминалом или переустановить ClickHouse.
 
@@ -31,13 +29,13 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 2. Перейдите в раздел **Конфиденциальность и безопасность**:
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="Стандартный вид настроек macOS «Конфиденциальность и безопасность»" border />
+   ![Стандартный вид настроек macOS «Конфиденциальность и безопасность»](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
 
 3. Прокрутите окно вниз и найдите сообщение: *«Использование &quot;clickhouse-macos-aarch64&quot; было заблокировано, так как программа не получена от идентифицированного разработчика»*.
 
 4. Нажмите **Все равно разрешить**.
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="Настройки macOS «Конфиденциальность и безопасность» с кнопкой «Все равно разрешить»" border />
+   ![Настройки macOS «Конфиденциальность и безопасность» с кнопкой «Все равно разрешить»](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
 
 5. Введите пароль пользователя macOS.
 

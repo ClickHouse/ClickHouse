@@ -7,8 +7,6 @@ title: 'Streaming de données de SQL Server vers ClickHouse pour des analyses ra
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Dans cet article, nous allons passer en revue un tutoriel qui montre comment transférer des données en continu de SQL Server vers ClickHouse. ClickHouse est idéal si vous recherchez des capacités d’analytics ultra-rapides pour alimenter des dashboards internes ou destinés à vos clients. Nous vous guiderons pas à pas pour configurer les deux bases de données, les connecter, puis utiliser [Streamkap](https://streamkap.com) pour acheminer vos données en continu. Si SQL Server gère vos opérations quotidiennes, mais que vous avez besoin de la rapidité et de la puissance analytique de ClickHouse, vous êtes au bon endroit.
 
 <div id="why-stream-data-from-sql-server-to-clickhouse">
@@ -79,11 +77,11 @@ Assurez-vous d&#39;avoir :
     * Nom d’utilisateur et mot de passe
     * Nom de la base de données
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+    ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
 
     #### Ce qui se passe en arrière-plan
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+    ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
 
     Une fois cette configuration effectuée, Streamkap se connectera à votre SQL Server et détectera les tables. Pour cette démo, nous choisirons une table contenant déjà des données en cours de diffusion, comme des événements ou des transactions.
   </Step>
@@ -148,7 +146,7 @@ Assurez-vous d&#39;avoir :
 
     #### Faut-il charger l’historique ?
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+    ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
 
     Vous vous demandez peut-être : faut-il charger les anciennes données ?
 

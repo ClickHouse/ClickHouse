@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
 
 <Tip>
@@ -24,11 +22,11 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 アプリケーションを ClickHouse Managed Postgres に接続するには、インスタンスの左側のサイドバーにある **Connect** ビューを開きます。
 
-<Image img="/images/managed-postgres/connect-button.webp" alt="接続情報を表示するには、左側のサイドバーで Connect をクリックします" size="md" border />
+![接続情報を表示するには、左側のサイドバーで Connect をクリックします](/images/managed-postgres/connect-button.webp)
 
 **Connect** をクリックするとモーダルが開き、接続資格情報と複数のフォーマットの接続文字列が表示されます。
 
-<Image img="/images/managed-postgres/connect-modal.webp" alt="資格情報と接続文字列のフォーマットを表示する接続モーダル" size="md" border />
+![資格情報と接続文字列のフォーマットを表示する接続モーダル](/images/managed-postgres/connect-modal.webp)
 
 接続モーダルには、次の情報が表示されます。
 
@@ -97,7 +95,7 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 本番ワークロードでは、正しいサーバーと通信していることを確実にするため、検証済み TLS 接続の使用を推奨します。これを行うには、**Settings** タブから CA 証明書バンドルをダウンロードし、データベースクライアントの信頼済み証明書に追加します。
 
-<Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="Settings タブから CA 証明書をダウンロード" size="md" border />
+![Settings タブから CA 証明書をダウンロード](/images/managed-postgres/tls-ca-bundle.webp)
 
 CA 証明書は ClickHouse Managed Postgres インスタンスごとに固有であり、他のインスタンスでは使用できません。
 

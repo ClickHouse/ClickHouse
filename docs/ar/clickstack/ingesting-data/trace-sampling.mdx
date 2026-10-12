@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'أخذ عينات التتبّع', 'أخذ عينات الذيل', 'معدل أخذ العينات', 'التجميعات المرجّحة', 'OpenTelemetry', 'SampleRate']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يمكن للخدمات ذات الإنتاجية العالية إنتاج ملايين spans في الثانية. ونظرًا إلى أن تخزين كل span مكلف، فعادةً ما تشغّل الفرق [معالج tail-sampling](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor) في OpenTelemetry Collector للاحتفاظ بـ span واحد فقط من كل N. ويحمل كل span مُحتفَظ به سمة `SampleRate` تسجّل القيمة N.
 
 بمجرد أخذ عينات من البيانات، تصبح عمليات التجميع المباشرة غير صحيحة: إذ يعيد `count()` عددًا من الأحداث أقل بمقدار N مما حدث فعليًا، ويصبح كل من `sum()` و`avg()` متحيزًا، كما تنحرف القيم المئينية. وتعرض لوحات المعلومات أعداد الطلبات والإنتاجية ومعدلات الأخطاء على نحو منخفض ومضلل.
@@ -51,6 +49,6 @@ greatest(toUInt64OrZero(toString(expr)), 1)
 
 على سبيل المثال، إذا كان معالج `tail-sampling` في OpenTelemetry يكتب المعدل في `SpanAttributes['SampleRate']`:
 
-<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="حقل تعبير معدل أخذ العينات في إعدادات المصدر في ClickStack" size="lg" />
+![حقل تعبير معدل أخذ العينات في إعدادات المصدر في ClickStack](/images/clickstack/trace-sampling-source-settings.webp)
 
 بعد إتمام التهيئة، ستطبّق جميع المخططات ولوحات المعلومات والتنبيهات ولوحات معلومات الخدمة تلقائيًا التجميع المرجّح بمعدل أخذ العينات. ولا حاجة إلى أي تغييرات في الاستعلامات الفردية.

@@ -7,8 +7,6 @@ title: 'ArtieをClickHouseに接続'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 
 <a href="https://www.artie.com/" target="_blank">Artie</a> は、本番データを ClickHouse にレプリケートし、顧客向け分析、運用ワークフロー、本番環境での Agentic AI を実現する、完全マネージド型のリアルタイムデータストリーミングプラットフォームです。
@@ -29,7 +27,7 @@ ClickUp、Substack、Alloy のような先進企業は、現在のパイプラ�
   <Step title="Artie アカウントを作成する" id="1-create-an-artie-account">
     <a href="https://www.artie.com/contact" target="_blank">artie.com/contact</a> にアクセスし、アクセスをリクエストするフォームに入力してください。
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp" size="md" border alt="Artie サインアップページ" />
+    ![Artie サインアップページ](/images/integrations/data-ingestion/etl-tools/artie/artie_signup.webp)
   </Step>
 
   <Step title="ClickHouse の認証情報を確認する" id="2-find-your-clickhouse-credentials">
@@ -45,7 +43,7 @@ ClickUp、Substack、Alloy のような先進企業は、現在のパイプラ�
     2. **レプリケートするテーブルを選択する** - ClickHouse に同期するテーブルを選択します
     3. **宛先に接続する** - ClickHouse の認証情報を入力します
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp" size="lg" border alt="Artie パイプライン編集インターフェイス" />
+    ![Artie パイプライン編集インターフェイス](/images/integrations/data-ingestion/etl-tools/artie/artie_edit_pipeline.webp)
   </Step>
 </Steps>
 
@@ -61,12 +59,12 @@ ClickUp、Substack、Alloy のような先進企業は、現在のパイプラ�
 
 分析ポータル
 
-<Image img="/images/integrations/data-ingestion/etl-tools/artie/analytics.webp" size="md" border alt="分析ポータル" />
+![分析ポータル](/images/integrations/data-ingestion/etl-tools/artie/analytics.webp)
 
 パイプラインおよびテーブルごとの監視
 
-<Image img="/images/integrations/data-ingestion/etl-tools/artie/monitor.webp" size="md" border alt="組み込みの監視" />
+![組み込みの監視](/images/integrations/data-ingestion/etl-tools/artie/monitor.webp)
 
 日次のスキーマ変更通知
 
-<Image img="/images/integrations/data-ingestion/etl-tools/artie/schema_notification.webp" size="md" border alt="スキーマ変更通知" />
+![スキーマ変更通知](/images/integrations/data-ingestion/etl-tools/artie/schema_notification.webp)

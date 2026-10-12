@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="inserting-into-clickhouse-vs-oltp-databases">
   ## ClickHouse への挿入と OLTP データベースの違い
 </div>
@@ -76,7 +74,7 @@ MergeTree (または Replicated テーブル) に直接 insert し、データ�
 
 非同期挿入では、以下の図にあるように、データはまずバッファに入れられ、その後 3 つのステップでデータベースストレージに書き込まれます。
 
-<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Postgres inserts" />
+![Postgres inserts](/images/guides/postgres-inserts.webp)
 
 非同期挿入を有効にすると、ClickHouse は次のように動作します。
 

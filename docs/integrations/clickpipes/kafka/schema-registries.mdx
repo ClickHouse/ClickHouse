@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ClickPipes supports integrating with a schema registry to decode Avro- and Protobuf-encoded record values. Kafka ClickPipes also support [structured Kafka keys](/integrations/clickpipes/kafka/reference#structured-message-keys).
 
 For Protobuf record values, you can also [upload a schema directly](/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic) without configuring a schema registry.
@@ -74,7 +72,7 @@ AWS Glue Schema Registry configuration is available through the ClickHouse Cloud
 
 In the ClickPipe creation wizard, enable **Schema registry** on the Kafka or Kinesis connection step and set **Registry type** to **AWS Glue**:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="Schema registry panel with AWS Glue selected" size="lg" border/>
+![Schema registry panel with AWS Glue selected](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
 
 | Field         | Required    | Description                                                                                                                             | Example                                                       |
 |---------------|-------------|-------------------------------------------------------------------------------------------------------------------------------------|---------------------------------------------------------------|
@@ -125,7 +123,7 @@ Use this when your broker does not authenticate with IAM (SASL/SCRAM, SASL/PLAIN
 
 Open the service, select the **Settings** tab, scroll to the **Network security information** section, and copy the **Service role ID (IAM)** value, an ARN of the form `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. This is referred to below as `{ClickHouse_IAM_ARN}`. Every ClickHouse service deployed on AWS has its own role, so this value is different for each service.
 
-<Image img="/images/cloud/security/secures3_arn.webp" alt="Service role ID (IAM)" size="lg" border/>
+![Service role ID (IAM)](/images/cloud/security/secures3_arn.webp)
 </Step>
 <Step title="Create the registry IAM role" id="create-registry-iam-role">
 

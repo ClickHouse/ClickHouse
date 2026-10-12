@@ -9,8 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 يرشدك هذا الدليل إلى كيفية إعادة توجيه logs من AWS CloudWatch إلى Managed ClickStack باستخدام [`awscloudwatch` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver) من OpenTelemetry، ثم عرضها في ClickStack UI.
@@ -257,11 +255,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   <Step title="أكّد ذلك في واجهة ClickStack" id="confirm-in-ui">
     افتح خدمتك في [وحدة تحكم ClickHouse Cloud](https://console.clickhouse.cloud) واختر **ClickStack** من القائمة اليمنى.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="تشغيل ClickStack" border />
+    ![تشغيل ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
 
     في عرض **Search**، غيّر المصدر إلى `Logs` واضبط النطاق الزمني على **آخر 15 دقيقة**. من المفترض أن تظهر أحداث CloudWatch خلال بضع فترات poll.
 
-    <Image img="/images/clickstack/cloudwatch/log-search-view-clickstack.webp" size="lg" alt="عرض Search في ClickStack مع سجلات CloudWatch" />
+    ![عرض Search في ClickStack مع سجلات CloudWatch](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
 
     يتضمن كل حدث مجموعة السجل وstream المصدر ضمن resource attributes:
 
@@ -272,11 +270,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
     عدّل البحث إلى `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body` لتضمين هذه السمات:
 
-    <Image img="/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp" size="lg" alt="عرض Search في ClickStack مع سجلات CloudWatch والسمات" />
+    ![عرض Search في ClickStack مع سجلات CloudWatch والسمات](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
 
     حدّد log entry لفحص بياناته الوصفية:
 
-    <Image img="/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp" size="lg" alt="سمات CloudWatch في عرض تفاصيل السجل" />
+    ![سمات CloudWatch في عرض تفاصيل السجل](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
 
     إذا لم يظهر شيء:
 
@@ -291,11 +289,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">نزّل `cloudwatch-logs-dashboard.json`</TrackedLink>، ثم انتقل في ClickStack UI إلى **Dashboards** وانقر على **Import**.
 
-    <Image img="/images/clickstack/clickstack-import-dashboard.webp" size="lg" alt="زر استيراد لوحة المعلومات" />
+    ![زر استيراد لوحة المعلومات](/images/clickstack/clickstack-import-dashboard.webp)
 
     ارفَع ملف JSON ثم انقر على **Finish Import**.
 
-    <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="مربع حوار إتمام الاستيراد" />
+    ![مربع حوار إتمام الاستيراد](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
   </Step>
 
   <Step title="للمزيد من القراءة" id="further-reading">

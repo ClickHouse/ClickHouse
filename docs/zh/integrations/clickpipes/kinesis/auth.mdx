@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本文介绍 ClickPipes 客户如何利用基于角色的访问控制与 Amazon Kinesis 进行身份验证，并安全地访问其数据流。
 
 <div id="prerequisite">
@@ -29,7 +27,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 在深入设置安全的 Kinesis 访问之前，先了解其工作机制很重要。下面概述了 ClickPipes 如何通过承担客户 AWS 账户中的某个角色来访问 Amazon Kinesis 数据流。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/securekinesis.jpg" alt="安全 Kinesis" size="lg" border />
+![安全 Kinesis](/images/integrations/data-ingestion/clickpipes/securekinesis.jpg)
 
 采用这种方式后，客户就可以在一个地方统一管理对其 Kinesis 数据流的所有访问权限 (即被承担角色的 IAM 策略) ，而无需逐一修改每个流的访问策略。
 
@@ -47,7 +45,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 * 4. 向下滚动到页面底部的 **Network security 信息** 部分
 * 5. 复制如下所示该服务对应的 **Service role ID (IAM)** 值。
 
-<Image img="/images/cloud/security/secures3_arn.webp" alt="Secure S3 ARN" size="lg" border />
+![Secure S3 ARN](/images/cloud/security/secures3_arn.webp)
 
 <div id="setting-up-iam-assume-role">
   ### 配置 IAM AssumeRole

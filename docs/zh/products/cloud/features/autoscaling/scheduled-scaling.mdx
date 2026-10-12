@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <BetaBadge />
 
 ClickHouse Cloud 服务会根据 CPU 和内存利用率自动扩缩容，但许多工作负载都呈现出可预测的模式——例如每日的摄取高峰、夜间运行的批次作业，或周末大幅下降的流量。对于这些场景，定时扩缩容可让您精确定义服务应在何时扩容或缩容，而不受实时指标影响。
@@ -26,9 +24,9 @@ ClickHouse Cloud 服务会根据 CPU 和内存利用率自动扩缩容，但许�
 
 要配置计划，请在 ClickHouse Cloud 控制台中进入你的服务并前往设置。在这里，选择 **Schedule Override**，然后添加一条新规则。
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="ClickHouse Cloud 控制台中的扩缩容计划界面，显示基于时间的扩缩容规则" border />
+![ClickHouse Cloud 控制台中的扩缩容计划界面，显示基于时间的扩缩容规则](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="在 ClickHouse Cloud 控制台中配置定时扩缩容规则" border />
+![在 ClickHouse Cloud 控制台中配置定时扩缩容规则](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
 
 每条规则都需要：
 

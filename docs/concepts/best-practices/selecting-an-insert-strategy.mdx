@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import AsyncInserts from '/snippets/_async_inserts.mdx';
 import BulkInserts from '/snippets/_bulk_inserts.mdx';
 
@@ -31,7 +29,7 @@ If not, see [Asynchronous inserts](#asynchronous-inserts) below.
 
  We briefly review ClickHouse's MergeTree insert mechanics below:
 
-<Image img="/images/bestpractices/insert_process.webp" size="lg" alt="Insert processes" background="black"/>
+![Insert processes](/images/bestpractices/insert_process.webp)
 
 #### Client-side steps {#client-side-steps}
 

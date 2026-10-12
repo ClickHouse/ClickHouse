@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'لوحات المعلومات', 'تصور', 'المراقبة', 'الرصد']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
 يدعم ClickStack تصور الأحداث، مع دعم مدمج لإنشاء المخططات في ClickStack UI ‏(HyperDX). ويمكن إضافة هذه المخططات إلى لوحات المعلومات لمشاركتها مع مستخدمين آخرين.
@@ -37,7 +35,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
   <Step title="الانتقال إلى Chart Explorer" id="navigate-chart-explorer">
     حدّد `Chart Explorer` من قائمة أيسر.
 
-    <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg" />
+    ![Chart Explorer](/images/use-cases/observability/clickstack-visualization-1.webp)
   </Step>
 
   <Step title="إنشاء تصور" id="create-visualization">
@@ -51,17 +49,17 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
     * Group By: `ServiceName`
     * Alias: `Average Time`
 
-    <Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="تصور بسيط" size="lg" />
+    ![تصور بسيط](/images/use-cases/observability/clickstack-visualization-2.webp)
 
     لاحظ أنه يمكنك تصفية الأحداث باستخدام عبارة SQL `WHERE` أو صياغة Lucene، كما يمكنك تحديد النطاق الزمني الذي ينبغي تصور الأحداث خلاله. كما يدعم النظام أيضًا سلاسل متعددة.
 
     على سبيل المثال، صفِّ حسب الخدمة `frontend` بإضافة عامل التصفية `ServiceName:\"frontend\"`. ثم أضف سلسلة ثانية لعدد الأحداث عبر الزمن بالاسم المستعار `Count` بالنقر على `Add Series`.
 
-    <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="تصور بسيط 2" size="lg" />
+    ![تصور بسيط 2](/images/use-cases/observability/clickstack-visualization-3.webp)
 
     لإنشاء سلسلة مشابهة لسلسلة موجودة، يمكنك نسخها بدلًا من البدء من الصفر. انقر على أيقونة النسخ (`Duplicate series`) في صف السلسلة لإدراج نسخة مباشرة أسفلها. تحتفظ النسخة بإعدادات السلسلة الأصلية، مثل المقياس والعمود وعامل التصفية. بعد ذلك، لا تغيّر إلا الحقول المختلفة (مثل التجميع) وتمنح النسخة اسمًا مستعارًا خاصًا بها. يتوفر النسخ في أي موضع يدعم سلاسل متعددة. ويكون مخفيًا لأنواع التصور التي تسمح بسلسلة واحدة فقط، مثل `Number` و`Pie` و`Heatmap`.
 
-    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="أيقونة نسخ Duplicate series وتلميحها في صف سلسلة مخطط" size="lg" />
+    ![أيقونة نسخ Duplicate series وتلميحها في صف سلسلة مخطط](/images/use-cases/observability/clickstack-duplicate-series.webp)
 
     <Note>
       يمكن إنشاء التصورات من أي مصدر بيانات — مقاييس أو تتبعات أو سجلات. ويتعامل ClickStack مع جميع هذه الأنواع على أنها wide events. ويمكن تمثيل أي **عمود رقمي** على مخطط عبر الزمن، كما يمكن استخدام الأعمدة **النصية** أو **التاريخية** أو **الرقمية** في عمليات التجميع.
@@ -85,7 +83,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
   <Step title="انتقل إلى لوحات المعلومات" id="navigate-dashboards">
     اختر `Dashboards` من القائمة الجانبية اليسرى، ثم انقر على `New Dashboard` لإنشاء لوحة معلومات مؤقتة أو محفوظة.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="إنشاء لوحة معلومات" size="lg" />
+    ![إنشاء لوحة معلومات](/images/use-cases/observability/hyperdx-dashboard-1.webp)
   </Step>
 
   <Step title="أنشئ تصورًا — متوسط وقت الطلب حسب الخدمة" id="create-a-tile">
@@ -102,11 +100,11 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
     انقر على زر **play** قبل النقر على `Save`.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-2.webp" alt="إنشاء تصور للوحة المعلومات" size="lg" />
+    ![إنشاء تصور للوحة المعلومات](/images/use-cases/observability/hyperdx-dashboard-2.webp)
 
     عدّل حجم التصور ليشغل كامل عرض لوحة المعلومات.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="لوحة معلومات تحتوي على تصورات" size="lg" />
+    ![لوحة معلومات تحتوي على تصورات](/images/use-cases/observability/hyperdx-dashboard-3.webp)
   </Step>
 
   <Step title="أنشئ تصورًا – الأحداث بمرور الوقت حسب الخدمة" id="create-a-tile-2">
@@ -122,11 +120,11 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
     انقر زر **play** قبل النقر على `Save`.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-4.webp" alt="تصور لوحة المعلومات 2" size="lg" />
+    ![تصور لوحة المعلومات 2](/images/use-cases/observability/hyperdx-dashboard-4.webp)
 
     غيّر حجم التصور ليشغل العرض الكامل للوحة المعلومات.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="لوحة المعلومات مع تصورات 2" size="lg" />
+    ![لوحة المعلومات مع تصورات 2](/images/use-cases/observability/hyperdx-dashboard-5.webp)
   </Step>
 
   <Step title="أضف بطاقة heatmap لمدة الـ span" id="create-a-tile-heatmap">
@@ -152,11 +150,11 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
     انقر `Run` لمعاينة المخطط، ثم `Save`.
 
-    <Image img="/images/clickstack/dashboards/heatmap-tile-editor.webp" alt="محرر بطاقة Heatmap مع تعبئة القيم الافتراضية لمدة الـ span مسبقًا، ومرشح ServiceName payment، وزر إعدادات العرض" size="lg" />
+    ![محرر بطاقة Heatmap مع تعبئة القيم الافتراضية لمدة الـ span مسبقًا، ومرشح ServiceName payment، وزر إعدادات العرض](/images/clickstack/dashboards/heatmap-tile-editor.webp)
 
     تُعرَض البطاقة المحفوظة كـ heatmap على لوحة المعلومات. مرّر المؤشر فوق أي خلية لرؤية حدود الحاوية وعدد الأحداث.
 
-    <Image img="/images/clickstack/dashboards/heatmap-tile-rendered.webp" alt="بطاقة heatmap على لوحة المعلومات تعرض توزيع مدة الـ span لخدمة payment على مدى 24 ساعة" size="lg" />
+    ![بطاقة heatmap على لوحة المعلومات تعرض توزيع مدة الـ span لخدمة payment على مدى 24 ساعة](/images/clickstack/dashboards/heatmap-tile-rendered.webp)
 
     <Tip>
       **استعلاما ClickHouse لكل heatmap**
@@ -168,7 +166,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
     انقر على أي خلية في بطاقة heatmap المعروضة لفتح إجراء **View in Event Deltas**.
 
-    <Image img="/images/clickstack/dashboards/heatmap-tile-drilldown.webp" alt="يكشف النقر على خلية في heatmap إجراء View in Event Deltas" size="lg" />
+    ![يكشف النقر على خلية في heatmap إجراء View in Event Deltas](/images/clickstack/dashboards/heatmap-tile-drilldown.webp)
 
     يؤدي تحديده إلى فتح عرض [Event Deltas](/ar/clickstack/features/event-deltas) مع تمرير مصدر بيانات البطاقة وعبارة `Where` والنطاق الزمني. ومن هناك يمكنك فحص التوزيع نفسه بصورة تفاعلية، والتقسيم حسب attribute لمعرفة ما الذي يجعل spans البطيئة مختلفة عن السريعة، وفحص spans الفردية وراء أي خلية، من دون إعادة بناء الاستعلام يدويًا.
   </Step>
@@ -176,13 +174,13 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
   <Step title="تصفية لوحة المعلومات" id="filter-dashboards">
     يمكن تطبيق عوامل تصفية Lucene أو SQL، إلى جانب النطاق الزمني، على مستوى لوحة المعلومات، وستُطبَّق تلقائيًا على جميع التصورات.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-filter.webp" alt="لوحة معلومات مع التصفية" size="lg" />
+    ![لوحة معلومات مع التصفية](/images/use-cases/observability/hyperdx-dashboard-filter.webp)
 
     للتوضيح، طبّق عامل تصفية Lucene ‏`ServiceName:"frontend"` على لوحة المعلومات، وعدّل النافذة الزمنية لتشمل آخر 3 ساعات. لاحظ كيف تعرض التصورات الآن بيانات خدمة `frontend` فقط.
 
     سيُحفَظ dashboard تلقائيًا. لتعيين اسم dashboard، حدِّد العنوان وعدِّله قبل النقر على `Save Name`.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-save.webp" alt="حفظ لوحة المعلومات" size="lg" />
+    ![حفظ لوحة المعلومات](/images/use-cases/observability/hyperdx-dashboard-save.webp)
   </Step>
 </Steps>
 
@@ -192,7 +190,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
 لإزالة تصور أو تعديله أو نسخه، مرّر المؤشر فوقه واستخدم أزرار الإجراءات المقابلة.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="تحرير لوحة المعلومات" size="lg" />
+![تحرير لوحة المعلومات](/images/use-cases/observability/hyperdx-dashboard-edit.webp)
 
 <div id="tile-display-settings">
   ### إعدادات عرض البلاطة
@@ -245,7 +243,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
 بعد تحديد بلاطة Number، افتح **إعدادات العرض** واضبط **المخطط الخلفي** على **Line** أو **Area** (أو **None** لإيقافه). ويُشتق هذا الخط البياني المصغر من نسخة مجمّعة زمنيًا من استعلام البلاطة، لذلك لا يلزم أي إعداد إضافي. ويرث لون البلاطة افتراضيًا؛ ويمكنك ضبط **لون الخلفية** لاستبداله بلون محدد من لوحة الألوان.
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="درج إعدادات العرض لبلاطة Number، مع ضبط المخطط الخلفي على Area" size="lg" />
+![درج إعدادات العرض لبلاطة Number، مع ضبط المخطط الخلفي على Area](/images/clickstack/dashboards/number-tile-background-chart.webp)
 
 تنطبق المخططات الخلفية على بلاطات Number الخاصة بباني الاستعلامات. أما بلاطات Number الخاصة بـ Raw SQL فتُرجع قيمة واحدة من دون بُعد زمني يمكن تجميعه، لذلك يظهر هذا الخيار لكنه يكون معطّلًا لها.
 
@@ -253,7 +251,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
 بعد تحديد بلاطة جدول، افتح **إعدادات العرض** وفعّل **خلفية الصفوف المتناوبة**. وهذا التمييز بصري فقط، لذا يعمل مع بلاطات الجدول الخاصة بباني الاستعلامات وبلاطات الجدول الخاصة بـ raw SQL على حد سواء.
 
-<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="درج إعدادات العرض لبلاطة جدول، مع تشغيل خلفية الصفوف المتناوبة" size="lg" />
+![درج إعدادات العرض لبلاطة جدول، مع تشغيل خلفية الصفوف المتناوبة](/images/clickstack/dashboards/table-tile-display-settings.webp)
 
 كما تحتفظ بلاطات الجدول بفاصل بين صف العنوان والبيانات أثناء التمرير، بحيث تظل رؤوس الأعمدة واضحة ومتميزة.
 
@@ -305,7 +303,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
 يمكن إضافة لوحات المعلومات إلى المفضلة لسهولة الوصول إليها من الشريط الجانبي ومن أعلى صفحة العرض. وتكون المفضلة خاصة بكل مستخدم على حدة.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-search.webp" alt="البحث في لوحة المعلومات" size="lg" />
+![البحث في لوحة المعلومات](/images/use-cases/observability/hyperdx-dashboard-search.webp)
 
 <div id="tagging">
   ## لوحات المعلومات - الوسوم
@@ -319,7 +317,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
 بالإضافة إلى [عوامل تصفية النص الحر](#filter-dashboards) المتاحة في جميع لوحات المعلومات، تدعم لوحات المعلومات المحفوظة عوامل تصفية مخصصة منسدلة تُعبَّأ ببيانات مستعلَمة من ClickHouse. وتوفّر هذه الفلاتر عناصر تحكم قابلة لإعادة الاستخدام تعتمد على النقر والاختيار، بحيث يتمكن مشاهدو لوحة المعلومات من التصفية من دون كتابة التعبيرات يدويًا.
 
-<Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="عامل تصفية خدمات منسدل يعرض أسماء الخدمات المتاحة" size="lg" />
+![عامل تصفية خدمات منسدل يعرض أسماء الخدمات المتاحة](/images/clickstack/dashboards/filter-dropdown.webp)
 
 يسمح كل عامل تصفية للمشاهد باختيار قيمة واحدة أو أكثر، وينفّذ أحد الإجراءين التاليين أو كليهما بهذه القيم:
 
@@ -334,7 +332,7 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
   <Step title="افتح مربع حوار Edit Filters" id="open-edit-filters">
     افتح لوحة معلومات محفوظة، ثم حدّد **Edit Filters and Variables** من شريط الأدوات.
 
-    <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="زر Edit Filters في شريط أدوات لوحة المعلومات" size="lg" />
+    ![زر Edit Filters في شريط أدوات لوحة المعلومات](/images/clickstack/dashboards/edit-filters.webp)
   </Step>
 
   <Step title="أضف عامل تصفية جديدًا" id="add-new-filter">
@@ -342,25 +340,25 @@ import Tagging from '/snippets/ar/_clickstack_tagging.mdx';
 
     على سبيل المثال، لإضافة عامل تصفية خدمة لبيانات التتبّع، استخدم `ServiceName` كتعبير للتصفية مع مصدر البيانات `Traces`. ويُعد &quot;Dropdown values filter&quot; اختياريًا، ويوفّر طريقة لتقييد القيم التي تظهر في القائمة المنسدلة.
 
-    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="مربع حوار إضافة عامل تصفية يحتوي على حقول Display Name وData source وFilter expression" size="md" />
+    ![مربع حوار إضافة عامل تصفية يحتوي على حقول Display Name وData source وFilter expression](/images/clickstack/dashboards/add-filter.webp)
 
     يتحكم مربع الحوار نفسه أيضًا في ما إذا كان عامل التصفية [يبث](#broadcast-filters) قيمته وما إذا كان [متاحًا كمتغير](#dashboard-variables)، وكلاهما موصوف أدناه.
 
     تعرض النافذة المنبثقة Filters جميع عوامل التصفية المُعدّة للوحة المعلومات. ومن هنا يمكنك تعديل عوامل التصفية الحالية أو حذفها، أو إضافة عوامل تصفية أخرى.
 
-    <Image img="/images/clickstack/dashboards/saved-filters.webp" alt="النافذة المنبثقة Filters تعرض عامل تصفية Services مُعدًّا" size="md" />
+    ![النافذة المنبثقة Filters تعرض عامل تصفية Services مُعدًّا](/images/clickstack/dashboards/saved-filters.webp)
   </Step>
 
   <Step title="استخدم عامل التصفية" id="use-filter">
     أغلق النافذة المنبثقة Filters. سيظهر عامل التصفية المنسدل الجديد أسفل شريط البحث. انقر عليه لعرض القيم المتاحة، ثم اختر واحدة لتصفية جميع التصورات في لوحة المعلومات.
 
-    <Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="لوحة معلومات تمت تصفيتها إلى خدمة frontend" size="lg" />
+    ![لوحة معلومات تمت تصفيتها إلى خدمة frontend](/images/clickstack/dashboards/filtered-dashboard.webp)
   </Step>
 
   <Step title="(اختياري) احفظ قيم عامل التصفية كإعداد افتراضي" id="save-default-filters">
     للاحتفاظ باختيار عامل التصفية بوصفه الإعداد الافتراضي للوحة المعلومات، اختر **Save Query &amp; Filters as Default** من قائمة لوحة المعلومات. ستُفتح لوحة المعلومات دائمًا مع تطبيق عوامل التصفية المحددة. ولإعادة التعيين، حدّد **Remove Default Query &amp; Filters** من القائمة نفسها.
 
-    <Image img="/images/clickstack/dashboards/save-filter-values.webp" alt="قائمة لوحة المعلومات تعرض خيار Save Query and Filters as Default" size="lg" />
+    ![قائمة لوحة المعلومات تعرض خيار Save Query and Filters as Default](/images/clickstack/dashboards/save-filter-values.webp)
   </Step>
 </Steps>
 
@@ -456,7 +454,7 @@ ORDER BY ts ASC
 * **عرض جميع الأحداث** — ينقلك إلى صفحة Search لعرض جميع الأحداث ضمن النافذة الزمنية المحددة.
 * **التصفية حسب المجموعة** — ينقلك إلى صفحة Search بعد تطبيق تصفية على سلسلة محددة.
 
-<Image img="/images/clickstack/dashboards/drilldown.webp" alt="قائمة سياقية للتعمّق تعرض خياري عرض جميع الأحداث والتصفية حسب المجموعة" size="lg" />
+![قائمة سياقية للتعمّق تعرض خياري عرض جميع الأحداث والتصفية حسب المجموعة](/images/clickstack/dashboards/drilldown.webp)
 
 يفيد ذلك عند التحقق من الارتفاعات المفاجئة أو الحالات الشاذة التي تلاحظها في لوحة المعلومات — إذ يمكنك الانتقال سريعًا من عرض مُجمّع إلى الأحداث الفردية الأساسية.
 
@@ -472,7 +470,7 @@ ORDER BY ts ASC
 
 توفر لوحة المعلومات هذه تصورات مرئية لمراقبة ClickHouse. للانتقال إلى لوحة المعلومات هذه، حدّدها من قائمة أيسر.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp" alt="لوحة معلومات ClickHouse" size="lg" />
+![لوحة معلومات ClickHouse](/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp)
 
 تستخدم لوحة المعلومات هذه علامات تبويب لفصل مراقبة **Selects** و**Inserts** و**البنية التحتية لـ ClickHouse**.
 
@@ -500,7 +498,7 @@ ORDER BY ts ASC
 
 يمكن تصفية التصورات باستخدام صيغة Lucene أو SQL، كما يمكن ضبط النافذة الزمنية لإجراء تحليل أكثر تركيزًا.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-services.webp" alt="خدمات ClickHouse" size="lg" />
+![خدمات ClickHouse](/images/use-cases/observability/hyperdx-dashboard-services.webp)
 
 <div id="kubernetes-dashboard">
   ### لوحة معلومات Kubernetes
@@ -510,4 +508,4 @@ ORDER BY ts ASC
 
 تُنظَّم بيانات Kubernetes ضمن ثلاث علامات تبويب لتسهيل التنقل: Pods وNodes وNamespaces.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse kubernetes" size="lg" />
+![ClickHouse kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)

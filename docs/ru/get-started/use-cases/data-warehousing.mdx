@@ -7,8 +7,6 @@ sidebarTitle: 'Хранилище данных'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -44,7 +42,7 @@ export const ExclusiveGroup = ({ name, children }) => {
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="Архитектура хранилища данных ClickHouse" />
+    ![Архитектура хранилища данных ClickHouse](/images/cloud/onboard/discover/use_cases/data-warehousing.webp)
   </div>
 
   <ExclusiveGroup name="dw-arch">

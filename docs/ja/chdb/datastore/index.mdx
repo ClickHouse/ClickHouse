@@ -7,8 +7,6 @@ keywords: ['chdb', 'datastore', 'pandas', 'dataframe', 'sql', 'lazy evaluation']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 DataStore は、使い慣れた pandas DataFrame インターフェイスと SQL によるクエリ最適化の力を組み合わせた、chDB の pandas-compatible API です。pandas スタイルのコードを書きながら、ClickHouse のパフォーマンスを活用できます。
 
 <div id="key-features">
@@ -25,7 +23,7 @@ DataStore は、使い慣れた pandas DataFrame インターフェイスと SQL
   ## アーキテクチャ
 </div>
 
-<Image size="md" img="/images/chdb/datastore_architecture.png" alt="DataStore アーキテクチャ" />
+![DataStore アーキテクチャ](/images/chdb/datastore_architecture.png)
 
 DataStore は、**遅延評価** と **デュアルエンジン実行** を採用しています。
 

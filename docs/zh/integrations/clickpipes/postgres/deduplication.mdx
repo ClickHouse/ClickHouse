@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 由于 ClickHouse 的数据存储结构和复制机制，从 Postgres 复制到 ClickHouse 的更新和删除操作会在 ClickHouse 中产生重复行。本文将介绍其原因，以及在 ClickHouse 中处理重复数据的策略。
 
 <div id="how-does-data-get-replicated">
@@ -64,7 +62,7 @@ ORDER BY id;
 
 下图通过一个基础示例说明了如何使用 ClickPipes 在 PostgreSQL 和 ClickHouse 之间同步 `users` 表。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="ClickPipes 初始加载" size="lg" />
+![ClickPipes 初始加载](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
 
 **步骤 1** 展示了 PostgreSQL 中 2 行数据的初始快照，以及 ClickPipes 将这 2 行数据初始加载到 ClickHouse 的过程。可以看到，这两行数据都会原样复制到 ClickHouse。
 

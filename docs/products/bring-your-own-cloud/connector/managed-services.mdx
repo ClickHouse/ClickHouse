@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 In managed mode the connector runs a third component, the executor. ClickHouse Cloud operates ClickHouse services in your Kubernetes cluster through it. This page covers creating a service, reading its status, what ClickHouse Cloud does with it, and how it is retired.
@@ -41,7 +39,7 @@ Only `prepare` needs AWS credentials: it creates the S3 buckets and the IAM role
 - `prepare` needs a copy of the connector configuration (`--config`), a `kubectl port-forward` to the executor's local API, and a writable `--output-dir`. It checks the service name against the executor and refuses to run when it cannot reach it.
 - When this host lacks the credential files the configuration names, `instances create` reads them from the `clicklink-hmac` and `clicklink-mtls` Secrets and announces each read. Add `--connector-namespace` when the connector namespace is not `clicklink`. Only `instances create` has this fallback.
 
-<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="ClickHouse Connector service lifecycle in managed mode" />
+![ClickHouse Connector service lifecycle in managed mode](/images/cloud/reference/byoc-connector-service-lifecycle.svg)
 
 <Steps>
 <Step title="Prepare the service" id="prepare">

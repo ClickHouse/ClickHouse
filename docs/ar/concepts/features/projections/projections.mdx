@@ -8,7 +8,6 @@ sidebar_order: 1
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
@@ -52,7 +51,7 @@ import { RunnableCode } from "/snippets/ar/components/RunnableCode/RunnableCode.
 إنتاج النتيجة الصحيحة نفسها، لكنه يتطلب أقل قدر ممكن من البيانات
 للقراءة، كما هو موضح في الشكل أدناه:
 
-<Image img="/images/data-modeling/projections_1.webp" size="md" alt="الإسقاطات في ClickHouse" />
+![الإسقاطات في ClickHouse](/images/data-modeling/projections_1.webp)
 
 <div id="smarter_storage_with_part_offset">
   ### تخزين أكثر ذكاءً باستخدام `_part_offset`
@@ -325,7 +324,7 @@ SETTINGS mutations_sync = 1
 يعرض الشكل أدناه تصورًا للجدول الرئيسي `uk_price_paid_with_projections`
 والإسقاطين التابعين له:
 
-<Image img="/images/data-modeling/projections_2.webp" size="md" alt="تصور للجدول الرئيسي uk_price_paid_with_projections والإسقاطين التابعين له" />
+![تصور للجدول الرئيسي uk_price_paid_with_projections والإسقاطين التابعين له](/images/data-modeling/projections_2.webp)
 
 إذا شغّلنا الآن الاستعلام الذي يسرد المقاطعات في لندن ذات أعلى ثلاثة
 أسعار مرة أخرى، فسنلاحظ تحسنًا في أداء الاستعلام:

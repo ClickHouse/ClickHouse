@@ -7,8 +7,6 @@ title: 'Интерфейс MySQL'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickHouse поддерживает протокол MySQL. Это позволяет некоторым клиентам, для которых нет нативных коннекторов ClickHouse, использовать вместо них протокол MySQL; совместимость была проверена со следующими BI-инструментами:
 
 * [Looker Studio](/ru/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
@@ -37,23 +35,23 @@ ClickHouse поддерживает протокол MySQL. Это позвол�
 
 <br />
 
-<Image img="/images/interfaces/mysql0.webp" alt="Экран учетных данных — промпт" size="md" />
+![Экран учетных данных — промпт](/images/interfaces/mysql0.webp)
 
 2. В раскрывающемся списке `Connect with` выберите `MySQL`.
 
 <br />
 
-<Image img="/images/interfaces/mysql1.webp" alt="Экран учетных данных — выбран MySQL" size="md" />
+![Экран учетных данных — выбран MySQL](/images/interfaces/mysql1.webp)
 
 3. Включите переключатель, чтобы активировать интерфейс MySQL для этого сервиса. После этого для сервиса будет открыт порт `3306`, и отобразится экран подключения MySQL с вашим уникальным именем пользователя MySQL. Пароль будет таким же, как у пользователя сервиса по умолчанию.
 
 <br />
 
-<Image img="/images/interfaces/mysql2.webp" alt="Экран учетных данных — MySQL включен" size="md" />
+![Экран учетных данных — MySQL включен](/images/interfaces/mysql2.webp)
 
 Скопируйте показанную строку подключения MySQL.
 
-<Image img="/images/interfaces/mysql3.webp" alt="Экран учетных данных — строка подключения" size="md" />
+![Экран учетных данных — строка подключения](/images/interfaces/mysql3.webp)
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
   ## Создание нескольких пользователей MySQL в ClickHouse Cloud

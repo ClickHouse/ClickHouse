@@ -8,7 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
 import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
 <Visibility for="agents">
@@ -40,11 +39,11 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     لإنشاء خدمة ClickHouse Managed Postgres جديدة، انقر على زر **New service** في قائمة الخدمات في Cloud Console. ستتمكن بعد ذلك من اختيار Postgres كنوع لقاعدة البيانات.
 
-    <Image img="/images/managed-postgres/create-service.webp" alt="أنشئ خدمة ClickHouse Managed Postgres" size="md" border />
+    ![أنشئ خدمة ClickHouse Managed Postgres](/images/managed-postgres/create-service.webp)
 
     أدخل اسمًا لـ instance قاعدة البيانات الخاصة بك وانقر على **Create service**. سيتم نقلك إلى صفحة Overview.
 
-    <Image img="/images/managed-postgres/overview.webp" alt="نظرة عامة على ClickHouse Managed Postgres" size="md" border />
+    ![نظرة عامة على ClickHouse Managed Postgres](/images/managed-postgres/overview.webp)
 
     سيتم توفير مثيل ClickHouse Managed Postgres الخاص بك وسيكون جاهزًا للاستخدام في غضون 3-5 دقائق.
 
@@ -52,7 +51,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     في الشريط الجانبي على اليسار، ستجد [**زر الاتصال**](/ar/products/managed-postgres/connection). انقر عليه لعرض تفاصيل الاتصال وسلاسل الاتصال بتنسيقات متعددة.
 
-    <Image img="/images/managed-postgres/connect-modal.webp" alt="النافذة المنبثقة Connect لـ ClickHouse Managed Postgres" size="md" border />
+    ![النافذة المنبثقة Connect لـ ClickHouse Managed Postgres](/images/managed-postgres/connect-modal.webp)
 
     انسخ سلسلة اتصال `psql` واتصل بقاعدة بياناتك. يمكنك أيضًا استخدام أي عميل متوافق مع Postgres مثل DBeaver، أو أي مكتبة تطبيق.
 
@@ -244,7 +243,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     بعد أن أصبح لدينا جداول وبيانات في Postgres، دعونا ننسخ الجداول إلى ClickHouse لأغراض التحليلات. نبدأ بالنقر على **مزامنة إلى ClickHouse** في الشريط الجانبي. ثم يمكنك النقر على **نسخ البيانات في ClickHouse**.
 
-    <Image img="/images/managed-postgres/integration-landing.webp" alt="تكامل ClickHouse Managed Postgres فارغ" size="md" border />
+    ![تكامل ClickHouse Managed Postgres فارغ](/images/managed-postgres/integration-landing.webp)
 
     في النموذج التالي، يمكنك إدخال اسم للتكامل الخاص بك واختيار مثيل ClickHouse موجود لنسخ البيانات إليه. إذا لم يكن لديك مثيل ClickHouse بعد، يمكنك إنشاء واحد مباشرةً من هذا النموذج.
 
@@ -254,7 +253,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
       تأكد من أن خدمة ClickHouse التي تحددها في حالة Running قبل المتابعة.
     </Info>
 
-    <Image img="/images/managed-postgres/postgres-analytics-form.webp" alt="نموذج تكامل ClickHouse Managed Postgres" size="md" border />
+    ![نموذج تكامل ClickHouse Managed Postgres](/images/managed-postgres/postgres-analytics-form.webp)
 
     انقر على **التالي** للانتقال إلى منتقي الجداول. كل ما عليك فعله هنا هو:
 
@@ -262,7 +261,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
     * وسّع المخطط **public** وحدد جدولي users وevents اللذين أنشأناهما سابقًا.
     * انقر على **Replicate data to ClickHouse**.
 
-    <Image img="/images/managed-postgres/table-picker.webp" alt="منتقي الجداول في ClickHouse Managed Postgres" size="md" border />
+    ![منتقي الجداول في ClickHouse Managed Postgres](/images/managed-postgres/table-picker.webp)
 
     ستبدأ عملية النسخ المتماثل، وسيتم نقلك إلى صفحة نظرة عامة على التكامل. بما أن هذا هو التكامل الأول، فقد يستغرق إعداد البنية التحتية الأولية دقيقتين إلى ثلاث دقائق. في هذه الأثناء، دعنا نطلع على الإضافة الجديدة **pg&#95;clickhouse**.
 
@@ -285,7 +284,7 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     استبدل `<clickhouse_cloud_host>` باسم مضيف ClickHouse الخاص بك، و`<database_name>` بقاعدة البيانات التي اخترتها أثناء إعداد النسخ المتماثل. يمكنك العثور على اسم المضيف في خدمة ClickHouse الخاصة بك بالنقر على **Connect** في الشريط الجانبي.
 
-    <Image img="/images/managed-postgres/get-clickhouse-host.webp" alt="الحصول على مضيف ClickHouse" size="md" border />
+    ![الحصول على مضيف ClickHouse](/images/managed-postgres/get-clickhouse-host.webp)
 
     <Note>
       إذا كنت تستخدم ClickHouse Cloud Console لتشغيل SQL، فامنح المستخدم الإداري لوحدة التحكم صلاحية الوصول إلى الخادم الخارجي:
@@ -321,11 +320,11 @@ import QuickstartCLI from "/snippets/ar/managed-postgres/_quickstart_cli.mdx";
 
     لنعُد إلى صفحة التكامل. ينبغي أن ترى أن النسخ المتماثل الأولي قد اكتمل. انقر على اسم التكامل لعرض التفاصيل.
 
-    <Image img="/images/managed-postgres/analytics-list.webp" alt="قائمة تحليلات ClickHouse Managed Postgres" size="md" border />
+    ![قائمة تحليلات ClickHouse Managed Postgres](/images/managed-postgres/analytics-list.webp)
 
     انقر على اسم الخدمة لفتح وحدة تحكم ClickHouse وعرض الجداول المُنسوخة.
 
-    <Image img="/images/managed-postgres/replicated-tables.webp" alt="الجداول المُكرَّرة لـ ClickHouse Managed Postgres في ClickHouse" size="md" border />
+    ![الجداول المُكرَّرة لـ ClickHouse Managed Postgres في ClickHouse](/images/managed-postgres/replicated-tables.webp)
 
 ### مقارنة أداء Postgres مقابل ClickHouse
 

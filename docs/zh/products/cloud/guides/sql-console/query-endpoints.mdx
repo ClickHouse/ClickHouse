@@ -7,8 +7,6 @@ title: 设置查询 API 端点
 doc_type: '指南'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 **查询 API 端点**功能允许您直接根据 ClickHouse Cloud 控制台中任意已保存的 SQL 查询创建 API 端点。您可以通过 HTTP 访问这些 API 端点来执行已保存的查询，而无需使用原生驱动程序连接到您的 ClickHouse Cloud 服务。
 
 <div id="quick-start-guide">
@@ -68,11 +66,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     现在快速运行这个查询，在 SQL 编辑器右侧的查询变量输入框中指定年份 `2010`，确认它能够正常工作：
 
-    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="测试示例查询" />
+    ![测试示例查询](/images/cloud/sqlconsole/endpoints-testquery.webp)
 
     接下来，保存该查询：
 
-    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="保存示例查询" />
+    ![保存示例查询](/images/cloud/sqlconsole/endpoints-savequery.webp)
 
     有关已保存查询的更多文档，请参阅 [&quot;Saving a query&quot;](/zh/products/cloud/features/sql-console-features/sql-console#saving-a-query) 部分。
   </Step>
@@ -81,7 +79,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     可以直接在查询视图中点击 **共享** 按钮并选择 `API Endpoint` 来配置查询 API 端点。
     系统会提示你指定哪些 API 密钥可以访问该端点：
 
-    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="配置查询端点" />
+    ![配置查询端点](/images/cloud/sqlconsole/endpoints-configure.webp)
 
     选择 API 密钥后，系统会要求你：
 
@@ -92,7 +90,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     界面中会显示一个示例 `curl` 命令，便于你发送测试请求：
 
-    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="端点 curl 命令" />
+    ![端点 curl 命令](/images/cloud/sqlconsole/endpoints-completed.webp)
 
     为方便起见，界面中显示的 `curl` 命令如下：
 
@@ -108,11 +106,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="测试与监控" id="testing-and-monitoring">
     创建查询 API 端点后，你可以使用 `curl` 或任何其他 HTTP 客户端测试其是否正常工作：
 
-    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="端点 curl 测试" />
+    ![端点 curl 测试](/images/cloud/sqlconsole/endpoints-curltest.webp)
 
     发送第一个请求后，**共享** 按钮右侧应会立即出现一个新按钮。点击它会打开一个弹出面板，其中包含该查询的监控数据：
 
-    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="端点监控" />
+    ![端点监控](/images/cloud/sqlconsole/endpoints-monitoring.webp)
   </Step>
 </Steps>
 

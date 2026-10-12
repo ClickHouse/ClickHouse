@@ -6,13 +6,11 @@ keywords: ['العرض المادي القابل للتحديث', 'التحدي�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تُعد [العروض المادية القابلة للتحديث](/ar/reference/statements/create/view#refreshable-materialized-view) مشابهة من حيث الفكرة للعروض المادية في قواعد بيانات OLTP التقليدية؛ إذ تخزّن ناتج استعلام محدد لسرعة استرجاعه وتقليل الحاجة إلى إعادة تنفيذ الاستعلامات كثيفة الاستهلاك للموارد بشكل متكرر. وعلى عكس [العروض المادية التزايدية](/ar/concepts/features/materialized-views/incremental-materialized-view) في ClickHouse، يتطلب هذا النوع تنفيذ الاستعلام دوريًا على مجموعة البيانات كاملة، ثم تخزين نتائجه في جدول هدف للاستعلام عنها. ومن الناحية النظرية، ينبغي أن تكون مجموعة النتائج هذه أصغر من مجموعة البيانات الأصلية، مما يتيح تنفيذ الاستعلامات اللاحقة بسرعة أكبر.
 
 يوضح المخطط التالي آلية عمل العروض المادية القابلة للتحديث:
 
-<Image img="/images/materialized-view/refreshable-materialized-view-diagram.webp" size="lg" alt="مخطط العرض المادي القابل للتحديث" />
+![مخطط العرض المادي القابل للتحديث](/images/materialized-view/refreshable-materialized-view-diagram.webp)
 
 يمكنك أيضًا مشاهدة الفيديو التالي:
 

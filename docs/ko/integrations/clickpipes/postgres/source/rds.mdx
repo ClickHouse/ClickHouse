@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/ko/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
@@ -42,17 +41,17 @@ postgres=> SHOW rds.logical_replication ;
 1. 필요한 설정이 포함된, 사용 중인 Postgres 버전에 맞는 새 파라미터 그룹을 생성합니다.
    * `rds.logical_replication`을 1로 설정합니다
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="RDS에서 파라미터 그룹을 찾는 위치" size="lg" border />
+![RDS에서 파라미터 그룹을 찾는 위치](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="rds.logical_replication 변경" size="lg" border />
+![rds.logical_replication 변경](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
 
 2. 새 파라미터 그룹을 RDS Postgres 데이터베이스에 적용합니다
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="새 파라미터 그룹을 사용하도록 RDS Postgres 수정" size="lg" border />
+![새 파라미터 그룹을 사용하도록 RDS Postgres 수정](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
 
 3. 변경 사항을 적용하려면 RDS 인스턴스를 재부팅합니다
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="RDS Postgres 재부팅" size="lg" border />
+![RDS Postgres 재부팅](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
 
 <div id="configure-database-user">
   ## 데이터베이스 사용자 구성
@@ -120,9 +119,9 @@ RDS Postgres 인스턴스에 관리자 사용자로 접속한 다음, 아래 명
 
 RDS 인스턴스로의 트래픽을 제한하려면 [문서에 안내된 정적 NAT IP 주소](/ko/integrations/clickpipes/networking/static-ips)를 RDS 보안 그룹의 `인바운드 규칙`에 추가하십시오.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="RDS Postgres에서 보안 그룹을 어디서 찾을 수 있습니까?" size="lg" border />
+![RDS Postgres에서 보안 그룹을 어디서 찾을 수 있습니까?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="위 보안 그룹의 인바운드 규칙 편집" size="lg" border />
+![위 보안 그룹의 인바운드 규칙 편집](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
 
 <div id="private-access-via-aws-privatelink">
   ### AWS PrivateLink를 통한 비공개 액세스

@@ -10,8 +10,6 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -41,13 +39,13 @@ Glue 코드와 ClickHouse를 통합하려면 다음 방법 중 하나로 Glue에
       <Step title="커넥터 활성화 및 연결 생성" id="activate-the-connector">
         구독한 후 작업 요구 사항에 맞는 Glue 버전을 선택하십시오. **Additional details** 섹션의 **Usage instructions** 아래에서 **Open Glue Studio - Add ClickHouse connector** 링크를 클릭하십시오. 그러면 주요 필드가 미리 채워진 Glue 연결 생성 페이지가 열립니다. 연결 이름을 입력한 다음 create를 누르십시오(이 단계에서는 ClickHouse 연결 세부 정보를 입력할 필요가 없습니다).
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png" size="md" alt="AWS Marketplace usage instructions for ClickHouse Glue connector" />
+        ![AWS Marketplace usage instructions for ClickHouse Glue connector](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
       </Step>
 
       <Step title="Glue 작업에서 사용" id="use-in-glue-job">
         Glue 작업에서 `Job details` 탭을 선택한 다음 `Advanced properties` 창을 펼치십시오. `Connections` 섹션에서 방금 생성한 연결을 선택하십시오. 커넥터가 필요한 JARs를 작업 런타임에 자동으로 주입합니다.
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp" size="md" alt="Glue Notebook connections config" force="true" />
+        ![Glue Notebook connections config](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
 
         <Note>
           Glue 작업 구성과 일치하는 커넥터 버전을 선택해야 합니다.
@@ -74,7 +72,7 @@ Glue 코드와 ClickHouse를 통합하려면 다음 방법 중 하나로 Glue에
       <Step title="종속 JAR 경로 구성">
         `Job details` 탭에서 아래로 스크롤하여 `Advanced properties` 드롭다운을 펼친 다음 `Dependent JARs path`에 JAR 경로를 입력합니다.
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp" size="md" alt="Glue Notebook JAR path options" force="true" />
+        ![Glue Notebook JAR path options](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
       </Step>
     </Steps>
   </Tab>
@@ -155,7 +153,7 @@ AWS 시크릿을 연결 자체에 연결한 경우([자격 증명에 AWS Secrets
   <Tab title="비주얼 에디터">
     ClickHouse 커넥터는 Glue Studio 비주얼 에디터에서 소스 또는 대상으로 사용할 수 있습니다. ClickHouse Spark Connector 컴포넌트를 캔버스로 끌어와 데이터 파이프라인에 연결하면 됩니다.
 
-    <Image img="/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png" size="md" alt="ClickHouse 커넥터가 있는 Glue Studio 비주얼 에디터" />
+    ![ClickHouse 커넥터가 있는 Glue Studio 비주얼 에디터](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
   </Tab>
 
   <Tab title="Scala">

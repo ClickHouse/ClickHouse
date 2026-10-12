@@ -7,8 +7,6 @@ doc_type: 'guide'
 sidebarTitle: '使用 ReplacingMergeTree 引擎'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 虽然事务型数据库针对事务性更新和删除工作负载进行了优化，但 OLAP 数据库对此类操作提供的保证较弱。相反，它们针对以批次插入的不可变数据进行了优化，以显著提升分析查询的速度。虽然 ClickHouse 通过 mutations 提供更新操作，也提供了轻量级的行删除方式，但其面向列的结构意味着这些操作应按上文所述谨慎安排。这些操作以异步方式处理，由单个线程执行，并且 (对于更新而言) 需要在磁盘上重写数据。因此，不应将它们用于大量零散的小规模变更。
 为了在避免上述使用模式的同时处理更新行和删除行的 stream，我们可以使用 ClickHouse 表引擎 ReplacingMergeTree。
 
@@ -32,7 +30,7 @@ ReplacingMergeTree 还允许指定一个 `deleted` 列。该列的值只能是 0
 
 <br />
 
-<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="ReplacingMergeTree 过程" />
+![ReplacingMergeTree 过程](/images/migrations/postgres-replacingmergetree.webp)
 
 <br />
 

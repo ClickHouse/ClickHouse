@@ -8,8 +8,6 @@ doc_type: 'guide'
 keywords: ['environmental sensors', 'Sensor.Community', 'air quality data', 'environmental data', 'getting started']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 [Sensor.Community](https://sensor.community/en/) is a contributors-driven global sensor network that creates Open Environmental Data. The data is collected from sensors all over the globe. Anyone can purchase a sensor and place it wherever they like. The APIs to download the data is in [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs) and the data is freely available under the [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/).
 
 <Warning>
@@ -162,7 +160,7 @@ ORDER BY date ASC;
 
 We can create a chart in the SQL Console to visualize the results:
 
-<Image img="/images/getting-started/example-datasets/sensors_01.webp" size="md" alt="Number of events per day"/>
+![Number of events per day](/images/getting-started/example-datasets/sensors_01.webp)
 
 6. This query counts the number of overly hot and humid days:
 
@@ -177,4 +175,4 @@ ORDER BY day ASC;
 
 Here's a visualization of the result:
 
-<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="Hot and humid days"/>
+![Hot and humid days](/images/getting-started/example-datasets/sensors_02.webp)

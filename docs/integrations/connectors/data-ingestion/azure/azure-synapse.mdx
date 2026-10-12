@@ -10,8 +10,6 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge/>
@@ -64,7 +62,7 @@ For instance, you can configure your Spark session in your notebook with these s
 
 Make sure it will be in the first cell as follows:
 
-<Image img="/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp" size="xl" alt="Setting Spark configurations via notebook" border/>
+![Setting Spark configurations via notebook](/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp)
 
 Please visit the [ClickHouse Spark configurations page](/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#configurations) for additional settings.
 
@@ -77,7 +75,7 @@ When working with ClickHouse Cloud Please make sure to set the [required Spark s
 To verify that the dependencies and configurations were set successfully, please visit your session's Spark UI, and go to your `Environment` tab.
 There, look for your ClickHouse related settings:
 
-<Image img="/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp" size="xl" alt="Verifying ClickHouse settings using Spark UI" border/>
+![Verifying ClickHouse settings using Spark UI](/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp)
 
 ## Additional resources {#additional-resources}
 

@@ -7,7 +7,6 @@ description: 'دليل البدء السريع لـ ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.mdx";
 
 <Visibility for="agents">
@@ -29,13 +28,13 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
         * إذا سجلت باستخدام بريد إلكتروني وكلمة مرور، فتذكّر تأكيد عنوان بريدك الإلكتروني خلال 24 ساعة عبر الرابط الذي ستتلقاه في بريدك الإلكتروني
         * سجّل الدخول باستخدام اسم المستخدم وكلمة المرور اللذين أنشأتهما للتو
 
-        <Image img="/images/_snippets/signup_page.webp" size="lg" alt="اختيار الخطة" border />
+        ![اختيار الخطة](/images/_snippets/signup_page.webp)
 
         <br />
 
         بعد تسجيل الدخول، يبدأ ClickHouse Cloud معالج الإعداد الذي يرشدك خلال إنشاء خدمة ClickHouse جديدة. اختر المنطقة التي تريد نشر الخدمة فيها، وامنح خدمتك الجديدة اسمًا:
 
-        <Image img="/images/_snippets/createservice1.webp" size="lg" alt="خدمة ClickHouse جديدة" border />
+        ![خدمة ClickHouse جديدة](/images/_snippets/createservice1.webp)
 
         <br />
 
@@ -43,7 +42,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         خصّص موارد الخدمة عند الحاجة عبر تحديد حجم أدنى وأقصى يمكن أن تتدرج replicas بينهما. عند الجاهزية، اختر `Create service`.
 
-        <Image img="/images/_snippets/scaling_limits.webp" size="lg" alt="حدود التوسع" border />
+        ![حدود التوسع](/images/_snippets/scaling_limits.webp)
 
         <br />
 
@@ -62,7 +61,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         للبدء بسرعة، يوفّر ClickHouse SQL Console عبر الويب، وستتم إعادتك إليها بعد إكمال Onboarding.
 
-        <Image img="/images/_snippets/createservice8.webp" size="lg" alt="SQL Console" border />
+        ![SQL Console](/images/_snippets/createservice8.webp)
 
         أنشئ علامة تبويب لاستعلام وأدخل استعلامًا بسيطًا للتحقق من عمل الاتصال:
 
@@ -72,7 +71,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         سترى 4 قواعد بيانات في القائمة، بالإضافة إلى أي قواعد بيانات أضفتها.
 
-        <Image img="/images/_snippets/show_databases.webp" size="lg" alt="SQL Console" border />
+        ![SQL Console](/images/_snippets/show_databases.webp)
 
         <br />
 
@@ -82,7 +81,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         اضغط على زر الاتصال في قائمة التنقل. ستُفتح نافذة تعرض بيانات اعتماد خدمتك ومجموعة من الإرشادات حول كيفية الاتصال عبر الواجهة أو مكتبات العملاء للغات البرمجة.
 
-        <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Service Connect" border />
+        ![Service Connect](/images/_snippets/service_connect.webp)
 
         <br />
 
@@ -92,7 +91,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
       <Step title="إضافة بيانات" id="3-add-data">
         يزداد ClickHouse قوةً بوجود البيانات! هناك طرق متعددة لإضافة البيانات، ومعظمها متاح في صفحة مصادر البيانات التي يمكن الوصول إليها من قائمة التنقل.
 
-        <Image img="/images/_snippets/data_sources.webp" size="lg" alt="مصادر البيانات" border />
+        ![مصادر البيانات](/images/_snippets/data_sources.webp)
 
         <br />
 
@@ -108,7 +107,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         [ClickPipes](/ar/integrations/clickpipes/home) هي منصة تكامل مُدارة تجعل استيعاب البيانات من مجموعة متنوعة من المصادر بسهولة النقر على بضعة أزرار. وقد صُممت لأكثر أحمال العمل تطلبًا، حيث تضمن معمارية ClickPipes المتينة والقابلة للتوسع أداءً وموثوقية متسقين. ويمكن استخدام ClickPipes لتلبية احتياجات البث طويلة الأمد أو لمهمة تحميل بيانات لمرة واحدة.
 
-        <Image img="/images/_snippets/select_data_source.webp" size="lg" alt="اختر مصدر البيانات" border />
+        ![اختر مصدر البيانات](/images/_snippets/select_data_source.webp)
 
         <br />
 
@@ -212,7 +211,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         يمكنك أيضًا الاتصال بخدمة ClickHouse Cloud الخاصة بك باستخدام أداة سطر الأوامر [**clickhouse client**](/ar/concepts/features/interfaces/client). انقر على `Connect` في القائمة اليسرى للاطلاع على هذه التفاصيل، ثم اختر `Native` من القائمة المنسدلة في مربع الحوار:
 
-        <Image img="/images/_snippets/client_details.webp" size="lg" alt="تفاصيل اتصال عميل ClickHouse" border />
+        ![تفاصيل اتصال عميل ClickHouse](/images/_snippets/client_details.webp)
 
         <br />
 
@@ -318,7 +317,7 @@ import CloudQuickstartCLI from "/snippets/ar/quickstarts/_cloud_quickstart_cli.m
 
         <br />
 
-        <Image img="/images/_snippets/new_rows_from_csv.webp" size="lg" alt="صفوف جديدة من ملف CSV" />
+        ![صفوف جديدة من ملف CSV](/images/_snippets/new_rows_from_csv.webp)
 
         <br />
       </Step>

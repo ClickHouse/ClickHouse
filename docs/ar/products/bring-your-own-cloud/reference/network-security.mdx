@@ -7,8 +7,6 @@ description: 'انشر ClickHouse على بنيتك التحتية السحاب�
 doc_type: 'مرجع'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 ## الاتصالات بين طبقة التحكم في ClickHouse وVPC الخاصة بـ BYOC لديك {#connection-between-clickhouse-and-byoc}
 
 تحافظ طبقة التحكم في ClickHouse Cloud على عدة أنواع من الاتصالات لتشغيل نشر BYOC الخاص بك ودعمه:
@@ -64,7 +62,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ### كيف يعمل Tailscale في BYOC {#how-tailscale-works}
 
-<Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="Tailscale في BYOC" border />
+![Tailscale في BYOC](/images/cloud/reference/byoc-tailscale-1.webp)
 
 لكل خدمة أو نقطة نهاية يلزم الوصول إليها عبر Tailscale، ينشر ClickHouse BYOC ما يلي:
 

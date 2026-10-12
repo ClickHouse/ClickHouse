@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickPipes 支持与 Schema Registry 集成，以解码采用 Avro 和 Protobuf 编码的记录值以及[结构化 Kafka key](/zh/integrations/clickpipes/kafka/reference#structured-message-keys)。
 
 对于 Protobuf 记录值，你也可以在不配置 Schema Registry 的情况下[直接上传 schema](/zh/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic)。
@@ -73,7 +71,7 @@ ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
 
 在 ClickPipe 创建向导的 Kafka 连接步骤中，启用**Schema Registry**，并将**Registry type**设为**AWS Glue**：
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="已选择 AWS Glue 的 Schema Registry 面板" size="lg" border />
+![已选择 AWS Glue 的 Schema Registry 面板](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
 
 | 字段            | 必填  | 说明                                                                                       | 示例                                                         |
 | ------------- | --- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -123,7 +121,7 @@ ClickPipes 会动态从已配置的 Schema Registry 获取并应用 schema。
   <Step title="获取 ClickHouse 服务 IAM 角色 ARN" id="obtain-clickhouse-service-iam-role-arn">
     打开服务，选择 **设置** 选项卡，滚动到 **Network security 信息** 部分，然后复制 **服务角色 ID (IAM)** 的值。该值是格式类似于 `arn:aws:iam::123456789012:role/CH-S3-example-service-Role` 的 ARN。下文将其称为 `{ClickHouse_IAM_ARN}`。部署在 AWS 上的每个 ClickHouse 服务都有各自的角色，因此每个服务的此值都不同。
 
-    <Image img="/images/cloud/security/secures3_arn.webp" alt="服务角色 ID (IAM)" size="lg" border />
+    ![服务角色 ID (IAM)](/images/cloud/security/secures3_arn.webp)
   </Step>
 
   <Step title="创建 registry IAM 角色" id="create-registry-iam-role">

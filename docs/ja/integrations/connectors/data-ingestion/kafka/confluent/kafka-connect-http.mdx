@@ -9,8 +9,6 @@ keywords: ['Confluent HTTP Sink コネクタ', 'HTTP Sink ClickHouse', 'Kafka HT
 ---
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキーマを必要とせず、Maps や Arrays などの ClickHouse 固有のデータ型にも対応しています。この柔軟性がある一方で、設定はやや複雑になります。
 
 以下では、単一の Kafka トピックからメッセージを取り込み、ClickHouse テーブルに行を挿入するシンプルな導入方法について説明します。
@@ -61,7 +59,7 @@ HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキ�
   <Step title="HTTP Sink の設定" id="4-configure-http-sink">
     Kafka トピックと HTTP Sink コネクタのインスタンスを作成します。
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp" size="sm" alt="HTTP Sink コネクタの作成方法を示す Confluent Cloud のインターフェイス" border />
+    ![HTTP Sink コネクタの作成方法を示す Confluent Cloud のインターフェイス](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
 
     <br />
 
@@ -78,7 +76,7 @@ HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキ�
       この HTTP Url は誤りが生じやすいため、問題を避けるにはエスケープを正確に行ってください。
     </Note>
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="HTTP Sink コネクタの認証設定を示す Confluent Cloud のインターフェイス" border />
+    ![HTTP Sink コネクタの認証設定を示す Confluent Cloud のインターフェイス](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
 
     <br />
 
@@ -92,13 +90,13 @@ HTTP Sink コネクタはデータ型に依存しないため、Kafka のスキ�
         * `Retry on HTTP codes` - 400-500。必要に応じて調整してください。たとえば、ClickHouse の前段に HTTP プロキシがある場合は変更が必要になることがあります。
         * `Maximum Reties` - デフォルトの (10) で適切ですが、より堅牢に再試行したい場合は調整してもかまいません。
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="HTTP Sink コネクタの詳細設定オプションを示す Confluent Cloud のインターフェイス" border />
+    ![HTTP Sink コネクタの詳細設定オプションを示す Confluent Cloud のインターフェイス](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
   </Step>
 
   <Step title="接続性のテスト" id="5-testing-the-connectivity">
     HTTP Sink で設定したトピックにメッセージを作成します
 
-    <Image img="/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp" size="md" alt="Kafka トピックでテストメッセージを作成する方法を示す Confluent Cloud のインターフェイス" border />
+    ![Kafka トピックでテストメッセージを作成する方法を示す Confluent Cloud のインターフェイス](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
 
     <br />
 

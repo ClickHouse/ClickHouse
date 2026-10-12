@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'marqueurs de version', 'suivi des déploiements', 'service.version', 'annotations', 'observability']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 La première question face à un pic de latence ou d’erreurs est généralement de savoir si une nouvelle version a été déployée. Les graphiques temporels des dashboards permettent d’y répondre directement : activez les marqueurs de version, et chaque tuile trace une ligne verticale en pointillés au moment où une version d’un service apparaît pour la première fois dans sa télémétrie.
 
 Les versions proviennent de la télémétrie que vous envoyez déjà, lue via une expression définie sur la source de la tuile. Aucune intégration d’intégration continue n’est nécessaire, et rien n’est à envoyer au moment du déploiement.
@@ -19,7 +17,7 @@ Les versions proviennent de la télémétrie que vous envoyez déjà, lue via un
 
 Les marqueurs de version sont désactivés par défaut. Ouvrez le menu d’options d’un dashboard et sélectionnez **Afficher les marqueurs de version**.
 
-<Image img="/images/clickstack/dashboards/release-markers-menu.webp" alt="Menu d’options du dashboard avec l’élément Afficher les marqueurs de version dans la section Affichage, sous Afficher les annotations d’alertes" size="sm" />
+![Menu d’options du dashboard avec l’élément Afficher les marqueurs de version dans la section Affichage, sous Afficher les annotations d’alertes](/images/clickstack/dashboards/release-markers-menu.webp)
 
 Le commutateur ajoute `releaseMarkers=true` à l’URL du dashboard, afin que les liens que vous partagez s’ouvrent avec les marqueurs déjà activés. Il s’agit d’un état d’affichage et non de la configuration du dashboard : il n’est pas enregistré avec le dashboard et sa désactivation supprime à nouveau le paramètre.
 
@@ -33,7 +31,7 @@ Par défaut, ClickStack lit `ResourceAttributes['service.version']`, l’attribu
 
 Pour lire la version depuis un autre emplacement, définissez **Expression de version du service** dans la source de logs ou de traces. Modifiez la source sous **Paramètres de l’équipe → Sources**. Dans une source de logs, le champ se trouve sous **Configurer les champs facultatifs** ; dans une source de traces, il apparaît directement dans le formulaire, sous **Expression du nom du service**.
 
-<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="Champ Expression de version du service dans les champs facultatifs d’une source de logs, affichant l’espace réservé par défaut ResourceAttributes['service.version']" size="lg" />
+![Champ Expression de version du service dans les champs facultatifs d’une source de logs, affichant l’espace réservé par défaut ResourceAttributes\['service.version'\]](/images/clickstack/dashboards/service-version-expression.webp)
 
 La valeur est une expression SQL, et non un nom d’attribut, ce qui couvre deux cas courants :
 
@@ -80,7 +78,7 @@ Dans le troisième cas, le service d’un marqueur n’a aucune ligne correspond
 
 Survolez l’étiquette d’un marqueur pour afficher toutes les versions à cet endroit, ainsi que le service qui les a publiées, leur numéro de version et l’heure.
 
-<Image img="/images/clickstack/dashboards/release-marker-tooltip.webp" alt="Infobulle au survol d’un marqueur de version indiquant le service frontend et la version 2.0.2, avec l’heure à laquelle cette version est apparue pour la première fois, sur un graphique représentant deux services" size="sm" />
+![Infobulle au survol d’un marqueur de version indiquant le service frontend et la version 2.0.2, avec l’heure à laquelle cette version est apparue pour la première fois, sur un graphique représentant deux services](/images/clickstack/dashboards/release-marker-tooltip.webp)
 
 La couleur associe un marqueur à sa série, mais la légende d’un graphique affiche au maximum quatre entrées avant de regrouper les autres sous « +N autres ». Il n’y a alors plus rien à l’écran permettant d’identifier la couleur. L’infobulle indique explicitement le nom du service et fonctionne donc quel que soit le nombre de séries affichées dans la tuile.
 

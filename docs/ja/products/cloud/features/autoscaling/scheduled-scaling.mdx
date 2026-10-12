@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <BetaBadge />
 
 ClickHouse Cloud サービスは CPU とメモリの使用率に基づいて自動的にスケーリングされますが、多くのワークロードには予測しやすいパターンがあります。たとえば、日次のインジェスト量の急増、夜間に実行されるバッチジョブ、週末に大きく減少するトラフィックなどです。こうしたユースケースでは、スケジュールスケーリングを使うことで、リアルタイムのメトリクスとは関係なく、サービスをいつスケールアップまたはスケールダウンするかを正確に定義できます。
@@ -26,9 +24,9 @@ ClickHouse Cloud サービスは CPU とメモリの使用率に基づいて自�
 
 スケジュールを設定するには、ClickHouse Cloudコンソールで対象のサービスに移動し、設定を開きます。そこで **Schedule Override** を選択し、新しいルールを追加します。
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="時間ベースのスケーリングルールが表示された、ClickHouse Cloudコンソールのスケーリングスケジュールのインターフェイス" border />
+![時間ベースのスケーリングルールが表示された、ClickHouse Cloudコンソールのスケーリングスケジュールのインターフェイス](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="ClickHouse Cloudコンソールでスケジュールスケーリングルールを設定する画面" border />
+![ClickHouse Cloudコンソールでスケジュールスケーリングルールを設定する画面](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
 
 各ルールには、次の項目が必要です。
 

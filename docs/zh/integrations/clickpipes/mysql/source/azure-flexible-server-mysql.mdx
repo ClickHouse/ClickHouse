@@ -7,8 +7,6 @@ keywords: ['azure', 'flexible server', 'mysql', 'clickpipes', 'binlog']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本分步指南介绍如何配置 Azure Database for MySQL 灵活服务器，以便使用 [MySQL ClickPipe](/zh/integrations/clickpipes/mysql/index) 将数据复制到 ClickHouse Cloud。该服务仅支持**一次性摄取**。有关 MySQL CDC (变更数据捕获) 的常见问题，请参阅 [MySQL 常见问题页面](/zh/integrations/clickpipes/mysql/faq)。
 
 <Warning>
@@ -59,7 +57,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     3. 在 **防火墙规则** 部分中，添加你的服务所在区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/networking/static-ips)。
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp" alt="为公共访问和 IP 允许列表配置网络" size="lg" border />
+       ![为公共访问和 IP 允许列表配置网络](/images/integrations/data-ingestion/clickpipes/mysql/source/azure-flexible-server-mysql/1_configure_network_security.webp)
 
     4. 点击 **保存**，保存网络安全配置更改。
   </Tab>

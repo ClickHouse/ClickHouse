@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Any Observability solution requires a means of collecting and exporting logs and traces. For this purpose, ClickHouse recommends [the OpenTelemetry (OTel) project](https://opentelemetry.io/).
 
 "OpenTelemetry is an Observability framework and toolkit designed to create and manage telemetry data such as traces, metrics, and logs."
@@ -52,7 +50,7 @@ The principal advantage of using a collector is it allows your services to offlo
 
 The Collector uses the terms [receiver](https://opentelemetry.io/docs/collector/configuration/#receivers), [processor](https://opentelemetry.io/docs/collector/configuration/#processors), and [exporter](https://opentelemetry.io/docs/collector/configuration/#exporters) for its three main processing stages. Receivers are used for data collection and can either be pull or push-based. Processors provide the ability to perform transformations and enrichment of messages. Exporters are responsible for sending the data to a downstream service. While this service can, in theory, be another collector, we assume all data is sent directly to ClickHouse for the initial discussion below.
 
-<Image img="/images/use-cases/observability/observability-3.webp" alt="Collecting logs" size="md"/>
+![Collecting logs](/images/use-cases/observability/observability-3.webp)
 
 We recommend users familiarize themselves with the full set of receivers, processors and exporters.
 
@@ -60,13 +58,13 @@ The collector provides two principal receivers for collecting logs:
 
 **Via OTLP** - In this case, logs are sent (pushed) directly to the collector from OpenTelemetry SDKs via the OTLP protocol. The [OpenTelemetry demo](https://opentelemetry.io/docs/demo/) employs this approach, with the OTLP exporters in each language assuming a local collector endpoint. The collector must be configured with the OTLP receiver in this case —see the above [demo for a configuration](https://github.com/ClickHouse/opentelemetry-demo/blob/main/src/otelcollector/otelcol-config.yml#L5-L12). The advantage of this approach is that log data will automatically contain Trace Ids, allowing users to later identify the traces for a specific log and vice versa.
 
-<Image img="/images/use-cases/observability/observability-4.webp" alt="Collecting logs via otlp" size="md"/>
+![Collecting logs via otlp](/images/use-cases/observability/observability-4.webp)
 
 This approach requires users to instrument their code with their [appropriate language SDK](https://opentelemetry.io/docs/languages/).
 
 - **Scraping via Filelog receiver** - This receiver tails files on disk and formulates log messages, sending these to ClickHouse. This receiver handles complex tasks such as detecting multi-line messages, handling log rollovers, checkpointing for robustness to restart, and extracting structure. This receiver is additionally able to tail Docker and Kubernetes container logs, deployable as a helm chart, [extracting the structure from these](https://opentelemetry.io/blog/2024/otel-collector-container-log-parser/) and enriching them with the pod details.
 
-<Image img="/images/use-cases/observability/observability-5.webp" alt="File log receiver" size="md"/>
+![File log receiver](/images/use-cases/observability/observability-5.webp)
 
 **Most deployments will use a combination of the above receivers. We recommend users read the [collector documentation](https://opentelemetry.io/docs/collector/) and familiarize themselves with the basic concepts, along with [the configuration structure](https://opentelemetry.io/docs/collector/configuration/) and [installation methods](https://opentelemetry.io/docs/collector/installation/).**
 
@@ -616,7 +614,7 @@ Typically, users are forced to send smaller batches when the throughput of a col
 
 If large batches can't be guaranteed, you can delegate batching to ClickHouse using [Asynchronous Inserts](/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). With asynchronous inserts, data is inserted into a buffer first and then written to the database storage later or asynchronously respectively.
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="Async inserts" size="md"/>
+![Async inserts](/images/use-cases/observability/observability-6.webp)
 
 With [enabled asynchronous inserts](/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), when ClickHouse ① receives an insert query, the query's data is ② immediately written into an in-memory buffer first. When ③ the next buffer flush takes place, the buffer's data is [sorted](/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) and written as a part to the database storage. Note, that the data isn't searchable by queries before being flushed to the database storage; the buffer flush is [configurable](/concepts/features/operations/insert/asyncinserts).
 
@@ -642,7 +640,7 @@ Several deployment architectures are possible when using the OTel collector with
 
 In an agent only architecture, users deploy the OTel collector as agents to the edge. These receive traces from local applications (e.g. as a sidecar container) and collect logs from servers and Kubernetes nodes. In this mode, agents send their data directly to ClickHouse.
 
-<Image img="/images/use-cases/observability/observability-7.webp" alt="Agents only" size="md"/>
+![Agents only](/images/use-cases/observability/observability-7.webp)
 
 This architecture is appropriate for small to medium-sized deployments. Its principal advantage is it doesn't require additional hardware and keeps the total resource footprint of the ClickHouse observability solution minimal, with a simple mapping between applications and collectors.
 
@@ -656,7 +654,7 @@ You should consider migrating to a Gateway-based architecture once the number of
 
 OTel collectors can be deployed as Gateway instances to address the above limitations. These provide a standalone service, typically per data center or per region. These receive events from applications (or other collectors in the agent role) via a single OTLP endpoint. Typically a set of gateway instances are deployed, with an out-of-the-box load balancer used to distribute the load amongst them.
 
-<Image img="/images/use-cases/observability/observability-8.webp" alt="Scaling with gateways" size="md"/>
+![Scaling with gateways](/images/use-cases/observability/observability-8.webp)
 
 The objective of this architecture is to offload computationally intensive processing from the agents, thereby minimizing their resource usage. These gateways can perform transformation tasks that would otherwise need to be done by agents. Furthermore, by aggregating events from many agents, the gateways can ensure large batches are sent to ClickHouse - allowing efficient insertion. These gateway collectors can easily be scaled as more agents are added and event throughput increases. An example gateway configuration, with an associated agent config consuming the example structured log file, is shown below. Note the use of OTLP for communication between the agent and gateway.
 
@@ -750,7 +748,7 @@ However, ClickHouse can handle inserting data very quickly - millions of rows pe
 
 However, if you require high delivery guarantees or the ability to replay data (potentially to multiple sources), Kafka can be a useful architectural addition.
 
-<Image img="/images/use-cases/observability/observability-9.webp" alt="Adding kafka" size="md"/>
+![Adding kafka](/images/use-cases/observability/observability-9.webp)
 
 In this case, OTel agents can be configured to send data to Kafka via the [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). Gateway instances, in turn, consume messages using the [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). We recommend the Confluent and OTel documentation for further details.
 

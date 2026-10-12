@@ -7,8 +7,6 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', 'static IP addresses', 'cloud endpoints', 'API', 'security', 'egress IPs', 'ingress IPs', 'firewall']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Static IPs API {#static-ips-api}
 
 If you need to fetch the list of static IPs, you can use the following ClickHouse Cloud API endpoint: [`https://api.clickhouse.cloud/static-ips.json`](https://api.clickhouse.cloud/static-ips.json). This API provides the endpoints for ClickHouse Cloud services, such as ingress/egress IPs and S3 endpoints per region and cloud.
@@ -50,8 +48,8 @@ For example, to allow access from a ClickHouse Cloud service hosted on AWS in th
 
 For example, an AWS RDS instance running in `us-east-2` that needs to connect to a ClickHouse cloud service should have the following Inbound security group rules:
 
-<Image img="/images/_snippets/aws-rds-mysql.webp" size="lg" alt="AWS Security group rules" border />
+![AWS Security group rules](/images/_snippets/aws-rds-mysql.webp)
 
 For the same ClickHouse Cloud service running in `us-east-2`, but this time connected to an MySQL in GCP, the `Authorized networks` should look like this:
 
-<Image img="/images/_snippets/gcp-authorized-network.webp" size="md" alt="GCP Authorized networks" border />
+![GCP Authorized networks](/images/_snippets/gcp-authorized-network.webp)

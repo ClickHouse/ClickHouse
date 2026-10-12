@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['Telflo', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -119,7 +118,7 @@ Telflo 提供：
 
     从 receivers 出发，经处理器连线至 exporter，每种信号对应一条管道。status 行会显示 **config valid**，或提示待修复的错误数量；**YAML** 选项卡则展示生成的配置。
 
-    <Image img="/images/clickstack/telflo/telflo-configuration.webp" alt="Telflo 编辑器中已配置 ClickHouse exporter 的 collector pipeline" size="lg" />
+    ![Telflo 编辑器中已配置 ClickHouse exporter 的 collector pipeline](/images/clickstack/telflo/telflo-configuration.webp)
 
     在正式上线之前，你可以让样本遥测数据流经该配置，查看最终的输出结果。请参阅 [Telflo 中的测试](https://docs.telflo.com/docs/testing/overview)。或者，你只需描述想要实现的目标，由 Telflo AI 助手 (点击工具栏中的 **AI** 按钮打开) 为你构建、校验并测试配置。你自己的 agent 也可以通过 [Telflo 命令行客户端](https://docs.telflo.com/docs/cli/)完成同样的操作。
   </Step>
@@ -136,7 +135,7 @@ Telflo 提供：
 
     如需滚动发布变更，请发布新的 version 并将其分配给该组；如需回滚，则分配此前部署过的 version。
 
-    <Image img="/images/clickstack/telflo/telflo-fleet.webp" alt="滚动发布完成后所有 collector 均已同步的 Telflo fleet" size="lg" />
+    ![滚动发布完成后所有 collector 均已同步的 Telflo fleet](/images/clickstack/telflo/telflo-fleet.webp)
   </Step>
 
   <Step title="验证遥测数据" id="verify-telemetry">

@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 This document describes how to control the sync of a MongoDB ClickPipe when the ClickPipe is in **CDC (Running) mode**.
 
 ## Overview {#overview}
@@ -39,18 +37,18 @@ A safe maximum is 10 million.
 You can set the sync interval and pull batch size when you create a ClickPipe or edit an existing one.
 When creating a ClickPipe it will be seen in the second step of the creation wizard, as shown below:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="Create sync settings" size="md"/>
+![Create sync settings](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
 
 When editing an existing ClickPipe, you can head over to the **Settings** tab of the pipe, pause the pipe and then click on **Configure** here:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="Edit sync button" size="md"/>
+![Edit sync button](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
 
 This will open a flyout with the sync settings, where you can change the sync interval and pull batch size:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="Edit sync settings" size="md"/>
+![Edit sync settings](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
 
 ### Monitoring sync control behaviour {#monitoring}
 
 You can see how long each batch takes in the **CDC Syncs** table in the **Metrics** tab of the ClickPipe. Note that the duration here includes push time and also if there are no rows incoming, the ClickPipe waits and the wait time is also included in the duration.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="CDC Syncs table" size="md"/>
+![CDC Syncs table](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)

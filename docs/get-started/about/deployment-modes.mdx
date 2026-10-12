@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ClickHouse is a versatile database system that can be deployed in several different ways depending on your needs. At its core, all deployment options **use the same powerful ClickHouse database engine** – what differs is how you interact with it and where it runs.
 
 Whether you're running large-scale analytics in production, doing local data analysis, or building applications, there's a deployment option designed for your use case. The consistency of the underlying engine means you get the same high performance and SQL compatibility across all deployment modes.
@@ -31,7 +29,7 @@ Each deployment mode has its own strengths and ideal use cases, which we'll expl
 
 ClickHouse Server represents the traditional client/server architecture and is ideal for production deployments. This deployment mode provides the full OLAP database capabilities with high throughput and low latency queries that ClickHouse is known for.
 
-<Image img="/images/deployment-modes/ch-server.webp" alt="ClickHouse Server" size="sm"/>
+![ClickHouse Server](/images/deployment-modes/ch-server.webp)
 
 <br/>
 
@@ -43,7 +41,7 @@ This deployment mode is the go-to choice for production environments where relia
 
 [ClickHouse Cloud](/products/cloud/getting-started/intro) is a fully managed version of ClickHouse that removes the operational overhead of running your own deployment. While it maintains all the core capabilities of ClickHouse Server, it enhances the experience with additional features designed to streamline development and operations.
 
-<Image img="/images/deployment-modes/ch-cloud.webp" alt="ClickHouse Cloud" size="sm"/>
+![ClickHouse Cloud](/images/deployment-modes/ch-cloud.webp)
 
 A key advantage of ClickHouse Cloud is its integrated tooling. [ClickPipes](/get-started/setup/cloud#clickpipes) provides a robust data ingestion framework, allowing you to easily connect and stream data from various sources without managing complex ETL pipelines. The platform also offers a dedicated [querying API](/products/cloud/guides/sql-console/query-endpoints), making it significantly easier to build applications.
 
@@ -75,7 +73,7 @@ clickhousectl local client
 
 [clickhouse-local](/concepts/features/tools-and-utilities/clickhouse-local) is a powerful command-line tool that provides the complete functionality of ClickHouse in a standalone executable. It's essentially the same database as ClickHouse Server, but packaged in a way that lets you harness all of ClickHouse's capabilities directly from the command line without running a server instance.
 
-<Image img="/images/deployment-modes/ch-local.webp" alt="clickhouse-local" size="sm"/>
+![clickhouse-local](/images/deployment-modes/ch-local.webp)
 
 This tool excels at ad-hoc data analysis, particularly when working with local files or data stored in cloud storage services. You can directly query files in various formats (CSV, JSON, Parquet, etc.) using ClickHouse's SQL dialect, making it an excellent choice for quick data exploration or one-off analysis tasks.
 
@@ -87,7 +85,7 @@ The combination of remote table functions and access to the local file system ma
 
 [chDB](/chdb/index) is ClickHouse embedded as an in-process database engine, with Python being the primary implementation, though it's also available for Go, Rust, NodeJS, and Bun. This deployment option brings ClickHouse's powerful OLAP capabilities directly into your application's process, eliminating the need for a separate database installation.
 
-<Image img="/images/deployment-modes/chdb.webp" alt="chDB - Embedded ClickHouse" size="sm"/>
+![chDB - Embedded ClickHouse](/images/deployment-modes/chdb.webp)
 
 chDB provides seamless integration with your application's ecosystem. In Python, for example, it's optimized to work efficiently with common data science tools like Pandas and Arrow, minimizing data copying overhead through Python memoryview. This makes it particularly valuable for data scientists and analysts who want to leverage ClickHouse's query performance within their existing workflows.
 

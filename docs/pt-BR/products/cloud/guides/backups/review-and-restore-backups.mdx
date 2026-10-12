@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Este guia aborda como os backups funcionam no ClickHouse Cloud, quais opções você tem para configurar backups para o seu serviço e como restaurar a partir de um backup.
 
 **Pré-requisitos**
@@ -21,7 +19,7 @@ Este guia aborda como os backups funcionam no ClickHouse Cloud, quais opções v
 
 Os backups são executados de acordo com o agendamento configurado para seu serviço, seja o agendamento diário padrão ou um [agendamento personalizado](/pt-BR/products/cloud/guides/backups/configurable-backups) escolhido por você. Todos os backups disponíveis podem ser visualizados na aba **Backups** do serviço. Nela, você pode ver o status, a duração e o tamanho do backup. Você também pode restaurar um backup específico pela coluna **Actions**.
 
-<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="Lista de status de backups no ClickHouse Cloud" border />
+![Lista de status de backups no ClickHouse Cloud](/images/cloud/manage/backup-status-list.webp)
 
 ## Entendendo o custo dos backups {#understanding-backup-cost}
 
@@ -29,7 +27,7 @@ A menos que seja configurado um agendamento diferente, é feito backup dos servi
 
 Para entender o custo dos backups, você pode ver o custo por serviço na tela de uso (como mostrado abaixo). Depois de executar os backups por alguns dias com um agendamento personalizado, você poderá ter uma ideia do custo e extrapolar para chegar ao custo mensal dos backups.
 
-<Image img="/images/cloud/manage/backup-usage.webp" size="md" alt="Gráfico de uso de backups no ClickHouse Cloud" border />
+![Gráfico de uso de backups no ClickHouse Cloud](/images/cloud/manage/backup-usage.webp)
 
 Para estimar o custo total dos seus backups, é necessário definir um agendamento. Antes de definir um agendamento, você pode usar a [calculadora de preços](https://clickhouse.com/pricing) para obter uma estimativa do custo mensal, fornecendo os seguintes dados:
 
@@ -48,11 +46,11 @@ Os backups são restaurados em um novo serviço do ClickHouse Cloud, e não no s
 
 Após clicar no ícone de backup **Restore**, você pode especificar o nome do novo serviço que será criado e, em seguida, restaurar esse backup:
 
-<Image img="/images/cloud/manage/backup-restore.webp" size="md" alt="Restaurando um backup no ClickHouse Cloud" />
+![Restaurando um backup no ClickHouse Cloud](/images/cloud/manage/backup-restore.webp)
 
 O novo serviço aparecerá na lista de serviços como `Provisioning` até ficar pronto:
 
-<Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="Provisionamento do serviço em andamento" border />
+![Provisionamento do serviço em andamento](/images/cloud/manage/backup-service-provisioning.webp)
 
 <div id="working-with-your-restored-service">
   ## Trabalhando com seu serviço restaurado

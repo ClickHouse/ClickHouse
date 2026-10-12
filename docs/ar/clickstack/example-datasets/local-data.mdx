@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'بيانات توضيحية', 'مجموعة بيانات عيّنة', 'السجلات', 'الرصد']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يتيح لك هذا الدليل التمهيدي جمع السجلات والمقاييس المحلية من نظامك وإرسالها إلى ClickStack لعرضها وتحليلها.
 
 **لا يعمل هذا المثال إلا على أنظمة OSX وLinux**
@@ -123,7 +121,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       <Step title="اختر خدمتك" id="select-your-service">
         اختر الخدمة التي تتضمن Managed ClickStack من الصفحة الرئيسية لـ ClickHouse Cloud.
 
-        <Image img="/images/clickstack/select_service.webp" alt="اختر الخدمة" size="lg" />
+        ![اختر الخدمة](/images/clickstack/select_service.webp)
       </Step>
 
       <Step title="استكشاف سجلات النظام" id="navigate-to-the-hyperdx-ui">
@@ -131,7 +129,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
         يُفترض أن تكون واجهة Search معبأة بسجلات النظام المحلية. وسِّع عوامل التصفية لتحديد `system.log`:
 
-        <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="سجلات HyperDX المحلية" size="lg" />
+        ![سجلات HyperDX المحلية](/images/use-cases/observability/hyperdx-20.webp)
       </Step>
 
       <Step title="استكشاف مقاييس النظام" id="explore-system-metrics">
@@ -143,15 +141,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
         اضغط على زر `Run` لعرض استخدام الذاكرة بمرور الوقت.
 
-        <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="الذاكرة بمرور الوقت" size="lg" />
+        ![الذاكرة بمرور الوقت](/images/use-cases/observability/hyperdx-21.webp)
 
         لاحظ أن القيمة تُعرَض كنسبة مئوية `%` بصيغة عدد عشري. لعرضها بشكل أوضح، حدِّد `Set number format`.
 
-        <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="تنسيق الأرقام" size="lg" />
+        ![تنسيق الأرقام](/images/use-cases/observability/hyperdx-22.webp)
 
         من القائمة التالية، يمكنك اختيار `Percentage` من القائمة المنسدلة `Output format` قبل النقر على `Apply`.
 
-        <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="النسبة المئوية للذاكرة بمرور الوقت" size="lg" />
+        ![النسبة المئوية للذاكرة بمرور الوقت](/images/use-cases/observability/hyperdx-23.webp)
       </Step>
     </Steps>
   </Tab>
@@ -268,7 +266,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     ينبغي أن تكون مصادر البيانات قد أُنشئت مسبقاً. يجب أن تكون واجهة Search مملوءةً بسجلات النظام المحلية. وسّع عوامل التصفية لتحديد `system.log`:
 
-    <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="سجلات HyperDX المحلية" size="lg" />
+    ![سجلات HyperDX المحلية](/images/use-cases/observability/hyperdx-20.webp)
 
     ### استكشاف مقاييس النظام
 
@@ -280,14 +278,14 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     اضغط على زر `Run` لعرض استخدام الذاكرة بمرور الوقت.
 
-    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="الذاكرة بمرور الوقت" size="lg" />
+    ![الذاكرة بمرور الوقت](/images/use-cases/observability/hyperdx-21.webp)
 
     لاحظ أن القيمة تُعرَض كنسبة مئوية `%` بصيغة عدد عشري. لعرضها بشكل أوضح، حدِّد `Set number format`.
 
-    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="تنسيق الأرقام" size="lg" />
+    ![تنسيق الأرقام](/images/use-cases/observability/hyperdx-22.webp)
 
     من القائمة التالية، يمكنك اختيار `Percentage` من القائمة المنسدلة `Output format` قبل النقر على `Apply`.
 
-    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="النسبة المئوية للذاكرة بمرور الوقت" size="lg" />
+    ![النسبة المئوية للذاكرة بمرور الوقت](/images/use-cases/observability/hyperdx-23.webp)
   </Tab>
 </Tabs>

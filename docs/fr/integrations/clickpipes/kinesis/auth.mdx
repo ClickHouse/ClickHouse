@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Cet article montre comment les clients de ClickPipes peuvent tirer parti du contrôle d’accès basé sur les rôles pour s’authentifier auprès d’Amazon Kinesis et accéder à leurs flux de données en toute sécurité.
 
 <div id="prerequisite">
@@ -29,7 +27,7 @@ Pour suivre ce guide, vous aurez besoin des éléments suivants :
 
 Avant d&#39;aborder la configuration de l&#39;accès sécurisé à Kinesis, il est important de comprendre le mécanisme. Voici un aperçu de la façon dont ClickPipes peut accéder aux flux de données Amazon Kinesis en assumant un rôle au sein des comptes AWS des clients.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/securekinesis.jpg" alt="Kinesis sécurisé" size="lg" border />
+![Kinesis sécurisé](/images/integrations/data-ingestion/clickpipes/securekinesis.jpg)
 
 Grâce à cette approche, les clients peuvent gérer en un seul endroit l&#39;ensemble des accès à leurs flux de données Kinesis (via la stratégie IAM du rôle assumé), sans avoir à modifier individuellement la stratégie d&#39;accès de chaque flux.
 
@@ -47,7 +45,7 @@ Grâce à cette approche, les clients peuvent gérer en un seul endroit l&#39;en
 * 4. Faites défiler la page jusqu’à la section **Network security information**, en bas de la page
 * 5. Copiez la valeur **Service role ID (IAM)** associée au service, comme indiqué ci-dessous.
 
-<Image img="/images/cloud/security/secures3_arn.webp" alt="ARN S3 sécurisé" size="lg" border />
+![ARN S3 sécurisé](/images/cloud/security/secures3_arn.webp)
 
 <div id="setting-up-iam-assume-role">
   ### Configuration pour assumer le rôle IAM

@@ -8,8 +8,6 @@ doc_type: 'guide'
 keywords: ['環境センサー', 'Sensor.Community', '大気質データ', '環境データ', 'はじめに']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 [Sensor.Community](https://sensor.community/en/) は、オープンな環境データを生み出す、コントリビューター主導のグローバルなセンサーネットワークです。データは世界中のセンサーから収集されています。誰でもセンサーを購入し、好きな場所に設置できます。データをダウンロードするための API は [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs) で公開されており、データは [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/) のもとで自由に利用できます。
 
 <Warning>
@@ -158,7 +156,7 @@ ORDER BY date ASC;
 
 SQL Consoleでチャートを作成し、結果を可視化できます：
 
-<Image img="/images/getting-started/example-datasets/sensors_01.webp" size="md" alt="1日あたりのイベント数" />
+![1日あたりのイベント数](/images/getting-started/example-datasets/sensors_01.webp)
 
 6. このクエリは、非常に暑く湿度の高い日数をカウントします。
 
@@ -173,4 +171,4 @@ ORDER BY day ASC;
 
 結果の可視化を以下に示します：
 
-<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="蒸し暑い日" />
+![蒸し暑い日](/images/getting-started/example-datasets/sensors_02.webp)

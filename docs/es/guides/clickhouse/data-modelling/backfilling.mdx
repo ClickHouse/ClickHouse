@@ -6,8 +6,6 @@ keywords: ['vistas materializadas', 'carga histórica', 'inserción de datos', '
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Tanto si está empezando con ClickHouse como si es responsable de una implementación existente, inevitablemente tendrá que rellenar tablas con datos históricos. En algunos casos, esto es relativamente sencillo, pero puede complicarse cuando también es necesario poblar vistas materializadas. Esta guía documenta algunos procesos para esta tarea que puede aplicar a su caso de uso.
 
 <Note>
@@ -478,7 +476,7 @@ El [motor de tabla Null](/es/reference/engines/table-engines/special/null) propo
 
 Es importante destacar que cualquier vista materializada adjunta al motor de tabla sigue ejecutándose sobre bloques de datos a medida que se insertan, enviando los resultados a una tabla de destino. Estos bloques tienen un tamaño configurable. Aunque los bloques más grandes pueden ser más eficientes (y procesarse más rápido), consumen más recursos (principalmente memoria). El uso de este motor de tabla significa que podemos crear nuestra vista materializada de forma incremental, es decir, un bloque cada vez, evitando así tener que mantener toda la agregación en memoria.
 
-<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="Desnormalización en ClickHouse" />
+![Desnormalización en ClickHouse](/images/data-modeling/null_table_mv.webp)
 
 <br />
 

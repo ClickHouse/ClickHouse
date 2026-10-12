@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 관측성을 위한 ClickHouse 배포에서는 예외 없이 관리가 필요한 대규모 데이터셋을 다루게 됩니다. ClickHouse는 데이터 관리를 지원하는 여러 기능을 제공합니다.
 
 <Tip>
@@ -28,7 +26,7 @@ ClickHouse의 파티셔닝은 컬럼 또는 SQL 표현식에 따라 디스크에
 
 파티셔닝은 테이블(table)을 처음 정의할 때 `PARTITION BY` 절을 통해 지정합니다. 이 절에는 하나 이상의 컬럼에 대한 SQL 표현식을 포함할 수 있으며, 이 표현식의 결과에 따라 각 행이 어느 파티션으로 들어갈지가 결정됩니다.
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="파티션" size="md" />
+![파티션](/images/use-cases/observability/observability-14.webp)
 
 데이터 파트는 디스크에서 각 파티션과 논리적으로 연결되며(공통 폴더 이름 접두사를 통해), 각 파티션별로 분리해서 쿼리할 수 있습니다. 아래 예시에서 기본 `otel_logs` 스키마(schema)는 `toDate(Timestamp)` 표현식을 사용해 일 단위로 파티셔닝됩니다. 행이 ClickHouse에 삽입되면 이 표현식이 각 행에 대해 평가되며, 해당 파티션이 이미 있으면 그 파티션으로 라우팅됩니다(해당 날짜의 첫 번째 행이면 파티션이 생성됩니다).
 

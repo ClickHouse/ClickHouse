@@ -9,7 +9,6 @@ doc_type: 'guide'
 keywords: ['optimización de consultas', 'cuellos de botella en consultas', 'rendimiento', 'pruebas de rendimiento']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/es/_nyc_taxi_example_dataset.mdx';
 
 La optimización de consultas resulta más sencilla si se modifica una parte de la consulta a la vez y se comparan los resultados con una referencia estable. Esta guía explica cómo simplificar progresivamente una consulta y usar las diferencias entre ejecuciones para identificar qué operaciones contribuyen más a su duración. A continuación, puede validar el posible cuello de botella antes de elegir una optimización.
@@ -71,7 +70,7 @@ SET optimize_use_implicit_projections = 0;
 
 El flujo de trabajo combina ejecuciones controladas de consultas con mediciones del registro de consultas:
 
-<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Flujo de trabajo para identificar consultas candidatas en registros de consultas y probar cambios de forma aislada" />
+![Flujo de trabajo para identificar consultas candidatas en registros de consultas y probar cambios de forma aislada](/images/guides/best-practices/query_optimization_diagram_1.webp)
 
 Recopile las mediciones de cada ejecución de la siguiente manera:
 

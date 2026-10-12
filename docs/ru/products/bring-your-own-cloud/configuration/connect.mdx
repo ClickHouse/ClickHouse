@@ -7,8 +7,6 @@ description: 'Подключайтесь к сервисам BYOC ClickHouse ч�
 doc_type: 'справочник'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 На этой странице описаны различные способы подключения к вашим сервисам ClickHouse в BYOC. В зависимости от ваших требований к безопасности и сетевой конфигурации вы можете выбрать публичные балансировщики нагрузки, приватные балансировщики нагрузки или частные конечные точки (AWS PrivateLink, GCP Private Service Connect или Azure Private Link).
 
 <div id="connection-via">
@@ -27,7 +25,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В раскрывающемся списке показаны только пути, включенные для вашей инфраструктуры, и список обновляется каждый раз при открытии диалога — недавно включенный приватный балансировщик нагрузки или конечная точка PrivateLink появится при следующем открытии **Connect**, без задержки распространения. Если доступен только один путь, раскрывающийся список отображается неактивным, и эта конечная точка выбирается автоматически.
 
-<Image img="/images/cloud/reference/byoc-connect-via.png" size="lg" alt="Диалог Connect с раскрытым списком Connection via, в котором показаны пути публичный балансировщик нагрузки, приватный балансировщик нагрузки и PrivateLink" background="black" />
+![Диалог Connect с раскрытым списком Connection via, в котором показаны пути публичный балансировщик нагрузки, приватный балансировщик нагрузки и PrivateLink](/images/cloud/reference/byoc-connect-via.png)
 
 <div id="public-load-balancer">
   ## Публичный балансировщик нагрузки
@@ -51,7 +49,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 1. **Получите конечную точку сервиса** в консоли ClickHouse Cloud. Конечная точка отображается в разделе &quot;Connect&quot; вашего сервиса.
 
-<Image img="/images/cloud/reference/byoc-connect-1.webp" size="lg" alt="Подключение BYOC" background="black" />
+![Подключение BYOC](/images/cloud/reference/byoc-connect-1.webp)
 
 Например:
 

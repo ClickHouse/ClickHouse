@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Node.js', 'تتبعات', 'OTEL', 'ClickStack', 'التتبّع الموزع']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -47,7 +45,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     3. انتقل إلى **Team Settings → API Keys**
     4. انسخ **Ingestion API Key** الخاص بك
 
-    <Image img="/images/clickstack/api-key.webp" alt="مفتاح واجهة برمجة تطبيقات لـ ClickStack" />
+    ![مفتاح واجهة برمجة تطبيقات لـ ClickStack](/images/clickstack/api-key.webp)
   </Step>
 
   <Step title="شغّل تطبيقك" id="run-application">
@@ -76,11 +74,11 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
   <Step title="تحقّق من التتبعات في HyperDX" id="verify-traces">
     بعد اكتمال التهيئة، سجّل الدخول إلى HyperDX وتحقّق من وصول التتبعات. ينبغي أن ترى شيئًا مشابهًا لما يلي. إذا لم تظهر لك التتبعات، فجرّب تعديل النطاق الزمني:
 
-    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="واجهة البحث عن التتبعات" />
+    ![واجهة البحث عن التتبعات](/images/clickstack/nodejs/traces-search-view.webp)
 
     انقر على أي تتبع لعرض التفاصيل، بما في ذلك spans والتوقيت والسمات:
 
-    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="عرض تتبع فردي" />
+    ![عرض تتبع فردي](/images/clickstack/nodejs/trace-view.webp)
   </Step>
 </Steps>
 
@@ -119,7 +117,7 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     3. انتقل إلى **Team Settings → API Keys**
     4. انسخ **Ingestion API Key** الخاص بك
 
-    <Image img="/images/clickstack/api-key.webp" alt="مفتاح واجهة برمجة تطبيقات لـ ClickStack" />
+    ![مفتاح واجهة برمجة تطبيقات لـ ClickStack](/images/clickstack/api-key.webp)
 
     عيّن مفتاح واجهة برمجة تطبيقات الخاص بك كمتغير بيئة:
 
@@ -144,9 +142,9 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     2. انتقل إلى عرض **Search** وعيّن المصدر إلى **Traces**
     3. عيّن النطاق الزمني إلى **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
 
-    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="عرض البحث للتتبعات" />
+    ![عرض البحث للتتبعات](/images/clickstack/nodejs/traces-search-view.webp)
 
-    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="عرض تتبع فردي" />
+    ![عرض تتبع فردي](/images/clickstack/nodejs/trace-view.webp)
 
     <Info>
       **عرض المنطقة الزمنية**
@@ -171,15 +169,15 @@ import { TrackedLink } from "/snippets/ar/components/GalaxyTrackedLink/GalaxyTra
     1. افتح HyperDX وانتقل إلى قسم **لوحات المعلومات**
     2. انقر على **استيراد لوحة معلومات** في الزاوية العلوية اليمنى (ضمن قائمة النقاط الثلاث)
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="استيراد لوحة معلومات" />
+    ![استيراد لوحة معلومات](/images/clickstack/import-dashboard.webp)
 
     3. ارفع ملف `nodejs-traces-dashboard.json` وانقر على **إنهاء الاستيراد**
 
-    <Image img="/images/clickstack/nodejs/finish-import.webp" alt="إنهاء الاستيراد" />
+    ![إنهاء الاستيراد](/images/clickstack/nodejs/finish-import.webp)
   </Step>
 
   <Step title="ستُنشأ لوحة المعلومات مع تهيئة جميع التصورات مسبقًا" id="created-dashboard">
-    <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="لوحة معلومات نموذجية" />
+    ![لوحة معلومات نموذجية](/images/clickstack/nodejs/example-traces-dashboard.webp)
 
     <Note>
       بالنسبة إلى مجموعة البيانات التجريبية، اضبط النطاق الزمني على **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (عدّله وفقًا لمنطقتك الزمنية المحلية). لن يكون للنطاق الزمني في لوحة المعلومات المستوردة أي قيمة محددة افتراضيًا.

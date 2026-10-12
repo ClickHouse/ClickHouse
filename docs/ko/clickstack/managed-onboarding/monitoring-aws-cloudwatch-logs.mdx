@@ -9,8 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 이 가이드에서는 OpenTelemetry [`awscloudwatch` 수신기](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/awscloudwatchreceiver)를 사용해 AWS CloudWatch Logs를 Managed ClickStack으로 전달한 뒤, ClickStack UI에서 확인하는 방법을 안내합니다.
@@ -257,11 +255,11 @@ ClickStack collector는 **Docker 컨테이너**로 배포할 수도 있고([Sett
   <Step title="ClickStack UI에서 확인" id="confirm-in-ui">
     [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 열고 왼쪽 메뉴에서 **ClickStack**을 선택합니다.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="ClickStack 실행" border />
+    ![ClickStack 실행](/images/use-cases/observability/clickstack-cloud-v2.webp)
 
     **검색** 보기에서 소스를 `Logs`로 전환하고 시간 범위를 **최근 15분**으로 설정합니다. CloudWatch 이벤트는 두어 번의 폴링 주기 내에 표시됩니다.
 
-    <Image img="/images/clickstack/cloudwatch/log-search-view-clickstack.webp" size="lg" alt="CloudWatch 로그가 표시된 ClickStack 검색 보기" />
+    ![CloudWatch 로그가 표시된 ClickStack 검색 보기](/images/clickstack/cloudwatch/log-search-view-clickstack.webp)
 
     각 이벤트에는 원본 로그 그룹과 스트림이 리소스 속성으로 포함됩니다:
 
@@ -272,11 +270,11 @@ ClickStack collector는 **Docker 컨테이너**로 배포할 수도 있고([Sett
 
     다음 속성이 포함되도록 검색을 `Timestamp, SeverityText as level, ResourceAttributes['aws.region'], ResourceAttributes['cloudwatch.log.group.name'], ResourceAttributes['cloudwatch.log.stream'], Body`로 수정합니다:
 
-    <Image img="/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp" size="lg" alt="CloudWatch 로그와 속성이 표시된 ClickStack 검색 보기" />
+    ![CloudWatch 로그와 속성이 표시된 ClickStack 검색 보기](/images/clickstack/cloudwatch/log-search-attributes-clickstack.webp)
 
     메타데이터를 확인하려면 로그 항목을 선택합니다:
 
-    <Image img="/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp" size="lg" alt="로그 상세 보기의 CloudWatch 속성" />
+    ![로그 상세 보기의 CloudWatch 속성](/images/clickstack/cloudwatch/error-log-column-values-clickstack.webp)
 
     아무것도 표시되지 않으면 다음을 확인합니다:
 
@@ -291,11 +289,11 @@ ClickStack collector는 **Docker 컨테이너**로 배포할 수도 있고([Sett
 
     <TrackedLink href={'https://clickhouse-docs-assets.s3.us-east-1.amazonaws.com/examples/cloudwatch-logs-dashboard.json'} download="cloudwatch-logs-dashboard.json" eventName="docs.cloudwatch_logs_monitoring.dashboard_download">`cloudwatch-logs-dashboard.json` 다운로드</TrackedLink>한 다음 ClickStack UI에서 **Dashboards**로 이동해 **Import**를 클릭합니다.
 
-    <Image img="/images/clickstack/clickstack-import-dashboard.webp" size="lg" alt="대시보드 가져오기 버튼" />
+    ![대시보드 가져오기 버튼](/images/clickstack/clickstack-import-dashboard.webp)
 
     JSON 파일을 업로드하고 **Finish Import**를 클릭합니다.
 
-    <Image img="/images/clickstack/cloudwatch/finish-clickstack-import.webp" size="lg" alt="가져오기 완료 대화 상자" />
+    ![가져오기 완료 대화 상자](/images/clickstack/cloudwatch/finish-clickstack-import.webp)
   </Step>
 
   <Step title="추가 참고 자료" id="further-reading">

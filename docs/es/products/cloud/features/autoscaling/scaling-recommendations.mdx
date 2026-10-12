@@ -7,8 +7,6 @@ title: 'Recomendaciones de escalado'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="introduction">
   ## Introducción
 </div>
@@ -96,7 +94,7 @@ En lugar de usar una sola ventana, ClickHouse Cloud utiliza dos ventanas de retr
 Cada ventana genera de forma independiente una recomendación a partir del análisis de memoria y CPU.
 Luego, el sistema combina estas recomendaciones según la dirección de escalado que sugiera cada ventana, como se muestra en la figura siguiente:
 
-<Image img="/images/cloud/features/autoscaling/two-window-recommender.webp" size="lg" alt="Lógica de combinación del recomendador de dos ventanas" />
+![Lógica de combinación del recomendador de dos ventanas](/images/cloud/features/autoscaling/two-window-recommender.webp)
 
 Para profundizar en las decisiones de diseño del recomendador, consulta [&quot;Autoescalado más inteligente para ClickHouse: el enfoque de dos ventanas
 &quot;](https://clickhouse.com/blog/smarter-auto-scaling#the-two-window-solution)

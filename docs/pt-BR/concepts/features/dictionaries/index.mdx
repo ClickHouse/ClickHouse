@@ -6,8 +6,6 @@ description: 'Um dicionário fornece uma representação de dados em chave-valor
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Um dicionário no ClickHouse fornece uma representação em memória de [chave-valor](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) de dados de várias [fontes internas e externas](/pt-BR/reference/statements/create/dictionary/sources/overview#dictionary-sources), otimizada para consultas de busca com latência extremamente baixa.
 
 Os dicionários são úteis para:
@@ -15,7 +13,7 @@ Os dicionários são úteis para:
 * Melhorar o desempenho das consultas, especialmente quando usados com `JOIN`s
 * Enriquecer os dados ingeridos em tempo real sem desacelerar o processo de ingestão
 
-<Image img="/images/dictionary/dictionary-use-cases.webp" size="lg" alt="Casos de uso do Dicionário no ClickHouse" />
+![Casos de uso do Dicionário no ClickHouse](/images/dictionary/dictionary-use-cases.webp)
 
 <div id="speeding-up-joins-using-a-dictionary">
   ## Acelerando junções usando um Dicionário
@@ -23,7 +21,7 @@ Os dicionários são úteis para:
 
 Dicionários podem ser usados para acelerar um tipo específico de `JOIN`: o tipo [`LEFT ANY`](/pt-BR/reference/statements/select/join#supported-types-of-join), em que a chave da junção precisa corresponder ao atributo-chave do armazenamento subjacente de chave-valor.
 
-<Image img="/images/dictionary/dictionary-left-any-join.webp" size="sm" alt="Usando Dicionário com LEFT ANY JOIN" />
+![Usando Dicionário com LEFT ANY JOIN](/images/dictionary/dictionary-left-any-join.webp)
 
 Se esse for o caso, o ClickHouse pode aproveitar o dicionário para executar um [Direct Join](https://clickhouse.com/blog/clickhouse-fully-supports-joins-direct-join-part4#direct-join). Esse é o algoritmo de junção mais rápido do ClickHouse e se aplica quando o [motor de tabela](/pt-BR/reference/engines/table-engines/index) da tabela do lado direito oferece suporte a solicitações de chave-valor de baixa latência. O ClickHouse tem três motores de tabela que oferecem isso: [Join](/pt-BR/reference/engines/table-engines/special/join) (que é basicamente uma tabela hash pré-calculada), [EmbeddedRocksDB](/pt-BR/reference/engines/table-engines/integrations/embedded-rocksdb) e [Dicionário](/pt-BR/reference/engines/table-engines/special/dictionary). Vamos descrever a abordagem baseada em dicionário, mas o funcionamento é o mesmo para os três motores.
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 sidebarTitle: 'Travailler avec le moteur ReplacingMergeTree'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Alors que les bases de données transactionnelles sont optimisées pour les charges de travail transactionnelles de mise à jour et de suppression, les bases de données OLAP offrent des garanties plus limitées pour ce type d’opérations. Elles privilégient plutôt des données immuables, insérées par lots, afin de permettre des requêtes analytiques nettement plus rapides. Bien que ClickHouse propose des opérations de mise à jour via des mutations, ainsi qu’un mécanisme léger pour supprimer des lignes, sa structure orientée colonnes implique que ces opérations doivent être planifiées avec soin, comme décrit ci-dessus. Ces opérations sont gérées de manière asynchrone, traitées par un seul thread et nécessitent (dans le cas des mises à jour) que les données soient réécrites sur disque. Elles ne doivent donc pas être utilisées pour un grand nombre de petites modifications.
 Afin de traiter un flux de lignes de mise à jour et de suppression tout en évitant les schémas d’utilisation ci-dessus, nous pouvons utiliser le moteur de table ReplacingMergeTree de ClickHouse.
 
@@ -32,7 +30,7 @@ Pendant ce processus, voici ce qui se produit lors de la fusion des parts :
 
 <br />
 
-<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="Processus ReplacingMergeTree" />
+![Processus ReplacingMergeTree](/images/migrations/postgres-replacingmergetree.webp)
 
 <br />
 

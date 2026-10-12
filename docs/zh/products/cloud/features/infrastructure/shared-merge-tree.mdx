@@ -7,8 +7,6 @@ description: '介绍 SharedMergeTree 表引擎'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 SharedMergeTree 表引擎家族是 ReplicatedMergeTree 引擎的云原生替代方案，经过专门优化，可运行在共享存储之上 (例如 Amazon S3、Google Cloud Storage、MinIO、Azure Blob 存储) 。每一种具体的 MergeTree 引擎类型都对应一个 SharedMergeTree 版本，例如，SharedReplacingMergeTree 对应替代 ReplicatedReplacingMergeTree。
 
 SharedMergeTree 表引擎家族为 ClickHouse Cloud 提供底层支持。对于最终用户而言，要从基于 ReplicatedMergeTree 的引擎切换到 SharedMergeTree 引擎家族，无需做任何更改。它还具备以下额外优势：
@@ -21,11 +19,11 @@ SharedMergeTree 表引擎家族为 ClickHouse Cloud 提供底层支持。对于�
 
 SharedMergeTree 带来的一项重大改进是，相比 ReplicatedMergeTree，它实现了更彻底的计算与存储分离。下图展示了 ReplicatedMergeTree 如何分离计算与存储：
 
-<Image img="/images/cloud/reference/shared-merge-tree-1.png" alt="ReplicatedMergeTree 示意图" size="md" />
+![ReplicatedMergeTree 示意图](/images/cloud/reference/shared-merge-tree-1.png)
 
 如下图所示，尽管 ReplicatedMergeTree 中的数据存储在对象存储中，但元数据仍然保存在每个 clickhouse-server 上。这意味着，每次执行复制操作时，元数据也需要在所有副本上进行复制。
 
-<Image img="/images/cloud/reference/shared-merge-tree-2.png" alt="带元数据的 ReplicatedMergeTree 示意图" size="md" />
+![带元数据的 ReplicatedMergeTree 示意图](/images/cloud/reference/shared-merge-tree-2.png)
 
 与 ReplicatedMergeTree 不同，SharedMergeTree 不要求各副本之间彼此通信。相反，所有通信都通过共享存储和 clickhouse-keeper 完成。SharedMergeTree 实现了异步、无 leader 的复制，并使用 clickhouse-keeper 进行协调和元数据存储。这意味着，随着 service 扩容或缩容，元数据无需一并复制。因此，复制、变更、合并 和扩容操作都能更快完成。SharedMergeTree 允许每张表拥有数百个副本，从而可以在不使用 shards 的情况下实现动态扩展。ClickHouse Cloud 采用分布式查询执行方式，以便为单个查询利用更多计算资源。
 

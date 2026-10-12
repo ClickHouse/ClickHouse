@@ -10,8 +10,6 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -72,7 +70,7 @@ Azure Synapse では、[パッケージ管理](https://learn.microsoft.com/en-us
 
 最初のセルが次のようになっていることを確認してください。
 
-<Image img="/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp" size="xl" alt="ノートブックで Spark 設定を行う" border />
+![ノートブックで Spark 設定を行う](/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp)
 
 追加の設定については、[ClickHouse Spark 設定ページ](/ja/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#configurations)を参照してください。
 
@@ -87,7 +85,7 @@ Azure Synapse では、[パッケージ管理](https://learn.microsoft.com/en-us
 依存関係と設定が正常に反映されていることを確認するには、セッションの Spark UI にアクセスし、`Environment` タブを開いてください。
 そこで、ClickHouse 関連の設定を確認してください。
 
-<Image img="/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp" size="xl" alt="Spark UI を使用した ClickHouse 設定の確認" border />
+![Spark UI を使用した ClickHouse 設定の確認](/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp)
 
 <div id="additional-resources">
   ## 追加リソース

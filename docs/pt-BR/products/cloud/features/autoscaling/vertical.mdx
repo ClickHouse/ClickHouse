@@ -7,8 +7,6 @@ title: 'Autoescalonamento vertical'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Autoescalonamento vertical" />
@@ -25,7 +23,7 @@ Membros da organização com a função **Admin** podem configurar o autoescalon
   Serviços Scale com uma única réplica e serviços Enterprise com perfis padrão `1:4` oferecem suporte a autoescalonamento vertical. Serviços Enterprise com perfis personalizados exigem redimensionamento vertical com assistência do suporte. Os serviços do tier Basic permanecem com tamanho fixo e não podem ser escalonados.
 </Note>
 
-<Image img="/images/cloud/manage/AutoScaling.webp" size="lg" alt="Página de configurações de escalonamento" border />
+![Página de configurações de escalonamento](/images/cloud/manage/AutoScaling.webp)
 
 Defina a **memória máxima** das suas réplicas com um valor maior que o da **memória mínima**. O serviço será então escalonado conforme necessário dentro desses limites. Essas configurações também estão disponíveis durante o fluxo inicial de criação do serviço. Cada réplica do seu serviço receberá os mesmos recursos de memória e CPU.
 

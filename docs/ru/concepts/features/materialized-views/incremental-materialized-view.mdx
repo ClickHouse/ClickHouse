@@ -7,8 +7,6 @@ score: 10000
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="background">
   ## Общие сведения
 </div>
@@ -21,7 +19,7 @@ Incremental Materialized Views (Materialized Views) позволяют пере�
 
 Materialized Views в ClickHouse обновляются в реальном времени по мере поступления данных в таблицу, на которой они основаны, и работают скорее как постоянно обновляемые indexes. Это отличается от других баз данных, где Materialized Views обычно представляют собой статические snapshots запроса, которые необходимо refresh (аналогично ClickHouse [Refreshable Materialized Views](/ru/reference/statements/create/view#refreshable-materialized-view)).
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="Схема materialized view" />
+![Схема materialized view](/images/materialized-view/materialized-view-diagram.webp)
 
 <div id="example">
   ## Пример

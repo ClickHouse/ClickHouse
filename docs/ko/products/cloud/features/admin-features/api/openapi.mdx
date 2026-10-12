@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['api', 'openapi', 'rest api', '문서', 'Cloud 관리']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse Cloud는 OpenAPI를 사용하는 API를 제공하며, 이를 통해 계정과 서비스의 여러 측면을 프로그래밍 방식으로 관리할 수 있습니다.
 
 <Note>
@@ -19,13 +17,13 @@ ClickHouse Cloud는 OpenAPI를 사용하는 API를 제공하며, 이를 통해 �
   <Step title="API Keys 페이지 열기">
     왼쪽 메뉴의 **API Keys** 탭에서 API Key를 생성하고 관리할 수 있습니다.
 
-    <Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="API Keys 탭" border />
+    ![API Keys 탭](/images/cloud/manage/openapi1.webp)
   </Step>
 
   <Step title="API Key 생성 시작">
     **API Keys** 페이지에는 처음에 아래와 같이 첫 번째 API Key를 생성하라는 안내가 표시됩니다. 첫 번째 키를 생성한 후에는 오른쪽 상단에 표시되는 `New API Key` 버튼을 사용해 새 키를 생성할 수 있습니다.
 
-    <Image img="/images/cloud/manage/openapi2.webp" size="md" alt="API Keys 페이지" border />
+    ![API Keys 페이지](/images/cloud/manage/openapi2.webp)
   </Step>
 
   <Step title="API Key 구성">
@@ -41,7 +39,7 @@ ClickHouse Cloud는 OpenAPI를 사용하는 API를 제공하며, 이를 통해 �
       API Key를 [Query API Endpoints](/ko/products/cloud/guides/sql-console/query-endpoints)와 함께 사용하려면 Organization Role을 최소 `Member`로 설정하고 Service Role 액세스를 `Query Endpoints`에 부여하십시오.
     </Tip>
 
-    <Image img="/images/cloud/manage/openapi3.png" size="md" alt="API Key 생성 양식" border />
+    ![API Key 생성 양식](/images/cloud/manage/openapi3.png)
   </Step>
 
   <Step title="허용된 IP 주소 추가">
@@ -49,7 +47,7 @@ ClickHouse Cloud는 OpenAPI를 사용하는 API를 제공하며, 이를 통해 �
 
     Query API 엔드포인트는 API Key 수준의 IP 허용 목록을 따릅니다. 요청은 ClickHouse 인프라 내부에서 프록시되므로 서비스 수준의 IP 허용 목록은 적용되지 않습니다. 자세한 내용은 [IP Access Control](/ko/products/cloud/features/sql-console-features/query-endpoints#ip-access-control)을 참조하십시오.
 
-    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="API Key에 구성된 허용 IP 주소" border />
+    ![API Key에 구성된 허용 IP 주소](/images/cloud/guides/query-endpoints/specific-locations.webp)
 
     키 구성을 마쳤으면 **Generate API Key**를 클릭하십시오.
   </Step>
@@ -57,7 +55,7 @@ ClickHouse Cloud는 OpenAPI를 사용하는 API를 제공하며, 이를 통해 �
   <Step title="API Key 자격 증명 저장">
     다음 화면에 Key ID와 Key secret이 표시됩니다. 이 값들을 복사해 볼트와 같은 안전한 곳에 저장하십시오. 이 화면을 벗어나면 해당 값은 다시 표시되지 않습니다.
 
-    <Image img="/images/cloud/manage/openapi4.webp" size="md" alt="API Key 세부 정보" border />
+    ![API Key 세부 정보](/images/cloud/manage/openapi4.webp)
   </Step>
 
   <Step title="API 요청 인증">
@@ -78,7 +76,7 @@ ClickHouse Cloud는 OpenAPI를 사용하는 API를 제공하며, 이를 통해 �
       API Key 삭제는 되돌릴 수 없는 영구적인 작업입니다. 해당 키를 사용하는 모든 서비스는 즉시 ClickHouse Cloud에 대한 액세스 권한을 잃게 됩니다.
     </Note>
 
-    <Image img="/images/cloud/manage/openapi5.webp" size="md" alt="API Keys 관리 페이지" border />
+    ![API Keys 관리 페이지](/images/cloud/manage/openapi5.webp)
   </Step>
 </Steps>
 

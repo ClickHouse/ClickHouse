@@ -8,8 +8,6 @@ doc_type: 'guide'
 keywords: ['экологические датчики', 'Sensor.Community', 'данные о качестве воздуха', 'экологические данные', 'начало работы']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 [Sensor.Community](https://sensor.community/en/) — это глобальная сеть датчиков, создаваемая сообществом участников и формирующая открытые данные об окружающей среде. Данные собираются с датчиков по всему миру. Любой может купить датчик и разместить его где угодно. API для загрузки данных доступны на [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs), а сами данные свободно распространяются по лицензии [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/).
 
 <Warning>
@@ -158,7 +156,7 @@ ORDER BY date ASC;
 
 Можно создать диаграмму в SQL Console для визуализации результатов:
 
-<Image img="/images/getting-started/example-datasets/sensors_01.webp" size="md" alt="Количество событий в день" />
+![Количество событий в день](/images/getting-started/example-datasets/sensors_01.webp)
 
 6. Этот запрос подсчитывает количество чрезмерно жарких и влажных дней:
 
@@ -173,4 +171,4 @@ ORDER BY day ASC;
 
 Визуализация результата:
 
-<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="Жаркие и влажные дни" />
+![Жаркие и влажные дни](/images/getting-started/example-datasets/sensors_02.webp)

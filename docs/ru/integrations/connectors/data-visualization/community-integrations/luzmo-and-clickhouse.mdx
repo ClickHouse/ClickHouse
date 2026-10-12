@@ -11,8 +11,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -21,11 +19,11 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
   <Step title="Настройка подключения к ClickHouse" id="1-setup-a-clickhouse-connection">
     Чтобы подключиться к ClickHouse, перейдите на страницу **Connections**, выберите **New Connection**, затем выберите ClickHouse в модальном окне New Connection.
 
-    <Image img="/images/integrations/data-visualization/luzmo_01.webp" size="md" alt="Интерфейс Luzmo с диалоговым окном Create a New Connection, в котором выбран ClickHouse" border />
+    ![Интерфейс Luzmo с диалоговым окном Create a New Connection, в котором выбран ClickHouse](/images/integrations/data-visualization/luzmo_01.webp)
 
     Вам будет предложено указать **host**, **username** и **password**:
 
-    <Image img="/images/integrations/data-visualization/luzmo_02.webp" size="md" alt="Форма настройки подключения Luzmo с полями host, username и password для ClickHouse" border />
+    ![Форма настройки подключения Luzmo с полями host, username и password для ClickHouse](/images/integrations/data-visualization/luzmo_02.webp)
 
     * **Host**: хост, на котором доступна ваша база данных ClickHouse. Обратите внимание, что здесь допускается только `https`, чтобы безопасно передавать данные по сети. URL хоста должен иметь следующую структуру: `https://url-to-clickhouse-db:port/database`
       По умолчанию плагин подключается к базе данных `default` через порт 443. Если указать базу данных после символа `/`, можно настроить, к какой базе данных выполнять подключение.
@@ -42,7 +40,7 @@ import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaint
 
     Теперь вы можете использовать свои датасеты для создания красивых встраиваемых панелей мониторинга или даже для работы ИИ-аналитика данных ([Luzmo IQ](https://luzmo.com/iq)), который может отвечать на вопросы ваших клиентов.
 
-    <Image img="/images/integrations/data-visualization/luzmo_03.webp" size="md" alt="Пример панели мониторинга Luzmo с несколькими визуализациями данных из ClickHouse" border />
+    ![Пример панели мониторинга Luzmo с несколькими визуализациями данных из ClickHouse](/images/integrations/data-visualization/luzmo_03.webp)
   </Step>
 </Steps>
 

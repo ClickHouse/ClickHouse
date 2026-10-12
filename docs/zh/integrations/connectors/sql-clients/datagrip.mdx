@@ -11,7 +11,6 @@ integration:
 keywords: ['DataGrip', '数据库 IDE', 'JetBrains', 'SQL 客户端', '集成开发环境']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
 
 import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
@@ -32,7 +31,7 @@ DataGrip 可从 https://www.jetbrains.com/datagrip/ 获取。
   <Step title="加载 ClickHouse 驱动" id="2-load-the-clickhouse-driver">
     1. 启动 DataGrip，然后在 **Data Sources and Drivers** 对话框的 **Data Sources** 选项卡中，点击 **+** 图标
 
-    <Image img="/images/integrations/sql-clients/datagrip-5.webp" size="lg" border alt="DataGrip 的 Data Sources 选项卡，+ 图标已高亮显示" />
+    ![DataGrip 的 Data Sources 选项卡，+ 图标已高亮显示](/images/integrations/sql-clients/datagrip-5.webp)
 
     选择 **ClickHouse**
 
@@ -40,14 +39,14 @@ DataGrip 可从 https://www.jetbrains.com/datagrip/ 获取。
       建立连接后，列表顺序会发生变化，因此 ClickHouse 可能还没有出现在列表顶部。
     </Tip>
 
-    <Image img="/images/integrations/sql-clients/datagrip-6.webp" size="sm" border alt="DataGrip 从数据源列表中选择 ClickHouse" />
+    ![DataGrip 从数据源列表中选择 ClickHouse](/images/integrations/sql-clients/datagrip-6.webp)
 
     * 切换到 **Drivers** 选项卡并加载 ClickHouse 驱动
 
       为了尽量减小下载体积，DataGrip 并不自带驱动。在 **Drivers** 选项卡中，
       从 **Complete Support** 列表中选择 **ClickHouse**，然后展开 **+** 号。从 **Provided Driver** 选项中选择 **Latest stable** 驱动：
 
-    <Image img="/images/integrations/sql-clients/datagrip-1.webp" size="lg" border alt="DataGrip 的 Drivers 选项卡显示 ClickHouse 驱动安装" />
+    ![DataGrip 的 Drivers 选项卡显示 ClickHouse 驱动安装](/images/integrations/sql-clients/datagrip-1.webp)
   </Step>
 
   <Step title="连接到 ClickHouse" id="3-connect-to-clickhouse">
@@ -66,7 +65,7 @@ DataGrip 可从 https://www.jetbrains.com/datagrip/ 获取。
       有关 JDBC URL 设置的更多详细信息，请参阅 [ClickHouse JDBC 驱动](https://github.com/ClickHouse/clickhouse-java) 仓库。
     </Tip>
 
-    <Image img="/images/integrations/sql-clients/datagrip-7.webp" border alt="带有 ClickHouse 设置的 DataGrip 连接信息表单" />
+    ![带有 ClickHouse 设置的 DataGrip 连接信息表单](/images/integrations/sql-clients/datagrip-7.webp)
   </Step>
 </Steps>
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 sidebarTitle: 'Trabalhando com o motor ReplacingMergeTree'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Enquanto bancos de dados transacionais são otimizados para cargas de trabalho transacionais de atualização e exclusão, bancos de dados OLAP oferecem menos garantias para esse tipo de operação. Em vez disso, eles são otimizados para dados imutáveis inseridos em lotes, permitindo consultas analíticas significativamente mais rápidas. Embora o ClickHouse ofereça operações de atualização por meio de mutações, bem como uma forma leve de excluir linhas, sua estrutura orientada a colunas faz com que essas operações precisem ser agendadas com cuidado, conforme descrito acima. Essas operações são tratadas de forma assíncrona, processadas em uma única thread e exigem, no caso de atualizações, que os dados sejam regravados em disco. Portanto, não devem ser usadas para um grande número de pequenas alterações.
 Para processar um fluxo de linhas de atualização e exclusão, evitando os padrões de uso acima, podemos usar o motor de tabela ReplacingMergeTree do ClickHouse.
 
@@ -32,7 +30,7 @@ Como resultado desse processo de mesclagem, temos quatro linhas que representam 
 
 <br />
 
-<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="Processo do ReplacingMergeTree" />
+![Processo do ReplacingMergeTree](/images/migrations/postgres-replacingmergetree.webp)
 
 <br />
 

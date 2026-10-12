@@ -6,8 +6,6 @@ title: 'ClickHouse Client'
 doc_type: 'リファレンス'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse は、ClickHouse サーバー に対して直接 SQL クエリを実行できるネイティブのコマンドラインクライアントを提供しています。
 対話型モード (クエリをその場で実行する場合) とバッチモード (スクリプト作成や自動化の場合) の両方をサポートしています。
 クエリ結果はターミナルに表示することも、ファイルにエクスポートすることもでき、Pretty、CSV、JSON など、ClickHouse のすべての出力[フォーマット](/ja/reference/formats/index)に対応しています。
@@ -68,7 +66,7 @@ Connected to ClickHouse server version 24.12.2.
 
 ClickHouse Cloud サービスの接続情報は、ClickHouse Cloud コンソールで確認できます。接続先のサービスを選択し、**Connect** をクリックします。
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud サービスの接続ボタン" />
+![ClickHouse Cloud サービスの接続ボタン](/images/_snippets/cloud-connect-button.webp)
 
 <br />
 
@@ -76,7 +74,7 @@ ClickHouse Cloud サービスの接続情報は、ClickHouse Cloud コンソー�
 
 **Native** を選択すると、接続情報と `clickhouse-client` コマンドの例が表示されます。
 
-<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="ClickHouse Cloud の Native TCP 接続情報" />
+![ClickHouse Cloud の Native TCP 接続情報](/images/_snippets/connection-details-native.webp)
 
 ### 設定ファイルに接続情報を保存する {#connection-credentials}
 

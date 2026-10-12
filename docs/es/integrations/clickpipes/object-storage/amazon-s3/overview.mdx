@@ -6,8 +6,6 @@ title: 'Integración de Amazon S3 con ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 S3 ClickPipe ofrece una forma totalmente gestionada y robusta de ingestar datos desde Amazon S3 y almacenes de objetos compatibles con S3 en ClickHouse Cloud. Admite tanto la **ingestión única** como la **ingestión continua**, con semántica de exactly-once.
 
 Los S3 ClickPipes pueden desplegarse y gestionarse manualmente mediante la UI de ClickPipes, así como de forma programática con [OpenAPI](/es/integrations/clickpipes/programmatic-access/openapi) y [Terraform](/es/integrations/clickpipes/programmatic-access/terraform).
@@ -189,7 +187,7 @@ Al usar el [modo no ordenado](#continuous-ingestion-any-order), SQS debe permiti
 
 Para usar [claves de acceso](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_credentials_access-keys.html) para autenticarse, selecciona `Credentials` en **Método de autenticación** al configurar tu conexión de ClickPipe. Luego, introduce el ID de la clave de acceso (por ejemplo, `AKIAIOSFODNN7EXAMPLE`) y la clave de acceso secreta (por ejemplo, `wJalrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY`) en `Access key` y `Secret key`, respectivamente.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp" alt="Credenciales de IAM para S3 ClickPipes" size="lg" border />
+![Credenciales de IAM para S3 ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_credentials.webp)
 
 <div id="iam-role">
   #### IAM role
@@ -197,7 +195,7 @@ Para usar [claves de acceso](https://docs.aws.amazon.com/IAM/latest/UserGuide/id
 
 Para usar [acceso basado en roles](https://docs.aws.amazon.com/IAM/latest/UserGuide/id_roles.html) para autenticarse, selecciona `IAM role` en **Método de autenticación** al configurar tu conexión de ClickPipe.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp" alt="Autenticación IAM para S3 ClickPipes" size="lg" border />
+![Autenticación IAM para S3 ClickPipes](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_iam.webp)
 
 Sigue [esta guía](/es/products/cloud/guides/data-sources/accessing-s3-data-securely) para [crear un rol](/es/products/cloud/guides/data-sources/accessing-s3-data-securely#option-2-manually-create-iam-role) con la política de confianza necesaria para acceder a S3. Luego, indica el ARN del rol de IAM en `IAM role ARN`.
 
@@ -242,7 +240,7 @@ ClickPipes ofrece valores predeterminados adecuados para cubrir los requisitos d
 | `Parallel view processing`           | false                | Indica si se habilita el envío a vistas adjuntas [de forma concurrente en lugar de secuencial](/es/reference/settings/session-settings/parallel#parallel_view_processing).     |
 | `Use cluster function`               | true                 | Indica si los archivos se procesan en paralelo en varios nodos.                                                                                                                |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Configuración avanzada de ClickPipes" size="lg" border />
+![Configuración avanzada de ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
 
 <div id="scaling">
   ### Escalado

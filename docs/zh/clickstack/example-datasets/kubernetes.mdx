@@ -6,7 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'kubernetes', '日志', '可观测性', '容器监控']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import DemoArchitecture from '/snippets/zh/_demo.mdx';
 
 本指南可帮助你从 Kubernetes 系统中收集日志和指标，并将其发送到 **ClickStack** 进行可视化和分析。对于演示数据，你也可以选择使用官方 OpenTelemetry demo 的 ClickStack 分支。
@@ -200,7 +199,7 @@ import DemoArchitecture from '/snippets/zh/_demo.mdx';
 
     创建用户，并提供符合复杂度要求的用户名和密码。
 
-    <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="HyperDX UI" size="lg" />
+    ![HyperDX UI](/images/use-cases/observability/hyperdx-login.webp)
   </Step>
 
   <Step title="获取摄取 API key" id="retrieve-ingestion-api-key">
@@ -208,7 +207,7 @@ import DemoArchitecture from '/snippets/zh/_demo.mdx';
 
     前往 [`Team Settings`](http://localhost:8080/team)，然后在 `API Keys` 部分复制 `Ingestion API Key`。此 API key 可确保通过 OpenTelemetry collector 进行的数据摄取安全无虞。
 
-    <Image img="/images/use-cases/observability/copy_api_key.webp" alt="复制 API key" size="lg" />
+    ![复制 API key](/images/use-cases/observability/copy_api_key.webp)
   </Step>
 
   <Step title="创建 API key Kubernetes Secret" id="create-api-key-kubernetes-secret">
@@ -232,7 +231,7 @@ import DemoArchitecture from '/snippets/zh/_demo.mdx';
 
     来自演示服务的 trace 和日志数据现在应该已开始流入 HyperDX。
 
-    <Image img="/images/use-cases/observability/hyperdx-kubernetes-data.webp" alt="HyperDX Kubernetes 数据" size="lg" />
+    ![HyperDX Kubernetes 数据](/images/use-cases/observability/hyperdx-kubernetes-data.webp)
   </Step>
 
   <Step title="添加 OpenTelemetry Helm 仓库" id="add-otel-helm-repo">
@@ -483,4 +482,4 @@ import DemoArchitecture from '/snippets/zh/_demo.mdx';
   </Step>
 </Steps>
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="Kubernetes 上的 ClickHouse" size="lg" />
+![Kubernetes 上的 ClickHouse](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)

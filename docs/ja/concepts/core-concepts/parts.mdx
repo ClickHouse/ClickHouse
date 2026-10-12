@@ -6,8 +6,6 @@ keywords: ['パーツ']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="what-are-table-parts-in-clickhouse">
   ## ClickHouse のテーブルのパーツとは何ですか？
 </div>
@@ -34,7 +32,7 @@ ORDER BY (town, street);
 
 テーブルに一連の行が挿入されるたびに、データパーツが作成されます。以下の図はその概要を示したものです。
 
-<Image img="/images/managing-data/core-concepts/part.webp" size="lg" />
+![](/images/managing-data/core-concepts/part.webp)
 
 <br />
 
@@ -68,7 +66,7 @@ ClickHouse server が上の図に示した 4 行のサンプル insert (たと�
 
 テーブルごとのパーツ数を管理するため、[バックグラウンドマージ](/ja/concepts/core-concepts/merges)ジョブが定期的に小さなパーツをより大きなパーツへ統合し、[設定可能な](/ja/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool)圧縮サイズ (通常は約 150 GB) に達するまでこの処理を続けます。マージ済みパーツは非アクティブとしてマークされ、[設定可能な](/ja/reference/settings/merge-tree-settings/other#old_parts_lifetime)期間の経過後に削除されます。時間の経過とともに、このプロセスによってマージ済みパーツの階層構造が形成されるため、これが MergeTree テーブルと呼ばれる理由です。
 
-<Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
+![](/images/managing-data/core-concepts/merges.webp)
 
 <br />
 

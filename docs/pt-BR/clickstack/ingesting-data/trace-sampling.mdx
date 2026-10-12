@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'amostragem de traces', 'tail sampling', 'taxa de amostragem', 'agregações ponderadas', 'OpenTelemetry', 'SampleRate']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Serviços de alto throughput podem produzir milhões de spans por segundo. Armazenar cada span é caro, por isso as equipes costumam executar o [processador tail-sampling](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor) do OpenTelemetry Collector para reter apenas 1 em cada N spans. Cada span retido carrega um atributo `SampleRate` que registra N.
 
 Depois que os dados são amostrados, agregações simples produzem resultados incorretos: `count()` retorna N vezes menos eventos do que os que realmente ocorreram, `sum()` e `avg()` ficam enviesados, e os percentis se distorcem. Os dashboards mostram contagens de requisições, throughput e taxas de erro artificialmente baixas.
@@ -51,6 +49,6 @@ Abra sua fonte de traces em **Configurações da fonte** e insira, no campo **Ex
 
 Por exemplo, se o processador tail-sampling do OpenTelemetry gravar a taxa em `SpanAttributes['SampleRate']`:
 
-<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="Campo Expressão da taxa de amostragem nas Configurações da fonte do ClickStack" size="lg" />
+![Campo Expressão da taxa de amostragem nas Configurações da fonte do ClickStack](/images/clickstack/trace-sampling-source-settings.webp)
 
 Depois de configurar, todos os gráficos, dashboards, alertas e painéis do dashboard de serviço aplicam automaticamente agregações ponderadas por amostragem. Não é necessário alterar consultas individuais.

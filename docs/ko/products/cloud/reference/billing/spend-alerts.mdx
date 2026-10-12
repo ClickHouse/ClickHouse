@@ -7,8 +7,6 @@ keywords: ['청구', '지출 알림', '사용량 임계값', '알림', '비용 �
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 지출 알림은 청구 기간 동안 조직의 사용량이 설정된 임계값에 도달하면 알려 주므로 예상치 못한 요금이 발생하는 것을 방지할 수 있습니다. 이 기능은 알림만 전송합니다. 자동 청구를 트리거하는 임계값은 [임계값](/ko/products/cloud/reference/billing/payment-thresholds)을 참조하십시오.
 
 <div id="prerequisites">
@@ -39,7 +37,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     1. ClickHouse Cloud 콘솔에서 **Organization &gt; Billing**으로 이동합니다.
     2. **Actions &gt; Add spend alerts**를 클릭합니다.
 
-    <Image img="/images/cloud/reference/billing/spend-alerts-actions.webp" alt="Actions 메뉴가 열려 있고 Add spend alerts가 강조 표시된 청구 페이지" size="lg" />
+    ![Actions 메뉴가 열려 있고 Add spend alerts가 강조 표시된 청구 페이지](/images/cloud/reference/billing/spend-alerts-actions.webp)
   </Step>
 
   <Step title="알림 구성 및 저장" id="configure-and-save">
@@ -47,7 +45,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     2. 알림 채널(**Email**, **UI**, **Slack**) 중 하나 이상을 선택합니다.
     3. **Save**를 클릭합니다.
 
-    <Image img="/images/cloud/reference/billing/spend-alerts-config.png" alt="지출 한도, 자동 임계값 알림, 알림 채널이 표시된 조직 지출 알림 대화 상자" size="md" />
+    ![지출 한도, 자동 임계값 알림, 알림 채널이 표시된 조직 지출 알림 대화 상자](/images/cloud/reference/billing/spend-alerts-config.png)
   </Step>
 </Steps>
 

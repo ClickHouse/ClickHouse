@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['Telflo', 'OTEL', 'ClickStack', 'OpenTelemetry', 'collector management', 'fleet management', 'ClickHouse exporter']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import { PartnerBadge } from "/snippets/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge/>
@@ -118,7 +117,7 @@ Keep **Batch** upstream of the exporter: ClickHouse performs best with batched i
 
 Draw edges from the receivers through the processors to the exporter, one pipeline per signal. The status row reports **config valid** or the number of errors to fix, and the **YAML** tab shows the generated configuration.
 
-<Image img="/images/clickstack/telflo/telflo-configuration.webp" alt="A collector pipeline in the Telflo editor with the ClickHouse exporter configured" size="lg"/>
+![A collector pipeline in the Telflo editor with the ClickHouse exporter configured](/images/clickstack/telflo/telflo-configuration.webp)
 
 Before you roll anything out, you can run sample telemetry through the configuration and check what comes out the other end. See [testing in Telflo](https://docs.telflo.com/docs/testing/overview). Alternatively, you can describe what you're trying to do and the Telflo AI assistant, opened with the **AI** button in the toolbar, builds, validates, and tests the configuration for you. Your own agent can do the same through the [Telflo CLI](https://docs.telflo.com/docs/cli/).
 </Step>
@@ -135,7 +134,7 @@ Click **Publish** in the toolbar. Published versions are read-only; to keep iter
 
 To roll out a change, publish a new version and assign it to the group; to roll back, assign a previously deployed version.
 
-<Image img="/images/clickstack/telflo/telflo-fleet.webp" alt="A Telflo fleet with every collector in sync after a rollout" size="lg"/>
+![A Telflo fleet with every collector in sync after a rollout](/images/clickstack/telflo/telflo-fleet.webp)
 </Step>
 <Step title="Verify telemetry" id="verify-telemetry">
 

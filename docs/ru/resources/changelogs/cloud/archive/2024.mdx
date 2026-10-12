@@ -7,8 +7,6 @@ doc_type: 'changelog'
 keywords: ['журнал изменений', 'примечания к релизам', 'обновления', 'новые возможности', 'изменения в Cloud', '2024']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="december-20-2024">
   ## 20 декабря 2024 года
 </div>
@@ -19,7 +17,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Теперь вы можете привязать новую подписку через маркетплейс к существующей организации ClickHouse Cloud. После оформления подписки через маркетплейс и перехода в ClickHouse Cloud вы сможете привязать уже существующую организацию, созданную ранее, к новой подписке через маркетплейс. С этого момента ресурсы в вашей организации будут оплачиваться через маркетплейс.
 
-<Image img="/images/cloud/reference/add_marketplace.webp" size="md" alt="Интерфейс ClickHouse Cloud, показывающий, как добавить подписку через маркетплейс к существующей организации" border />
+![Интерфейс ClickHouse Cloud, показывающий, как добавить подписку через маркетплейс к существующей организации](/images/cloud/reference/add_marketplace.webp)
 
 <div id="force-openapi-key-expiration">
   ### Обязательный срок действия для ключей OpenAPI
@@ -55,7 +53,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 На этой неделе мы рады объявить о запуске бета-версии панелей мониторинга в ClickHouse Cloud. С их помощью можно превращать сохранённые запросы в визуализации, размещать визуализации на панелях мониторинга и работать с панелями мониторинга, используя параметры запроса. Чтобы начать, ознакомьтесь с [документацией по панелям мониторинга](/ru/products/cloud/features/sql-console-features/dashboards).
 
-<Image img="/images/cloud/reference/beta_dashboards.webp" size="lg" alt="Интерфейс ClickHouse Cloud с новой бета-возможностью панелей мониторинга и визуализациями" border />
+![Интерфейс ClickHouse Cloud с новой бета-возможностью панелей мониторинга и визуализациями](/images/cloud/reference/beta_dashboards.webp)
 
 <div id="query-api-endpoints-ga">
   ### Эндпоинты Query API (GA)
@@ -73,7 +71,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Чтобы начать, ознакомьтесь с [документацией по эндпоинтам Query API](/ru/products/cloud/guides/sql-console/query-endpoints).
 
-<Image img="/images/cloud/reference/api_endpoints.webp" size="lg" alt="Интерфейс ClickHouse Cloud с настройками API Endpoints" border />
+![Интерфейс ClickHouse Cloud с настройками API Endpoints](/images/cloud/reference/api_endpoints.webp)
 
 <div id="native-json-support-beta">
   ### Нативная поддержка JSON (бета)
@@ -108,7 +106,7 @@ ClickHouse уже предлагает широкие возможности д�
 
 Теперь вы можете предоставить однонаправленный доступ к конкретному источнику данных, например AWS MSK. С помощью меж-VPC-доступа к ресурсам на базе AWS PrivateLink и VPC Lattice можно предоставлять доступ к отдельным ресурсам через границы VPC и аккаунтов, а также из сетей в собственной инфраструктуре — без ущерба для конфиденциальности и безопасности при передаче данных через публичную сеть. Чтобы начать работу и настроить общий доступ к ресурсу, прочитайте [пост с анонсом](https://clickhouse.com/blog/clickpipes-crossvpc-resource-endpoints?utm_medium=web\&utm_source=changelog).
 
-<Image img="/images/cloud/reference/cross-vpc-clickpipes.webp" size="lg" alt="Диаграмма с архитектурой меж-VPC-доступа к ресурсам для ClickPipes при подключении к AWS MSK" border />
+![Диаграмма с архитектурой меж-VPC-доступа к ресурсам для ClickPipes при подключении к AWS MSK](/images/cloud/reference/cross-vpc-clickpipes.webp)
 
 <div id="clickpipes-now-supports-iam-for-aws-msk">
   ### ClickPipes теперь поддерживает IAM для AWS MSK
@@ -134,7 +132,7 @@ ClickHouse уже предлагает широкие возможности д�
 
 Эта панель позволяет просматривать запросы на основе таблицы [system.dashboards](/ru/reference/system-tables/dashboards) в едином интерфейсе. Перейдите на страницу **Monitoring &gt; Service Health**, чтобы уже сегодня начать пользоваться расширенной панелью обсервабилити.
 
-<Image img="/images/cloud/reference/nov-22-dashboard.webp" size="lg" alt="Расширенная панель обсервабилити в ClickHouse Cloud, показывающая метрики сервера и использование ресурсов" border />
+![Расширенная панель обсервабилити в ClickHouse Cloud, показывающая метрики сервера и использование ресурсов](/images/cloud/reference/nov-22-dashboard.webp)
 
 <div id="ai-powered-sql-autocomplete">
   ### Автодополнение SQL на базе ИИ
@@ -142,7 +140,7 @@ ClickHouse уже предлагает широкие возможности д�
 
 Мы значительно улучшили автодополнение: теперь новый AI Copilot предлагает встроенные SQL-подсказки прямо во время написания запросов. Эту возможность можно включить, переключив параметр **&quot;Enable Inline Code Completion&quot;** для любого сервиса ClickHouse Cloud.
 
-<Image img="/images/cloud/reference/nov-22-copilot.gif" size="lg" alt="Анимация, показывающая, как AI Copilot предлагает варианты автодополнения SQL по мере того, как пользователь вводит текст" border />
+![Анимация, показывающая, как AI Copilot предлагает варианты автодополнения SQL по мере того, как пользователь вводит текст](/images/cloud/reference/nov-22-copilot.gif)
 
 <div id="new-billing-role">
   ### Новая роль &quot;billing&quot;
@@ -164,7 +162,7 @@ ClickHouse уже предлагает широкие возможности д�
 
 Подробнее о том, как включить уведомления для вашего сервиса, см. в [документации ClickHouse](/ru/products/cloud/features/monitoring/notifications).
 
-<Image img="/images/cloud/reference/nov-8-notifications.webp" size="lg" alt="Интерфейс центра уведомлений ClickHouse Cloud с параметрами настройки для разных типов уведомлений" border />
+![Интерфейс центра уведомлений ClickHouse Cloud с параметрами настройки для разных типов уведомлений](/images/cloud/reference/nov-8-notifications.webp)
 
 <br />
 
@@ -208,7 +206,7 @@ ClickPipes for Kafka теперь поддерживает пользовате�
 
 Видимость производительности имеет решающее значение. В ClickPipes теперь доступен график задержки, который показывает время от публикации сообщения (в Kafka topic или Kinesis Stream) до ингестии в ClickHouse Cloud. Эта новая метрика позволяет точнее отслеживать производительность ваших конвейеров данных и оптимизировать их по мере необходимости.
 
-<Image img="/images/cloud/reference/oct-4-latency-insights.webp" size="lg" alt="Интерфейс ClickPipes с графиком метрик задержки для оценки производительности ингестии данных" border />
+![Интерфейс ClickPipes с графиком метрик задержки для оценки производительности ингестии данных](/images/cloud/reference/oct-4-latency-insights.webp)
 
 <br />
 
@@ -252,7 +250,7 @@ Terraform позволяет программно управлять серви�
 
 Новая возможность Compute-compute separation позволяет создавать несколько групп вычислительных узлов, каждая со своей конечной точкой, использующих одну и ту же папку Объектного хранилища и, следовательно, одни и те же таблицы, представления и т. д. Подробнее см. [здесь](/ru/products/cloud/features/infrastructure/warehouses). Если вы хотите получить доступ к этой возможности в рамках закрытой предварительной версии, [обратитесь в службу поддержки](https://clickhouse.com/support/program).
 
-<Image img="/images/cloud/reference/aug-15-compute-compute.webp" size="lg" alt="Диаграмма с примером архитектуры Compute-compute separation с группами сервисов с возможностью чтения и записи и только для чтения" border />
+![Диаграмма с примером архитектуры Compute-compute separation с группами сервисов с возможностью чтения и записи и только для чтения](/images/cloud/reference/aug-15-compute-compute.webp)
 
 <div id="clickpipes-for-s3-and-gcs-now-in-ga-continuous-mode-support">
   ### ClickPipes для S3 и GCS теперь в GA, с поддержкой непрерывного режима
@@ -278,7 +276,7 @@ ClickPipes — самый простой способ выполнять инг�
 
 Недавно мы запустили **Table Inspector** в консоли ClickHouse Cloud, который позволяет получать важную информацию о таблицах и столбцах прямо в интерфейсе, без необходимости писать SQL. Вы можете опробовать Table Inspector для своих сервисов в консоли ClickHouse Cloud. Он показывает сведения о схеме, хранилище, сжатии и многом другом в едином интерфейсе.
 
-<Image img="/images/cloud/reference/july-18-table-inspector.webp" size="lg" alt="Интерфейс ClickHouse Cloud Table Inspector с подробной информацией о схеме и хранилище" border />
+![Интерфейс ClickHouse Cloud Table Inspector с подробной информацией о схеме и хранилище](/images/cloud/reference/july-18-table-inspector.webp)
 
 <div id="new-java-client-api">
   ### Новый API Java-клиента
@@ -318,7 +316,7 @@ ClickPipes — самый простой способ выполнять инг�
 
 Новый интерфейс Query Insights в консоли ClickHouse Cloud значительно упрощает работу со встроенным журналом запросов ClickHouse. Таблица ClickHouse `system.query_log` — ключевой источник информации для оптимизации запросов, отладки, а также мониторинга общего состояния и производительности кластера. Но есть одна сложность: из-за более чем 70 полей и нескольких записей на каждый запрос разобраться в журнале запросов не так просто. Эта первая версия Query Insights задает направление для дальнейшей работы по упрощению отладки запросов и выявлению шаблонов оптимизации. Мы будем рады вашему отзыву по мере развития этой возможности, поэтому свяжитесь с нами — ваш отклик очень важен.
 
-<Image img="/images/cloud/reference/june-28-query-insights.webp" size="lg" alt="Интерфейс Query Insights в ClickHouse Cloud, показывающий метрики производительности запросов и анализ" border />
+![Интерфейс Query Insights в ClickHouse Cloud, показывающий метрики производительности запросов и анализ](/images/cloud/reference/june-28-query-insights.webp)
 
 <div id="prometheus-endpoint-for-metrics-private-preview">
   ### Конечная точка Prometheus для метрик (закрытая предварительная версия)
@@ -326,7 +324,7 @@ ClickPipes — самый простой способ выполнять инг�
 
 Пожалуй, это одна из самых востребованных возможностей: теперь вы можете экспортировать метрики [Prometheus](https://prometheus.io/) из ClickHouse Cloud в [Grafana](https://grafana.com/) и [Datadog](https://www.datadoghq.com/) для визуализации. Prometheus предоставляет решение с открытым исходным кодом для мониторинга ClickHouse и настройки пользовательских оповещений. Доступ к метрикам Prometheus для вашего сервиса ClickHouse Cloud можно получить через [ClickHouse Cloud API](/ru/products/cloud/features/monitoring/prometheus). Сейчас эта возможность доступна в рамках закрытой предварительной версии. Чтобы включить её для вашей организации, обратитесь в [команду поддержки](https://clickhouse.com/support/program).
 
-<Image img="/images/cloud/reference/june-28-prometheus.webp" size="lg" alt="Панель мониторинга Grafana с метриками Prometheus из ClickHouse Cloud" border />
+![Панель мониторинга Grafana с метриками Prometheus из ClickHouse Cloud](/images/cloud/reference/june-28-prometheus.webp)
 
 <div id="other-features">
   ### Другие возможности
@@ -352,7 +350,7 @@ ClickPipes — самый простой способ выполнять инг�
 * С последнего: начните чтение данных с самого последнего смещения. Это полезно, если вас интересуют только новые сообщения.
 * С временной метки: начните чтение данных из сообщений, созданных в указанное время или позже. Эта возможность обеспечивает более точный контроль и позволяет возобновить обработку с конкретного момента времени.
 
-<Image img="/images/cloud/reference/june-13-kafka-config.webp" size="lg" alt="Интерфейс конфигурации коннектора Kafka в ClickPipes с параметрами выбора смещения" border />
+![Интерфейс конфигурации коннектора Kafka в ClickPipes с параметрами выбора смещения](/images/cloud/reference/june-13-kafka-config.webp)
 
 <div id="enroll-services-to-the-fast-release-channel">
   ### Подключение сервисов к каналу Fast release
@@ -360,7 +358,7 @@ ClickPipes — самый простой способ выполнять инг�
 
 Канал Fast release позволяет вашим сервисам получать обновления раньше общего графика релизов. Раньше для включения этой возможности требовалась помощь службы поддержки. Теперь вы можете включить эту возможность для своих сервисов напрямую в консоли ClickHouse Cloud. Просто перейдите в **Settings** и нажмите **Enroll in fast releases**. После этого ваш сервис будет получать обновления, как только они станут доступны.
 
-<Image img="/images/cloud/reference/june-13-fast-releases.webp" size="lg" alt="Страница настроек ClickHouse Cloud с возможностью подключиться к fast releases" border />
+![Страница настроек ClickHouse Cloud с возможностью подключиться к fast releases](/images/cloud/reference/june-13-fast-releases.webp)
 
 <div id="terraform-support-for-horizontal-scaling">
   ### Поддержка Terraform для горизонтального масштабирования
@@ -382,7 +380,7 @@ ClickHouse Cloud поддерживает [горизонтальное масш
 
 Мы рады сообщить, что теперь вы можете легко делиться запросами через консоль ClickHouse Cloud. В редакторе запросов можно поделиться запросом напрямую со всей командой или с конкретным участником. Также можно указать, предоставить ли им доступ только для чтения или для записи. Чтобы опробовать новую возможность совместного доступа к запросам, нажмите кнопку **Share** в редакторе запросов.
 
-<Image img="/images/cloud/reference/may-30-share-queries.webp" size="lg" alt="Редактор запросов ClickHouse Cloud с функцией общего доступа и вариантами разрешений" border />
+![Редактор запросов ClickHouse Cloud с функцией общего доступа и вариантами разрешений](/images/cloud/reference/may-30-share-queries.webp)
 
 <div id="clickhouse-cloud-for-microsoft-azure-is-now-in-beta">
   ### ClickHouse Cloud for Microsoft Azure теперь в бета-версии
@@ -402,7 +400,7 @@ ClickHouse Cloud поддерживает [горизонтальное масш
 
 Теперь вы можете настроить частные конечные точки всего за несколько кликов прямо в консоли ClickHouse Cloud. Просто перейдите в раздел **Settings** вашего сервиса, затем в раздел **Security** и нажмите **Set up private endpoint**.
 
-<Image img="/images/cloud/reference/may-30-private-endpoints.webp" size="lg" alt="Консоль ClickHouse Cloud с интерфейсом настройки частной конечной точки в разделе безопасности" border />
+![Консоль ClickHouse Cloud с интерфейсом настройки частной конечной точки в разделе безопасности](/images/cloud/reference/may-30-private-endpoints.webp)
 
 <div id="may-17-2024">
   ## 17 мая 2024
@@ -416,7 +414,7 @@ ClickPipes — это сервис, доступный только в ClickHous
 
 Вы можете попробовать новую интеграцию Amazon Kinesis для ClickPipes в консоли ClickHouse Cloud:
 
-<Image img="/images/cloud/reference/may-17-kinesis.webp" size="lg" alt="Интерфейс ClickPipes с параметрами конфигурации интеграции Amazon Kinesis" border />
+![Интерфейс ClickPipes с параметрами конфигурации интеграции Amazon Kinesis](/images/cloud/reference/may-17-kinesis.webp)
 
 <div id="configurable-backups-private-preview">
   ### Настраиваемые резервные копии (закрытая предварительная версия)
@@ -430,7 +428,7 @@ ClickPipes — это сервис, доступный только в ClickHous
 
 Когда вы пишете SQL-запрос для ClickHouse, вам всё равно нужно подключаться к ClickHouse через драйвер, чтобы предоставить приложению доступ к этому запросу. Теперь, благодаря нашей новой возможности **Query Endpoints**, вы можете выполнять SQL-запросы напрямую через API без какой-либо настройки. Можно указать, чтобы эндпоинты запросов возвращали JSON, CSV или TSV. Нажмите кнопку &quot;Share&quot; в консоли ClickHouse Cloud, чтобы опробовать эту новую возможность со своими запросами. Подробнее о Query Endpoints читайте [здесь](https://clickhouse.com/blog/automatic-query-endpoints).
 
-<Image img="/images/cloud/reference/may-17-query-endpoints.webp" size="lg" alt="Интерфейс ClickHouse Cloud с настройкой Query Endpoints и вариантами формата вывода" border />
+![Интерфейс ClickHouse Cloud с настройкой Query Endpoints и вариантами формата вывода](/images/cloud/reference/may-17-query-endpoints.webp)
 
 <div id="official-clickhouse-certification-is-now-available">
   ### Официальная сертификация ClickHouse теперь доступна
@@ -450,7 +448,7 @@ ClickPipes — это сервис, доступный только в ClickHous
 
 В последнем обновлении ClickPipes появилась возможность напрямую загружать данные из Amazon S3 и Google Cloud Storage. Хотя вы по-прежнему можете использовать наши встроенные табличные функции, ClickPipes — это полностью управляемый сервис с настройкой через интерфейс, который позволяет загружать данные из S3 и GCS всего в несколько кликов. Эта возможность всё ещё находится в стадии закрытой предварительной версии, но вы уже сегодня можете попробовать её в консоли ClickHouse Cloud.
 
-<Image img="/images/cloud/reference/clickpipes-s3-gcs.webp" size="lg" alt="Интерфейс ClickPipes с параметрами настройки для загрузки данных из бакетов S3 и GCS" border />
+![Интерфейс ClickPipes с параметрами настройки для загрузки данных из бакетов S3 и GCS](/images/cloud/reference/clickpipes-s3-gcs.webp)
 
 <div id="use-fivetran-to-load-data-from-500-sources-into-clickhouse-cloud">
   ### Используйте Fivetran для загрузки данных из более чем 500 источников в ClickHouse Cloud
@@ -483,7 +481,7 @@ ClickHouse может быстро выполнять запросы к ваши
 
 В этом релизе для ClickHouse Cloud добавлен новый регион AWS Tokyo (`ap-northeast-1`). Поскольку мы стремимся сделать ClickHouse самой быстрой базой данных, мы постоянно расширяем список регионов во всех облаках, чтобы максимально снизить задержки. Теперь вы можете создать новый сервис в Tokyo в обновлённой консоли ClickHouse Cloud.
 
-<Image img="/images/cloud/reference/create-tokyo-service.webp" size="lg" alt="Интерфейс создания сервиса ClickHouse Cloud с выбором региона Tokyo" border />
+![Интерфейс создания сервиса ClickHouse Cloud с выбором региона Tokyo](/images/cloud/reference/create-tokyo-service.webp)
 
 Другие изменения:
 
@@ -521,7 +519,7 @@ ClickHouse может быстро выполнять запросы к ваши
 
 Некоторые клиенты получат доступ к предварительной версии новой консоли ClickHouse Cloud — единому и удобному способу исследовать данные в ClickHouse и управлять ими. Если вы хотите получить приоритетный доступ, свяжитесь с нами по адресу support@clickhouse.com.
 
-<Image img="/images/cloud/reference/new-cloud-console.webp" size="lg" alt="Анимация, показывающая новый интерфейс консоли ClickHouse Cloud со встроенным редактором SQL и функциями управления" border />
+![Анимация, показывающая новый интерфейс консоли ClickHouse Cloud со встроенным редактором SQL и функциями управления](/images/cloud/reference/new-cloud-console.webp)
 
 <div id="march-28-2024">
   ## 28 марта 2024 г.

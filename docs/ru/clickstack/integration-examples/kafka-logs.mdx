@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Kafka', 'журналы', 'OTEL', 'ClickStack', 'мониторинг брокеров', 'Log4j']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -163,9 +161,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   <Step title="Проверьте журналы в HyperDX" id="verifying-logs">
     После настройки войдите в HyperDX и убедитесь, что журналы поступают:
 
-    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Представление Search" />
+    ![Представление Search](/images/clickstack/kafka/logs/search-view.webp)
 
-    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="Представление логов" />
+    ![Представление логов](/images/clickstack/kafka/logs/log-view.webp)
   </Step>
 </Steps>
 
@@ -253,9 +251,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     2. Перейдите в представление Search и выберите источник `Logs`
     3. Установите временной диапазон, включающий **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
 
-    <Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Представление Search" />
+    ![Представление Search](/images/clickstack/kafka/logs/search-view.webp)
 
-    <Image img="/images/clickstack/kafka/logs/log-view.webp" alt="Представление логов" />
+    ![Представление логов](/images/clickstack/kafka/logs/log-view.webp)
   </Step>
 </Steps>
 
@@ -272,17 +270,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     1. Откройте HyperDX и перейдите в раздел панелей мониторинга.
     2. Нажмите &quot;Import Dashboard&quot; в правом верхнем углу в меню с многоточием.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Импорт панели мониторинга" />
+    ![Импорт панели мониторинга](/images/clickstack/import-dashboard.webp)
 
     3. Загрузите файл kafka-logs-dashboard.json и нажмите finish import.
 
-    <Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="Завершение импорта панели мониторинга журналов Kafka" />
+    ![Завершение импорта панели мониторинга журналов Kafka](/images/clickstack/kafka/logs/finish-import.webp)
   </Step>
 
   <Step title="Панель мониторинга будет создана со всеми преднастроенными визуализациями" id="created-dashboard">
     Для демо-набора данных установите временной диапазон, включающий **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
-    <Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="Пример панели мониторинга журналов Kafka" />
+    ![Пример панели мониторинга журналов Kafka](/images/clickstack/kafka/logs/example-dashboard.webp)
   </Step>
 </Steps>
 

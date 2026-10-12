@@ -6,7 +6,6 @@ keywords: ['分区', 'partition by']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { RunnableCode } from "/snippets/zh/components/RunnableCode/RunnableCode.jsx";
 
 <div id="what-are-table-partitions-in-clickhouse">
@@ -46,7 +45,7 @@ PARTITION BY toStartOfMonth(date);
 
 每当一组行被插入到表中时，ClickHouse 不会创建一个包含所有已插入行的单个数据分区片段 (至少会创建 [一个](/zh/reference/settings/session-settings/max-insert#max_insert_block_size)，如[此处](/zh/concepts/core-concepts/parts)所述) ，而是会为已插入行中每个唯一的分区键值各创建一个新的数据分区片段：
 
-<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="INSERT PROCESSING" />
+![INSERT PROCESSING](/images/managing-data/core-concepts/partitions.webp)
 
 <br />
 
@@ -61,7 +60,7 @@ ClickHouse server 首先按照分区键值 `toStartOfMonth(date)`，将上图中
 
 启用分区后，ClickHouse 只会在分区内[合并](/zh/concepts/core-concepts/merges)数据分区片段，而不会跨分区合并。我们以上文的示例表来说明这一点：
 
-<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="分片合并" />
+![分片合并](/images/managing-data/core-concepts/merges_with_partitions.webp)
 
 <br />
 
@@ -158,7 +157,7 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 
 ClickHouse 通过依次应用一系列剪枝技术来处理该查询，从而避免评估无关数据：
 
-<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="分片合并 2" />
+![分片合并 2](/images/managing-data/core-concepts/partition-pruning.webp)
 
 <br />
 

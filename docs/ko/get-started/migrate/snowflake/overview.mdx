@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 > 이 문서는 Snowflake에서 ClickHouse로 데이터를 마이그레이션하는 과정을 간략히 소개합니다.
 
 Snowflake는 주로 기존 온프레미스 데이터 웨어하우징 워크로드를 클라우드로
@@ -52,7 +50,7 @@ Snowflake의 아키텍처는 공유 스토리지(shared-storage, shared-disk)
 아래 이미지는 [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts)에서 가져온 것으로,
 이 아키텍처를 보여줍니다:
 
-<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Snowflake 아키텍처" />
+![Snowflake 아키텍처](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
 
 반대로, 오픈소스이자 클라우드 호스팅 제품인 ClickHouse는
 shared-disk 및 shared-nothing 아키텍처 모두에 배포할 수 있습니다. 후자는
@@ -72,7 +70,7 @@ S3의 확장성 특성은 shared-disk
 노드가 추가되더라도 기존 노드에서 사용할 수 있는 I/O 처리량이
 영향받지 않도록 보장합니다.
 
-<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="ClickHouse Cloud 아키텍처" />
+![ClickHouse Cloud 아키텍처](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
 
 <div id="differences">
   ### 차이점

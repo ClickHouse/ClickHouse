@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['bitdrift', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'обсервабилити мобильных приложений', 'трассировка']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -39,7 +37,7 @@ import { PartnerBadge } from "/snippets/ru/components/PartnerBadge/PartnerBadge.
 
 bitdrift хранит телеметрию мобильных приложений на периферии, пока она не потребуется, поэтому команды могут получить полный сеанс без выборки, приведший к сбою или проблеме с производительностью, вместо того чтобы работать с фиксированным, заранее отобранным набором сигналов. Платформа bitdrift Capture доступна как SaaS, размещаемый bitdrift, или как развертывание в собственной Cloud (либо в бакете) в вашем аккаунте AWS.
 
-<Image img="/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png" alt="Панель мониторинга bitdrift User Journey, показывающая пути к ANR" size="lg" />
+![Панель мониторинга bitdrift User Journey, показывающая пути к ANR](/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png)
 
 *Панель мониторинга bitdrift User Journey, показывающая пути пользователей к ANR.*
 
@@ -85,7 +83,7 @@ ClickStack предоставляет инженерным командам ре
 
 После настройки в строках журнала временной шкалы bitdrift и представлениях спанов отображается ссылка **View Trace**, передающая захваченный идентификатор трассировки в интерфейс ClickStack (HyperDX).
 
-<Image img="/images/clickstack/bitdrift/bitdrift-view-trace.jpg" alt="Трассировка bitdrift со ссылкой на распределённую трассировку в интерфейсе ClickStack" size="lg" />
+![Трассировка bitdrift со ссылкой на распределённую трассировку в интерфейсе ClickStack](/images/clickstack/bitdrift/bitdrift-view-trace.jpg)
 
 *Переход по ссылке View Trace из сеанса bitdrift к распределённой трассировке в интерфейсе ClickStack (HyperDX).*
 

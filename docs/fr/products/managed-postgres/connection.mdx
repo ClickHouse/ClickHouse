@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
 
 <Tip>
@@ -24,11 +22,11 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
 Pour connecter vos applications à ClickHouse Managed Postgres, accédez à la section **Connect** dans la barre latérale gauche de votre instance.
 
-<Image img="/images/managed-postgres/connect-button.webp" alt="Cliquez sur Connect dans la barre latérale gauche pour afficher les informations de connexion" size="md" border />
+![Cliquez sur Connect dans la barre latérale gauche pour afficher les informations de connexion](/images/managed-postgres/connect-button.webp)
 
 Un clic sur **Connect** ouvre une fenêtre modale affichant vos identifiants et vos chaînes de connexion dans plusieurs formats.
 
-<Image img="/images/managed-postgres/connect-modal.webp" alt="Fenêtre modale de connexion affichant les identifiants et les formats de chaîne de connexion" size="md" border />
+![Fenêtre modale de connexion affichant les identifiants et les formats de chaîne de connexion](/images/managed-postgres/connect-modal.webp)
 
 La fenêtre modale de connexion affiche les informations suivantes :
 
@@ -97,7 +95,7 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 Pour les charges de travail de production, nous vous recommandons d’utiliser une connexion TLS vérifiée afin de garantir que vous communiquez avec le bon serveur. Pour ce faire, téléchargez le bundle de certificats CA depuis l’onglet **Settings** et ajoutez-le aux certificats de confiance de votre client de base de données.
 
-<Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="Télécharger le certificat CA depuis l’onglet Settings" size="md" border />
+![Télécharger le certificat CA depuis l’onglet Settings](/images/managed-postgres/tls-ca-bundle.webp)
 
 Le certificat CA est propre à votre instance ClickHouse Managed Postgres et ne fonctionnera pas avec d’autres instances.
 

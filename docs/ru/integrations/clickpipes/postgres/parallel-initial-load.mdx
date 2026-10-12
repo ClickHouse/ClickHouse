@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В этом документе объясняется, как в ClickPipe для Postgres выполняются параллельное создание снимка и начальная загрузка, а также описываются параметры снимка, с помощью которых можно управлять этим процессом.
 
 <div id="overview-pg-snapshot">
@@ -35,7 +33,7 @@ ClickPipe для Postgres использует столбец CTID для лог
 
 Рассмотрим приведённые ниже настройки:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp" alt="Параметры снимка" size="md" />
+![Параметры снимка](/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp)
 
 <div id="numrows-pg-snapshot">
   #### Количество строк в снимке для партиции

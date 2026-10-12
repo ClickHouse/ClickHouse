@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse は多種多様な JOIN タイプとアルゴリズムをサポートしており、JOIN のパフォーマンスも最近のリリースで大幅に改善されています。ただし、JOIN は本質的に、単一の非正規化されたテーブルに対するクエリよりもコストが高くなります。非正規化では、計算処理をクエリ実行時から INSERT 時または前処理時に移すため、実行時のレイテンシを大幅に低減できることがよくあります。リアルタイム処理やレイテンシに敏感な分析クエリでは、**非正規化を強く推奨します**。
 
 一般に、次のような場合は非正規化を検討してください。
@@ -56,7 +54,7 @@ ClickHouse は、速度とメモリ使用量のトレードオフが異なる複
 * **Partial Merge JOIN:** メモリ使用量を最小限に抑えられますが、速度は遅くなります。メモリが限られた環境で大規模なテーブルを結合するのに最適です。
 * **Grace Hash JOIN:** 柔軟でメモリ使用量を調整しやすく、パフォーマンス特性を調整できる大規模なデータセットに適しています。
 
-<Image img="/images/bestpractices/joins-speed-memory.png" size="md" alt="Joins — speed vs memory" />
+![Joins — speed vs memory](/images/bestpractices/joins-speed-memory.png)
 
 <Note>
   各アルゴリズムでサポートされる JOIN の種類は異なります。各アルゴリズムでサポートされる JOIN タイプの完全な一覧は、[こちら](/ja/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm)を参照してください。

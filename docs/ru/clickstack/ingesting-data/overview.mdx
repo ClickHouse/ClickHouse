@@ -7,19 +7,17 @@ doc_type: 'guide'
 keywords: ['clickstack', 'обсервабилити', 'журналы', 'мониторинг', 'платформа']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Все данные поступают в Open Source ClickStack или Управляемый ClickStack через **OpenTelemetry Collector (OTel)**. Он служит основной точкой входа для журналов, метрик, трассировок и данных сеансов.
 
 Ключевое различие между архитектурами заключается в том, где размещаются компоненты. В обоих случаях вы запускаете OpenTelemetry Collector для приёма телеметрических данных от ваших приложений. При использовании Open Source ClickStack вы также самостоятельно размещаете и администрируете ClickHouse и интерфейс ClickStack (HyperDX). При использовании Управляемого ClickStack ClickHouse и интерфейс HyperDX размещаются и управляются в ClickHouse Cloud, а встроенная аутентификация и эксплуатационное сопровождение уже обеспечены.
 
 <Tabs>
   <Tab title="Управляемый ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp" alt="Управляемая архитектура с потоком данных" size="md" />
+    ![Управляемая архитектура с потоком данных](/images/use-cases/observability/clickstack-managed-architecture-with-flow.webp)
   </Tab>
 
   <Tab title="Open Source ClickStack">
-    <Image img="/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp" alt="Простая архитектура с потоком данных" size="md" />
+    ![Простая архитектура с потоком данных](/images/use-cases/observability/clickstack-oss-architecture-with-flow.webp)
   </Tab>
 </Tabs>
 

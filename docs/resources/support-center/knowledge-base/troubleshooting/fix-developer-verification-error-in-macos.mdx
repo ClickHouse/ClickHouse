@@ -6,15 +6,13 @@ tags: ['Errors and Exceptions']
 keywords: ['Developer Verification', 'MacOS']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Fix the Developer Verification Error in MacOS {#fix-the-developer-verification-error-in-macos}
 If you install ClickHouse using `brew`, you may encounter an error from MacOS.
 By default, MacOS will not run applications or tools created by a developer who cannot be verified.
 
 When attempting to run any `clickhouse` command, you may see this error:
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="MacOS developer verification error dialog" border />
+![MacOS developer verification error dialog](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
 
 To get around this verification error, you need to remove the app from MacOS' quarantine bin either by finding the appropriate setting in your System Settings window, using the terminal, or by re-installing ClickHouse.
 
@@ -24,12 +22,12 @@ The easiest way to remove the `clickhouse` executable from the quarantine bin is
 1. Open **System settings**.
 1. Navigate to **Privacy & Security**:
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="MacOS Privacy & Security settings default view" border />
+    ![MacOS Privacy & Security settings default view](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
 
 1. Scroll to the bottom of the window to find a message saying _"clickhouse-macos-aarch64" was blocked from use because it is not from an identified developer".
 1. Click **Allow Anyway**.
 
-    <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="MacOS Privacy & Security settings showing Allow Anyway button" border />
+    ![MacOS Privacy & Security settings showing Allow Anyway button](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
 
 1. Enter your MacOS user password.
 

@@ -7,8 +7,6 @@ title: '将数据从 SQL Server 流式传输到 ClickHouse，实现快速分析�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本文将拆解一个教程，向你展示如何将数据从 SQL Server 流式传输到 ClickHouse。如果你希望为内部或面向客户的仪表盘提供超高速分析，ClickHouse 是理想之选。我们会一步步带你完成这两个数据库的设置、连接方式，以及最后如何使用 [Streamkap](https://streamkap.com) 流式传输数据。如果 SQL Server 承担着你的日常业务操作，而你又需要 ClickHouse 的分析速度和能力，那么你来对地方了。
 
 <div id="why-stream-data-from-sql-server-to-clickhouse">
@@ -79,11 +77,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     * 用户名和密码
     * 数据库名称
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+    ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
 
     #### 后台会发生什么
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+    ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
 
     完成设置后，Streamkap 会连接到你的 SQL Server 并检测表。此次演示中，我们会选择一张已经有一些数据持续流入的表，例如 events 或 transactions。
   </Step>
@@ -148,7 +146,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     #### 需要回填吗？
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+    ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
 
     你可能会问：需要回填旧数据吗？
 

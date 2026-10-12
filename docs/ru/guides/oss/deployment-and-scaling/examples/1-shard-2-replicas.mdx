@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['репликация', 'высокая доступность', 'настройка кластера', 'избыточность данных', 'отказоустойчивость']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import ConfigExplanation from '/snippets/ru/_config_explanation.mdx';
 import ListenHost from '/snippets/ru/_listen_host.mdx';
 import ServerParameterTable from '/snippets/ru/_server_parameter_table.mdx';
@@ -26,7 +24,7 @@ import CloudTip from '/snippets/ru/_cloud_tip.mdx';
 
 Ниже показана архитектура кластера, который вы будете настраивать:
 
-<Image img="/images/deployment-guides/replication-sharding-examples/replication.webp" size="md" alt="Схема архитектуры для 1 сегмента и 2 реплик с ReplicatedMergeTree" />
+![Схема архитектуры для 1 сегмента и 2 реплик с ReplicatedMergeTree](/images/deployment-guides/replication-sharding-examples/replication.webp)
 
 <DedicatedKeeperServers />
 

@@ -12,8 +12,6 @@ integration:
 
 import BucketDetails from '/snippets/ru/_S3_authentication_and_bucket.mdx';
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Вы можете вставлять данные из S3 в ClickHouse, а также использовать S3 как пункт назначения экспорта, что позволяет работать с архитектурами &quot;озер данных&quot;. Кроме того, S3 может предоставлять &quot;холодные&quot; уровни хранения и помогать разделять хранилище и вычислительные ресурсы. В разделах ниже мы используем набор данных о такси Нью-Йорка, чтобы продемонстрировать процесс перемещения данных между S3 и ClickHouse, а также выделить ключевые параметры конфигурации и дать рекомендации по оптимизации производительности.
 
 ## Табличные функции S3 {#s3-table-functions}
@@ -859,7 +857,7 @@ SELECT * FROM s3_table1;
 6. В консоли AWS перейдите в раздел бакетов, затем выберите новый бакет и папку.
    Вы должны увидеть примерно следующее:
 
-<Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="Представление S3 бакета в консоли AWS, где показаны файлы данных ClickHouse, хранящиеся в S3" />
+![Представление S3 бакета в консоли AWS, где показаны файлы данных ClickHouse, хранящиеся в S3](/images/integrations/data-ingestion/s3/s3-j.webp)
 
 <div id="s3-multi-region">
   ## Репликация одного сегмента в двух регионах AWS с использованием объектного хранилища S3
@@ -1298,9 +1296,9 @@ sudo service clickhouse-server start
 
   Проверьте данные в каждом S3 бакете (итоговые значения не показаны, но после вставки в обоих бакетах хранится примерно по 36 MiB):
 
-<Image img="/images/integrations/data-ingestion/s3/bucket1.webp" size="lg" border alt="Размер данных в первом S3 бакете, показывающий метрики использования хранилища" />
+![Размер данных в первом S3 бакете, показывающий метрики использования хранилища](/images/integrations/data-ingestion/s3/bucket1.webp)
 
-<Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="Размер данных во втором S3 бакете, показывающий метрики использования хранилища" />
+![Размер данных во втором S3 бакете, показывающий метрики использования хранилища](/images/integrations/data-ingestion/s3/bucket2.webp)
 
 <div id="s3express">
   ## S3Express

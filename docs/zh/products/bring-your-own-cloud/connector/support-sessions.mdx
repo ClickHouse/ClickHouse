@@ -7,8 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 support session 通过 ClickHouse 连接器向 ClickHouse 授予临时诊断访问权限。本页介绍会话的定义、如何启用和禁用会话、会话期间 ClickHouse 支持工程师可执行的操作，以及如何对其进行审计。
@@ -19,7 +17,7 @@ support session 是一段有时限的窗口期，在此期间故障排查工具�
 
 会话仅管辖诊断操作。managed 模式下 services 的生命周期命令通过 executor 的独立通道传输，support session 既不会开启该通道，也不会对其进行 gate；参见 [managed services](/zh/products/bring-your-own-cloud/connector/managed-services#service-lifecycle)。
 
-<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="ClickHouse 连接器 support session 信任流程" />
+![ClickHouse 连接器 support session 信任流程](/images/cloud/reference/byoc-connector-session-trust.svg)
 
 你可以通过两种途径控制会话：
 

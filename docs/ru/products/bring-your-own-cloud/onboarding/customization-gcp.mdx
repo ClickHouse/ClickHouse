@@ -7,8 +7,6 @@ description: 'Развертывание ClickHouse BYOC в вашей суще�
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ## VPC под управлением клиента (BYO-VPC) для GCP {#customer-managed-vpc-gcp}
 
 Если вы предпочитаете использовать существующую VPC для развертывания ClickHouse BYOC вместо того, чтобы ClickHouse Cloud создавал новую VPC, выполните приведенные ниже шаги. Такой подход дает больше контроля над конфигурацией сети и позволяет интегрировать ClickHouse BYOC в существующую сетевую инфраструктуру.
@@ -23,7 +21,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
       Чтобы предоставлять сервисы через [Private Service Connect](/ru/cloud/reference/byoc/onboarding/network-gcp#setup-psc), в этой VPC также требуется отдельная подсеть с назначением `PRIVATE_SERVICE_CONNECT`. Вы можете создать ее сейчас или позже, до включения private link.
     </Note>
 
-    <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="Сведения о подсети BYOC в GCP с основным и вторичным диапазонами IPv4 и включенным Private Google Access" />
+    ![Сведения о подсети BYOC в GCP с основным и вторичным диапазонами IPv4 и включенным Private Google Access](/images/cloud/reference/byoc-gcp-subnet.webp)
   </Step>
 
   <Step title="Обеспечьте сетевую связность" id="ensure-network-connectivity">
@@ -53,7 +51,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     5. Если ваша VPC находится в host-проекте Shared VPC, укажите **Shared VPC host project ID**. Оставьте поле пустым, если VPC находится в том же проекте, что и инфраструктура. См. раздел [Shared VPC из host-проекта](#shared-vpc-host-project) ниже.
     6. Нажмите **Set up Infrastructure**, чтобы начать подготовку.
 
-    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="Интерфейс настройки ClickHouse Cloud BYOC с выбранным Use existing VPC для GCP, где показаны поля VPC network name, subnet name, secondary range names и Shared VPC host project ID" />
+    ![Интерфейс настройки ClickHouse Cloud BYOC с выбранным Use existing VPC для GCP, где показаны поля VPC network name, subnet name, secondary range names и Shared VPC host project ID](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
   </Step>
 </Steps>
 

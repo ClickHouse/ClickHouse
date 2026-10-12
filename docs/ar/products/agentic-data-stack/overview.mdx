@@ -6,8 +6,6 @@ doc_type: 'landing-page'
 keywords: ['agentic data stack', 'agentic analytics', 'ClickHouse', 'MCP', 'LibreChat', 'Langfuse', 'AI']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 أسهل طريقة لتشغيل التحليلات المعتمدة على الوكلاء على ClickHouse هي [ClickHouse Agents](/ar/products/cloud/features/ai-ml/agents) في ClickHouse Cloud: مُدار بالكامل، من دون الحاجة إلى تشغيل أي بنية تحتية. يطرح المستخدمون أسئلة بلغة طبيعية، ويجيب عنها وكيل ذكاء اصطناعي عبر الاستعلام من قاعدة البيانات مباشرةً.
 
 للاستضافة الذاتية، تُعد **Agentic Data Stack** حزمةً مفتوحة المصدر قابلة للتركيب. أنت تشغّلها بنفسك، وتربط نماذجك الخاصة، وتُبقي محادثاتك وبياناتك داخل بيئتك الخاصة. وهي تتكوّن من [ClickHouse](/ar/get-started/setup/install)، و[خادم MCP في ClickHouse](/ar/products/agentic-data-stack/components/mcp-server)، و[LibreChat](/ar/products/agentic-data-stack/components/librechat)، و[Langfuse](/ar/products/agentic-data-stack/components/langfuse).
@@ -32,7 +30,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## كيف تتكامل مكوّنات Agentic Data Stack
 </div>
 
-<Image img="/images/agentic-data-stack/01-architecture.webp" alt="بنية Agentic Data Stack: يتفاعل المستخدمون مع LibreChat، الذي يتصل بنموذج لغوي كبير، وبـ ClickHouse عبر خادم MCP، وبـ Langfuse لأغراض التتبّع" size="md" />
+![بنية Agentic Data Stack: يتفاعل المستخدمون مع LibreChat، الذي يتصل بنموذج لغوي كبير، وبـ ClickHouse عبر خادم MCP، وبـ Langfuse لأغراض التتبّع](/images/agentic-data-stack/01-architecture.webp)
 
 يطرح المستخدم سؤالًا في LibreChat. يضع النموذج خطةً للاستجابة، ومن خلال خادم MCP في ClickHouse يستدعي أدوات لاستكشاف ClickHouse وتنفيذ استعلامات عليه. ثم تعود النتائج، ويصوغ الوكيل الإجابة. ويسجّل Langfuse، المبني على OpenTelemetry، كل تشغيل بدءًا من الموجّه مرورًا باستدعاء الأداة ووصولًا إلى الاستجابة، ويتيح لك تقييم المخرجات تلقائيًا أو عبر مراجعة بشرية، كما يتتبّع الجودة والتكلفة وزمن الاستجابة.
 

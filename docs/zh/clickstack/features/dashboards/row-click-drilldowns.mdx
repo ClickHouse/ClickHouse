@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', '仪表盘', '下钻', '表', '行点击', '排查', '可观测性']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 表格卡片通常就是一个**清单**：每个服务、主机、端点或错误组各占一行，并用几列对每一项进行评分。行点击操作会把这个清单变成一套排查工作流。你先浏览清单找到关键的那一行，点击它，然后 ClickStack 会将该行的值作为过滤器一路带入。这样打开目标页面时，就已经自动限定到这一个条目，无需再手动重建查询。
 
 一次点击会进入以下两个位置之一：
@@ -40,7 +38,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     按 `Requests` 降序排序，让最繁忙的服务排在最前面。这个表就是清单：每个服务一行，按 RED 指标打分。
 
-    <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="服务清单表，为每个服务显示 RED 列（Requests、Errors、P95 Duration），按请求量排序，上方还有请求随时间变化的趋势图" size="lg" />
+    ![服务清单表，为每个服务显示 RED 列（Requests、Errors、P95 Duration），按请求量排序，上方还有请求随时间变化的趋势图](/images/clickstack/dashboards/row-click-catalog.webp)
 
     <Tip>
       **将 group-by 列放在最前面**
@@ -63,7 +61,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="点击一行" id="click-dashboard">
     将鼠标悬停在某一行上时，表格右侧边缘会显示一个链接入口，并附带说明该操作的提示 (`Open dashboard "Service Detail"`) 。点击该行会打开 `Service Detail` 仪表盘，并将其中的 `Service` 过滤器设置为被点击的值，因此所有卡片 (RED 关键指标、延迟百分位数、各端点明细) 都会在一次点击后重新限定到该服务。
 
-    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="在点击某一行后显示的 Service Detail 仪表盘，其中 Service 过滤器已设置为被点击的服务，RED 关键指标、延迟百分位数以及各端点明细都已限定到该服务" size="lg" />
+    ![在点击某一行后显示的 Service Detail 仪表盘，其中 Service 过滤器已设置为被点击的服务，RED 关键指标、延迟百分位数以及各端点明细都已限定到该服务](/images/clickstack/dashboards/row-click-drilldown.webp)
   </Step>
 </Steps>
 
@@ -88,7 +86,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="点击一行" id="click-search">
     现在，点击某个服务行会在该链路追踪数据源上打开搜索页面，并按 `ServiceName = <service>` 过滤，因此你会直接看到相同时间范围内仅属于该服务的 spans。
 
-    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="点击行后，搜索页面会在链路追踪数据源上打开，并过滤到被点击的服务" size="lg" />
+    ![点击行后，搜索页面会在链路追踪数据源上打开，并过滤到被点击的服务](/images/clickstack/dashboards/row-click-search-drilldown.webp)
   </Step>
 </Steps>
 
@@ -100,7 +98,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 行点击操作直接在表格卡片上配置，没有单独的设置页面。添加或编辑一个卡片，并将其可视化类型设置为 **Table**。然后，编辑器工具栏中会出现一个 **Row Click Action** 按钮，位于 **Display Settings** 旁边。该按钮仅在表格卡片上显示，其标签会反映当前操作：`Row Click Action: Default`、`Row Click Action: Search` 或 `Row Click Action: Dashboard`。点击它即可打开侧边抽屉。
 
-<Image img="/images/clickstack/dashboards/row-click-drawer.webp" alt="在 Dashboard 模式下的 Row Click Action 侧边抽屉中，Service Detail 仪表盘被选为目标端，并配置了从点击行中模板化出的 ServiceName 过滤器" size="lg" />
+![在 Dashboard 模式下的 Row Click Action 侧边抽屉中，Service Detail 仪表盘被选为目标端，并配置了从点击行中模板化出的 ServiceName 过滤器](/images/clickstack/dashboards/row-click-drawer.webp)
 
 侧边抽屉提供三种操作：
 

@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/pt-BR/_self_managed_only_automated.mdx';
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <SelfManaged />
 
 Este guia apresenta configurações simples e mínimas para configurar o ClickHouse a usar certificados OpenSSL para validar conexões. Para esta demonstração, são criados um certificado e uma chave de uma autoridade certificadora (CA) autoassinada, junto com certificados de nó, para estabelecer as conexões com as configurações adequadas.
@@ -461,7 +459,7 @@ Este guia apresenta configurações simples e mínimas para configurar o ClickHo
 
     5. Faça login na UI do Play pela interface `https` em `https://chnode1.marsnet.local:8443/play`.
 
-       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="Configuração de TLS" size="md" border />
+       ![Configuração de TLS](/images/guides/sre/configuring-ssl_01.webp)
 
     <Note>
       o navegador mostrará um certificado não confiável, já que está sendo acessado a partir de uma estação de trabalho e os certificados não estão nos repositórios de CA raiz da máquina cliente.

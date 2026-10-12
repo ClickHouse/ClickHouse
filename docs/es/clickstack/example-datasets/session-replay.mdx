@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'session replay', 'SDK del navegador', 'Demo', 'observabilidad', 'instrumentación']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <Info>
   **En resumen**
 
@@ -62,7 +60,7 @@ Para obtener más contexto sobre qué es Session Replay y cómo encaja en ClickS
     3. Ve a **Team Settings → API Keys**
     4. Copia tu **API key de ingesta**
 
-    <Image img="/images/clickstack/api-key.webp" alt="API key de ClickStack" />
+    ![API key de ClickStack](/images/clickstack/api-key.webp)
 
     5. Defínela como una variable de entorno:
 
@@ -82,7 +80,7 @@ Para obtener más contexto sobre qué es Session Replay y cómo encaja en ClickS
 
     Abre [http://localhost:3000](http://localhost:3000) en tu navegador e interactúa con la aplicación: busca temas, filtra por categoría, consulta ejemplos de código y guarda elementos en favoritos.
 
-    <Image img="/images/clickstack/session-replay/demo-app.webp" alt="Aplicación de demostración de session replay" />
+    ![Aplicación de demostración de session replay](/images/clickstack/session-replay/demo-app.webp)
 
     Todas las interacciones se capturan automáticamente con el SDK para navegador de ClickStack.
   </Step>
@@ -90,11 +88,11 @@ Para obtener más contexto sobre qué es Session Replay y cómo encaja en ClickS
   <Step title="Ver tu session replay" id="view-session-replay">
     Vuelve a HyperDX en [http://localhost:8080](http://localhost:8080) y ve a **Client Sessions** en la barra lateral izquierda.
 
-    <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Búsqueda de session replay" />
+    ![Búsqueda de session replay](/images/clickstack/session-replay/replay-search-view.webp)
 
     Deberías ver tu sesión en la lista con su duración y número de eventos. Haz clic en el botón ▶️ para reproducirla.
 
-    <Image img="/images/clickstack/session-replay/session-replay.webp" alt="Session replay" />
+    ![Session replay](/images/clickstack/session-replay/session-replay.webp)
 
     Cambia entre los modos **Highlighted** y **All Events** para ajustar el nivel de detalle en la línea de tiempo.
   </Step>

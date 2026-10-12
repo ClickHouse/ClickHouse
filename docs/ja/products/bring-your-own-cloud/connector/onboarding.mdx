@@ -7,8 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ja/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 このページでは、登録トークンの取得から、ClickHouse Cloud が駆動するサービスライフサイクルを executor が適用する managed モードでの検証済みコネクタの準備までの手順を説明します。コネクタは、Kubernetes クラスター (Helm) または Linux VM (systemd) にインストールできます。標準的な手順はトークン登録です。環境からコネクタエンドポイントに直接アクセスできない場合は、[エアギャップ環境およびミラーインストール](#air-gapped-and-mirrored-installs)を参照してください。executor を使わずに自分で運用する ClickHouse を監視する場合は、`--no-managed` を指定してください。
@@ -88,7 +86,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
   <Step title="コネクタを登録してインストールする" id="enroll-and-install">
     `init --enroll` はトークンを引き換え、署名済みのクライアント証明書と executor の cluster-wide grant を取得したうえで、コネクタをインストールして検証します。
 
-    <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="ClickHouse Connector の登録フロー" />
+    ![ClickHouse Connector の登録フロー](/images/cloud/reference/byoc-connector-enrollment-flow.svg)
 
     端末上では、`init` が `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?` と尋ね、`yes` があらかじめ選択された状態になります。このプロンプトをスキップするには `--managed` を、executor を含まない観測専用インストールを行うには `--no-managed` を渡します。どちらのフラグも指定しない無人の新規インストールでは managed モードは無効のままになります (`--force` による再実行では、置き換えられる設定の状態が引き継がれます) 。そのため、スクリプトでは必ず `--managed` を渡してください。
 

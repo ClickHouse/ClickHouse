@@ -7,7 +7,6 @@ title: '将 ClickHouse 连接到 Holistics'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -54,7 +53,7 @@ GRANT SELECT ON system.* TO holistics_user;
 
     你可以在 ClickHouse Cloud 控制台中点击 **Connect** 按钮，然后选择 **HTTPS** 来查看这些连接信息。
 
-    <Image size="md" img="/images/integrations/data-visualization/holistics_01.webp" alt="ClickHouse Cloud 控制台中 Connect 按钮的位置" border />
+    ![ClickHouse Cloud 控制台中 Connect 按钮的位置](/images/integrations/data-visualization/holistics_01.webp)
   </Step>
 
   <Step title="配置网络访问" id="step-2-configure-network-access">
@@ -62,7 +61,7 @@ GRANT SELECT ON system.* TO holistics_user;
 
     1. **Direct Connection (推荐) ：** 在你的防火墙或 ClickHouse Cloud IP Access List 中将 Holistics 的 IP 地址加入白名单。你可以在 [IP Whitelisting guide](https://docs.holistics.io/docs/connect/ip-whitelisting) 中查看 IP 列表。
 
-       <Image size="md" img="/images/integrations/data-visualization/holistics_02.webp" alt="ClickHouse Cloud 中 IP 白名单配置示例" border />
+       ![ClickHouse Cloud 中 IP 白名单配置示例](/images/integrations/data-visualization/holistics_02.webp)
 
     2. **Reverse SSH Tunnel：** 如果你的数据库位于私有网络 (VPC) 中且无法对公网开放，请使用 [Reverse SSH Tunnel](https://docs.holistics.io/docs/connect/connect-tunnel)。
   </Step>
@@ -70,11 +69,11 @@ GRANT SELECT ON system.* TO holistics_user;
   <Step title="在 Holistics 中添加数据源" id="step-3-add-data-source-in-holistics">
     1. 在 Holistics 中，前往 **Settings → 数据源**。
 
-       <Image size="md" img="/images/integrations/data-visualization/holistics_03.webp" alt="在 Holistics 设置中前往 数据源" border />
+       ![在 Holistics 设置中前往 数据源](/images/integrations/data-visualization/holistics_03.webp)
 
     2. 点击 **New Data Source**，然后选择 **ClickHouse**。
 
-       <Image size="md" img="/images/integrations/data-visualization/holistics_04.webp" alt="从新建数据源列表中选择 ClickHouse" border />
+       ![从新建数据源列表中选择 ClickHouse](/images/integrations/data-visualization/holistics_04.webp)
 
     3. 使用步骤 1 中收集的信息填写表单。
 
@@ -85,11 +84,11 @@ GRANT SELECT ON system.* TO holistics_user;
        | **Require SSL**   | 如果使用 8443 端口，请切换为 **ON** (ClickHouse Cloud 必需) 。 |
        | **Database Name** | `default` (或你的特定 DB)                             |
 
-       <Image size="md" img="/images/integrations/data-visualization/holistics_05.webp" alt="在 Holistics 中填写 ClickHouse 连接信息" border />
+       ![在 Holistics 中填写 ClickHouse 连接信息](/images/integrations/data-visualization/holistics_05.webp)
 
     4. 点击 **Test Connection**。
 
-       <Image size="md" img="/images/integrations/data-visualization/holistics_06.webp" alt="Holistics 中成功通过 ClickHouse 连接测试" border />
+       ![Holistics 中成功通过 ClickHouse 连接测试](/images/integrations/data-visualization/holistics_06.webp)
 
        * **Success：** 点击 **Save**。
        * **Failure：** 检查你的用户名和密码，并确认已将 [Holistics IP 地址加入白名单](https://docs.holistics.io/docs/connect/ip-whitelisting)。

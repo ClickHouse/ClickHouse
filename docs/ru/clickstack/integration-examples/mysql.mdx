@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['MySQL', 'журналы', 'OTEL', 'ClickStack', 'мониторинг баз данных', 'медленные запросы']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -203,9 +201,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     3. Отфильтруйте по `source:mysql-error` или `source:mysql-slow`, чтобы увидеть журналы MySQL
     4. Вы должны увидеть структурированные записи журнала с такими полями, как `level`, `error_code`, `message` (для журналов ошибок), а также `query_time`, `rows_examined`, `query` (для журналов медленных запросов)
 
-    <Image img="/images/clickstack/mysql/search-view.webp" alt="Search view" />
+    ![Search view](/images/clickstack/mysql/search-view.webp)
 
-    <Image img="/images/clickstack/mysql/log-view.webp" alt="Представление логов" />
+    ![Представление логов](/images/clickstack/mysql/log-view.webp)
   </Step>
 </Steps>
 
@@ -328,9 +326,9 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       Если вы не видите все 40 логов сразу, подождите около минуты, пока коллектор завершит обработку. Если логи по-прежнему не появляются, выполните `docker restart clickstack-demo` и проверьте снова ещё через минуту. Это известная проблема ресивера filelog OpenTelemetry при пакетной загрузке уже существующих файлов с `start_at: beginning`. В производственных развертываниях с `start_at: end` логи обрабатываются в реальном времени по мере записи, и этой проблемы не возникает.
     </Note>
 
-    <Image img="/images/clickstack/mysql/search-view.webp" alt="Представление поиска" />
+    ![Представление поиска](/images/clickstack/mysql/search-view.webp)
 
-    <Image img="/images/clickstack/mysql/log-view.webp" alt="Представление логов" />
+    ![Представление логов](/images/clickstack/mysql/log-view.webp)
 
     <Info>
       **Отображение часового пояса**
@@ -355,17 +353,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Кнопка импорта панели мониторинга" />
+    ![Кнопка импорта панели мониторинга](/images/clickstack/import-dashboard.webp)
 
     3. Загрузите файл `mysql-logs-dashboard.json` и нажмите **Finish Import**
 
-    <Image img="/images/clickstack/mysql/finish-import.webp" alt="Завершение импорта" />
+    ![Завершение импорта](/images/clickstack/mysql/finish-import.webp)
   </Step>
 
   <Step title="Просмотрите панель мониторинга" id="created-dashboard">
     Панель мониторинга будет создана со всеми преднастроенными визуализациями.
 
-    <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="Пример панели мониторинга" />
+    ![Пример панели мониторинга](/images/clickstack/mysql/example-dashboard.webp)
 
     <Note>
       Для демо-набора данных установите временной диапазон **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (с учётом вашего локального часового пояса). По умолчанию у импортированной панели мониторинга временной диапазон не задан.

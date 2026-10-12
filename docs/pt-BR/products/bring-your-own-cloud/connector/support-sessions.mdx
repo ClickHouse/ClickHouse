@@ -7,8 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 Uma sessão de suporte concede ao ClickHouse acesso temporário para fins de diagnóstico por meio do ClickHouse Connector. Esta página aborda o que é uma sessão, como habilitá-la e desabilitá-la, o que os engenheiros de suporte do ClickHouse podem fazer durante ela e como auditá-la.
@@ -19,7 +17,7 @@ Uma sessão de suporte é uma janela de tempo limitado na qual o solucionador de
 
 As sessões regem apenas os diagnósticos. Os comandos de ciclo de vida de serviços em modo managed trafegam pelo canal separado do executor, que uma sessão de suporte não abre nem controla; consulte [managed services](/pt-BR/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
-<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="Fluxo de confiança da sessão de suporte do ClickHouse Connector" />
+![Fluxo de confiança da sessão de suporte do ClickHouse Connector](/images/cloud/reference/byoc-connector-session-trust.svg)
 
 Você controla as sessões por meio de duas interfaces:
 

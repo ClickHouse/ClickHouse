@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'search', 'logs', 'observability', 'full-text search']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Search in ClickStack and Elastic {#search-in-clickstack-and-elastic}
 
 ClickHouse is a SQL-native engine, designed from the ground up for high-performance analytical workloads. In contrast, Elasticsearch provides a SQL-like interface, transpiling SQL into the underlying Elasticsearch query DSL — meaning it isn't a first-class citizen, and [feature parity](https://www.elastic.co/docs/explore-analyze/query-filter/languages/sql-limitations) is limited. 
@@ -17,11 +15,11 @@ ClickHouse not only supports full SQL but extends it with a range of observabili
 
 For simple log and trace exploration, the ClickStack UI (HyperDX) provides a [Lucene-style syntax](/clickstack/features/search) for intuitive, text-based filtering for field-value queries, ranges, wildcards, and more. This is comparable to the [Lucene syntax](https://www.elastic.co/docs/reference/query-languages/query-dsl/query-dsl-query-string-query#query-string-syntax) in Elasticsearch and elements of the [Kibana Query Language](https://www.elastic.co/docs/reference/query-languages/kql).
 
-<Image img="/images/use-cases/observability/hyperdx-search.webp" alt="Search" size="lg"/>
+![Search](/images/use-cases/observability/hyperdx-search.webp)
 
 The search interface supports this familiar syntax but translates it behind the scenes into efficient SQL `WHERE` clauses, making the experience familiar for Kibana users while still allowing users to leverage the power of SQL when needed. This allows you to exploit the full range of [string search functions](/reference/functions/regular-functions/string-search-functions), [similarity functions](/reference/functions/regular-functions/string-functions#stringJaccardIndex) and [date time functions](/reference/functions/regular-functions/date-time-functions) in ClickHouse.
 
-<Image img="/images/use-cases/observability/hyperdx-sql.webp" alt="SQL" size="lg"/>
+![SQL](/images/use-cases/observability/hyperdx-sql.webp)
 
 Below, we compare the Lucene query languages of ClickStack and Elasticsearch.
 

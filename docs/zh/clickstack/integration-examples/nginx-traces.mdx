@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Nginx', '链路追踪', 'otel']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -158,7 +156,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   <Step title="在 HyperDX 中验证链路追踪" id="verifying-traces">
     配置完成后，登录 HyperDX 并确认链路追踪是否已开始流入。你应该会看到类似下面的内容；如果没有看到链路追踪，请尝试调整时间范围：
 
-    <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="查看链路追踪" />
+    ![查看链路追踪](/images/clickstack/nginx-traces-search-view.webp)
   </Step>
 </Steps>
 
@@ -246,7 +244,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       HyperDX 会按浏览器的本地时区显示时间戳。演示数据覆盖 **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**。较大的时间范围可确保无论你身处何地都能看到这些演示链路追踪。看到链路追踪后，你可以将范围缩小到 24 小时，以获得更清晰的可视化效果。
     </Info>
 
-    <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="查看链路追踪" />
+    ![查看链路追踪](/images/clickstack/nginx-traces-search-view.webp)
   </Step>
 </Steps>
 
@@ -265,11 +263,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     1. 打开 HyperDX，进入“仪表盘”部分。
     2. 点击右上角省略号菜单中的“导入仪表盘”。
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘" />
+    ![导入仪表盘](/images/clickstack/import-dashboard.webp)
 
     3. 上传 nginx-trace-dashboard.json 文件，然后点击“完成导入”。
 
-    <Image img="/images/clickstack/finish-nginx-traces-dashboard.webp" alt="完成导入" />
+    ![完成导入](/images/clickstack/finish-nginx-traces-dashboard.webp)
   </Step>
 
   <Step title="仪表盘创建后，所有可视化都会预先配置好。" id="created-dashboard">
@@ -277,7 +275,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       对于演示数据集，请将时间范围设置为 **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (请根据你的本地时区进行调整) 。导入的仪表盘默认不会设置时间范围。
     </Note>
 
-    <Image img="/images/clickstack/nginx-traces-dashboard.webp" alt="示例仪表盘" />
+    ![示例仪表盘](/images/clickstack/nginx-traces-dashboard.webp)
   </Step>
 </Steps>
 

@@ -9,8 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Ce guide vous explique comment collecter les logs, les métriques d’infrastructure et les événements Kubernetes d’un cluster dans Managed ClickStack, puis les consulter dans le tableau de bord Kubernetes intégré.
 
 Le schéma suit le modèle standard d’OpenTelemetry : deux collecteurs sont déployés via le [chart Helm OpenTelemetry](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector), chacun transférant les données vers votre collecteur passerelle ClickStack via OTLP. Un **DaemonSet** s’exécute sur chaque nœud pour collecter les logs des conteneurs et les métriques du kubelet. Un **Deployment** avec une seule réplique collecte les événements Kubernetes et les métriques à l’échelle du cluster. Pour en savoir plus sur le rôle de passerelle, voir [Rôles des collecteurs](/fr/clickstack/ingesting-data/collector#collector-roles).
@@ -302,15 +300,15 @@ Pour une charge de travail exécutée dans Kubernetes, le collecteur passerelle 
   <Step title="Vérifier dans l’interface ClickStack" id="confirm-in-ui">
     Ouvrez votre service dans la [console ClickHouse Cloud](https://console.clickhouse.cloud) et sélectionnez **ClickStack** dans le menu de gauche.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="Lancer ClickStack" border />
+    ![Lancer ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
 
     Dans la vue **Search**, sélectionnez `Logs` comme source et définissez l’intervalle de temps sur **Last 15 minutes**. Les logs des conteneurs de tout le cluster devraient apparaître en quelques secondes, enrichis d’attributs comme `k8s.namespace.name`, `k8s.pod.name` et `k8s.node.name`.
 
-    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="Vue Search de ClickStack avec les logs Kubernetes" />
+    ![Vue Search de ClickStack avec les logs Kubernetes](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
 
     Pour voir les métriques et événements d’infrastructure dans leur contexte, ouvrez le tableau de bord **Kubernetes** intégré en accédant à **Dashboards** -&gt; **Kubernetes**. Les onglets `Pods`, `Nodes` et `Namespaces` devraient tous contenir des données.
 
-    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="Tableau de bord Kubernetes de ClickStack" border />
+    ![Tableau de bord Kubernetes de ClickStack](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
 
     Si rien ne s’affiche :
 

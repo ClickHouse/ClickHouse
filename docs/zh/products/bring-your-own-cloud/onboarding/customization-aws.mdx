@@ -7,8 +7,6 @@ description: '将 ClickHouse BYOC 部署到您现有的 AWS VPC 中'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="customer-managed-vpc-aws">
   ## 适用于 AWS 的客户管理的 VPC (BYO-VPC)
 </div>
@@ -22,15 +20,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     3. 确保每个子网的最小 CIDR 范围为 `/25` (例如 `10.0.0.0/25`)。每个 `/25` 在每个可用区大约支持 10 个 ClickHouse server 节点；大多数部署建议使用 `/24`，预计会扩展的部署则应使用更大的子网。Pod IP 地址从子网本身分配，因此每个副本都会占用子网地址。
     4. 为每个子网添加标签 `kubernetes.io/role/internal-elb=1` 和 `clickhouse-byoc="true"`，以启用正确的负载均衡器配置。
 
-    <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="BYOC VPC 子网" />
+    ![BYOC VPC 子网](/images/cloud/reference/byoc-subnet-1.webp)
 
-    <Image img="/images/cloud/reference/byoc-subnet-2.webp" size="lg" alt="BYOC VPC 子网标签" />
+    ![BYOC VPC 子网标签](/images/cloud/reference/byoc-subnet-2.webp)
   </Step>
 
   <Step title="配置 S3 Gateway Endpoint" id="configure-s3-endpoint">
     如果您的 VPC 尚未配置 S3 Gateway Endpoint，则需要创建一个，以便在 VPC 与 Amazon S3 之间启用安全的私有通信。此端点可让您的 ClickHouse 服务在不经过公共互联网的情况下访问 S3。示例配置请参见下方截图。
 
-    <Image img="/images/cloud/reference/byoc-s3-endpoint.webp" size="lg" alt="BYOC S3 端点" />
+    ![BYOC S3 端点](/images/cloud/reference/byoc-s3-endpoint.webp)
   </Step>
 
   <Step title="确保网络连通性" id="ensure-network-connectivity">
@@ -95,7 +93,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     4. 如果您的配置需要面向公网的负载均衡器，可选填 **Public subnet IDs**。
     5. 点击 **Set up Infrastructure** 开始预配。
 
-    <Image img="/images/cloud/reference/byoc-aws-existing-vpc-ui.webp" size="lg" alt="已选择 Use existing VPC 的 ClickHouse Cloud BYOC 设置界面" />
+    ![已选择 Use existing VPC 的 ClickHouse Cloud BYOC 设置界面](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
 
     <Note>
       新区域的设置最多可能需要 40 分钟。

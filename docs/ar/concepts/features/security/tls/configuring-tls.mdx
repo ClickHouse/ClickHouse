@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import SelfManaged from '/snippets/ar/_self_managed_only_automated.mdx';
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <SelfManaged />
 
 يوفّر هذا الدليل إعدادات بسيطة ومحدودة لتهيئة ClickHouse لاستخدام شهادات OpenSSL للتحقق من صحة الاتصالات. ولأغراض هذا العرض التوضيحي، تُنشأ شهادة ومفتاح لمرجع شهادات (CA) موقَّعين ذاتيًا، إلى جانب شهادات للعُقد، بحيث يمكن إنشاء الاتصالات باستخدام الإعدادات المناسبة.
@@ -461,7 +459,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     5. سجّل الدخول إلى واجهة Play عبر واجهة `https` على `https://chnode1.marsnet.local:8443/play`.
 
-       <Image img="/images/guides/sre/configuring-ssl_01.webp" alt="تهيئة TLS" size="md" border />
+       ![تهيئة TLS](/images/guides/sre/configuring-ssl_01.webp)
 
     <Note>
       سيعرض المتصفح شهادةً غير موثوق بها، لأن الوصول إليه يتم من محطة عمل ولأن الشهادات غير موجودة في مخازن شهادات CA الجذرية على جهاز العميل.

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['storage', 'compute', 'architecture', 'scalability', 'cloud']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Overview {#overview}
 
 This guide explores how you can use ClickHouse and S3 to implement an architecture with separated storage and compute.
@@ -156,7 +154,7 @@ In the AWS console, if your data was successfully inserted to S3, you should see
 
 If everything worked successfully, you're now using ClickHouse with separated storage and compute!
 
-<Image img="/images/guides/s3_bucket_example.webp" size="md" alt="S3 bucket example using separation of compute and storage" border/>
+![S3 bucket example using separation of compute and storage](/images/guides/s3_bucket_example.webp)
 
 </Step>
 <Step title="Implementing replication for fault tolerance (optional)" id="3-implementing-replication-for-fault-tolerance-optional">

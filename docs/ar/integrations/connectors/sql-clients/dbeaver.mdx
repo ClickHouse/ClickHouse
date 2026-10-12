@@ -11,8 +11,6 @@ integration:
 keywords: ['DBeaver', 'إدارة قواعد البيانات', 'عميل SQL', 'اتصال JDBC', 'متعدد المنصات']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -40,29 +38,29 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
   <Step title="إضافة قاعدة بيانات" id="3-add-a-database">
     * استخدم إمّا القائمة **Database &gt; New Database Connection** أو أيقونة **New Database Connection** في **Database Navigator** لفتح مربع الحوار **Connect to a database**:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-add-database.webp" size="md" border alt="إضافة قاعدة بيانات جديدة" />
+    ![إضافة قاعدة بيانات جديدة](/images/integrations/sql-clients/dbeaver-add-database.webp)
 
     * حدِّد **Analytical** ثم **ClickHouse**:
 
     * أنشئ **JDBC URL**. في علامة التبويب **Main**، اضبط **Host** و**Port** و**Username** و**Password** و**Database**:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-host-port.webp" size="md" border alt="تعيين اسم المضيف والمنفذ والمستخدم وكلمة المرور واسم قاعدة البيانات" />
+    ![تعيين اسم المضيف والمنفذ والمستخدم وكلمة المرور واسم قاعدة البيانات](/images/integrations/sql-clients/dbeaver-host-port.webp)
 
     * افتراضيًا، تكون الخاصية **SSL &gt; Use SSL** غير مفعّلة. إذا كنت تتصل بـ ClickHouse Cloud أو بخادم يتطلب SSL على منفذ HTTP، فقم بتمكين **SSL &gt; Use SSL**:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-use-ssl.webp" size="md" border alt="فعّل SSL إذا لزم الأمر" />
+    ![فعّل SSL إذا لزم الأمر](/images/integrations/sql-clients/dbeaver-use-ssl.webp)
 
     * اختبر الاتصال:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="اختبر الاتصال" />
+    ![اختبر الاتصال](/images/integrations/sql-clients/dbeaver-test-connection.webp)
 
     إذا اكتشف DBeaver أن برنامج تشغيل ClickHouse غير مثبّت لديك، فسيعرض عليك تنزيله:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-download-driver.webp" size="md" border alt="تنزيل برنامج تشغيل ClickHouse" />
+    ![تنزيل برنامج تشغيل ClickHouse](/images/integrations/sql-clients/dbeaver-download-driver.webp)
 
     * بعد تنزيل برنامج التشغيل، اختبر الاتصال مرة أخرى بالنقر على **Test**:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-test-connection.webp" size="md" border alt="اختبر الاتصال" />
+    ![اختبر الاتصال](/images/integrations/sql-clients/dbeaver-test-connection.webp)
   </Step>
 
   <Step title="نفّذ استعلامًا على ClickHouse" id="4-query-clickhouse">
@@ -70,11 +68,11 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
 
     * انقر بزر الماوس الأيمن على اتصالك واختر **SQL Editor &gt; Open SQL Script** لفتح محرر استعلامات:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-sql-editor.webp" size="md" border alt="افتح محرر SQL" />
+    ![افتح محرر SQL](/images/integrations/sql-clients/dbeaver-sql-editor.webp)
 
     * مثال على استعلام لـ `system.query_log`:
 
-    <Image img="/images/integrations/sql-clients/dbeaver-query-log-select.webp" size="md" border alt="استعلام نموذجي" />
+    ![استعلام نموذجي](/images/integrations/sql-clients/dbeaver-query-log-select.webp)
   </Step>
 </Steps>
 

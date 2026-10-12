@@ -8,8 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
 
 ClickHouse Cloud 支持对 ClickHouse Managed Postgres 服务进行基于角色的访问控制 (RBAC) 。您可以创建具有特定权限的自定义角色，并将其分配给组织成员，以控制哪些人可以查看或管理您的 Postgres 服务。
@@ -37,16 +35,16 @@ ClickHouse Managed Postgres 当前支持两项权限：
 
 1. 在左侧边栏中点击组织名称，然后选择 **Users and roles**。
 
-<Image img="/images/managed-postgres/rbac/usersandroles.webp" alt="Users and roles 菜单" size="md" border />
+![Users and roles 菜单](/images/managed-postgres/rbac/usersandroles.webp)
 
 2. 切换到 **Roles** 选项卡，然后点击 **Create role**。
 3. 输入角色名称，然后点击 **+ Allow**，并从实体列表中选择 **Postgres Service**。
 
-<Image img="/images/managed-postgres/rbac/postgresentity.webp" alt="选择 Postgres Service 实体" size="md" border />
+![选择 Postgres Service 实体](/images/managed-postgres/rbac/postgresentity.webp)
 
 4. 选择该角色要限定到的 Postgres 服务，然后选择要授予的权限。
 
-<Image img="/images/managed-postgres/rbac/newpostgresperms.webp" alt="为角色配置 Postgres 权限" size="md" border />
+![为角色配置 Postgres 权限](/images/managed-postgres/rbac/newpostgresperms.webp)
 
 5. 点击 **Create role** 保存。
 

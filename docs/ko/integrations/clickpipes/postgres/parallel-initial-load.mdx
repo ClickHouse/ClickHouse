@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 문서에서는 Postgres ClickPipe의 병렬 스냅샷/초기 적재 동작 방식과 이를 제어하는 데 사용할 수 있는 스냅샷 매개변수를 설명합니다.
 
 <div id="overview-pg-snapshot">
@@ -35,7 +33,7 @@ Postgres ClickPipe는 CTID 컬럼을 사용해 원본 테이블을 논리적으�
 
 아래 설정을 살펴보겠습니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp" alt="스냅샷 매개변수" size="md" />
+![스냅샷 매개변수](/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp)
 
 <div id="numrows-pg-snapshot">
   #### 파티션당 스냅샷 행 수

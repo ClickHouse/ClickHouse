@@ -11,7 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
-import { Image } from "/snippets/fr/components/Image.jsx";
 import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -29,7 +28,7 @@ Ce partenariat réunit **la vitesse de ClickHouse** et **l’expérience dévelo
 Dans ce guide, vous découvrirez comment **Lightdash** se connecte à **ClickHouse** pour explorer vos modèles dbt et créer des tableaux de bord interactifs.
 L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des données issues de ClickHouse.
 
-<Image size="md" img="/images/integrations/data-visualization/lightdash_02.webp" alt="Exemple de tableau de bord Lightdash" border />
+![Exemple de tableau de bord Lightdash](/images/integrations/data-visualization/lightdash_02.webp)
 
 <Steps>
   <Step title="Rassemblez les informations de connexion" id="connection-data-required">
@@ -56,7 +55,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
 
     Par exemple :
 
-    <Image size="md" img="/images/integrations/data-visualization/lightdash_01.webp" alt="Exemple de configuration profiles.yml pour un projet lightdash-clickhouse" border />
+    ![Exemple de configuration profiles.yml pour un projet lightdash-clickhouse](/images/integrations/data-visualization/lightdash_01.webp)
 
     <br />
   </Step>
@@ -88,7 +87,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
   <Step title="Définir les métriques et les dimensions dans Lightdash" id="defining-metrics-and-dimensions-in-lightdash">
     Dans Lightdash, toutes les **métriques** et **dimensions** sont définies directement dans les fichiers `.yml` de vos modèles dbt. Votre logique métier est ainsi gérée par version, cohérente et entièrement transparente.
 
-    <Image size="md" img="/images/integrations/data-visualization/lightdash_03.webp" alt="Exemple de métriques définies dans le fichier .yml" border />
+    ![Exemple de métriques définies dans le fichier .yml](/images/integrations/data-visualization/lightdash_03.webp)
 
     <br />
 
@@ -114,7 +113,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
     4. **Results** — affichez les données brutes renvoyées par votre base de données ClickHouse
     5. **SQL** — examinez la requête SQL générée à l’origine de vos résultats
 
-    <Image size="lg" img="/images/integrations/data-visualization/lightdash_04.webp" alt="Vue Explore de Lightdash montrant les dimensions, les filtres, le graphique, les résultats et SQL" border />
+    ![Vue Explore de Lightdash montrant les dimensions, les filtres, le graphique, les résultats et SQL](/images/integrations/data-visualization/lightdash_04.webp)
 
     À partir de là, vous pouvez créer et ajuster des requêtes de manière interactive : glisser-déposer des champs, ajouter des filtres et passer d’un type de visualisation à un autre, comme des tables, des histogrammes ou des séries temporelles.
 
@@ -138,7 +137,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
     3. Créez votre visualisation dans le chart builder
     4. Enregistrez-la : elle apparaîtra en bas de votre dashboard
 
-    <Image size="lg" img="/images/integrations/data-visualization/lightdash_05.webp" alt="Création et organisation de graphiques dans un dashboard Lightdash" border />
+    ![Création et organisation de graphiques dans un dashboard Lightdash](/images/integrations/data-visualization/lightdash_05.webp)
 
     Pour en savoir plus sur la création et l’organisation des dashboards, consultez :
     [Créer des dashboards → Documentation Lightdash](https://docs.lightdash.com/get-started/exploring-data/dashboards?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)
@@ -152,7 +151,7 @@ L’exemple ci-dessous montre un tableau de bord abouti, alimenté par des donn�
 
     Le tout repose sur la même couche sémantique que celle que vous utilisez dans dbt, ce qui signifie que chaque réponse reste gouvernée, explicable et rapide — avec ClickHouse en arrière-plan.
 
-    <Image size="lg" img="/images/integrations/data-visualization/lightdash_06.webp" alt="Interface Ask AI de Lightdash affichant une requête en langage naturel propulsée par des métriques dbt" border />
+    ![Interface Ask AI de Lightdash affichant une requête en langage naturel propulsée par des métriques dbt](/images/integrations/data-visualization/lightdash_06.webp)
 
     <Tip>
       Pour en savoir plus sur les Agents IA, consultez : [AI Agents → Documentation Lightdash](https://docs.lightdash.com/guides/ai-agents?utm_source=clickhouse\&utm_medium=partner\&utm_campaign=integration_docs)

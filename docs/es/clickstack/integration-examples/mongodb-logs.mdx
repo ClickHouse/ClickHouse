@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['MongoDB', 'logs', 'OTel', 'ClickStack', 'monitorización de bases de datos', 'consulta lenta']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -177,9 +175,9 @@ Si desea probar la integración de MongoDB antes de configurar su propio entorno
   <Step title="Verificar logs en HyperDX" id="verifying-logs">
     Una vez completada la configuración, inicia sesión en HyperDX y verifica que los logs estén llegando:
 
-    <Image img="/images/clickstack/mongodb/search-view.webp" alt="Vista de búsqueda de logs de MongoDB" />
+    ![Vista de búsqueda de logs de MongoDB](/images/clickstack/mongodb/search-view.webp)
 
-    <Image img="/images/clickstack/mongodb/log-view.webp" alt="Vista detallada del log de MongoDB" />
+    ![Vista detallada del log de MongoDB](/images/clickstack/mongodb/log-view.webp)
   </Step>
 </Steps>
 
@@ -277,9 +275,9 @@ Prueba la integración de MongoDB con un dataset de ejemplo pregenerado antes de
     2. Ve a la vista Search y establece el source en `Logs`
     3. Ajusta el intervalo de tiempo para que incluya **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
 
-    <Image img="/images/clickstack/mongodb/search-view.webp" alt="Vista Search de logs de MongoDB" />
+    ![Vista Search de logs de MongoDB](/images/clickstack/mongodb/search-view.webp)
 
-    <Image img="/images/clickstack/mongodb/log-view.webp" alt="Vista detallada de un log de MongoDB" />
+    ![Vista detallada de un log de MongoDB](/images/clickstack/mongodb/log-view.webp)
   </Step>
 </Steps>
 
@@ -296,17 +294,17 @@ Prueba la integración de MongoDB con un dataset de ejemplo pregenerado antes de
     1. Abre HyperDX y ve a la sección Dashboards.
     2. Haz clic en &quot;Import Dashboard&quot; en la esquina superior derecha, en el menú de tres puntos.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Importar dashboard" />
+    ![Importar dashboard](/images/clickstack/import-dashboard.webp)
 
     3. Sube el archivo mongodb-logs-dashboard.json y haz clic en &quot;Finish import&quot;.
 
-    <Image img="/images/clickstack/mongodb/finish-import.webp" alt="Finalizar la importación del dashboard de logs de MongoDB" />
+    ![Finalizar la importación del dashboard de logs de MongoDB](/images/clickstack/mongodb/finish-import.webp)
   </Step>
 
   <Step title="El dashboard se creará con todas las visualizaciones preconfiguradas" id="created-dashboard">
     Para el dataset de demostración, establece el intervalo de tiempo para incluir **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
-    <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="Dashboard de logs de MongoDB" />
+    ![Dashboard de logs de MongoDB](/images/clickstack/mongodb/example-dashboard.webp)
   </Step>
 </Steps>
 

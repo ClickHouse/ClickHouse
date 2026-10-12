@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'métricas', 'OTEL', 'ClickStack', 'monitorización de bases de datos']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -202,17 +200,17 @@ Para ayudarte a empezar a monitorear PostgreSQL con ClickStack, proporcionamos v
     1. Abre HyperDX y ve a la sección Dashboards
     2. Haz clic en **Import Dashboard** en la esquina superior derecha, en el menú de los tres puntos
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Botón para importar dashboard" />
+    ![Botón para importar dashboard](/images/clickstack/import-dashboard.webp)
 
     3. Sube el archivo `postgres-metrics-dashboard.json` y haz clic en **Finish Import**
 
-    <Image img="/images/clickstack/postgres/import-dashboard.webp" alt="Cuadro de diálogo para finalizar la importación" />
+    ![Cuadro de diálogo para finalizar la importación](/images/clickstack/postgres/import-dashboard.webp)
   </Step>
 
   <Step title="Ver el dashboard" id="created-dashboard">
     El dashboard se creará con todas las visualizaciones preconfiguradas:
 
-    <Image img="/images/clickstack/postgres/postgres-metrics-dashboard.webp" alt="Dashboard de métricas de PostgreSQL" />
+    ![Dashboard de métricas de PostgreSQL](/images/clickstack/postgres/postgres-metrics-dashboard.webp)
 
     <Note>
       Para el conjunto de datos de demostración, establece el intervalo de tiempo en **2025-11-10 00:00:00 - 2025-11-11 00:00:00 (UTC)** (ajústalo según tu zona horaria local). El dashboard importado no tendrá ningún intervalo de tiempo especificado de forma predeterminada.

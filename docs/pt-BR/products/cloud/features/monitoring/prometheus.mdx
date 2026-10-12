@@ -8,8 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O recurso oferece suporte à integração com o [Prometheus](https://prometheus.io/) para monitorar serviços do ClickHouse Cloud. O acesso às métricas do Prometheus é disponibilizado por meio do endpoint da [ClickHouse Cloud API](/pt-BR/products/cloud/features/admin-features/api/api-overview), que permite conectar-se com segurança e exportar métricas para seu collector de métricas do Prometheus. Essas métricas podem ser integradas a dashboards, como Grafana e Datadog, para visualização.
 
 As métricas dos [ClickPipes](/pt-BR/integrations/clickpipes) associados a um serviço são incluídas junto às métricas do ClickHouse desse serviço.
@@ -273,17 +271,17 @@ Fornecemos abaixo instruções para usar essas opções, com foco nos detalhes e
 * Configure a URL de scrape para apontar para o endpoint Prometheus e use autenticação básica para configurar a conexão com a chave da API/o segredo
 * Teste a conexão para garantir que ela funcione
 
-<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="Configurar o Endpoint de Métricas do Grafana" border />
+![Configurar o Endpoint de Métricas do Grafana](/images/integrations/prometheus-grafana-metrics-endpoint.webp)
 
 <br />
 
 Depois de concluir a configuração, as métricas deverão aparecer no menu suspenso para que você possa selecioná-las e configurar dashboards:
 
-<Image img="/images/integrations/prometheus-grafana-dropdown.webp" size="md" alt="Menu suspenso do Explorador de Métricas do Grafana" border />
+![Menu suspenso do Explorador de Métricas do Grafana](/images/integrations/prometheus-grafana-dropdown.webp)
 
 <br />
 
-<Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Gráfico do Explorador de Métricas do Grafana" border />
+![Gráfico do Explorador de Métricas do Grafana](/images/integrations/prometheus-grafana-chart.webp)
 
 <div id="grafana-cloud-with-alloy">
   ### Grafana Cloud com Alloy
@@ -291,7 +289,7 @@ Depois de concluir a configuração, as métricas deverão aparecer no menu susp
 
 Se você estiver usando o Grafana Cloud, o Alloy pode ser instalado acessando o menu Alloy no Grafana e seguindo as instruções na tela:
 
-<Image img="/images/integrations/prometheus-grafana-alloy.webp" size="md" alt="Grafana Alloy" border />
+![Grafana Alloy](/images/integrations/prometheus-grafana-alloy.webp)
 
 <br />
 
@@ -372,7 +370,7 @@ Usuários do Grafana autogerenciado podem encontrar as instruções para instala
 
 Depois de configurar, você deverá ver as métricas relacionadas ao ClickHouse no explorador de métricas:
 
-<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="Explorador de Métricas do Grafana" border />
+![Explorador de Métricas do Grafana](/images/integrations/prometheus-grafana-metrics-explorer.webp)
 
 <br />
 
@@ -398,7 +396,7 @@ instances:
 
 <br />
 
-<Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Integração do Prometheus com o Datadog" />
+![Integração do Prometheus com o Datadog](/images/integrations/prometheus-datadog.webp)
 
 <div id="related">
   ## Páginas relacionadas

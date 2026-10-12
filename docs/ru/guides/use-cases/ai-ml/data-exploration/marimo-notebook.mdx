@@ -7,8 +7,6 @@ keywords: ['ML', 'Marimo', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В этом руководстве вы узнаете, как анализировать набор данных из ClickHouse Cloud в ноутбуке Marimo с помощью [chDB](/ru/chdb/index) — быстрого встраиваемого SQL OLAP-движка на базе ClickHouse.
 
 **Требования:**
@@ -44,15 +42,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В меню слева нажмите `Data sources`, затем — `Predefined sample data`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="Добавить пример набора данных" />
+![Добавить пример набора данных](/images/use-cases/AI_ML/jupyter/1.webp)
 
 На карточке данных о ценах продажи недвижимости в Великобритании (4 GB) выберите `Get started`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="Выбрать набор данных о ценах в Великобритании" />
+![Выбрать набор данных о ценах в Великобритании](/images/use-cases/AI_ML/jupyter/2.webp)
 
 Затем нажмите `Import dataset`:
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="Импортировать набор данных о ценах в Великобритании" />
+![Импортировать набор данных о ценах в Великобритании](/images/use-cases/AI_ML/jupyter/3.webp)
 
 ClickHouse автоматически создаст таблицу `pp_complete` в базе данных `default` и заполнит её 28,92 млн строк с данными о ценах.
 
@@ -93,7 +91,7 @@ marimo edit clickhouse_exploration.py
 
 Должно открыться новое окно браузера с интерфейсом Marimo на localhost:2718:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/4.webp" alt="Интерфейс Marimo" />
+![Интерфейс Marimo](/images/use-cases/AI_ML/Marimo/4.webp)
 
 Ноутбуки Marimo хранятся как обычные Python-файлы, поэтому их легко хранить в системе контроля версий и делиться ими с другими.
 
@@ -124,7 +122,7 @@ result
 
 Вы увидите результат под ячейкой, которую только что запустили:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/5.webp" alt="Marimo hello world" />
+![Marimo hello world](/images/use-cases/AI_ML/Marimo/5.webp)
 
 <div id="exploring-the-data">
   ## Изучение данных
@@ -206,7 +204,7 @@ fig
 
 Неудивительно, что цены на недвижимость в Лондоне со временем значительно выросли.
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/6.webp" alt="Визуализация данных Marimo" />
+![Визуализация данных Marimo](/images/use-cases/AI_ML/Marimo/6.webp)
 
 Одна из сильных сторон Marimo — реактивная модель выполнения. Давайте создадим интерактивный виджет для динамического выбора разных городов.
 
@@ -267,7 +265,7 @@ fig_reactive
 
 Теперь при выборе города в раскрывающемся списке график будет обновляться автоматически:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/7.webp" alt="Динамически обновляемый график Marimo" />
+![Динамически обновляемый график Marimo](/images/use-cases/AI_ML/Marimo/7.webp)
 
 <div id="exploring-price-distributions">
   ### Изучение распределения цен с помощью интерактивных диаграмм размаха
@@ -343,7 +341,7 @@ fig_box
 код.
 При перемещении ползунка график будет автоматически обновляться благодаря реактивному выполнению в Marimo:
 
-<Image size="md" img="/images/use-cases/AI_ML/Marimo/8.webp" alt="Динамический график Marimo" />
+![Динамический график Marimo](/images/use-cases/AI_ML/Marimo/8.webp)
 
 <div id="summary">
   ## Итоги

@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['Agentic Data Stack', 'Docker Compose', 'セットアップ', 'LibreChat', 'MCP', 'Langfuse']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 Docker Compose を使って Agentic Data Stack 一式をローカルで実行すると、初回ログイン直後からデータについて質問できます。`docker compose up` コマンド 1 つで、[LibreChat](/ja/products/agentic-data-stack/components/librechat)、[ClickHouse MCPサーバー](/ja/products/agentic-data-stack/components/mcp-server)、[ClickHouse](/ja/get-started/setup/install)、そしてオブザーバビリティ向けの [Langfuse](/ja/products/agentic-data-stack/components/langfuse) が起動します。
 
 <div id="prerequisites">
@@ -74,18 +72,18 @@ Docker Compose を使って Agentic Data Stack 一式をローカルで実行す
   <Step title="モデルを選択する">
     モデルはデフォルトで選択されています。変更する場合は、モデル selector を開いて使用するものを選んでください。
 
-    <Image img="/images/agentic-data-stack/select-model.webp" alt="左上隅にある LibreChat のモデル selector。デフォルトのモデルと「Select a model」のツールチップが表示されている" size="md" />
+    ![左上隅にある LibreChat のモデル selector。デフォルトのモデルと「Select a model」のツールチップが表示されている](/images/agentic-data-stack/select-model.webp)
 
     セットアップ中に provider の key を設定しなかった場合は、UI で追加してください。
 
     <Accordion title="UI で provider の key を設定する">
       モデル selector を開き、provider の横にある **Set API Key** をクリックします。
 
-      <Image img="/images/agentic-data-stack/set-api-key.webp" alt="Anthropic provider の横にある Set API Key ボタンが表示された LibreChat のモデル selector" size="md" />
+      ![Anthropic provider の横にある Set API Key ボタンが表示された LibreChat のモデル selector](/images/agentic-data-stack/set-api-key.webp)
 
       ダイアログに key を貼り付けて **Submit** をクリックします。有効期限を設定することも、期限切れにしないこともできます。
 
-      <Image img="/images/agentic-data-stack/set-api-key-modal.webp" alt="Anthropic 用の Set API Key ダイアログ。expiration のドロップダウン、Key フィールド、Submit ボタンと Revoke ボタンが表示されている" size="md" />
+      ![Anthropic 用の Set API Key ダイアログ。expiration のドロップダウン、Key フィールド、Submit ボタンと Revoke ボタンが表示されている](/images/agentic-data-stack/set-api-key-modal.webp)
     </Accordion>
   </Step>
 
@@ -96,7 +94,7 @@ Docker Compose を使って Agentic Data Stack 一式をローカルで実行す
 
     {/* TODO: ClickHouse-Cloud の接続方法についてユーザー向けガイドを追加する（または /cloud/features/ai-ml/remote-mcp の リモートMCP ドキュメントへリンクする）— 同梱のローカルサーバーとは異なり、OAuth フローが必要。 */}
 
-    <Image img="/images/agentic-data-stack/select-clickhouse-local.webp" alt="LibreChat の composer で MCP Servers メニューが開かれ、緑の接続済みドット付きの ClickHouse-Local と ClickHouse-Cloud が表示されている" size="md" />
+    ![LibreChat の composer で MCP Servers メニューが開かれ、緑の接続済みドット付きの ClickHouse-Local と ClickHouse-Cloud が表示されている](/images/agentic-data-stack/select-clickhouse-local.webp)
   </Step>
 
   <Step title="最初の質問をする">
@@ -106,7 +104,7 @@ Docker Compose を使って Agentic Data Stack 一式をローカルで実行す
 
     この agent は MCPサーバー のツールを使って database と table を一覧表示し、ClickHouse に対して read-only の queries を実行し、その結果をもとに回答を組み立てます。SQL を書く必要はありません。
 
-    <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="ClickHouse-Local の MCP ツールを呼び出して利用可能な database と table を一覧表示し、例の質問に回答する LibreChat" size="md" />
+    ![ClickHouse-Local の MCP ツールを呼び出して利用可能な database と table を一覧表示し、例の質問に回答する LibreChat](/images/agentic-data-stack/prompt-chat.webp)
   </Step>
 </Steps>
 

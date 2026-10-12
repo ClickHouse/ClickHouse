@@ -11,8 +11,6 @@ integration:
   - website: 'https://airbyte.com/'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -37,7 +35,7 @@ import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.
 
     3. 当你在终端中看到 Airbyte 标识后，即可连接到 <a href="http://localhost:8000" target="_blank">localhost:8000</a>
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_01.webp" size="lg" border alt="Airbyte 标识" />
+       ![Airbyte 标识](/images/integrations/data-ingestion/etl-tools/airbyte_01.webp)
 
     <Note>
       或者，你也可以注册并使用 <a href="https://docs.airbyte.com/" target="_blank">Airbyte Cloud</a>
@@ -55,11 +53,11 @@ import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.
 
     2. 在 Airbyte 中，选择 &quot;Destinations&quot; 页面并添加新的目标端：
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_02.webp" size="lg" border alt="在 Airbyte 中添加目标端" />
+       ![在 Airbyte 中添加目标端](/images/integrations/data-ingestion/etl-tools/airbyte_02.webp)
 
     3. 在 &quot;Destination type&quot; 下拉列表中选择 ClickHouse，然后填写 &quot;Set up the destination&quot; 表单，提供 ClickHouse 主机名和端口、数据库名称、用户名和密码，并选择是否使用 SSL 连接 (相当于 `clickhouse-client` 中的 `--secure` 标志) ：
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_03.webp" size="lg" border alt="在 Airbyte 中创建 ClickHouse 目标端" />
+       ![在 Airbyte 中创建 ClickHouse 目标端](/images/integrations/data-ingestion/etl-tools/airbyte_03.webp)
 
     4. 恭喜！你现在已经在 Airbyte 中将 ClickHouse 添加为目标端。
 
@@ -79,7 +77,7 @@ import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.
 
     1. 在 Airbyte 中，选择 &quot;Sources&quot; 页面，并添加一个新的文件类型数据源。
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_04.webp" size="lg" border alt="在 Airbyte 中添加数据源" />
+       ![在 Airbyte 中添加数据源](/images/integrations/data-ingestion/etl-tools/airbyte_04.webp)
 
     2. 填写 &quot;Set up the source&quot; 表单，为数据源命名，并提供 NYC Taxi 2022 年 1 月文件的 URL (见下文) 。请务必选择 `parquet` 作为文件格式，`HTTPS Public Web` 作为存储提供商，以及 `nyc_taxi_2022` 作为数据集名称。
 
@@ -87,7 +85,7 @@ import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.
        https://d37ci6vzurychx.cloudfront.net/trip-data/yellow_tripdata_2022-01.parquet
        ```
 
-       <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_05.webp" size="lg" border alt="在 Airbyte 中创建 ClickHouse 数据源" />
+       ![在 Airbyte 中创建 ClickHouse 数据源](/images/integrations/data-ingestion/etl-tools/airbyte_05.webp)
 
     3. 恭喜！你现在已经在 Airbyte 中添加了一个文件数据源。
   </Step>
@@ -95,21 +93,21 @@ import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.
   <Step title="创建连接并将数据集加载到 ClickHouse" id="4-create-a-connection-and-load-the-dataset-into-clickhouse">
     1. 在 Airbyte 中，选择 &quot;连接&quot; 页面并新增一个连接
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_06.webp" size="lg" border alt="在 Airbyte 中新增连接" />
+    ![在 Airbyte 中新增连接](/images/integrations/data-ingestion/etl-tools/airbyte_06.webp)
 
     2. 选择 &quot;使用现有 source&quot;，并选择 New York City Taxi Data；然后选择 &quot;使用现有目标端&quot;，并选择你的 ClickHouse 实例。
 
     3. 在 &quot;设置连接&quot; 表单中，选择复制频率 (本教程中我们将使用 `manual`) ，并将 `nyc_taxi_2022` 选为要同步的 stream。请确保归一化方式选择 `归一化表格数据`。
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_07.webp" size="lg" border alt="在 Airbyte 中创建连接" />
+    ![在 Airbyte 中创建连接](/images/integrations/data-ingestion/etl-tools/airbyte_07.webp)
 
     4. 现在连接已创建，点击 &quot;立即同步&quot; 以开始加载数据 (因为我们将复制频率设为 `Manual`)
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_08.webp" size="lg" border alt="立即在 Airbyte 中同步" />
+    ![立即在 Airbyte 中同步](/images/integrations/data-ingestion/etl-tools/airbyte_08.webp)
 
     5. 数据将开始加载，你可以展开视图查看 Airbyte 日志和进度。操作完成后，你会在日志中看到一条 `Completed successfully` 消息：
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/airbyte_09.webp" size="lg" border alt="已成功完成" />
+    ![已成功完成](/images/integrations/data-ingestion/etl-tools/airbyte_09.webp)
 
     6. 使用您常用的 SQL 客户端连接到您的 ClickHouse 实例，并检查生成的表：
 

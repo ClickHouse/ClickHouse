@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickPipes prend en charge l’intégration à un registre de schémas afin de décoder des valeurs d’enregistrement encodées en Avro et en Protobuf ainsi que des [clés Kafka structurées](/fr/integrations/clickpipes/kafka/reference#structured-message-keys).
 
 Pour les valeurs d’enregistrement Protobuf, vous pouvez également [téléverser un schéma directement](/fr/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic) sans configurer de registre de schémas.
@@ -73,7 +71,7 @@ La configuration d’AWS Glue Schema Registry est actuellement disponible unique
 
 Dans l’assistant de création de ClickPipe, activez **Registre de schémas** à l’étape de connexion Kafka et définissez **Type de registre** sur **AWS Glue** :
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="Panneau du registre de schémas avec AWS Glue sélectionné" size="lg" border />
+![Panneau du registre de schémas avec AWS Glue sélectionné](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
 
 | Champ            | Obligatoire  | Description                                                                                                                                                            | Exemple                                                    |
 | ---------------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -123,7 +121,7 @@ Utilisez cette option lorsque votre broker ne s’authentifie pas via IAM (SASL/
   <Step title="Obtenir l’ARN du rôle IAM du service ClickHouse" id="obtain-clickhouse-service-iam-role-arn">
     Ouvrez le service, sélectionnez l’onglet **Paramètres**, faites défiler jusqu’à la section **Informations de sécurité réseau**, puis copiez la valeur **ID du rôle de service (IAM)**, un ARN au format `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. Cette valeur est désignée ci-dessous par `{ClickHouse_IAM_ARN}`. Chaque service ClickHouse déployé sur AWS possède son propre rôle ; cette valeur est donc différente pour chaque service.
 
-    <Image img="/images/cloud/security/secures3_arn.webp" alt="ID du rôle de service (IAM)" size="lg" border />
+    ![ID du rôle de service (IAM)](/images/cloud/security/secures3_arn.webp)
   </Step>
 
   <Step title="Créer le rôle IAM du registre" id="create-registry-iam-role">

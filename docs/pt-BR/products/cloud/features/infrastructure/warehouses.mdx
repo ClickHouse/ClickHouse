@@ -6,7 +6,6 @@ description: 'Separação compute-compute no ClickHouse Cloud'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/pt-BR/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="separação compute-compute" />
@@ -21,7 +20,7 @@ Cada serviço do ClickHouse Cloud inclui:
 * um endpoint (ou vários endpoints criados pelo console da UI do ClickHouse Cloud) para se conectar ao serviço (por exemplo, `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`) em conexões locais e de aplicativos de terceiros
 * uma pasta de armazenamento de objetos onde o serviço armazena todos os dados e parte dos metadados:
 
-<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="Serviço único no ClickHouse Cloud" />
+![Serviço único no ClickHouse Cloud](/images/cloud/reference/compute-compute-1.webp)
 
 <br />
 
@@ -35,7 +34,7 @@ Isso significa que você pode escolher o tamanho de compute adequado para a sua 
 
 Separação compute-compute também permite separar operações de leitura de operações de gravação para que não interfiram umas nas outras:
 
-<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="Separação de compute no ClickHouse Cloud" />
+![Separação de compute no ClickHouse Cloud](/images/cloud/reference/compute-compute-2.webp)
 
 <br />
 
@@ -50,7 +49,7 @@ Por exemplo, na captura de tela abaixo, você pode ver um warehouse &quot;DWH Pr
 * Serviço primário `DWH Prod`
 * Serviço secundário `DWH Prod Subservice`
 
-<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="Exemplo de warehouse com serviços primário e secundário" background="white" />
+![Exemplo de warehouse com serviços primário e secundário](/images/cloud/reference/compute-compute-8.webp)
 
 <br />
 
@@ -75,7 +74,7 @@ Como todos os serviços em um warehouse compartilham o mesmo conjunto de tabelas
 Isso significa que todos os usuários do banco de dados criados no Serviço 1 também poderão usar o Serviço 2 com as mesmas permissões (grants para tabelas, views etc.) e vice-versa.
 Um endpoint diferente é usado para cada serviço, mas o mesmo nome de usuário e a mesma senha são usados em todos eles. Em outras palavras, **os usuários são compartilhados entre serviços que trabalham com o mesmo armazenamento**, como mostrado na figura abaixo:
 
-<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="Acesso de usuários entre serviços que compartilham os mesmos dados" />
+![Acesso de usuários entre serviços que compartilham os mesmos dados](/images/cloud/reference/compute-compute-3.webp)
 
 <br />
 
@@ -91,7 +90,7 @@ Isso permite restringir o acesso a serviços específicos.
 
 No exemplo abaixo, Alice está impedida de acessar o serviço 2 no warehouse:
 
-<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="Configurações de controle de acesso à rede" />
+![Configurações de controle de acesso à rede](/images/cloud/reference/compute-compute-4.webp)
 
 <br />
 
@@ -116,7 +115,7 @@ Os serviços podem ser de um destes tipos:
 Às vezes, convém isolar cargas de trabalho críticas de leitura da sobrecarga de escrita/merge tornando um serviço read-only.
 Você pode fazer isso com o segundo serviço e quaisquer serviços adicionais que criar; no entanto, o primeiro serviço sempre será read-write, como mostrado na figura abaixo:
 
-<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="Serviços read-write e read-only em um warehouse" />
+![Serviços read-write e read-only em um warehouse](/images/cloud/reference/compute-compute-5.webp)
 
 <br />
 
@@ -206,7 +205,7 @@ Consulte a calculadora de preços na página de [preços](https://clickhouse.com
 
 Para criar um warehouse, você precisa criar um segundo serviço que compartilhará os dados com um serviço existente. Isso pode ser feito clicando no sinal de mais em qualquer um dos serviços existentes:
 
-<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="Criando um novo serviço em um warehouse" />
+![Criando um novo serviço em um warehouse](/images/cloud/reference/compute-compute-7.webp)
 
 <br />
 

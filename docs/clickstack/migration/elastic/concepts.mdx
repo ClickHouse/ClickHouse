@@ -8,8 +8,6 @@ keywords: ['Elasticsearch']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Elastic Stack vs ClickStack {#elastic-vs-clickstack}
 
 Both Elastic Stack and ClickStack cover the core roles of an observability platform, but they approach these roles with different design philosophies. These roles include:
@@ -75,7 +73,7 @@ Both systems offer a REST API, but ClickHouse also provides a **native protocol*
 
 ### Indexing and storage {#indexing-and-storage}
 
-<Image img="/images/use-cases/observability/elasticsearch.webp" alt="Elasticsearch" size="lg"/>
+![Elasticsearch](/images/use-cases/observability/elasticsearch.webp)
 
 The concept of sharding is fundamental to Elasticsearch's scalability model. Each ① [**index**](https://www.elastic.co/blog/what-is-an-elasticsearch-index) is broken into **shards**, each of which is a physical Lucene index stored as segments on disk. A shard can have one or more physical copies called replica shards for resilience. For scalability, shards and replicas can be distributed over several nodes. A single shard ② consists of one or more immutable segments. A segment is the basic indexing structure of Lucene, the Java library providing the indexing and search features on which Elasticsearch is based.
 
@@ -95,7 +93,7 @@ In Elasticsearch, [index mappings](https://www.elastic.co/guide/en/elasticsearch
 
 ClickHouse, by contrast, is **column-oriented** — every column is stored independently but always sorted by the table's primary/ordering key. This ordering enables [sparse primary indexes](/concepts/core-concepts/primary-indexes), which allow ClickHouse to skip over data during query execution efficiently. When queries filter by primary key fields, ClickHouse reads only the relevant parts of each column, significantly reducing disk I/O and improving performance — even without a full index on every column. 
 
-<Image img="/images/use-cases/observability/clickhouse.webp" alt="ClickHouse" size="lg"/>
+![ClickHouse](/images/use-cases/observability/clickhouse.webp)
 
 ClickHouse also supports [**skip indexes**](/concepts/features/performance/skip-indexes/skipping-indexes), which accelerate filtering by precomputing index data for selected columns. These must be explicitly defined but can significantly improve performance. Additionally, ClickHouse lets you specify [compression codecs](/guides/use-cases/observability/build-your-own/schema-design#using-codecs) and compression algorithms per column — something Elasticsearch doesn't support (its [compression](https://www.elastic.co/docs/reference/elasticsearch/index-settings/index-modules) only applies to `_source` JSON storage).
 
@@ -160,7 +158,7 @@ The above differences can be attributed to the execution models of Elasticsearch
 
 ClickHouse was designed to maximize efficiency on modern hardware. By default, ClickHouse runs a SQL query with N concurrent execution lanes on a machine with N CPU cores: 
 
-<Image img="/images/use-cases/observability/clickhouse-execution.webp" alt="ClickHouse execution" size="lg"/>
+![ClickHouse execution](/images/use-cases/observability/clickhouse-execution.webp)
 
 On a single node, execution lanes split data into independent ranges allowing concurrent processing across CPU threads. This includes filtering, aggregation, and sorting. The local results from each lane are eventually merged, and a limit operator is applied, in case the query features a limit clause.
 
@@ -172,7 +170,7 @@ This model enables efficient scaling across cores and nodes, making ClickHouse w
 
 Elasticsearch, by contrast, assigns one thread per shard for most aggregations, regardless of how many CPU cores are available. These threads return shard-local top-N results, which are merged at the coordinating node. This approach can underutilize system resources and introduce potential inaccuracies in global aggregations, particularly when frequent terms are distributed across multiple shards. Accuracy can be improved by increasing the `shard_size` parameter, but this comes at the cost of higher memory usage and query latency.
 
-<Image img="/images/use-cases/observability/elasticsearch-execution.webp" alt="Elasticsearch execution" size="lg"/>
+![Elasticsearch execution](/images/use-cases/observability/elasticsearch-execution.webp)
 
 In summary, ClickHouse executes aggregations and queries with finer-grained parallelism and greater control over hardware resources, while Elasticsearch relies on shard-based execution with more rigid constraints.
 
@@ -206,7 +204,7 @@ In Elasticsearch, **rollups** or **aggregates** are achieved using a mechanism c
 
 The following diagram sketches abstractly how transforms work (note that we use the blue color for all documents belonging to the same bucket for which we want to pre-calculate aggregate values): 
 
-<Image img="/images/use-cases/observability/es-transforms.webp" alt="Elasticsearch transforms" size="lg"/>
+![Elasticsearch transforms](/images/use-cases/observability/es-transforms.webp)
 
 Continuous transforms use transform [checkpoints](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html) based on a configurable check interval time (transform [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html) with a default value of 1 minute). In the diagram above, we assume ① a new checkpoint is created after the check interval time has elapsed. Now Elasticsearch checks for changes in the transforms' source index and detects three new `blue` documents (11, 12, and 13) that exist since the previous checkpoint. Therefore the source index is filtered for all existing `blue` documents, and, with a [composite aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html) (to utilize result [pagination](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html)), the aggregate values are recalculated (and the destination index is updated with a document replacing the document containing the previous aggregation values). Similarly, at ② and ③, new checkpoints are processed by checking for changes and recalculating the aggregate values from all existing documents belonging to the same 'blue' bucket.
 
@@ -216,7 +214,7 @@ This model is made possible by ClickHouse's support for [**partial aggregate sta
 
 We sketch the mechanics of incremental materialized views abstractly (note that we use the blue color for all rows belonging to the same group for which we want to pre-calculate aggregate values): 
 
-<Image img="/images/use-cases/observability/ch-mvs.webp" alt="ClickHouse Materialized Views" size="lg"/>
+![ClickHouse Materialized Views](/images/use-cases/observability/ch-mvs.webp)
 
 In the diagram above, the materialized view's source table already contains a data part storing some `blue` rows (1 to 10) belonging to the same group. For this group, there also already exists a data part in the view's target table storing a [partial aggregation state](https://www.youtube.com/watch?v=QDAJTKZT8y4) for the `blue` group. When ① ② ③ inserts into the source table with new rows take place, a corresponding source table data part is created for each insert, and, in parallel, (just) for each block of newly inserted rows, a partial aggregation state is calculated and inserted in the form of a data part into the materialized view's target table. ④ During background part merges, the partial aggregation states are merged, resulting in incremental data aggregation. 
 

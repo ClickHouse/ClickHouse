@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', '대시보드', '시각화', '모니터링', '관측성']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import Tagging from '/snippets/ko/_clickstack_tagging.mdx';
 
 ClickStack는 이벤트 시각화를 지원하며, ClickStack UI(HyperDX)에서 차트를 기본적으로 만들 수 있습니다. 이러한 차트는 다른 사용자와 공유할 수 있도록 대시보드에 추가할 수 있습니다.
@@ -37,7 +35,7 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
   <Step title="Chart Explorer로 이동" id="navigate-chart-explorer">
     왼쪽 메뉴에서 `Chart Explorer`를 선택합니다.
 
-    <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg" />
+    ![Chart Explorer](/images/use-cases/observability/clickstack-visualization-1.webp)
   </Step>
 
   <Step title="시각화 만들기" id="create-visualization">
@@ -51,17 +49,17 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
     * Group By: `ServiceName`
     * Alias: `Average Time`
 
-    <Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="단순 시각화" size="lg" />
+    ![단순 시각화](/images/use-cases/observability/clickstack-visualization-2.webp)
 
     이벤트는 SQL `WHERE` 절 또는 Lucene 구문으로 필터링할 수 있으며, 이벤트를 시각화할 시간 범위도 설정할 수 있습니다. 여러 시리즈도 지원됩니다.
 
     예를 들어, 필터 `ServiceName:\"frontend\"`를 추가해 `frontend` 서비스만 필터링할 수 있습니다. `Add Series`를 클릭해 별칭을 `Count`로 지정한 두 번째 시리즈를 추가하면 시간에 따른 이벤트 수도 함께 표시할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="단순 시각화 2" size="lg" />
+    ![단순 시각화 2](/images/use-cases/observability/clickstack-visualization-3.webp)
 
     기존 시리즈와 비슷한 시리즈를 만들려면 처음부터 새로 만드는 대신 복제할 수 있습니다. 시리즈 행의 복사 아이콘(`Duplicate series`)을 클릭하면 바로 아래에 복사본이 삽입됩니다. 복사본은 메트릭, 컬럼, 필터 등 원본 시리즈의 설정을 유지합니다. 이후 달라지는 필드만 변경하고(예: 집계) 복사본에 별도의 별칭을 지정하면 됩니다. 복제 기능은 여러 시리즈를 지원하는 모든 곳에서 사용할 수 있습니다. `Number`, `Pie`, `Heatmap`처럼 하나의 시리즈만 허용하는 시각화 유형에서는 이 기능이 표시되지 않습니다.
 
-    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="차트 시리즈 행의 Duplicate series 복사 아이콘과 해당 툴팁" size="lg" />
+    ![차트 시리즈 행의 Duplicate series 복사 아이콘과 해당 툴팁](/images/use-cases/observability/clickstack-duplicate-series.webp)
 
     <Note>
       시각화는 메트릭, 트레이스, 로그 등 모든 데이터 소스에서 만들 수 있습니다. ClickStack은 이 모두를 wide 이벤트로 처리합니다. 모든 **numeric 컬럼**은 시간에 따라 차트로 표시할 수 있으며, **string**, **date**, **numeric** 컬럼은 그룹화에 사용할 수 있습니다.
@@ -85,7 +83,7 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
   <Step title="대시보드로 이동" id="navigate-dashboards">
     왼쪽 메뉴에서 `Dashboards`를 선택합니다. 그런 다음 `New Dashboard`를 클릭하여 임시 대시보드 또는 저장된 대시보드를 만듭니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="대시보드 생성" size="lg" />
+    ![대시보드 생성](/images/use-cases/observability/hyperdx-dashboard-1.webp)
   </Step>
 
   <Step title="시각화 생성 – 서비스별 평균 요청 시간" id="create-a-tile">
@@ -102,11 +100,11 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
 
     `Save`를 클릭하기 전에 **실행** 버튼을 클릭합니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-2.webp" alt="대시보드 시각화 생성" size="lg" />
+    ![대시보드 시각화 생성](/images/use-cases/observability/hyperdx-dashboard-2.webp)
 
     시각화가 대시보드 전체 너비를 차지하도록 크기를 조정합니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="시각화가 있는 대시보드" size="lg" />
+    ![시각화가 있는 대시보드](/images/use-cases/observability/hyperdx-dashboard-3.webp)
   </Step>
 
   <Step title="시각화 만들기 – 시간에 따른 서비스별 이벤트 수" id="create-a-tile-2">
@@ -122,11 +120,11 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
 
     `Save`를 클릭하기 전에 **실행** 버튼을 클릭합니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-4.webp" alt="대시보드 시각화 2" size="lg" />
+    ![대시보드 시각화 2](/images/use-cases/observability/hyperdx-dashboard-4.webp)
 
     시각화 크기를 조정해 대시보드 전체 너비를 차지하도록 합니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="시각 자료가 있는 대시보드 2" size="lg" />
+    ![시각 자료가 있는 대시보드 2](/images/use-cases/observability/hyperdx-dashboard-5.webp)
   </Step>
 
   <Step title="스팬 지속 시간용 히트맵 타일 추가" id="create-a-tile-heatmap">
@@ -152,11 +150,11 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
 
     `Run`을 클릭해 차트를 미리 확인한 다음 `Save`를 클릭합니다.
 
-    <Image img="/images/clickstack/dashboards/heatmap-tile-editor.webp" alt="스팬 지속 시간 기본값이 미리 채워지고 ServiceName payment 필터와 Display Settings 버튼이 표시된 히트맵 타일 편집기" size="lg" />
+    ![스팬 지속 시간 기본값이 미리 채워지고 ServiceName payment 필터와 Display Settings 버튼이 표시된 히트맵 타일 편집기](/images/clickstack/dashboards/heatmap-tile-editor.webp)
 
     저장된 타일은 대시보드에 히트맵으로 표시됩니다. 셀 위에 마우스를 올리면 버킷 경계와 이벤트 수를 확인할 수 있습니다.
 
-    <Image img="/images/clickstack/dashboards/heatmap-tile-rendered.webp" alt="24시간 동안 payment 서비스의 스팬 지속 시간 분포를 보여 주는 히트맵 대시보드 타일" size="lg" />
+    ![24시간 동안 payment 서비스의 스팬 지속 시간 분포를 보여 주는 히트맵 대시보드 타일](/images/clickstack/dashboards/heatmap-tile-rendered.webp)
 
     <Tip>
       **히트맵당 두 개의 ClickHouse 쿼리**
@@ -168,7 +166,7 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
 
     렌더링된 히트맵 타일의 셀을 클릭하면 **View in Event Deltas** 작업이 열립니다.
 
-    <Image img="/images/clickstack/dashboards/heatmap-tile-drilldown.webp" alt="View in Event Deltas 작업이 표시되는 히트맵 셀 클릭" size="lg" />
+    ![View in Event Deltas 작업이 표시되는 히트맵 셀 클릭](/images/clickstack/dashboards/heatmap-tile-drilldown.webp)
 
     이 작업을 선택하면 타일의 데이터 소스, `Where` 절, 시간 범위가 그대로 유지된 상태로 [Event Deltas](/ko/clickstack/features/event-deltas) 화면이 열립니다. 여기에서 동일한 분포를 대화형으로 살펴보고, 속성별로 나누어 느린 스팬이 빠른 스팬과 무엇이 다른지 확인할 수 있으며, 쿼리를 수동으로 다시 작성하지 않고도 각 셀에 해당하는 개별 스팬을 조사할 수 있습니다.
   </Step>
@@ -176,13 +174,13 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
   <Step title="대시보드 필터" id="filter-dashboards">
     시간 범위와 함께 Lucene 또는 SQL 필터를 대시보드 수준에서 적용할 수 있으며, 이 설정은 모든 시각화에 자동으로 반영됩니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-filter.webp" alt="필터링이 적용된 대시보드" size="lg" />
+    ![필터링이 적용된 대시보드](/images/use-cases/observability/hyperdx-dashboard-filter.webp)
 
     예를 들어, Lucene 필터 `ServiceName:"frontend"`를 대시보드에 적용하고 시간 윈도우를 최근 3시간으로 변경하십시오. 이제 시각화에 `frontend` 서비스의 데이터만 반영되는 것을 확인할 수 있습니다.
 
     대시보드는 자동으로 저장됩니다. 대시보드 이름을 설정하려면 제목을 선택해 수정한 뒤 `Save Name`을 클릭하십시오.
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-save.webp" alt="대시보드 저장" size="lg" />
+    ![대시보드 저장](/images/use-cases/observability/hyperdx-dashboard-save.webp)
   </Step>
 </Steps>
 
@@ -192,7 +190,7 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
 
 시각화를 삭제, 편집하거나 복제하려면 해당 항목 위에 마우스를 올린 다음 해당 작업 버튼을 사용하십시오.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="대시보드 편집" size="lg" />
+![대시보드 편집](/images/use-cases/observability/hyperdx-dashboard-edit.webp)
 
 <div id="tile-display-settings">
   ### 타일 표시 설정
@@ -245,7 +243,7 @@ HyperDX의 **Chart Explorer** 인터페이스를 사용하면 시간 흐름에 �
 
 숫자 타일을 선택한 상태에서 **표시 설정**를 열고 **Background chart**를 **Line** 또는 **Area**로 설정하십시오(끄려면 **None** 선택). 스파크라인은 타일 쿼리의 시간 버킷 기준 버전에서 파생되므로 추가 구성은 필요하지 않습니다. 기본적으로 타일 색상을 그대로 사용하며, 특정 팔레트 색상으로 재정의하려면 **Background color**를 설정하십시오.
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="숫자 타일의 표시 설정 드로어에서 Background chart가 Area로 설정된 상태" size="lg" />
+![숫자 타일의 표시 설정 드로어에서 Background chart가 Area로 설정된 상태](/images/clickstack/dashboards/number-tile-background-chart.webp)
 
 Background chart는 query-builder 숫자 타일에 적용됩니다. Raw SQL 숫자 타일은 버킷으로 나눌 시간 차원이 없는 단일 값만 반환하므로, 이 옵션은 표시되지만 비활성화됩니다.
 
@@ -253,7 +251,7 @@ Table 타일에서는 **Alternate Row Background**를 사용해 행에 줄무늬
 
 Table 타일을 선택한 상태에서 **표시 설정**를 열고 **Alternate Row Background**를 켜십시오. 줄무늬는 순전히 시각적인 표시이므로 query-builder와 raw SQL Table 타일 모두에서 작동합니다.
 
-<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="Table 타일의 표시 설정 드로어에서 Alternate Row Background가 켜진 상태" size="lg" />
+![Table 타일의 표시 설정 드로어에서 Alternate Row Background가 켜진 상태](/images/clickstack/dashboards/table-tile-display-settings.webp)
 
 Table 타일은 스크롤하는 동안 헤더 행과 데이터 사이의 구분선도 유지하므로 컬럼 헤더를 계속 뚜렷하게 구분할 수 있습니다.
 
@@ -305,7 +303,7 @@ Table 타일은 스크롤하는 동안 헤더 행과 데이터 사이의 구분�
 
 대시보드는 사이드바와 목록 페이지 상단에서 빠르게 접근할 수 있도록 즐겨찾기에 추가할 수 있습니다. 즐겨찾기는 사용자별로 개별 관리됩니다.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-search.webp" alt="대시보드 검색" size="lg" />
+![대시보드 검색](/images/use-cases/observability/hyperdx-dashboard-search.webp)
 
 <div id="tagging">
   ## 대시보드 - 태그 지정
@@ -319,7 +317,7 @@ Table 타일은 스크롤하는 동안 헤더 행과 데이터 사이의 구분�
 
 모든 대시보드에서 사용할 수 있는 [자유 텍스트 필터](#filter-dashboards) 외에도, 저장된 대시보드에서는 ClickHouse에서 쿼리한 데이터로 채워지는 사용자 지정 드롭다운 필터를 지원합니다. 이를 통해 재사용 가능한 클릭형 필터 컨트롤을 제공하므로, 대시보드 사용자는 표현식을 직접 작성하지 않고도 필터링할 수 있습니다.
 
-<Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="사용 가능한 서비스 이름을 보여주는 서비스 드롭다운 필터" size="lg" />
+![사용 가능한 서비스 이름을 보여주는 서비스 드롭다운 필터](/images/clickstack/dashboards/filter-dropdown.webp)
 
 각 필터에서는 사용자가 하나 이상의 값을 선택할 수 있으며, 선택한 값으로 다음 중 하나 또는 둘 다를 수행합니다.
 
@@ -334,7 +332,7 @@ Table 타일은 스크롤하는 동안 헤더 행과 데이터 사이의 구분�
   <Step title="필터 편집 대화상자 열기" id="open-edit-filters">
     저장된 대시보드를 열고 도구 모음에서 **Edit Filters and Variables**를 선택합니다.
 
-    <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="대시보드 도구 모음의 Edit Filters 버튼" size="lg" />
+    ![대시보드 도구 모음의 Edit Filters 버튼](/images/clickstack/dashboards/edit-filters.webp)
   </Step>
 
   <Step title="새 필터 추가" id="add-new-filter">
@@ -342,25 +340,25 @@ Table 타일은 스크롤하는 동안 헤더 행과 데이터 사이의 구분�
 
     예를 들어, trace 데이터용 서비스 필터를 추가하려면 `Traces` 데이터 소스에서 `ServiceName`을 필터 표현식으로 사용합니다. &quot;Dropdown values filter&quot;는 선택 사항이며, 드롭다운에 표시할 값을 제한할 때 사용할 수 있습니다.
 
-    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="Display Name, 데이터 소스, 필터 표현식 필드가 있는 필터 추가 대화상자" size="md" />
+    ![Display Name, 데이터 소스, 필터 표현식 필드가 있는 필터 추가 대화상자](/images/clickstack/dashboards/add-filter.webp)
 
     같은 대화상자에서 필터가 값을 [브로드캐스트](#broadcast-filters)할지와 [변수로 사용할 수 있는지](#dashboard-variables)도 제어하며, 두 기능은 아래에서 설명합니다.
 
     Filters 모달에는 대시보드에 구성된 모든 필터가 표시됩니다. 여기에서 기존 필터를 편집하거나 삭제하고, 추가 필터를 더 만들 수 있습니다.
 
-    <Image img="/images/clickstack/dashboards/saved-filters.webp" alt="구성된 Services 필터를 보여주는 Filters 모달" size="md" />
+    ![구성된 Services 필터를 보여주는 Filters 모달](/images/clickstack/dashboards/saved-filters.webp)
   </Step>
 
   <Step title="필터 사용" id="use-filter">
     Filters 모달을 닫습니다. 새 드롭다운 필터가 검색창 아래에 표시됩니다. 이를 클릭해 사용 가능한 값을 확인한 다음 하나를 선택하면 대시보드의 모든 시각화에 필터가 적용됩니다.
 
-    <Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="frontend 서비스로 필터링된 대시보드" size="lg" />
+    ![frontend 서비스로 필터링된 대시보드](/images/clickstack/dashboards/filtered-dashboard.webp)
   </Step>
 
   <Step title="(선택 사항) 필터 값을 기본값으로 저장" id="save-default-filters">
     필터 선택을 대시보드 기본값으로 유지하려면 대시보드 메뉴에서 **Save Query &amp; Filters as Default**를 선택합니다. 그러면 이후 대시보드는 선택한 필터가 적용된 상태로 항상 열립니다. 재설정하려면 같은 메뉴에서 **Remove Default Query &amp; Filters**를 선택합니다.
 
-    <Image img="/images/clickstack/dashboards/save-filter-values.webp" alt="Save Query and Filters as Default 옵션을 보여주는 대시보드 메뉴" size="lg" />
+    ![Save Query and Filters as Default 옵션을 보여주는 대시보드 메뉴](/images/clickstack/dashboards/save-filter-values.webp)
   </Step>
 </Steps>
 
@@ -456,7 +454,7 @@ SQL 타일에서 사용할 수 있는 매크로 전체 목록은 [SQL 기반 시
 * **모든 이벤트 보기** — 선택한 시간 범위의 모든 이벤트를 표시하는 Search 페이지로 이동합니다.
 * **그룹으로 필터링** — 특정 시리즈로 필터링된 Search 페이지로 이동합니다.
 
-<Image img="/images/clickstack/dashboards/drilldown.webp" alt="모든 이벤트 보기 및 그룹으로 필터링 옵션이 표시된 드릴다운 컨텍스트 메뉴" size="lg" />
+![모든 이벤트 보기 및 그룹으로 필터링 옵션이 표시된 드릴다운 컨텍스트 메뉴](/images/clickstack/dashboards/drilldown.webp)
 
 이 기능은 대시보드에서 발견한 특정 급증이나 이상 징후를 조사할 때 유용합니다. 집계된 보기에서 해당 개별 이벤트로 빠르게 전환할 수 있습니다.
 
@@ -472,7 +470,7 @@ HyperDX는 기본 제공 대시보드와 함께 배포됩니다.
 
 이 대시보드는 ClickHouse 모니터링을 위한 시각화를 제공합니다. 이 대시보드로 이동하려면 왼쪽 메뉴에서 선택하십시오.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp" alt="ClickHouse 대시보드" size="lg" />
+![ClickHouse 대시보드](/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp)
 
 이 대시보드는 탭을 사용해 **Selects**, **Inserts**, **ClickHouse Infrastructure** 모니터링을 구분합니다.
 
@@ -500,7 +498,7 @@ HyperDX는 기본 제공 대시보드와 함께 배포됩니다.
 
 시각화는 Lucene 또는 SQL 구문을 사용해 필터링할 수 있으며, 시간 범위도 원하는 분석에 맞게 조정할 수 있습니다.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-services.webp" alt="ClickHouse 서비스" size="lg" />
+![ClickHouse 서비스](/images/use-cases/observability/hyperdx-dashboard-services.webp)
 
 <div id="kubernetes-dashboard">
   ### Kubernetes 대시보드
@@ -510,4 +508,4 @@ HyperDX는 기본 제공 대시보드와 함께 배포됩니다.
 
 Kubernetes 데이터는 쉽게 탐색할 수 있도록 파드, Nodes, 네임스페이스의 세 탭으로 구성되어 있습니다.
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse kubernetes" size="lg" />
+![ClickHouse kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)

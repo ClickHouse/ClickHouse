@@ -7,8 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/pt-BR/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 ## Componentes {#components}
@@ -21,7 +19,7 @@ O ClickHouse Connector executa três daemons, todos embutidos no binary `clickli
 
 No Kubernetes, o chart do Helm `clicklink-connector` implanta os daemons em um espaço de nomes de sua escolha (padrão: `clicklink`). O executor é uma Implantação de réplica única que mantém o estado de seus comandos em um volume persistente. Em uma Linux VM, os daemons são executados como os systemd units `clicklink-scraper`, `clicklink-troubleshooter` e `clicklink-executor`, sob um usuário de sistema `clicklink` sem privilégios.
 
-<Image img="/images/cloud/reference/byoc-connector-architecture.svg" size="lg" alt="Arquitetura do ClickHouse Connector" />
+![Arquitetura do ClickHouse Connector](/images/cloud/reference/byoc-connector-architecture.svg)
 
 ## Conexões {#connections}
 
@@ -57,7 +55,7 @@ O connector verifica o certificado do servidor do seu endpoint com base no syste
 
 ## Fluxo de dados {#data-flow}
 
-<Image img="/images/cloud/reference/byoc-connector-data-flow.svg" size="lg" alt="Fluxo de dados do ClickHouse Connector" />
+![Fluxo de dados do ClickHouse Connector](/images/cloud/reference/byoc-connector-data-flow.svg)
 
 ### O que sai do seu ambiente {#what-leaves}
 

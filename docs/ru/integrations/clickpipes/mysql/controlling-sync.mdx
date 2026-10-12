@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В этом документе описано, как управлять синхронизацией ClickPipe для MySQL, когда ClickPipe находится в **режиме CDC (Running)**.
 
 <div id="overview">
@@ -53,15 +51,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 Вы можете задать интервал синхронизации и размер батча при извлечении при создании ClickPipe или редактировании существующего.
 При создании ClickPipe эти параметры отображаются на втором шаге мастера, как показано ниже:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="Создание параметров синхронизации" size="md" />
+![Создание параметров синхронизации](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
 
 При редактировании существующего ClickPipe перейдите на вкладку **Settings** этого пайпа, приостановите его, а затем нажмите **Configure**:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="Кнопка редактирования параметров синхронизации" size="md" />
+![Кнопка редактирования параметров синхронизации](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
 
 Откроется выдвижная панель с параметрами синхронизации, где можно изменить интервал синхронизации и размер батча при извлечении:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="Редактирование параметров синхронизации" size="md" />
+![Редактирование параметров синхронизации](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
 
 <div id="monitoring">
   ### Мониторинг работы управления синхронизацией
@@ -69,4 +67,4 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В таблице **CDC Syncs** на вкладке **Metrics** в ClickPipe можно увидеть, сколько времени занимает каждый батч. Обратите внимание, что длительность здесь включает время отправки, а также время ожидания: если новые строки не поступают, ClickPipe ждёт, и это время тоже входит в длительность.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="Таблица CDC Syncs" size="md" />
+![Таблица CDC Syncs](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)

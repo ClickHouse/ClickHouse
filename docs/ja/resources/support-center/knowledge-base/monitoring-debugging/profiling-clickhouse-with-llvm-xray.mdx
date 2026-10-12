@@ -5,8 +5,6 @@ description: "LLVM の XRay インストルメンテーションプロファイ�
 tags: ['パフォーマンスと最適化', 'ツールとユーティリティ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="types-of-profilers">
   ## プロファイラの種類
 </div>
@@ -53,7 +51,7 @@ system.trace&#95;log に収集されたデータを [Chrome
 可視化します。各エントリの query&#95;id、cpu&#95;id、stacktrace に
 注目してください。
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="time-order" />
+![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
 
 <div id="profiling-a-native-application-using-xray">
   ## XRay を使用したネイティブアプリケーションのプロファイリング
@@ -161,19 +159,19 @@ Perfetto は複数のスレッドの可視化やデータのクエリをしや�
   #### 時系列順
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="時系列順" />
+![時系列順](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
 
 <div id="left-heavy">
   #### 左側に偏る
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="左側に偏る" />
+![左側に偏る](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
 
 <div id="sandwitch">
   #### サンドイッチ
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="サンドイッチ" />
+![サンドイッチ](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
 
 <div id="check-out-the-docs">
   ## ドキュメントを確認する

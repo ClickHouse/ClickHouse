@@ -6,8 +6,6 @@ keywords: ['visões materializadas', 'backfilling', 'inserção de dados', 'carg
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Seja você iniciante no ClickHouse ou responsável por uma implantação existente, inevitavelmente precisará preencher tabelas retroativamente com dados históricos. Em alguns casos, isso é relativamente simples, mas pode se tornar mais complexo quando visões materializadas precisam ser populadas. Este guia descreve alguns processos para essa tarefa que você pode aplicar ao seu caso de uso.
 
 <Note>
@@ -478,7 +476,7 @@ O [Null table engine](/pt-BR/reference/engines/table-engines/special/null) forne
 
 É importante destacar que quaisquer visões materializadas associadas ao motor de tabela ainda são executadas sobre blocos de dados à medida que são inseridos, enviando seus resultados para uma tabela de destino. Esses blocos têm tamanho configurável. Embora blocos maiores possam ser potencialmente mais eficientes (e mais rápidos de processar), eles consomem mais recursos (principalmente memória). O uso desse motor de tabela significa que podemos construir nossa visão materializada de forma incremental, isto é, um bloco por vez, evitando a necessidade de manter toda a agregação em memória.
 
-<Image img="/images/data-modeling/null_table_mv.webp" size="md" alt="Desnormalização no ClickHouse" />
+![Desnormalização no ClickHouse](/images/data-modeling/null_table_mv.webp)
 
 <br />
 

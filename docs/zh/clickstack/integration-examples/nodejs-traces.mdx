@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Node.js', '链路追踪', 'OTEL', 'ClickStack', '分布式链路追踪']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -47,7 +45,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     3. 进入 **Team Settings → API Keys**
     4. 复制你的 **摄取 API key**
 
-    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+    ![ClickStack API key](/images/clickstack/api-key.webp)
   </Step>
 
   <Step title="运行你的应用程序" id="run-application">
@@ -76,11 +74,11 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
   <Step title="在 HyperDX 中验证链路追踪" id="verify-traces">
     配置完成后，登录 HyperDX 并确认链路追踪已正常上报。你应该会看到类似下面的内容。如果没有看到链路追踪，请尝试调整时间范围：
 
-    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="trace 搜索视图" />
+    ![trace 搜索视图](/images/clickstack/nodejs/traces-search-view.webp)
 
     点击任意一个链路追踪，即可查看包含 spans、耗时和 attributes 的详细视图：
 
-    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="单个 trace 视图" />
+    ![单个 trace 视图](/images/clickstack/nodejs/trace-view.webp)
   </Step>
 </Steps>
 
@@ -119,7 +117,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     3. 导航到 **Team Settings → API Keys**
     4. 复制你的 **摄取 API key**
 
-    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+    ![ClickStack API key](/images/clickstack/api-key.webp)
 
     将你的 API key 设置为环境变量：
 
@@ -144,9 +142,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     2. 导航到 **搜索** 视图，并将 source 设置为 **trace**
     3. 将时间范围设置为 **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
 
-    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="trace 搜索视图" />
+    ![trace 搜索视图](/images/clickstack/nodejs/traces-search-view.webp)
 
-    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="单个 trace 视图" />
+    ![单个 trace 视图](/images/clickstack/nodejs/trace-view.webp)
 
     <Info>
       **时区显示**
@@ -171,15 +169,15 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     1. 打开 HyperDX，进入 **Dashboards** 部分
     2. 点击右上角的 **导入仪表盘** (位于省略号菜单下)
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘" />
+    ![导入仪表盘](/images/clickstack/import-dashboard.webp)
 
     3. 上传 `nodejs-traces-dashboard.json` 文件，然后点击 **Finish Import**
 
-    <Image img="/images/clickstack/nodejs/finish-import.webp" alt="完成导入" />
+    ![完成导入](/images/clickstack/nodejs/finish-import.webp)
   </Step>
 
   <Step title="仪表盘创建后，所有可视化都会预先配置好" id="created-dashboard">
-    <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="示例仪表盘" />
+    ![示例仪表盘](/images/clickstack/nodejs/example-traces-dashboard.webp)
 
     <Note>
       对于演示数据集，请将时间范围设置为 **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (请根据你的本地时区调整)。导入后的仪表盘默认不会指定时间范围。

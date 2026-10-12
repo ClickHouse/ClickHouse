@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/zh/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -71,7 +70,7 @@ ProbeDeck 用于获取已配置内存限制的 `system.server_settings` 需要 C
     ClickHouse Cloud 使用 **API Keys** 页面中的组织级密钥来访问 Cloud API 和查询 API 端点。
     ProbeDeck 的 SQL 连接流程不使用这些密钥。
 
-    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="ProbeDeck 连接表单已配置为通过端口 8443 使用 HTTPS 和 ClickHouse 用户名" />
+    ![ProbeDeck 连接表单已配置为通过端口 8443 使用 HTTPS 和 ClickHouse 用户名](/images/integrations/sql-clients/probedeck-add-connection.png)
   </Step>
 </Steps>
 
@@ -146,11 +145,11 @@ ProbeDeck 会将连接密钥和导入的密钥材料存储在设备的 iOS Keych
 | 内存和服务器指标           | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | 历史查询和磁盘速率          | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
-<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="显示正在运行的查询、复制、磁盘、parts、变更、合并、查询速率和内存的 ProbeDeck 监控仪表板" />
+![显示正在运行的查询、复制、磁盘、parts、变更、合并、查询速率和内存的 ProbeDeck 监控仪表板](/images/integrations/sql-clients/probedeck-dashboard.png)
 
 点击 **正在运行的查询**，按耗时对活动查询排序，并查看内存和读取行数。
 
-<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="按耗时排序的 ProbeDeck 正在运行的查询列表" />
+![按耗时排序的 ProbeDeck 正在运行的查询列表](/images/integrations/sql-clients/probedeck-running-queries.png)
 
 <div id="query-the-uk-property-price-dataset">
   ## 查询英国房产价格数据集

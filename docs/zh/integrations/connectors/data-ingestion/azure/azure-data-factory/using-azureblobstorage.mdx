@@ -10,8 +10,6 @@ integration:
    - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 这是将数据从 Azure Blob 存储或 Azure Data Lake Storage 复制到 ClickHouse 的最高效、最直接的方法之一。使用此表函数，您可以让 ClickHouse 直接连接到 Azure 存储，并按需读取数据。
 
 它提供了类似表的接口，使您能够直接从源中选择、插入和过滤数据。该函数经过高度优化，支持许多常用文件格式，包括 `CSV`、`JSON`、`Parquet`、`Arrow`、`TSV`、`ORC`、`Avro` 等。完整列表请参见 [&quot;数据格式&quot;](/zh/reference/formats/index)。
@@ -29,11 +27,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 2. 在左侧菜单中，选择 **安全 +
    网络** 部分下的 **访问密钥**。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp" size="lg" alt="Azure 数据存储设置" border />
+   ![Azure 数据存储设置](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-settings.webp)
 
 3. 选择 **key1** 或 **key2**，然后点击 **连接字符串** 字段旁边的
    **显示** 按钮。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp" size="lg" alt="Azure 数据存储访问密钥" border />
+   ![Azure 数据存储访问密钥](/images/integrations/data-ingestion/azure-data-factory/azure-data-store-access-keys.webp)
 
 4. 复制该连接字符串——你将在 azureBlobStorage 表函数中将其用作参数。
 

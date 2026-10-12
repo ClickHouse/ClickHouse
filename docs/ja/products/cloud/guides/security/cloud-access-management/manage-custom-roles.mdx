@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['カスタムロール', 'セキュリティ', '権限']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このガイドは、ClickHouse Cloud で Admin ロールを持つユーザーを対象としています。
 
 ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロールを選択することも、ユーザーに割り当てるカスタムロールを作成することもできます。システムロールと、それに関連付けられた権限の詳細については、[Console roles and permissions](/ja/products/cloud/reference/security/console-roles)を参照してください。このガイドでは、カスタムロールの管理方法について詳しく説明します。
@@ -21,25 +19,25 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
   <Step title="組織設定にアクセスし、`Users and roles` を選択する" id="users-and-roles-1">
     サービスページで、組織名を選択します。ポップアップメニューから `Users and roles` を選択します。
 
-    <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
+    ![](/images/cloud/guides/control_plane/1_users_and_roles.webp)
   </Step>
 
   <Step title={<>`Roles` タブを選択する</>} id="roles-tab">
     画面上部中央の `Roles` タブを選択します。
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp" size="lg" />
+    ![](/images/cloud/guides/control_plane/manage_custom_roles/2_custom_role.webp)
   </Step>
 
   <Step title={<>右上の <code>Create new role</code> を選択する</>} id="create-new-role">
     画面右上の `Create new role` ボタンを選択します。
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp" size="lg" />
+    ![](/images/cloud/guides/control_plane/manage_custom_roles/3_custom_role.webp)
   </Step>
 
   <Step title="ロールに名前を付ける" id="name-the-role">
     わかりやすいロール名を入力します。この名前は、ユーザーや API キーにロールを割り当てる際に表示されます。
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp" size="md" />
+    ![](/images/cloud/guides/control_plane/manage_custom_roles/4_custom_role.webp)
   </Step>
 
   <Step title={<>`Allow` をクリックし、権限のスコープを選択する</>} id="scope-permissions">
@@ -55,13 +53,13 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
       **Data Sources** タブにアクセスするには、現在このロールに `Manage selected services` 権限が必要です。
     </Info>
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp" size="md" />
+    ![](/images/cloud/guides/control_plane/manage_custom_roles/5_custom_role.webp)
   </Step>
 
   <Step title="新しいロールを確認する" id="review-role">
     作成を確定する前に、新しいロールに割り当てた権限を確認します。完了したら `Create role` をクリックします。
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp" size="md" />
+    ![](/images/cloud/guides/control_plane/manage_custom_roles/6_custom_role.webp)
   </Step>
 </Steps>
 
@@ -83,7 +81,7 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
 
 サービス上のカスタムデータベースロールは、[JWT 認証](/ja/products/cloud/guides/security/cloud-access-management/jwt-authentication-setup)に依存しており、無効になっている間は適用されません。ロールに `Data` ポリシーを追加する前に、サービスに移動し、`Settings` を開き、`Security` セクションで `JWT authentication` カードを見つけます。`SQL Console` トグルが有効になっていることを確認してください。
 
-<Image img="/images/cloud/security/jwt/jwt-sql-console-toggle.png" alt="SQL Consoleトグルが有効になっているJWT認証カード" size="lg" force />
+![SQL Consoleトグルが有効になっているJWT認証カード](/images/cloud/security/jwt/jwt-sql-console-toggle.png)
 
 <Steps>
   <Step title="ロールダイアログを開く" id="open-role-dialog">
@@ -111,7 +109,7 @@ ClickHouse Cloud のお客様は、あらかじめ定義されたシステムロ
   <Step title="アクセスレベルを選択する" id="choose-data-access-level">
     `Read-only`、`Admin`、または `Custom` アクセスを選択します。`Custom` アクセスでは、ClickHouse の [`GRANT` ステートメント](/ja/reference/statements/grant)を使用して、特定のデータアクセス権限を定義します。`Custom` アクセスは、ポリシーの対象が単一のサービスである場合にのみ選択できます。複数のサービスにカスタム権限を定義するには、サービスごとに個別の `Data` ポリシーを追加します。
 
-    <Image img="/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp" alt="カスタムGRANTステートメントでデータ権限が定義された新しいロールの作成ダイアログ" size="md" />
+    ![カスタムGRANTステートメントでデータ権限が定義された新しいロールの作成ダイアログ](/images/cloud/guides/control_plane/manage_custom_roles/create_role_data_permissions.webp)
   </Step>
 
   <Step title="ロールを作成する" id="create-role-with-data-permissions">

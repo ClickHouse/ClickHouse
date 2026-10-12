@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 > このドキュメントでは、Snowflake から ClickHouse へのデータ移行の概要を紹介します。
 
 Snowflake は、主に従来のオンプレミスのデータウェアハウジングワークロードを
@@ -52,7 +50,7 @@ S3 のようなオブジェクト
 以下の [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts)
 の図は、このアーキテクチャを示しています。
 
-<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Snowflake アーキテクチャ" />
+![Snowflake アーキテクチャ](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
 
 これに対して、オープンソースかつクラウドホスト型の製品である ClickHouse は、
 shared-disk と shared-nothing の両方のアーキテクチャでデプロイできます。後者は
@@ -73,7 +71,7 @@ S3 のスケーラビリティ特性は、shared-disk
 クラスターにノードを追加しても、既存ノードが利用できる I/O スループットが
 影響を受けないようにします。
 
-<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="ClickHouse Cloud アーキテクチャ" />
+![ClickHouse Cloud アーキテクチャ](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
 
 <div id="differences">
   ### 違い

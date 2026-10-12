@@ -7,15 +7,13 @@ doc_type: 'guide'
 keywords: ['clickstack', 'event deltas', 'heatmap', 'attribute distribution', 'trace analysis', 'observability']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Event deltas pair a latency heatmap with automatic attribute analysis so you can see the shape of your trace data and find what makes the slow spans different, without writing queries. There are three ways to use it:
 
 - **Distribution mode (always on)**: when no heatmap selection exists, every attribute's value distribution is shown for the current span population. Useful for spotting dominant or unusually rare values (cardinality outliers).
 - **Comparison mode**: drag a rectangle on the heatmap to compare the spans inside (Selection) against everything outside (Background). Useful for isolating deviations.
 - **Iterative drill-down**: click any bar to filter (or exclude) on that value. The heatmap re-renders against the filtered population, so you can keep narrowing until the cause is obvious.
 
-<Image img="/images/clickstack/event-deltas/overview.webp" alt="Event deltas overview on the payment service with the bright band climbing mid-window and no recovery in frame" size="lg"/>
+![Event deltas overview on the payment service with the bright band climbing mid-window and no recovery in frame](/images/clickstack/event-deltas/overview.webp)
 
 In the screenshot above, the right edge of the heatmap sits at roughly 10 ms, not back at the 1 ms baseline that held through the morning. The degradation is still in progress, so we are catching this mid-incident.
 
@@ -64,7 +62,7 @@ The shape of the rectangle you draw changes the question you're asking. The two 
 
 When the heatmap shows latency drifting upward over the timeline (the slow band thickens, the bright band climbs, or a clear inflection point separates a healthy period from a degraded one), drag a rectangle from the climb inflection to the right edge of the window. To sharpen the comparison, set the bottom of the rectangle at the healthy baseline rather than at the bottom of the axis: this isolates the spans that are genuinely slower than normal in the degraded window, instead of dragging in still-healthy fast spans that happen to fall in the same time range.
 
-<Image img="/images/clickstack/event-deltas/before-after.webp" alt="Comparison mode on the payment service with the rectangle drawn from the climb inflection to the right edge, bottom resting on the 1 ms baseline" size="lg"/>
+![Comparison mode on the payment service with the rectangle drawn from the climb inflection to the right edge, bottom resting on the 1 ms baseline](/images/clickstack/event-deltas/before-after.webp)
 
 The attribute bars below the heatmap are sorted with the largest divergences first. In this example, the top-row charts surface the strongest signals: `SpanKind`, `SpanName`, and `ScopeName` each show a sharp orange-vs-green split between the slow Selection and the healthy Background. Read together, they fingerprint what changed at the inflection.
 
@@ -74,7 +72,7 @@ This is the right shape when you want to ask "what changed?" A tighter variant u
 
 When the heatmap shows two latency populations clearly separated on the duration axis, drag a wide rectangle that spans the entire time range but covers only the upper, cleanly-separated band. The slow population becomes the Selection; the fast bulk becomes the Background.
 
-<Image img="/images/clickstack/event-deltas/slow-vs-fast.webp" alt="Slow vs fast comparison on frontend-proxy with the rectangle covering only the cleanly-separated upper band, well clear of the dense bulk" size="lg"/>
+![Slow vs fast comparison on frontend-proxy with the rectangle covering only the cleanly-separated upper band, well clear of the dense bulk](/images/clickstack/event-deltas/slow-vs-fast.webp)
 
 Draw the rectangle tightly around the upper band, with a visible horizontal gap between it and the dense bulk. A loose rectangle that bleeds into the fast population washes out the divergence.
 
@@ -90,7 +88,7 @@ Comparison and distribution modes are most powerful when chained. Click any bar 
 - **Exclude**: remove spans with this value
 - **Copy**: copy the value to the clipboard
 
-<Image img="/images/clickstack/event-deltas/drill-down.webp" alt="Click popover on a ScopeVersion bar showing Selection vs Background percentages and filter, exclude, copy actions" size="lg"/>
+![Click popover on a ScopeVersion bar showing Selection vs Background percentages and filter, exclude, copy actions](/images/clickstack/event-deltas/drill-down.webp)
 
 After applying a filter or exclude, the heatmap selection is cleared, the heatmap re-renders against the new population, and distribution mode resumes against that filtered set. Watch how the heatmap reshapes; a successful filter visibly removes the slow band, collapses the bimodal split, or flattens the upward drift. Repeat: spot the next suspicious value, filter, look at the new heatmap, look at the new distributions. A few iterations usually narrow a regression to one or two attributes.
 
@@ -104,7 +102,7 @@ When the population is small enough, switch to the **Results Table** tab to insp
 
 The gear icon in the top-right of the heatmap opens the **Display Settings** drawer.
 
-<Image img="/images/clickstack/event-deltas/settings-drawer.webp" alt="Display Settings drawer with Scale, Value, and Count fields" size="lg"/>
+![Display Settings drawer with Scale, Value, and Count fields](/images/clickstack/event-deltas/settings-drawer.webp)
 
 | Parameter | Default          | Description                                                                                                              |
 | --------- | ---------------- | ------------------------------------------------------------------------------------------------------------------------ |

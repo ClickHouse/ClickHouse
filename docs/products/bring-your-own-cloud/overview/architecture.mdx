@@ -7,12 +7,10 @@ description: 'Deploy ClickHouse on your own cloud infrastructure'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Key concepts {#key-concepts}
 The diagram below illustrates how ClickHouse Cloud organizations, cloud accounts, and BYOC infrastructure relate to each other.
 
-<Image img="/images/cloud/reference/byoc-organization-hierarchy.svg" size="lg" alt="BYOC organization hierarchy" />
+![BYOC organization hierarchy](/images/cloud/reference/byoc-organization-hierarchy.svg)
 
 - **ClickHouse Cloud organization:** The top-level entity in ClickHouse Cloud that manages users, billing, and non-BYOC ClickHouse services. Users within an organization can access both standard Cloud services and BYOC services.
 - **ClickHouse BYOC organization:** A separate organization dedicated to managing BYOC deployments. It shares users with the Cloud organization but is linked to one or more cloud accounts where BYOC infrastructure is deployed.
@@ -36,7 +34,7 @@ In your **Customer BYOC VPC**, ClickHouse provisions a Kubernetes cluster (for e
 
 <br />
 
-<Image img="/images/cloud/reference/byoc-architecture.svg" size="lg" alt="BYOC architecture: the ClickHouse control plane in the ClickHouse VPC manages a Kubernetes data plane inside the customer cloud account; ClickHouse data, backups, logs and monitoring data stay in the customer account and only bounded operational telemetry is exported." />
+![BYOC architecture: the ClickHouse control plane in the ClickHouse VPC manages a Kubernetes data plane inside the customer cloud account; ClickHouse data, backups, logs and monitoring data stay in the customer account and only bounded operational telemetry is exported.](/images/cloud/reference/byoc-architecture.svg)
 
 <br />
 

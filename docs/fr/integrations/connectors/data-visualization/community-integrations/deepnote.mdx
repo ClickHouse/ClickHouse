@@ -11,7 +11,6 @@ integration:
   - website: 'https://deepnote.com/launch?template=ClickHouse%20and%20Deepnote'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/fr/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
 
@@ -35,13 +34,13 @@ Si vous souhaitez explorer un exemple interactif d’interrogation de ClickHouse
 
 1. Dans Deepnote, sélectionnez la vue d’ensemble « Integrations », puis cliquez sur la vignette ClickHouse.
 
-<Image size="lg" img="/images/integrations/data-visualization/deepnote_01.webp" alt="Vignette d’intégration ClickHouse" border />
+![Vignette d’intégration ClickHouse](/images/integrations/data-visualization/deepnote_01.webp)
 
 2. Saisissez les informations de connexion de votre instance ClickHouse :
 
 <ConnectionDetails />
 
-<Image size="md" img="/images/integrations/data-visualization/deepnote_02.webp" alt="Boîte de dialogue des détails de ClickHouse" border />
+![Boîte de dialogue des détails de ClickHouse](/images/integrations/data-visualization/deepnote_02.webp)
 
 ***REMARQUE :*** Si votre connexion à ClickHouse est protégée par une IP Access List, vous devrez peut-être autoriser les adresses IP de Deepnote. Pour en savoir plus, consultez la [documentation de Deepnote](https://deepnote.com/docs/securing-connections).
 
@@ -53,7 +52,7 @@ Si vous souhaitez explorer un exemple interactif d’interrogation de ClickHouse
 
 1. Commencez par vous connecter à l’intégration ClickHouse à droite de votre notebook.
 
-   <Image size="lg" img="/images/integrations/data-visualization/deepnote_03.webp" alt="ClickHouse details dialog" border />
+   ![ClickHouse details dialog](/images/integrations/data-visualization/deepnote_03.webp)
 
 2. Créez ensuite un nouveau bloc de requête ClickHouse et interrogez votre base de données. Les résultats de la requête seront enregistrés dans un DataFrame et stockés dans la variable spécifiée dans le bloc SQL.
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'relecture de session', 'SDK navigateur', 'frontend observability', 'sessions utilisateur', 'débogage']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 La relecture de session dans ClickStack capture et reconstitue les interactions des utilisateurs dans votre application web, ce qui vous permet de rejouer visuellement exactement ce qu’un utilisateur a vu et fait pendant sa session. Plutôt qu’un enregistrement vidéo, le SDK enregistre les modifications du DOM, les mouvements de souris, les clics, les défilements, les saisies au clavier, les console logs, les requêtes réseau (XHR, Fetch, WebSocket) et les exceptions JavaScript — puis reconstitue l’expérience dans le navigateur.
 
 Comme les relectures de session sont stockés dans ClickHouse aux côtés de vos logs, traces et métriques, vous pouvez passer du visionnage de l’expérience d’un utilisateur à l’inspection des traces backend et des requêtes de base de données qui l’ont alimentée — le tout en quelques clics. La relecture de session est donc utile pour le debugging des problèmes de production, comprendre le comportement des utilisateurs, identifier les points de friction UX et confirmer visuellement les problèmes signalés au support.
@@ -95,11 +93,11 @@ Le Browser SDK prend également en charge le [masquage des champs de saisie et d
 
 Accédez à **Client Sessions** depuis la barre latérale gauche dans l’UI ClickStack (HyperDX). Cette vue répertorie toutes les sessions de navigateur capturées, avec leur durée et leur nombre d&#39;événements.
 
-<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Vue de recherche des relectures de session" size="lg" />
+![Vue de recherche des relectures de session](/images/clickstack/session-replay/replay-search-view.webp)
 
 Cliquez sur le bouton de lecture d&#39;une session pour la rejouer. La vue de relecture de session affiche l&#39;expérience utilisateur reconstituée à droite, avec à gauche une chronologie des événements du navigateur — requêtes réseau, console logs et erreurs.
 
-<Image img="/images/clickstack/session-replay/session-replay.webp" alt="Lecture d’une relecture de session" size="lg" />
+![Lecture d’une relecture de session](/images/clickstack/session-replay/session-replay.webp)
 
 Basculez entre les modes **Highlighted** et **All Events** pour ajuster le niveau de détail affiché dans la chronologie. Les erreurs sont annotées en rouge, et cliquer sur un événement positionne la relecture de session à cet instant de la session.
 
@@ -121,7 +119,7 @@ Cela fonctionne parce que la configuration `tracePropagationTargets` relie les s
 
 La corrélation fonctionne aussi dans l&#39;autre sens. Lorsque vous consultez une trace dans la vue **Search**, cliquez dessus pour ouvrir son détail, puis sélectionnez l&#39;onglet **Relecture de session** pour voir exactement ce que l&#39;utilisateur faisait au moment de cette trace. C&#39;est particulièrement utile pour analyser des erreurs ou des requêtes lentes : vous pouvez partir d&#39;un problème backend et voir immédiatement le point de vue de l&#39;utilisateur.
 
-<Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="Vue de trace de Relecture de session" size="lg" />
+![Vue de trace de Relecture de session](/images/clickstack/session-replay/trace-to-replay.webp)
 
 <div id="data-storage">
   ## Comment les données de session sont stockées

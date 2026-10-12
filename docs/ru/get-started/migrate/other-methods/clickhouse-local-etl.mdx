@@ -7,11 +7,9 @@ description: 'Руководство по миграции в ClickHouse с ис
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import AddARemoteSystem from '/snippets/ru/_add_remote_ip_access_list_detail.mdx';
 
-<Image img="/images/integrations/migration/ch-local-01.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+![Миграция самоуправляемого ClickHouse](/images/integrations/migration/ch-local-01.webp)
 
 Вы можете использовать ClickHouse, а точнее [`clickhouse-local`](/ru/concepts/features/tools-and-utilities/clickhouse-local)
 как ETL-инструмент для миграции данных из вашей текущей системы баз данных в ClickHouse Cloud, если для этой системы баз данных доступен либо
@@ -27,7 +25,7 @@ ClickHouse предоставляет движки интеграции и та�
   ## Что такое clickhouse-local?
 </div>
 
-<Image img="/images/integrations/migration/ch-local-02.webp" size="lg" alt="Миграция самоуправляемого ClickHouse" />
+![Миграция самоуправляемого ClickHouse](/images/integrations/migration/ch-local-02.webp)
 
 Обычно ClickHouse запускается в виде кластера, где несколько экземпляров движка базы данных ClickHouse работают в распределённом режиме на разных серверах.
 
@@ -95,7 +93,7 @@ ClickHouse предоставляет движки интеграции и та�
 Мы будем использовать [движок интеграции](/ru/reference/engines/table-engines/integrations/mysql) (динамически создаваемый с помощью [табличной функции mysql](/ru/reference/functions/table-functions/mysql)) для чтения данных из исходной базы данных MySQL, а [табличную функцию remoteSecure](/ru/reference/functions/table-functions/remote)
 — для записи данных в целевую таблицу в вашем сервисе ClickHouse Cloud.
 
-<Image img="/images/integrations/migration/ch-local-03.webp" size="lg" alt="Миграция с самоуправляемого ClickHouse" />
+![Миграция с самоуправляемого ClickHouse](/images/integrations/migration/ch-local-03.webp)
 
 <div id="on-the-destination-clickhouse-cloud-service">
   ### На целевом сервисе ClickHouse Cloud:

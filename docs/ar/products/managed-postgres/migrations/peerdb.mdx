@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يوفّر هذا الدليل إرشادات خطوة بخطوة لترحيل قاعدة بيانات PostgreSQL الخاصة بك إلى ClickHouse Managed Postgres باستخدام PeerDB.
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-peerdb-beta" />
@@ -44,7 +42,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 أنشئ نظيرًا لقاعدة بيانات PostgreSQL المصدر لديك عبر إدخال تفاصيل الاتصال، مثل المضيف والمنفذ واسم قاعدة البيانات واسم المستخدم وكلمة المرور. بعد إدخال التفاصيل، انقر على الزر `Create peer` لحفظ النظير.
 
-<Image img="/images/managed-postgres/peerdb/source-peer.webp" alt="إنشاء النظير المصدر" size="md" border />
+![إنشاء النظير المصدر](/images/managed-postgres/peerdb/source-peer.webp)
 
 <div id="migration-peerdb-target-peer">
   ### إنشاء نظير الهدف
@@ -52,11 +50,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 وبالمثل، أنشئ نظير لمثيل ClickHouse Managed Postgres الخاص بك من خلال إدخال تفاصيل الاتصال المطلوبة. يمكنك الحصول على [تفاصيل الاتصال](/ar/products/managed-postgres/connection) الخاصة بمثيلك من ClickHouse Cloud console. بعد إدخال التفاصيل، انقر على الزر `Create peer` لحفظ نظير الهدف.
 
-<Image img="/images/managed-postgres/peerdb/target-peer.webp" alt="إنشاء نظير الهدف" size="md" border />
+![إنشاء نظير الهدف](/images/managed-postgres/peerdb/target-peer.webp)
 
 الآن، ينبغي أن ترى كلاً من نظير المصدر ونظير الهدف مدرجَين في قسم &quot;Peers&quot;.
 
-<Image img="/images/managed-postgres/peerdb/peers.webp" alt="قائمة نظراء" size="md" border />
+![قائمة نظراء](/images/managed-postgres/peerdb/peers.webp)
 
 <div id="migration-peerdb-source-schema-dump">
   ### الحصول على تفريغ مخطط قاعدة البيانات المصدر
@@ -144,7 +142,7 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 بعد ذلك، نحتاج إلى إنشاء مرآة لتحديد عملية ترحيل البيانات بين النظير المصدر والنظير الهدف. في واجهة PeerDB، انتقل إلى قسم &quot;Mirrors&quot; بالنقر على &quot;Mirrors&quot; في الشريط الجانبي. ولإنشاء مرآة جديدة، انقر على الزر `+ New mirror`.
 
-<Image img="/images/managed-postgres/peerdb/create-mirror.webp" alt="إنشاء مرآة" size="md" border />
+![إنشاء مرآة](/images/managed-postgres/peerdb/create-mirror.webp)
 
 1. امنح المرآة اسمًا يعبّر عن عملية الترحيل.
 2. اختر النظير المصدر والنظير الهدف اللذين أنشأتهما سابقًا من القوائم المنسدلة.
@@ -153,11 +151,11 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 * أن يكون Soft delete مضبوطًا على OFF.
 * وسّع `Advanced settings`. وتأكد من أن **نظام أنواع Postgres مُمكّن** وأن **أعمدة PeerDB معطّلة**.
 
-<Image img="/images/managed-postgres/peerdb/settings.webp" alt="إعدادات المرآة" size="md" border />
+![إعدادات المرآة](/images/managed-postgres/peerdb/settings.webp)
 
 4. اختر الجداول التي تريد ترحيلها. يمكنك اختيار جداول محددة أو تحديد جميع الجداول من قاعدة البيانات المصدر.
 
-<Image img="/images/managed-postgres/peerdb/table-picker.webp" alt="منتقي الجداول" size="md" border />
+![منتقي الجداول](/images/managed-postgres/peerdb/table-picker.webp)
 
 <Info>
   **اختيار الجداول**
@@ -169,7 +167,7 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 يجب أن تظهر المرآة التي أنشأتها للتو في قسم &quot;Mirrors&quot;.
 
-<Image img="/images/managed-postgres/peerdb/mirrors.webp" alt="قائمة المرايا" size="md" border />
+![قائمة المرايا](/images/managed-postgres/peerdb/mirrors.webp)
 
 <div id="migration-peerdb-initial-load">
   ## انتظر اكتمال التحميل الأولي
@@ -177,7 +175,7 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 بعد إنشاء الـ مرآة، سيبدأ PeerDB التحميل الأولي للبيانات من المصدر إلى قاعدة البيانات الهدف. يمكنك النقر على الـ مرآة ثم الانتقال إلى علامة التبويب **التحميل الأولي** لمتابعة تقدّم ترحيل البيانات الأولي.
 
-<Image img="/images/managed-postgres/peerdb/initial-load.webp" alt="تقدّم التحميل الأولي" size="md" border />
+![تقدّم التحميل الأولي](/images/managed-postgres/peerdb/initial-load.webp)
 
 بمجرد اكتمال التحميل الأولي، يفترض أن ترى حالة تشير إلى اكتمال الترحيل.
 

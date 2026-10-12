@@ -7,14 +7,13 @@ keywords: ['azure', 'private link', 'privatelink']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Azure Private Link" />
 
 이 가이드에서는 Azure Private Link를 사용하여 Azure(고객 소유 서비스 및 Microsoft Partner 서비스 포함)와 ClickHouse Cloud 간에 가상 네트워크를 통한 비공개 연결을 제공하는 방법을 설명합니다. Azure Private Link는 데이터가 퍼블릭 인터넷에 노출되지 않도록 하여 네트워크 아키텍처를 단순화하고 Azure 내 엔드포인트 간 연결을 안전하게 보호합니다.
 
-<Image img="/images/cloud/security/azure-pe.webp" size="lg" alt="PrivateLink 개요" background="white" />
+![PrivateLink 개요](/images/cloud/security/azure-pe.webp)
 
 <Warning>
   Azure Private Link는 Azure VNet에서 ClickHouse Cloud로 시작되는 연결만 지원합니다. 프라이빗 데이터베이스와 같이 ClickHouse Cloud에서 VNet 내 서비스로 시작되는 연결에는 사용할 수 없습니다.
@@ -57,7 +56,7 @@ Terraform 예시는 ClickHouse [Terraform 프로바이더 리포지토리](https
 
 ClickHouse Cloud 콘솔에서 PrivateLink로 연결하려는 서비스를 연 다음 **설정** 메뉴를 엽니다. **Set up private endpoint** 버튼을 클릭하십시오. Private Link를 설정할 때 사용할 `Service name`과 `DNS name`을 메모해 두십시오.
 
-<Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="lg" alt="Private Endpoints" border />
+![Private Endpoints](/images/cloud/security/azure-privatelink-pe-create.webp)
 
 `Service name`과 `DNS name`을 메모해 두십시오. 다음 단계에서 필요합니다.
 
@@ -118,11 +117,11 @@ curl --silent --user "${KEY_ID:?}:${KEY_SECRET:?}" "https://api.clickhouse.cloud
 
 Azure Portal에서 **Private Link Center → Private Endpoints**를 엽니다.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Azure Private Center 열기" border />
+![Azure Private Center 열기](/images/cloud/security/azure-private-link-center.webp)
 
 **Create** 버튼을 클릭하여 Private Endpoint 생성 대화 상자를 엽니다.
 
-<Image img="/images/cloud/security/azure-private-link-center.webp" size="lg" alt="Azure Private Center 열기" border />
+![Azure Private Center 열기](/images/cloud/security/azure-private-link-center.webp)
 
 ***
 
@@ -134,7 +133,7 @@ Azure Portal에서 **Private Link Center → Private Endpoints**를 엽니다.
 
 위 단계를 완료한 후 **Next: Resource** 버튼을 클릭합니다.
 
-<Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Private Endpoint 기본 생성" border />
+![Private Endpoint 기본 생성](/images/cloud/security/azure-pe-create-basic.webp)
 
 ***
 
@@ -144,7 +143,7 @@ Azure Portal에서 **Private Link Center → Private Endpoints**를 엽니다.
 
 **Next: Virtual Network** 버튼을 클릭합니다.
 
-<Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="Private Endpoint 리소스 선택" border />
+![Private Endpoint 리소스 선택](/images/cloud/security/azure-pe-resource.webp)
 
 ***
 
@@ -157,13 +156,13 @@ Azure Portal에서 **Private Link Center → Private Endpoints**를 엽니다.
 
 **Next: DNS** 버튼을 클릭합니다.
 
-<Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="Private Endpoint 가상 네트워크 선택" border />
+![Private Endpoint 가상 네트워크 선택](/images/cloud/security/azure-pe-create-vnet.webp)
 
 **Next: Tags** 버튼을 클릭합니다.
 
 ***
 
-<Image img="/images/cloud/security/azure-pe-create-dns.webp" size="md" alt="Private Endpoint DNS 구성" border />
+![Private Endpoint DNS 구성](/images/cloud/security/azure-pe-create-dns.webp)
 
 필요한 경우 Private Endpoint에 tags를 추가할 수 있습니다.
 
@@ -171,17 +170,17 @@ Azure Portal에서 **Private Link Center → Private Endpoints**를 엽니다.
 
 ***
 
-<Image img="/images/cloud/security/azure-pe-create-tags.webp" size="md" alt="Private Endpoint 태그" border />
+![Private Endpoint 태그](/images/cloud/security/azure-pe-create-tags.webp)
 
 마지막으로 **Create** 버튼을 클릭합니다.
 
-<Image img="/images/cloud/security/azure-pe-create-review.webp" size="md" alt="Private Endpoint 검토" border />
+![Private Endpoint 검토](/images/cloud/security/azure-pe-create-review.webp)
 
 생성된 Private Endpoint의 **Connection status**는 처음에 **Pending** 상태입니다. 이 Private Endpoint를 서비스 허용 목록에 추가하면 **Approved** 상태로 변경됩니다.
 
 Private Endpoint와 연결된 네트워크 인터페이스를 열고 **Private IPv4 address**(이 예시에서는 10.0.0.4)를 복사하십시오. 이 정보는 다음 단계에서 필요합니다.
 
-<Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="Private Endpoint IP 주소" border />
+![Private Endpoint IP 주소](/images/cloud/security/azure-pe-ip.webp)
 
 <div id="option-2-using-terraform-to-create-a-private-endpoint-in-azure">
   ### 옵션 2: Terraform을 사용해 Azure에서 Private Endpoint 생성하기
@@ -212,18 +211,18 @@ Private Link를 사용하려면 서비스 허용 목록에 Private Endpoint 연�
 
 Private Endpoint Resource ID는 Azure Portal에 표시됩니다. 이전 단계에서 생성한 Private Endpoint를 열고 **JSON View**를 클릭하십시오.
 
-<Image img="/images/cloud/security/azure-pe-view.webp" size="lg" alt="Private Endpoint 보기" border />
+![Private Endpoint 보기](/images/cloud/security/azure-pe-view.webp)
 
 최상위 `id` 필드(Private Endpoint의 Resource ID이며, 형식은 `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`)를 복사하십시오. `properties` 객체 내부에 중첩된 `id` 필드는 사용하지 마십시오.
 
 **권장 메서드: Resource ID 사용**
 
-<Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="Private Endpoint Resource ID" border />
+![Private Endpoint Resource ID](/images/cloud/security/azure-pe-resource-id.webp)
 
 **레거시 메서드: resourceGUID 사용**
 하위 호환성을 위해 resourceGUID도 계속 사용할 수 있습니다. `resourceGuid` 필드를 찾아 이 값을 복사하십시오.
 
-<Image img="/images/cloud/security/azure-pe-resource-guid.webp" size="lg" alt="Private Endpoint Resource GUID" border />
+![Private Endpoint Resource GUID](/images/cloud/security/azure-pe-resource-guid.webp)
 
 <div id="setting-up-dns-for-private-link">
   ## Private Link용 DNS 설정
@@ -264,7 +263,7 @@ resource "azurerm_private_dns_zone" "clickhouse_cloud_private_link_zone" {
 4. IP Address에 Private Endpoint에 표시된 IP 주소를 입력합니다.
 5. **OK**를 선택합니다.
 
-<Image img="/images/cloud/security/azure-pl-dns-wildcard.webp" size="lg" alt="Private Link DNS 와일드카드 설정" border />
+![Private Link DNS 와일드카드 설정](/images/cloud/security/azure-pl-dns-wildcard.webp)
 
 **옵션 2: Terraform 사용**
 
@@ -326,7 +325,7 @@ Address: 10.0.0.4
 
 엔드포인트를 제거하려면 **Organization details -&gt; Private Endpoints**를 열고 삭제 버튼을 클릭하십시오.
 
-<Image img="/images/cloud/security/azure-pe-remove-private-endpoint.webp" size="lg" alt="Private Endpoint 제거" border />
+![Private Endpoint 제거](/images/cloud/security/azure-pe-remove-private-endpoint.webp)
 
 <div id="option-2-api">
   ### 옵션 2: API
@@ -404,7 +403,7 @@ ClickHouse Cloud 콘솔에서 PrivateLink를 통해 연결할 서비스를 연 �
   기존 PrivateLink connection의 액세스를 허용하려면 기존 endpoint 드롭다운 메뉴를 사용하십시오.
 </Note>
 
-<Image img="/images/cloud/security/azure-privatelink-pe-filter.webp" size="lg" alt="Private Endpoints 필터" border />
+![Private Endpoints 필터](/images/cloud/security/azure-privatelink-pe-filter.webp)
 
 <div id="option-2-api">
   ### 옵션 2: API
@@ -473,7 +472,7 @@ Private Link가 활성화된 각 서비스에는 퍼블릭 엔드포인트와 Pr
 
 ClickHouse Cloud 콘솔에서 **설정**으로 이동합니다. **Set up private endpoint** 버튼을 클릭합니다. 열리는 플라이아웃에서 **DNS Name**을 복사합니다.
 
-<Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="lg" alt="Private Endpoint DNS Name" border />
+![Private Endpoint DNS Name](/images/cloud/security/azure-privatelink-pe-dns.webp)
 
 <div id="option-2-api-3">
   #### 옵션 2: API

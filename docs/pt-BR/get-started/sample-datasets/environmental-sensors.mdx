@@ -8,8 +8,6 @@ doc_type: 'guide'
 keywords: ['sensores ambientais', 'Sensor.Community', 'dados de qualidade do ar', 'dados ambientais', 'primeiros passos']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 [Sensor.Community](https://sensor.community/en/) é uma rede global de sensores movida por colaboradores que cria Dados Ambientais Abertos. Os dados são coletados por sensores em todo o mundo. Qualquer pessoa pode comprar um sensor e instalá-lo onde quiser. As APIs para baixar os dados estão no [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs), e os dados estão disponíveis gratuitamente sob a [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/).
 
 <Warning>
@@ -158,7 +156,7 @@ ORDER BY date ASC;
 
 Podemos criar um gráfico no SQL Console para visualizar os resultados:
 
-<Image img="/images/getting-started/example-datasets/sensors_01.webp" size="md" alt="Número de eventos por dia" />
+![Número de eventos por dia](/images/getting-started/example-datasets/sensors_01.webp)
 
 6. Esta consulta conta o número de dias quentes e úmidos em excesso:
 
@@ -173,4 +171,4 @@ ORDER BY day ASC;
 
 Veja a visualização do resultado:
 
-<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="Dias quentes e úmidos" />
+![Dias quentes e úmidos](/images/getting-started/example-datasets/sensors_02.webp)

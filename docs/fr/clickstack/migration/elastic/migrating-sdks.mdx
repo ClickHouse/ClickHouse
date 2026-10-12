@@ -8,8 +8,6 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Elastic Stack propose deux types de SDKs pour différents langages afin d’instrumenter les applications :
 
 1. **[Agents APM officiels d’Elastic](https://www.elastic.co/docs/reference/apm-agents/)** – Ils sont conçus spécifiquement pour une utilisation avec Elastic Stack. Il n’existe actuellement aucune procédure de migration directe pour ces SDKs. Les applications qui les utilisent devront être instrumentées à nouveau à l’aide des [ClickStack SDKs](/fr/clickstack/ingesting-data/sdks/index) correspondants.
@@ -50,4 +48,4 @@ export OTEL_EXPORTER_OTLP_HEADERS="authorization=<YOUR_INGESTION_API_KEY>"
 
 Votre clé API d’ingestion est générée par l’application HyperDX et se trouve dans Team Settings → API Keys.
 
-<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Clés d’ingestion" size="lg" />
+![Clés d’ingestion](/images/use-cases/observability/ingestion-keys.webp)

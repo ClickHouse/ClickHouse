@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['agentic data stack', 'docker compose', 'setup', 'LibreChat', 'MCP', 'Langfuse']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 Docker Compose로 로컬에서 전체 에이전트형 데이터 스택을 실행하면 첫 로그인 직후부터 데이터에 관해 질문할 수 있습니다. `docker compose up` 명령 한 번으로 [LibreChat](/ko/products/agentic-data-stack/components/librechat), [ClickHouse MCP 서버](/ko/products/agentic-data-stack/components/mcp-server), [ClickHouse](/ko/get-started/setup/install), 그리고 관측성을 위한 [Langfuse](/ko/products/agentic-data-stack/components/langfuse)를 모두 실행할 수 있습니다.
 
 <div id="prerequisites">
@@ -74,18 +72,18 @@ Docker Compose로 로컬에서 전체 에이전트형 데이터 스택을 실행
   <Step title="모델 선택">
     기본적으로 모델이 선택되어 있습니다. 변경하려면 모델 셀렉터를 열고 사용할 모델을 선택하십시오.
 
-    <Image img="/images/agentic-data-stack/select-model.webp" alt="왼쪽 상단에 있는 LibreChat 모델 셀렉터에 기본 모델과 「Select a model」 툴팁이 표시된 모습" size="md" />
+    ![왼쪽 상단에 있는 LibreChat 모델 셀렉터에 기본 모델과 「Select a model」 툴팁이 표시된 모습](/images/agentic-data-stack/select-model.webp)
 
     Setup 중에 제공업체 키를 설정하지 않았다면 UI에서 추가하십시오.
 
     <Accordion title="UI에서 제공업체 키 설정">
       모델 셀렉터를 열고 제공업체 옆의 **Set API Key**를 클릭하십시오.
 
-      <Image img="/images/agentic-data-stack/set-api-key.webp" alt="Anthropic provider 옆에 Set API Key 버튼이 표시된 LibreChat 모델 셀렉터" size="md" />
+      ![Anthropic provider 옆에 Set API Key 버튼이 표시된 LibreChat 모델 셀렉터](/images/agentic-data-stack/set-api-key.webp)
 
       대화 상자에 키를 붙여넣고 **Submit**을 클릭하십시오. 만료 시간을 설정하거나, 키가 만료되지 않도록 유지할 수 있습니다.
 
-      <Image img="/images/agentic-data-stack/set-api-key-modal.webp" alt="만료 드롭다운, Key 필드, Submit 및 Revoke 버튼이 있는 Anthropic용 Set API Key 대화 상자" size="md" />
+      ![만료 드롭다운, Key 필드, Submit 및 Revoke 버튼이 있는 Anthropic용 Set API Key 대화 상자](/images/agentic-data-stack/set-api-key-modal.webp)
     </Accordion>
   </Step>
 
@@ -96,7 +94,7 @@ Docker Compose로 로컬에서 전체 에이전트형 데이터 스택을 실행
 
     {/* TODO: guide users (or link out to the Remote MCP docs at /cloud/features/ai-ml/remote-mcp) on connecting ClickHouse-Cloud — it requires an OAuth flow, unlike the bundled local server. */}
 
-    <Image img="/images/agentic-data-stack/select-clickhouse-local.webp" alt="LibreChat 컴포저에서 MCP Servers 메뉴가 열려 있으며, 녹색 연결 점이 있는 ClickHouse-Local과 ClickHouse-Cloud가 표시된 모습" size="md" />
+    ![LibreChat 컴포저에서 MCP Servers 메뉴가 열려 있으며, 녹색 연결 점이 있는 ClickHouse-Local과 ClickHouse-Cloud가 표시된 모습](/images/agentic-data-stack/select-clickhouse-local.webp)
   </Step>
 
   <Step title="첫 번째 질문하기">
@@ -106,7 +104,7 @@ Docker Compose로 로컬에서 전체 에이전트형 데이터 스택을 실행
 
     에이전트는 MCP 서버의 도구를 사용해 데이터베이스와 테이블을 나열하고, ClickHouse에 읽기 전용 쿼리를 실행한 뒤, 결과를 바탕으로 답변을 구성합니다. SQL을 직접 작성할 필요는 없습니다.
 
-    <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="ClickHouse-Local MCP 도구를 호출해 예시 질문에 답변하고, 사용 가능한 데이터베이스와 테이블을 나열하는 LibreChat" size="md" />
+    ![ClickHouse-Local MCP 도구를 호출해 예시 질문에 답변하고, 사용 가능한 데이터베이스와 테이블을 나열하는 LibreChat](/images/agentic-data-stack/prompt-chat.webp)
   </Step>
 </Steps>
 

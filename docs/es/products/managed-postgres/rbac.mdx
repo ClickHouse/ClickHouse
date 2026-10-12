@@ -8,8 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.rbac-beta" />
 
 ClickHouse Cloud admite el control de acceso basado en roles (RBAC) para los servicios ClickHouse Managed Postgres. Puede crear roles personalizados con permisos específicos y asignarlos a miembros de la organización para controlar quién puede ver o administrar sus servicios de Postgres.
@@ -37,16 +35,16 @@ Para crear un nuevo servicio de Postgres, se requiere el permiso existente **Org
 
 1. Haga clic en el nombre de su organización en la barra lateral izquierda y seleccione **Usuarios y roles**.
 
-<Image img="/images/managed-postgres/rbac/usersandroles.webp" alt="Menú Usuarios y roles" size="md" border />
+![Menú Usuarios y roles](/images/managed-postgres/rbac/usersandroles.webp)
 
 2. Vaya a la pestaña **Roles** y haga clic en **Create role**.
 3. Introduzca un nombre para el rol, luego haga clic en **+ Allow** y seleccione **Postgres Service** en la lista de entidades.
 
-<Image img="/images/managed-postgres/rbac/postgresentity.webp" alt="Selección de la entidad Postgres Service" size="md" border />
+![Selección de la entidad Postgres Service](/images/managed-postgres/rbac/postgresentity.webp)
 
 4. Elija el servicio de Postgres al que se aplicará el rol y, a continuación, seleccione los permisos que desea otorgar.
 
-<Image img="/images/managed-postgres/rbac/newpostgresperms.webp" alt="Configuración de permisos de Postgres en un rol" size="md" border />
+![Configuración de permisos de Postgres en un rol](/images/managed-postgres/rbac/newpostgresperms.webp)
 
 5. Haga clic en **Create role** para guardar los cambios.
 

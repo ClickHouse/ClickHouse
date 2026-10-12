@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このドキュメントでは、Postgres ClickPipe が **CDC (変更データキャプチャ)  (実行中) モード** にある場合の同期制御方法について説明します。
 
 <div id="overview">
@@ -53,15 +51,15 @@ Postgres ClickPipe の同期を制御する主な方法は 2 つあります。�
 ClickPipe の作成時または既存の ClickPipe の編集時に、同期間隔とプルのバッチサイズを設定できます。
 ClickPipe の作成時には、以下のように作成ウィザードの 2 番目のステップに表示されます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp" alt="同期設定の作成" size="md" />
+![同期設定の作成](/images/integrations/data-ingestion/clickpipes/postgres/create_sync_settings.webp)
 
 既存の ClickPipe を編集する場合は、パイプの **Settings** タブに移動し、パイプを一時停止してから、ここで **Configure** をクリックします。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp" alt="同期編集ボタン" size="md" />
+![同期編集ボタン](/images/integrations/data-ingestion/clickpipes/postgres/edit_sync_button.webp)
 
 これにより、同期設定のフライアウトが開き、そこで同期間隔とプルのバッチサイズを変更できます。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp" alt="同期設定の編集" size="md" />
+![同期設定の編集](/images/integrations/data-ingestion/clickpipes/postgres/sync_settings_edit.webp)
 
 <div id="tweaking">
   ### レプリケーションスロットの肥大化を抑えるための同期設定の調整
@@ -77,4 +75,4 @@ ClickHouse へのプッシュにかかる時間は、ソースデータベース
 
 各バッチにかかる時間は、ClickPipe の **Metrics** タブにある **CDC Syncs** テーブルで確認できます。ここでの所要時間にはプッシュ時間が含まれます。また、受信する行がない場合は ClickPipe が待機し、その待機時間も所要時間に含まれる点に注意してください。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp" alt="CDC Syncs テーブル" size="md" />
+![CDC Syncs テーブル](/images/integrations/data-ingestion/clickpipes/postgres/cdc_syncs.webp)

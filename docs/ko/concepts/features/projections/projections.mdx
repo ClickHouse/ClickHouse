@@ -7,7 +7,6 @@ sidebar_order: 1
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
@@ -51,7 +50,7 @@ ClickHouse는 프라이머리 키를 자동으로 샘플링하여 동일하게 �
 생성할 수 있으면서도 읽어야 하는 데이터 양이 가장 적은 테이블을 선택합니다.
 이는 아래 그림에 나와 있습니다:
 
-<Image img="/images/data-modeling/projections_1.webp" size="md" alt="ClickHouse의 프로젝션" />
+![ClickHouse의 프로젝션](/images/data-modeling/projections_1.webp)
 
 <div id="smarter_storage_with_part_offset">
   ### `_part_offset`를 활용한 더 스마트한 스토리지
@@ -320,7 +319,7 @@ SETTINGS mutations_sync = 1
 아래 그림은 메인 테이블 `uk_price_paid_with_projections`
 과 두 개의 PROJECTION을 시각화한 것입니다:
 
-<Image img="/images/data-modeling/projections_2.webp" size="md" alt="메인 테이블 uk_price_paid_with_projections와 두 개의 PROJECTION 시각화" />
+![메인 테이블 uk_price_paid_with_projections와 두 개의 PROJECTION 시각화](/images/data-modeling/projections_2.webp)
 
 이제 가장 높은 거래 가격 3건에 해당하는 런던의 카운티를 나열하는
 쿼리를 다시 실행하면, 쿼리 성능이 향상된 것을 확인할 수 있습니다:

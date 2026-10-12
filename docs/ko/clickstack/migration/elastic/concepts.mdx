@@ -8,8 +8,6 @@ keywords: ['Elasticsearch']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="elastic-vs-clickstack">
   ## Elastic Stack vs ClickStack
 </div>
@@ -91,7 +89,7 @@ Elasticsearch는 JSON(및 [제한적인 CSV](https://www.elastic.co/docs/referen
   ### 인덱싱과 스토리지
 </div>
 
-<Image img="/images/use-cases/observability/elasticsearch.webp" alt="Elasticsearch" size="lg" />
+![Elasticsearch](/images/use-cases/observability/elasticsearch.webp)
 
 세그먼트 분할(sharding) 개념은 Elasticsearch의 확장성 모델에서 기본입니다. 각 ① [**인덱스**](https://www.elastic.co/blog/what-is-an-elasticsearch-index)는 **세그먼트**로 분할되며, 각 세그먼트는 디스크에 세그먼트로 저장된 물리적 Lucene 인덱스입니다. 세그먼트는 복원력을 위해 replica 세그먼트라고 불리는 하나 이상의 물리적 복사본을 가질 수 있습니다. 확장성을 위해 세그먼트와 레플리카는 여러 노드에 분산될 수 있습니다. 단일 세그먼트 ②는 하나 이상의 불변 세그먼트로 구성됩니다. 세그먼트는 Elasticsearch의 기반이 되는 인덱싱 및 검색 기능을 제공하는 Java 라이브러리인 Lucene의 기본 인덱싱 구조입니다.
 
@@ -111,7 +109,7 @@ Elasticsearch에서 [인덱스 매핑](https://www.elastic.co/guide/en/elasticse
 
 반대로 ClickHouse는 **컬럼 지향(column-oriented)** 입니다 — 각 컬럼은 독립적으로 저장되지만 항상 테이블의 기본/정렬 키로 정렬됩니다. 이 정렬은 ClickHouse가 쿼리 실행 중 데이터를 효율적으로 건너뛰게 해주는 [희소 프라이머리 인덱스(sparse primary indexes)](/ko/concepts/core-concepts/primary-indexes)를 가능하게 합니다. 쿼리가 기본 키 필드로 필터링할 때 ClickHouse는 각 컬럼의 관련 부분만 읽어 디스크 I/O를 크게 줄이고 성능을 향상시킵니다 — 모든 컬럼에 전체 인덱스가 없어도 그렇습니다.
 
-<Image img="/images/use-cases/observability/clickhouse.webp" alt="ClickHouse" size="lg" />
+![ClickHouse](/images/use-cases/observability/clickhouse.webp)
 
 ClickHouse는 또한 선택된 컬럼에 대한 인덱스 데이터를 미리 계산하여 필터링을 가속화하는 [**스킵 인덱스(skip indexes)**](/ko/concepts/features/performance/skip-indexes/skipping-indexes)를 지원합니다. 이는 명시적으로 정의해야 하지만 성능을 크게 향상시킬 수 있습니다. 또한 ClickHouse는 컬럼별로 [압축 코덱](/ko/guides/use-cases/observability/build-your-own/schema-design#using-codecs)과 압축 알고리즘을 지정할 수 있게 해 주며 — 이는 Elasticsearch가 지원하지 않는 기능입니다(Elasticsearch의 [압축](https://www.elastic.co/docs/reference/elasticsearch/index-settings/index-modules)은 `_source` JSON 저장에만 적용됩니다).
 
@@ -184,7 +182,7 @@ ClickHouse에는 size 제한이 없습니다. 대규모 데이터셋에 대해 �
 
 ClickHouse는 최신 하드웨어에서 효율을 극대화하도록 설계되었습니다. 기본적으로 ClickHouse는 N개의 CPU 코어가 있는 머신에서 N개의 동시 실행 레인으로 SQL 쿼리를 실행합니다.
 
-<Image img="/images/use-cases/observability/clickhouse-execution.webp" alt="ClickHouse 실행" size="lg" />
+![ClickHouse 실행](/images/use-cases/observability/clickhouse-execution.webp)
 
 단일 노드에서는 실행 레인이 데이터를 서로 독립적인 범위로 나누어 CPU 스레드 전반에서 동시에 처리할 수 있게 합니다. 여기에는 필터링, 집계, 정렬이 포함됩니다. 각 레인의 로컬 결과는 최종적으로 머지되며, 쿼리에 limit 절이 있으면 limit 연산자가 적용됩니다.
 
@@ -199,7 +197,7 @@ ClickHouse는 최신 하드웨어에서 효율을 극대화하도록 설계되�
 
 반면 Elasticsearch는 사용 가능한 CPU 코어 수와 관계없이 대부분의 집계에 대해 세그먼트당 하나의 스레드를 할당합니다. 이 스레드들은 세그먼트 로컬 상위 N개 결과를 반환하며, 이는 코디네이팅 노드에서 머지됩니다. 이 방식은 시스템 리소스를 충분히 활용하지 못할 수 있으며, 특히 자주 나타나는 term이 여러 세그먼트에 분산되어 있을 때 전역 집계에서 부정확성이 발생할 수 있습니다. 정확도는 `shard_size` 매개변수를 늘려 높일 수 있지만, 그만큼 메모리 사용량과 쿼리 지연 시간이 증가합니다.
 
-<Image img="/images/use-cases/observability/elasticsearch-execution.webp" alt="Elasticsearch 실행" size="lg" />
+![Elasticsearch 실행](/images/use-cases/observability/elasticsearch-execution.webp)
 
 요약하면, ClickHouse는 더 세밀한 병렬성과 하드웨어 리소스에 대한 더 높은 제어력을 바탕으로 집계와 쿼리를 실행하는 반면, Elasticsearch는 더 엄격한 제약이 있는 세그먼트 기반 실행에 의존합니다.
 
@@ -241,7 +239,7 @@ Elasticsearch에서는 **롤업** 또는 **집계**를 [**transforms**](https://
 
 다음 다이어그램은 transforms가 작동하는 방식을 추상적으로 보여줍니다(집계 값을 미리 계산하려는 동일한 버킷에 속한 모든 문서는 파란색으로 표시했습니다):
 
-<Image img="/images/use-cases/observability/es-transforms.webp" alt="Elasticsearch transforms" size="lg" />
+![Elasticsearch transforms](/images/use-cases/observability/es-transforms.webp)
 
 연속 transforms는 구성 가능한 확인 인터벌 시간(transform [frequency](https://www.elastic.co/guide/en/elasticsearch/reference/current/put-transform.html), 기본값은 1분)을 기준으로 하는 transform [checkpoints](https://www.elastic.co/guide/en/elasticsearch/reference/current/transform-checkpoints.html)를 사용합니다. 위 다이어그램에서는 ① 확인 인터벌 시간이 지난 뒤 새 체크포인트가 생성된다고 가정합니다. 이제 Elasticsearch는 transforms의 원본 인덱스에서 변경 사항을 확인하고, 이전 체크포인트 이후 새로 추가된 `blue` 문서 3개(11, 12, 13)를 감지합니다. 따라서 원본 인덱스에서 기존의 모든 `blue` 문서를 대상으로 필터링을 수행하고, [composite aggregation](https://www.elastic.co/guide/en/elasticsearch/reference/current/search-aggregations-bucket-composite-aggregation.html)을 사용해([pagination](https://www.elastic.co/guide/en/elasticsearch/reference/current/paginate-search-results.html) 활용) 집계 값을 다시 계산합니다(그리고 대상 인덱스는 이전 집계 값을 담고 있던 문서를 대체하는 문서로 업데이트됩니다). 마찬가지로 ②와 ③에서도 변경 사항을 확인하고 동일한 &#39;blue&#39; 버킷에 속한 기존 모든 문서의 집계 값을 다시 계산하는 방식으로 새 체크포인트가 처리됩니다.
 
@@ -251,7 +249,7 @@ ClickHouse는 근본적으로 다른 접근 방식을 취합니다. 주기적으
 
 다음은 증분형 materialized view의 동작 원리를 추상적으로 나타낸 것입니다(집계 값을 미리 계산하려는 동일한 그룹에 속한 모든 행은 파란색으로 표시했습니다):
 
-<Image img="/images/use-cases/observability/ch-mvs.webp" alt="ClickHouse Materialized Views" size="lg" />
+![ClickHouse Materialized Views](/images/use-cases/observability/ch-mvs.webp)
 
 위 다이어그램에서 materialized view의 원본 테이블에는 이미 동일한 그룹에 속하는 일부 `blue` 행(1~10)을 저장한 데이터 파트가 들어 있습니다. 이 그룹에 대해서는 뷰의 대상 테이블에도 이미 `blue` 그룹의 [부분 집계 상태](https://www.youtube.com/watch?v=QDAJTKZT8y4)를 저장하는 데이터 파트가 존재합니다. ① ② ③에서 새 행이 원본 테이블에 삽입되면, 각 삽입마다 해당 원본 테이블의 데이터 파트가 생성되고, 동시에 새로 삽입된 행의 각 block에 대해서만 부분 집계 상태가 계산되어 materialized view의 대상 테이블에 데이터 파트 형태로 삽입됩니다. ④ 백그라운드 파트 병합이 수행되는 동안 부분 집계 상태가 병합되며, 그 결과 증분 집계가 이루어집니다.
 

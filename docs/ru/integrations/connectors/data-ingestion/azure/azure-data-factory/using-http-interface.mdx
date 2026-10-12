@@ -10,8 +10,6 @@ integration:
    - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 [`azureBlobStorage` — табличная функция](/ru/reference/functions/table-functions/azureBlobStorage),
 которая позволяет быстро и удобно выполнять приём данных из Azure Blob Storage в
 ClickHouse. Однако её использование не всегда подходит по следующим причинам:
@@ -106,21 +104,21 @@ Service для вашего экземпляра ClickHouse, определим 
 
 1. Войдите в [Microsoft Azure Portal](https://portal.azure.com/) и нажмите
    **Create a resource**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp" size="lg" alt="Домашняя страница Azure Portal" border />
+   ![Домашняя страница Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp)
 
 2. На панели Categories слева выберите **Analytics**, затем нажмите
    **Data Factory** в списке популярных сервисов.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp" size="lg" alt="Новый ресурс в Azure Portal" border />
+   ![Новый ресурс в Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp)
 
 3. Выберите подписку и группу ресурсов, введите имя для нового экземпляра Data
    Factory, выберите регион и оставьте версию V2.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp" size="lg" alt="Новый Data Factory в Azure Portal" border />
+   ![Новый Data Factory в Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp)
 
 4. Нажмите **Review + Create**, затем **Create**, чтобы запустить развертывание.
 
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp" size="lg" alt="Подтверждение нового Data Factory в Azure Portal" border />
+   ![Подтверждение нового Data Factory в Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp)
 
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp" size="lg" alt="Успешное создание нового Data Factory в Azure Portal" border />
+   ![Успешное создание нового Data Factory в Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp)
 
 После успешного завершения развертывания вы сможете начать использовать новый экземпляр Azure
 Data Factory.
@@ -130,34 +128,34 @@ Data Factory.
 </div>
 
 1. Войдите в Microsoft Azure Portal и откройте свой экземпляр Data Factory.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="Главная страница Azure Portal с Data Factory" border />
+   ![Главная страница Azure Portal с Data Factory](/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp)
 
 2. На странице обзора Data Factory нажмите **Launch Studio**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Страница Data Factory в Azure Portal" border />
+   ![Страница Data Factory в Azure Portal](/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp)
 
 3. В меню слева выберите **Manage**, затем перейдите в **Linked services**
    и нажмите **+ New**, чтобы создать новую связанную службу.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Кнопка New связанной службы в Azure Data Factory" border />
+   ![Кнопка New связанной службы в Azure Data Factory](/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp)
 
 4. В **New linked service search bar** введите **REST**, выберите **REST** и нажмите **Continue**,
    чтобы создать экземпляр
    [REST connector](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest).
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Поиск New связанной службы в Azure Data Factory" border />
+   ![Поиск New связанной службы в Azure Data Factory](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp)
 
 5. На панели конфигурации связанной службы задайте имя новой службы,
    нажмите на поле **Base URL**, затем выберите **Add dynamic content** (эта ссылка
    появляется только после выбора поля).
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="Панель New Lined Service" border />
+   ![Панель New Lined Service](/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp)
 
 6. На панели dynamic content можно создать параметризованный URL,
    который позволит позже задавать запрос при создании датасетов для разных
    таблиц — это делает связанную службу пригодной для повторного использования.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="Пустой Base URL в New связанной службе" border />
+   ![Пустой Base URL в New связанной службе](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp)
 
 7. Нажмите **&quot;+&quot;** рядом с полем filter и добавьте новый parameter, назовите его
    `pQuery`, задайте тип String и значение по умолчанию `SELECT 1`.
    Нажмите **Save**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="Параметры New связанной службы" border />
+   ![Параметры New связанной службы](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp)
 
 8. В поле expression введите следующее и нажмите **OK**. Замените
    `your-clickhouse-url.com` на фактический адрес вашего экземпляра
@@ -165,16 +163,16 @@ Data Factory.
    ```text
    @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
    ```
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="Заполненное поле Expression в New связанной службе" border />
+   ![Заполненное поле Expression в New связанной службе](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp)
 
 9. Вернувшись в основную форму, выберите basic authentication, введите username и
    password, которые используются для подключения к вашему HTTP-интерфейсу ClickHouse, и нажмите **Test
    connection**. Если всё настроено правильно, вы увидите сообщение
    об успешном подключении.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="Проверка подключения New связанной службы" border />
+   ![Проверка подключения New связанной службы](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp)
 
 10. Нажмите **Create**, чтобы завершить настройку.
-    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="Список связанных служб" border />
+    ![Список связанных служб](/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp)
 
 После этого в списке должна появиться новая связанная служба на основе REST.
 
@@ -207,19 +205,19 @@ ClickHouse.
 
 2. В Azure Data Factory Studio выберите Author на левой панели. Наведите указатель
    на элемент набора данных, нажмите значок с тремя точками и выберите New dataset.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp" size="lg" alt="Элемент New набора данных" border />
+   ![Элемент New набора данных](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp)
 
 3. В строке поиска введите **REST**, выберите **REST** и нажмите **Continue**.
    Введите имя набора данных и выберите **связанную службу**, созданную
    на предыдущем шаге. Нажмите **OK**, чтобы создать набор данных.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp" size="lg" alt="Страница New набора данных" border />
+   ![Страница New набора данных](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp)
 
 4. Теперь в разделе наборов данных
    на панели Factory Resources слева должен отображаться только что созданный набор данных. Выберите его, чтобы
    открыть свойства. Вы увидите параметр `pQuery`, который был определён в
    связанной службе. Нажмите текстовое поле **Value**. Затем нажмите **Add dynamic**
    content.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp" size="lg" alt="Свойства New набора данных" border />
+   ![Свойства New набора данных](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp)
 
 5. В открывшуюся панель вставьте следующий запрос:
    ```sql
@@ -238,12 +236,12 @@ ClickHouse.
   должно быть записано как `''best_effort''`.
 </Danger>
 
-<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp" size="xl" alt="Запрос New набора данных" border />
+![Запрос New набора данных](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp)
 
 6. Нажмите OK, чтобы сохранить выражение. Нажмите Test connection. Если всё
    настроено правильно, появится сообщение Connection successful. Нажмите Publish
    all в верхней части страницы, чтобы сохранить изменения.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp" size="xl" alt="Успешное подключение New набора данных" border />
+   ![Успешное подключение New набора данных](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp)
 
 <div id="setting-up-an-example-dataset">
   ### Настройка примера набора данных
@@ -277,14 +275,14 @@ ClickHouse.
 1. Откройте **Azure Data Factory Studio** и перейдите на вкладку **Author**. В
    панели **Factory Resources** наведите указатель на **Pipeline**, нажмите
    значок с тремя точками и выберите **New pipeline**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp" size="lg" alt="Новый элемент Pipeline в ADF" border />
+   ![Новый элемент Pipeline в ADF](/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp)
 
 2. В панели **Activities** разверните раздел **Move and transform** и
    перетащите действие **Copy data** на холст.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp" size="lg" alt="Новый элемент Copy Data" border />
+   ![Новый элемент Copy Data](/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp)
 
 3. Выберите вкладку **Source** и укажите исходный набор данных, который вы создали ранее.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp" size="lg" alt="Источник Copy Data" border />
+   ![Источник Copy Data](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp)
 
 4. Перейдите на вкладку **Sink** и выберите набор данных ClickHouse, созданный для
    таблицы sensors. Установите для **Request method** значение POST. Убедитесь,
@@ -302,12 +300,12 @@ ClickHouse.
   [Выбор стратегии вставки / Батч-вставки при синхронном режиме](/ru/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous).
 </Info>
 
-<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp" size="lg" alt="Настройка Sink Copy Data с выбором POST" border />
+![Настройка Sink Copy Data с выбором POST](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp)
 
 5. Нажмите **Debug** в верхней части холста, чтобы запустить конвейер. После
    короткого ожидания действие будет поставлено в очередь и выполнено. Если всё
    настроено правильно, задача должна завершиться со статусом **Success**.
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp" size="lg" alt="Успешный Debug для Copy Data" border />
+   ![Успешный Debug для Copy Data](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp)
 
 6. После завершения нажмите **Publish all**, чтобы сохранить изменения в конвейере и наборах данных.
 

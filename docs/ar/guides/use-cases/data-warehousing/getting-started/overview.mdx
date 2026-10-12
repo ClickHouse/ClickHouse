@@ -7,8 +7,6 @@ keywords: ['بحيرات البيانات', 'ليكهاوس', 'بدء الاست
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <Info>
   **باختصار**
 
@@ -41,7 +39,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     LIMIT 5
     ```
 
-    <Image img="/images/datalake/iceberg-query-direct.webp" alt="استعلام Iceberg" />
+    ![استعلام Iceberg](/images/datalake/iceberg-query-direct.webp)
 
     يقرأ ClickHouse البيانات الوصفية لـ Iceberg مباشرةً من S3 ويستنتج المخطط تلقائيًا. وينطبق النهج نفسه على [`deltaLake()`](/ar/reference/functions/table-functions/deltalake) و[`hudi()`](/ar/reference/functions/table-functions/hudi) و[`paimon()`](/ar/reference/functions/table-functions/paimon).
 
@@ -68,7 +66,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     LIMIT 5
     ```
 
-    <Image img="/images/datalake/iceberg-query-engine.webp" alt="استعلام Iceberg" />
+    ![استعلام Iceberg](/images/datalake/iceberg-query-engine.webp)
 
     يدعم محرك الجدول التخزين المؤقت للبيانات، والتخزين المؤقت للبيانات الوصفية، وتطوّر المخطط، والسفر عبر الزمن. راجع دليل [الاستعلام مباشرةً](/ar/guides/use-cases/data-warehousing/getting-started/querying-directly) للحصول على تفاصيل حول ميزات محرك الجدول، و[مصفوفة الدعم](/ar/guides/use-cases/data-warehousing/support-matrix) للاطلاع على مقارنة شاملة للميزات.
   </Step>
@@ -160,7 +158,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     يفحص هذا الاستعلام مجموعة البيانات بالكامل في S3 لأن Iceberg لا يراعي عامل التصفية `counterid` — لذا توقّع أن يستغرق ذلك عدة ثوانٍ.
 
-    <Image img="/images/datalake/iceberg-query.webp" alt="استعلام Iceberg" />
+    ![استعلام Iceberg](/images/datalake/iceberg-query.webp)
 
     الآن أنشئ جدول MergeTree وحمّل البيانات:
 
@@ -194,7 +192,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     LIMIT 5
     ```
 
-    <Image img="/images/datalake/clickhouse-query.webp" alt="استعلام ClickHouse" />
+    ![استعلام ClickHouse](/images/datalake/clickhouse-query.webp)
 
     نظرًا لأن `counterid` هو العمود الأول في مفتاح `ORDER BY`، فإن الفهرس الأساسي المتناثر في ClickHouse يتخطّى مباشرةً إلى وحدات granule ذات الصلة، فلا يقرأ إلا الصفوف الخاصة بـ `counterid = 38` بدلًا من فحص جميع الصفوف المئة مليون. والنتيجة هي تسارع كبير جدًا.
 

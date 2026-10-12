@@ -9,8 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本指南将引导你把集群中的日志、基础设施指标和 Kubernetes 事件收集到托管 ClickStack 中，然后在内置的 Kubernetes 仪表板中查看它们。
 
 这种模式采用标准的 OpenTelemetry 方案：通过 [OpenTelemetry Helm 图表](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector) 部署两个采集器，并都通过 OTLP 转发到你的 ClickStack 网关采集器。一个 **DaemonSet 守护进程集** 运行在每个节点上，用于收集容器日志和 kubelet 节点代理指标。一个仅包含单个副本的 **部署** 用于收集 Kubernetes 事件和集群级指标。有关网关角色的背景说明，请参阅 [Collector roles](/zh/clickstack/ingesting-data/collector#collector-roles)。
@@ -302,15 +300,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="在 ClickStack UI 中确认" id="confirm-in-ui">
     在 [ClickHouse Cloud 控制台](https://console.clickhouse.cloud)中打开你的服务，然后从左侧菜单中选择 **ClickStack**。
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="启动 ClickStack" border />
+    ![启动 ClickStack](/images/use-cases/observability/clickstack-cloud-v2.webp)
 
     在 **搜索视图** 中，将数据源切换为 `Logs`，并将时间范围设为 **最近 15 分钟**。几秒钟内，你应该就能看到整个集群的容器日志，并附带 `k8s.namespace.name`、`k8s.pod.name` 和 `k8s.node.name` 等属性。
 
-    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="带有 Kubernetes 日志的 ClickStack 搜索视图" />
+    ![带有 Kubernetes 日志的 ClickStack 搜索视图](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
 
     若要结合上下文查看基础设施指标和事件，请通过 **仪表盘** -&gt; **Kubernetes** 打开内置的 **Kubernetes** 仪表盘。`Pods`、`Nodes` 和 `Namespaces` 选项卡中都应显示数据。
 
-    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="ClickStack Kubernetes 仪表盘" border />
+    ![ClickStack Kubernetes 仪表盘](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
 
     如果没有显示任何内容：
 

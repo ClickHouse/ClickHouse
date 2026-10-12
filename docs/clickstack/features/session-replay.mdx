@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'session replay', 'browser sdk', 'frontend observability', 'user sessions', 'debugging']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Session replay in ClickStack captures and reconstructs user interactions in your web application, allowing you to visually replay exactly what a user saw and did during their session. Rather than video recording, the SDK records DOM changes, mouse movements, clicks, scrolls, keyboard inputs, console logs, network requests (XHR, Fetch, WebSocket), and JavaScript exceptions — then reconstructs the experience in the browser.
 
 Because session replays are stored in ClickHouse alongside your logs, traces, and metrics, you can go from watching a user's experience to inspecting the backend traces and database queries that powered it — all in a few clicks. This makes session replay useful for debugging production issues, understanding user behavior, identifying UX friction points, and visually confirming issues reported to support.
@@ -93,11 +91,11 @@ The Browser SDK also supports [masking inputs and text](/clickstack/ingesting-da
 ## Viewing session replays {#viewing-replays}
 Navigate to **Client Sessions** from the left sidebar in the ClickStack UI (HyperDX). This view lists all captured browser sessions with their duration and event count.
 
-<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Session replay search view" size="lg"/>
+![Session replay search view](/images/clickstack/session-replay/replay-search-view.webp)
 
 Click the play button on any session to replay it. The replay view shows the reconstructed user experience on the right, with a timeline of browser events — network requests, console logs, and errors — on the left.
 
-<Image img="/images/clickstack/session-replay/session-replay.webp" alt="Session replay playback" size="lg"/>
+![Session replay playback](/images/clickstack/session-replay/session-replay.webp)
 
 Switch between **Highlighted** and **All Events** modes to adjust the level of detail shown on the timeline. Errors are annotated in red, and clicking on any event navigates the replay to that point in the session.
 
@@ -113,7 +111,7 @@ This works because the `tracePropagationTargets` configuration links browser spa
 ### From trace to session {#trace-to-session}
 The correlation works in the other direction too. When viewing a trace in the **Search** view, click on it to open the trace detail, then select the **Session replay** tab to see exactly what the user was experiencing at the time of that trace. This is especially useful when investigating errors or slow requests — you can start from the backend issue and immediately see the user's perspective.
 
-<Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="Session replay trace view" size="lg"/>
+![Session replay trace view](/images/clickstack/session-replay/trace-to-replay.webp)
 
 ## How session data is stored {#data-storage}
 Session replay data is stored in a dedicated [`hyperdx_sessions`](/clickstack/ingesting-data/schemas#sessions) table in ClickHouse, separate from logs and traces. Each session event is a row with a `Body` field containing the event payload and a `LogAttributes` map storing the event metadata. The `Body` and `LogAttributes` columns together hold the details of the actual session events that are used to reconstruct the replay.

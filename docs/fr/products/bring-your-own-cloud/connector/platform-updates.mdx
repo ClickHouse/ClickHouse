@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 Un cluster managé exécute une petite couche plateforme dont dépendent les services ClickHouse. ClickHouse Cloud propose des mises à jour de cette couche ; l&#39;executor n&#39;applique rien tant que vous ne les avez pas approuvées une à une avec vos propres identifiants de cluster.
@@ -29,7 +27,7 @@ L&#39;executor n&#39;applique jamais un bundle que vous n&#39;avez pas approuvé
 
 ## Approuver une mise à jour de la plateforme {#approve-a-platform-update}
 
-<Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="Flux d'approbation de la plateforme ClickHouse Connector" />
+![Flux d'approbation de la plateforme ClickHouse Connector](/images/cloud/reference/byoc-connector-platform-approval.svg)
 
 ### Identifiants de registry {#registry-credentials}
 

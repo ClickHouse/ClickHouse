@@ -12,8 +12,6 @@ integration:
 keywords: ['vector', '로그 수집', '관측성', '데이터 수집', '파이프라인']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ko/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -113,7 +111,7 @@ ClickHouse는 뛰어난 압축률(로그의 경우 최대 [170배](https://click
     SELECT * FROM nginxdb.access_logs
     ```
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="ClickHouse 로그를 테이블 형식으로 보기" />
+    ![ClickHouse 로그를 테이블 형식으로 보기](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
   </Step>
 
   <Step title="로그 파싱" id="4-parse-the-logs">
@@ -216,7 +214,7 @@ ClickHouse는 뛰어난 압축률(로그의 경우 최대 [170배](https://click
     SELECT * FROM nginxdb.access_logs_view
     ```
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/vector_02.webp" size="lg" border alt="파싱된 ClickHouse 로그를 테이블 형식으로 보기" />
+    ![파싱된 ClickHouse 로그를 테이블 형식으로 보기](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
 
     <Note>
       위 예제에서는 데이터를 두 개의 테이블에 저장했지만, 초기 `nginxdb.access_logs` 테이블은 [`Null`](/ko/reference/engines/table-engines/special/null) 테이블 엔진으로 변경할 수 있습니다.

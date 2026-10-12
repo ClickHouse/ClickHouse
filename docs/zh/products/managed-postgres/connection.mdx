@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.connection-beta" />
 
 <Tip>
@@ -24,11 +22,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 要将应用程序连接到 ClickHouse Managed Postgres，请前往实例左侧边栏中的 **Connect** 视图。
 
-<Image img="/images/managed-postgres/connect-button.webp" alt="点击左侧边栏中的 Connect 以查看连接详细信息" size="md" border />
+![点击左侧边栏中的 Connect 以查看连接详细信息](/images/managed-postgres/connect-button.webp)
 
 点击 **Connect** 会打开一个连接弹窗，以多种格式显示连接凭据和连接字符串。
 
-<Image img="/images/managed-postgres/connect-modal.webp" alt="显示凭据和连接字符串格式的连接弹窗" size="md" border />
+![显示凭据和连接字符串格式的连接弹窗](/images/managed-postgres/connect-modal.webp)
 
 连接弹窗会显示以下信息：
 
@@ -97,7 +95,7 @@ psql 'postgresql://postgres:PASSWORD@your-instance.pg.clickhouse.cloud:5432/post
 
 对于生产环境中的 workloads，我们建议使用已验证的 TLS 连接，以确保你连接的是正确的 server。为此，请在 **Settings** 选项卡中下载 CA 证书包，并将其添加到数据库客户端的受信任证书中。
 
-<Image img="/images/managed-postgres/tls-ca-bundle.webp" alt="从 Settings 选项卡下载 CA 证书" size="md" border />
+![从 Settings 选项卡下载 CA 证书](/images/managed-postgres/tls-ca-bundle.webp)
 
 该 CA 证书是你的 ClickHouse Managed Postgres 实例专属的，不能用于其他实例。
 

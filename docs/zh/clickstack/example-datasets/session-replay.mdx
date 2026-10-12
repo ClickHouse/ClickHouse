@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', '会话回放', 'browser sdk', '演示', '可观测性', '插桩']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <Info>
   **摘要**
 
@@ -62,7 +60,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     3. 前往 **Team Settings → API Keys**
     4. 复制你的 **摄取 API key**
 
-    <Image img="/images/clickstack/api-key.webp" alt="ClickStack API key" />
+    ![ClickStack API key](/images/clickstack/api-key.webp)
 
     5. 将其设置为环境变量：
 
@@ -82,7 +80,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     在浏览器中打开 [http://localhost:3000](http://localhost:3000) 并与应用交互——搜索主题、按类别过滤、查看代码示例，以及收藏条目。
 
-    <Image img="/images/clickstack/session-replay/demo-app.webp" alt="会话回放演示应用" />
+    ![会话回放演示应用](/images/clickstack/session-replay/demo-app.webp)
 
     所有交互都会由 ClickStack Browser SDK 自动记录。
   </Step>
@@ -90,11 +88,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="查看你的会话回放" id="view-session-replay">
     返回 [http://localhost:8080](http://localhost:8080) 中的 HyperDX，然后在左侧边栏中前往 **Client Sessions**。
 
-    <Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="会话回放搜索" />
+    ![会话回放搜索](/images/clickstack/session-replay/replay-search-view.webp)
 
     你应该会看到自己的会话已列出，并显示其耗时和事件数量。点击 ▶️ 按钮即可回放。
 
-    <Image img="/images/clickstack/session-replay/session-replay.webp" alt="会话回放" />
+    ![会话回放](/images/clickstack/session-replay/session-replay.webp)
 
     在 **Highlighted** 和 **All Events** 模式之间切换，以调整时间轴上的详细程度。
   </Step>

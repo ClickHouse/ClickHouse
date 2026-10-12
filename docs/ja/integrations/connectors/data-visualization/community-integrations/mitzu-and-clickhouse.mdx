@@ -11,8 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -47,19 +45,19 @@ Mitzu は、ノーコードのウェアハウスネイティブなプロダク�
   <Step title="Mitzu にサインインまたは登録する" id="2-sign-in-or-sign-up-to-mitzu">
     まず、[https://app.mitzu.io](https://app.mitzu.io) にアクセスしてサインアップします。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_01.webp" alt="メールアドレスとパスワードの入力欄がある Mitzu のサインインページ" border />
+    ![メールアドレスとパスワードの入力欄がある Mitzu のサインインページ](/images/integrations/data-visualization/mitzu_01.webp)
   </Step>
 
   <Step title="ワークスペースを設定する" id="3-configure-your-workspace">
     組織を作成したら、左側のサイドバーにある `Set up your workspace` オンボーディングガイドに従ってください。次に、`Connect Mitzu with your data warehouse` リンクをクリックします。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_02.webp" alt="オンボーディング手順を表示する Mitzu のワークスペース設定ページ" border />
+    ![オンボーディング手順を表示する Mitzu のワークスペース設定ページ](/images/integrations/data-visualization/mitzu_02.webp)
   </Step>
 
   <Step title="MitzuをClickHouseに接続する" id="4-connect-mitzu-to-clickhouse">
     まず、接続タイプとして ClickHouse を選択し、接続情報を入力します。次に、`Test connection & Save` ボタンをクリックして設定を保存します。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_03.webp" alt="設定フォームが表示された ClickHouse 用の Mitzu 接続設定ページ" border />
+    ![設定フォームが表示された ClickHouse 用の Mitzu 接続設定ページ](/images/integrations/data-visualization/mitzu_03.webp)
   </Step>
 
   <Step title="イベントテーブルを設定する" id="5-configure-event-tables">
@@ -67,7 +65,7 @@ Mitzu は、ノーコードのウェアハウスネイティブなプロダク�
 
     チェックボックスを使って少なくとも 1 つのテーブルを選択し、`Configure table` ボタンをクリックします。モーダルウィンドウが開き、各テーブルのキーカラムを設定できます。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_04.webp" alt="データベーステーブルを表示する Mitzu のテーブル選択インターフェイス" border />
+    ![データベーステーブルを表示する Mitzu のテーブル選択インターフェイス](/images/integrations/data-visualization/mitzu_04.webp)
 
     <br />
 
@@ -80,7 +78,7 @@ Mitzu は、ノーコードのウェアハウスネイティブなプロダク�
     > * **Event time** - イベントのタイムスタンプカラム。
     > * Optional&#91;**Event name**&#93; - テーブルに複数のイベントタイプが含まれている場合、このカラムでイベントを分類します。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_05.webp" alt="カラムマッピングのオプションを表示する Mitzu のイベントカタログ設定" border />
+    ![カラムマッピングのオプションを表示する Mitzu のイベントカタログ設定](/images/integrations/data-visualization/mitzu_05.webp)
 
     <br />
 
@@ -92,7 +90,7 @@ Mitzu は、ノーコードのウェアハウスネイティブなプロダク�
 
     `Explore` ページには左側にイベントの選択エリアがあり、上部のセクションでは期間を設定できます。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_06.webp" alt="イベント選択と期間設定を備えた Mitzu のセグメンテーション用クエリインターフェイス" border />
+    ![イベント選択と期間設定を備えた Mitzu のセグメンテーション用クエリインターフェイス](/images/integrations/data-visualization/mitzu_06.webp)
 
     <br />
 
@@ -108,7 +106,7 @@ Mitzu は、ノーコードのウェアハウスネイティブなプロダク�
     ファネルでは最大 9 つのステップを選択できます。ユーザーがファネルを完了するまでの時間枠を選択します。
     SQL コードを 1 行も書かずに、コンバージョン率に関するインサイトをすぐに得られます。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_07.webp" alt="ステップ間のコンバージョン率を表示する Mitzu のファネル分析ビュー" border />
+    ![ステップ間のコンバージョン率を表示する Mitzu のファネル分析ビュー](/images/integrations/data-visualization/mitzu_07.webp)
 
     <br />
 
@@ -123,7 +121,7 @@ Mitzu は、ノーコードのウェアハウスネイティブなプロダク�
     継続率の計算では、最大 2 つのステップを選択します。リピートウィンドウの継続期間を選択します。
     SQL を 1 行も書かずに、コンバージョン率のインサイトをすぐに得られます。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_08.webp" alt="コホート継続率を表示する Mitzu の継続分析" border />
+    ![コホート継続率を表示する Mitzu の継続分析](/images/integrations/data-visualization/mitzu_08.webp)
 
     <br />
 
@@ -137,7 +135,7 @@ Mitzu は、ノーコードのウェアハウスネイティブなプロダク�
   <Step title="ジャーニークエリを実行する" id="7-run-journey-queries">
     ファネルには最大 9 つのステップを選択できます。ユーザーがこのジャーニーを完了できる時間枠を選択してください。Mitzu のジャーニーチャートでは、ユーザーが選択したイベント間をどのような経路で進んだかを視覚的に把握できます。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_09.webp" alt="イベント間のユーザー経路フローを表示する Mitzu のジャーニー可視化" border />
+    ![イベント間のユーザー経路フローを表示する Mitzu のジャーニー可視化](/images/integrations/data-visualization/mitzu_09.webp)
 
     <br />
 
@@ -153,13 +151,13 @@ Mitzu は、ノーコードのウェアハウスネイティブなプロダク�
   <Step title="売上クエリを実行する" id="8-run-revenue-queries">
     収益設定を行っていれば、Mitzu は支払いイベントに基づいて合計 MRR とサブスクリプション数を計算できます。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_10.webp" alt="MRR メトリクスを表示する Mitzu の収益分析ダッシュボード" border />
+    ![MRR メトリクスを表示する Mitzu の収益分析ダッシュボード](/images/integrations/data-visualization/mitzu_10.webp)
   </Step>
 
   <Step title="ネイティブ SQL" id="9-sql-native">
     Mitzu は SQL Native です。つまり、Explore ページで選択した設定に基づいて、ネイティブな SQL コードを生成します。
 
-    <Image size="lg" img="/images/integrations/data-visualization/mitzu_11.webp" alt="ネイティブな ClickHouse クエリを表示する Mitzu の SQL コード生成ビュー" border />
+    ![ネイティブな ClickHouse クエリを表示する Mitzu の SQL コード生成ビュー](/images/integrations/data-visualization/mitzu_11.webp)
 
     <br />
 

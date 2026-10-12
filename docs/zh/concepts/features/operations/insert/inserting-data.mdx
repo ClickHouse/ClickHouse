@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="inserting-into-clickhouse-vs-oltp-databases">
   ## 向 ClickHouse 插入数据与向 OLTP 数据库插入数据的区别
 </div>
@@ -76,7 +74,7 @@ PostgreSQL 使用 MVCC (多版本并发控制) 来处理并发事务，这需要
 
 启用异步插入后，数据会先写入缓冲区，然后再按下图所示分 3 步写入数据库存储：
 
-<Image img="/images/guides/postgres-inserts.webp" size="md" alt="Postgres inserts" />
+![Postgres inserts](/images/guides/postgres-inserts.webp)
 
 启用异步插入后，ClickHouse 会：
 

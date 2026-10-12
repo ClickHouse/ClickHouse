@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'Nginx', 'трассировка', 'otel']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -158,7 +156,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
   <Step title="Проверка трассировок в HyperDX" id="verifying-traces">
     После настройки войдите в HyperDX и убедитесь, что трассировки поступают. Вы должны увидеть примерно такую картину; если трассировки не отображаются, попробуйте изменить временной диапазон:
 
-    <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="Просмотр трассировок" />
+    ![Просмотр трассировок](/images/clickstack/nginx-traces-search-view.webp)
   </Step>
 </Steps>
 
@@ -246,7 +244,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       HyperDX отображает временные метки в локальном часовом поясе вашего браузера. Демо-данные охватывают диапазон **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)**. Широкий временной диапазон гарантирует, что вы увидите демо-трассировки независимо от своего местоположения. После этого можно сузить диапазон до 24 часов для более наглядных визуализаций.
     </Info>
 
-    <Image img="/images/clickstack/nginx-traces-search-view.webp" alt="Просмотр трассировок" />
+    ![Просмотр трассировок](/images/clickstack/nginx-traces-search-view.webp)
   </Step>
 </Steps>
 
@@ -265,11 +263,11 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     1. Откройте HyperDX и перейдите в раздел Dashboards.
     2. Нажмите &quot;Import Dashboard&quot; в правом верхнем углу в меню с многоточием.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Импорт панели мониторинга" />
+    ![Импорт панели мониторинга](/images/clickstack/import-dashboard.webp)
 
     3. Загрузите файл nginx-trace-dashboard.json и нажмите &quot;Finish Import&quot;.
 
-    <Image img="/images/clickstack/finish-nginx-traces-dashboard.webp" alt="Завершение импорта" />
+    ![Завершение импорта](/images/clickstack/finish-nginx-traces-dashboard.webp)
   </Step>
 
   <Step title="Панель мониторинга будет создана со всеми преднастроенными визуализациями." id="created-dashboard">
@@ -277,7 +275,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
       Для демо-набора данных установите временной диапазон **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (с учётом вашего местного часового пояса). По умолчанию у импортированной панели мониторинга временной диапазон не задан.
     </Note>
 
-    <Image img="/images/clickstack/nginx-traces-dashboard.webp" alt="Пример панели мониторинга" />
+    ![Пример панели мониторинга](/images/clickstack/nginx-traces-dashboard.webp)
   </Step>
 </Steps>
 

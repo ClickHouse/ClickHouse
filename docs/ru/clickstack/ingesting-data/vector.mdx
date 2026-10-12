@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'vector', 'трейсы', 'обсервабилити', 'телеметрия']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import InstallingVector from '/snippets/ru/_installing_vector.mdx';
 import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
 
@@ -106,13 +105,13 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
       <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-clickstack-ui">
         Откройте свой сервис Управляемый ClickStack и выберите &quot;ClickStack&quot; в меню слева. Если вы уже завершили онбординг, интерфейс ClickStack откроется в новой вкладке, а авторизация произойдёт автоматически. Если нет, пройдите онбординг и выберите “Launch ClickStack” после того, как укажете Vector в качестве источника входящих данных.
 
-        <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Запуск ClickStack для Vector" size="lg" />
+        ![Запуск ClickStack для Vector](/images/clickstack/launch-clickstack-vector.webp)
       </Step>
 
       <Step title="Создайте источник данных" id="create-a-datasource-managed">
         Создайте источник данных для журналов. Если источников данных ещё нет, при первом входе вам будет предложено создать его. В противном случае перейдите в Team Settings и добавьте новый источник данных.
 
-        <Image img="/images/clickstack/create-vector-datasource.webp" alt="Создание источника данных — vector" size="lg" />
+        ![Создание источника данных — vector](/images/clickstack/create-vector-datasource.webp)
 
         Приведённая выше конфигурация предполагает схему в стиле Nginx со столбцом `time_local`, который используется в качестве временной метки. По возможности это должен быть столбец временной метки, объявленный в первичном ключе. Этот столбец обязателен.
 
@@ -126,7 +125,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
       <Step title="Просмотрите данные" id="explore-the-data-managed">
         Перейдите в представление журналов, чтобы просмотреть данные и начать работу с ClickStack.
 
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Журналы Nginx в ClickStack" size="lg" />
+        ![Журналы Nginx в ClickStack](/images/clickstack/nginx-logs-vector-search.webp)
       </Step>
     </Steps>
   </Tab>
@@ -138,7 +137,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
 
         Сначала создайте базу данных. Это можно сделать через [веб-интерфейс ClickHouse](/ru/concepts/features/interfaces/http#web-ui) по адресу [http://localhost:8123/play](http://localhost:8123/play). Используйте имя пользователя и пароль по умолчанию `api:api`.
 
-        <Image img="/images/clickstack/play-ui-clickstack.webp" alt="Интерфейс play в ClickStack" size="lg" />
+        ![Интерфейс play в ClickStack](/images/clickstack/play-ui-clickstack.webp)
 
         В примере ниже используется `logs`:
 
@@ -213,13 +212,13 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
       <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-clickstack-ui-oss">
         Перейдите в интерфейс ClickStack по адресу [http://localhost:8080](http://localhost:8080). Если вы ещё не прошли онбординг, создайте пользователя.
 
-        <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="Вход в ClickStack" size="lg" />
+        ![Вход в ClickStack](/images/use-cases/observability/hyperdx-login.webp)
       </Step>
 
       <Step title="Создайте источник данных" id="create-a-datasource-oss">
         Перейдите в Team Settings и добавьте новый источник данных.
 
-        <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="Создание источника данных — Vector" size="lg" />
+        ![Создание источника данных — Vector](/images/clickstack/create-vector-datasource-oss.webp)
 
         Приведённая выше конфигурация предполагает схему в стиле Nginx со столбцом `time_local`, используемым в качестве временной метки. По возможности это должен быть столбец временной метки, указанный в первичном ключе. Этот столбец обязателен.
 
@@ -233,7 +232,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
       <Step title="Просмотрите данные" id="explore-the-data-oss">
         Перейдите в представление журналов, чтобы просмотреть данные и начать работу с ClickStack.
 
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Журналы Nginx в ClickStack" size="lg" />
+        ![Журналы Nginx в ClickStack](/images/clickstack/nginx-logs-vector-search.webp)
       </Step>
     </Steps>
   </Tab>
@@ -354,13 +353,13 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
       <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-clickstack-ui-nginx-managed">
         Перейдите в свой сервис Управляемый ClickStack и выберите &quot;ClickStack&quot; в левом меню. Если вы уже завершили онбординг, интерфейс ClickStack откроется в новой вкладке, и вы автоматически войдёте в систему. Если нет, пройдите онбординг и нажмите “Launch ClickStack” после того, как выберете Vector в качестве входного источника.
 
-        <Image img="/images/clickstack/launch-clickstack-vector.webp" alt="Запуск ClickStack для Vector" size="lg" />
+        ![Запуск ClickStack для Vector](/images/clickstack/launch-clickstack-vector.webp)
       </Step>
 
       <Step title="Создание источника данных" id="create-a-datasource-nginx-managed">
         Создайте источник данных для журналов. Если источников данных ещё нет, при первом входе в систему вам будет предложено создать его. В противном случае перейдите в Team Settings и добавьте новый источник данных.
 
-        <Image img="/images/clickstack/create-vector-datasource.webp" alt="Создание источника данных — vector" size="lg" />
+        ![Создание источника данных — vector](/images/clickstack/create-vector-datasource.webp)
 
         Конфигурация предполагает схему Nginx со столбцом `time_local`, который используется как временная метка. Именно этот столбец временной метки объявлен в первичном ключе. Этот столбец обязателен.
 
@@ -393,7 +392,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
       <Step title="Просмотрите данные" id="explore-the-data-nginx-managed">
         Перейдите в представление поиска за `October 20th, 2025`, чтобы просмотреть данные и начать работу с ClickStack.
 
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Интерфейс HyperDX" size="lg" />
+        ![Интерфейс HyperDX](/images/clickstack/nginx-logs-vector-search.webp)
       </Step>
     </Steps>
   </Tab>
@@ -415,7 +414,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
 
         Сначала создайте базу данных. Это можно сделать через [веб-интерфейс ClickHouse](/ru/concepts/features/interfaces/http#web-ui) по адресу [http://localhost:8123/play](http://localhost:8123/play). Используйте имя пользователя и пароль по умолчанию `api:api`.
 
-        <Image img="/images/clickstack/play-ui-clickstack.webp" alt="Интерфейс play в ClickStack" size="lg" />
+        ![Интерфейс play в ClickStack](/images/clickstack/play-ui-clickstack.webp)
 
         Создайте базу данных `logs`:
 
@@ -510,7 +509,7 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
       <Step title="Создание источника данных" id="create-a-datasource-nginx-oss">
         Создайте источник данных для журналов через `Team -> Sources`
 
-        <Image img="/images/clickstack/create-vector-datasource-oss.webp" alt="Создание источника данных — vector" size="lg" />
+        ![Создание источника данных — vector](/images/clickstack/create-vector-datasource-oss.webp)
 
         Конфигурация предполагает схему Nginx со столбцом `time_local`, который используется в качестве временной метки. Это столбец временной метки, объявленный в primary key. Этот столбец обязателен.
 
@@ -543,13 +542,13 @@ import VectorSampleData from '/snippets/ru/_vector_sample_data.mdx';
       <Step title="Перейдите в интерфейс ClickStack" id="navigate-to-clickstack-ui-nginx-oss">
         Откройте интерфейс ClickStack по адресу [http://localhost:8080](http://localhost:8080). Создайте пользователя, если вы ещё не прошли онбординг.
 
-        <Image img="/images/use-cases/observability/hyperdx-login.webp" alt="Вход в ClickStack" size="lg" />
+        ![Вход в ClickStack](/images/use-cases/observability/hyperdx-login.webp)
       </Step>
 
       <Step title="Просмотрите данные" id="explore-the-data-nginx-oss">
         Перейдите в представление поиска за `October 20th, 2025`, чтобы просмотреть данные и начать работу с ClickStack.
 
-        <Image img="/images/clickstack/nginx-logs-vector-search.webp" alt="Интерфейс HyperDX" size="lg" />
+        ![Интерфейс HyperDX](/images/clickstack/nginx-logs-vector-search.webp)
       </Step>
     </Steps>
   </Tab>

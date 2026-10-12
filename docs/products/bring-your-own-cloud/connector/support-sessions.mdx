@@ -7,8 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 A support session grants ClickHouse temporary diagnostic access through the ClickHouse Connector. This page covers what a session is, how to enable and disable one, what ClickHouse support engineers can do during one, and how to audit it.
@@ -19,7 +17,7 @@ A support session is a time-boxed window in which the troubleshooter accepts com
 
 Sessions govern diagnostics only. Lifecycle commands for services in managed mode travel over the executor's separate channel, which a support session neither opens nor gates; see [managed services](/products/bring-your-own-cloud/connector/managed-services#service-lifecycle).
 
-<Image img="/images/cloud/reference/byoc-connector-session-trust.svg" size="lg" alt="ClickHouse Connector support session trust flow" />
+![ClickHouse Connector support session trust flow](/images/cloud/reference/byoc-connector-session-trust.svg)
 
 You control sessions through two surfaces:
 

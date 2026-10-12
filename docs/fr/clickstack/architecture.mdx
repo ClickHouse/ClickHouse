@@ -7,8 +7,6 @@ doc_type: 'reference'
 keywords: ["architecture ClickStack", "architecture d'observabilité", 'HyperDX', 'OpenTelemetry collector', 'MongoDB', 'architecture système']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 L’architecture de ClickStack varie selon son mode de déploiement. Il existe d’importantes différences architecturales entre **ClickStack Open Source**, où tous les composants sont autogérés, et **Managed ClickStack**, où ClickHouse et la HyperDX UI sont hébergés et exploités dans ClickHouse Cloud. Bien que les composants de base restent les mêmes dans les deux modèles, la responsabilité de l’hébergement, du dimensionnement et de la sécurisation de chaque composant diffère.
 
 <div id="architecture-overview">
@@ -23,7 +21,7 @@ Vous trouverez ci-dessous un aperçu des architectures de ClickStack Managed et 
 
     Dans ce modèle, **ClickHouse et la ClickStack UI (HyperDX)** sont hébergés, exploités et sécurisés par ClickHouse Cloud. Les utilisateurs sont uniquement responsables de l’exécution d’un **collecteur OpenTelemetry (OTel)** pour envoyer les données de télémétrie vers le service géré.
 
-    <Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="Architecture gérée" size="lg" />
+    ![Architecture gérée](/images/use-cases/observability/clickstack-managed-architecture.webp)
 
 ### ClickHouse Cloud : le moteur
 
@@ -77,7 +75,7 @@ Vous trouverez ci-dessous un aperçu des architectures de ClickStack Managed et 
   <Tab title="ClickStack Open Source">
     L’architecture de ClickStack Open Source s’articule autour de trois composants clés : **ClickHouse**, **HyperDX** et un **collecteur OpenTelemetry (OTel)**. Une instance **MongoDB** assure le stockage de l’état de l’application. Ensemble, ils forment une stack d’observability open source haute performance, optimisée pour les logs, les métriques et les traces.
 
-    <Image img="/images/use-cases/observability/clickstack-oss-architecture.webp" alt="Architecture" size="lg" />
+    ![Architecture](/images/use-cases/observability/clickstack-oss-architecture.webp)
 
 ### ClickHouse : le moteur de base de données
 

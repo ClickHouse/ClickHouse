@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickPipes は、Avro および Protobuf でエンコードされたレコード値と[構造化 Kafka キー](/ja/integrations/clickpipes/kafka/reference#structured-message-keys)をデコードするためのスキーマレジストリとの連携をサポートしています。
 
 Protobuf のレコード値については、スキーマレジストリを設定せずに[スキーマを直接アップロードする](/ja/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic)こともできます。
@@ -73,7 +71,7 @@ AWS Glue Schema Registry の設定は現在、ClickHouse Cloud console でのみ
 
 ClickPipe 作成ウィザードの Kafka 接続ステップで **スキーマレジストリ** を有効にし、**レジストリタイプ** を **AWS Glue** に設定します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="AWS Glue が選択されたスキーマレジストリパネル" size="lg" border />
+![AWS Glue が選択されたスキーマレジストリパネル](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
 
 | フィールド       | 必須   | 説明                                                                              | 例                                                          |
 | ----------- | ---- | ------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -123,7 +121,7 @@ Kafka ClickPipe がすでに IAM を使用して MSK に認証している場合
   <Step title="ClickHouse サービスの IAM ロール ARN を取得する" id="obtain-clickhouse-service-iam-role-arn">
     サービスを開き、**Settings** タブを選択します。**Network security information** セクションまでスクロールし、`arn:aws:iam::123456789012:role/CH-S3-example-service-Role` 形式の ARN である **サービスロール ID (IAM)** の値をコピーします。以降、この値を `{ClickHouse_IAM_ARN}` と呼びます。AWS にデプロイされた各 ClickHouse サービスには固有のロールがあるため、この値はサービスごとに異なります。
 
-    <Image img="/images/cloud/security/secures3_arn.webp" alt="サービスロール ID（IAM）" size="lg" border />
+    ![サービスロール ID（IAM）](/images/cloud/security/secures3_arn.webp)
   </Step>
 
   <Step title="レジストリ IAM ロールを作成する" id="create-registry-iam-role">

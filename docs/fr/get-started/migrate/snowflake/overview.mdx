@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 > Ce document propose une introduction à la migration des données de Snowflake vers ClickHouse.
 
 Snowflake est un entrepôt de données dans le cloud principalement conçu pour migrer vers le cloud
@@ -51,7 +49,7 @@ résilience et des garanties de débit évolutif.
 L’image ci-dessous, issue de [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts),
 montre cette architecture :
 
-<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Architecture de Snowflake" />
+![Architecture de Snowflake](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
 
 À l’inverse, en tant que produit open-source et hébergé dans le cloud, ClickHouse peut être déployé
 dans des architectures à disque partagé comme dans des architectures shared-nothing. Ces dernières sont typiques des
@@ -70,7 +68,7 @@ architectures à disque partagé (goulots d’étranglement d’E/S disque et r�
 disponible pour les nœuds actuels d’un cluster n’est pas affecté lorsque des nœuds supplémentaires sont
 ajoutés.
 
-<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="Architecture de ClickHouse Cloud" />
+![Architecture de ClickHouse Cloud](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
 
 <div id="differences">
   ### Différences

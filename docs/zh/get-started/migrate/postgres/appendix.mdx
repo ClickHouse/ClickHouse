@@ -6,8 +6,6 @@ description: '有关从 PostgreSQL 迁移的补充信息'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="postgres-vs-clickhouse-equivalent-and-different-concepts">
   ## Postgres 与 ClickHouse：对应概念与差异
 </div>
@@ -40,7 +38,7 @@ ClickHouse 使用 ClickHouse Keeper (一个用 C++ 实现的 ZooKeeper，也可�
 
 ClickHouse 中的复制过程 (1) 始于数据被插入任意一个副本时。这些处于原始插入形式的数据会连同其校验和一起被 (2) 写入磁盘。写入完成后，该副本会 (3) 尝试在 Keeper 中注册这个新的数据分区片段，具体做法是分配唯一的块编号并记录该新分区片段的详细信息。其他副本在 (4) 检测到复制日志中的新条目后，会 (5) 通过内部 HTTP 协议下载相应的数据分区片段，并根据 ZooKeeper 中列出的校验和进行校验。该方法确保即使各副本处理速度不同或存在潜在延迟，最终也都能持有一致且最新的数据。此外，系统还能够并发处理多项操作，从而优化数据管理流程，并提升系统的可扩展性以及应对硬件差异的稳健性。
 
-<Image img="/images/integrations/data-ingestion/dbms/postgres-replicas.webp" size="md" alt="最终一致性" />
+![最终一致性](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
 
 请注意，ClickHouse Cloud 使用一种[针对云环境优化的复制机制](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates)，以适配其存储与计算分离的架构。由于数据存储在共享对象存储中，所有计算节点都可以自动访问这些数据，而无需在节点之间物理复制数据。相反，Keeper 仅用于在计算节点之间共享元数据 (即哪些数据存在于对象存储中的什么位置) 。
 

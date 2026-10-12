@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/ru/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 В управляемом кластере работает небольшой платформенный слой, от которого зависят сервисы ClickHouse. ClickHouse Cloud предлагает обновления для этого слоя, однако исполнитель ничего не применяет, пока вы не одобрите каждое из них своими учётными данными кластера.
@@ -29,7 +27,7 @@ Bundle применяется в две части:
 
 ## Одобрение обновления платформы {#approve-a-platform-update}
 
-<Image img="/images/cloud/reference/byoc-connector-platform-approval.svg" size="lg" alt="Процесс одобрения обновления платформы коннектора ClickHouse" />
+![Процесс одобрения обновления платформы коннектора ClickHouse](/images/cloud/reference/byoc-connector-platform-approval.svg)
 
 ### Учётные данные registry {#registry-credentials}
 

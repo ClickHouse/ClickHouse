@@ -7,11 +7,9 @@ description: 'دليل يوضح كيفية ترحيل إلى ClickHouse باست
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import AddARemoteSystem from '/snippets/ar/_add_remote_ip_access_list_detail.mdx';
 
-<Image img="/images/integrations/migration/ch-local-01.webp" size="lg" alt="ترحيل ClickHouse مُدار ذاتيًا" />
+![ترحيل ClickHouse مُدار ذاتيًا](/images/integrations/migration/ch-local-01.webp)
 
 يمكنك استخدام ClickHouse، أو بشكل أكثر تحديدًا، [`clickhouse-local`](/ar/concepts/features/tools-and-utilities/clickhouse-local)
 كأداة ETL لترحيل البيانات من نظام قاعدة البيانات الحالي لديك إلى ClickHouse Cloud، ما دام يتوفر لنظام قاعدة البيانات الحالي لديك إما
@@ -27,7 +25,7 @@ import AddARemoteSystem from '/snippets/ar/_add_remote_ip_access_list_detail.mdx
   ## ما هو clickhouse-local؟
 </div>
 
-<Image img="/images/integrations/migration/ch-local-02.webp" size="lg" alt="ترحيل ClickHouse المُدار ذاتيًا" />
+![ترحيل ClickHouse المُدار ذاتيًا](/images/integrations/migration/ch-local-02.webp)
 
 عادةً ما يُشغَّل ClickHouse على شكل عنقود، حيث تعمل عدة مثيلات من محرك قاعدة بيانات ClickHouse بصورة موزعة عبر خوادم مختلفة.
 
@@ -95,7 +93,7 @@ import AddARemoteSystem from '/snippets/ar/_add_remote_ip_access_list_detail.mdx
 سنستخدم [محرك جدول Integration](/ar/reference/engines/table-engines/integrations/mysql) (الذي يُنشأ لحظيًا بواسطة [دالة الجدول mysql](/ar/reference/functions/table-functions/mysql)) لقراءة البيانات من قاعدة بيانات MySQL المصدر، وسنستخدم [دالة الجدول remoteSecure](/ar/reference/functions/table-functions/remote)
 لكتابة البيانات في جدول وجهة على خدمة ClickHouse Cloud الخاصة بك.
 
-<Image img="/images/integrations/migration/ch-local-03.webp" size="lg" alt="ترحيل ClickHouse المُدار ذاتيًا" />
+![ترحيل ClickHouse المُدار ذاتيًا](/images/integrations/migration/ch-local-03.webp)
 
 <div id="on-the-destination-clickhouse-cloud-service">
   ### في خدمة ClickHouse Cloud الوجهة:

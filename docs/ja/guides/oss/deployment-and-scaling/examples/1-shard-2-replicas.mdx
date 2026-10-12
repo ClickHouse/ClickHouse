@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['レプリケーション', '高可用性', 'クラスター構成', 'データ冗長化', 'フォールトトレランス']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import ConfigExplanation from '/snippets/ja/_config_explanation.mdx';
 import ListenHost from '/snippets/ja/_listen_host.mdx';
 import ServerParameterTable from '/snippets/ja/_server_parameter_table.mdx';
@@ -23,7 +21,7 @@ import CloudTip from '/snippets/ja/_cloud_tip.mdx';
 
 これからセットアップするクラスターのアーキテクチャを以下に示します。
 
-<Image img="/images/deployment-guides/replication-sharding-examples/replication.webp" size="md" alt="ReplicatedMergeTree を使用した 1 分片 2 レプリカのアーキテクチャ図" />
+![ReplicatedMergeTree を使用した 1 分片 2 レプリカのアーキテクチャ図](/images/deployment-guides/replication-sharding-examples/replication.webp)
 
 <DedicatedKeeperServers />
 

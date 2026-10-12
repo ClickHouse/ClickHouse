@@ -8,8 +8,6 @@ doc_type: 'reference'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 此功能支持集成 [Prometheus](https://prometheus.io/)，用于监控 ClickHouse Cloud 服务。Prometheus 指标通过 [ClickHouse Cloud API](/zh/products/cloud/features/admin-features/api/api-overview) 端点提供，您可以通过该端点安全地连接，并将指标导出到您的 Prometheus 指标收集器中。这些指标还可以集成到仪表盘中，例如 Grafana、Datadog，以便进行可视化。
 
 附加到服务的 [ClickPipes](/zh/integrations/clickpipes) 指标会与该服务的 ClickHouse 指标一同包含在内。
@@ -273,17 +271,17 @@ scrape_configs:
 * 将 Scrape URL 配置为指向 Prometheus 端点，并使用基本身份验证通过 API key/secret 配置连接
 * 测试连接，确保可以成功连通
 
-<Image img="/images/integrations/prometheus-grafana-metrics-endpoint.webp" size="md" alt="配置 Grafana 指标端点" border />
+![配置 Grafana 指标端点](/images/integrations/prometheus-grafana-metrics-endpoint.webp)
 
 <br />
 
 配置完成后，你应该会在下拉列表中看到这些指标，可选择它们来配置仪表盘：
 
-<Image img="/images/integrations/prometheus-grafana-dropdown.webp" size="md" alt="Grafana 指标浏览器下拉列表" border />
+![Grafana 指标浏览器下拉列表](/images/integrations/prometheus-grafana-dropdown.webp)
 
 <br />
 
-<Image img="/images/integrations/prometheus-grafana-chart.webp" size="md" alt="Grafana 指标浏览器图表" border />
+![Grafana 指标浏览器图表](/images/integrations/prometheus-grafana-chart.webp)
 
 <div id="grafana-cloud-with-alloy">
   ### 通过 Alloy 使用 Grafana Cloud
@@ -291,7 +289,7 @@ scrape_configs:
 
 如果你使用的是 Grafana Cloud，可以在 Grafana 中打开 Alloy 菜单，并按照屏幕上的说明安装 Alloy：
 
-<Image img="/images/integrations/prometheus-grafana-alloy.webp" size="md" alt="Grafana Alloy" border />
+![Grafana Alloy](/images/integrations/prometheus-grafana-alloy.webp)
 
 <br />
 
@@ -372,7 +370,7 @@ prometheus.scrape "clickhouse_cloud" {
 
 配置完成后，你应该会在指标浏览器中看到与 ClickHouse 相关的指标：
 
-<Image img="/images/integrations/prometheus-grafana-metrics-explorer.webp" size="md" alt="Grafana 指标浏览器" border />
+![Grafana 指标浏览器](/images/integrations/prometheus-grafana-metrics-explorer.webp)
 
 <br />
 
@@ -398,7 +396,7 @@ instances:
 
 <br />
 
-<Image img="/images/integrations/prometheus-datadog.webp" size="md" alt="Prometheus 与 Datadog 集成" />
+![Prometheus 与 Datadog 集成](/images/integrations/prometheus-datadog.webp)
 
 <div id="related">
   ## 相关页面

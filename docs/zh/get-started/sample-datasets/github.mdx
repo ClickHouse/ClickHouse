@@ -9,8 +9,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 该数据集包含 ClickHouse 仓库中的所有 提交 和变更。可使用 ClickHouse 随附分发的原生 `git-import` 工具生成。
 
 生成的数据会为以下每个表提供一个 `tsv` 文件：
@@ -572,11 +570,11 @@ LIMIT 10
 
 **按新增和删除的行数：**
 
-<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="按新增和删除的行数" size="md" />
+![按新增和删除的行数](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
 
 **按提交和作者：**
 
-<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="按提交和作者" size="md" />
+![按提交和作者](/images/getting-started/example-datasets/superset-commits-authors.webp)
 
 <div id="list-files-with-maximum-number-of-authors">
   ### 列出作者最多的文件
@@ -1365,11 +1363,11 @@ LIMIT 100
 
 Sankey 图表 (SuperSet) 可以很好地展示这一点。注意，我们将 `LIMIT BY` 增加到 3，以便找出每位作者对应的前 3 位“代码移除者”，从而让可视化结果更加丰富。
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="Superset 作者矩阵" size="md" />
+![Superset 作者矩阵](/images/getting-started/example-datasets/superset-authors-matrix.webp)
 
 Alexey 显然很喜欢删除别人的代码。为了让代码删除情况的视图更加均衡，我们把他排除掉。
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="Superset 作者矩阵 v2" size="md" />
+![Superset 作者矩阵 v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
   ### 按星期几来看，谁的贡献占比最高？

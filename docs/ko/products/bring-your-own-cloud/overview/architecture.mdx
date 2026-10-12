@@ -7,13 +7,11 @@ description: '자체 클라우드 인프라에 ClickHouse를 배포'
 doc_type: '참고'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ## 핵심 개념 {#key-concepts}
 
 아래 다이어그램은 ClickHouse Cloud 조직, 클라우드 계정, BYOC 인프라가 서로 어떤 관계에 있는지 보여줍니다.
 
-<Image img="/images/cloud/reference/byoc-organization-hierarchy.svg" size="lg" alt="BYOC 조직 계층 구조" />
+![BYOC 조직 계층 구조](/images/cloud/reference/byoc-organization-hierarchy.svg)
 
 * **ClickHouse Cloud 조직:** 사용자, 청구, 비-BYOC ClickHouse 서비스를 관리하는 ClickHouse Cloud의 최상위 엔터티입니다. 조직 내 사용자는 일반 Cloud 서비스와 BYOC 서비스에 모두 액세스할 수 있습니다.
 * **ClickHouse BYOC 조직:** BYOC 배포를 전담 관리하는 별도의 조직입니다. Cloud 조직과 사용자를 공유하지만, BYOC 인프라가 배포되는 하나 이상의 클라우드 계정에 연결됩니다.
@@ -41,7 +39,7 @@ BYOC는 ClickHouse VPC에서 실행되는 **ClickHouse 컨트롤 플레인**과 
 
 <br />
 
-<Image img="/images/cloud/reference/byoc-architecture.svg" size="lg" alt="BYOC 아키텍처: ClickHouse VPC의 ClickHouse 컨트롤 플레인이 고객 클라우드 계정 내부의 Kubernetes 데이터 플레인을 관리합니다. ClickHouse 데이터, 백업, 로그, 모니터링 데이터는 고객 계정에 유지되며 제한된 운영 텔레메트리만 외부로 내보내집니다." />
+![BYOC 아키텍처: ClickHouse VPC의 ClickHouse 컨트롤 플레인이 고객 클라우드 계정 내부의 Kubernetes 데이터 플레인을 관리합니다. ClickHouse 데이터, 백업, 로그, 모니터링 데이터는 고객 계정에 유지되며 제한된 운영 텔레메트리만 외부로 내보내집니다.](/images/cloud/reference/byoc-architecture.svg)
 
 <br />
 

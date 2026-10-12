@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['api', 'postman', 'rest api', 'クラウド管理', 'インテグレーション']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このガイドでは、[Postman](https://www.postman.com/product/what-is-postman/) を使って ClickHouse Cloud API をテストする方法を紹介します。
 Postman アプリケーションは、Web ブラウザで利用することも、デスクトップ版をダウンロードして利用することもできます。
 
@@ -18,7 +16,7 @@ Postman アプリケーションは、Web ブラウザで利用することも�
 
 * 無料アカウントは [https://www.postman.com](https://www.postman.com) で作成できます。
 
-<Image img="/images/cloud/manage/postman/postman1.webp" size="md" alt="Postman サイト" border />
+![Postman サイト](/images/cloud/manage/postman/postman1.webp)
 
 <div id="create-a-workspace">
   ### ワークスペースを作成する
@@ -26,7 +24,7 @@ Postman アプリケーションは、Web ブラウザで利用することも�
 
 * ワークスペースに名前を付け、公開範囲を設定します。
 
-<Image img="/images/cloud/manage/postman/postman2.webp" size="md" alt="ワークスペースを作成する" border />
+![ワークスペースを作成する](/images/cloud/manage/postman/postman2.webp)
 
 <div id="create-a-collection">
   ### コレクションを作成する
@@ -34,17 +32,17 @@ Postman アプリケーションは、Web ブラウザで利用することも�
 
 * 左上のメニューで、&quot;Explore&quot; の下にある &quot;Import&quot; をクリックします:
 
-<Image img="/images/cloud/manage/postman/postman3.webp" size="md" alt="Explore > Import" border />
+![Explore > Import](/images/cloud/manage/postman/postman3.webp)
 
 * モーダルウィンドウが表示されます:
 
-<Image img="/images/cloud/manage/postman/postman4.webp" size="md" alt="API URL入力" border />
+![API URL入力](/images/cloud/manage/postman/postman4.webp)
 
 * API アドレス &quot;https://api.clickhouse.cloud/v1&quot; を入力して、&#39;Enter&#39; キーを押します:
 
 * &quot;Import&quot; ボタンをクリックして、&quot;Postman Collection&quot; を選択します:
 
-<Image img="/images/cloud/manage/postman/postman6.webp" size="md" alt="コレクション > Import" border />
+![コレクション > Import](/images/cloud/manage/postman/postman6.webp)
 
 <div id="interface-with-the-clickhouse-cloud-api-spec">
   ### ClickHouse Cloud API仕様を使用する
@@ -52,11 +50,11 @@ Postman アプリケーションは、Web ブラウザで利用することも�
 
 * これで、「Collections」 (左側のナビゲーション) 内に「API spec for ClickHouse Cloud」が表示されます。
 
-<Image img="/images/cloud/manage/postman/postman7.webp" size="md" alt="APIをインポートする" border />
+![APIをインポートする](/images/cloud/manage/postman/postman7.webp)
 
 * 「API spec for ClickHouse Cloud」をクリックします。中央のペインで「Authorization」タブを選択します。
 
-<Image img="/images/cloud/manage/postman/postman8.webp" size="md" alt="インポート完了" border />
+![インポート完了](/images/cloud/manage/postman/postman8.webp)
 
 <div id="set-authorization">
   ### 認証を設定
@@ -64,11 +62,11 @@ Postman アプリケーションは、Web ブラウザで利用することも�
 
 * ドロップダウンメニューを開き、「Basic Auth」を選択します。
 
-<Image img="/images/cloud/manage/postman/postman9.webp" size="md" alt="Basic auth" border />
+![Basic auth](/images/cloud/manage/postman/postman9.webp)
 
 * ClickHouse Cloud API キーの設定時に受け取った Username と Password を入力します。
 
-<Image img="/images/cloud/manage/postman/postman10.webp" size="md" alt="認証情報" border />
+![認証情報](/images/cloud/manage/postman/postman10.webp)
 
 <div id="enable-variables">
   ### 変数を有効にする
@@ -83,7 +81,7 @@ Postman アプリケーションは、Web ブラウザで利用することも�
 * 「Collection」内で、中央ペインの「Variable」タブをクリックします (Base URL は先ほどの API インポートで設定されています) :
 * `baseURL` の下にある空欄の「Add new value」をクリックし、組織 ID とサービス ID に置き換えます:
 
-<Image img="/images/cloud/manage/postman/postman11.webp" size="md" alt="組織 ID とサービス ID" border />
+![組織 ID とサービス ID](/images/cloud/manage/postman/postman11.webp)
 
 <div id="test-the-clickhouse-cloud-api-functionalities">
   ## ClickHouse Cloud API の機能をテストする
@@ -96,11 +94,11 @@ Postman アプリケーションは、Web ブラウザで利用することも�
 * 「ClickHouse Cloud の OpenAPI spec」で、フォルダ &gt; V1 &gt; organizations を展開します
 * 「GET list of available organizations」をクリックし、右側の青い「Send」ボタンを押します。
 
-<Image img="/images/cloud/manage/postman/postman12.webp" size="md" alt="組織の取得をテストする" border />
+![組織の取得をテストする](/images/cloud/manage/postman/postman12.webp)
 
 * 返された結果には、`"status": 200` とともに組織の詳細が表示されるはずです。 (組織情報が表示されず、`"status": 400` が返される場合は、設定が正しくありません)。
 
-<Image img="/images/cloud/manage/postman/postman13.webp" size="md" alt="ステータス" border />
+![ステータス](/images/cloud/manage/postman/postman13.webp)
 
 <div id="test-get-organizational-details">
   ### 「GET organizational details」をテストする
@@ -109,15 +107,15 @@ Postman アプリケーションは、Web ブラウザで利用することも�
 * `organizationid` フォルダーで「GET organizational details」に移動します。
 * 中央フレームの Params メニューでは、`organizationid` が必要です。
 
-<Image img="/images/cloud/manage/postman/postman14.webp" size="md" alt="組織の詳細の取得をテスト" border />
+![組織の詳細の取得をテスト](/images/cloud/manage/postman/postman14.webp)
 
 * この値を、中かっこ付きの `orgid`、`{{orgid}}` に変更します (この値を前の手順で設定していれば、その値を含むメニューが表示されます) 。
 
-<Image img="/images/cloud/manage/postman/postman15.webp" size="md" alt="テストを送信" border />
+![テストを送信](/images/cloud/manage/postman/postman15.webp)
 
 * 「Save」ボタンを押した後、画面右上の青い「Send」ボタンを押します。
 
-<Image img="/images/cloud/manage/postman/postman16.webp" size="md" alt="戻り値" border />
+![戻り値](/images/cloud/manage/postman/postman16.webp)
 
 * 返された結果には、&quot;status&quot;: 200 とともに組織の詳細が表示されるはずです。 (組織情報が表示されず &quot;status&quot;: 400 が返る場合は、設定が正しくありません) 。
 
@@ -129,6 +127,6 @@ Postman アプリケーションは、Web ブラウザで利用することも�
 * `organizationid` と `serviceid` の値を、それぞれ `{{orgid}}` と `{{serviceid}}` に編集します。
 * 「Save」を押してから、右側の青い「Send」ボタンを押します。
 
-<Image img="/images/cloud/manage/postman/postman17.webp" size="md" alt="サービスの一覧" border />
+![サービスの一覧](/images/cloud/manage/postman/postman17.webp)
 
 * 返された結果には、&quot;status&quot;: 200 とともに、サービスの一覧とその詳細が表示されるはずです。(サービス情報がなく &quot;status&quot; 400 が返される場合は、設定が正しくありません。)

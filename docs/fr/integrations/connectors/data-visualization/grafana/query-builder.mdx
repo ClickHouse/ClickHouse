@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -50,7 +48,7 @@ Le type de requête le plus flexible est la requête de type tableau. Il s’agi
 | Limit        | Ajoute une instruction [LIMIT](/fr/reference/statements/select/limit) à la fin de la requête. Si cette valeur est définie sur `0`, elle est exclue. Certaines visualizations peuvent nécessiter que cette valeur soit définie sur `0` pour afficher toutes les données. |
 | Filters      | Une liste de filtres à appliquer dans la clause `WHERE`.                                                                                                                                                                                                                |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="Exemple de requête de tableau agrégée" border />
+![Exemple de requête de tableau agrégée](/images/integrations/data-visualization/grafana/demo_table_query.webp)
 
 Ce type de requête affiche les données sous forme de tableau.
 
@@ -78,7 +76,7 @@ Le type de requête logs prend en charge les [liens de données](#data-links).
 | Filtres           | Une liste de filtres à appliquer dans la clause `WHERE`.                                                                                                                                                             |
 | Filtre de message | Champ de saisie permettant de filtrer facilement les logs avec un `LIKE %value%`. Exclu lorsque le champ est vide.                                                                                                   |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="Exemple de requête de logs OTel" border />
+![Exemple de requête de logs OTel](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
 
 <br />
 
@@ -86,7 +84,7 @@ Ce type de requête affiche les données dans le panneau de logs, avec un pannea
 
 Les colonnes supplémentaires sélectionnées dans la requête peuvent être consultées dans la ligne de log développée :
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Exemple de champs supplémentaires dans une requête de logs" border />
+![Exemple de champs supplémentaires dans une requête de logs](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
 
 ### Time Series {#time-series}
 
@@ -118,7 +116,7 @@ Les deux vues sont globalement identiques, avec toutefois les différences notab
 | Limit        | Ajoute une instruction [LIMIT](/fr/reference/statements/select/limit) à la fin de la requête. S’il est défini sur `0`, il est exclu ; cela est recommandé pour certains jeux de données de séries temporelles afin d’afficher la visualisation complète. |
 | Filters      | Une liste de filtres à appliquer dans la clause `WHERE`.                                                                                                                                                                                              |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="Exemple de requête de séries temporelles" border />
+![Exemple de requête de séries temporelles](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
 
 Ce type de requête affichera les données dans le panneau de séries temporelles.
 
@@ -155,7 +153,7 @@ Le type de requête de trace prend en charge les [liens de données](#data-links
 | Filters               | Une liste de filtres à appliquer dans la clause `WHERE`.                                                                                                                                                                     |
 | Trace ID              | L&#39;ID de trace sur lequel filtrer. Utilisé uniquement en mode Trace ID et lors de l&#39;ouverture d&#39;un [lien de données](#data-links) de type Trace ID.                                                               |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="Exemple de requête de trace OTel" border />
+![Exemple de requête de trace OTel](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
 
 Ce type de requête affichera les données dans la vue tableau pour le mode Trace Search, et dans le panneau de traces pour le mode Trace ID.
 
@@ -171,7 +169,7 @@ Les [fonctions macro](#macros) peuvent toujours être utilisées dans ce mode.
 Vous pouvez basculer entre les types de requêtes pour obtenir la visualisation la mieux adaptée à votre requête.
 Ce changement a également un effet en vue dashboard, notamment avec les données de séries temporelles.
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="Exemple de requête Raw SQL" border />
+![Exemple de requête Raw SQL](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
 
 ## Liens de données {#data-links}
 
@@ -182,13 +180,13 @@ Cette fonctionnalité a été activée dans le plugin ClickHouse pour lier une t
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   Exemple de liens de traces dans un tableau
 
-  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="Liens de traces dans un tableau" border />
+  ![Liens de traces dans un tableau](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Exemple de liens de traces dans les logs
 
-  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="Liens de traces dans les logs" border />
+  ![Liens de traces dans les logs](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
 </div>
 
 <div id="how-to-make-a-data-link">
@@ -215,7 +213,7 @@ Il est nécessaire de configurer des valeurs par défaut pour les [logs](/fr/int
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Exemple d’affichage d’une trace (panneau de droite) à partir d’une requête de logs (panneau de gauche)
 
-  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="Exemple de liaison avec des liens de données" border />
+  ![Exemple de liaison avec des liens de données](/images/integrations/data-visualization/grafana/demo_data_links.webp)
 </div>
 
 <div id="macros">

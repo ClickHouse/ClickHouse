@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-clickhouse-cloud-beta" />
 
 이제 ClickHouse Cloud는 외부 PostgreSQL 데이터베이스를 Managed Postgres 서비스로 마이그레이션할 수 있도록 ClickPipes를 제공합니다. 이 기본 제공 통합을 사용하면 원본 데이터베이스에 연결하고, 스키마를 내보내고, 이를 Managed Postgres로 가져오고, 지속적 복제를 설정하는 작업을 간편하게 수행할 수 있습니다.
@@ -45,15 +43,15 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 [ClickHouse Cloud 콘솔](https://clickhouse.cloud)을 열고 Managed Postgres 서비스를 선택합니다.
 
-<Image img="/images/managed-postgres/pgpg/servicecard.webp" alt="ClickHouse Cloud 서비스 목록의 Managed Postgres 서비스 카드" size="lg" border />
+![ClickHouse Cloud 서비스 목록의 Managed Postgres 서비스 카드](/images/managed-postgres/pgpg/servicecard.webp)
 
 왼쪽 사이드바에서 **데이터 소스**를 클릭합니다.
 
-<Image img="/images/managed-postgres/pgpg/overview.webp" alt="Managed Postgres 서비스 사이드바의 데이터 소스 항목" size="lg" border />
+![Managed Postgres 서비스 사이드바의 데이터 소스 항목](/images/managed-postgres/pgpg/overview.webp)
 
 **Start import**를 클릭합니다.
 
-<Image img="/images/managed-postgres/pgpg/startimport.webp" alt="Start import 버튼이 있는 데이터 소스 페이지" size="lg" border />
+![Start import 버튼이 있는 데이터 소스 페이지](/images/managed-postgres/pgpg/startimport.webp)
 
 원본 PostgreSQL 데이터베이스의 연결 정보를 입력합니다: 호스트, 포트, 사용자 이름, 비밀번호, 데이터베이스 이름. 원본 데이터베이스에서 필요하면 **TLS**를 활성화합니다.
 
@@ -65,13 +63,13 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 * **Initial load only** — 한 번만 복사하고, 이후 복제는 수행하지 않습니다.
 * **CDC only** — 초기 복사를 건너뛰고 이 시점 이후의 새 변경 사항만 복제합니다.
 
-<Image img="/images/managed-postgres/pgpg/migrationform.webp" alt="1단계: 수집 메서드 옵션이 있는 원본 데이터베이스 연결 양식" size="lg" border />
+![1단계: 수집 메서드 옵션이 있는 원본 데이터베이스 연결 양식](/images/managed-postgres/pgpg/migrationform.webp)
 
 **다음**을 클릭합니다.
 
 ## 자동 스키마 마이그레이션 {#automated-schema-migration}
 
-<Image img="/images/managed-postgres/pg_dump_restore/automated.webp" alt="2단계: 대상 데이터베이스 셀렉터를 사용한 자동 스키마 마이그레이션" size="lg" border />
+![2단계: 대상 데이터베이스 셀렉터를 사용한 자동 스키마 마이그레이션](/images/managed-postgres/pg_dump_restore/automated.webp)
 
 이 옵션을 선택하면 ClickPipe가 생성된 후 [Setup 단계](/ko/integrations/clickpipes/postgres/lifecycle#setup)에서 원본 데이터베이스의 스키마를 자동으로 가져와 Managed Postgres 서비스에 적용합니다.
 
@@ -79,7 +77,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 드롭다운에서 대상 데이터베이스를 선택하거나 **새 데이터베이스 만들기**를 클릭하여 새 데이터베이스를 프로비저닝합니다.
 
-<Image img="/images/managed-postgres/pg_dump_restore/newdb.webp" alt="새 Postgres 데이터베이스 만들기 대화 상자" size="lg" border />
+![새 Postgres 데이터베이스 만들기 대화 상자](/images/managed-postgres/pg_dump_restore/newdb.webp)
 
 ### 모니터링 {#monitoring}
 
@@ -93,13 +91,13 @@ ClickPipes 세부 정보 보기에서 스키마 마이그레이션 진행 상황
 
 대상 데이터베이스에 이미 데이터가 있거나 자동화 모드에서 전제하는 초기 상태 대신 더 맞춤화된 설정이 필요한 경우, 여기에서 **수동** 모드를 선택할 수 있습니다.
 
-<Image img="/images/managed-postgres/pg_dump_restore/manual.webp" alt="2단계: pg_dump 내보내기 명령을 사용한 수동 스키마 마이그레이션" size="lg" border />
+![2단계: pg_dump 내보내기 명령을 사용한 수동 스키마 마이그레이션](/images/managed-postgres/pg_dump_restore/manual.webp)
 
 ### 데이터베이스 스키마 내보내기 {#step-2-export-schema}
 
 마법사에 원본 연결 정보가 미리 입력된 `pg_dump` 명령이 표시됩니다. 터미널에서 실행합니다:
 
-<Image img="/images/managed-postgres/pgpg/nextexport.webp" alt="2단계: 스키마 내보내기를 위한 pg_dump 명령" size="lg" border />
+![2단계: 스키마 내보내기를 위한 pg_dump 명령](/images/managed-postgres/pgpg/nextexport.webp)
 
 ```shell
 pg_dump \
@@ -112,7 +110,7 @@ pg_dump \
 
 이 명령을 실행하면 현재 디렉터리에 `pg.sql`이 생성됩니다.
 
-<Image img="/images/managed-postgres/pgpg/psqlexport.webp" alt="pg_dump 실행 후 터미널 출력" size="lg" border />
+![pg_dump 실행 후 터미널 출력](/images/managed-postgres/pgpg/psqlexport.webp)
 
 **다음**을 클릭합니다.
 
@@ -122,7 +120,7 @@ pg_dump \
 
 마법사에 스키마 덤프를 Managed Postgres 서비스에 적용하는 `psql` 명령이 표시됩니다. 터미널에서 실행합니다:
 
-<Image img="/images/managed-postgres/pgpg/nextimport.webp" alt="3단계: 스키마 가져오기를 위한 psql 명령" size="lg" border />
+![3단계: 스키마 가져오기를 위한 psql 명령](/images/managed-postgres/pgpg/nextimport.webp)
 
 ```shell
 psql \
@@ -133,7 +131,7 @@ psql \
   -f pg.sql
 ```
 
-<Image img="/images/managed-postgres/pgpg/psqlimport.webp" alt="psql 스키마 가져오기 실행 후 터미널 출력" size="lg" border />
+![psql 스키마 가져오기 실행 후 터미널 출력](/images/managed-postgres/pgpg/psqlimport.webp)
 
 **다음**을 클릭합니다.
 
@@ -151,7 +149,7 @@ psql \
 | 스냅샷 파티션당 행 수    | 100000  | 대형 테이블 스냅샷의 파티션 크기        |
 | 병렬 스냅샷 테이블 수    | 1       | 동시에 스냅샷하는 테이블 수           |
 
-<Image img="/images/managed-postgres/pgpg/advancedsettings.webp" alt="Step 4: publication 및 고급 복제 옵션이 포함된 수집 설정 양식" size="lg" border />
+![Step 4: publication 및 고급 복제 옵션이 포함된 수집 설정 양식](/images/managed-postgres/pgpg/advancedsettings.webp)
 
 **다음**을 클릭하십시오.
 
@@ -161,7 +159,7 @@ psql \
 
 복제할 테이블을 선택하세요. 테이블은 스키마별로 그룹화되어 있습니다. 개별 테이블을 선택하거나 스키마를 펼쳐 전체를 선택하세요.
 
-<Image img="/images/managed-postgres/pgpg/tablepicker.webp" alt="5단계: Create migration 버튼이 있는 스키마별 그룹화된 테이블 선택기" size="lg" border />
+![5단계: Create migration 버튼이 있는 스키마별 그룹화된 테이블 선택기](/images/managed-postgres/pgpg/tablepicker.webp)
 
 **Create migration**을 클릭하세요.
 
@@ -169,11 +167,11 @@ psql \
 
 마이그레이션을 생성하면 **데이터 소스**에 **Running** 상태로 표시됩니다.
 
-<Image img="/images/managed-postgres/pgpg/migrationlist.webp" alt="실행 중인 마이그레이션이 표시된 데이터 소스 목록" size="lg" border />
+![실행 중인 마이그레이션이 표시된 데이터 소스 목록](/images/managed-postgres/pgpg/migrationlist.webp)
 
 마이그레이션을 클릭하면 상세 보기가 열립니다. **Tables** 탭에는 처리된 행 수, 파티션, 파티션당 평균 시간 등 각 테이블의 초기 적재 진행 상황이 표시됩니다. **Metrics** 탭에는 CDC가 시작되면 복제 지연과 처리량이 표시됩니다.
 
-<Image img="/images/managed-postgres/pgpg/initialload.webp" alt="테이블별 초기 적재 통계가 표시된 마이그레이션 상세 보기" size="lg" border />
+![테이블별 초기 적재 통계가 표시된 마이그레이션 상세 보기](/images/managed-postgres/pgpg/initialload.webp)
 
 ## 트래픽 전환 {#cutover}
 
@@ -202,31 +200,31 @@ WHERE datname = '<source_db>'
 
 계속하려면 **Mark as completed**를 클릭하십시오.
 
-<Image img="/images/managed-postgres/pgpg/post-migration/readonly.webp" alt="마이그레이션 후 1단계: 원본 데이터베이스를 읽기 전용 모드로 설정" size="lg" border />
+![마이그레이션 후 1단계: 원본 데이터베이스를 읽기 전용 모드로 설정](/images/managed-postgres/pgpg/post-migration/readonly.webp)
 
 ### 2단계: 행 수 검사 {#cutover-validate}
 
 검사할 복제된 테이블을 선택합니다. ClickPipes는 선택한 모든 테이블의 행 수를 소스와 타깃 양쪽에서 집계하여 비교합니다. 대용량 테이블은 근사치가 반환될 수 있습니다. 모든 테이블을 검사하려면 **Select all tables**를 사용하고, 특정 테이블만 검사하려면 해당 테이블을 검색해 선택한 후 **Count rows**를 클릭하십시오.
 
-<Image img="/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp" alt="마이그레이션 후 2단계: 테이블 선택 및 소스와 타깃 간 행 수 검사" size="lg" border />
+![마이그레이션 후 2단계: 테이블 선택 및 소스와 타깃 간 행 수 검사](/images/managed-postgres/pgpg/post-migration/validate-row-counts.webp)
 
 ### 3단계: 파이프 일시 중지 {#cutover-pause}
 
 시퀀스를 재설정하고 트래픽을 전환하기 전에 복제가 중지되도록 ClickPipe를 일시 중지합니다. **Pause ClickPipe**를 클릭한 후 파이프가 일시 중지될 때까지 기다린 다음 진행하십시오.
 
-<Image img="/images/managed-postgres/pgpg/post-migration/pause-pipe.webp" alt="마이그레이션 후 step 3: pause the ClickPipe to stop replication" size="lg" border />
+![마이그레이션 후 step 3: pause the ClickPipe to stop replication](/images/managed-postgres/pgpg/post-migration/pause-pipe.webp)
 
 ### 4단계: 시퀀스 재설정 {#cutover-reset-sequences}
 
 이후의 삽입 작업이 올바른 값에서 이어지도록 대상에서 시퀀스를 재설정합니다. **Reset sequences**를 클릭하면 각 시퀀스가 해당 테이블의 현재 최대값에 맞춰집니다.
 
-<Image img="/images/managed-postgres/pgpg/post-migration/reset-sequences.webp" alt="마이그레이션 후 step 4: reset sequences on the destination" size="lg" border />
+![마이그레이션 후 step 4: reset sequences on the destination](/images/managed-postgres/pgpg/post-migration/reset-sequences.webp)
 
 ### 5단계: 트래픽 전환 {#cutover-traffic}
 
 애플리케이션의 데이터베이스 URL을 Managed Postgres 연결 문자열(connection string)로 변경하여 읽기와 쓰기를 Managed Postgres 서비스로 전환하십시오. 마법사는 **url**, **psql**, **env**, **yaml**, **jdbc** 등 여러 포맷으로 연결 정보(connection details)를 제공하므로, 사용 중인 스택에 맞는 항목을 복사해 사용하면 됩니다. 애플리케이션을 업데이트한 후 **Mark as completed**를 클릭하십시오.
 
-<Image img="/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp" alt="마이그레이션 후 step 5: cut over traffic using the Managed Postgres connection string" size="lg" border />
+![마이그레이션 후 step 5: cut over traffic using the Managed Postgres connection string](/images/managed-postgres/pgpg/post-migration/cutover-traffic.webp)
 
 ### 6단계: 정리 {#cutover-cleanup}
 
@@ -238,7 +236,7 @@ SELECT pg_drop_replication_slot('<slot_name>');
 
 그런 다음 **Delete ClickPipe migration**을 클릭하여 **데이터 소스**에서 해당 마이그레이션을 제거합니다.
 
-<Image img="/images/managed-postgres/pgpg/post-migration/cleanup.webp" alt="마이그레이션 후 6단계: replication slot 삭제 및 마이그레이션 삭제로 정리하기" size="lg" border />
+![마이그레이션 후 6단계: replication slot 삭제 및 마이그레이션 삭제로 정리하기](/images/managed-postgres/pgpg/post-migration/cleanup.webp)
 
 ## 다음 단계 {#next-steps}
 

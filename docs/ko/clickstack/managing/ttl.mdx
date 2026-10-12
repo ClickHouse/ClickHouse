@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'ttl', '데이터 보존', '수명 주기', '스토리지 관리']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import OtelLogsSchema from '/snippets/ko/clickstack/_schema_otel_logs.mdx';
 
 <div id="ttl-clickstack">
@@ -26,7 +25,7 @@ ClickHouse의 파티셔닝은 컬럼 또는 SQL 표현식에 따라 디스크에
 
 위 예시에서 볼 수 있듯이 파티셔닝은 테이블을 처음 정의할 때 `PARTITION BY` 절을 통해 지정합니다. 이 절에는 하나 이상의 컬럼에 대한 SQL 표현식을 포함할 수 있으며, 그 결과에 따라 각 행이 어느 파티션으로 전송될지가 결정됩니다. 이로 인해 데이터는 디스크에서 각 파티션과 논리적으로 연결되며(공통 폴더 이름 접두사를 통해), 이후 각 파티션만 따로 쿼리할 수 있습니다. 위 예시에서는 기본 `otel_logs` 스키마가 `toDate(Timestamp)` 표현식을 사용해 일 단위로 파티셔닝합니다. 행이 ClickHouse에 삽입되면 이 표현식이 각 행에 대해 평가되고, 해당 파티션이 이미 있으면 그 파티션으로 전달됩니다(해당 날짜의 첫 번째 행이면 파티션이 생성됩니다). 파티셔닝과 그 밖의 활용 사례에 대한 자세한 내용은 [&quot;Table Partitions&quot;](/ko/concepts/core-concepts/partitions)를 참조하십시오.
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="파티션" size="lg" />
+![파티션](/images/use-cases/observability/observability-14.webp)
 
 테이블 스키마에는 `TTL toDateTime(Timestamp) + ${TABLES_TTL}`와 설정 `ttl_only_drop_parts = 1`도 포함됩니다. 앞의 절은 데이터가 구성된 TTL(기본적으로 3일)보다 오래되면 삭제되도록 보장합니다. 설정 `ttl_only_drop_parts = 1`은 모든 데이터가 만료된 데이터 파트만 만료 대상으로 처리하도록 합니다(행을 부분적으로 삭제하려고 시도하는 대신). 또한 파티셔닝을 통해 서로 다른 날짜의 데이터가 절대 머지되지 않으므로 데이터를 효율적으로 삭제할 수 있습니다.
 

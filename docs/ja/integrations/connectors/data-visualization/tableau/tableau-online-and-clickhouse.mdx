@@ -12,8 +12,6 @@ integration:
 
 import MySQLCloudSetup from '/snippets/ja/_clickhouse_mysql_cloud_setup.mdx';
 import MySQLOnPremiseSetup from '/snippets/ja/_clickhouse_mysql_on_premise_setup.mdx';
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 Tableau Online は、公式の MySQL データソースを使用して、MySQL インターフェイス経由で ClickHouse Cloud またはオンプレミスの ClickHouse 環境に接続できます。
 
 <div id="clickhouse-cloud-setup">
@@ -34,25 +32,25 @@ Tableau Online は、公式の MySQL データソースを使用して、MySQL �
 
 Tableau Cloud サイトにログインし、新しい Published Data Source を追加します。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_01.webp" alt="Published Data Source を作成するための「New」ボタンが表示された Tableau Online のインターフェイス" border />
+![Published Data Source を作成するための「New」ボタンが表示された Tableau Online のインターフェイス](/images/integrations/data-visualization/tableau_online_01.webp)
 
 <br />
 
 使用可能なコネクタの一覧から &quot;MySQL&quot; を選択します。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_02.webp" alt="MySQL オプションが強調表示された Tableau Online のコネクタ選択画面" border />
+![MySQL オプションが強調表示された Tableau Online のコネクタ選択画面](/images/integrations/data-visualization/tableau_online_02.webp)
 
 <br />
 
 ClickHouse のセットアップ時に取得した接続情報を入力します。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_03.webp" alt="server、port、database、認証情報の各フィールドがある Tableau Online の MySQL 接続設定画面" border />
+![server、port、database、認証情報の各フィールドがある Tableau Online の MySQL 接続設定画面](/images/integrations/data-visualization/tableau_online_03.webp)
 
 <br />
 
 Tableau Online がデータベースを読み取り、利用可能なテーブルの一覧を表示します。目的のテーブルを右側のキャンバスへドラッグします。さらに、&quot;Update Now&quot; をクリックしてデータをプレビューしたり、読み取られたフィールドの型や名前を調整したりできます。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_online_04.webp" alt="左側にデータベーステーブル、右側にドラッグアンドドロップ可能なキャンバスが表示された Tableau Online のデータソースページ" border />
+![左側にデータベーステーブル、右側にドラッグアンドドロップ可能なキャンバスが表示された Tableau Online のデータソースページ](/images/integrations/data-visualization/tableau_online_04.webp)
 
 <br />
 
@@ -72,7 +70,7 @@ Windows または Mac マシンで Tableau Desktop を起動し、&quot;Connect&
 インストール方法については、Data Source のドロップダウンで MySQL を選択すると表示される [こちら](https://www.tableau.com/support/drivers) のセットアップガイドに従ってください。
 M1 Mac を使用している場合は、ドライバーのインストール回避策について [このトラブルシューティングスレッド](https://community.tableau.com/s/question/0D58b0000Ar6OhvCQE/unable-to-install-mysql-driver-for-m1-mac) を確認してください。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_01.webp" alt="MySQL オプションが強調表示された Connect メニューを示す Tableau Desktop のインターフェイス" border />
+![MySQL オプションが強調表示された Connect メニューを示す Tableau Desktop のインターフェイス](/images/integrations/data-visualization/tableau_desktop_01.webp)
 
 <br />
 
@@ -84,26 +82,26 @@ M1 Mac を使用している場合は、ドライバーのインストール回�
 
 ClickHouse Cloud インスタンスの MySQL ユーザー認証情報と、ダウンロードしたルート証明書のパスを指定します。
 
-<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_02.webp" alt="SSL オプションが有効になっており、server、username、password、certificate の各フィールドが表示された Tableau Desktop の MySQL 接続ダイアログ" border />
+![SSL オプションが有効になっており、server、username、password、certificate の各フィールドが表示された Tableau Desktop の MySQL 接続ダイアログ](/images/integrations/data-visualization/tableau_desktop_02.webp)
 
 <br />
 
 通常どおり必要なテーブルを選択し (Tableau Online の場合と同様) 、
 &quot;Server&quot; -&gt; &quot;Publish Data Source&quot; -&gt; Tableau Cloud を選択します。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_03.webp" alt="Publish Data Source オプションが強調表示された Server メニューを示す Tableau Desktop" border />
+![Publish Data Source オプションが強調表示された Server メニューを示す Tableau Desktop](/images/integrations/data-visualization/tableau_desktop_03.webp)
 
 <br />
 
 重要: &quot;Authentication&quot; オプションで &quot;Embedded password&quot; を選択する必要があります。
 
-<Image size="md" img="/images/integrations/data-visualization/tableau_desktop_04.webp" alt="Embedded password が選択された Authentication オプションを示す Tableau Desktop の公開ダイアログ" border />
+![Embedded password が選択された Authentication オプションを示す Tableau Desktop の公開ダイアログ](/images/integrations/data-visualization/tableau_desktop_04.webp)
 
 <br />
 
 さらに、&quot;Update workbook to use the published data source&quot; を選択します。
 
-<Image size="sm" img="/images/integrations/data-visualization/tableau_desktop_05.webp" alt="'Update workbook to use the published data source' オプションがチェックされた Tableau Desktop の公開ダイアログ" border />
+!['Update workbook to use the published data source' オプションがチェックされた Tableau Desktop の公開ダイアログ](/images/integrations/data-visualization/tableau_desktop_05.webp)
 
 <br />
 

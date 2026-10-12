@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -50,7 +48,7 @@ ClickHouse 플러그인에서는 모든 쿼리를 실행할 수 있습니다.
 | Limit        | 쿼리 끝에 [LIMIT](/ko/reference/statements/select/limit) SQL 문을 추가합니다. `0`으로 설정하면 제외됩니다. 일부 시각화에서는 모든 데이터를 표시하려면 이 값을 `0`으로 설정해야 할 수 있습니다. |
 | Filters      | `WHERE` 절에 적용할 필터 목록입니다.                                                                                                               |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="집계 테이블 쿼리 예시" border />
+![집계 테이블 쿼리 예시](/images/integrations/data-visualization/grafana/demo_table_query.webp)
 
 이 쿼리 유형은 데이터를 테이블로 표시합니다.
 
@@ -78,7 +76,7 @@ ClickHouse 플러그인에서는 모든 쿼리를 실행할 수 있습니다.
 | Filters        | `WHERE` 절에 적용할 필터 목록입니다.                                                                                      |
 | Message Filter | `LIKE %value%`를 사용해 로그를 편리하게 필터링할 수 있는 텍스트 입력란입니다. 입력이 비어 있으면 제외됩니다.                                          |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="OTel 로그 쿼리 예시" border />
+![OTel 로그 쿼리 예시](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
 
 <br />
 
@@ -86,7 +84,7 @@ ClickHouse 플러그인에서는 모든 쿼리를 실행할 수 있습니다.
 
 쿼리에서 선택한 추가 컬럼은 확장된 로그 행에서 확인할 수 있습니다:
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="로그 쿼리의 추가 필드 예시" border />
+![로그 쿼리의 추가 필드 예시](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
 
 <div id="time-series">
   ### 시계열
@@ -120,7 +118,7 @@ ClickHouse 플러그인에서는 모든 쿼리를 실행할 수 있습니다.
 | Limit        | 쿼리 끝에 [LIMIT](/ko/reference/statements/select/limit) 문을 추가합니다. `0`으로 설정하면 제외되며, 전체 시각화를 표시하기 위해 일부 시계열 데이터셋에서는 이를 권장합니다. |
 | Filters      | `WHERE` 절에 적용할 필터 목록입니다.                                                                                                 |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="시계열 쿼리 예시" border />
+![시계열 쿼리 예시](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
 
 이 쿼리 유형은 데이터를 시계열 패널로 표시합니다.
 
@@ -157,7 +155,7 @@ Time 및 Duration Time 컬럼에 대한 ORDER BY도 함께 포함됩니다.
 | Filters               | `WHERE` 절에 적용할 필터 목록입니다.                                                                                        |
 | Trace ID              | 필터링할 트레이스 ID입니다. Trace ID 모드에서만 사용되며, 트레이스 ID [데이터 링크](#data-links)를 열 때도 사용됩니다.                                |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="예시 OTel 트레이스 쿼리" border />
+![예시 OTel 트레이스 쿼리](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
 
 이 쿼리 유형은 Trace Search 모드에서는 데이터를 테이블 뷰로, Trace ID 모드에서는 트레이스 패널로 표시합니다.
 
@@ -173,7 +171,7 @@ Time 및 Duration Time 컬럼에 대한 ORDER BY도 함께 포함됩니다.
 쿼리에 가장 적합한 시각화를 표시하도록 쿼리 유형을 전환할 수 있습니다.
 이 전환은 대시보드 보기에도 영향을 주며, 특히 시계열 데이터에서 두드러집니다.
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="raw SQL 쿼리 예시" border />
+![raw SQL 쿼리 예시](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
 
 ## 데이터 링크 {#data-links}
 
@@ -183,13 +181,13 @@ Grafana의 [데이터 링크](https://grafana.com/docs/grafana/latest/panels-vis
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   테이블의 트레이스 링크 예시
 
-  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="테이블의 트레이스 링크" border />
+  ![테이블의 트레이스 링크](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   로그의 트레이스 링크 예시
 
-  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="로그의 트레이스 링크" border />
+  ![로그의 트레이스 링크](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
 </div>
 
 <div id="how-to-make-a-data-link">
@@ -216,7 +214,7 @@ Grafana의 [데이터 링크](https://grafana.com/docs/grafana/latest/panels-vis
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   로그 쿼리(왼쪽 패널)에서 트레이스(오른쪽 패널)를 보는 예시
 
-  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="데이터 링크 연결 예시" border />
+  ![데이터 링크 연결 예시](/images/integrations/data-visualization/grafana/demo_data_links.webp)
 </div>
 
 <div id="macros">

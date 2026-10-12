@@ -7,8 +7,6 @@ description: 'انشر ClickHouse BYOC ضمن شبكة VPC الحالية لدي
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 ## Customer-managed VPC (BYO-VPC) for GCP {#customer-managed-vpc-gcp}
 
 إذا كنت تفضّل استخدام شبكة VPC الحالية لنشر ClickHouse BYOC بدلًا من أن يقوم ClickHouse Cloud بتجهيز VPC جديدة، فاتبع الخطوات أدناه. يوفّر هذا النهج قدرًا أكبر من التحكم في تكوين الشبكة، ويتيح لك دمج ClickHouse BYOC ضمن البنية التحتية الحالية لشبكتك.
@@ -23,7 +21,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       لعرض الخدمات عبر [Private Service Connect](/ar/cloud/reference/byoc/onboarding/network-gcp#setup-psc)، تحتاج أيضًا إلى شبكة فرعية مخصصة بالغرض `PRIVATE_SERVICE_CONNECT` في شبكة VPC هذه. يمكنك إنشاؤها الآن أو لاحقًا، قبل تفعيل private link.
     </Note>
 
-    <Image img="/images/cloud/reference/byoc-gcp-subnet.webp" size="lg" alt="تفاصيل الشبكة الفرعية لـ BYOC على GCP، مع عرض نطاقات IPv4 الأساسية والثانوية وتفعيل Private Google Access" />
+    ![تفاصيل الشبكة الفرعية لـ BYOC على GCP، مع عرض نطاقات IPv4 الأساسية والثانوية وتفعيل Private Google Access](/images/cloud/reference/byoc-gcp-subnet.webp)
   </Step>
 
   <Step title="ضمان اتصال الشبكة" id="ensure-network-connectivity">
@@ -53,7 +51,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     5. إذا كانت شبكة VPC لديك موجودة في مشروع مضيف لشبكة Shared VPC، فأدخل **Shared VPC host project ID**. اتركه فارغًا عندما تكون شبكة VPC في المشروع نفسه الذي توجد فيه البنية التحتية. راجع [شبكة Shared VPC من مشروع مضيف](#shared-vpc-host-project) أدناه.
     6. انقر على **Set up Infrastructure** لبدء التجهيز.
 
-    <Image img="/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp" size="lg" alt="واجهة إعداد ClickHouse Cloud BYOC مع تحديد Use existing VPC لـ GCP، مع عرض حقول اسم شبكة VPC واسم الشبكة الفرعية وأسماء النطاقات الثانوية ومعرّف المشروع المضيف لشبكة Shared VPC" />
+    ![واجهة إعداد ClickHouse Cloud BYOC مع تحديد Use existing VPC لـ GCP، مع عرض حقول اسم شبكة VPC واسم الشبكة الفرعية وأسماء النطاقات الثانوية ومعرّف المشروع المضيف لشبكة Shared VPC](/images/cloud/reference/byoc-gcp-existing-vpc-ui.webp)
   </Step>
 </Steps>
 

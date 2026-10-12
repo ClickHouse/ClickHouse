@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'text-to-chart', 'IA', 'visualização', 'Chart Explorer', 'linguagem natural', 'observabilidade']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O recurso Text-to-Chart do ClickStack permite criar visualizações descrevendo, em texto simples, o que você quer ver. Em vez de selecionar manualmente métricas, filtros e campos de agrupamento, você pode digitar um prompt como &quot;taxas de erro por serviço nas últimas 24 horas&quot;, e o ClickStack gerará automaticamente o gráfico correspondente.
 
 Esse recurso usa um modelo de linguagem de grande porte (LLM) para converter seu prompt de texto em uma consulta e, em seguida, criar a visualização no [Chart Explorer](/pt-BR/clickstack/features/dashboards/overview#navigate-chart-explorer). Ele funciona com qualquer fonte de dados configurada.
@@ -68,7 +66,7 @@ Para implantações open source, passe a chave como variável de ambiente. O mé
   <Step title="Selecione uma fonte de dados" id="select-data-source">
     Escolha a fonte de dados que você quer visualizar — por exemplo, **Logs**, **Traces** ou **Metrics**.
 
-    <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Explorador de gráficos" />
+    ![Explorador de gráficos](/images/clickstack/text-to-chart/chart-explorer.webp)
   </Step>
 
   <Step title="Insira um prompt de texto" id="enter-text-prompt">
@@ -80,7 +78,7 @@ Para implantações open source, passe a chave como variável de ambiente. O mé
 
     O ClickStack converte o prompt em uma consulta e exibe a visualização automaticamente.
 
-    <Image img="/images/clickstack/text-to-chart/text-to-chart.webp" alt="Texto para gráfico" />
+    ![Texto para gráfico](/images/clickstack/text-to-chart/text-to-chart.webp)
   </Step>
 </Steps>
 
@@ -101,7 +99,7 @@ Acesse `localhost:8080`. Para se conectar aos dados de demonstração, vá para 
 * **Username**: `otel_demo`
 * **Password**: Deixe em branco
 
-<Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="Criar conexão" />
+![Criar conexão](/images/clickstack/text-to-chart/create-connection.webp)
 
 Em seguida, altere cada um dos sources — **Logs**, **Traces**, **Metrics** e **Sessions** — para usar o banco de dados `otel_v2`. Para ver todos os detalhes sobre como configurar sources, consulte o [guia do demo dataset remoto](/pt-BR/clickstack/example-datasets/remote-demo-data).
 

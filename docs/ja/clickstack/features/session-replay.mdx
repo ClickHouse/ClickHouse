@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'session replay', 'browser sdk', 'frontend observability', 'user sessions', 'debugging']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickStack のセッションリプレイは、Web アプリケーション内でのユーザー操作を記録・再構成し、セッション中にユーザーが実際に見て何をしたのかを、そのまま視覚的に再生できるようにします。動画を録画するのではなく、SDK は DOM の変更、マウスの動き、クリック、スクロール、キーボード入力、コンソールログ、ネットワークリクエスト (XHR、Fetch、WebSocket) 、JavaScript の例外を記録し、その体験をブラウザ内で再構成します。
 
 セッションリプレイは、ログ、トレース、メトリクスとともに ClickHouse に保存されるため、ユーザー体験を確認してから、それを支えたバックエンドのトレースやデータベースクエリの調査まで、すべて数回のクリックで行えます。これにより、セッションリプレイは本番環境の問題のデバッグ、ユーザー行動の把握、UX 上のつまずきポイントの特定、さらにサポートに報告された問題の視覚的な確認に役立ちます。
@@ -95,11 +93,11 @@ Browser SDK は、プライバシーに配慮が必要なアプリケーショ�
 
 ClickStack UI (HyperDX) の左側のサイドバーから **Client Sessions** に移動します。このビューには、キャプチャされたすべてのブラウザーセッションが、継続時間とイベント数とともに一覧表示されます。
 
-<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="セッションリプレイの検索ビュー" size="lg" />
+![セッションリプレイの検索ビュー](/images/clickstack/session-replay/replay-search-view.webp)
 
 任意のセッションの再生ボタンをクリックすると、そのセッションをリプレイできます。リプレイ画面では、右側に再現されたユーザー体験が表示され、左側にはブラウザーイベント (ネットワークリクエスト、コンソールログ、エラー) のタイムラインが表示されます。
 
-<Image img="/images/clickstack/session-replay/session-replay.webp" alt="セッションリプレイの再生" size="lg" />
+![セッションリプレイの再生](/images/clickstack/session-replay/session-replay.webp)
 
 タイムラインに表示する詳細度は、**Highlighted** モードと **All Events** モードを切り替えて調整できます。エラーは赤色で示され、任意のイベントをクリックすると、リプレイはそのセッション内の該当時点に移動します。
 
@@ -121,7 +119,7 @@ ClickStack UI (HyperDX) の左側のサイドバーから **Client Sessions** �
 
 この相関は逆方向にも機能します。**Search** ビューでトレースを表示している際にそのトレースをクリックして詳細を開き、**Session replay** タブを選択すると、そのトレース発生時にユーザーが実際にどのような操作をしていたかを確認できます。これは、エラーやリクエスト遅延を調査する際に特に有用です。バックエンド側の問題から調査を始めて、すぐにユーザー視点の状況を確認できます。
 
-<Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="Session replay のトレースビュー" size="lg" />
+![Session replay のトレースビュー](/images/clickstack/session-replay/trace-to-replay.webp)
 
 <div id="data-storage">
   ## セッションデータの保存方法

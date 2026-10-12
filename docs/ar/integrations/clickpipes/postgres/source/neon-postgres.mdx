@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 هذا دليل يوضح كيفية إعداد Neon Postgres، والذي يمكنك استخدامه للنسخ المتماثل في ClickPipes.
 تأكد من أنك مسجّل الدخول إلى [وحدة تحكم Neon](https://console.neon.tech/app/projects) لإتمام هذا الإعداد.
 
@@ -68,11 +66,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 في Neon، يمكنك تمكين النسخ المتماثل المنطقي عبر واجهة المستخدم. وهذا ضروري لكي يتمكن CDC في ClickPipes من إجراء نسخ متماثل للبيانات.
 انتقل إلى تبويب **Settings** ثم إلى قسم **Logical Replication**.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp" alt="تمكين النسخ المتماثل المنطقي" border />
+![تمكين النسخ المتماثل المنطقي](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enable-replication.webp)
 
 انقر على **Enable** لإتمام الإعداد هنا. وبمجرد تمكينه، ينبغي أن تظهر لك رسالة النجاح أدناه.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp" alt="تم تمكين النسخ المتماثل المنطقي" border />
+![تم تمكين النسخ المتماثل المنطقي](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-enabled-replication.webp)
 
 لنتحقق من الإعدادات التالية في مثيل Neon Postgres لديك:
 
@@ -89,7 +87,7 @@ SHOW max_replication_slots; -- should be 10
 إذا كانت لديك خطة Neon Enterprise، فيمكنك إدراج [ClickPipes IPs](/ar/integrations/clickpipes/networking/static-ips) في قائمة السماح لتمكين النسخ المتماثل من ClickPipes إلى مثيل Neon Postgres الخاص بك.
 للقيام بذلك، انقر على علامة التبويب **Settings** ثم انتقل إلى قسم **IP Allow**.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp" alt="شاشة السماح لعناوين IP" border />
+![شاشة السماح لعناوين IP](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-ip-allow.webp)
 
 <div id="copy-connection-details">
   ## انسخ تفاصيل الاتصال
@@ -99,7 +97,7 @@ SHOW max_replication_slots; -- should be 10
 توجّه إلى **Dashboard**، وفي مربع النص الذي يعرض سلسلة الاتصال،
 غيّر طريقة العرض إلى **Parameters Only**. سنحتاج إلى هذه المعلمات في الخطوة التالية.
 
-<Image size="lg" img="/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp" alt="تفاصيل الاتصال" border />
+![تفاصيل الاتصال](/images/integrations/data-ingestion/clickpipes/postgres/source/setup/neon-postgres/neon-conn-details.webp)
 
 <div id="whats-next">
   ## ما الخطوة التالية؟

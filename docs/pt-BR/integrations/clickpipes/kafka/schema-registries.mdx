@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O ClickPipes oferece suporte à integração com um registro de esquema para decodificar valores de registros codificados em Avro e em Protobuf e [chaves estruturadas do Kafka](/pt-BR/integrations/clickpipes/kafka/reference#structured-message-keys).
 
 Para valores de registros em Protobuf, você também pode [enviar um esquema diretamente](/pt-BR/integrations/clickpipes/kafka/create-kafka-clickpipe#7-select-your-topic) sem configurar um registro de esquema.
@@ -73,7 +71,7 @@ No momento, a configuração do AWS Glue Schema Registry está disponível apena
 
 No assistente de criação de ClickPipe, habilite o **Registro de esquemas** na etapa de conexão do Kafka e defina o **Tipo de registro** como **AWS Glue**:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png" alt="Painel de registro de esquemas com AWS Glue selecionado" size="lg" border />
+![Painel de registro de esquemas com AWS Glue selecionado](/images/integrations/data-ingestion/clickpipes/cp_glue_schema_registry.png)
 
 | Campo                | Obrigatório | Descrição                                                                                                                                                                         | Exemplo                                                    |
 | -------------------- | ----------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------- |
@@ -123,7 +121,7 @@ Use esta opção quando o broker não autenticar com IAM (SASL/SCRAM, SASL/PLAIN
   <Step title="Obter o ARN da função IAM do serviço ClickHouse" id="obtain-clickhouse-service-iam-role-arn">
     Abra o serviço, selecione a aba **Settings**, role até a seção **Network security information** e copie o valor de **Service role ID (IAM)**, um ARN no formato `arn:aws:iam::123456789012:role/CH-S3-example-service-Role`. Esse valor é referido abaixo como `{ClickHouse_IAM_ARN}`. Cada serviço ClickHouse implantado na AWS tem sua própria função; portanto, esse valor é diferente para cada serviço.
 
-    <Image img="/images/cloud/security/secures3_arn.webp" alt="ID da função de serviço (IAM)" size="lg" border />
+    ![ID da função de serviço (IAM)](/images/cloud/security/secures3_arn.webp)
   </Step>
 
   <Step title="Criar a função IAM do registro" id="create-registry-iam-role">

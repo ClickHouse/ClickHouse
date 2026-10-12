@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'opentelemetry', 'التتبعات', 'observability', 'القياس عن بُعد']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تُستقبل جميع البيانات في ClickStack عبر مثيل **OpenTelemetry (OTel) collector**، الذي يعمل كنقطة الدخول الأساسية للسجلات والمقاييس والتتبعات وبيانات الجلسات. نوصي باستخدام [توزيعة ClickStack الرسمية](#installing-otel-collector) من الـ collector لهذا المثيل.
 
 <Tip>
@@ -127,7 +125,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     بالإضافة إلى ذلك، يلزم إرسال ترويسة تفويض تتضمن مفتاح API للإدخال. يمكنك العثور على المفتاح في تطبيق HyperDX ضمن `Team Settings → API Keys`.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="مفاتيح الإدخال" size="lg" />
+    ![مفاتيح الإدخال](/images/use-cases/observability/ingestion-keys.webp)
 
     بالنسبة إلى SDKs الخاصة باللغات، يمكن بعد ذلك ضبط هذا إما بواسطة الدالة `init` أو عبر متغير البيئة `OTEL_EXPORTER_OTLP_HEADERS`، على سبيل المثال:
 

@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Updates and deletes replicated from Postgres to ClickHouse result in duplicated rows in ClickHouse due to its data storage structure and the replication process. This page covers why this happens and the strategies to use in ClickHouse to handle duplicates.
 
 ## How does data get replicated? {#how-does-data-get-replicated}
@@ -56,7 +54,7 @@ ORDER BY id;
 
 The illustration below walks through a basic example of synchronization of a table `users` between PostgreSQL and ClickHouse using ClickPipes.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="ClickPipes initial load" size="lg"/>
+![ClickPipes initial load](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
 
 **Step 1** shows the initial snapshot of the 2 rows in PostgreSQL and ClickPipes performing the initial load of those 2 rows to ClickHouse. As you can observe, both rows are copied as-is to ClickHouse.
 

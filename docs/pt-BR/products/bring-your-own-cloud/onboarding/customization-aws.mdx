@@ -7,8 +7,6 @@ description: 'Implante o ClickHouse BYOC na sua VPC existente na AWS'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <div id="customer-managed-vpc-aws">
   ## VPC gerenciada pelo cliente (BYO-VPC) para AWS
 </div>
@@ -22,15 +20,15 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
     3. Certifique-se de que cada sub-rede tenha um intervalo CIDR mínimo de `/25` (por exemplo, 10.0.0.0/25). Um `/25` comporta aproximadamente 10 nós de servidor do ClickHouse por zona de disponibilidade; `/24` é recomendado para a maioria das implantações, e sub-redes maiores para implantações que você espera expandir. Os endereços IP dos pods são alocados da própria sub-rede, portanto, cada réplica consome endereços da sub-rede.
     4. Adicione as tags `kubernetes.io/role/internal-elb=1` e `clickhouse-byoc="true"` a cada sub-rede para permitir a configuração correta do balanceador de carga.
 
-    <Image img="/images/cloud/reference/byoc-subnet-1.webp" size="lg" alt="Sub-rede da VPC BYOC" />
+    ![Sub-rede da VPC BYOC](/images/cloud/reference/byoc-subnet-1.webp)
 
-    <Image img="/images/cloud/reference/byoc-subnet-2.webp" size="lg" alt="Tags da sub-rede da VPC BYOC" />
+    ![Tags da sub-rede da VPC BYOC](/images/cloud/reference/byoc-subnet-2.webp)
   </Step>
 
   <Step title="Configure o endpoint de gateway do S3" id="configure-s3-endpoint">
     Se sua VPC ainda não tiver um endpoint de gateway do S3 configurado, será necessário criar um para habilitar a comunicação segura e privada entre sua VPC e o Amazon S3. Esse endpoint permite que seus serviços do ClickHouse acessem o S3 sem passar pela internet pública. Consulte a captura de tela abaixo para ver um exemplo de configuração.
 
-    <Image img="/images/cloud/reference/byoc-s3-endpoint.webp" size="lg" alt="Endpoint S3 do BYOC" />
+    ![Endpoint S3 do BYOC](/images/cloud/reference/byoc-s3-endpoint.webp)
   </Step>
 
   <Step title="Garanta a conectividade de rede" id="ensure-network-connectivity">
@@ -95,7 +93,7 @@ Se você prefere usar uma VPC existente para implantar o ClickHouse BYOC, em vez
     4. Opcionalmente, insira os **IDs das sub-redes públicas** se sua configuração exigir balanceadores de carga voltados para a internet.
     5. Clique em **Configurar infraestrutura** para iniciar o provisionamento.
 
-    <Image img="/images/cloud/reference/byoc-aws-existing-vpc-ui.webp" size="lg" alt="UI de configuração do BYOC no ClickHouse Cloud com Usar VPC existente selecionado" />
+    ![UI de configuração do BYOC no ClickHouse Cloud com Usar VPC existente selecionado](/images/cloud/reference/byoc-aws-existing-vpc-ui.webp)
 
     <Note>
       A configuração de uma nova região pode levar até 40 minutos.

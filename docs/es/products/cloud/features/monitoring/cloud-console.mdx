@@ -7,8 +7,6 @@ sidebarTitle: 'Consola de ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Los servicios de ClickHouse Cloud incluyen componentes de monitoreo listos para usar que proporcionan a los usuarios paneles y notificaciones. De forma predeterminada, todos los usuarios de la consola de ClickHouse Cloud pueden acceder a estos paneles.
 
 <div id="dashboards">
@@ -68,7 +66,7 @@ Los gráficos muestran el ingreso y la salida de datos de ClickHouse Cloud. Más
 
 Este panel es una versión modificada del [panel avanzado de observabilidad integrado](/es/products/cloud/features/monitoring/advanced-dashboard), donde cada serie representa métricas por réplica. Este panel puede ser útil para supervisar y diagnosticar problemas específicos de ClickHouse.
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="Panel avanzado en ClickHouse Cloud" border />
+![Panel avanzado en ClickHouse Cloud](/images/cloud/manage/monitoring/advanced_dashboard.webp)
 
 <Note>
   ClickHouse Cloud recopila y almacena, a partir de tablas del sistema, las métricas que se muestran en este panel para que puedan consultarse incluso cuando un servicio está inactivo. Acceder a estas métricas no emite ninguna consulta al servicio subyacente y no reactivará servicios inactivos.
@@ -115,7 +113,7 @@ La función **Query Insights** hace que el registro de consultas integrado de Cl
 
 Después de seleccionar un servicio, el elemento de navegación **Monitoring** en la barra lateral izquierda se despliega para mostrar un subelemento **Query insights**:
 
-<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="Descripción general de la UI de Query Insights" border />
+![Descripción general de la UI de Query Insights](/images/cloud/sqlconsole/insights_overview.webp)
 
 <div id="top-level-metrics">
   ### Métricas de nivel superior
@@ -123,7 +121,7 @@ Después de seleccionar un servicio, el elemento de navegación **Monitoring** e
 
 Los recuadros de estadísticas de la parte superior representan métricas básicas de las consultas para el periodo de tiempo seleccionado. Debajo, los gráficos de series temporales muestran el volumen de consultas, la latencia y la tasa de errores, desglosados por tipo de consulta (select, insert, otras). El gráfico de latencia puede ajustarse para mostrar las latencias p50, p90 y p99:
 
-<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="gráfico de latencia de Query Insights" border />
+![gráfico de latencia de Query Insights](/images/cloud/sqlconsole/insights_latency.webp)
 
 <div id="recent-queries">
   ### Consultas recientes
@@ -131,7 +129,7 @@ Los recuadros de estadísticas de la parte superior representan métricas básic
 
 Una tabla muestra las entradas del log de consultas agrupadas por el hash de la consulta normalizada y el usuario dentro de la ventana de tiempo seleccionada. Las consultas recientes se pueden filtrar y ordenar por cualquier campo disponible, y la tabla puede configurarse para mostrar u ocultar campos adicionales, como tablas y las latencias p90 y p99:
 
-<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="Tabla de consultas recientes de Query Insights" border />
+![Tabla de consultas recientes de Query Insights](/images/cloud/sqlconsole/insights_recent.webp)
 
 <div id="query-drill-down">
   ### Desglose de consultas
@@ -139,11 +137,11 @@ Una tabla muestra las entradas del log de consultas agrupadas por el hash de la 
 
 Al seleccionar una consulta en la tabla **Recent queries**, se abrirá un flyout con métricas e información específicas de la consulta seleccionada:
 
-<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="Desglose de consultas en la UI de Query Insights" border />
+![Desglose de consultas en la UI de Query Insights](/images/cloud/sqlconsole/insights_drilldown.webp)
 
 Todas las métricas de la pestaña **Query info** son métricas agregadas, pero también podemos ver las métricas de ejecuciones individuales al seleccionar la pestaña **Query history**:
 
-<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="Información de consultas en la UI de Query Insights" border />
+![Información de consultas en la UI de Query Insights](/images/cloud/sqlconsole/insights_query_info.webp)
 
 Desde este panel, se pueden expandir los elementos `Settings` y `Profile Events` de cada ejecución de consulta para mostrar información adicional.
 

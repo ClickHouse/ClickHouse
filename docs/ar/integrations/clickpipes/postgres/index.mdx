@@ -12,7 +12,6 @@ integration:
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ar/clickpipes/_changing_tls_settings.mdx';
 import PostgresClickPipeCli from '/snippets/ar/clickpipes/_postgres_clickpipe_cli.mdx';
 import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.mdx';
@@ -65,15 +64,15 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
     1. في وحدة تحكم ClickHouse Cloud، انتقل إلى خدمة ClickHouse Cloud الخاصة بك.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="خدمة ClickPipes" size="lg" border />
+    ![خدمة ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
 
     2. حدّد زر `Data Sources` في القائمة الجانبية اليسرى وانقر على &quot;Set up a ClickPipe&quot;
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="اختيار عمليات الاستيراد" size="lg" border />
+    ![اختيار عمليات الاستيراد](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
 
     3. حدّد بطاقة `Postgres CDC`
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp" alt="اختر Postgres" size="lg" border />
+       ![اختر Postgres](/images/integrations/data-ingestion/clickpipes/postgres/postgres-tile.webp)
 
 ### إضافة اتصال قاعدة بيانات Postgres المصدر
 
@@ -84,7 +83,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
       لمزيد من المعلومات، راجع أدلة إعداد Postgres المصدر المرتبطة في [أعلى هذه الصفحة](#prerequisites).
     </Info>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg" alt="أدخل تفاصيل الاتصال" size="lg" border />
+    ![أدخل تفاصيل الاتصال](/images/integrations/data-ingestion/clickpipes/postgres/postgres-connection-details.jpg)
 
 #### (اختياري) إعداد AWS Private Link
 
@@ -104,7 +103,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
     2. أدخل تفاصيل اتصال SSH.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH tunneling" size="lg" border />
+       ![SSH tunneling](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
 
     3. لاستخدام المصادقة المعتمدة على المفاتيح، انقر على &quot;Revoke and generate key pair&quot; لإنشاء زوج مفاتيح جديد، ثم انسخ المفتاح العام الذي تم إنشاؤه إلى خادم SSH لديك في الملف `~/.ssh/authorized_keys`.
 
@@ -120,7 +119,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
     5. تأكد من اختيار فتحة النسخ المتماثل التي أنشأتها في خطوة المتطلبات المسبقة من القائمة المنسدلة.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg" alt="اختيار فتحة النسخ المتماثل" size="lg" border />
+       ![اختيار فتحة النسخ المتماثل](/images/integrations/data-ingestion/clickpipes/postgres/select-replication-slot.jpg)
 
 #### الإعدادات المتقدمة
 
@@ -136,7 +135,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
     6. هنا يمكنك تحديد قاعدة البيانات الهدف الخاصة بـ ClickPipe لديك. يمكنك إما اختيار قاعدة بيانات موجودة أو إنشاء قاعدة بيانات جديدة.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg" alt="اختيار قاعدة البيانات الهدف" size="lg" border />
+       ![اختيار قاعدة البيانات الهدف](/images/integrations/data-ingestion/clickpipes/postgres/select-destination-db.jpg)
 
     7. يمكنك تحديد الجداول التي ترغب في نسخها المتماثل من قاعدة بيانات Postgres المصدر. وأثناء تحديد الجداول، يمكنك أيضًا إعادة تسمية الجداول في قاعدة بيانات ClickHouse الوجهة، إضافةً إلى استبعاد أعمدة محددة.
 
@@ -150,7 +149,7 @@ import SettingPartitionBy from '/snippets/ar/clickpipes/_target_ch_partition_by.
 
     9. حدّد دور &quot;Full access&quot; من قائمة الأذونات المنسدلة ثم انقر على &quot;Complete Setup&quot;.
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="مراجعة الصلاحيات" size="lg" border />
+       ![مراجعة الصلاحيات](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
 
 ## ما الخطوة التالية؟
 

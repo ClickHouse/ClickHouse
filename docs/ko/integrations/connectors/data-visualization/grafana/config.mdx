@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -26,7 +24,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupp
 
 예시 구성 화면:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_common.webp" alt="보안 네이티브 구성 예시" border />
+![보안 네이티브 구성 예시](/images/integrations/data-visualization/grafana/config_common.webp)
 
 공통 설정 예시 YAML:
 
@@ -60,7 +58,7 @@ secureJsonData:
 
 HTTP protocol로 연결을 선택하면 추가 설정이 표시됩니다.
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/config_http.webp" alt="추가 HTTP 구성 옵션" border />
+![추가 HTTP 구성 옵션](/images/integrations/data-visualization/grafana/config_http.webp)
 
 <div id="http-path">
   #### HTTP 경로
@@ -108,7 +106,7 @@ secureJsonData:
 
 이 추가 설정은 선택 사항입니다.
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_additional.webp" alt="추가 설정 예시" border />
+![추가 설정 예시](/images/integrations/data-visualization/grafana/config_additional.webp)
 
 예시 YAML:
 
@@ -143,7 +141,7 @@ OpenTelemetry를 사용하는 경우 &quot;**Use OTel**&quot; 스위치를 활�
 
 로그 구성 화면 예시:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_logs.webp" alt="로그 구성" border />
+![로그 구성](/images/integrations/data-visualization/grafana/config_logs.webp)
 
 로그 구성 YAML 예시:
 
@@ -181,7 +179,7 @@ OpenTelemetry가 필수는 아니지만, 트레이스에 OpenTelemetry 스키마
 
 트레이스 구성 화면 예시:
 
-<Image size="sm" img="/images/integrations/data-visualization/grafana/config_traces.webp" alt="트레이스 구성" border />
+![트레이스 구성](/images/integrations/data-visualization/grafana/config_traces.webp)
 
 트레이스 구성 YAML 예시:
 
@@ -284,11 +282,11 @@ INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
 
 이제 이 테이블을 Grafana에서 사용하도록 구성할 수 있습니다. 이름은 자유롭게 지정할 수 있으며, 별도의 데이터베이스에 정의해도 됩니다:
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="예시 별칭 테이블 구성" border />
+![예시 별칭 테이블 구성](/images/integrations/data-visualization/grafana/alias_table_config_example.webp)
 
 이제 Grafana는 `DESC example_table`의 결과 대신 별칭 테이블의 결과를 확인합니다:
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="예시 별칭 테이블 선택" border />
+![예시 별칭 테이블 선택](/images/integrations/data-visualization/grafana/alias_table_select_example.webp)
 
 두 가지 alias 방식 모두 복잡한 타입 변환이나 JSON 필드 추출에 사용할 수 있습니다.
 

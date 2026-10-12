@@ -6,8 +6,6 @@ title: 'セルフサービスによる前払いクレジット管理'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 確約契約で前払いクレジットを購入した場合、そのクレジットを ClickHouse 組織間でどのように割り当てるかを管理できます。
 残高の確認や組織間でのクレジットの移動には、**Prepaid credits** ページを使用します。
 
@@ -15,7 +13,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Prepaid credits** を選択します。
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-navigation.png" alt="Prepaid credits under Account in the Settings sidebar" size="sm" />
+![Prepaid credits under Account in the Settings sidebar](/images/cloud/reference/billing/prepaid-credits-navigation.png)
 
 前払いクレジットの残高を表示するには、確約契約のクレジットが割り当てられた組織で、次のいずれかのロールを持っている必要があります。
 
@@ -63,7 +61,7 @@ ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Pr
 | **Spent**              | 組織のすべての前払い残高が消費済みですが、有効期限は切れていません。このステータスは **Active** よりも優先されます。    |
 | **No Prepaid Credits** | 組織に前払いクレジットがありません。                                                  |
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="Prepaid credit summary metrics and balances by organization" size="lg" />
+![Prepaid credit summary metrics and balances by organization](/images/cloud/reference/billing/prepaid-credits-balances.png)
 
 ## クレジットの移管 {#transfer-credits}
 
@@ -77,7 +75,7 @@ ClickHouse Cloud console で **Settings** を開き、**Account** 配下の **Pr
 4. 移管する金額を入力します。
 5. 移管後の残高を確認し、**Transfer credits** をクリックします。
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="移管元のグラント、移管先の組織、移管金額、移管後の残高を表示したクレジット移管パネル" size="md" />
+![移管元のグラント、移管先の組織、移管金額、移管後の残高を表示したクレジット移管パネル](/images/cloud/reference/billing/prepaid-credits-transfer.png)
 
 ### 移管のルール {#transfer-rules}
 

@@ -7,8 +7,6 @@ keywords: ['Iceberg', 'RBAC', 'Amazon S3', 'المصادقة']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يدعم ClickHouse Cloud وصولًا آمنًا قائمًا على الأدوار إلى بيانات Iceberg المخزنة في التخزين الكائني (عادةً S3)، وذلك باستخدام علاقة ثقة في AWS IAM مستندة إلى ARN. ويتبع هذا الدليل النمط نفسه للإعداد الآمن كما في [الوصول الآمن إلى بيانات S3](/ar/products/cloud/guides/data-sources/accessing-s3-data-securely)، مع إضافة إعدادات خاصة بـ Iceberg في ClickHouse.
 
 <div id="overview">
@@ -36,7 +34,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title={<>5. انسخ قيمة <strong>معرّف دور خدمة ClickHouse ‏(IAM)</strong>.</>} id="service-role-iam-value">
     هذا الـ ARN مطلوب لسياسة الثقة في دور AWS IAM الذي سيصل إلى بيانات Iceberg الخاصة بك.
 
-    <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="الحصول على ARN لدور IAM لخدمة ClickHouse" border />
+    ![الحصول على ARN لدور IAM لخدمة ClickHouse](/images/cloud/security/secures3_arn.webp)
   </Step>
 </Steps>
 

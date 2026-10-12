@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Este documento explica cómo funciona la instantánea/carga inicial en paralelo en Postgres ClickPipe y describe los parámetros de la instantánea que pueden usarse para controlarla.
 
 <div id="overview-pg-snapshot">
@@ -35,7 +33,7 @@ El Postgres ClickPipe usa la columna CTID para particionar lógicamente las tabl
 
 Veamos los siguientes parámetros:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp" alt="Parámetros de la instantánea" size="md" />
+![Parámetros de la instantánea](/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp)
 
 <div id="numrows-pg-snapshot">
   #### Número de filas de la instantánea por partición

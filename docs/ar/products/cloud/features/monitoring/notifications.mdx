@@ -7,8 +7,6 @@ sidebarTitle: 'الإشعارات'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يرسل ClickHouse Cloud إشعارات بشأن الأحداث المهمة المرتبطة بخدمتك أو بمؤسستك. وهناك بعض المفاهيم التي ينبغي وضعها في الاعتبار لفهم كيفية إرسال الإشعارات وإعدادها:
 
 1. **فئة الإشعارات**: تشير إلى مجموعات من الإشعارات، مثل إشعارات الفوترة والإشعارات المتعلقة بالخدمة وما إلى ذلك. وضمن كل فئة، توجد عدة إشعارات يمكن إعداد طريقة تسليمها.
@@ -21,9 +19,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 يمكن تلقي الإشعارات عبر قنوات متعددة. يدعم ClickHouse Cloud تلقي الإشعارات عبر البريد الإلكتروني، وواجهة ClickHouse Cloud، وSlack. يمكنك النقر على أيقونة الجرس في القائمة العلوية اليسرى لعرض الإشعارات الحالية، مما يفتح لوحة منبثقة جانبية. وسيؤدي النقر على الزر **View All** في أسفل اللوحة المنبثقة الجانبية إلى نقلك إلى صفحة تعرض سجل النشاط لجميع الإشعارات.
 
-<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="اللوحة المنبثقة الجانبية لإشعارات ClickHouse Cloud" border />
+![اللوحة المنبثقة الجانبية لإشعارات ClickHouse Cloud](/images/cloud/manage/notifications-1.webp)
 
-<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="سجل نشاط إشعارات ClickHouse Cloud" border />
+![سجل نشاط إشعارات ClickHouse Cloud](/images/cloud/manage/notifications-2.webp)
 
 <div id="customizing-notifications">
   ## تخصيص الإشعارات
@@ -35,9 +33,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 لتهيئة التسليم لإشعار معيّن، انقر على أيقونة القلم لتعديل قنوات تسليم الإشعار.
 
-<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="شاشة إعدادات إشعارات ClickHouse Cloud" border />
+![شاشة إعدادات إشعارات ClickHouse Cloud](/images/cloud/manage/notifications-3.webp)
 
-<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="إعدادات تسليم إشعارات ClickHouse Cloud" border />
+![إعدادات تسليم إشعارات ClickHouse Cloud](/images/cloud/manage/notifications-4.webp)
 
 <Note>
   بعض الإشعارات **الإلزامية**، مثل **فشل الدفع**، غير قابلة للتهيئة.

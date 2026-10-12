@@ -6,8 +6,6 @@ keywords: ['スキーマ', 'スキーマ設計', 'クエリ最適化']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 効果的なスキーマ設計を理解することは、ClickHouse のパフォーマンスを最適化するうえで重要です。スキーマ設計ではしばしばトレードオフを伴う選択が求められ、最適なアプローチは、実行するクエリに加えて、データの更新頻度、レイテンシ要件、データ量といった要因によって異なります。このガイドでは、ClickHouse のパフォーマンスを最適化するための、スキーマ設計のベストプラクティスとデータモデリング手法の概要を説明します。
 
 <div id="stack-overflow-dataset">
@@ -18,7 +16,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 > 示されている主キーとリレーションシップは制約によって強制されるものではありません (Parquet はテーブルフォーマットではなくファイルフォーマットであるため) 。あくまで、データ同士がどのように関連しているか、およびそれぞれがどの一意キーを持つかを示しているだけです。
 
-<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Stack Overflow スキーマ" />
+![Stack Overflow スキーマ](/images/data-modeling/stackoverflow-schema.webp)
 
 <br />
 
@@ -237,7 +235,7 @@ OLTP データベースに慣れたユーザーは、ClickHouse でもそれに�
 
 ClickHouse がよく利用される規模では、メモリとディスクの効率が極めて重要です。データは ClickHouse テーブルにパーツと呼ばれる単位で書き込まれ、バックグラウンドでそれらのパーツをマージするルールが適用されます。ClickHouse では、各パーツがそれぞれ独自のプライマリインデックスを持ちます。パーツがマージされると、マージ後のパーツのプライマリインデックスも統合されます。パーツのプライマリインデックスには、行の各グループごとに 1 つの索引エントリがあります。この手法はスパースインデックスと呼ばれます。
 
-<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="ClickHouse におけるスパースインデックス" />
+![ClickHouse におけるスパースインデックス](/images/data-modeling/schema-design-indices.webp)
 
 ClickHouse で選択したキーは、索引だけでなく、データがディスクに書き込まれる順序も決定します。そのため、圧縮率に大きな影響を与え、ひいてはクエリパフォーマンスにも影響します。大半のカラムの値が連続した順序で書き込まれるような順序キーを選べば、選択した圧縮アルゴリズム (および コーデック) によってデータをより効果的に圧縮できます。
 

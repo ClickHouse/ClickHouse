@@ -8,7 +8,6 @@ doc_type: 'guide'
 keywords: ['Datadog', 'Datadog receiver', 'Datadog agent', 'OpenTelemetry collector', '迁移', '可观测性', 'ClickStack']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 <ExperimentalBadge />
@@ -23,7 +22,7 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 * **平滑迁移到 ClickStack**，保留当前采集层，并逐步采用 OpenTelemetry 插桩。
 * **长期并行运行两套技术栈**，让每个平台各尽其长。
 
-<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="迁移 Datadog agents" size="lg" background />
+![迁移 Datadog agents](/images/use-cases/observability/migrating_datadog_agents.png)
 
 <div id="why-run-clickstack-alongside-datadog">
   ## 为什么将 ClickStack 与 Datadog 搭配使用
@@ -47,17 +46,17 @@ import { ExperimentalBadge } from "/snippets/zh/components/ExperimentalBadge/Exp
 
 在典型的 OpenTelemetry 部署中，遥测数据在到达后端之前，会先发送到 OpenTelemetry collector。collector 会从以 agent 模式运行的 collectors，以及为应用埋点的 [OpenTelemetry SDKs](/zh/clickstack/ingesting-data/sdks/index) 接收数据，应用所需的过滤或转换，将事件按批次处理，然后导出到目标端。
 
-<Image img="/images/use-cases/observability/simple_otel_pipeline.png" alt="简单的 OTel 管道" size="lg" background />
+![简单的 OTel 管道](/images/use-cases/observability/simple_otel_pipeline.png)
 
 [Datadog receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/datadogreceiver) 为这一架构增加了另一种输入。它提供了一个端点，能够理解 Datadog agents 和 SDKs 使用的协议，并将传入的 Datadog 载荷转换为 OpenTelemetry 数据模型。之后，这些数据会像其他遥测数据一样，通过常规的 collector 管道继续处理。
 
 现有的 Datadog agents 只需重新配置为将日志和链路追踪发送到运行在 ClickStack collector 上的 receiver。应用可以继续使用现有的 Datadog SDKs，而已经部署在整个基础设施中的 agents 也无需改动。
 
-<Image img="/images/use-cases/observability/datadog_to_otel.png" alt="Datadog 到 OpenTelemetry" size="lg" background />
+![Datadog 到 OpenTelemetry](/images/use-cases/observability/datadog_to_otel.png)
 
 由于 collector 管道可以使用多个 exporter，同一份遥测数据就可以同时发送到 Datadog 和 ClickStack。这也正是并行评估和长期并行运行成为可能的原因：你可以基于完全相同的数据对比两个平台，然后再独立决定是否迁移。
 
-<Image img="/images/use-cases/observability/migrating_datadog_agents.png" alt="迁移 Datadog agents" size="lg" background />
+![迁移 Datadog agents](/images/use-cases/observability/migrating_datadog_agents.png)
 
 <div id="what-the-receiver-handles">
   ## receiver 处理的内容
@@ -201,7 +200,7 @@ Datadog receiver 包含在 ClickStack 发行的 OpenTelemetry Collector 中，�
       <Step title="复制你的摄取 API key" id="copy-ingestion-key-oss">
         在 ClickStack 界面 (HyperDX) 中，选择左下角的用户菜单，进入 **Team Settings &gt; API Keys**，然后复制 **Ingestion API Key**。
 
-        <Image img="/images/use-cases/observability/hyperdx_ingestion_key.png" alt="ClickStack 摄取 key" size="lg" background />
+        ![ClickStack 摄取 key](/images/use-cases/observability/hyperdx_ingestion_key.png)
       </Step>
 
       <Step title="配置 Datadog agent" id="configure-datadog-agent-oss">
@@ -275,7 +274,7 @@ Datadog receiver 包含在 ClickStack 发行的 OpenTelemetry Collector 中，�
 
     按照 [README 中的说明](https://github.com/ClickHouse/hn-news-analyzer/tree/datadog-instrumentation) 运行该应用。
 
-    <Image img="/images/clickstack/getting-started/hackernews_main.webp" alt="在本地运行的 HackerNews Analyzer 应用" />
+    ![在本地运行的 HackerNews Analyzer 应用](/images/clickstack/getting-started/hackernews_main.webp)
   </Step>
 
   <Step title="启动已启用 receiver 的 ClickStack" id="launch-clickstack-example">
@@ -314,11 +313,11 @@ Datadog receiver 包含在 ClickStack 发行的 OpenTelemetry Collector 中，�
   <Step title="在 ClickStack 中探索你的遥测数据" id="explore-telemetry">
     打开 [http://localhost:8080](http://localhost:8080) 上的 HyperDX 界面，探索从 Datadog agent 采集到的链路追踪、日志和指标。
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_2.png" alt="ClickStack 中的 Datadog 链路追踪 2" size="lg" background />
+    ![ClickStack 中的 Datadog 链路追踪 2](/images/use-cases/observability/datadog_clickstack_demo_2.png)
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_1.png" alt="ClickStack 中的 Datadog 链路追踪 1" size="lg" background />
+    ![ClickStack 中的 Datadog 链路追踪 1](/images/use-cases/observability/datadog_clickstack_demo_1.png)
 
-    <Image img="/images/use-cases/observability/datadog_clickstack_demo_3.png" alt="ClickStack 中的 Datadog 链路追踪 3" size="lg" background />
+    ![ClickStack 中的 Datadog 链路追踪 3](/images/use-cases/observability/datadog_clickstack_demo_3.png)
   </Step>
 </Steps>
 

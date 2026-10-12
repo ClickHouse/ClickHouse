@@ -11,7 +11,6 @@ integration:
   - website: 'https://deepnote.com/launch?template=ClickHouse%20and%20Deepnote'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ru/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 
@@ -35,13 +34,13 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 
 1. В Deepnote откройте раздел &quot;Integrations&quot; и нажмите на плитку ClickHouse.
 
-<Image size="lg" img="/images/integrations/data-visualization/deepnote_01.webp" alt="Плитка интеграции ClickHouse" border />
+![Плитка интеграции ClickHouse](/images/integrations/data-visualization/deepnote_01.webp)
 
 2. Укажите сведения о подключении к вашему экземпляру ClickHouse:
 
 <ConnectionDetails />
 
-<Image size="md" img="/images/integrations/data-visualization/deepnote_02.webp" alt="Диалоговое окно с параметрами ClickHouse" border />
+![Диалоговое окно с параметрами ClickHouse](/images/integrations/data-visualization/deepnote_02.webp)
 
 ***ПРИМЕЧАНИЕ:*** Если подключение к ClickHouse защищено с помощью IP Access List, возможно, вам потребуется разрешить IP-адреса Deepnote. Подробнее см. в [документации Deepnote](https://deepnote.com/docs/securing-connections).
 
@@ -53,7 +52,7 @@ import ConnectionDetails from '/snippets/ru/_gather_your_details_http.mdx';
 
 1. Сначала подключитесь к интеграции ClickHouse в правой части ноутбука.
 
-   <Image size="lg" img="/images/integrations/data-visualization/deepnote_03.webp" alt="диалоговое окно с параметрами ClickHouse" border />
+   ![диалоговое окно с параметрами ClickHouse](/images/integrations/data-visualization/deepnote_03.webp)
 
 2. Теперь создайте новый блок запроса к ClickHouse и выполните запрос к базе данных. Результаты запроса будут сохранены в виде DataFrame и помещены в переменную, указанную в SQL-блоке.
 

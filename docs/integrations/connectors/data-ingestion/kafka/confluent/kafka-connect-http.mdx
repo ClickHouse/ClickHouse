@@ -9,8 +9,6 @@ keywords: ['Confluent HTTP Sink Connector', 'HTTP Sink ClickHouse', 'Kafka HTTP 
 ---
 
 import ConnectionDetails from '/snippets/_gather_your_details_http.mdx';
-import { Image } from "/snippets/components/Image.jsx";
-
 The HTTP Sink Connector is data type agnostic and thus doesn't need a Kafka schema as well as supporting ClickHouse specific data types such as Maps and Arrays. This additional flexibility comes at a slight increase in configuration complexity.
 
 Below we describe a simple installation, pulling messages from a single Kafka topic and inserting rows into a ClickHouse table.
@@ -60,7 +58,7 @@ ORDER BY tuple()
 </Step>
 <Step title="Configure HTTP Sink" id="4-configure-http-sink">
 Create a Kafka topic and an instance of HTTP Sink Connector:
-<Image img="/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp" size="sm" alt="Confluent Cloud interface showing how to create an HTTP Sink connector" border/>
+![Confluent Cloud interface showing how to create an HTTP Sink connector](/images/integrations/data-ingestion/kafka/confluent/create_http_sink.webp)
 
 <br />
 
@@ -76,7 +74,7 @@ Configure HTTP Sink Connector:
   This HTTP Url is error-prone. Ensure escaping is precise to avoid issues.
 </Note>
 
-<Image img="/images/integrations/data-ingestion/kafka/confluent/http_auth.webp" size="lg" alt="Confluent Cloud interface showing authentication settings for the HTTP Sink connector" border/>
+![Confluent Cloud interface showing authentication settings for the HTTP Sink connector](/images/integrations/data-ingestion/kafka/confluent/http_auth.webp)
 <br/>
 
 * Configuration
@@ -89,12 +87,12 @@ Configure HTTP Sink Connector:
     * `Retry on HTTP codes` - 400-500 but adapt as required e.g. this may change if you have an HTTP proxy in front of ClickHouse.
     * `Maximum Reties` - the default (10) is appropriate but feel to adjust for more robust retries.
 
-<Image img="/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp" size="sm" alt="Confluent Cloud interface showing advanced configuration options for the HTTP Sink connector" border/>
+![Confluent Cloud interface showing advanced configuration options for the HTTP Sink connector](/images/integrations/data-ingestion/kafka/confluent/http_advanced.webp)
 
 </Step>
 <Step title="Testing the connectivity" id="5-testing-the-connectivity">
 Create an message in a topic configured by your HTTP Sink
-<Image img="/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp" size="md" alt="Confluent Cloud interface showing how to create a test message in a Kafka topic" border/>
+![Confluent Cloud interface showing how to create a test message in a Kafka topic](/images/integrations/data-ingestion/kafka/confluent/create_message_in_topic.webp)
 
 <br/>
 

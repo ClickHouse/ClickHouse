@@ -7,7 +7,6 @@ description: 'Руководство по быстрому старту с Click
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.mdx";
 
 <Visibility for="agents">
@@ -29,13 +28,13 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
         * Если вы регистрируетесь с помощью электронной почты и пароля, не забудьте подтвердить адрес электронной почты в течение следующих 24 часов по ссылке из полученного письма
         * Войдите, используя только что созданные имя пользователя и пароль
 
-        <Image img="/images/_snippets/signup_page.webp" size="lg" alt="Выберите тариф" border />
+        ![Выберите тариф](/images/_snippets/signup_page.webp)
 
         <br />
 
         После входа в систему ClickHouse Cloud запустит мастер онбординга, который поможет создать новый сервис ClickHouse. Выберите регион для развертывания сервиса и задайте ему имя:
 
-        <Image img="/images/_snippets/createservice1.webp" size="lg" alt="Новый сервис ClickHouse" border />
+        ![Новый сервис ClickHouse](/images/_snippets/createservice1.webp)
 
         <br />
 
@@ -43,7 +42,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
 
         При необходимости настройте ресурсы сервиса, указав минимальный и максимальный размеры, между которыми будут масштабироваться реплики. Когда всё будет готово, выберите `Create service`.
 
-        <Image img="/images/_snippets/scaling_limits.webp" size="lg" alt="Ограничения масштабирования" border />
+        ![Ограничения масштабирования](/images/_snippets/scaling_limits.webp)
 
         <br />
 
@@ -62,7 +61,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
 
         Для быстрого начала работы ClickHouse предоставляет веб-консоль SQL, в которую вы будете перенаправлены после завершения онбординга.
 
-        <Image img="/images/_snippets/createservice8.webp" size="lg" alt="Консоль SQL" border />
+        ![Консоль SQL](/images/_snippets/createservice8.webp)
 
         Создайте вкладку запроса и выполните простой запрос, чтобы убедиться, что подключение работает:
 
@@ -72,7 +71,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
 
         В списке должны отображаться 4 базы данных, а также все базы данных, добавленные вами.
 
-        <Image img="/images/_snippets/show_databases.webp" size="lg" alt="SQL Console" border />
+        ![SQL Console](/images/_snippets/show_databases.webp)
 
         <br />
 
@@ -82,7 +81,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
 
         Нажмите кнопку подключения в навигационном меню. Откроется модальное окно с учетными данными для вашего сервиса и инструкциями по подключению через выбранный интерфейс или клиентскую библиотеку.
 
-        <Image img="/images/_snippets/service_connect.webp" size="lg" alt="Service Connect" border />
+        ![Service Connect](/images/_snippets/service_connect.webp)
 
         <br />
 
@@ -92,7 +91,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
       <Step title="Добавить данные" id="3-add-data">
         ClickHouse раскрывается в полной мере, когда в нём есть данные! Добавить данные можно несколькими способами, и большинство из них доступны на странице Data Sources, которую можно открыть из меню навигации.
 
-        <Image img="/images/_snippets/data_sources.webp" size="lg" alt="Источники данных" border />
+        ![Источники данных](/images/_snippets/data_sources.webp)
 
         <br />
 
@@ -108,7 +107,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
 
         [ClickPipes](/ru/integrations/clickpipes/home) — это управляемая интеграционная платформа, которая позволяет загружать данные из самых разных источников буквально в несколько кликов. Разработанная для самых требовательных нагрузок, надежная и масштабируемая архитектура ClickPipes обеспечивает стабильную производительность и надежность. ClickPipes можно использовать как для долгосрочной потоковой передачи данных, так и для разовой загрузки данных.
 
-        <Image img="/images/_snippets/select_data_source.webp" size="lg" alt="Выберите источник данных" border />
+        ![Выберите источник данных](/images/_snippets/select_data_source.webp)
 
         <br />
 
@@ -212,7 +211,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
 
         Также вы можете подключиться к своему сервису ClickHouse Cloud с помощью инструмента командной строки [**clickhouse client**](/ru/concepts/features/interfaces/client). Чтобы получить эти данные, нажмите `Connect` в меню слева. В открывшемся диалоговом окне выберите `Native` в выпадающем списке:
 
-        <Image img="/images/_snippets/client_details.webp" size="lg" alt="сведения о подключении клиента ClickHouse" border />
+        ![сведения о подключении клиента ClickHouse](/images/_snippets/client_details.webp)
 
         <br />
 
@@ -318,7 +317,7 @@ import CloudQuickstartCLI from "/snippets/ru/quickstarts/_cloud_quickstart_cli.m
 
         <br />
 
-        <Image img="/images/_snippets/new_rows_from_csv.webp" size="lg" alt="Новые строки из CSV-файла" />
+        ![Новые строки из CSV-файла](/images/_snippets/new_rows_from_csv.webp)
 
         <br />
       </Step>

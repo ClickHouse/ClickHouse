@@ -7,8 +7,6 @@ description: 'Deploy ClickHouse on your own cloud infrastructure'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ## Connections between ClickHouse Control Plane and Your BYOC VPC {#connection-between-clickhouse-and-byoc}
 
 The ClickHouse Cloud control plane maintains several types of connections to operate and support your BYOC deployment:
@@ -62,7 +60,7 @@ Tailscale is used **only for management and troubleshooting operations**. It is 
 
 ### How Tailscale Works in BYOC {#how-tailscale-works}
 
-<Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
+![BYOC Tailscale](/images/cloud/reference/byoc-tailscale-1.webp)
 
 For each service or endpoint that needs to be accessed via Tailscale, ClickHouse BYOC deploys:
 

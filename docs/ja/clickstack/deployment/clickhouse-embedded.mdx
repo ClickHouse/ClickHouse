@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack の組み込み', 'ClickHouse の組み込み', 'ClickStack ClickHouse Server', '組み込みオブザーバビリティ']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickStack は ClickHouse server バイナリに直接組み込まれています。つまり、追加のコンポーネントをデプロイしなくても、ClickHouse インスタンスから ClickStack UI (HyperDX) にアクセスできます。このデプロイは [play-clickstack.clickhouse.com](https://play-clickstack.clickhouse.com) の公開デモに似ていますが、お使いの ClickHouse インスタンスとデータを対象に動作します。
 
 <div id="suitable-for">
@@ -59,7 +57,7 @@ ClickStack は ClickHouse server バイナリに直接組み込まれていま�
 
         ユーザー名 `default` とパスワード `password` を入力して、ローカルインスタンスに接続します。
 
-        <Image img="/images/clickstack/deployment/embedded/authenticate.webp" alt="認証" size="lg" />
+        ![認証](/images/clickstack/deployment/embedded/authenticate.webp)
       </Step>
 
       <Step title="ログソースを作成する" id="create-a-source-docker">
@@ -67,7 +65,7 @@ ClickStack は ClickHouse server バイナリに直接組み込まれていま�
 
         新規インストールの場合は、ログソースの作成を求められます。**Table** フィールドに適切なテーブル名 (例: `otel_logs`) を入力し、**Save New Source** をクリックします。
 
-        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="ログソースを作成" size="lg" />
+        ![ログソースを作成](/images/clickstack/deployment/embedded/inferred-source.webp)
 
         まだデータがない場合は、利用可能なオプションについて [Ingesting data](/ja/clickstack/ingesting-data/overview) を参照してください。
       </Step>
@@ -140,7 +138,7 @@ ClickStack は ClickHouse server バイナリに直接組み込まれていま�
 
         まだデータがない場合は、利用可能なオプションについて [Ingesting data](/ja/clickstack/ingesting-data/overview) を参照してください。
 
-        <Image img="/images/clickstack/deployment/embedded/inferred-source.webp" alt="ログソースを作成" size="lg" />
+        ![ログソースを作成](/images/clickstack/deployment/embedded/inferred-source.webp)
       </Step>
     </Steps>
   </Tab>

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['MySQL', '日志', 'OTEL', 'ClickStack', '数据库监控', '慢查询']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -203,9 +201,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     3. 使用 `source:mysql-error` 或 `source:mysql-slow` 作为过滤条件，查看 MySQL 专属日志
     4. 你应该会看到结构化的日志记录，其中包含 `level`、`error_code`、`message` (错误日志) 以及 `query_time`、`rows_examined`、`query` (慢查询日志) 等字段
 
-    <Image img="/images/clickstack/mysql/search-view.webp" alt="搜索视图" />
+    ![搜索视图](/images/clickstack/mysql/search-view.webp)
 
-    <Image img="/images/clickstack/mysql/log-view.webp" alt="日志视图" />
+    ![日志视图](/images/clickstack/mysql/log-view.webp)
   </Step>
 </Steps>
 
@@ -328,9 +326,9 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
       如果没有立即看到全部 40 条日志，请等待约一分钟，让 collector 完成处理。如果等待后日志仍未出现，请运行 `docker restart clickstack-demo`，再过一分钟后重新检查。这是 OpenTelemetry filelog receiver 在使用 `start_at: beginning` 批量加载已有文件时的已知问题。生产部署使用 `start_at: end` 时，会在日志写入时进行实时处理，因此不会遇到这个问题。
     </Note>
 
-    <Image img="/images/clickstack/mysql/search-view.webp" alt="搜索视图" />
+    ![搜索视图](/images/clickstack/mysql/search-view.webp)
 
-    <Image img="/images/clickstack/mysql/log-view.webp" alt="日志视图" />
+    ![日志视图](/images/clickstack/mysql/log-view.webp)
 
     <Info>
       **时区显示**
@@ -355,17 +353,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     1. 打开 HyperDX 并进入“仪表盘”部分
     2. 点击右上角省略号菜单中的 **Import Dashboard**
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
+    ![导入仪表盘按钮](/images/clickstack/import-dashboard.webp)
 
     3. 上传 `mysql-logs-dashboard.json` 文件，然后点击 **Finish Import**
 
-    <Image img="/images/clickstack/mysql/finish-import.webp" alt="完成导入" />
+    ![完成导入](/images/clickstack/mysql/finish-import.webp)
   </Step>
 
   <Step title="查看仪表盘" id="created-dashboard">
     仪表盘创建后，所有可视化都将预先配置完成。
 
-    <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="示例仪表盘" />
+    ![示例仪表盘](/images/clickstack/mysql/example-dashboard.webp)
 
     <Note>
       对于演示数据集，请将时间范围设置为 **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (请根据你的本地时区调整) 。默认情况下，导入的仪表盘不会指定时间范围。

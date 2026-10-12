@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="are-transaction-rollbacks-replicated">
   ### 事务回滚会同步到 ClickHouse 吗？
 </div>
@@ -433,7 +431,7 @@ PeerDB 目前有一个限制：如果 source table 标识符中包含点号—�
 
 可以。对于复制模式为 CDC 或 Snapshot + CDC 的 Postgres ClickPipe，你可以在创建 ClickPipe 时，在 `Advanced Settings` 部分打开下方开关，让 ClickPipes 创建启用了故障转移的 replication slot。请注意，使用此功能要求 Postgres 版本为 17 或更高。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp" border size="md" />
+![](/images/integrations/data-ingestion/clickpipes/postgres/failover_slot.webp)
 
 如果来源端已完成相应配置，那么在故障转移到 Postgres 只读副本后，该 slot 仍会被保留，从而确保数据复制持续进行。更多信息请参见[这里](https://www.postgresql.org/docs/current/logical-replication-failover.html)。
 

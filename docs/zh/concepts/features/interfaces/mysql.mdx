@@ -7,8 +7,6 @@ title: 'MySQL 接口'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickHouse 支持 MySQL wire 协议。这使得某些没有原生 ClickHouse 连接器的客户端可以改用 MySQL 协议，并且已在以下 BI 工具中完成验证：
 
 * [Looker Studio](/zh/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
@@ -37,23 +35,23 @@ ClickHouse 支持 MySQL wire 协议。这使得某些没有原生 ClickHouse 连
 
 <br />
 
-<Image img="/images/interfaces/mysql0.webp" alt="凭据界面 - Prompt" size="md" />
+![凭据界面 - Prompt](/images/interfaces/mysql0.webp)
 
 2. 将 `Connect with` 下拉菜单切换为 `MySQL`。
 
 <br />
 
-<Image img="/images/interfaces/mysql1.webp" alt="凭据界面 - 已选择 MySQL" size="md" />
+![凭据界面 - 已选择 MySQL](/images/interfaces/mysql1.webp)
 
 3. 切换开关，为该特定服务启用 MySQL 接口。这样会为该服务开放端口 `3306`，并显示 MySQL 连接界面，其中包含你专属的 MySQL 用户名。密码与该服务默认用户的密码相同。
 
 <br />
 
-<Image img="/images/interfaces/mysql2.webp" alt="凭据界面 - 已启用 MySQL" size="md" />
+![凭据界面 - 已启用 MySQL](/images/interfaces/mysql2.webp)
 
 复制显示的 MySQL 连接字符串。
 
-<Image img="/images/interfaces/mysql3.webp" alt="凭据界面 - 连接字符串" size="md" />
+![凭据界面 - 连接字符串](/images/interfaces/mysql3.webp)
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
   ## 在 ClickHouse Cloud 中创建多个 MySQL 用户

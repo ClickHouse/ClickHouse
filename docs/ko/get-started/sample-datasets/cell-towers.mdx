@@ -6,8 +6,6 @@ keywords: ['example dataset', 'cell towers', 'OpenCelliD', 'geospatial', 'pointI
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 튜토리얼에서는 기지국(cell tower) 데이터셋을 사용하여 ClickHouse로 Geo 데이터를 다루는 방법을 살펴봅니다.
 먼저 데이터셋을 ClickHouse Cloud에 로드하고 스키마(schema)를 확인한 다음, 수천만 개의 행을 대상으로 집계 쿼리(aggregation query)를 실행합니다.
 이어서 딕셔너리(Dictionary)로 데이터를 보강하고, `pointInPolygon` 함수로 독일 내 기지국 수를 집계한 뒤, ClickHouse Agents를 사용하여 결과를 지도에 시각화합니다.
@@ -234,7 +232,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     &quot;Visualize cell towers within Germany on a map using the `default.cell_towers` and `default.germany` tables&quot;를 입력하고 전송하세요.
     한 실행에서 에이전트는 다음 단계를 수행했습니다.
 
-    <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp" size="lg" alt="독일의 기지국 밀도 그리드를 만들기 위해 수행한 단계를 보여주는 ClickHouse Agent 채팅" />
+    ![독일의 기지국 밀도 그리드를 만들기 위해 수행한 단계를 보여주는 ClickHouse Agent 채팅](/images/get-started/sample-datasets/clickhouse-agents-cell-towers.webp)
 
     * `mcc_country_dict`에서 독일의 모바일 국가 코드를 조회하여 MCC `262`를 찾았습니다.
     * `pointInPolygon`을 사용하여 `germany`의 폴리곤 내부에 있으면서 `mcc = 262`인 기지국 수를 집계했으며, 그 결과 2,588,635개가 나왔습니다. 추가된 `mcc` 필터로 인해 폴리곤 내부에 있더라도 다른 국가에 등록된 기지국은 제외되므로, 앞서 구한 개수보다 약간 적습니다.
@@ -243,7 +241,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     생성된 파일을 열어 결과를 확인하십시오. 밝게 표시된 밀집 지역은 베를린, 함부르크, 뮌헨, 프랑크푸르트 등 주요 대도시권입니다.
 
-    <Image img="/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp" size="md" alt="로그 색상 척도를 적용한 0.1도 그리드 기반 독일 기지국 밀도 히트맵" />
+    ![로그 색상 척도를 적용한 0.1도 그리드 기반 독일 기지국 밀도 히트맵](/images/get-started/sample-datasets/clickhouse-agents-cell-towers-visualization.webp)
   </Step>
 </Steps>
 

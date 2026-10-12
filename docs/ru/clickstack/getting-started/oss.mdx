@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack Open Source', 'начало работы', 'развертывание Docker', 'OpenTelemetry', 'локальное развертывание']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Запустите ClickStack с открытым исходным кодом локально, отправьте тестовое событие через его OpenTelemetry Collector и убедитесь, что оно доступно в интерфейсе ClickStack.
 
 При использовании ClickStack с открытым исходным кодом вы самостоятельно запускаете и управляете серверной частью ClickHouse, интерфейсом ClickStack и конвейером ингестии. Образ «Всё в одном» объединяет эти компоненты с MongoDB в одном контейнере Docker для локальной оценки и тестирования.
@@ -127,7 +125,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     В результатах должно отображаться тестовое событие с именем сервиса `clickstack-docs-test`.
 
-    <Image img="/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp" size="lg" alt="Представление журналов ClickStack с тестовым событием ингестии ClickStack с открытым исходным кодом" border />
+    ![Представление журналов ClickStack с тестовым событием ингестии ClickStack с открытым исходным кодом](/images/clickstack/getting-started/clickstack_ingestion_test_oss.webp)
   </Step>
 </Steps>
 

@@ -7,8 +7,6 @@ sidebarTitle: 'Data warehousing'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 export const ExclusiveGroup = ({ name, children }) => {
   useEffect(() => {
     document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
@@ -44,7 +42,7 @@ Los datos fluyen desde plataformas de streaming y almacenes de datos existentes,
 
 <Columns cols={2}>
   <div>
-    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="Arquitectura de almacén de datos de ClickHouse" />
+    ![Arquitectura de almacén de datos de ClickHouse](/images/cloud/onboard/discover/use_cases/data-warehousing.webp)
   </div>
 
   <ExclusiveGroup name="dw-arch">

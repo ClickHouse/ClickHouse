@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', '배포', '설정', '구성', '관측성']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import JSONSupport from '/snippets/ko/_json_support.mdx';
 
 [올인원 이미지](/ko/clickstack/deployment/docker-compose)와 마찬가지로, 이 포괄적인 Docker 이미지는 모든 ClickStack 구성 요소를 포함합니다:
@@ -49,11 +47,11 @@ import JSONSupport from '/snippets/ko/_json_support.mdx';
 
     ClickHouse Cloud와 같은 외부 ClickHouse 클러스터에 연결하십시오.
 
-    <Image img="/images/use-cases/observability/hyperdx-2.webp" alt="로그인 생성" size="md" />
+    ![로그인 생성](/images/use-cases/observability/hyperdx-2.webp)
 
     소스를 생성하고 기본값은 모두 그대로 유지한 다음, `Table` 필드에 `otel_logs`를 입력하십시오. 나머지 설정은 모두 자동으로 감지되므로 `Save New Source`를 클릭하면 됩니다.
 
-    <Image img="/images/use-cases/observability/hyperdx-logs.webp" alt="로그 소스 생성" size="md" />
+    ![로그 소스 생성](/images/use-cases/observability/hyperdx-logs.webp)
   </Step>
 </Steps>
 

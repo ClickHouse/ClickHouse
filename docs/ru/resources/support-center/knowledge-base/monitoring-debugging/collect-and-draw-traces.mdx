@@ -6,8 +6,6 @@ keywords: ['трассировка запроса', 'OTel', 'Grafana']
 description: "В этом руководстве показано, как собирать и визуализировать трассировки запросов в самоуправляемом ClickHouse с помощью встроенных средств или Grafana. Это особенно полезно при работе со сложными запросами, когда нужно понять внутренний механизм выполнения глубже, чем это позволяет EXPLAIN."
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 **Предварительные требования**:
 
 * Знакомство с [файлами конфигурации ClickHouse](/ru/concepts/features/configuration/server-config/configuration-files)
@@ -145,7 +143,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Используйте размещённый сервис визуализации трейсов по адресу [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/).
     Загрузите файл `trace.json` из предыдущего шага, чтобы визуализировать трейс.
 
-    <Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="Пример визуализатора трейсов ClickHouse" />
+    ![Пример визуализатора трейсов ClickHouse](/images/knowledgebase/trace-visualizer-example.png)
   </Step>
 
   <Step title="Визуализация трассировок в Grafana" id="using-grafana">
@@ -174,10 +172,10 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Убедитесь, что для `Query type` выбрано значение `Traces`:
 
-    <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="Визуализация трейсов ClickHouse в Grafana" />
+    ![Визуализация трейсов ClickHouse в Grafana](/images/knowledgebase/trace-visualization-grafana.png)
 
     Нажмите &quot;Run Query&quot; и просмотрите диаграмму трассировки:
 
-    <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="Визуализация трейсов ClickHouse в Grafana" />
+    ![Визуализация трейсов ClickHouse в Grafana](/images/knowledgebase/trace-visualization-diagram.png)
   </Step>
 </Steps>

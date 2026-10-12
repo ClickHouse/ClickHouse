@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', '可观测性', '告警', '搜索告警', '通知', '阈值', 'Slack', '电子邮件', 'PagerDuty', '错误监控', '性能监控', '用户事件']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickStack 内置告警支持，使团队能够针对日志、指标和链路追踪中的问题进行实时检测和响应。
 
 可以直接在 HyperDX 界面中创建告警，并与 Slack、PagerDuty 等常见通知系统集成。
@@ -37,7 +35,7 @@ ClickStack 支持两种互补的告警创建方式：**搜索告警**和**仪表
   <Step title="打开告警创建对话框" id="open-dialog">
     首先输入一个[搜索](/zh/clickstack/features/search)，然后点击`搜索`页面右上角的 `告警` 按钮。
 
-    <Image img="/images/use-cases/observability/alerts_search_view.webp" alt="告警搜索视图" size="lg" />
+    ![告警搜索视图](/images/use-cases/observability/alerts_search_view.webp)
   </Step>
 
   <Step title="创建告警" id="create-the-alert">
@@ -50,13 +48,13 @@ ClickStack 支持两种互补的告警创建方式：**搜索告警**和**仪表
 
     保存前，ClickStack 会将阈值条件可视化，方便你确认其行为符合预期。
 
-    <Image img="/images/use-cases/observability/search_alert.webp" alt="搜索告警" size="lg" />
+    ![搜索告警](/images/use-cases/observability/search_alert.webp)
   </Step>
 </Steps>
 
 请注意，一个搜索可以添加多个告警。如果重复上述流程，你会在编辑告警对话框顶部看到当前告警以选项卡形式显示，并且每个告警都会分配一个编号。
 
-<Image img="/images/use-cases/observability/multiple_search_alerts.webp" alt="多个告警" size="md" />
+![多个告警](/images/use-cases/observability/multiple_search_alerts.webp)
 
 <div id="dashboard-alerts">
   ### 2. 仪表板图表告警
@@ -80,19 +78,19 @@ ClickStack 支持两种互补的告警创建方式：**搜索告警**和**仪表
   <Step title="打开图表编辑对话框" id="open-chart-dialog">
     打开图表的配置菜单，然后选择告警按钮。此时会显示图表编辑对话框。
 
-    <Image img="/images/use-cases/observability/edit_chart_alert.webp" alt="编辑图表告警" size="lg" />
+    ![编辑图表告警](/images/use-cases/observability/edit_chart_alert.webp)
   </Step>
 
   <Step title="添加告警" id="add-chart-alert">
     选择 **Add Alert**。
 
-    <Image img="/images/use-cases/observability/add_chart_alert.webp" alt="向图表添加告警" size="lg" />
+    ![向图表添加告警](/images/use-cases/observability/add_chart_alert.webp)
   </Step>
 
   <Step title="定义告警条件" id="define-alert-conditions">
     定义条件 (`>=`、`>`、`<=`、`<`、`=`、`!=`、`<= x >=`、`> or <`) 、阈值、持续时间和 webhook。这里的持续时间也会决定告警的触发频率。
 
-    <Image img="/images/use-cases/observability/create_chart_alert.webp" alt="为图表创建告警" size="lg" />
+    ![为图表创建告警](/images/use-cases/observability/create_chart_alert.webp)
 
     你可以直接在此视图中添加新的 webhook。详见[添加 webhook](#add-webhook)。
   </Step>
@@ -108,11 +106,11 @@ ClickStack 支持两种互补的告警创建方式：**搜索告警**和**仪表
 
 例如，在下方图表的告警创建过程中，在指定 webhook 之前，用户可以选择 `Add New Webhook`。
 
-<Image img="/images/use-cases/observability/add_new_webhook.webp" alt="添加新 webhook" size="lg" />
+![添加新 webhook](/images/use-cases/observability/add_new_webhook.webp)
 
 这会打开 webhook 创建对话框，您可以在其中创建新的 webhook：
 
-<Image img="/images/use-cases/observability/add_webhook_dialog.webp" alt="创建 webhook" size="md" />
+![创建 webhook](/images/use-cases/observability/add_webhook_dialog.webp)
 
 webhook 名称为必填项，描述为可选项。其他需要填写的设置取决于服务类型。
 
@@ -160,11 +158,11 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 
 可以通过 HyperDX 左侧的告警面板集中管理告警。
 
-<Image img="/images/use-cases/observability/manage_alerts.webp" alt="管理告警" size="lg" />
+![管理告警](/images/use-cases/observability/manage_alerts.webp)
 
 在此视图中，你可以看到所有已创建且当前在 ClickStack 中运行的告警。
 
-<Image img="/images/use-cases/observability/alerts_view.webp" alt="告警视图" size="lg" />
+![告警视图](/images/use-cases/observability/alerts_view.webp)
 
 此视图还会显示告警的评估历史。告警会按照固定的时间间隔重复评估 (该间隔由创建告警时设置的周期/时长决定) 。在每次评估期间，HyperDX 都会查询你的数据，以检查是否满足告警条件：
 
@@ -184,7 +182,7 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 要删除告警，请打开关联搜索或图表的编辑对话框，然后选择 **Remove Alert**。
 在下面的示例中，`Remove Alert` 按钮会删除该图表上的告警。
 
-<Image img="/images/use-cases/observability/remove_chart_alert.webp" alt="删除图表告警" size="lg" />
+![删除图表告警](/images/use-cases/observability/remove_chart_alert.webp)
 
 <div id="sql-based-alerts">
   ## 基于 SQL 的图表告警
@@ -218,7 +216,7 @@ ClickStack 告警可开箱即用地集成以下服务类型：
 
     选择 **折线图**、**堆叠条形图** 或 **数值** 作为显示类型。
 
-    <Image img="/images/use-cases/observability/open_sql_chart_mode.webp" alt="创建 SQL 图表" size="lg" />
+    ![创建 SQL 图表](/images/use-cases/observability/open_sql_chart_mode.webp)
   </Step>
 
   <Step title="添加告警" id="add-sql-alert">
@@ -229,7 +227,7 @@ ClickStack 告警可开箱即用地集成以下服务类型：
     * **间隔**: 告警的评估频率 (1m, 5m, 15m, 30m, 1h, 6h, 12h, 或 1d)。这也定义了每次评估的时间窗口。
     * **Webhook**: 告警触发时使用的通知通道。请参阅[添加 webhook](#add-webhook)。
 
-    <Image img="/images/use-cases/observability/add_raw_sql_alert.webp" alt="编辑图表告警" size="lg" />
+    ![编辑图表告警](/images/use-cases/observability/add_raw_sql_alert.webp)
 
     <Warning>
       **告警时间范围**

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'MCP', 'Model Context Protocol', 'AI', '可观测性', 'HyperDX', 'Claude', 'Cursor', 'ClickHouse Cloud', 'OAuth']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickStack 内置了 [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) 服务器，让 AI 助手能够与你的可观测性数据交互。连接后，AI 助手可以通过自然语言查询日志、链路追踪和指标；管理仪表盘和告警；浏览数据源；以及使用已保存的搜索。
 
 这样一来，你就可以使用 [Claude Code](https://docs.anthropic.com/en/docs/claude-code)、[Cursor](https://www.cursor.com/) 或任何兼容 MCP 的客户端，在不离开开发环境的情况下排查故障、构建仪表盘并管理你的可观测性配置。
@@ -155,7 +153,7 @@ https://mcp.clickhouse.cloud/clickstack
 * 一个正在运行的 ClickStack 实例 (有关设置选项，请参见 [部署](/zh/clickstack/deployment/overview))
 * 一个 **Personal API Access Key** — 您可以在 HyperDX 的 **Team Settings → API Keys → Personal API Access Key** 中找到
 
-<Image img="/images/clickstack/api-key-personal.webp" alt="Team Settings 中的 Personal API Access Key" size="md" border />
+![Team Settings 中的 Personal API Access Key](/images/clickstack/api-key-personal.webp)
 
 <Note>
   Personal API Access Key 与 **摄取 API key** 不同；后者也可在 Team Settings 中找到，用于验证发送到 OpenTelemetry Collector 的遥测数据。

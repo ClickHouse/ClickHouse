@@ -8,8 +8,6 @@ title: 'ClickHouse Cloud 的高级仪表板'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 在生产环境中监控数据库系统，对于了解部署的健康状况至关重要，
 这样您才能预防或解决服务中断。
 
@@ -30,7 +28,7 @@ Cloud 中使用高级仪表板。
 * 左侧面板
   * `Monitoring` → `Advanced dashboard`
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="高级仪表板" />
+![高级仪表板](/images/cloud/manage/monitoring/advanced_dashboard.webp)
 
 <div id="accessing-the-native-advanced-dashboard">
   ## 访问原生高级仪表板
@@ -45,12 +43,12 @@ Cloud 中使用高级仪表板。
 这会在新标签页中打开原生高级仪表板。您需要先完成
 身份验证才能访问该仪表板。
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="高级仪表板" />
+![高级仪表板](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
 
 每个可视化都关联了一个用于填充数据的 SQL 查询。您可以
 点击铅笔图标编辑该查询。
 
-<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="高级仪表板" />
+![高级仪表板](/images/cloud/manage/monitoring/edit_visualization.webp)
 
 <div id="out-of-box-visualizations">
   ## 开箱即用的可视化
@@ -133,7 +131,7 @@ ClickHouse Cloud 使用对象存储 (S3 类型) 来存储数据。监控该
 用于识别插入未充分优化问题的关键指标是 **Inserted Rows/sec** 和
 **Max Parts for Partition**
 
-<Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="非批量插入" />
+![非批量插入](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
 
 上面的示例显示，在 13h 到 14h 之间，**Inserted Rows/sec** 和 **Max Parts for Partition**
 都出现了两次峰值。这表明我们正在以合理的速度摄取数据。
@@ -153,7 +151,7 @@ ClickHouse Cloud 使用对象存储 (S3 类型) 来存储数据。监控该
 
 下面是一个示例：CPU 使用率出现峰值，而每秒执行的查询数量并未明显变化。
 
-<Image img="/images/cloud/manage/monitoring/resource_intensive_query.webp" size="lg" alt="资源密集型查询" />
+![资源密集型查询](/images/cloud/manage/monitoring/resource_intensive_query.webp)
 
 <div id="bad-primary-key-design">
   ### 糟糕的主键设计
@@ -169,7 +167,7 @@ ClickHouse Cloud 使用对象存储 (S3 类型) 来存储数据。监控该
 既可能表明整体查询吞吐量有所上升，也可能意味着某些查询
 为执行而选中了大量行。
 
-<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="资源密集型查询" />
+![资源密集型查询](/images/cloud/manage/monitoring/selected_rows_sec.webp)
 
 你可以使用时间戳作为过滤器，在表 `system.query_log` 中
 找出峰值出现时执行的查询。

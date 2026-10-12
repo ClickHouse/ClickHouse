@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'opentelemetry', 'トレース', 'オブザーバビリティ', 'テレメトリー']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 すべてのデータは **OpenTelemetry (OTel) collector** インスタンス経由で ClickStack に取り込まれます。このインスタンスは、ログ、メトリクス、トレース、セッションデータの主要なエントリポイントとして機能します。このインスタンスには、collector の公式 [ClickStack distribution](#installing-otel-collector) を使用することを推奨します。
 
 <Tip>
@@ -127,7 +125,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
     さらに、APIインジェストキーを含む Authorization ヘッダーが必要です。このキーは、HyperDX アプリの `Team Settings → API Keys` で確認できます。
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="インジェストキー" size="lg" />
+    ![インジェストキー](/images/use-cases/observability/ingestion-keys.webp)
 
     言語 SDK では、これは `init` 関数で設定することも、`OTEL_EXPORTER_OTLP_HEADERS` 環境変数で設定することもできます。例:
 

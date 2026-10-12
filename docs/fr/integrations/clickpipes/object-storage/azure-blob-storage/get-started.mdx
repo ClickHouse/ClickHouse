@@ -6,8 +6,6 @@ title: 'Créer votre premier ClickPipe Azure Blob Storage'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 **Prérequis**
 
 Pour suivre ce guide, vous aurez besoin de :
@@ -22,15 +20,15 @@ Pour suivre ce guide, vous aurez besoin de :
     Depuis la page d’accueil de votre service, cliquez sur **Data sources** dans le menu de gauche.
     Développez le menu déroulant **ClickPipes**, puis cliquez sur **Create ClickPipe**
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp" alt="Accéder aux sources de données" size="md" />
+    ![Accéder aux sources de données](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/01-navigate-to-datasources.webp)
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp" alt="Créer un ClickPipe" size="md" />
+    ![Créer un ClickPipe](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/02-create-clickpipe.webp)
   </Step>
 
   <Step title="Sélectionner la source de données" id="select-data-source">
     Sélectionnez **Azure Blob Storage** comme type de données
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp" alt="Sélectionner Azure Blob Storage" size="md" />
+    ![Sélectionner Azure Blob Storage](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/03-select-blob-storage.webp)
   </Step>
 
   <Step title="Configurer votre connexion ClickPipe" id="setup-connection">
@@ -44,7 +42,7 @@ Pour suivre ce guide, vous aurez besoin de :
 
     Enfin, cliquez sur **Incoming data**
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp" alt="Détails de la configuration" size="md" />
+    ![Détails de la configuration](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/04-configuration-details.webp)
   </Step>
 
   <Step title="Sélectionner le format des données" id="select-data-format">
@@ -53,7 +51,7 @@ Pour suivre ce guide, vous aurez besoin de :
     3. Renseignez toute configuration supplémentaire propre au format, comme le délimiteur utilisé pour les formats séparés par des virgules
     4. Cliquez sur **Parse information**
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp" alt="Choisir le format des données" size="md" />
+    ![Choisir le format des données](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/05-choose-data-format.webp)
   </Step>
 
   <Step title="Configurer la table, le schéma et les paramètres" id="configure-table-schema">
@@ -65,7 +63,7 @@ Pour suivre ce guide, vous aurez besoin de :
     4. Définissez les correspondances entre le fichier source et la table de destination pour le nom de colonne, le type de colonne, la valeur par défaut et la possibilité d’une valeur nulle
     5. Enfin, indiquez les paramètres avancés, comme le type de moteur à utiliser, l’expression de partitionnement et la clé primaire
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp" alt="Analyser les informations" size="md" />
+    ![Analyser les informations](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/06-parse-information.webp)
 
     Une fois la configuration de la table, du schéma et des paramètres terminée, cliquez sur **Details and settings**
   </Step>
@@ -75,7 +73,7 @@ Pour suivre ce guide, vous aurez besoin de :
     Vous pouvez sélectionner un rôle pour cet utilisateur.
     Pour les vues matérialisées ou l’accès aux dictionnaires depuis la table de destination, choisissez &quot;Full access&quot;.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp" alt="Configurer les autorisations" size="md" />
+    ![Configurer les autorisations](/images/integrations/data-ingestion/clickpipes/object-storage/azure-blob-storage/07-permissions.webp)
   </Step>
 
   <Step title="Finaliser la configuration" id="complete-setup">

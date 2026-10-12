@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 > В этом руководстве объясняется, как настроить [Open WebUI](https://github.com/open-webui/open-webui) с MCP-сервером ClickHouse
 > и подключить его к демонстрационным наборам данных ClickHouse.
 
@@ -47,47 +45,47 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Список созданных конечных точек можно увидеть, перейдя по адресу [http://localhost:8000/docs](http://localhost:8000/docs)
 
-    <Image img="/images/use-cases/AI_ML/MCP/0_endpoints.webp" alt="Конечные точки OpenAPI" size="md" />
+    ![Конечные точки OpenAPI](/images/use-cases/AI_ML/MCP/0_endpoints.webp)
 
     Чтобы использовать эти конечные точки в Open WebUI, перейдите в настройки:
 
-    <Image img="/images/use-cases/AI_ML/MCP/1_settings.webp" alt="Настройки Open WebUI" size="md" />
+    ![Настройки Open WebUI](/images/use-cases/AI_ML/MCP/1_settings.webp)
 
     Нажмите `Tools`:
 
-    <Image img="/images/use-cases/AI_ML/MCP/2_tools_page.webp" alt="Инструменты Open WebUI" size="md" />
+    ![Инструменты Open WebUI](/images/use-cases/AI_ML/MCP/2_tools_page.webp)
 
     Добавьте [http://localhost:8000](http://localhost:8000) как URL инструмента:
 
-    <Image img="/images/use-cases/AI_ML/MCP/3_add_tool.webp" alt="Инструмент Open WebUI" size="md" />
+    ![Инструмент Open WebUI](/images/use-cases/AI_ML/MCP/3_add_tool.webp)
 
     После этого рядом со значком инструмента на панели чата должна появиться цифра `1`:
 
-    <Image img="/images/use-cases/AI_ML/MCP/4_tools_available.webp" alt="Доступные инструменты Open WebUI" size="md" />
+    ![Доступные инструменты Open WebUI](/images/use-cases/AI_ML/MCP/4_tools_available.webp)
 
     Если нажать на значок инструмента, можно будет увидеть список доступных инструментов:
 
-    <Image img="/images/use-cases/AI_ML/MCP/5_list_of_tools.webp" alt="Список инструментов Open WebUI" size="md" />
+    ![Список инструментов Open WebUI](/images/use-cases/AI_ML/MCP/5_list_of_tools.webp)
   </Step>
 
   <Step title="Настройте OpenAI" id="configure-openai">
     По умолчанию Open WebUI работает с моделями Ollama, но также можно добавить конечные точки, совместимые с OpenAI.
     Они настраиваются через меню настроек, но на этот раз нужно открыть вкладку `Connections`:
 
-    <Image img="/images/use-cases/AI_ML/MCP/6_connections.webp" alt="Подключения Open WebUI" size="md" />
+    ![Подключения Open WebUI](/images/use-cases/AI_ML/MCP/6_connections.webp)
 
     Добавим конечную точку и ключ OpenAI:
 
-    <Image img="/images/use-cases/AI_ML/MCP/7_add_connection.webp" alt="Open WebUI — добавить OpenAI как подключение" size="md" />
+    ![Open WebUI — добавить OpenAI как подключение](/images/use-cases/AI_ML/MCP/7_add_connection.webp)
 
     После этого модели OpenAI будут доступны в верхнем меню:
 
-    <Image img="/images/use-cases/AI_ML/MCP/8_openai_models_more.webp" alt="Open WebUI — модели" size="md" />
+    ![Open WebUI — модели](/images/use-cases/AI_ML/MCP/8_openai_models_more.webp)
   </Step>
 
   <Step title="Общайтесь с MCP-сервером ClickHouse через Open WebUI" id="chat-to-clickhouse-mcp-server">
     После этого можно начать диалог, и Open WebUI при необходимости обратится к MCP-серверу:
 
-    <Image img="/images/use-cases/AI_ML/MCP/9_conversation.webp" alt="Open WebUI — чат с MCP-сервером ClickHouse" size="md" />
+    ![Open WebUI — чат с MCP-сервером ClickHouse](/images/use-cases/AI_ML/MCP/9_conversation.webp)
   </Step>
 </Steps>

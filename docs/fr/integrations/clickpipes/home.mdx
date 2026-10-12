@@ -10,7 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import ClickPipesConnectors from '/snippets/fr/_clickpipes_connectors.mdx';
 
 <div id="overview">
@@ -59,7 +58,7 @@ ClickHouse Cloud fournit des valeurs par défaut adaptées à la plupart des cas
 1. créez un rôle personnalisé `CREATE ROLE my_clickpipes_role SETTINGS ...`. Consultez la syntaxe de [CREATE ROLE](/fr/reference/statements/create/role) pour plus de détails.
 2. ajoutez le rôle personnalisé à l’utilisateur ClickPipes à l’étape `Details and Settings` lors de la création de ClickPipes.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp" alt="Attribuer un rôle personnalisé" size="lg" border />
+![Attribuer un rôle personnalisé](/images/integrations/data-ingestion/clickpipes/cp_custom_role.webp)
 
 <div id="clickpipes-advanced-settings">
   ## Ajuster les paramètres avancés de ClickPipes
@@ -84,7 +83,7 @@ ClickPipes propose des paramètres par défaut adaptés à la plupart des cas d�
 | `Parallel view processing`           | false             | Indique s’il faut activer l’envoi vers les vues attachées [de manière concurrente plutôt que séquentielle](/fr/reference/settings/session-settings/parallel#parallel_view_processing). |
 | `Use cluster function`               | true              | Indique s’il faut traiter les fichiers en parallèle sur plusieurs nœuds.                                                                                                            |
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp" alt="Paramètres avancés de ClickPipes" size="lg" border />
+![Paramètres avancés de ClickPipes](/images/integrations/data-ingestion/clickpipes/cp_advanced_settings.webp)
 
 <div id="clickpipes-advanced-settings-streaming">
   ### ClickPipes de streaming

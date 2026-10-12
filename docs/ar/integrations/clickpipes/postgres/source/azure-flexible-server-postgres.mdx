@@ -10,8 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يدعم ClickPipes ‏Postgres الإصدار 12 وما بعده.
 
 <div id="enable-logical-replication">
@@ -22,15 +20,15 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 1. انقر على قسم **Server parameters**
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp" alt="Server Parameters في Azure Flexible Server for Postgres" size="lg" border />
+![Server Parameters في Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/server_parameters.webp)
 
 2. عدّل قيمة `wal_level` إلى `logical`
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp" alt="تغيير wal_level إلى logical في Azure Flexible Server for Postgres" size="lg" border />
+![تغيير wal_level إلى logical في Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/wal_level.webp)
 
 3. سيتطلب هذا التغيير إعادة تشغيل الخادم، لذا أعد تشغيله عند مطالبتك بذلك.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp" alt="إعادة تشغيل الخادم بعد تغيير wal_level" size="lg" border />
+![إعادة تشغيل الخادم بعد تغيير wal_level](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/restart.webp)
 
 <div id="creating-clickpipes-user-and-granting-permissions">
   ## إنشاء مستخدمي ClickPipes ومنح الأذونات
@@ -87,7 +85,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 1. انتقل إلى علامة التبويب **Networking** وأضِف [ClickPipes IPs](/ar/integrations/clickpipes/networking/static-ips) إلى جدار الحماية
    الخاص بـ Azure Flexible Server Postgres أو Jump Server/Bastion إذا كنت تستخدم نفق SSH.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp" alt="أضِف ClickPipes IPs إلى جدار الحماية في Azure Flexible Server for Postgres" size="lg" />
+![أضِف ClickPipes IPs إلى جدار الحماية في Azure Flexible Server for Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/azure-flexible-server-postgres/firewall.webp)
 
 <div id="whats-next">
   ## ما الخطوة التالية؟

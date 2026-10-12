@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 以下の理由から、ログとトレースについては、常に独自のスキーマを作成することを推奨します。
 
 * **主キーの選択** - デフォルトのスキーマでは、特定のアクセスパターン向けに最適化された `ORDER BY` が使用されています。通常、実際のアクセスパターンがこれに一致するとは限りません。
@@ -256,7 +254,7 @@ Peak memory usage: 3.16 MiB.
 
 Materialized Views を使うと、計算コストを query time から insert time へ移せます。ClickHouse の materialized view は、データの block がテーブルに挿入されるたびに、その block に対してクエリを実行する単なるトリガーです。このクエリの結果は、2 つ目の「ターゲット」テーブルに挿入されます。
 
-<Image img="/images/use-cases/observability/observability-10.webp" alt="materialized view" size="md" />
+![materialized view](/images/use-cases/observability/observability-10.webp)
 
 <Info>
   **リアルタイム更新**
@@ -411,7 +409,7 @@ FROM otel_logs
 
 上記を以下に示します。
 
-<Image img="/images/use-cases/observability/observability-11.webp" alt="OTel MV" size="md" />
+![OTel MV](/images/use-cases/observability/observability-11.webp)
 
 ここで、[&quot;ClickHouse へのエクスポート&quot;](/ja/guides/use-cases/observability/build-your-own/integrating-opentelemetry#exporting-to-clickhouse) で使用した collector の設定を再起動すると、データが意図したフォーマットで `otel_logs_v2` に取り込まれるようになります。型付き JSON 抽出関数を使用している点にも注目してください。
 
@@ -645,7 +643,7 @@ LIMIT 5
 
 [Dictionaries](/ja/reference/statements/create/dictionary) は ClickHouse の[重要な機能](https://clickhouse.com/blog/faster-queries-dictionaries-clickhouse)の 1 つで、さまざまな内部および外部[SOURCES](/ja/reference/statements/create/dictionary/sources/overview#dictionary-sources) から取得したデータをインメモリの [キー・バリュー](https://en.wikipedia.org/wiki/Key%E2%80%93value_database) 形式で表現し、超低レイテンシのルックアップクエリ向けに最適化します。
 
-<Image img="/images/use-cases/observability/observability-12.webp" alt="オブザーバビリティと Dictionaries" size="md" />
+![オブザーバビリティと Dictionaries](/images/use-cases/observability/observability-12.webp)
 
 これはさまざまな場面で役立ちます。たとえば、インジェスト処理を遅くすることなく取り込みデータをその場で enrich したり、クエリ全体のパフォーマンスを向上させたりできます。特に JOIN で効果を発揮します。
 オブザーバビリティのユースケースでは JOIN が必要になることはまれですが、Dictionaries は エンリッチメント の用途で引き続き便利です。insert 時にもクエリ時にも利用できます。以下では、その両方の例を紹介します。
@@ -1473,7 +1471,7 @@ ClickHouse のプロジェクションを使用すると、1 つのテーブル�
   プロジェクションは materialized view と同様の機能を数多く提供しますが、使用は限定的にとどめるべきであり、多くの場合は後者の方が適しています。欠点と、どのような場合に適しているのかを理解しておく必要があります。たとえば、プロジェクションは集計の事前計算に使用できますが、この用途には Materialized views を使用することを推奨します。
 </Info>
 
-<Image img="/images/use-cases/observability/observability-13.webp" alt="Observability and projections" size="md" />
+![Observability and projections](/images/use-cases/observability/observability-13.webp)
 
 次のクエリを考えてみましょう。これは `otel_logs_v2` テーブルを 500 エラーコードでフィルタリングするものです。これはログにおける一般的なアクセスパターンであり、ユーザーはエラーコードでフィルタリングしたいことが多いと考えられます。
 

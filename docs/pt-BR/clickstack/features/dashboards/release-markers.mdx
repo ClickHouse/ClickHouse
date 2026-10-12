@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'dashboards', 'marcadores de lançamento', 'acompanhamento de implantações', 'service.version', 'anotações', 'observabilidade']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 A primeira pergunta diante de um pico de latência ou de erros geralmente é se algo foi implantado. Os gráficos de série temporal do dashboard podem respondê-la imediatamente: ative os marcadores de lançamento, e cada bloco exibirá uma linha vertical tracejada no momento em que uma versão de um serviço aparecer pela primeira vez na telemetria.
 
 As versões vêm da telemetria que você já envia, lida por meio de uma expressão na fonte do bloco. Não é preciso configurar uma integração de CI nem enviar nada no momento da implantação.
@@ -19,7 +17,7 @@ As versões vêm da telemetria que você já envia, lida por meio de uma express
 
 Os marcadores de lançamento ficam desativados por padrão. Abra o menu de opções de um dashboard e selecione **Mostrar marcadores de lançamento**.
 
-<Image img="/images/clickstack/dashboards/release-markers-menu.webp" alt="Menu de opções do dashboard com o item Mostrar marcadores de lançamento na seção Visualização, abaixo de Mostrar anotações de alertas" size="sm" />
+![Menu de opções do dashboard com o item Mostrar marcadores de lançamento na seção Visualização, abaixo de Mostrar anotações de alertas](/images/clickstack/dashboards/release-markers-menu.webp)
 
 O controle adiciona `releaseMarkers=true` à URL do dashboard; assim, um link compartilhado é aberto com os marcadores já ativados. Trata-se de um estado de visualização, e não da configuração do dashboard: ele não é salvo com o dashboard, e desativá-lo remove o parâmetro novamente.
 
@@ -33,7 +31,7 @@ Por padrão, o ClickStack lê `ResourceAttributes['service.version']`, o atribut
 
 Para ler a versão de outro local, defina **Service Version Expression** na fonte de log ou trace. Edite a fonte em **Team Settings → Sources**. Em uma fonte de log, o campo fica em **Configure Optional Fields**; em uma fonte de trace, ele aparece diretamente no formulário, abaixo de **Service Name Expression**.
 
-<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="Campo Service Version Expression nos campos opcionais de uma fonte de log, mostrando o placeholder padrão ResourceAttributes['service.version']" size="lg" />
+![Campo Service Version Expression nos campos opcionais de uma fonte de log, mostrando o placeholder padrão ResourceAttributes\['service.version'\]](/images/clickstack/dashboards/service-version-expression.webp)
 
 O valor é uma expressão SQL, não um nome de atributo, o que abrange dois casos comuns:
 
@@ -80,7 +78,7 @@ No terceiro caso, o serviço de um marcador não tem uma linha correspondente no
 
 Passe o cursor sobre o rótulo de um marcador para listar todos os lançamentos naquele ponto, cada um com o serviço que o disponibilizou, sua versão e o horário.
 
-<Image img="/images/clickstack/dashboards/release-marker-tooltip.webp" alt="Dica de ferramenta exibida ao passar o cursor sobre um marcador de lançamento, mostrando o serviço frontend, a versão 2.0.2 e o horário em que a versão apareceu pela primeira vez, em um gráfico de dois serviços" size="sm" />
+![Dica de ferramenta exibida ao passar o cursor sobre um marcador de lançamento, mostrando o serviço frontend, a versão 2.0.2 e o horário em que a versão apareceu pela primeira vez, em um gráfico de dois serviços](/images/clickstack/dashboards/release-marker-tooltip.webp)
 
 A cor associa um marcador à sua série, mas a legenda do gráfico mostra no máximo quatro entradas antes de recolher as demais em &quot;+N more&quot;, e nesse ponto não há nada na tela com que comparar a cor. A dica de ferramenta informa diretamente o nome do serviço, portanto funciona independentemente de quantas séries o bloco exibe.
 

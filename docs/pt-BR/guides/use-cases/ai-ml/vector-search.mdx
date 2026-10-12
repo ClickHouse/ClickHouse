@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <Info>
   **Neste guia, você vai:**
 
@@ -47,7 +45,7 @@ O ClickHouse oferece suporte à [busca vetorial por força bruta](/pt-BR/referen
 Vamos ver um exemplo simples para entender como a busca vetorial funciona.
 Considere embeddings (representações vetoriais) de palavras:
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_4.jpg" alt="Visualização de embeddings de frutas e animais" />
+![Visualização de embeddings de frutas e animais](/images/use-cases/AI_ML/QBit/diagram_4.jpg)
 
 Crie a tabela abaixo com alguns embeddings de exemplo:
 
@@ -118,7 +116,7 @@ Você tem duas opções:
   ### Hierarchical Navigable Small World (HNSW)
 </div>
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_1.jpg" alt="Estrutura em camadas do HNSW" />
+![Estrutura em camadas do HNSW](/images/use-cases/AI_ML/QBit/diagram_1.jpg)
 
 O HNSW é construído a partir de várias camadas de nós (vetores). Cada nó é atribuído aleatoriamente a uma ou mais camadas, e a probabilidade de aparecer em camadas mais altas diminui exponencialmente.
 
@@ -154,7 +152,7 @@ Graças a esse design em camadas, o HNSW alcança complexidade de busca logarít
 QBit é uma nova estrutura de dados capaz de armazenar valores `BFloat16`, `Float32` e `Float64` aproveitando a forma como números de ponto flutuante são representados — em bits.
 Em vez de armazenar cada número inteiro, o QBit divide os valores em **planos de bits**: o primeiro bit de cada valor, o segundo, o terceiro e assim por diante.
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_2.jpg" alt="Conceito de planos de bits do QBit" />
+![Conceito de planos de bits do QBit](/images/use-cases/AI_ML/QBit/diagram_2.jpg)
 
 Essa abordagem resolve a principal limitação da quantização tradicional. Não é necessário armazenar dados duplicados nem correr o risco de fazer com que os valores percam o significado. Ela também evita os gargalos de RAM do HNSW, já que o QBit trabalha diretamente com os dados armazenados, em vez de manter um índice em memória.
 
@@ -195,7 +193,7 @@ INSERT INTO fruit_animal VALUES
 ('horse',  [-0.61435682, 0.48542571, 1.21091247, -0.62530446, -1.33082533]);
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_5.jpg" alt="Transposição da estrutura de dados QBit" />
+![Transposição da estrutura de dados QBit](/images/use-cases/AI_ML/QBit/diagram_5.jpg)
 
 Quando os dados são inseridos em uma coluna QBit, eles são transpostos para que todos os primeiros bits fiquem alinhados, todos os segundos bits fiquem alinhados, e assim por diante. Chamamos esses conjuntos de **grupos**.
 
@@ -237,13 +235,13 @@ O terceiro parâmetro (16) especifica o nível de precisão, em bits.
   ### Otimização de I/O
 </div>
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_3.jpg" alt="Otimização de I/O do QBit" />
+![Otimização de I/O do QBit](/images/use-cases/AI_ML/QBit/diagram_3.jpg)
 
 Antes de podermos calcular distâncias, os dados necessários precisam ser lidos do disco e depois destranspostos (convertidos de volta da representação de bits agrupados para vetores completos). Como o QBit armazena valores transpostos em bits por nível de precisão, o ClickHouse pode ler apenas os planos de bits mais significativos necessários para reconstruir os números com a precisão desejada.
 
 Na consulta acima, usamos um nível de precisão de 16. Como um Float64 tem 64 bits, lemos apenas os primeiros 16 planos de bits, **ignorando 75% dos dados**.
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_6.jpg" alt="Reconstrução do QBit" />
+![Reconstrução do QBit](/images/use-cases/AI_ML/QBit/diagram_6.jpg)
 
 Após a leitura, reconstruímos apenas a parte mais significativa de cada número a partir dos planos de bits carregados, deixando zerados os bits que não foram lidos.
 
@@ -251,7 +249,7 @@ Após a leitura, reconstruímos apenas a parte mais significativa de cada númer
   ### Otimização do cálculo
 </div>
 
-<Image size="md" img="/images/use-cases/AI_ML/QBit/diagram_7.jpg" alt="Comparação de downcasting" />
+![Comparação de downcasting](/images/use-cases/AI_ML/QBit/diagram_7.jpg)
 
 Pode-se perguntar se converter para um tipo menor, como Float32 ou BFloat16, poderia eliminar essa parte não utilizada. Funciona, mas casts explícitos são custosos quando aplicados a cada linha.
 

@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Managed ClickStack', '시작하기', 'ClickHouse Cloud']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import ExampleOTelConfig from '/snippets/ko/clickstack/_config_example_otel.mdx';
 
 ClickHouse Cloud에 Managed ClickStack을 배포하고, 수집 파이프라인을 통해 테스트 이벤트를 전송한 다음, 해당 이벤트가 ClickStack UI에서 사용 가능한지 확인하십시오.
@@ -51,7 +49,7 @@ ClickHouse Cloud 빠른 시작 가이드의 [ClickHouse 서비스 만들기](/ko
     <Step title="수집 소스 및 collector 설정 선택" id="choose-an-ingestion-source">
       ClickHouse Cloud 서비스에서 ClickStack을 시작합니다. ClickStack **시작하기** 페이지에서 **수집 시작**을 선택합니다.
 
-      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="수집 시작" border />
+      ![수집 시작](/images/clickstack/getting-started/start_ingestion.webp)
 
       **수집 소스 선택** 페이지에서 [OpenTelemetry](https://opentelemetry.io/)를 선택합니다.
 
@@ -61,7 +59,7 @@ ClickHouse Cloud 빠른 시작 가이드의 [ClickHouse 서비스 만들기](/ko
         OpenTelemetry는 로그, 트레이스, 메트릭, 세션을 위한 사전 구성된 스키마를 제공합니다.
       </Info>
 
-      <Image img="/images/clickstack/getting-started/select_source_toggle.webp" size="lg" alt="수집 소스로 OpenTelemetry 선택" border />
+      ![수집 소스로 OpenTelemetry 선택](/images/clickstack/getting-started/select_source_toggle.webp)
 
       <Tabs>
         <Tab title="새 collector 시작">
@@ -167,7 +165,7 @@ ClickHouse Cloud 빠른 시작 가이드의 [ClickHouse 서비스 만들기](/ko
 
       결과에 서비스 이름이 `clickstack-docs-test`인 테스트 이벤트가 표시됩니다.
 
-      <Image img="/images/clickstack/getting-started/clickstack_ingestion_test.webp" size="lg" alt="ClickStack 수집 테스트 이벤트가 표시된 ClickStack 로그 보기" border />
+      ![ClickStack 수집 테스트 이벤트가 표시된 ClickStack 로그 보기](/images/clickstack/getting-started/clickstack_ingestion_test.webp)
     </Step>
   </Steps>
 </View>
@@ -183,11 +181,11 @@ ClickHouse Cloud 빠른 시작 가이드의 [ClickHouse 서비스 만들기](/ko
     <Step title="Vector 선택 및 수집 구성" id="choose-an-ingestion-source-vector">
       ClickHouse Cloud 서비스에서 ClickStack을 실행합니다. ClickStack **시작하기** 페이지에서 **Start ingestion**을 선택합니다.
 
-      <Image img="/images/clickstack/getting-started/start_ingestion.webp" size="lg" alt="수집 시작" border />
+      ![수집 시작](/images/clickstack/getting-started/start_ingestion.webp)
 
       **Choose an ingestion source** 페이지에서 [Vector](https://vector.dev/)를 선택하십시오.
 
-      <Image img="/images/clickstack/getting-started/select_source_vector_toggle.webp" size="lg" alt="수집 소스로 Vector를 선택합니다" border />
+      ![수집 소스로 Vector를 선택합니다](/images/clickstack/getting-started/select_source_vector_toggle.webp)
 
       [Vector](https://vector.dev)는 고성능의 벤더 중립적인 관측성 데이터 파이프라인으로, 유연성과 낮은 리소스 사용량 덕분에 특히 로그 수집 용도로 널리 사용됩니다.
 
@@ -332,7 +330,7 @@ ClickHouse Cloud 빠른 시작 가이드의 [ClickHouse 서비스 만들기](/ko
     <Step title="탐색을 시작하고 수집을 확인합니다" id="open-clickstack-and-confirm-ingestion-vector">
       데이터 소스를 만든 후 **탐색 시작**을 선택하여 **검색** 보기로 이동합니다. 테이블의 데이터 소스를 선택한 다음, 전송한 이벤트가 포함되어 있는지 확인합니다.
 
-      <Image img="/images/clickstack/getting-started/clickstack_managed_ui.webp" size="lg" alt="ClickStack UI의 로그" />
+      ![ClickStack UI의 로그](/images/clickstack/getting-started/clickstack_managed_ui.webp)
     </Step>
   </Steps>
 </View>

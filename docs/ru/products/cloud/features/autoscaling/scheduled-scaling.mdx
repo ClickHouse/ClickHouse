@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <BetaBadge />
 
 Сервисы ClickHouse Cloud автоматически масштабируются в зависимости от загрузки CPU и памяти, но для многих рабочих нагрузок характерны предсказуемые паттерны — ежедневные всплески ингестии, батч-задачи, выполняемые по ночам, или резкое падение трафика по выходным. Для таких сценариев запланированное масштабирование позволяет точно определить, когда ваш сервис должен масштабироваться вверх или вниз, независимо от метрик в реальном времени.
@@ -26,9 +24,9 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Чтобы настроить расписание, перейдите к своему сервису в консоли ClickHouse Cloud и откройте настройки. Затем выберите **Schedule Override** и добавьте новое правило.
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="Интерфейс Scaling Schedules в консоли ClickHouse Cloud с правилами масштабирования по времени" border />
+![Интерфейс Scaling Schedules в консоли ClickHouse Cloud с правилами масштабирования по времени](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="Настройка правила запланированного масштабирования в консоли ClickHouse Cloud" border />
+![Настройка правила запланированного масштабирования в консоли ClickHouse Cloud](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
 
 Для каждого правила нужно указать:
 

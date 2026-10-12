@@ -7,8 +7,6 @@ title: 'Настройка эндпоинтов Query API'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Возможность **эндпоинты Query API** позволяет создавать API-конечные точки напрямую из любого сохранённого SQL-запроса в консоли ClickHouse Cloud. Вы сможете обращаться к API-конечным точкам по HTTP, чтобы выполнять сохранённые запросы без необходимости подключаться к своему сервису ClickHouse Cloud через нативный драйвер.
 
 <div id="quick-start-guide">
@@ -68,11 +66,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Давайте быстро выполним этот запрос, чтобы убедиться, что он работает: укажите год `2010` в поле переменных запроса справа в редакторе SQL:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="Проверка примера запроса" />
+    ![Проверка примера запроса](/images/cloud/sqlconsole/endpoints-testquery.webp)
 
     Затем сохраните запрос:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="Сохранение примера запроса" />
+    ![Сохранение примера запроса](/images/cloud/sqlconsole/endpoints-savequery.webp)
 
     Дополнительную информацию о сохраненных запросах можно найти в разделе [&quot;Saving a query&quot;](/ru/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
@@ -81,7 +79,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Эндпоинты Query API можно настраивать прямо из представления запроса: нажмите кнопку **Share** и выберите `API Endpoint`.
     Затем вам будет предложено указать, какие ключ API смогут обращаться к этому эндпоинту Query API:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Настройка конечной точки запроса" />
+    ![Настройка конечной точки запроса](/images/cloud/sqlconsole/endpoints-configure.webp)
 
     После выбора ключа API вам будет предложено:
 
@@ -92,7 +90,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Затем будет показан пример команды `curl`, чтобы вы могли отправить тестовый запрос:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="Команда curl для конечной точки" />
+    ![Команда curl для конечной точки](/images/cloud/sqlconsole/endpoints-completed.webp)
 
     Для удобства ниже приведена команда `curl`, отображаемая в интерфейсе:
 
@@ -108,11 +106,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Тестирование и мониторинг" id="testing-and-monitoring">
     После создания эндпоинта Query API вы можете проверить его работу с помощью `curl` или любого другого HTTP-клиента:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="тест curl для конечной точки" />
+    ![тест curl для конечной точки](/images/cloud/sqlconsole/endpoints-curltest.webp)
 
     После отправки первого запроса сразу справа от кнопки **Share** должна появиться новая кнопка. При нажатии на нее откроется выдвижная панель с данными мониторинга по запросу:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="Мониторинг конечной точки" />
+    ![Мониторинг конечной точки](/images/cloud/sqlconsole/endpoints-monitoring.webp)
   </Step>
 </Steps>
 

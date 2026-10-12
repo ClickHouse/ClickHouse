@@ -8,8 +8,6 @@ keywords: ['clickstack', '可观测性', 'materialized views', '性能', '优化
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <BetaBadge />
 
 <div id="introduction">
@@ -36,7 +34,7 @@ ClickStack 可以利用[增量materialized view (IMV)](/zh/concepts/features/mat
 
 ClickHouse 中的 materialized view 会随着数据流入源表而持续更新，行为更像始终保持最新的索引。这与许多其他数据库不同：在那些数据库中，materialized view 是静态快照，必须定期刷新，类似于 ClickHouse 的 [可刷新materialized view](/zh/concepts/features/materialized-views/refreshable-materialized-view)。
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized view 示意图" />
+![materialized view 示意图](/images/materialized-view/materialized-view-diagram.webp)
 
 增量materialized view 只会在新数据到达时计算视图的变更，将计算前移到写入时。由于 ClickHouse 对摄取进行了高度优化，因此，相比查询执行时获得的收益，为每个写入块维护视图所增加的成本很小。聚合的计算成本被分摊到多次写入中，而不是在每次读取时反复付出。因此，查询预聚合结果的代价远低于重新计算这些结果，即使在 PB 级规模下，也能为下游可视化带来更低的运营成本和接近实时的性能。
 
@@ -124,7 +122,7 @@ GROUP BY time, ServiceName, StatusCode
 
 确定要加速的一个或一组可视化后，下一步就是找出其底层查询。实际操作中，这意味着检查可视化配置并审查生成的 SQL，重点关注所用的聚合指标和应用的函数。
 
-<Image img="/images/clickstack/materialized_views/generated_sql.webp" size="lg" alt="生成的 SQL" />
+![生成的 SQL](/images/clickstack/materialized_views/generated_sql.webp)
 
 <Note>
   如果 HyperDX 中某个组件没有调试面板，用户可以查看浏览器控制台，其中会记录所有查询。
@@ -229,13 +227,13 @@ materialized view 应注册到 HyperDX 中与其所派生自的**原始源表**�
   <Step title="编辑 数据源" id="edit-the-source">
     在 HyperDX 中找到相应的 **数据源**，然后打开 **编辑配置** 对话框。滚动到 materialized view 部分。
 
-    <Image img="/images/clickstack/materialized_views/edit_source.webp" size="lg" alt="编辑 source" />
+    ![编辑 source](/images/clickstack/materialized_views/edit_source.webp)
   </Step>
 
   <Step title="添加 materialized view" id="add-the-materialized-view">
     选择 **添加 materialized view**，然后选择作为该 materialized view 后端的数据库和目标表。
 
-    <Image img="/images/clickstack/materialized_views/add_view.webp" size="lg" alt="编辑 source" />
+    ![编辑 source](/images/clickstack/materialized_views/add_view.webp)
   </Step>
 
   <Step title="选择指标" id="select-metrics">
@@ -248,13 +246,13 @@ materialized view 应注册到 HyperDX 中与其所派生自的**原始源表**�
 
     对于维度，请指定除 时间戳 之外，该视图用于分组的所有列。
 
-    <Image img="/images/clickstack/materialized_views/select_metrics.webp" size="lg" alt="选择指标" />
+    ![选择指标](/images/clickstack/materialized_views/select_metrics.webp)
   </Step>
 
   <Step title="选择时间粒度" id="select-time-granularity">
     选择 materialized view 的**时间粒度**，例如 1 分钟。
 
-    <Image img="/images/clickstack/materialized_views/select_time_granularity.webp" size="lg" alt="选择时间粒度" />
+    ![选择时间粒度](/images/clickstack/materialized_views/select_time_granularity.webp)
   </Step>
 
   <Step title="选择最小日期" id="specify-the-minimum-date">
@@ -265,7 +263,7 @@ materialized view 应注册到 HyperDX 中与其所派生自的**原始源表**�
       有关回填 materialized view 的完整指南，请参阅[“回填数据”](/zh/guides/clickhouse/data-modelling/backfilling#scenario-2-adding-materialized-views-to-existing-tables)
     </Note>
 
-    <Image img="/images/clickstack/materialized_views/select_min_time.webp" size="lg" alt="选择最小时间" />
+    ![选择最小时间](/images/clickstack/materialized_views/select_min_time.webp)
 
     如果无法确定确切的开始时间，可以通过查询目标表中的最小 时间戳 来确定，例如：
 
@@ -277,7 +275,7 @@ materialized view 应注册到 HyperDX 中与其所派生自的**原始源表**�
   <Step title="保存 数据源" id="save-the-source">
     保存 数据源 配置。
 
-    <Image img="/images/clickstack/materialized_views/save_source.webp" size="lg" alt="保存 Source" />
+    ![保存 Source](/images/clickstack/materialized_views/save_source.webp)
   </Step>
 </Steps>
 
@@ -300,7 +298,7 @@ ClickStack 提供了清晰的可视化标识，用于确认是否正在使用 ma
 * **绿色闪电**表示该查询已由 materialized view 加速。
 * **橙色闪电**表示该查询是在源表上执行的。
 
-<Image img="/images/clickstack/materialized_views/accelerated_visual.webp" size="lg" alt="加速的可视化" />
+![加速的可视化](/images/clickstack/materialized_views/accelerated_visual.webp)
 
 2. **查看优化详情**  点击闪电图标，打开详情面板，其中会显示：
 

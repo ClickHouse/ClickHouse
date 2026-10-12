@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickStack', 'text-to-chart', 'ИИ', 'визуализация', 'Chart Explorer', 'естественный язык', 'обсервабилити']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Возможность Text-to-Chart в ClickStack позволяет создавать визуализации, просто описывая обычным текстом, что вы хотите увидеть. Вместо того чтобы вручную выбирать метрики, фильтры и поля для группировки, вы можете ввести промпт, например &quot;уровень ошибок по сервисам за последние 24 часа&quot;, и ClickStack автоматически создаст соответствующий график.
 
 Эта возможность использует большую языковую модель (LLM), чтобы преобразовать ваш текстовый промпт в запрос, а затем создать визуализацию в [Chart Explorer](/ru/clickstack/features/dashboards/overview#navigate-chart-explorer). Она работает с любым настроенным источником данных.
@@ -68,7 +66,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Выберите источник данных" id="select-data-source">
     Выберите источник данных, который хотите визуализировать, — например, **журналы**, **Traces** или **Metrics**.
 
-    <Image img="/images/clickstack/text-to-chart/chart-explorer.webp" alt="Chart explorer" />
+    ![Chart explorer](/images/clickstack/text-to-chart/chart-explorer.webp)
   </Step>
 
   <Step title="Введите текстовый промпт" id="enter-text-prompt">
@@ -80,7 +78,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     ClickStack преобразует промпт в запрос и автоматически построит визуализацию.
 
-    <Image img="/images/clickstack/text-to-chart/text-to-chart.webp" alt="Text to chart" />
+    ![Text to chart](/images/clickstack/text-to-chart/text-to-chart.webp)
   </Step>
 </Steps>
 
@@ -101,7 +99,7 @@ docker run -e ANTHROPIC_API_KEY='<YOUR_KEY>' -p 8080:8080 clickhouse/clickstack-
 * **Username**: `otel_demo`
 * **Password**: Оставьте пустым
 
-<Image img="/images/clickstack/text-to-chart/create-connection.webp" alt="Создание подключения" />
+![Создание подключения](/images/clickstack/text-to-chart/create-connection.webp)
 
 Затем измените каждый из источников — **журналы**, **Traces**, **Metrics** и **Sessions** — так, чтобы они использовали базу данных `otel_v2`. Подробные сведения о настройке источников см. в [руководстве по удалённому демо-набору данных](/ru/clickstack/example-datasets/remote-demo-data).
 

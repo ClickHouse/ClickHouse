@@ -7,7 +7,6 @@ sidebar_order: 1
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { RunnableCode } from "/snippets/ja/components/RunnableCode/RunnableCode.jsx";
 
 <div id="introduction">
@@ -48,7 +47,7 @@ ClickHouse は自動的に主キーをサンプリングし、
 同じ正しい結果を生成でき、かつ読み取る必要があるデータ量が最も少ないテーブルを
 以下の図に示すように選択します。
 
-<Image img="/images/data-modeling/projections_1.webp" size="md" alt="ClickHouse における プロジェクション" />
+![ClickHouse における プロジェクション](/images/data-modeling/projections_1.webp)
 
 <div id="smarter_storage_with_part_offset">
   ### `_part_offset` によるより効率的なストレージ
@@ -300,7 +299,7 @@ SETTINGS mutations_sync = 1
 以下の図は、メインテーブル `uk_price_paid_with_projections`
 と、その 2 つのPROJECTIONを可視化したものです。
 
-<Image img="/images/data-modeling/projections_2.webp" size="md" alt="メインテーブル uk_price_paid_with_projections とその 2 つのPROJECTIONの可視化" />
+![メインテーブル uk_price_paid_with_projections とその 2 つのPROJECTIONの可視化](/images/data-modeling/projections_2.webp)
 
 ここで、ロンドンの county のうち価格が最も高い 3 件を
 一覧表示するクエリを再度実行すると、クエリパフォーマンスが改善していることがわかります。

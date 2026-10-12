@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Atualizações e exclusões replicadas do Postgres para o ClickHouse resultam em linhas duplicadas no ClickHouse devido à sua estrutura de armazenamento de dados e ao processo de replicação. Esta página explica por que isso acontece e quais estratégias usar no ClickHouse para lidar com duplicatas.
 
 <div id="how-does-data-get-replicated">
@@ -64,7 +62,7 @@ ORDER BY id;
 
 A ilustração abaixo mostra um exemplo básico de sincronização de uma tabela `users` entre PostgreSQL e ClickHouse usando ClickPipes.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp" alt="Carga inicial do ClickPipes" size="lg" />
+![Carga inicial do ClickPipes](/images/integrations/data-ingestion/clickpipes/postgres/postgres-cdc-initial-load.webp)
 
 **Etapa 1** mostra o snapshot inicial das 2 linhas no PostgreSQL e o ClickPipes realizando a carga inicial dessas 2 linhas no ClickHouse. Como você pode observar, ambas as linhas são copiadas sem alterações para o ClickHouse.
 

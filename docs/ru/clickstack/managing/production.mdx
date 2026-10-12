@@ -8,8 +8,6 @@ toc_max_heading_level: 2
 keywords: ['ClickStack', 'эксплуатация', 'развертывание', 'лучшие практики', 'операции']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import ResourceEstimation from '/snippets/ru/_resource_estimation.mdx';
 
 При развертывании ClickStack в производственной среде необходимо учитывать несколько дополнительных факторов, чтобы обеспечить безопасность, стабильность и корректную конфигурацию. Они различаются в зависимости от используемого варианта развертывания — с открытым исходным кодом или управляемого.
@@ -132,7 +130,7 @@ import ResourceEstimation from '/snippets/ru/_resource_estimation.mdx';
 
     Весь приём данных должен осуществляться через порты OTLP, предоставляемые дистрибутивом ClickStack коллектора OpenTelemetry (OTel). По умолчанию для этого требуется защищённый ключ API для приёма данных, генерируемый при запуске. Этот ключ необходим при отправке данных на порты OTel и доступен в интерфейсе HyperDX в разделе `Team Settings → API Keys`.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Ключи ингестии" size="lg" />
+    ![Ключи ингестии](/images/use-cases/observability/ingestion-keys.webp)
 
     Кроме того, рекомендуется включить TLS для конечных точек OTLP.
 

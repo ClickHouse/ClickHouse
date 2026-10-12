@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 > Este documento apresenta uma introdução à migração de dados do Snowflake para o ClickHouse.
 
 O Snowflake é um data warehouse em nuvem voltado principalmente para a migração de cargas de trabalho legadas de armazenamento de dados on-premise
@@ -51,7 +49,7 @@ resiliência e garantias de throughput escalável.
 A imagem abaixo, de [docs.snowflake.com](https://docs.snowflake.com/en/user-guide/intro-key-concepts),
 mostra essa arquitetura:
 
-<Image img="/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp" size="md" alt="Arquitetura do Snowflake" />
+![Arquitetura do Snowflake](/images/cloud/onboard/discover/use_cases/snowflake_architecture.webp)
 
 Por outro lado, como produto open-source e hospedado na nuvem, o ClickHouse pode ser implantado
 tanto em arquiteturas de disco compartilhado quanto shared-nothing. Esta última é típica de
@@ -70,7 +68,7 @@ as propriedades de escalabilidade do S3 resolvem a limitação clássica das arq
 disponível para os nós atuais em um cluster não seja afetado à medida que nós adicionais são
 adicionados.
 
-<Image img="/images/cloud/onboard/discover/use_cases/cloud_architecture.webp" size="md" alt="Arquitetura do ClickHouse Cloud" />
+![Arquitetura do ClickHouse Cloud](/images/cloud/onboard/discover/use_cases/cloud_architecture.webp)
 
 <div id="differences">
   ### Diferenças

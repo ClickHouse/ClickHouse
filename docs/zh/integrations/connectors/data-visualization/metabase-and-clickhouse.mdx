@@ -12,7 +12,6 @@ integration:
   - website: 'https://github.com/clickhouse/metabase-clickhouse-driver'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
 
 import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
@@ -27,7 +26,7 @@ Metabase 是一款易于使用的开源 UI 工具，可用于查询和分析您�
 
 在本指南中，你将使用 Metabase 向 ClickHouse 中的数据提出一些问题，并将答案可视化。其中一个结果会类似这样：
 
-<Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Metabase 饼图可视化，显示来自 ClickHouse 的数据" border />
+![Metabase 饼图可视化，显示来自 ClickHouse 的数据](/images/integrations/data-visualization/metabase_08.webp)
 
 <p />
 
@@ -61,13 +60,13 @@ Metabase 是一款易于使用的开源 UI 工具，可用于查询和分析您�
 
     3. 如果驱动已成功安装，您将在 **Database type** 的下拉菜单中看到 **ClickHouse**：
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_01.webp" alt="Metabase 数据库选择界面，显示 ClickHouse 选项" border />
+       ![Metabase 数据库选择界面，显示 ClickHouse 选项](/images/integrations/data-visualization/metabase_01.webp)
 
     4. 为您的数据库填写一个 **Display name**。这是 Metabase 中的一项设置，因此您可以使用任意喜欢的名称。
 
     5. 输入 ClickHouse 数据库的连接详细信息。如果您的 ClickHouse 服务器配置为使用 SSL，请启用安全连接。例如：
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_02.webp" alt="Metabase 中用于 ClickHouse 数据库的连接详细信息表单" border />
+       ![Metabase 中用于 ClickHouse 数据库的连接详细信息表单](/images/integrations/data-visualization/metabase_02.webp)
 
     6. 点击 **Save** 按钮后，Metabase 将扫描数据库中的表。
   </Step>
@@ -77,25 +76,25 @@ Metabase 是一款易于使用的开源 UI 工具，可用于查询和分析您�
 
     2. 点击右上角的 **+ New** 菜单，您会看到可以提出问题、运行 SQL 查询以及构建仪表盘：
 
-       <Image size="sm" img="/images/integrations/data-visualization/metabase_03.webp" alt="Metabase 的 New 菜单，显示创建问题、SQL 查询和仪表盘的选项" border />
+       ![Metabase 的 New 菜单，显示创建问题、SQL 查询和仪表盘的选项](/images/integrations/data-visualization/metabase_03.webp)
 
     3. 例如，下面是在名为 `uk_price_paid` 的表上运行的一条 SQL 查询，它返回 1995 年到 2022 年间按年份统计的平均成交价格：
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_04.webp" alt="Metabase SQL 编辑器，显示针对 UK price paid 数据的查询" border />
+       ![Metabase SQL 编辑器，显示针对 UK price paid 数据的查询](/images/integrations/data-visualization/metabase_04.webp)
   </Step>
 
   <Step title="提出问题" id="5-ask-a-question">
     1. 点击 **+ New** 并选择 **Question**。请注意，您可以从数据库和表开始构建一个问题。例如，下面的问题是针对 `default` 数据库中名为 `uk_price_paid` 的表提出的。这里有一个简单的问题，用于计算 Greater Manchester 县内按城镇分组的平均价格：
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_06.webp" alt="Metabase 问题构建器界面，显示 UK price 数据" border />
+       ![Metabase 问题构建器界面，显示 UK price 数据](/images/integrations/data-visualization/metabase_06.webp)
 
     2. 点击 **Visualize** 按钮，以表格视图查看结果。
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_07.webp" alt="Metabase 可视化，显示按城镇统计平均价格的表格结果" border />
+       ![Metabase 可视化，显示按城镇统计平均价格的表格结果](/images/integrations/data-visualization/metabase_07.webp)
 
     3. 在结果下方，点击 **Visualization** 按钮，将可视化切换为条形图 (或其他任一可用选项) ：
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="Metabase 饼图可视化，显示 Greater Manchester 按城镇统计的平均价格" border />
+       ![Metabase 饼图可视化，显示 Greater Manchester 按城镇统计的平均价格](/images/integrations/data-visualization/metabase_08.webp)
   </Step>
 </Steps>
 

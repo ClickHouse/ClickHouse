@@ -12,8 +12,6 @@ integration:
 
 import BucketDetails from '/snippets/ko/_S3_authentication_and_bucket.mdx';
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 S3의 데이터를 ClickHouse에 삽입할 수 있으며, S3를 내보내기 대상으로도 사용할 수 있으므로 「데이터 레이크」 아키텍처와 연동할 수 있습니다. 또한 S3는 「콜드」 스토리지 계층을 제공하고 스토리지와 컴퓨트를 분리하는 데도 도움이 됩니다. 아래 섹션에서는 뉴욕시 택시 데이터셋을 사용해 S3와 ClickHouse 간에 데이터를 이동하는 방법을 설명하고, 주요 구성 매개변수를 살펴보며, 성능 최적화를 위한 힌트도 제공합니다.
 
 ## S3 테이블 함수 {#s3-table-functions}
@@ -859,7 +857,7 @@ SELECT * FROM s3_table1;
 6. AWS 콘솔에서 버킷으로 이동한 다음, 새로 만든 버킷과 폴더를 선택합니다.
    다음과 비슷한 화면이 표시됩니다:
 
-<Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="S3에 저장된 ClickHouse 데이터 파일을 보여주는 AWS 콘솔의 S3 버킷 보기" />
+![S3에 저장된 ClickHouse 데이터 파일을 보여주는 AWS 콘솔의 S3 버킷 보기](/images/integrations/data-ingestion/s3/s3-j.webp)
 
 <div id="s3-multi-region">
   ## S3 객체 스토리지를 사용해 단일 세그먼트를 2개의 AWS 리전에 걸쳐 복제하기
@@ -1298,9 +1296,9 @@ sudo service clickhouse-server start
 
   각 S3 버킷의 데이터를 확인합니다(합계는 표시되지 않지만, 삽입 후 두 버킷 모두에 약 36 MiB가 저장되어 있습니다):
 
-<Image img="/images/integrations/data-ingestion/s3/bucket1.webp" size="lg" border alt="스토리지 사용량 메트릭을 보여주는 첫 번째 S3 버킷의 데이터 크기" />
+![스토리지 사용량 메트릭을 보여주는 첫 번째 S3 버킷의 데이터 크기](/images/integrations/data-ingestion/s3/bucket1.webp)
 
-<Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="스토리지 사용량 메트릭을 보여주는 두 번째 S3 버킷의 데이터 크기" />
+![스토리지 사용량 메트릭을 보여주는 두 번째 S3 버킷의 데이터 크기](/images/integrations/data-ingestion/s3/bucket2.webp)
 
 <div id="s3express">
   ## S3Express

@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 > Ce guide explique comment configurer [AnythingLLM](https://anythingllm.com/) avec un serveur MCP ClickHouse à l’aide de Docker
 > et le connecter aux jeux de données d’exemple de ClickHouse.
 
@@ -101,18 +99,18 @@ import { Image } from "/snippets/fr/components/Image.jsx";
   <Step title="Attendre le démarrage des serveurs MCP" id="wait-for-mcp-servers-to-start-up">
     Cliquez sur l’icône d’outil en bas à gauche de l’UI :
 
-    <Image img="/images/use-cases/AI_ML/MCP/alm_tool-icon.webp" alt="Icône d’outil" size="md" />
+    ![Icône d’outil](/images/use-cases/AI_ML/MCP/alm_tool-icon.webp)
 
     Cliquez sur `Agent Skills` et regardez dans la section `MCP servers`.
     Attendez que `Mcp ClickHouse` soit défini sur `On`
 
-    <Image img="/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp" alt="Serveurs MCP prêts" size="md" />
+    ![Serveurs MCP prêts](/images/use-cases/AI_ML/MCP/allm_mcp-servers.webp)
   </Step>
 
   <Step title="Discuter avec le serveur MCP ClickHouse dans AnythingLLM" id="chat-with-clickhouse-mcp-server-with-anythingllm">
     Nous sommes maintenant prêts à démarrer une discussion.
     Pour rendre les serveurs MCP disponibles dans une discussion, vous devrez faire précéder le premier message de la conversation de `@agent`.
 
-    <Image img="/images/use-cases/AI_ML/MCP/allm_conversation.webp" alt="Conversation" size="md" />
+    ![Conversation](/images/use-cases/AI_ML/MCP/allm_conversation.webp)
   </Step>
 </Steps>

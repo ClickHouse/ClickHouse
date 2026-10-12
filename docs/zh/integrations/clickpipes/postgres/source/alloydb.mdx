@@ -6,8 +6,6 @@ title: 'AlloyDB Postgres 数据源设置指南'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="supported-versions">
   ## 支持的版本
 </div>
@@ -34,14 +32,14 @@ SHOW  wal_level;
 
 1. 在 Google Cloud Console 中，前往 AlloyDB 的 [Clusters](https://console.cloud.google.com/alloydb/clusters) 页面。在主节点实例对应的 **Actions** 菜单中，点击 **Edit**。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp" alt="编辑主节点实例配置" size="lg" border />
+   ![编辑主节点实例配置](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/1_edit_instance.webp)
 
 2. 向下滚动到 **Advanced configuration options** 并展开该部分。在 **Flags** 下，点击 **Add a database flag**。
 
    * 添加 [`allowdb.enable_pglogical`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.enable_pglogical) 标志，并将其值设为 `on`
    * 添加 [`alloydb.logical_decoding`](https://cloud.google.com/alloydb/docs/reference/alloydb-flags#alloydb.logical_decoding) 标志，并将其值设为 `on`
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp" alt="将 allowdb.enable_pglogical 和 alloydb.logical_decoding 标志设为 on" size="lg" border />
+   ![将 allowdb.enable_pglogical 和 alloydb.logical_decoding 标志设为 on](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/2_set_flags.webp)
 
 3. 点击 **Update instance** 保存配置更改。请注意，此操作**会触发主节点实例重启。**
 
@@ -53,7 +51,7 @@ SHOW  wal_level;
 
    结果应为 `logical`。
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp" alt="验证逻辑复制已启用" size="lg" border />
+   ![验证逻辑复制已启用](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/3_verify_logical_replication.webp)
 
 <div id="create-a-clickpipes-user-and-manage-replication-permissions">
   ## 创建 ClickPipes 用户并管理复制权限
@@ -119,7 +117,7 @@ SHOW  wal_level;
 
     3. 勾选 **Enable Public IP** 复选框，以允许通过公网连接到该实例。在 **Authorized external networks** 下，输入你的 service 所部署区域对应的 [ClickPipes 静态 IP 地址列表](/zh/integrations/clickpipes/networking/static-ips)。
 
-       <Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp" alt="配置公共访问和 IP 允许列表的网络设置" size="lg" border />
+       ![配置公共访问和 IP 允许列表的网络设置](/images/integrations/data-ingestion/clickpipes/postgres/source/alloydb/4_configure_network_security.webp)
 
     <Note>
       AlloyDB 要求使用 [CIDR 表示法](https://cloud.google.com/alloydb/docs/connection-overview#public-ip) 指定地址。你可以在每个地址后附加 `/32`，将提供的 ClickPipes 静态 IP 地址列表转换为这种格式。

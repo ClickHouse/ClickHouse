@@ -6,8 +6,6 @@ keywords: ['query trace', 'OTel', 'Grafana']
 description: "This guide shows you how to collect and draw query traces with self-managed ClickHouse using either built-in methods or using Grafana. This is particularly useful when you're working with complex queries and need to understand the internal execution mechanics beyond what EXPLAIN provides."
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 **Prerequisites**:
 - Familiarity with ClickHouse [config files](/concepts/features/configuration/server-config/configuration-files)
 - A running instance of [ClickHouse server](/get-started/setup/install)
@@ -140,7 +138,7 @@ By default, this file is created in the current working directory from which you
 Use the hosted trace visualizer at [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/).
 Load the `trace.json` file from the previous step to visualize the trace.
 
-<Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="ClickHouse trace visualizer example"/>
+![ClickHouse trace visualizer example](/images/knowledgebase/trace-visualizer-example.png)
 </Step>
 <Step title="Using Grafana to visualize traces" id="using-grafana">
 We recommend Grafana for visualizing and exploring trace data using the official ClickHouse plugin.
@@ -168,10 +166,10 @@ WHERE trace_id = '68a14b27-a61f-596d-3746-2b03d2530e42' ORDER BY startTime ASC
 
 Make sure to set `Query type` to `Traces`:
 
-<Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="ClickHouse trace visualization in Grafana"/>
+![ClickHouse trace visualization in Grafana](/images/knowledgebase/trace-visualization-grafana.png)
 
 Click "Run Query" and inspect the trace diagram:
 
-<Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="ClickHouse trace visualization in Grafana"/>
+![ClickHouse trace visualization in Grafana](/images/knowledgebase/trace-visualization-diagram.png)
 </Step>
 </Steps>

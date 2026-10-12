@@ -8,8 +8,6 @@ keywords: ['ClickHouse Cloud', '仪表盘', '数据可视化', 'SQL 控制台仪
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 SQL 控制台的仪表盘功能可让您从已保存的查询中汇集并共享可视化内容。首先保存查询并将其可视化，然后将查询可视化添加到仪表盘中，再使用查询参数让仪表盘支持交互。
 
 <div id="core-concepts">
@@ -48,17 +46,17 @@ SQL 控制台的仪表盘功能可让您从已保存的查询中汇集并共享�
 
 打开一个新的查询标签页。我们来编写一个查询，使用 ClickHouse 系统表按天统计某个服务上的查询量：
 
-<Image img="/images/cloud/dashboards/2_dashboards.webp" size="md" alt="创建已保存的查询" border />
+![创建已保存的查询](/images/cloud/dashboards/2_dashboards.webp)
 
 我们可以以表格形式查看查询结果，也可以从图表视图开始创建可视化。在下一步中，我们将把该查询保存为 `queries over time`：
 
-<Image img="/images/cloud/dashboards/3_dashboards.webp" size="md" alt="保存查询" border />
+![保存查询](/images/cloud/dashboards/3_dashboards.webp)
 
 有关已保存查询的更多说明，请参见[保存查询部分](/zh/products/cloud/features/sql-console-features/sql-console#saving-a-query)。
 
 我们还可以创建并保存另一个查询 `query count by query kind`，用于按查询类型统计查询数量。下面是在 SQL 控制台中展示该数据的条形图可视化。
 
-<Image img="/images/cloud/dashboards/4_dashboards.webp" size="md" alt="查询结果的条形图可视化" border />
+![查询结果的条形图可视化](/images/cloud/dashboards/4_dashboards.webp)
 
 现在已经有两个查询了，我们来创建一个仪表盘，用于可视化和汇总这些查询。
 
@@ -68,7 +66,7 @@ SQL 控制台的仪表盘功能可让您从已保存的查询中汇集并共享�
 
 前往 仪表盘 面板，然后点击“New Dashboard”。输入名称后，你的第一个仪表盘就创建好了！
 
-<Image img="/images/cloud/dashboards/5_dashboards.webp" size="md" alt="创建新仪表盘" border />
+![创建新仪表盘](/images/cloud/dashboards/5_dashboards.webp)
 
 <div id="add-a-visualization">
   ### 添加可视化
@@ -76,13 +74,13 @@ SQL 控制台的仪表盘功能可让您从已保存的查询中汇集并共享�
 
 这里有两个已保存的查询：`queries over time` 和 `query count by query kind`。先将第一个可视化为折线图。为该可视化设置标题和副标题，并选择要可视化的查询。然后，选择“Line”图表类型，并指定 x 轴和 y 轴。
 
-<Image img="/images/cloud/dashboards/6_dashboards.webp" size="md" alt="添加可视化" border />
+![添加可视化](/images/cloud/dashboards/6_dashboards.webp)
 
 在这里，还可以进一步调整样式，例如数值格式、图例布局和坐标轴标签。
 
 接下来，将第二个查询可视化为表格，并将其放在折线图下方。
 
-<Image img="/images/cloud/dashboards/7_dashboards.webp" size="md" alt="将查询结果可视化为表格" border />
+![将查询结果可视化为表格](/images/cloud/dashboards/7_dashboards.webp)
 
 通过将这两个已保存的查询可视化，你已经创建了第一个仪表盘！
 
@@ -94,18 +92,18 @@ SQL 控制台的仪表盘功能可让您从已保存的查询中汇集并共享�
 
 点击折线图旁边的三个点，再点击查询旁边的铅笔按钮，打开内联查询编辑器。在这里，你可以直接在仪表盘中编辑底层的已保存查询。
 
-<Image img="/images/cloud/dashboards/8_dashboards.webp" size="md" alt="编辑底层查询" border />
+![编辑底层查询](/images/cloud/dashboards/8_dashboards.webp)
 
 现在，点击黄色的“运行查询”按钮后，你会看到和前面相同的查询，只不过已过滤为仅显示 insert 查询。点击保存按钮以更新查询。返回图表设置后，你就可以对折线图应用过滤了。
 
 现在，使用顶部功能区中的全局过滤器，你可以通过更改输入值来切换过滤器。
 
-<Image img="/images/cloud/dashboards/9_dashboards.webp" size="md" alt="调整全局过滤器" border />
+![调整全局过滤器](/images/cloud/dashboards/9_dashboards.webp)
 
 假设你想将折线图的过滤器关联到表。你可以返回可视化设置，将 `query_kind` 查询参数的值来源改为表，并选择 `query_kind` 列作为要关联的字段。
 
-<Image img="/images/cloud/dashboards/10_dashboards.webp" size="md" alt="更改查询参数" border />
+![更改查询参数](/images/cloud/dashboards/10_dashboards.webp)
 
 现在，你可以直接通过 queries by kind 表中的查询来控制折线图上的过滤器，从而让仪表盘具备交互性。
 
-<Image img="/images/cloud/dashboards/11_dashboards.webp" size="md" alt="控制折线图上的过滤器" border />
+![控制折线图上的过滤器](/images/cloud/dashboards/11_dashboards.webp)

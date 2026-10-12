@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/zh/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 在 managed 模式下，连接器会运行第三个组件 executor。ClickHouse Cloud 正是通过它在你的 Kubernetes 集群中运维 ClickHouse 服务。本页介绍如何创建服务、如何查看服务的 status、ClickHouse Cloud 会对其执行哪些操作，以及它如何退役。
@@ -41,7 +39,7 @@ managed 模式在 enroll 时选定：向 `clicklink clctl init` 传入 `--manage
 * `prepare` 需要一份连接器配置的副本 (`--config`) 、一个指向 executor 本地 API 的 `kubectl port-forward`，以及一个可写的 `--output-dir`。它会向 executor 核对 服务 name，若无法连接到 executor 则拒绝运行。
 * 当本机缺少配置中所指定的 凭证 文件时，`instances create` 会从 `clicklink-hmac` 和 `clicklink-mtls` Secrets 中读取这些文件，并在每次读取时给出提示。若连接器所在命名空间不是 `clicklink`，请添加 `--connector-namespace`。只有 `instances create` 具备这一 fallback 行为。
 
-<Image img="/images/cloud/reference/byoc-connector-service-lifecycle.svg" size="lg" alt="ClickHouse Connector service lifecycle in managed mode" />
+![ClickHouse Connector service lifecycle in managed mode](/images/cloud/reference/byoc-connector-service-lifecycle.svg)
 
 <Steps>
   <Step title="准备服务" id="prepare">

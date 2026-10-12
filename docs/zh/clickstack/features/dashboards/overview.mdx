@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', '仪表盘', '可视化', '监控', '可观测性']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import Tagging from '/snippets/zh/_clickstack_tagging.mdx';
 
 ClickStack 支持事件可视化，并在 ClickStack UI (HyperDX) 中内置了图表功能。这些图表可以添加到仪表盘中，与其他用户共享。
@@ -37,7 +35,7 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
   <Step title="前往 Chart Explorer" id="navigate-chart-explorer">
     从左侧菜单中选择 `Chart Explorer`。
 
-    <Image img="/images/use-cases/observability/clickstack-visualization-1.webp" alt="Chart Explorer" size="lg" />
+    ![Chart Explorer](/images/use-cases/observability/clickstack-visualization-1.webp)
   </Step>
 
   <Step title="创建可视化" id="create-visualization">
@@ -51,17 +49,17 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
     * Group By：`ServiceName`
     * 别名：`Average Time`
 
-    <Image img="/images/use-cases/observability/clickstack-visualization-2.webp" alt="Simple visualization" size="lg" />
+    ![Simple visualization](/images/use-cases/observability/clickstack-visualization-2.webp)
 
     请注意，你既可以使用 SQL `WHERE` 子句，也可以使用 Lucene 语法来过滤事件，并设置事件可视化的时间范围。还支持多个数据系列。
 
     例如，添加过滤器 `ServiceName:"frontend"`，按 `frontend` 服务进行过滤。点击 `Add Series`，添加第二个表示事件数量随时间变化的数据系列，并将别名设为 `Count`。
 
-    <Image img="/images/use-cases/observability/clickstack-visualization-3.webp" alt="Simple visualization 2" size="lg" />
+    ![Simple visualization 2](/images/use-cases/observability/clickstack-visualization-3.webp)
 
     若要基于现有数据系列创建一个类似的新数据系列，你可以直接复制，而不必从头开始。点击某个数据系列行上的复制图标 (`Duplicate series`)，即可在其正下方插入一个副本。副本会保留原数据系列的设置，例如指标、列和过滤器。然后你只需修改不同的字段 (例如聚合方式) ，并为副本设置自己的别名。在所有支持多个数据系列 的地方都可以使用复制功能。对于仅允许一个数据系列 的可视化类型，例如 `数值`、`Pie` 和 `Heatmap`，则会隐藏该功能。
 
-    <Image img="/images/use-cases/observability/clickstack-duplicate-series.webp" alt="The Duplicate series copy icon and its tooltip on a chart series row" size="lg" />
+    ![The Duplicate series copy icon and its tooltip on a chart series row](/images/use-cases/observability/clickstack-duplicate-series.webp)
 
     <Note>
       可以基于任何数据源创建可视化——无论是指标、trace 还是日志。ClickStack 将这些统一视为宽事件。任何**数值列**都可以按时间绘制成图，而**字符串**、**日期**或**数值**列都可用于分组。
@@ -85,7 +83,7 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
   <Step title="前往仪表盘" id="navigate-dashboards">
     在左侧菜单中选择 `Dashboards`。然后点击 `New Dashboard`，创建临时仪表盘或已保存的仪表盘。
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-1.webp" alt="创建仪表盘" size="lg" />
+    ![创建仪表盘](/images/use-cases/observability/hyperdx-dashboard-1.webp)
   </Step>
 
   <Step title="创建可视化——按服务查看平均请求耗时" id="create-a-tile">
@@ -102,11 +100,11 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
 
     点击 `Save` 之前，先点击 **play** 按钮。
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-2.webp" alt="创建仪表板可视化" size="lg" />
+    ![创建仪表板可视化](/images/use-cases/observability/hyperdx-dashboard-2.webp)
 
     调整可视化大小，使其占满仪表板的整个宽度。
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-3.webp" alt="包含可视化内容的仪表板" size="lg" />
+    ![包含可视化内容的仪表板](/images/use-cases/observability/hyperdx-dashboard-3.webp)
   </Step>
 
   <Step title="创建可视化——按服务查看事件随时间的变化" id="create-a-tile-2">
@@ -122,11 +120,11 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
 
     点击 `Save` 前，先点击 **play** 按钮。
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-4.webp" alt="仪表板可视化 2" size="lg" />
+    ![仪表板可视化 2](/images/use-cases/observability/hyperdx-dashboard-4.webp)
 
     调整可视化大小，使其占满整个仪表板宽度。
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-5.webp" alt="带可视化内容的仪表板 2" size="lg" />
+    ![带可视化内容的仪表板 2](/images/use-cases/observability/hyperdx-dashboard-5.webp)
   </Step>
 
   <Step title="为 span 耗时添加热力图卡片" id="create-a-tile-heatmap">
@@ -152,11 +150,11 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
 
     点击 `Run` 预览图表，然后点击 `Save`。
 
-    <Image img="/images/clickstack/dashboards/heatmap-tile-editor.webp" alt="已预填 span 耗时默认值、ServiceName payment 过滤条件和 Display Settings 按钮的热力图卡片编辑器" size="lg" />
+    ![已预填 span 耗时默认值、ServiceName payment 过滤条件和 Display Settings 按钮的热力图卡片编辑器](/images/clickstack/dashboards/heatmap-tile-editor.webp)
 
     保存后的卡片会在仪表盘上渲染为热力图。将鼠标悬停在任意单元上，即可查看 bucket 边界和事件数。
 
-    <Image img="/images/clickstack/dashboards/heatmap-tile-rendered.webp" alt="显示 payment 服务在 24 小时内 span 耗时分布的热力图仪表盘卡片" size="lg" />
+    ![显示 payment 服务在 24 小时内 span 耗时分布的热力图仪表盘卡片](/images/clickstack/dashboards/heatmap-tile-rendered.webp)
 
     <Tip>
       **每个热力图会执行两条 ClickHouse 查询**
@@ -168,7 +166,7 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
 
     点击已渲染热力图卡片中的任意单元，即可打开 **View in Event Deltas** 操作。
 
-    <Image img="/images/clickstack/dashboards/heatmap-tile-drilldown.webp" alt="点击热力图单元后显示 View in Event Deltas 操作" size="lg" />
+    ![点击热力图单元后显示 View in Event Deltas 操作](/images/clickstack/dashboards/heatmap-tile-drilldown.webp)
 
     选择它后，会打开 [Event Deltas](/zh/clickstack/features/event-deltas) 视图，并带入该卡片的数据源、`Where` 子句和时间范围。在那里，你可以交互式检查同一分布，按 attribute 切分以查看慢 spans 与快 spans 的差异，并查看任意单元背后的各个 spans，而无需手动重新构建查询。
   </Step>
@@ -176,13 +174,13 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
   <Step title="筛选仪表板" id="filter-dashboards">
     可在仪表板级别应用 Lucene 或 SQL 过滤器以及时间范围，这些设置会自动同步到所有可视化中。
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-filter.webp" alt="带筛选条件的仪表板" size="lg" />
+    ![带筛选条件的仪表板](/images/use-cases/observability/hyperdx-dashboard-filter.webp)
 
     为演示这一点，请将 Lucene 过滤器 `ServiceName:"frontend"` 应用到仪表板，并将时间窗口调整为最近 3 小时。注意，此时所有可视化都只显示来自 `frontend` 服务的数据。
 
     仪表板会自动保存。要设置仪表板名称，请选中标题并进行修改，然后点击 `Save Name`。
 
-    <Image img="/images/use-cases/observability/hyperdx-dashboard-save.webp" alt="保存仪表板" size="lg" />
+    ![保存仪表板](/images/use-cases/observability/hyperdx-dashboard-save.webp)
   </Step>
 </Steps>
 
@@ -192,7 +190,7 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
 
 要删除、编辑或复制可视化，请将鼠标悬停在其上，然后使用相应的操作按钮。
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-edit.webp" alt="编辑仪表盘" size="lg" />
+![编辑仪表盘](/images/use-cases/observability/hyperdx-dashboard-edit.webp)
 
 <div id="tile-display-settings">
   ### 卡片显示设置
@@ -245,7 +243,7 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
 
 选中数值卡片后，打开 **Display Settings**，将 **Background chart** 设置为 **Line** 或 **Area** (也可设为 **None** 将其关闭) 。这条迷你线图来自卡片查询按时间分桶后的结果，因此无需额外配置。默认情况下，它会继承卡片颜色；如果想改用调色板中的特定颜色，可以设置 **Background color** 进行覆盖。
 
-<Image img="/images/clickstack/dashboards/number-tile-background-chart.webp" alt="数值卡片的 Display Settings 抽屉，其中 Background chart 设置为 Area" size="lg" />
+![数值卡片的 Display Settings 抽屉，其中 Background chart 设置为 Area](/images/clickstack/dashboards/number-tile-background-chart.webp)
 
 背景图表适用于查询构建器生成的数值卡片。Raw SQL 数值卡片只返回单个值，没有可用于分桶的时间维度，因此该选项会显示，但处于禁用状态。
 
@@ -253,7 +251,7 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
 
 选中表格卡片后，打开 **Display Settings** 并开启 **Alternate Row Background**。斑马纹仅影响视觉显示，因此它同时适用于查询构建器和 Raw SQL 表格卡片。
 
-<Image img="/images/clickstack/dashboards/table-tile-display-settings.webp" alt="表格卡片的 Display Settings 抽屉，其中已开启 Alternate Row Background" size="lg" />
+![表格卡片的 Display Settings 抽屉，其中已开启 Alternate Row Background](/images/clickstack/dashboards/table-tile-display-settings.webp)
 
 表格卡片在滚动时也会在表头与数据之间保留分隔线，因此列标题始终清晰可辨。
 
@@ -305,7 +303,7 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
 
 可以将仪表盘加入收藏，方便从侧边栏和列表页面顶部快速访问。收藏内容仅对各个用户单独保存。
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-search.webp" alt="仪表盘搜索" size="lg" />
+![仪表盘搜索](/images/use-cases/observability/hyperdx-dashboard-search.webp)
 
 <div id="tagging">
   ## 仪表盘 - 标签
@@ -319,7 +317,7 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
 
 除了所有仪表盘上都可用的[自由文本过滤器](#filter-dashboards)之外，已保存的仪表盘还支持自定义下拉过滤器，其选项来自对 ClickHouse 的查询结果。这些过滤器提供可复用的点选式过滤控件，让仪表盘查看者无需手动编写表达式即可进行过滤。
 
-<Image img="/images/clickstack/dashboards/filter-dropdown.webp" alt="显示可用服务名称的服务下拉过滤器" size="lg" />
+![显示可用服务名称的服务下拉过滤器](/images/clickstack/dashboards/filter-dropdown.webp)
 
 每个过滤器都允许查看者选择一个或多个值，并对这些值执行以下一种或两种操作：
 
@@ -334,7 +332,7 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
   <Step title="打开“Edit 过滤器”对话框" id="open-edit-filters">
     打开一个已保存的仪表盘，然后在工具栏中选择 **Edit 过滤器 and 变量**。
 
-    <Image img="/images/clickstack/dashboards/edit-filters.webp" alt="仪表盘工具栏中的 Edit 过滤器 按钮" size="lg" />
+    ![仪表盘工具栏中的 Edit 过滤器 按钮](/images/clickstack/dashboards/edit-filters.webp)
   </Step>
 
   <Step title="添加新过滤器" id="add-new-filter">
@@ -342,25 +340,25 @@ HyperDX 中的 **Chart Explorer** 界面可让你按时间维度将指标、trac
 
     例如，要为链路追踪数据添加服务过滤器，可选择 `Traces` 数据源，并将 `ServiceName` 用作过滤表达式。“Dropdown values filter”为可选项，可用于限制下拉框中显示的值。
 
-    <Image img="/images/clickstack/dashboards/add-filter.webp" alt="包含 Display Name、数据源 和 Filter expression 字段的 Add filter 对话框" size="md" />
+    ![包含 Display Name、数据源 和 Filter expression 字段的 Add filter 对话框](/images/clickstack/dashboards/add-filter.webp)
 
     同一对话框还可控制过滤器是否会[广播](#broadcast-filters)其值，以及是否[可作为变量使用](#dashboard-variables)，下文将对此进行说明。
 
     过滤器 模态框会显示该仪表盘上已配置的所有过滤器。你可以在这里编辑或删除现有过滤器，也可以添加更多过滤器。
 
-    <Image img="/images/clickstack/dashboards/saved-filters.webp" alt="显示已配置 Services 过滤器的 过滤器 模态框" size="md" />
+    ![显示已配置 Services 过滤器的 过滤器 模态框](/images/clickstack/dashboards/saved-filters.webp)
   </Step>
 
   <Step title="使用过滤器" id="use-filter">
     关闭 过滤器 模态框。新的下拉过滤器会显示在搜索栏下方。点击它可查看可用值，然后选择一个值，以过滤仪表盘上的所有可视化内容。
 
-    <Image img="/images/clickstack/dashboards/filtered-dashboard.webp" alt="已按 frontend 服务过滤的仪表盘" size="lg" />
+    ![已按 frontend 服务过滤的仪表盘](/images/clickstack/dashboards/filtered-dashboard.webp)
   </Step>
 
   <Step title="（可选）将过滤器值保存为默认值" id="save-default-filters">
     要将某个过滤器选择保存为仪表盘的默认值，请在仪表盘菜单中选择 **Save Query &amp; 过滤器 as Default**。此后，该仪表盘打开时将始终自动应用所选过滤器。若要重置，请在同一菜单中选择 **Remove Default Query &amp; 过滤器**。
 
-    <Image img="/images/clickstack/dashboards/save-filter-values.webp" alt="显示 Save Query and 过滤器 as Default 选项的仪表盘菜单" size="lg" />
+    ![显示 Save Query and 过滤器 as Default 选项的仪表盘菜单](/images/clickstack/dashboards/save-filter-values.webp)
   </Step>
 </Steps>
 
@@ -456,7 +454,7 @@ ORDER BY ts ASC
 * **查看所有事件** — 跳转到搜索页，显示所选时间范围内的所有事件。
 * **按组筛选** — 跳转到搜索页，并筛选为特定数据系列。
 
-<Image img="/images/clickstack/dashboards/drilldown.webp" alt="显示“查看所有事件”和“按组筛选”选项的下钻上下文菜单" size="lg" />
+![显示“查看所有事件”和“按组筛选”选项的下钻上下文菜单](/images/clickstack/dashboards/drilldown.webp)
 
 这对于调查在仪表盘中发现的特定峰值或异常非常有用——你可以快速从聚合视图切换到底层的单条事件。
 
@@ -472,7 +470,7 @@ HyperDX 部署后即提供开箱即用的仪表盘。
 
 此仪表盘提供用于监控 ClickHouse 的可视化视图。要进入此仪表盘，请从左侧菜单中选择。
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp" alt="ClickHouse 仪表盘" size="lg" />
+![ClickHouse 仪表盘](/images/use-cases/observability/hyperdx-dashboard-clickhouse.webp)
 
 此仪表盘使用选项卡分别展示 **Selects**、**Inserts** 和 **ClickHouse 基础设施** 的监控信息。
 
@@ -500,7 +498,7 @@ HyperDX 部署后即提供开箱即用的仪表盘。
 
 这些可视化可使用 Lucene 或 SQL 语法进行过滤，并且可以调整时间窗口，以便进行更有针对性的分析。
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-services.webp" alt="ClickHouse services" size="lg" />
+![ClickHouse services](/images/use-cases/observability/hyperdx-dashboard-services.webp)
 
 <div id="kubernetes-dashboard">
   ### Kubernetes 仪表盘
@@ -510,4 +508,4 @@ HyperDX 部署后即提供开箱即用的仪表盘。
 
 为便于导航，Kubernetes 数据分为三个选项卡：Pods、Nodes 和 Namespaces。
 
-<Image img="/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp" alt="ClickHouse kubernetes" size="lg" />
+![ClickHouse kubernetes](/images/use-cases/observability/hyperdx-dashboard-kubernetes.webp)

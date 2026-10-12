@@ -7,8 +7,6 @@ score: 20
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 بينما يمكن استخدام [استدلال المخطط](/ar/guides/clickhouse/data-formats/json/inference) لوضع مخطط أولي لبيانات JSON واستعلام ملفات بيانات JSON مباشرةً في مكانها، مثلًا في S3، ينبغي أن تسعى إلى وضع مخطط مُحسَّن مُدار بالإصدارات لبياناتك. نناقش أدناه النهج الموصى به لنمذجة بُنى JSON.
 
 <div id="static-vs-dynamic-json">
@@ -989,19 +987,19 @@ FORMAT PrettyJSONEachRow
 
 يخزّن ClickHouse كل مسار JSON كعمود فرعي ضمن تخطيط عمودي حقيقي، مما يتيح مزايا الأداء نفسها التي نراها مع الأعمدة التقليدية، مثل الضغط، والمعالجة المسرّعة باستخدام SIMD، وتقليل عمليات الإدخال/الإخراج على القرص إلى الحد الأدنى. ويمكن لكل تركيبة فريدة من المسار والنوع في بيانات JSON لديك أن تصبح ملف عمود مستقلاً على القرص.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="عمود لكل مسار JSON" />
+![عمود لكل مسار JSON](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
 
 على سبيل المثال، عند إدراج مساري JSON بنوعين مختلفين، يخزّن ClickHouse قيم كل [نوع فعلي في أعمدة فرعية منفصلة](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). ويمكن الوصول إلى هذه الأعمدة الفرعية بشكل مستقل، مما يقلّل من عمليات الإدخال/الإخراج غير الضرورية. لاحظ أنه عند الاستعلام عن عمود يضم عدة أنواع، تظل قيمه تُعاد في استجابة عمودية واحدة.
 
 إضافةً إلى ذلك، ومن خلال الاستفادة من الإزاحات، يضمن ClickHouse أن تظل هذه الأعمدة الفرعية كثيفة، من دون تخزين أي قيم افتراضية لمسارات JSON غير الموجودة. ويزيد هذا النهج من كفاءة الضغط ويقلل عمليات الإدخال/الإخراج بدرجة أكبر.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="إزاحات JSON" />
+![إزاحات JSON](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
 
 ومع ذلك، في السيناريوهات التي تتضمن بُنى JSON عالية الكاردينالية أو شديدة التغيّر، مثل خطوط معالجة بيانات القياس عن بُعد، أو السجلات، أو مخازن السمات للتعلّم الآلي - قد يؤدي هذا السلوك إلى تضخم كبير في عدد ملفات الأعمدة. إذ ينتج عن كل مسار JSON فريد جديد ملف عمود جديد، وينتج عن كل تنويعة نوع ضمن ذلك المسار ملف عمود إضافي. وعلى الرغم من أن هذا مثالي لأداء القراءة، فإنه يفرض تحديات تشغيلية، منها استنفاد واصفات الملفات، وزيادة استخدام الذاكرة، وبطء عمليات الدمج بسبب العدد الكبير من الملفات الصغيرة.
 
 وللتخفيف من ذلك، يقدّم ClickHouse مفهوم العمود الفرعي الفائض: فبمجرد أن يتجاوز عدد مسارات JSON المميزة عتبةً معيّنة، تُخزَّن المسارات الإضافية في ملف مشترك واحد باستخدام تنسيق مرمّز مضغوط. ويظل هذا الملف قابلاً للاستعلام، لكنه لا يستفيد من خصائص الأداء نفسها التي توفرها الأعمدة الفرعية المخصّصة.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="عمود JSON مشترك" />
+![عمود JSON مشترك](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
 
 ويُتحكَّم في هذه العتبة بواسطة المَعلمة [`max_dynamic_paths`](/ar/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) في تعريف نوع JSON.
 

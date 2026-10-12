@@ -7,8 +7,6 @@ description: 'お客様のクラウドインフラストラクチャにClickHous
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ## ClickHouse コントロールプレーンとお客様の BYOC VPC 間の接続 {#connection-between-clickhouse-and-byoc}
 
 ClickHouse Cloud のコントロールプレーンは、お客様の BYOC デプロイメントを運用・サポートするために、いくつかの種類の接続を維持します。
@@ -66,7 +64,7 @@ Tailscale は、ClickHouse のコントロールプレーン (ClickHouse の VPC
   ### BYOC における Tailscale の仕組み
 </div>
 
-<Image img="/images/cloud/reference/byoc-tailscale-1.webp" size="lg" alt="BYOC Tailscale" border />
+![BYOC Tailscale](/images/cloud/reference/byoc-tailscale-1.webp)
 
 Tailscale 経由でアクセスする必要がある各サービスまたはエンドポイントごとに、ClickHouse BYOC は以下をデプロイします。
 

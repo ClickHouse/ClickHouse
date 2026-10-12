@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Kinesis ClickPipes can be deployed and managed manually using the ClickPipes UI, as well as programmatically using [OpenAPI](/integrations/clickpipes/programmatic-access/openapi) and [Terraform](/integrations/clickpipes/programmatic-access/terraform).
 
 ## Prerequisite {#prerequisite}
@@ -21,37 +19,37 @@ You have familiarized yourself with the [ClickPipes intro](/integrations/clickpi
 
 1. Access the SQL Console for your ClickHouse Cloud Service.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes service" size="lg" border/>
+![ClickPipes service](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
 
 2. Select the `Data Sources` button on the left-side menu and click on "Set up a ClickPipe"
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Select imports" size="lg" border/>
+![Select imports](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
 
 3. Select your data source.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="Select data source type" size="lg" border/>
+![Select data source type](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
 
 4. Fill out the form by providing your ClickPipe with a name, a description (optional), your IAM role or credentials, and other connection details.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="Fill out connection details" size="lg" border/>
+![Fill out connection details](/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp)
 
 5. Select the Kinesis stream, **Data format**, and starting offset. Kinesis ClickPipes support JSON, Avro, and Protobuf. For `Protobuf`, upload a `.proto` file or serialized `FileDescriptorSet` (maximum 768 KiB), or configure an AWS Glue Schema Registry. For Avro, configure an AWS Glue Schema Registry. Do not combine an uploaded Protobuf schema with a schema registry.
 
    The UI displays sample data from the selected stream. **Use Kinesis Enhanced Fan-Out** is enabled by default. See the [Amazon Kinesis documentation](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html) for details.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="Set data format and topic" size="lg" border/>
+![Set data format and topic](/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp)
 
 6. In the next step, you can select whether you want to ingest data into a new ClickHouse table or reuse an existing one. Follow the instructions in the screen to modify your table name, schema, and settings. You can see a real-time preview of your changes in the sample table at the top.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="Set table, schema, and settings" size="lg" border/>
+![Set table, schema, and settings](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
 
   You can also customize the advanced settings using the controls provided
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="Set advanced controls" size="lg" border/>
+![Set advanced controls](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
 
 7. Alternatively, you can decide to ingest your data in an existing ClickHouse table. In that case, the UI will allow you to map fields from the source to the ClickHouse fields in the selected destination table.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="Use an existing table" size="lg" border/>
+![Use an existing table](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
 
 8. Finally, you can configure permissions for the internal ClickPipes user.
 
@@ -59,21 +57,21 @@ You have familiarized yourself with the [ClickPipes intro](/integrations/clickpi
     - `Full access`: with the full access to the cluster. It might be useful if you use materialized view or Dictionary with the destination table.
     - `Only destination table`: with the `INSERT` permissions to the destination table only.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="Permissions" border/>
+![Permissions](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
 
 9. By clicking on "Complete Setup", the system will register you ClickPipe, and you'll be able to see it listed in the summary table.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="Success notice" size="sm" border/>
+![Success notice](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="Remove notice" size="lg" border/>
+![Remove notice](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
 
   The summary table provides controls to display sample data from the source or the destination table in ClickHouse
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="View destination" size="lg" border/>
+![View destination](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
 
   As well as controls to remove the ClickPipe and display a summary of the ingest job.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="View overview" size="lg" border/>
+![View overview](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
 
 10. **Congratulations!** you have successfully set up your first ClickPipe. If this is a streaming ClickPipe it will be continuously running, ingesting data in real-time from your remote data source. Otherwise it will ingest the batch and complete.
 

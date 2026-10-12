@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['MySQL', 'logs', 'OTEL', 'ClickStack', 'monitorización de bases de datos', 'consulta lenta']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -203,9 +201,9 @@ Si desea probar la integración de logs de MySQL antes de configurar su propio e
     3. Filtra por `source:mysql-error` o `source:mysql-slow` para ver logs específicos de MySQL
     4. Deberías ver entradas de log estructuradas con campos como `level`, `error_code`, `message` (para logs de error) y `query_time`, `rows_examined`, `query` (para logs de consultas lentas)
 
-    <Image img="/images/clickstack/mysql/search-view.webp" alt="Vista de búsqueda" />
+    ![Vista de búsqueda](/images/clickstack/mysql/search-view.webp)
 
-    <Image img="/images/clickstack/mysql/log-view.webp" alt="Vista de logs" />
+    ![Vista de logs](/images/clickstack/mysql/log-view.webp)
   </Step>
 </Steps>
 
@@ -328,9 +326,9 @@ Para quienes quieran probar la integración de logs de MySQL antes de configurar
       Si no ves los 40 logs de inmediato, espera aproximadamente un minuto para que el colector termine de procesarlos. Si los logs siguen sin aparecer después de esperar, ejecuta `docker restart clickstack-demo` y vuelve a comprobarlo al cabo de otro minuto. Este es un problema conocido del filelog receiver de OpenTelemetry al cargar en bloque archivos preexistentes con `start_at: beginning`. Los despliegues de producción que usan `start_at: end` procesan los logs a medida que se escriben en tiempo real y no experimentan este problema.
     </Note>
 
-    <Image img="/images/clickstack/mysql/search-view.webp" alt="Search view" />
+    ![Search view](/images/clickstack/mysql/search-view.webp)
 
-    <Image img="/images/clickstack/mysql/log-view.webp" alt="Log view" />
+    ![Log view](/images/clickstack/mysql/log-view.webp)
 
     <Info>
       **Visualización de la zona horaria**
@@ -355,17 +353,17 @@ Para ayudarte a empezar a supervisar MySQL con ClickStack, proporcionamos visual
     1. Abre HyperDX y ve a la sección Dashboards
     2. Haz clic en **Import Dashboard** en la esquina superior derecha, dentro del menú de puntos suspensivos
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Botón Import dashboard" />
+    ![Botón Import dashboard](/images/clickstack/import-dashboard.webp)
 
     3. Sube el archivo `mysql-logs-dashboard.json` y haz clic en **Finish Import**
 
-    <Image img="/images/clickstack/mysql/finish-import.webp" alt="Finalizar importación" />
+    ![Finalizar importación](/images/clickstack/mysql/finish-import.webp)
   </Step>
 
   <Step title="Ver el dashboard" id="created-dashboard">
     El dashboard se creará con todas las visualizaciones ya configuradas.
 
-    <Image img="/images/clickstack/mysql/example-dashboard.webp" alt="Dashboard de ejemplo" />
+    ![Dashboard de ejemplo](/images/clickstack/mysql/example-dashboard.webp)
 
     <Note>
       Para el conjunto de datos de demostración, establece el intervalo de tiempo en **2025-11-14 00:00:00 - 2025-11-15 00:00:00 (UTC)** (ajústalo según tu zona horaria local). El dashboard importado no tendrá un intervalo de tiempo especificado de forma predeterminada.

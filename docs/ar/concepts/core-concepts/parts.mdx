@@ -6,8 +6,6 @@ keywords: ['جزء']
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="what-are-table-parts-in-clickhouse">
   ## ما هي أجزاء الجدول في ClickHouse؟
 </div>
@@ -34,7 +32,7 @@ ORDER BY (town, street);
 
 يُنشأ جزء بيانات كلما أُدرجت مجموعة من الصفوف في الجدول. يوضّح المخطط التالي ذلك:
 
-<Image img="/images/managing-data/core-concepts/part.webp" size="lg" />
+![](/images/managing-data/core-concepts/part.webp)
 
 <br />
 
@@ -68,7 +66,7 @@ ORDER BY (town, street);
 
 لإدارة عدد الأجزاء في كل جدول، تجمع مهمة [دمج في الخلفية](/ar/concepts/core-concepts/merges) الأجزاء الأصغر دوريًا في أجزاء أكبر حتى تصل إلى [حجم مضغوط](/ar/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) [قابل للتهيئة](/ar/reference/settings/merge-tree-settings/max-bytes#max_bytes_to_merge_at_max_space_in_pool) (عادةً نحو 150 جيجابايت). وتُعلَّم الأجزاء المدمجة على أنها غير نشطة، ثم تُحذف بعد [فاصل زمني](/ar/reference/settings/merge-tree-settings/other#old_parts_lifetime) [قابل للتهيئة](/ar/reference/settings/merge-tree-settings/other#old_parts_lifetime). ومع مرور الوقت، تُنشئ هذه العملية بنية هرمية من الأجزاء المدمجة، ولهذا سُمّي جدول MergeTree بهذا الاسم:
 
-<Image img="/images/managing-data/core-concepts/merges.webp" size="lg" />
+![](/images/managing-data/core-concepts/merges.webp)
 
 <br />
 

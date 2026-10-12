@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['api', 'openapi', 'rest api', 'documentation', 'gestion du Cloud']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse Cloud fournit une API basée sur OpenAPI qui vous permet de gérer par programmation votre compte et certains aspects de vos services.
 
 <Note>
@@ -19,13 +17,13 @@ ClickHouse Cloud fournit une API basée sur OpenAPI qui vous permet de gérer pa
   <Step title="Ouvrez la page API Keys">
     Vous pouvez utiliser l’onglet **API Keys** dans le menu de gauche pour créer et gérer vos clés API.
 
-    <Image img="/images/cloud/manage/openapi1.webp" size="sm" alt="Onglet API Keys" border />
+    ![Onglet API Keys](/images/cloud/manage/openapi1.webp)
   </Step>
 
   <Step title="Commencez à créer une clé API">
     La page **API Keys** affiche d’abord une invite vous proposant de créer votre première clé API, comme illustré ci-dessous. Une fois cette première clé créée, vous pouvez en créer de nouvelles à l’aide du bouton `New API Key` qui apparaît dans l’angle supérieur droit.
 
-    <Image img="/images/cloud/manage/openapi2.webp" size="md" alt="Page API Keys" border />
+    ![Page API Keys](/images/cloud/manage/openapi2.webp)
   </Step>
 
   <Step title="Configurez la clé API">
@@ -41,7 +39,7 @@ ClickHouse Cloud fournit une API basée sur OpenAPI qui vous permet de gérer pa
       Pour utiliser des clés API avec les [Query API Endpoints](/fr/products/cloud/guides/sql-console/query-endpoints), définissez Organization Role sur `Member` (minimum) et accordez au Service Role l’accès à `Query Endpoints`.
     </Tip>
 
-    <Image img="/images/cloud/manage/openapi3.png" size="md" alt="Formulaire de création de clé API" border />
+    ![Formulaire de création de clé API](/images/cloud/manage/openapi3.png)
   </Step>
 
   <Step title="Ajoutez des adresses IP autorisées">
@@ -49,7 +47,7 @@ ClickHouse Cloud fournit une API basée sur OpenAPI qui vous permet de gérer pa
 
     Les Query API endpoints respectent les listes d’autorisation d’IP définies au niveau des clés API. Étant donné que les requêtes sont relayées depuis l’infrastructure de ClickHouse, les listes d’autorisation d’IP au niveau du service ne s’appliquent pas. Consultez [IP Access Control](/fr/products/cloud/features/sql-console-features/query-endpoints#ip-access-control) pour plus de détails.
 
-    <Image img="/images/cloud/guides/query-endpoints/specific-locations.webp" size="md" alt="Adresses IP autorisées configurées pour une clé API" border />
+    ![Adresses IP autorisées configurées pour une clé API](/images/cloud/guides/query-endpoints/specific-locations.webp)
 
     Cliquez sur **Generate API Key** lorsque vous avez terminé de configurer la clé.
   </Step>
@@ -57,7 +55,7 @@ ClickHouse Cloud fournit une API basée sur OpenAPI qui vous permet de gérer pa
   <Step title="Enregistrez les identifiants de la clé API">
     L’écran suivant affiche votre Key ID et votre Key secret. Copiez ces valeurs et conservez-les en lieu sûr, par exemple dans un coffre-fort. Elles ne seront plus affichées après que vous aurez quitté cet écran.
 
-    <Image img="/images/cloud/manage/openapi4.webp" size="md" alt="Détails de la clé API" border />
+    ![Détails de la clé API](/images/cloud/manage/openapi4.webp)
   </Step>
 
   <Step title="Authentifiez les requêtes API">
@@ -78,7 +76,7 @@ ClickHouse Cloud fournit une API basée sur OpenAPI qui vous permet de gérer pa
       La suppression d’une clé API est définitive. Tous les services qui utilisent cette clé perdront immédiatement l’accès à ClickHouse Cloud.
     </Note>
 
-    <Image img="/images/cloud/manage/openapi5.webp" size="md" alt="Page de gestion des API Keys" border />
+    ![Page de gestion des API Keys](/images/cloud/manage/openapi5.webp)
   </Step>
 </Steps>
 

@@ -6,15 +6,13 @@ slug: /guides/joining-tables
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В ClickHouse есть [полная поддержка `JOIN`](https://clickhouse.com/blog/clickhouse-fully-supports-joins-part1) и широкий выбор алгоритмов JOIN. Чтобы добиться максимальной производительности, рекомендуем следовать советам по оптимизации JOIN из этого руководства.
 
 * Для оптимальной производительности следует стремиться уменьшить количество `JOIN` в запросах, особенно для аналитических рабочих нагрузок в реальном времени, где важна задержка на уровне миллисекунд. Старайтесь, чтобы в одном запросе было не более 3–4 JOIN. В [разделе о моделировании данных](/ru/guides/clickhouse/data-modelling/schema-design) мы подробно рассматриваем несколько способов минимизировать количество JOIN, включая денормализацию, словари и материализованные представления.
 * Начиная с ClickHouse 24.12, планировщик запросов автоматически переставляет JOIN двух таблиц так, чтобы меньшая таблица находилась справа для оптимальной производительности. В версии 25.9 эта возможность была расширена и теперь оптимизирует порядок JOIN в запросах с тремя и более таблицами.
 * Если вашему запросу нужен direct JOIN, то есть `LEFT ANY JOIN`, как показано ниже, мы рекомендуем по возможности использовать [Dictionaries](/ru/concepts/features/dictionaries/index).
 
-<Image img="/images/guides/joins-1.webp" size="sm" alt="LEFT ANY JOIN" />
+![LEFT ANY JOIN](/images/guides/joins-1.webp)
 
 * При выполнении inner JOIN часто эффективнее записывать их как подзапросы с использованием предложения `IN`. Рассмотрим следующие запросы, которые функционально эквивалентны. Оба находят количество `posts`, где ClickHouse не упоминается в вопросе, но упоминается в `comments`.
 
@@ -140,7 +138,7 @@ ClickHouse поддерживает ряд [алгоритмов JOIN](https://c
 
 <br />
 
-<Image img="/images/guides/joins-2.png" size="lg" alt="зависимость скорости JOIN от использования памяти" />
+![зависимость скорости JOIN от использования памяти](/images/guides/joins-2.png)
 
 <br />
 
@@ -150,7 +148,7 @@ ClickHouse поддерживает ряд [алгоритмов JOIN](https://c
 
 <br />
 
-<Image img="/images/guides/joins-3.webp" size="lg" alt="возможности JOIN" />
+![возможности JOIN](/images/guides/joins-3.webp)
 
 <br />
 
@@ -166,7 +164,7 @@ ClickHouse поддерживает ряд [алгоритмов JOIN](https://c
 
 <br />
 
-<Image img="/images/guides/joins-4.webp" size="lg" alt="блок-схема JOIN" />
+![блок-схема JOIN](/images/guides/joins-4.webp)
 
 <br />
 
@@ -192,7 +190,7 @@ Grace hash JOIN — самый гибкий из трёх алгоритмов J
 
 <br />
 
-<Image img="/images/guides/joins-5.webp" size="lg" alt="Дерево решений для оптимизации использования памяти JOIN" />
+![Дерево решений для оптимизации использования памяти JOIN](/images/guides/joins-5.webp)
 
 <br />
 

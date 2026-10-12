@@ -6,8 +6,6 @@ keywords: ['ClickStack 配置', '可观测性配置', 'HyperDX 设置', '采集�
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickStack 的各个组件均提供以下配置选项：
 
 <div id="modifying-settings">
@@ -117,7 +115,7 @@ ClickStack UI 依赖用户为每一种可观测性数据类型/支柱定义一�
 
 此配置可在应用内的 `Team Settings -> Sources` 中完成，下面以日志为例：
 
-<Image img="/images/use-cases/observability/hyperdx-25.webp" alt="HyperDX 数据源配置" size="md" />
+![HyperDX 数据源配置](/images/use-cases/observability/hyperdx-25.webp)
 
 创建这些数据源时，每个数据源都至少需要指定一张表，以及一组供 HyperDX 查询数据的列。
 
@@ -296,15 +294,15 @@ ClickStack UI 依赖用户为每一种可观测性数据类型/支柱定义一�
 
 例如，这个链路追踪数据源已配置了一个高亮属性和一个高亮 trace 属性：
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp" alt="高亮属性配置" size="md" />
+![高亮属性配置](/images/use-cases/observability/hyperdx-highlighted-attributes-config.webp)
 
 点击日志或 span 后，这些属性会显示在侧边面板中：
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes.webp" alt="高亮属性" size="md" />
+![高亮属性](/images/use-cases/observability/hyperdx-highlighted-attributes.webp)
 
 点击某个属性后，可以选择将该属性用作搜索值。如果在属性配置中提供了可选的 Lucene 表达式，搜索时将使用 Lucene 表达式而不是 SQL 表达式。
 
-<Image img="/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp" alt="高亮属性搜索" size="md" />
+![高亮属性搜索](/images/use-cases/observability/hyperdx-highlighted-attributes-search.webp)
 
 <div id="correlated-sources">
   ### 关联来源
@@ -321,7 +319,7 @@ ClickStack UI 依赖用户为每一种可观测性数据类型/支柱定义一�
 
 例如，下面是已配置关联来源的日志数据源：
 
-<Image img="/images/use-cases/observability/hyperdx-26.webp" alt="HyperDX 关联来源" size="md" />
+![HyperDX 关联来源](/images/use-cases/observability/hyperdx-26.webp)
 
 <div id="application-configuration-settings">
   ### 应用配置设置

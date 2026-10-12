@@ -8,8 +8,6 @@ doc_type: 'guide'
 
 import IntroClickPipe from '/snippets/_intro.mdx';
 
-import { Image } from "/snippets/components/Image.jsx";
-
 <IntroClickPipe/>
 
 ## Pre-requisites {#pre-requisites}
@@ -23,11 +21,11 @@ import { Image } from "/snippets/components/Image.jsx";
 
 **1.** In ClickHouse Cloud, select **Data sources** in the main navigation menu and click **Create ClickPipe**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Select imports" size="lg" border/>
+    ![Select imports](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
 
 **2.** Click the **BigQuery** tile.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="Select BigQuery tile" size="lg" border/>
+    ![Select BigQuery tile](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
 </Step>
 <Step title="Set up your ClickPipe connection" id="2-setup-your-clickpipe-connection">
 
@@ -35,7 +33,7 @@ To set up a new ClickPipe, you must provide details on how to connect to and aut
 
 **1.** Upload the `.json` key for the service account you created for ClickPipes. Ensure the service account has the minimum required set of [permissions](/integrations/clickpipes/bigquery/overview#permissions).
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="Upload service account key" size="lg" border/>    
+    ![Upload service account key](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
 
 **2.** Select the **Replication method**. In Private Preview, the only supported option is [**Initial load only**](/integrations/clickpipes/bigquery/overview#initial-load).
 
@@ -53,7 +51,7 @@ Depending on the size of your BigQuery dataset, or the total size of the tables 
 
 **2.** Select the tables and, optionally, the columns you want to replicate. Only datasets that the provided service account has access to will be listed.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="Permissions" size="lg" border/>
+    ![Permissions](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp)
 
 **3.** For each selected table, make sure to define a custom sorting key under **Advanced settings** > **Use a custom sorting key**. In the future, the sorting key will be automatically inferred based on existing clustering or partitioning keys in the upstream database.
 
@@ -61,7 +59,7 @@ Depending on the size of your BigQuery dataset, or the total size of the tables 
     You **must** define a [sorting key](/concepts/best-practices/choosing-a-primary-key) for the replicated tables in order to optimize query performance in ClickHouse. Otherwise, the sorting key will be set as `tuple()`, which means no primary index will be created and ClickHouse will perform full table scans for all queries on the table.
 </Warning>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="Permissions" size="lg" border/>
+    ![Permissions](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp)
 </Step>
 <Step title="Configure permissions" id="6-configure-permissions">
 
@@ -75,6 +73,6 @@ Finally, you can configure permissions for the internal ClickPipes user.
 
 Click **Create ClickPipe** to complete the setup. You'll be redirected to the overview page, where you can the progress of the initial load and click through to see the details for your BigQuery ClickPipes.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="Permissions" size="lg" border/>
+![Permissions](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
 </Step>
 </Steps>

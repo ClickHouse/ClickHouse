@@ -7,12 +7,10 @@ keywords: ['RBAC', 'Amazon S3', 'autenticação']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Este guia mostra como clientes do ClickHouse Cloud podem usar o controle de acesso baseado em função para se autenticar no Amazon Simple Storage Service (S3) e acessar seus dados com segurança.
 Antes de partir para a configuração do acesso seguro ao S3, é importante entender como isso funciona. Abaixo está uma visão geral de como os serviços do ClickHouse podem acessar buckets privados do S3 assumindo uma função na conta da AWS dos clientes.
 
-<Image img="/images/cloud/security/secures3.webp" size="lg" alt="Visão geral do acesso seguro ao S3 com ClickHouse" />
+![Visão geral do acesso seguro ao S3 com ClickHouse](/images/cloud/security/secures3.webp)
 
 <br />
 
@@ -33,7 +31,7 @@ Na seção abaixo, você aprenderá a configurar isso.
 
 5. Copie o valor de **Service role ID (IAM)** do serviço, como mostrado abaixo.
 
-<Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Obtendo o ARN da função do IAM do serviço ClickHouse" border />
+![Obtendo o ARN da função do IAM do serviço ClickHouse](/images/cloud/security/secures3_arn.webp)
 
 <div id="setting-up-iam-assume-role">
   ## Configurar a assunção de função do IAM
@@ -81,7 +79,7 @@ A assunção de função do IAM pode ser configurada de duas maneiras:
 
 10. Copie o valor de **RoleArn** desta integração, que é o que você precisará para acessar seu bucket do S3.
 
-<Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="Saída da stack do CloudFormation mostrando o ARN da função do IAM" border />
+![Saída da stack do CloudFormation mostrando o ARN da função do IAM](/images/cloud/security/secures3_output.webp)
 
 <div id="option-2-manually-create-iam-role">
   ### Criar função do IAM manualmente

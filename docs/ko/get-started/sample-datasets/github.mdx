@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 데이터셋에는 ClickHouse 리포지토리의 모든 커밋과 변경 사항이 포함되어 있습니다. 이 데이터셋은 ClickHouse와 함께 배포되는 네이티브 `git-import` 도구를 사용해 생성할 수 있습니다.
 
 생성된 데이터는 다음 각 테이블(table)에 대한 `tsv` 파일을 제공합니다.
@@ -571,11 +569,11 @@ LIMIT 10
 
 **추가 및 삭제된 라인의 경우:**
 
-<Image img="/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp" alt="추가 및 삭제된 라인의 경우" size="md" />
+![추가 및 삭제된 라인의 경우](/images/getting-started/example-datasets/superset-github-lines-added-deleted.webp)
 
 **커밋 및 작성자의 경우:**
 
-<Image img="/images/getting-started/example-datasets/superset-commits-authors.webp" alt="커밋 및 작성자의 경우" size="md" />
+![커밋 및 작성자의 경우](/images/getting-started/example-datasets/superset-commits-authors.webp)
 
 <div id="list-files-with-maximum-number-of-authors">
   ### 작성자 수가 가장 많은 파일 목록
@@ -1364,11 +1362,11 @@ LIMIT 100
 
 Sankey chart(SuperSet)를 사용하면 이를 효과적으로 시각화할 수 있습니다. 시각화의 다양성을 높이기 위해 각 작성자별로 코드 제거량이 많은 상위 3명을 가져오도록 `LIMIT BY`를 3으로 늘렸다는 점에 유의하십시오.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix.webp" alt="Superset 작성자 매트릭스" size="md" />
+![Superset 작성자 매트릭스](/images/getting-started/example-datasets/superset-authors-matrix.webp)
 
 Alexey는 다른 사람의 코드를 제거하는 경향이 뚜렷합니다. 코드 제거 양상을 더 균형 있게 보기 위해 Alexey는 제외하겠습니다.
 
-<Image img="/images/getting-started/example-datasets/superset-authors-matrix_v2.webp" alt="Superset 작성자 매트릭스 v2" size="md" />
+![Superset 작성자 매트릭스 v2](/images/getting-started/example-datasets/superset-authors-matrix_v2.webp)
 
 <div id="who-is-the-highest-percentage-contributor-per-day-of-week">
   ### 요일별로 가장 높은 비중을 차지하는 기여자는 누구입니까?

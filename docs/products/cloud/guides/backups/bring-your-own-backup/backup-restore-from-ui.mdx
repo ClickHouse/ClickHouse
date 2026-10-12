@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['backups', 'disaster recovery', 'data protection', 'restore', 'cloud features']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 <Note>
 Automated backups to your external bucket are full, independent backups. They follow the backup frequency and start time configured for the service (every 24 hours by default). ClickHouse also creates a separate backup in a ClickHouse-managed bucket every 24 hours; that cadence is fixed.
 </Note>
@@ -36,7 +34,7 @@ AWS uses role based authentication, so create an IAM role that the ClickHouse Cl
 
 * a. Obtain the ARN from the ClickHouse Cloud service settings page, under Network security information,  which looks similar to this:
 
-<Image img="/images/cloud/manage/backups/arn.webp" alt="AWS S3 ARN" size="lg" />
+![AWS S3 ARN](/images/cloud/manage/backups/arn.webp)
 
 * b. For this role create the trust policy as follows:
 
@@ -110,13 +108,13 @@ Follow the steps below in the ClickHouse Cloud console to configure the external
 
 On the Settings page, click on Set up external backup:
 
-<Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
+![Change external backup](/images/cloud/manage/backups/change_external_backup.webp)
 </Step>
 <Step title="Configure AWS IAM Role ARN and S3 bucket details" id="configure-aws-iam-role-arn-and-s3-bucket-details">
 
 On the next screen provide the AWS IAM Role ARN you just created and the S3 bucket URL in the following format:
 
-<Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="Configure AWS IAM Role ARN and S3 bucket details" size="lg" />
+![Configure AWS IAM Role ARN and S3 bucket details](/images/cloud/manage/backups/configure_arn_s3_details.webp)
 </Step>
 <Step title="Save changes" id="save-changes">
 
@@ -135,7 +133,7 @@ use the default schedule (backups every 24 hours) and default retention policy.
 The Backups page will display these backups in your bucket in a separate table
 as shown below:
 
-<Image img="/images/cloud/manage/backups/view_backups.webp" alt="View backups stored in your bucket" size="lg" />
+![View backups stored in your bucket](/images/cloud/manage/backups/view_backups.webp)
 </Step>
 </Steps>
 
@@ -160,7 +158,7 @@ so the new service can access the S3 bucket.
 Click on the “access or restore a backup” link above the list of backups in the
 UI to get the SQL command to restore the backup. The command will look like this:
 
-<Image img="/images/cloud/manage/backups/backup_command.webp" alt="Get SQL command used to restore backup" size="md" />
+![Get SQL command used to restore backup](/images/cloud/manage/backups/backup_command.webp)
 
 <Warning>
 **Moving backups to another location**
@@ -230,13 +228,13 @@ Follow the steps below in the ClickHouse Cloud console to configure the external
 
 On the `Settings` page, click on `Change external backup`
 
-<Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
+![Change external backup](/images/cloud/manage/backups/change_external_backup.webp)
 </Step>
 <Step title="Configure GCP HMAC Key and Secret" id="gcp-configure-gcp-hmac-key-and-secret">
 
 In the popup dialogue, provide the GCP bucket path, HMAC key and Secret created in the previous section.
 
-<Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="Configure GCP HMAC Key and Secret" size="md" />
+![Configure GCP HMAC Key and Secret](/images/cloud/manage/backups/gcp_configure.webp)
 </Step>
 <Step title="Save external bucket" id="gcp-save-external-bucket">
 
@@ -254,7 +252,7 @@ use the default schedule (backups every 24 hours) and default retention policy.
 
 The Backups page should display these backups in your bucket in a separate table as shown below:
 
-<Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="View backups stored in your bucket" size="lg" />
+![View backups stored in your bucket](/images/cloud/manage/backups/gcp_stored_backups.webp)
 </Step>
 </Steps>
 
@@ -275,7 +273,7 @@ and you can pick the appropriate backup from the dropdown to get the restore
 command for that specific backup. You will need to add your secret access key 
 to the command:
 
-<Image img="/images/cloud/manage/backups/gcp_restore_command.webp" alt="Get SQL command used to restore backup" size="md" />
+![Get SQL command used to restore backup](/images/cloud/manage/backups/gcp_restore_command.webp)
 
 <Warning>
 **Moving backups to another location**
@@ -331,14 +329,14 @@ Follow the steps below in the ClickHouse Cloud console to configure the external
 
 On the `Settings` page, click on `Change external backup`
 
-<Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="Change external backup" size="lg" />
+![Change external backup](/images/cloud/manage/backups/change_external_backup.webp)
 </Step>
 <Step title="Provide connection string and container name for your Azure storage account" id="azure-provide-connection-string-and-container-name-azure">
 
 On the next screen provide the Connection String and Container Name for your
 Azure storage account created in the previous section:
 
-<Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="Provide connection string and container name for your Azure storage account" size="md" />
+![Provide connection string and container name for your Azure storage account](/images/cloud/manage/backups/azure_connection_details.webp)
 </Step>
 <Step title="Save external bucket" id="azure-save-external-bucket">
 
@@ -357,7 +355,7 @@ Backups in the ClickHouse Cloud-managed bucket use the default schedule (backups
 The Backups page should display these backups in your bucket in a separate table 
 as shown below:
 
-<Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="View backups stored in your bucket" size="md" />
+![View backups stored in your bucket](/images/cloud/manage/backups/view_backups_azure.webp)
 </Step>
 </Steps>
 
@@ -379,7 +377,7 @@ this, and you can pick the appropriate backup from the dropdown to get the
 restore command for that specific backup. You will need to add your Azure 
 storage account connection string to the command.
 
-<Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="Restore backups in Azure" size="md" />
+![Restore backups in Azure](/images/cloud/manage/backups/restore_backups_azure.webp)
 
 <Warning>
 **Moving backups to another location**

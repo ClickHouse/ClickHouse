@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/pt-BR/clickpipes/_iam_authentication.mdx";
 
 Este guia passo a passo mostra como configurar o Amazon RDS MySQL para replicar dados para o ClickHouse Cloud usando o [ClickPipe do MySQL](/pt-BR/integrations/clickpipes/mysql/index). Para perguntas frequentes sobre MySQL CDC, consulte a [página de perguntas frequentes do MySQL](/pt-BR/integrations/clickpipes/mysql/faq).
@@ -25,7 +24,7 @@ O log binário consiste em um conjunto de arquivos de log que contém informaç�
   <Step title="Habilitar o log binário com backup automatizado" id="enable-binlog-logging">
     O recurso de backups automatizados determina se o log binário está ativado ou desativado no MySQL. Os backups automatizados podem ser configurados para sua instância no Console do RDS acessando **Modify** &gt; **Additional configuration** &gt; **Backup** e selecionando a caixa de seleção **Enable automated backups** (caso ainda não esteja selecionada).
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Habilitando backups automatizados no RDS" size="lg" border />
+    ![Habilitando backups automatizados no RDS](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
 
     Recomendamos definir o **Backup retention period** como um valor razoavelmente longo, dependendo do caso de uso da replicação.
   </Step>
@@ -57,27 +56,27 @@ Você pode encontrar o grupo de parâmetros clicando na instância MySQL no Cons
   Se você tiver um cluster MySQL, os parâmetros abaixo podem ser encontrados no grupo de parâmetros do [cluster de DB](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html), em vez do grupo de instância de DB.
 </Tip>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp" alt="Onde encontrar o grupo de parâmetros no RDS" size="lg" border />
+![Onde encontrar o grupo de parâmetros no RDS](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
 
 <br />
 
 Clique no link do grupo de parâmetros para acessar a página dedicada a ele. Você deverá ver um botão **Edit** no canto superior direito.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="Editar grupo de parâmetros" size="lg" border />
+![Editar grupo de parâmetros](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
 
 Os parâmetros a seguir precisam ser definidos da seguinte forma:
 
 1. `binlog_format` como `ROW`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Formato do binlog como ROW" size="lg" border />
+![Formato do binlog como ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
 
 2. `binlog_row_metadata` como `FULL`
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Metadados de linha do binlog como FULL" size="lg" border />
+![Metadados de linha do binlog como FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
 
 3. `binlog_row_image` como `FULL`
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Imagem de linha do binlog como FULL" size="lg" border />
+![Imagem de linha do binlog como FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
 
 <br />
 
@@ -104,7 +103,7 @@ A replicação baseada em GTID é compatível com o Amazon RDS for MySQL nas ver
 7. Clique em **Save Changes** no canto superior direito.
 8. Reinicie sua instância para que as alterações entrem em vigor.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp" alt="GTID ativado" size="lg" border />
+![GTID ativado](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
 
 <br />
 
@@ -153,9 +152,9 @@ Conecte-se à sua instância do RDS MySQL como um usuário administrador e execu
 
 Para restringir o tráfego até sua instância do Aurora MySQL, adicione os [IPs NAT estáticos documentados](/pt-BR/integrations/clickpipes/networking/static-ips) às **regras de entrada** do seu Security Group do RDS.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Onde encontrar o Security Group no RDS MySQL?" size="lg" border />
+![Onde encontrar o Security Group no RDS MySQL?](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Edite as regras de entrada do Security Group acima" size="lg" border />
+![Edite as regras de entrada do Security Group acima](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
 
 <div id="private-access-via-aws-privatelink">
   ### Acesso privado via AWS PrivateLink

@@ -7,8 +7,6 @@ keywords: ['サンプルデータセット', 'Foursquare', '地理空間', 'Iceb
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 Foursquare OS Places には、店舗、レストラン、公園、遊び場、記念碑など、1 億件を超える商業施設・場所に関するポイントオブインタレスト (POI) が収録されています。このガイドでは、ClickHouse を Foursquare の Iceberg カタログに接続し、データセットを調査して、地理空間クエリ向けに最適化されたテーブルに読み込みます。
 
 このデータセットは [Foursquare Places Portal](https://places.foursquare.com/) で提供されており、Apache 2.0 ライセンスのもとで無料で利用できます。
@@ -367,10 +365,10 @@ WHERE latitude IS NOT NULL AND longitude IS NOT NULL;
 社内ハッカソンで、ClickHouse の共同創業者兼 CTO である Alexey Milovidov は ClickHouse を使用して、
 Foursquare データセットから以下の可視化を作成しました。
 
-<Image img="/images/getting-started/example-datasets/visualization_1.webp" size="md" alt="ヨーロッパのポイントオブインタレストの密度マップ" />
+![ヨーロッパのポイントオブインタレストの密度マップ](/images/getting-started/example-datasets/visualization_1.webp)
 
-<Image img="/images/getting-started/example-datasets/visualization_2.webp" size="md" alt="日本の日本酒バー" />
+![日本の日本酒バー](/images/getting-started/example-datasets/visualization_2.webp)
 
-<Image img="/images/getting-started/example-datasets/visualization_3.webp" size="md" alt="ATM" />
+![ATM](/images/getting-started/example-datasets/visualization_3.webp)
 
-<Image img="/images/getting-started/example-datasets/visualization_4.webp" size="md" alt="ポイントオブインタレストを国別に分類したヨーロッパ地図" />
+![ポイントオブインタレストを国別に分類したヨーロッパ地図](/images/getting-started/example-datasets/visualization_4.webp)

@@ -7,12 +7,10 @@ keywords: ['RBAC', 'Amazon S3', 'authentification']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Ce guide montre comment les clients de ClickHouse Cloud peuvent tirer parti de l’accès basé sur les rôles pour s’authentifier auprès d’Amazon Simple Storage Service (S3) et accéder à leurs données en toute sécurité.
 Avant d’aborder la configuration d’un accès sécurisé à S3, il est important de comprendre comment cela fonctionne. Vous trouverez ci-dessous un aperçu de la manière dont les services ClickHouse peuvent accéder à des buckets S3 privés en assumant un rôle au sein du compte AWS des clients.
 
-<Image img="/images/cloud/security/secures3.webp" size="lg" alt="Aperçu de l’accès sécurisé à S3 avec ClickHouse" />
+![Aperçu de l’accès sécurisé à S3 avec ClickHouse](/images/cloud/security/secures3.webp)
 
 <br />
 
@@ -33,7 +31,7 @@ Dans la section ci-dessous, vous verrez comment configurer cela.
 
 5. Copiez la valeur **Service role ID (IAM)** associée au service, comme indiqué ci-dessous.
 
-<Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Récupération de l’ARN du rôle IAM du service ClickHouse" border />
+![Récupération de l’ARN du rôle IAM du service ClickHouse](/images/cloud/security/secures3_arn.webp)
 
 <div id="setting-up-iam-assume-role">
   ## Configurer le rôle IAM à assumer
@@ -81,7 +79,7 @@ Le rôle IAM à assumer peut être configuré de l’une des deux manières suiv
 
 10. Copiez la valeur **RoleArn** pour cette integration, car c’est elle qui vous permettra d’accéder à votre bucket S3.
 
-<Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="Sortie de la stack CloudFormation affichant l’ARN du rôle IAM" border />
+![Sortie de la stack CloudFormation affichant l’ARN du rôle IAM](/images/cloud/security/secures3_output.webp)
 
 <div id="option-2-manually-create-iam-role">
   ### Créer manuellement un rôle IAM

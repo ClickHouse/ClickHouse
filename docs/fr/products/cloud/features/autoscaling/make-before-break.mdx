@@ -7,8 +7,6 @@ title: 'Opérations « Make before break » (MBB) dans ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse Cloud effectue les mises à niveau et la mise à l’échelle des clusters selon une approche **Make Before Break** (MBB).
 Dans cette approche, de nouvelles répliques sont ajoutées au cluster avant d’en retirer les anciennes.
 Cela s’oppose à l’approche break-first, dans laquelle les anciennes répliques seraient d’abord supprimées avant d’ajouter les nouvelles.
@@ -21,7 +19,7 @@ L’approche MBB présente plusieurs avantages :
 
 L’image ci-dessous montre comment cela peut se produire pour un cluster de 3 répliques lorsque le service fait l’objet d’une mise à l’échelle verticale :
 
-<Image img="/images/cloud/features/mbb/vertical_scaling.webp" size="lg" alt="Schéma d’exemple pour un cluster de 3 répliques faisant l’objet d’une mise à l’échelle verticale" />
+![Schéma d’exemple pour un cluster de 3 répliques faisant l’objet d’une mise à l’échelle verticale](/images/cloud/features/mbb/vertical_scaling.webp)
 
 Dans l’ensemble, MBB offre une expérience de mise à l’échelle et de mise à niveau fluide et moins perturbatrice que l’approche break-first utilisée auparavant.
 

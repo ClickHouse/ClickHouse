@@ -7,12 +7,10 @@ keywords: ['RBAC', 'Amazon S3', 'المصادقة']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يوضح هذا الدليل كيف يمكن لعملاء ClickHouse Cloud الاستفادة من التحكم في الوصول المستند إلى الأدوار للمصادقة مع Amazon Simple Storage Service ‏(S3) والوصول إلى بياناتهم بأمان.
 قبل التعمق في إعداد الوصول الآمن إلى S3، من المهم فهم آلية عمل ذلك. في ما يلي نظرة عامة على كيفية تمكّن خدمات ClickHouse من الوصول إلى حاويات S3 الخاصة من خلال افتراض دور داخل حساب AWS الخاص بالعملاء.
 
-<Image img="/images/cloud/security/secures3.webp" size="lg" alt="نظرة عامة على الوصول الآمن إلى S3 باستخدام ClickHouse" />
+![نظرة عامة على الوصول الآمن إلى S3 باستخدام ClickHouse](/images/cloud/security/secures3.webp)
 
 <br />
 
@@ -33,7 +31,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 5. انسخ قيمة **معرّف دور الخدمة (IAM)** الخاصة بالخدمة، كما هو موضّح أدناه.
 
-<Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="الحصول على ARN لدور IAM الخاص بخدمة ClickHouse" border />
+![الحصول على ARN لدور IAM الخاص بخدمة ClickHouse](/images/cloud/security/secures3_arn.webp)
 
 <div id="setting-up-iam-assume-role">
   ## إعداد IAM Assume Role
@@ -81,7 +79,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 10. انسخ قيمة **RoleArn** لهذا integration، فهي ما تحتاجه للوصول إلى حاوية S3 الخاصة بك.
 
-<Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="مخرجات CloudFormation stack التي تعرض IAM Role ARN" border />
+![مخرجات CloudFormation stack التي تعرض IAM Role ARN](/images/cloud/security/secures3_output.webp)
 
 <div id="option-2-manually-create-iam-role">
   ### أنشئ دور IAM يدويًا

@@ -8,8 +8,6 @@ toc_max_heading_level: 2
 keywords: ['ClickStack', 'OpenTelemetry collector', 'ClickHouse observability', 'OTel collector configuration', 'OpenTelemetry ClickHouse']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import ExtendingConfig from '/snippets/_extending_config.mdx';
 
 <Tip>
@@ -451,7 +449,7 @@ The ClickStack distribution of the OpenTelemetry collector includes built-in sup
 
 This integration ensures that the OTLP endpoint is secured using an auto-generated ingestion API key, created when the HyperDX app is deployed. All telemetry data sent to the collector must include this API key for authentication. You can find the key in the HyperDX app under `Team Settings → API Keys`.
 
-<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Ingestion keys" size="lg"/>
+![Ingestion keys](/images/use-cases/observability/ingestion-keys.webp)
 
 To further secure your deployment, we recommend:
 
@@ -577,7 +575,7 @@ Typically, users are forced to send smaller batches when the throughput of a col
 
 If large batches can't be guaranteed, you can delegate batching to ClickHouse using [Asynchronous Inserts](/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). With asynchronous inserts, data is inserted into a buffer first and then written to the database storage later or asynchronously respectively.
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="Async inserts" size="md"/>
+![Async inserts](/images/use-cases/observability/observability-6.webp)
 
 With [asynchronous inserts enabled](/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), when ClickHouse ① receives an insert query, the query's data is ② immediately written into an in-memory buffer first. When ③ the next buffer flush takes place, the buffer's data is [sorted](/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) and written as a part to the database storage. Note, that the data isn't searchable by queries before being flushed to the database storage; the buffer flush is [configurable](/concepts/features/operations/insert/asyncinserts).
 
@@ -599,7 +597,7 @@ Full details on configuring this feature can be found on this [docs page](/conce
 
 The ClickStack OTel collector acts a Gateway instance - see [Collector roles](#collector-roles). These provide a standalone service, typically per data center or per region. These receive events from applications (or other collectors in the agent role) via a single OTLP endpoint. Typically a set of collector instances are deployed, with an out-of-the-box load balancer used to distribute the load amongst them.
 
-<Image img="/images/use-cases/observability/clickstack-with-gateways.webp" alt="Scaling with gateways" size="lg"/>
+![Scaling with gateways](/images/use-cases/observability/clickstack-with-gateways.webp)
 
 The objective of this architecture is to offload computationally intensive processing from the agents, thereby minimizing their resource usage. These ClickStack gateways can perform transformation tasks that would otherwise need to be done by agents. Furthermore, by aggregating events from many agents, the gateways can ensure large batches are sent to ClickHouse - allowing efficient insertion. These gateway collectors can easily be scaled as more agents and SDK sources are added and event throughput increases. 
 
@@ -613,7 +611,7 @@ However, ClickHouse can handle inserting data very quickly - millions of rows pe
 
 However, if you require high delivery guarantees or the ability to replay data (potentially to multiple sources), Kafka can be a useful architectural addition.
 
-<Image img="/images/use-cases/observability/observability-8.webp" alt="Adding kafka" size="lg"/>
+![Adding kafka](/images/use-cases/observability/observability-8.webp)
 
 In this case, OTel agents can be configured to send data to Kafka via the [Kafka exporter](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). Gateway instances, in turn, consume messages using the [Kafka receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). We recommend the Confluent and OTel documentation for further details.
 

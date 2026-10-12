@@ -6,8 +6,6 @@ keywords: ['schema', 'schema 设计', '查询优化']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 理解高效的 schema 设计是优化 ClickHouse 性能的关键。这涉及一系列往往需要权衡取舍的选择，而最佳方案取决于所处理的查询，以及数据更新频率、延迟要求和数据量等因素。本指南概述了优化 ClickHouse 性能时在 schema 设计和数据建模方面的最佳实践。
 
 <div id="stack-overflow-dataset">
@@ -18,7 +16,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 > 图中标出的主键和关系并未通过约束强制实施 (Parquet 是文件格式，不是表格式) ，仅用于说明数据之间的关联方式以及各自具备的唯一键。
 
-<Image img="/images/data-modeling/stackoverflow-schema.webp" size="lg" alt="Stack Overflow Schema" />
+![Stack Overflow Schema](/images/data-modeling/stackoverflow-schema.webp)
 
 <br />
 
@@ -237,7 +235,7 @@ ClickHouse 中的主键 (排序键)
 
 在 ClickHouse 常见的使用规模下，内存和磁盘效率至关重要。数据会以称为 parts 的块写入 ClickHouse 表，并按照既定规则在后台对这些 parts 进行合并。在 ClickHouse 中，每个 part 都有自己的主索引。当 parts 合并时，合并后 part 的主索引也会一并合并。对于一个 part，主索引中每组行对应一条索引项——这种技术称为稀疏索引。
 
-<Image img="/images/data-modeling/schema-design-indices.webp" size="md" alt="ClickHouse 中的稀疏索引" />
+![ClickHouse 中的稀疏索引](/images/data-modeling/schema-design-indices.webp)
 
 在 ClickHouse 中，所选的键不仅决定索引，还决定数据在磁盘上的写入顺序。因此，它会显著影响压缩效果，进而影响查询性能。如果某个排序键能让大多数列的值按连续方式存储，就能让所选的压缩算法 (以及编解码器) 更高效地压缩数据。
 

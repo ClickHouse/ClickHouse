@@ -10,8 +10,6 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -72,7 +70,7 @@ Azure Synapse 支持三个级别的[包管理](https://learn.microsoft.com/en-us
 
 请确保它位于第一个单元格中，如下所示：
 
-<Image img="/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp" size="xl" alt="通过笔记本设置 Spark 配置" border />
+![通过笔记本设置 Spark 配置](/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp)
 
 如需更多设置，请访问 [ClickHouse Spark 配置页面](/zh/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#configurations)。
 
@@ -87,7 +85,7 @@ Azure Synapse 支持三个级别的[包管理](https://learn.microsoft.com/en-us
 要验证依赖项和配置是否已成功完成设置，请访问当前 会话 的 Spark UI，并转到 `Environment` 选项卡。
 在这里，查找与你的 ClickHouse 相关的设置：
 
-<Image img="/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp" size="xl" alt="使用 Spark UI 验证 ClickHouse 设置" border />
+![使用 Spark UI 验证 ClickHouse 设置](/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp)
 
 <div id="additional-resources">
   ## 其他资源

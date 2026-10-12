@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 توجد حالات يكون فيها من المفيد إيقاف MongoDB ClickPipe مؤقتًا. على سبيل المثال، قد ترغب في إجراء بعض التحليلات على البيانات الحالية وهي في حالة ثابتة. أو قد تكون بصدد تنفيذ ترقيات على MongoDB. إليك كيفية إيقاف MongoDB ClickPipe مؤقتًا ثم استئنافها.
 
 <div id="pause-clickpipe-steps">
@@ -22,16 +20,16 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 2. انتقل إلى علامة التبويب **الإعدادات**.
 3. انقر على الزر **Pause**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp" border size="md" />
+![](/images/integrations/data-ingestion/clickpipes/postgres/pause_button.webp)
 
 4. ينبغي أن يظهر مربع حوار للتأكيد. انقر على **Pause** مرة أخرى.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp" border size="md" />
+![](/images/integrations/data-ingestion/clickpipes/postgres/pause_dialog.webp)
 
 4. انتقل إلى علامة التبويب **المقاييس**.
 5. انتظر حتى تصبح حالة الـ pipe **متوقف مؤقتًا**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp" border size="md" />
+![](/images/integrations/data-ingestion/clickpipes/postgres/pause_status.webp)
 
 <div id="resume-clickpipe-steps">
   ## خطوات استئناف MongoDB ClickPipe
@@ -41,11 +39,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 2. انتقل إلى علامة التبويب **الإعدادات**.
 3. انقر على الزر **استئناف**.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp" border size="md" />
+![](/images/integrations/data-ingestion/clickpipes/postgres/resume_button.webp)
 
 4. يجب أن يظهر مربع حوار للتأكيد. انقر على **استئناف** مرة أخرى.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp" border size="md" />
+![](/images/integrations/data-ingestion/clickpipes/postgres/resume_dialog.webp)
 
 5. انتقل إلى علامة التبويب **المقاييس**.
 6. انتظر حتى تصبح حالة الـ pipe **قيد التشغيل**.

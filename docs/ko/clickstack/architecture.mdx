@@ -7,8 +7,6 @@ doc_type: '참고'
 keywords: ['ClickStack 아키텍처', '관측성 아키텍처', 'HyperDX', 'OpenTelemetry collector', 'MongoDB', '시스템 설계']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구성 요소를 자가 관리하는 **ClickStack Open Source**와 ClickHouse 및 HyperDX UI를 ClickHouse Cloud에서 호스팅하고 운영하는 **Managed ClickStack** 사이에는 중요한 아키텍처상 차이가 있습니다. 두 모델 모두 핵심 구성 요소는 동일하지만, 각 구성 요소의 호스팅, 스케일링, 보안에 대한 책임은 다릅니다.
 
 <div id="architecture-overview">
@@ -23,7 +21,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
 
     이 모델에서는 **ClickHouse 및 ClickStack UI (HyperDX)** 가 ClickHouse Cloud에서 호스팅되고, 운영되며, 보호됩니다. 사용자는 텔레메트리 데이터를 관리형 서비스로 전송하기 위해 **OpenTelemetry (OTel) collector**만 실행하면 됩니다.
 
-    <Image img="/images/use-cases/observability/clickstack-managed-architecture.webp" alt="관리형 아키텍처" size="lg" />
+    ![관리형 아키텍처](/images/use-cases/observability/clickstack-managed-architecture.webp)
 
 ### ClickHouse Cloud: 엔진
 
@@ -77,7 +75,7 @@ ClickStack 아키텍처는 배포 방식에 따라 달라집니다. 모든 구�
   <Tab title="오픈 소스 ClickStack">
     ClickStack Open Source 아키텍처는 **ClickHouse**, **HyperDX**, **OpenTelemetry (OTel) collector**의 세 가지 핵심 구성 요소를 중심으로 설계되었습니다. **MongoDB** 인스턴스는 애플리케이션 상태를 저장합니다. 이 구성 요소들이 함께 로그, 메트릭, 트레이스에 최적화된 고성능 오픈 소스 관측성 스택을 제공합니다.
 
-    <Image img="/images/use-cases/observability/clickstack-oss-architecture.webp" alt="아키텍처" size="lg" />
+    ![아키텍처](/images/use-cases/observability/clickstack-oss-architecture.webp)
 
 ### ClickHouse: 데이터베이스 엔진
 

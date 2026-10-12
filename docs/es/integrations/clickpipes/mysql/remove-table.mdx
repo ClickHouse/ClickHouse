@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 En algunos casos, tiene sentido excluir tablas específicas de un ClickPipe de MySQL; por ejemplo, si una tabla no es necesaria para su carga de trabajo analítica, omitirla puede reducir los costos de almacenamiento y replicación en ClickHouse.
 
 <div id="remove-tables-steps">
@@ -27,7 +25,7 @@ El primer paso es quitar la tabla del pipe. Esto puede hacerse siguiendo estos p
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
 
 5. Haz clic en Update.
 6. Una vez que la actualización se complete correctamente, en la pestaña **Metrics** el estado será **Running**. Esta tabla dejará de replicarse mediante este ClickPipe.

@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ru/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 В этом руководстве приведены пошаговые инструкции по переносу базы данных PostgreSQL в ClickHouse Managed Postgres с помощью PeerDB.
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.migration-guide-peerdb-beta" />
@@ -44,7 +42,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Создайте peer для исходной базы данных PostgreSQL, указав сведения о подключении: хост, порт, имя базы данных, имя пользователя и пароль. После этого нажмите кнопку `Create peer`, чтобы сохранить peer.
 
-<Image img="/images/managed-postgres/peerdb/source-peer.webp" alt="Создание peer для источника" size="md" border />
+![Создание peer для источника](/images/managed-postgres/peerdb/source-peer.webp)
 
 <div id="migration-peerdb-target-peer">
   ### Создание целевого peer
@@ -52,11 +50,11 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Аналогичным образом создайте peer для своего экземпляра ClickHouse Managed Postgres, указав необходимые сведения о подключении. [Сведения о подключении](/ru/products/managed-postgres/connection) для вашего экземпляра можно получить в консоли ClickHouse Cloud. После заполнения данных нажмите кнопку `Create peer`, чтобы сохранить целевой peer.
 
-<Image img="/images/managed-postgres/peerdb/target-peer.webp" alt="Создание целевого peer" size="md" border />
+![Создание целевого peer](/images/managed-postgres/peerdb/target-peer.webp)
 
 Теперь в разделе &quot;Peers&quot; должны отображаться оба peer — исходный и целевой.
 
-<Image img="/images/managed-postgres/peerdb/peers.webp" alt="Список peer" size="md" border />
+![Список peer](/images/managed-postgres/peerdb/peers.webp)
 
 <div id="migration-peerdb-source-schema-dump">
   ### Получение дампа схемы исходной базы данных
@@ -144,7 +142,7 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 Далее нужно создать mirror, чтобы определить процесс переноса данных между исходным и целевым peer. В интерфейсе PeerDB перейдите в раздел &quot;Mirrors&quot;, щелкнув &quot;Mirrors&quot; на боковой панели. Чтобы создать новый mirror, нажмите кнопку `+ New mirror`.
 
-<Image img="/images/managed-postgres/peerdb/create-mirror.webp" alt="Создание mirror" size="md" border />
+![Создание mirror](/images/managed-postgres/peerdb/create-mirror.webp)
 
 1. Задайте mirror имя, описывающее перенос.
 2. Выберите исходный и целевой peer, которые вы создали ранее, в раскрывающихся списках.
@@ -153,11 +151,11 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 * Soft delete выключен.
 * Разверните `Advanced settings`. Убедитесь, что **система типов Postgres включена**, а **столбцы PeerDB отключены**.
 
-<Image img="/images/managed-postgres/peerdb/settings.webp" alt="Настройки mirror" size="md" border />
+![Настройки mirror](/images/managed-postgres/peerdb/settings.webp)
 
 4. Выберите таблицы, которые хотите перенести. Можно выбрать конкретные таблицы или все таблицы из исходной базы данных.
 
-<Image img="/images/managed-postgres/peerdb/table-picker.webp" alt="Выбор таблиц" size="md" border />
+![Выбор таблиц](/images/managed-postgres/peerdb/table-picker.webp)
 
 <Info>
   **Выбор таблиц**
@@ -169,7 +167,7 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 После этого новый mirror должен появиться в разделе &quot;Mirrors&quot;.
 
-<Image img="/images/managed-postgres/peerdb/mirrors.webp" alt="Список mirrors" size="md" border />
+![Список mirrors](/images/managed-postgres/peerdb/mirrors.webp)
 
 <div id="migration-peerdb-initial-load">
   ## Дождитесь завершения Initial load
@@ -177,7 +175,7 @@ ALTER ROLE <target_role> SET session_replication_role = replica;
 
 После создания mirror PeerDB начнет Initial load данных из исходной базы данных в целевую. Чтобы отслеживать ход Initial load данных, нажмите mirror и перейдите на вкладку **Initial load**.
 
-<Image img="/images/managed-postgres/peerdb/initial-load.webp" alt="Прогресс Initial load" size="md" border />
+![Прогресс Initial load](/images/managed-postgres/peerdb/initial-load.webp)
 
 Когда Initial load завершится, вы увидите статус, указывающий, что миграция завершена.
 

@@ -7,8 +7,6 @@ keywords: ['GCS']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 This guide demonstrates how to securely authenticate with Google Cloud Storage (GCS) and access your data from ClickHouse Cloud.
 
 ## Introduction {#introduction}
@@ -39,11 +37,11 @@ For following this guide you will need:
 
 1. In the Google Cloud Console, navigate to IAM & Admin → Service Accounts
 
-<Image img="/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp" size="md" alt=""/>
+![](/images/cloud/guides/accessing-data/GCS/IAM_and_admin.webp)
 
 2. Click `Service accounts` from the left-hand menu, then click `Create service account`:
 
-<Image img="/images/cloud/guides/accessing-data/GCS/create_service_account.webp" size="md" alt=""/>
+![](/images/cloud/guides/accessing-data/GCS/create_service_account.webp)
 
 Enter a name and description for your service account, for example:
 
@@ -54,11 +52,11 @@ Service account description: Service account for ClickHouse Cloud to access GCS 
 
 Click `Create and continue`
 
-<Image img="/images/cloud/guides/accessing-data/GCS/create_and_continue.webp" size="sm" alt=""/>
+![](/images/cloud/guides/accessing-data/GCS/create_and_continue.webp)
 
 Grant the service account the `Storage Object User` role:
 
-<Image img="/images/cloud/guides/accessing-data/GCS/storage_object_user.webp" size="sm" alt=""/>
+![](/images/cloud/guides/accessing-data/GCS/storage_object_user.webp)
 
 This role provides read and write access to GCS objects
 
@@ -71,7 +69,7 @@ Click `Continue`, then `Done`
 
 Make note of the service account email address:
 
-<Image img="/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp" size="md" alt=""/>
+![](/images/cloud/guides/accessing-data/GCS/note_service_account_email.webp)
 </Step>
 <Step title="Grant bucket access to the service account" id="grant-bucket-access-to-service-account">
 
@@ -108,19 +106,19 @@ Grant access only to the specific buckets that ClickHouse needs to access, rathe
 
 Navigate to `Cloud Storage` → `Settings` → `Interoperability`:
 
-<Image img="/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp" size="sm" alt=""/>
+![](/images/cloud/guides/accessing-data/GCS/cloud_storage_settings.webp)
 
 If you don't see an "Access keys" section, click `Enable interoperability access`
 
 Under "Access keys for service accounts", click `Create a key for a service account`:
 
-<Image img="/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp" size="md" alt=""/>
+![](/images/cloud/guides/accessing-data/GCS/create_key_for_service_account.webp)
 
 Select the service account you created earlier (e.g clickhouse-gcs-access@your-project.iam.gserviceaccount.com)
 
 Click `Create key`:
 
-<Image img="/images/cloud/guides/accessing-data/GCS/create_a_key.webp" size="md" alt=""/>
+![](/images/cloud/guides/accessing-data/GCS/create_a_key.webp)
 
 The HMAC key will be displayed.
 Save both the Access Key and Secret immediately - you won't be able to view the secret again.
@@ -176,7 +174,7 @@ When [setting up a GCS ClickPipe](/integrations/clickpipes/object-storage/google
 1. Select `Credentials` under `Authentication method` during ClickPipe setup
 2. Provide HMAC credentials obtained in the previous steps
 
-<Image img="/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp" size="md" alt=""/>
+![](/images/cloud/guides/accessing-data/GCS/clickpipes_hmac_key.webp)
 
 <Note>
 Service account authentication isn't currently supported - you must use HMAC keys

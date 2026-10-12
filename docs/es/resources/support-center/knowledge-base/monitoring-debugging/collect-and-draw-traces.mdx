@@ -6,8 +6,6 @@ keywords: ['traza de consulta', 'OTel', 'Grafana']
 description: "Esta guía le muestra cómo recopilar y visualizar trazas de consultas con ClickHouse autogestionado, ya sea con métodos integrados o con Grafana. Esto resulta especialmente útil cuando trabaja con consultas complejas y necesita comprender los mecanismos internos de ejecución más allá de lo que ofrece EXPLAIN."
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 **Requisitos previos**:
 
 * Familiaridad con los [archivos de configuración](/es/concepts/features/configuration/server-config/configuration-files) de ClickHouse
@@ -145,7 +143,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
     Utiliza el visualizador de trazas alojado en [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/).
     Carga el archivo `trace.json` del paso anterior para visualizar la traza.
 
-    <Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="Ejemplo del visualizador de trazas de ClickHouse" />
+    ![Ejemplo del visualizador de trazas de ClickHouse](/images/knowledgebase/trace-visualizer-example.png)
   </Step>
 
   <Step title="Usar Grafana para visualizar trazas" id="using-grafana">
@@ -174,10 +172,10 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
     Asegúrate de configurar `Query type` como `Traces`:
 
-    <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="Visualización de trazas de ClickHouse en Grafana" />
+    ![Visualización de trazas de ClickHouse en Grafana](/images/knowledgebase/trace-visualization-grafana.png)
 
     Haz clic en &quot;Run Query&quot; e inspecciona el diagrama de trazas:
 
-    <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="Visualización de trazas de ClickHouse en Grafana" />
+    ![Visualización de trazas de ClickHouse en Grafana](/images/knowledgebase/trace-visualization-diagram.png)
   </Step>
 </Steps>

@@ -7,8 +7,6 @@ description: 'Set up VNet peering or Private Link for BYOC on Azure'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 ClickHouse BYOC on Azure supports two private connection options: [Azure Virtual Network peering](https://learn.microsoft.com/azure/virtual-network/virtual-network-peering-overview) and [Azure Private Link](https://learn.microsoft.com/azure/private-link/private-link-overview). Both keep traffic on the Azure backbone so that it never traverses the public internet.
 
 ## Prerequisites {#common-prerequisites}
@@ -19,7 +17,7 @@ Common steps required by both VNet peering and Private Link.
 
 In the ClickHouse Cloud console, enable the **Private load balancer** for your BYOC infrastructure. Both connection options route through this internal load balancer, so neither works until it is enabled.
 
-<Image img="/images/cloud/reference/byoc-private-load-balancer-azure.webp" size="md" alt="BYOC Enable Private Load Balancer" border />
+![BYOC Enable Private Load Balancer](/images/cloud/reference/byoc-private-load-balancer-azure.webp)
 
 Note down the infrastructure **Spoken name**. ClickHouse deploys your BYOC infrastructure into your own Azure subscription, into a managed resource group named `clickhouse-cloud-<spoken-name>-default`. That resource group is where you find the BYOC VNet in the steps below.
 
@@ -44,11 +42,11 @@ The example steps are for a simple scenario: one of your VNets peering directly 
 2. Search for **Virtual networks** and select the BYOC VNet, which lives in the `clickhouse-cloud-<spoken-name>-default` resource group.
 3. Under **Settings**, select **Peerings**, then select **+ Add**.
 
-<Image img="/images/cloud/reference/byoc-vnetpeering-azure-1.webp" size="lg" alt="BYOC Create VNet peering" border />
+![BYOC Create VNet peering](/images/cloud/reference/byoc-vnetpeering-azure-1.webp)
 
 4. Fill in both halves of the peering:
 
-<Image img="/images/cloud/reference/byoc-vnetpeering-azure-2.webp" size="md" alt="BYOC configure VNet peering" border />
+![BYOC configure VNet peering](/images/cloud/reference/byoc-vnetpeering-azure-2.webp)
 
 5. Click **Add**.
 
@@ -70,7 +68,7 @@ Open **Peerings** on either virtual network. The **Peering status** must show **
 
 No route table changes are needed. Azure automatically installs system routes for the peered address space on both sides. You can confirm this on any network interface in your VNet under **Effective routes**, where the BYOC address space appears with a next hop type of **VNet peering**.
 
-<Image img="/images/cloud/reference/byoc-vnetpeering-azure-3.webp" size="lg" alt="BYOC Verify VNet peering" border />
+![BYOC Verify VNet peering](/images/cloud/reference/byoc-vnetpeering-azure-3.webp)
 </Step>
 <Step title="Allow peered VNet access through the network security group" id="step-4-allow-address-space-through-nsg">
 
@@ -114,33 +112,33 @@ Azure Private Link provides a secure and private connection to your ClickHouse B
 Make sure the **private load balancer** is turned on as a prerequisite.
 </Note>
 
-<Image img="/images/cloud/reference/byoc-privatelink.webp" size="md" alt="BYOC PrivateLink Enable" border />
+![BYOC PrivateLink Enable](/images/cloud/reference/byoc-privatelink.webp)
 </Step>
 <Step title={<>Obtain endpoint <code>Service name</code></>} id="step-2-obtain-endpoint-service-name">
 
 1. In the ClickHouse Cloud console, navigate to the service's Settings page that you would like to connect to via Private Link.
 2. Click "Set up private endpoint".
 3. In the opened flyout, copy the `Service name` (the Private Link service alias) and `DNS name` values — you'll use them in the next steps. (It may take a while for the values to be generated after enabling Private Link.)
-   <Image img="/images/cloud/security/azure-privatelink-pe-create.webp" size="md" alt="Private Endpoints" border />
+   ![Private Endpoints](/images/cloud/security/azure-privatelink-pe-create.webp)
 </Step>
 <Step title="Create a private endpoint in your network" id="step-3-create-endpoint">
 
 1. Open your **own Azure Portal** (i.e. the Azure subscription where your client application is) → **Network Foundation** → **Private endpoints** → **Create**.
 2. On the **Basics** tab, choose the subscription, resource group, name, and region for the private endpoint. The region should be the region of the VNet your client application connects from.
-   <Image img="/images/cloud/security/azure-pe-create-basic.webp" size="md" alt="Create Private Endpoint Basic" border />
+   ![Create Private Endpoint Basic](/images/cloud/security/azure-pe-create-basic.webp)
 3. On the **Resource** tab, select **Connect to an Azure resource by resource ID or alias** and enter the `Service name` obtained from the last step.
-   <Image img="/images/cloud/security/azure-pe-resource.webp" size="md" alt="Private Endpoint Resource Selection" border />
+   ![Private Endpoint Resource Selection](/images/cloud/security/azure-pe-resource.webp)
 4. On the **Virtual Network** tab, choose the virtual network and subnet where the private endpoint will be created. Optionally, attach an application security group to filter traffic to the private endpoint.
-   <Image img="/images/cloud/security/azure-pe-create-vnet.webp" size="md" alt="Private Endpoint Virtual Network Selection" border />
+   ![Private Endpoint Virtual Network Selection](/images/cloud/security/azure-pe-create-vnet.webp)
 5. Continue through the remaining tabs and click **Create**. The **Connection status** of the created private endpoint will be in a **Pending** state until you add its `Resource ID` to the ClickHouse service allow list in the next steps.
 6. Open the network interface associated with the private endpoint and copy the **Private IPv4 address** — you'll use it in the DNS setup step.
-   <Image img="/images/cloud/security/azure-pe-ip.webp" size="lg" alt="Private Endpoint IP Address" border />
+   ![Private Endpoint IP Address](/images/cloud/security/azure-pe-ip.webp)
 </Step>
 <Step title={<>Add the private endpoint <code>Resource ID</code> to ClickHouse service allow list</>} id="step-4-add-endpoint-id-to-services-allow-list">
 
 To obtain the private endpoint Resource ID, open the private endpoint created earlier in the Azure Portal and click **JSON View**, then copy the top-level `id` field (the **Resource ID** shown at the top of the view, in the form `/subscriptions/.../providers/Microsoft.Network/privateEndpoints/<name>`). Don't use the nested `id` fields inside the `properties` object:
 
-<Image img="/images/cloud/security/azure-pe-resource-id.webp" size="lg" alt="Private Endpoint Resource ID" border />
+![Private Endpoint Resource ID](/images/cloud/security/azure-pe-resource-id.webp)
 
 1. In the ClickHouse Cloud console, navigate to the service's Settings page that you would like to connect to via Private Link.
 2. Click "Set up private endpoint".
@@ -151,7 +149,7 @@ To obtain the private endpoint Resource ID, open the private endpoint created ea
 If you want to allow access from an existing Private Link connection, use the existing endpoint dropdown menu.
 The dropdown will show the existing Private Link connections to the services within the same infrastructure.
 </Note>
-<Image img="/images/cloud/security/azure-privatelink-pe-filter.webp" size="md" alt="Private Endpoints Filter" border />
+![Private Endpoints Filter](/images/cloud/security/azure-privatelink-pe-filter.webp)
 
 <Note>
 No manual approval in the Azure Portal is required — once the `Resource ID` is added to the allow list, the endpoint connection is automatically approved, and its `LinkID` is automatically added to the Istio `AuthorizationPolicy` for the ClickHouse service. The **Connection status** of the private endpoint in your subscription changes to **Approved**.
@@ -180,7 +178,7 @@ nslookup h5ju65kv87.privatelink.mhp0y4dmph.westus3.azure.clickhouse-byoc.com
 1. In the ClickHouse Cloud console, navigate to service's Settings page.
 2. Click "Set up private endpoint".
 3. In the opened flyout, copy the `DNS name`.
-   <Image img="/images/cloud/security/azure-privatelink-pe-dns.webp" size="md" alt="Private Endpoint DNS Name" border />
+   ![Private Endpoint DNS Name](/images/cloud/security/azure-privatelink-pe-dns.webp)
    <Note>
    Access to ClickHouse services via Private Link is controlled by the service-level **Istio Authorization Policy**, managed by ClickHouse within your BYOC infrastructure.
    </Note>

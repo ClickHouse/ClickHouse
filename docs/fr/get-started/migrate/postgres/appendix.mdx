@@ -6,8 +6,6 @@ description: 'Informations complémentaires sur la migration depuis PostgreSQL'
 doc_type: 'référence'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="postgres-vs-clickhouse-equivalent-and-different-concepts">
   ## Postgres vs ClickHouse : concepts équivalents et différences
 </div>
@@ -40,7 +38,7 @@ ClickHouse utilise ClickHouse Keeper (implémentation C++ de ZooKeeper, bien que
 
 Le processus de réplication dans ClickHouse (1) commence lorsque des données sont insérées dans n’importe quelle réplique. Ces données, sous leur forme brute d’insertion, sont (2) écrites sur disque avec leurs sommes de contrôle. Une fois l’écriture terminée, la réplique (3) tente d’enregistrer cette nouvelle partie de données dans Keeper en lui attribuant un numéro de bloc unique et en consignant les détails de cette nouvelle partie. Les autres répliques, lorsqu’elles (4) détectent de nouvelles entrées dans le journal de réplication, (5) téléchargent la partie de données correspondante via un protocole HTTP interne, puis la vérifient à l’aide des sommes de contrôle répertoriées dans ZooKeeper. Cette méthode garantit que toutes les répliques finissent par disposer de données cohérentes et à jour, malgré des vitesses de traitement variables ou d’éventuels retards. De plus, le système est capable de gérer plusieurs opérations en parallèle, ce qui optimise les processus de gestion des données et améliore la scalabilité ainsi que la robustesse du système face aux disparités matérielles.
 
-<Image img="/images/integrations/data-ingestion/dbms/postgres-replicas.webp" size="md" alt="Cohérence éventuelle" />
+![Cohérence éventuelle](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
 
 Notez que ClickHouse Cloud utilise un [mécanisme de réplication optimisé pour le cloud](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates), adapté à son architecture de séparation du stockage et du calcul. En stockant les données dans un stockage objet partagé, celles-ci deviennent automatiquement disponibles pour tous les nœuds de calcul, sans qu’il soit nécessaire de les répliquer physiquement entre les nœuds. Keeper sert alors uniquement à partager les métadonnées (quelles données existent et où elles se trouvent dans le stockage objet) entre les nœuds de calcul.
 

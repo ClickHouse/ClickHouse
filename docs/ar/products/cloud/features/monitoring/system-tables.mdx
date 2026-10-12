@@ -7,8 +7,6 @@ sidebarTitle: 'جداول النظام'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تأتي جميع مثيلات ClickHouse مع مجموعة من [جداول النظام](/ar/reference/system-tables/overview) ضمن قاعدة البيانات `system`، وتحتوي على معلومات حول:
 
 * حالات الخادم وعملياته وبيئته.
@@ -58,7 +56,7 @@ ORDER BY
 
 يأتي ClickHouse مزودًا بميزة لوحة معلومات observability متقدمة مضمّنة يمكن الوصول إليها عبر `$HOST:$PORT/dashboard` (يتطلب اسم المستخدم وكلمة المرور)، وتعرض مقاييس Cloud Overview الموجودة في `system.dashboards`.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="لوحة معلومات observability المتقدمة الأصلية" border />
+![لوحة معلومات observability المتقدمة الأصلية](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
 
 <Note>
   تتطلب لوحة المعلومات هذه مصادقة مباشرة على مثيل ClickHouse، وهي منفصلة عن [لوحة المعلومات المتقدمة في Cloud Console](/ar/products/cloud/features/monitoring/cloud-console#advanced-dashboard)، التي يمكن الوصول إليها عبر واجهة مستخدم Cloud Console دون مصادقة إضافية.

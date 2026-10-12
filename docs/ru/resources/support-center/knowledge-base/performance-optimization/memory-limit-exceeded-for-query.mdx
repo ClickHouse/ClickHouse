@@ -6,8 +6,6 @@ tags: ['Ошибки и исключения']
 keywords: ['OOM', 'превышен лимит памяти']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="troubleshooting-out-of-memory-issues">
   ## Превышен лимит памяти при выполнении запроса
 </div>
@@ -67,7 +65,7 @@ ClickHouse Cloud делает автоматически и без лишних 
 сортируются на диске, если они не помещаются в памяти, что позволяет выполнять JOIN
 для больших таблиц.
 
-<Image img="/images/knowledgebase/memory-limit-exceeded-for-query.webp" size="md" alt="Алгоритмы JOIN" />
+![Алгоритмы JOIN](/images/knowledgebase/memory-limit-exceeded-for-query.webp)
 
 Начиная с версии 20.3, ClickHouse поддерживает значение auto для настройки `join_algorithm`.
 Оно указывает ClickHouse использовать адаптивный подход к JOIN: предпочтение

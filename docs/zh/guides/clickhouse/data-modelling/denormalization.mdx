@@ -6,8 +6,6 @@ keywords: ['数据反规范化', '反规范化', '查询优化']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 数据反规范化是 ClickHouse 中一种通过使用扁平化表、避免 JOIN，从而尽可能降低查询延迟的技术。
 
 <div id="comparing-normalized-vs-denormalized-schemas">
@@ -18,7 +16,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 这一过程减少了查询时对复杂 JOIN 的需求，并且能够显著提升读取操作速度，因此非常适合读取密集且查询复杂的应用。不过，这也会增加写入操作和维护的复杂度，因为对重复数据的任何修改都必须同步到所有实例中，以保持一致性。
 
-<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="ClickHouse 中的反规范化" />
+![ClickHouse 中的反规范化](/images/data-modeling/denormalization-diagram.webp)
 
 <br />
 
@@ -147,7 +145,7 @@ LIMIT 5
 
 现在来看一下 `Users` 和 `Badges`：
 
-<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="Users 和 Badges schema" />
+![Users 和 Badges schema](/images/data-modeling/denormalization-schema.webp)
 
 <p />
 

@@ -11,7 +11,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import { PrivatePreviewBadge } from "/snippets/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
 
 You can use [AWS PrivateLink](https://aws.amazon.com/privatelink/) to establish a secure connection between ClickPipes and a data source hosted on AWS. ClickPipes creates a **reverse private endpoint (RPE)** in its VPC and points it at a private endpoint service published for your data source, so traffic is never exposed to the public internet.
@@ -263,19 +262,19 @@ To configure custom private DNS names:
 
 1. Access the SQL Console for your ClickHouse Cloud Service.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes service" size="md" border/>
+![ClickPipes service](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
 
 2. Select the `Data Sources` button on the left-side menu and click on "Set up a ClickPipe"
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="Select imports" size="lg" border/>
+![Select imports](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
 
 3. Select either Kafka or Postgres as a data source.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp" alt="Select data source" size="lg" border/>
+![Select data source](/images/integrations/data-ingestion/clickpipes/cp_rpe_select.webp)
 
 4. Select the `Reverse private endpoint` option.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp" alt="Select reverse private endpoint" size="lg" border/>
+![Select reverse private endpoint](/images/integrations/data-ingestion/clickpipes/cp_rpe_step0.webp)
 
 5. Select any of existing reverse private endpoints or create a new one.
 
@@ -286,11 +285,11 @@ If cross-region access is required for RDS, you need to create a VPC endpoint se
 For same-region access, creating a VPC Resource is the recommended approach.
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp" alt="Select reverse private endpoint" size="lg" border/>
+![Select reverse private endpoint](/images/integrations/data-ingestion/clickpipes/cp_rpe_step1.webp)
 
 6. Provide the required parameters for the selected endpoint type.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp" alt="Select reverse private endpoint" size="lg" border/>
+![Select reverse private endpoint](/images/integrations/data-ingestion/clickpipes/cp_rpe_step2.webp)
 
     - For VPC resource, provide the configuration share ARN and configuration ID.
     - For MSK multi-VPC, provide the cluster ARN and authentication method used with a created endpoint.
@@ -303,7 +302,7 @@ For same-region access, creating a VPC Resource is the recommended approach.
    The page will refresh automatically once the endpoint is ready.
    VPC endpoint service might require accepting the connection request in your AWS console.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp" alt="Select reverse private endpoint" size="lg" border/>
+![Select reverse private endpoint](/images/integrations/data-ingestion/clickpipes/cp_rpe_step3.webp)
 
 8. Once the endpoint is ready, you can use a DNS name to connect to the data source.
 
@@ -323,11 +322,11 @@ You can manage existing reverse private endpoints in the ClickHouse Cloud servic
 
 1. On a sidebar find the `Settings` button and click on it.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp" alt="ClickHouse Cloud settings" size="lg" border/>
+    ![ClickHouse Cloud settings](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings0.webp)
 
 2. Click on `Reverse private endpoints` in a `ClickPipe reverse private endpoints` section.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp" alt="ClickHouse Cloud settings" size="md" border/>
+    ![ClickHouse Cloud settings](/images/integrations/data-ingestion/clickpipes/cp_rpe_settings1.webp)
 
    Reverse private endpoint extended information is shown in the flyout.
 

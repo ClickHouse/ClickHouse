@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
 ClickHouse Managed Postgres는 워크로드 요구 사항에 맞는 유연한 스케일링 옵션을 제공합니다. 50개가 넘는 NVMe 기반 인스턴스 유형 중에서 선택할 수 있으며, CPU, 메모리, 스토리지를 각각 독립적으로 스케일링해 사용 사례에 맞게 성능과 비용을 최적화할 수 있습니다.
@@ -22,7 +20,7 @@ ClickHouse Managed Postgres는 각기 다른 워크로드 특성에 맞게 최�
 * **모든 인스턴스 유형에서 NVMe 기반 스토리지**를 제공해 일관된 고성능 디스크 I/O를 지원합니다
 * **독립적인 리소스 스케일링**: 워크로드에 따라 CPU, 메모리, 스토리지의 적절한 균형을 선택할 수 있습니다
 
-<Image img="/images/managed-postgres/instance-types.webp" alt="인스턴스 유형" size="md" border />
+![인스턴스 유형](/images/managed-postgres/instance-types.webp)
 
 <div id="choosing-instance">
   ### 적합한 인스턴스 유형 선택
@@ -44,7 +42,7 @@ ClickHouse Managed Postgres는 각기 다른 워크로드 특성에 맞게 최�
 
 인스턴스 유형을 변경하면 ClickHouse Managed Postgres는 새 인프라를 프로비저닝하고 데이터베이스를 마이그레이션하는 수직 스케일링을 수행하며, 이 과정에서 다운타임은 최소화됩니다.
 
-<Image img="/images/managed-postgres/scaling-settings.webp" alt="스케일링 설정" size="md" border />
+![스케일링 설정](/images/managed-postgres/scaling-settings.webp)
 
 <div id="scaling-process">
   ### 스케일링 프로세스

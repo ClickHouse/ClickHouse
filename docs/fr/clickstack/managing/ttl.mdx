@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'ttl', 'rétention des données', 'cycle de vie', 'gestion du stockage']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
 import OtelLogsSchema from '/snippets/fr/clickstack/_schema_otel_logs.mdx';
 
 <div id="ttl-clickstack">
@@ -26,7 +25,7 @@ Le partitionnement dans ClickHouse permet de séparer logiquement les données s
 
 Comme le montre l’exemple ci-dessus, le partitionnement est spécifié sur une table lors de sa définition initiale via la clause `PARTITION BY`. Cette clause peut contenir une expression SQL sur une ou plusieurs colonnes, dont le résultat détermine vers quelle partition une ligne est envoyée. Les données sont ainsi logiquement associées (via un préfixe commun de nom de dossier) à chaque partition sur le disque, qui peut ensuite être interrogée isolément. Dans l’exemple ci-dessus, le schéma `otel_logs` par défaut partitionne les données par jour à l’aide de l’expression `toDate(Timestamp)`. À mesure que des lignes sont insérées dans ClickHouse, cette expression est évaluée pour chaque ligne et celle-ci est dirigée vers la partition correspondante si elle existe (si la ligne est la première d’une journée, la partition sera créée). Pour plus de détails sur le partitionnement et ses autres applications, voir [&quot;Partitions de table&quot;](/fr/concepts/core-concepts/partitions).
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="Partitions" size="lg" />
+![Partitions](/images/use-cases/observability/observability-14.webp)
 
 Le schéma de la table inclut également `TTL toDateTime(Timestamp) + ${TABLES_TTL}` et le paramètre `ttl_only_drop_parts = 1`. La première clause garantit que les données seront supprimées une fois qu’elles dépassent le TTL configuré (3 jours par défaut). Le paramètre `ttl_only_drop_parts = 1` fait en sorte que seules les data parts dont toutes les données ont expiré soient supprimées (au lieu de tenter une suppression partielle des lignes). Comme le partitionnement garantit que les données de jours distincts ne sont jamais « fusionnées », elles peuvent ainsi être supprimées efficacement.
 

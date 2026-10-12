@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Kafka', 'logs', 'OTEL', 'ClickStack', 'broker monitoring', 'Log4j']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -159,9 +157,9 @@ Ensure the ClickStack collector has appropriate permissions to read the Kafka lo
 
 Once configured, log into HyperDX and verify that logs are flowing:
 
-<Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Search view"/>
+![Search view](/images/clickstack/kafka/logs/search-view.webp)
 
-<Image img="/images/clickstack/kafka/logs/log-view.webp" alt="Log view"/>
+![Log view](/images/clickstack/kafka/logs/log-view.webp)
 </Step>
 </Steps>
 
@@ -248,9 +246,9 @@ Once ClickStack is running:
 2. Navigate to the Search view and set the source to `Logs`
 3. Set the time range to include **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**
 
-<Image img="/images/clickstack/kafka/logs/search-view.webp" alt="Search view"/>
+![Search view](/images/clickstack/kafka/logs/search-view.webp)
 
-<Image img="/images/clickstack/kafka/logs/log-view.webp" alt="Log view"/>
+![Log view](/images/clickstack/kafka/logs/log-view.webp)
 </Step>
 </Steps>
 
@@ -266,17 +264,17 @@ Once ClickStack is running:
 1. Open HyperDX and navigate to the Dashboards section.
 2. Click "Import Dashboard" in the upper right corner under the ellipses.
 
-<Image img="/images/clickstack/import-dashboard.webp" alt="Import Dashboard"/>
+![Import Dashboard](/images/clickstack/import-dashboard.webp)
 
 3. Upload the kafka-logs-dashboard.json file and click finish import.
 
-<Image img="/images/clickstack/kafka/logs/finish-import.webp" alt="Finish importing Kafka logs dashboard"/>
+![Finish importing Kafka logs dashboard](/images/clickstack/kafka/logs/finish-import.webp)
 </Step>
 <Step title="The dashboard will be created with all visualizations pre-configured" id="created-dashboard">
 
 For the demo dataset, set the time range to include **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**.
 
-<Image img="/images/clickstack/kafka/logs/example-dashboard.webp" alt="Kafka Logs example dashboard"/>
+![Kafka Logs example dashboard](/images/clickstack/kafka/logs/example-dashboard.webp)
 </Step>
 </Steps>
 

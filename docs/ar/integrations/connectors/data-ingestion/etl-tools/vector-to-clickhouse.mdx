@@ -12,8 +12,6 @@ integration:
 keywords: ['vector', 'جمع السجلات', 'Observability', 'إدخال البيانات', 'مسار معالجة']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -113,7 +111,7 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
     SELECT * FROM nginxdb.access_logs
     ```
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/vector_01.webp" size="lg" border alt="عرض سجلات ClickHouse بتنسيق جدولي" />
+    ![عرض سجلات ClickHouse بتنسيق جدولي](/images/integrations/data-ingestion/etl-tools/vector_01.webp)
   </Step>
 
   <Step title="تحليل السجلات" id="4-parse-the-logs">
@@ -215,7 +213,7 @@ import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.
     SELECT * FROM nginxdb.access_logs_view
     ```
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/vector_02.webp" size="lg" border alt="اعرض سجلات ClickHouse المُحلَّلة بتنسيق جدولي" />
+    ![اعرض سجلات ClickHouse المُحلَّلة بتنسيق جدولي](/images/integrations/data-ingestion/etl-tools/vector_02.webp)
 
     <Note>
       في الدرس أعلاه، جرى تخزين البيانات في جدولين، لكن يمكنك تغيير الجدول الأولي `nginxdb.access_logs` لاستخدام محرك الجدول [`Null`](/ar/reference/engines/table-engines/special/null).

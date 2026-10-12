@@ -8,7 +8,6 @@ sidebar_order: 1
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import { RunnableCode } from "/snippets/components/RunnableCode/RunnableCode.jsx";
 
 ## Introduction {#introduction}
@@ -49,7 +48,7 @@ ClickHouse automatically samples the primary keys and chooses a table that can
 generate the same correct result, but requires the least amount of data to be 
 read as shown in the figure below:
 
-<Image img="/images/data-modeling/projections_1.webp" size="md" alt="Projections in ClickHouse"/>
+![Projections in ClickHouse](/images/data-modeling/projections_1.webp)
 
 ### Smarter storage with `_part_offset` {#smarter_storage_with_part_offset}
 
@@ -310,7 +309,7 @@ becomes `AggregatingMergeTree`, and all aggregate functions are converted to
 The figure below is a visualization of the main table `uk_price_paid_with_projections`
 and its two projections:
 
-<Image img="/images/data-modeling/projections_2.webp" size="md" alt="Visualization of the main table uk_price_paid_with_projections and its two projections"/>
+![Visualization of the main table uk_price_paid_with_projections and its two projections](/images/data-modeling/projections_2.webp)
 
 If we now run the query that lists the counties in London for the three highest 
 paid prices again, we see an improvement in query performance:

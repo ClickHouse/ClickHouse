@@ -6,8 +6,6 @@ title: 'Gerenciamento de créditos pré-pagos em autoatendimento'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Se você adquirir créditos pré-pagos por meio de um contrato com compromisso de consumo, poderá gerenciar como esses créditos são distribuídos entre as suas organizações do ClickHouse.
 Use a página **Prepaid credits** para consultar saldos e transferir créditos entre organizações.
 
@@ -15,7 +13,7 @@ Use a página **Prepaid credits** para consultar saldos e transferir créditos e
 
 No console do ClickHouse Cloud, abra **Settings** e selecione **Prepaid credits** em **Account**.
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-navigation.png" alt="Créditos pré-pagos em Account na barra lateral de Settings" size="sm" />
+![Créditos pré-pagos em Account na barra lateral de Settings](/images/cloud/reference/billing/prepaid-credits-navigation.png)
 
 Para visualizar os saldos de créditos pré-pagos, você precisa ter pelo menos uma das seguintes funções em uma organização com créditos de contrato com compromisso de consumo alocados:
 
@@ -63,7 +61,7 @@ Cada linha da tabela abaixo do resumo representa uma organização, com dados qu
 | **Spent**              | Todos os saldos pré-pagos da organização foram consumidos, mas não expiraram. Esse status tem precedência sobre **Active**.  |
 | **No Prepaid Credits** | A organização não tem créditos pré-pagos.                                                                                    |
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-balances.png" alt="Métricas de resumo de créditos pré-pagos e saldos por organização" size="lg" />
+![Métricas de resumo de créditos pré-pagos e saldos por organização](/images/cloud/reference/billing/prepaid-credits-balances.png)
 
 ## Transferir créditos {#transfer-credits}
 
@@ -77,7 +75,7 @@ Para transferir créditos, você precisa da permissão [Manage billing details](
 4. Informe o valor a ser transferido.
 5. Revise os saldos resultantes e clique em **Transfer credits**.
 
-<Image img="/images/cloud/reference/billing/prepaid-credits-transfer.png" alt="Painel de transferência de créditos com a concessão de origem, a organização de destino, o valor da transferência e os saldos resultantes" size="md" />
+![Painel de transferência de créditos com a concessão de origem, a organização de destino, o valor da transferência e os saldos resultantes](/images/cloud/reference/billing/prepaid-credits-transfer.png)
 
 ### Regras de transferência {#transfer-rules}
 

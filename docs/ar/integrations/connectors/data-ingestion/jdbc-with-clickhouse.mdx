@@ -7,8 +7,6 @@ title: 'ربط ClickHouse بمصادر بيانات خارجية باستخدا�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <Warning>
   يحتوي clickhouse-jdbc-bridge على شيفرة تجريبية ولم يعد مدعومًا. وقد يتضمن مشكلات تتعلق بالموثوقية وثغرات أمنية. استخدمه على مسؤوليتك الخاصة.
 </Warning>
@@ -19,7 +17,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 **نظرة عامة:** يتيح <a href="https://github.com/ClickHouse/clickhouse-jdbc-bridge" target="_blank">ClickHouse JDBC Bridge</a>، بالاقتران مع [jdbc table function](/ar/reference/functions/table-functions/jdbc) أو [JDBC table engine](/ar/reference/engines/table-engines/integrations/jdbc)، لـ ClickHouse الوصول إلى البيانات من أي مصدر بيانات خارجي يتوفر له <a href="https://en.wikipedia.org/wiki/JDBC_driver" target="_blank">برنامج تشغيل JDBC</a>:
 
-<Image img="/images/integrations/data-ingestion/dbms/jdbc-01.webp" size="lg" alt="مخطط معمارية ClickHouse JDBC Bridge" background="white" />
+![مخطط معمارية ClickHouse JDBC Bridge](/images/integrations/data-ingestion/dbms/jdbc-01.webp)
 
 ويكون ذلك مفيدًا عندما لا يتوفر [integration engine](/ar/reference/engines/table-engines/integrations/index) أصلي مدمج، أو table function، أو قاموس خارجي لمصدر البيانات الخارجي، بينما يتوفر برنامج تشغيل JDBC لهذا المصدر.
 
@@ -45,7 +43,9 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   ## ثبّت ClickHouse JDBC Bridge محليًا
 </div>
 
-أسهل طريقة لاستخدام ClickHouse JDBC Bridge هي تثبيته وتشغيله على نفس المضيف الذي يعمل عليه ClickHouse:<Image img="/images/integrations/data-ingestion/dbms/jdbc-02.webp" size="lg" alt="مخطط نشر ClickHouse JDBC Bridge محليًا" background="white" />
+أسهل طريقة لاستخدام ClickHouse JDBC Bridge هي تثبيته وتشغيله على نفس المضيف الذي يعمل عليه ClickHouse:
+
+![مخطط نشر ClickHouse JDBC Bridge محليًا](/images/integrations/data-ingestion/dbms/jdbc-02.webp)
 
 لنبدأ بالاتصال بـ Unix shell على الجهاز الذي يعمل عليه ClickHouse، ثم إنشاء مجلد محلي سنُثبّت فيه ClickHouse JDBC Bridge لاحقًا (يمكنك تسمية المجلد كما تشاء ووضعه في أي مكان تريده):
 
@@ -147,7 +147,7 @@ wget https://github.com/ClickHouse/clickhouse-jdbc-bridge/releases/download/v2.0
 
 بالنسبة إلى عنقود ClickHouse موزّع (أي عنقود يضم أكثر من مضيف ClickHouse واحد)، فمن المنطقي تثبيت ClickHouse JDBC Bridge وتشغيله خارجيًا على مضيف مستقل:
 
-<Image img="/images/integrations/data-ingestion/dbms/jdbc-03.webp" size="lg" alt="مخطط نشر خارجي لـ ClickHouse JDBC Bridge" background="white" />
+![مخطط نشر خارجي لـ ClickHouse JDBC Bridge](/images/integrations/data-ingestion/dbms/jdbc-03.webp)
 
 وتتمثل ميزة ذلك في أن كل مضيف ClickHouse يمكنه الوصول إلى JDBC Bridge. بخلاف ذلك، سيلزم تثبيت JDBC Bridge محليًا على كل مثيل ClickHouse من المفترض أن يصل إلى مصادر بيانات خارجية عبر الـ Bridge.
 

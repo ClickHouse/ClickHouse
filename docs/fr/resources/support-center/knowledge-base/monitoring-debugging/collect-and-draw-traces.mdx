@@ -6,8 +6,6 @@ keywords: ['trace de requête', 'OTel', 'Grafana']
 description: "Ce guide vous montre comment collecter et visualiser des traces de requête avec une instance ClickHouse autogérée, soit à l’aide des méthodes intégrées, soit avec Grafana. Cela est particulièrement utile lorsque vous travaillez sur des requêtes complexes et devez comprendre les mécanismes internes d’exécution au-delà de ce que fournit EXPLAIN."
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 **Prérequis** :
 
 * Connaissance des [fichiers de configuration](/fr/concepts/features/configuration/server-config/configuration-files) de ClickHouse
@@ -145,7 +143,7 @@ import { Image } from "/snippets/fr/components/Image.jsx";
     Utilisez le visualiseur de traces hébergé à l’adresse [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/).
     Chargez le fichier `trace.json` de l’étape précédente pour visualiser la trace.
 
-    <Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="Exemple du visualiseur de traces ClickHouse" />
+    ![Exemple du visualiseur de traces ClickHouse](/images/knowledgebase/trace-visualizer-example.png)
   </Step>
 
   <Step title="Utiliser Grafana pour visualiser les traces" id="using-grafana">
@@ -174,10 +172,10 @@ import { Image } from "/snippets/fr/components/Image.jsx";
 
     Assurez-vous de définir `Query type` sur `Traces` :
 
-    <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="Visualisation des traces ClickHouse dans Grafana" />
+    ![Visualisation des traces ClickHouse dans Grafana](/images/knowledgebase/trace-visualization-grafana.png)
 
     Cliquez sur &quot;Run Query&quot; et examinez le diagramme de traces :
 
-    <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="Visualisation des traces ClickHouse dans Grafana" />
+    ![Visualisation des traces ClickHouse dans Grafana](/images/knowledgebase/trace-visualization-diagram.png)
   </Step>
 </Steps>

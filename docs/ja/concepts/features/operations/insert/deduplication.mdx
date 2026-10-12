@@ -7,8 +7,6 @@ keywords: ['重複排除戦略', 'データ重複排除', 'upsert', '更新と�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 **重複排除**とは、***データセットから重複した行を取り除くこと***&#x3092;指します。OLTP データベースでは、各行が一意の主キーを持つため、これは簡単に行えますが、その代償として insert は遅くなります。挿入するすべての行について、まず既存の行を検索し、見つかった場合は置き換える必要があるためです。
 
 ClickHouse は、高速なデータ挿入を重視して設計されています。ストレージファイルは不変であり、ClickHouse は行を挿入する前に既存の主キーを確認しないため、重複排除にはもう少し手間がかかります。つまり、重複排除は即時には行われず、**最終的に**行われるということです。そのため、いくつかの副作用があります。
@@ -20,7 +18,7 @@ ClickHouse は、高速なデータ挿入を重視して設計されています
 <div class="transparent-table">
   |                                                                                      |                                                                                                                                                                                                                                |
   | ------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-  | <Image img="/images/guides/developer/de_duplication.webp" alt="重複排除のロゴ" size="sm" /> | ClickHouse では、重複排除をはじめとするさまざまなトピックについて、無料のトレーニングを提供しています。[Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) は、その出発点として最適です。 |
+  | ![重複排除のロゴ](/images/guides/developer/de_duplication.webp) | ClickHouse では、重複排除をはじめとするさまざまなトピックについて、無料のトレーニングを提供しています。[Deleting and Updating Data training module](https://learn.clickhouse.com/visitor_catalog_class/show/1328954/?utm_source=clickhouse\&utm_medium=docs) は、その出発点として最適です。 |
 </div>
 
 <div id="options-for-deduplication">

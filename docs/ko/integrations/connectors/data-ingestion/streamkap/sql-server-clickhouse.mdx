@@ -7,8 +7,6 @@ title: '빠른 분석을 위한 SQL Server에서 ClickHouse로 데이터 스트�
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 글에서는 SQL Server에서 ClickHouse로 데이터를 스트리밍하는 방법을 설명하는 튜토리얼을 살펴봅니다. ClickHouse는 내부용 또는 고객 대상 대시보드 보고에 필요한 초고속 분석에 적합합니다. 두 데이터베이스를 설정하고, 서로 연결한 다음, 마지막으로 [Streamkap](https://streamkap.com)을 사용해 데이터를 스트리밍하는 방법까지 단계별로 안내합니다. SQL Server가 일상적인 운영을 처리하고 있지만 분석에는 ClickHouse의 속도와 강력한 기능이 필요하다면, 이 가이드가 도움이 됩니다.
 
 <div id="why-stream-data-from-sql-server-to-clickhouse">
@@ -79,11 +77,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     * 사용자 이름 및 비밀번호
     * 데이터베이스 이름
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image3.webp" size="lg" />
+    ![](/images/integrations/data-ingestion/etl-tools/image3.webp)
 
     #### 내부에서 수행되는 작업
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image1.webp" size="lg" />
+    ![](/images/integrations/data-ingestion/etl-tools/image1.webp)
 
     이 설정을 완료하면 Streamkap이 SQL Server에 연결해 테이블을 감지합니다. 이 데모에서는 events 또는 transactions처럼 이미 일부 데이터가 계속 스트리밍되고 있는 테이블을 선택하겠습니다.
   </Step>
@@ -148,7 +146,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     #### 백필이 필요할까요?
 
-    <Image img="/images/integrations/data-ingestion/etl-tools/image2.webp" size="lg" />
+    ![](/images/integrations/data-ingestion/etl-tools/image2.webp)
 
     이전 데이터를 백필해야 할지 궁금할 수 있습니다.
 

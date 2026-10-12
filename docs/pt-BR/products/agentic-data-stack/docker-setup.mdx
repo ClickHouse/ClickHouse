@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['agentic data stack', 'docker compose', 'setup', 'LibreChat', 'MCP', 'Langfuse']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Execute o Agentic Data Stack completo localmente com Docker Compose e faça perguntas aos seus dados desde o primeiro acesso. Um único comando `docker compose up` inicializa o [LibreChat](/pt-BR/products/agentic-data-stack/components/librechat), o [ClickHouse MCP server](/pt-BR/products/agentic-data-stack/components/mcp-server), o [ClickHouse](/pt-BR/get-started/setup/install) e o [Langfuse](/pt-BR/products/agentic-data-stack/components/langfuse) para observabilidade.
 
 <div id="prerequisites">
@@ -74,18 +72,18 @@ Execute o Agentic Data Stack completo localmente com Docker Compose e faça perg
   <Step title="Selecione um modelo">
     Um modelo já vem selecionado por padrão. Se quiser alterá-lo, abra o seletor de modelos e escolha o que deseja usar.
 
-    <Image img="/images/agentic-data-stack/select-model.webp" alt="O seletor de modelos do LibreChat no canto superior esquerdo, mostrando o modelo padrão com uma dica de ferramenta Select a model" size="md" />
+    ![O seletor de modelos do LibreChat no canto superior esquerdo, mostrando o modelo padrão com uma dica de ferramenta Select a model](/images/agentic-data-stack/select-model.webp)
 
     Se você não definiu uma chave do provedor durante o Setup, adicione uma na UI.
 
     <Accordion title="Defina uma chave do provedor na UI">
       Abra o seletor de modelos e clique em **Set API Key** ao lado do provedor.
 
-      <Image img="/images/agentic-data-stack/set-api-key.webp" alt="Seletor de modelos do LibreChat com o botão Set API Key ao lado do provedor Anthropic" size="md" />
+      ![Seletor de modelos do LibreChat com o botão Set API Key ao lado do provedor Anthropic](/images/agentic-data-stack/set-api-key.webp)
 
       Cole sua chave na caixa de diálogo e clique em **Submit**. Você pode definir uma expiração ou manter a chave sem expiração.
 
-      <Image img="/images/agentic-data-stack/set-api-key-modal.webp" alt="A caixa de diálogo Set API Key for Anthropic com uma lista suspensa de expiração, um campo Key e os botões Submit e Revoke" size="md" />
+      ![A caixa de diálogo Set API Key for Anthropic com uma lista suspensa de expiração, um campo Key e os botões Submit e Revoke](/images/agentic-data-stack/set-api-key-modal.webp)
     </Accordion>
   </Step>
 
@@ -96,7 +94,7 @@ Execute o Agentic Data Stack completo localmente com Docker Compose e faça perg
 
     {/* TODO: guide users (or link out to the Remote MCP docs at /cloud/features/ai-ml/remote-mcp) on connecting ClickHouse-Cloud — it requires an OAuth flow, unlike the bundled local server. */}
 
-    <Image img="/images/agentic-data-stack/select-clickhouse-local.webp" alt="O menu MCP Servers aberto na área de composição do LibreChat, mostrando ClickHouse-Local com um ponto verde indicando conexão e ClickHouse-Cloud" size="md" />
+    ![O menu MCP Servers aberto na área de composição do LibreChat, mostrando ClickHouse-Local com um ponto verde indicando conexão e ClickHouse-Cloud](/images/agentic-data-stack/select-clickhouse-local.webp)
   </Step>
 
   <Step title="Faça sua primeira pergunta">
@@ -106,7 +104,7 @@ Execute o Agentic Data Stack completo localmente com Docker Compose e faça perg
 
     O agente usa as ferramentas do servidor MCP para listar bancos de dados e tabelas, executar consultas em modo somente leitura no ClickHouse e montar uma resposta com base nos resultados. Você não precisa escrever SQL.
 
-    <Image img="/images/agentic-data-stack/prompt-chat.webp" alt="O LibreChat respondendo à pergunta de exemplo ao chamar as ferramentas MCP do ClickHouse-Local e listar os bancos de dados e tabelas disponíveis" size="md" />
+    ![O LibreChat respondendo à pergunta de exemplo ao chamar as ferramentas MCP do ClickHouse-Local e listar os bancos de dados e tabelas disponíveis](/images/agentic-data-stack/prompt-chat.webp)
   </Step>
 </Steps>
 

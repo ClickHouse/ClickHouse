@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 في بعض الحالات، يكون من المنطقي استبعاد جداول معيّنة من ClickPipe لـ MongoDB — على سبيل المثال، إذا لم يكن جدول معيّن مطلوبًا ضمن أعباء عمل التحليلات لديك، فإن تخطيه قد يقلّل من تكاليف التخزين والنسخ المتماثل في ClickHouse.
 
 <div id="remove-tables-steps">
@@ -27,7 +25,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp" border size="md" />
+![](/images/integrations/data-ingestion/clickpipes/postgres/remove_table.webp)
 
 5. انقر على update.
 6. بعد اكتمال التحديث بنجاح، ستكون الحالة في علامة تبويب **Metrics** هي **Running**. لن يعود هذا الجدول يُنسَخ بواسطة ClickPipe هذا.

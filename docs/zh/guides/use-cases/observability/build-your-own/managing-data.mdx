@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 用于可观测性的 ClickHouse 部署通常都会涉及海量数据集，因此需要妥善管理。ClickHouse 提供了多项功能来帮助进行数据管理。
 
 <Tip>
@@ -28,7 +26,7 @@ ClickHouse 中的分区允许根据某个列或 SQL 表达式在磁盘上对数�
 
 分区是在表初始定义时通过 `PARTITION BY` 子句指定的。该子句可以包含基于任意列的 SQL 表达式，其结果决定每一行会被写入哪个分区。
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="分区" size="md" />
+![分区](/images/use-cases/observability/observability-14.webp)
 
 磁盘上的每个分区都会在逻辑上关联相应的数据分区片段 (通过相同的文件夹名前缀) ，并且可以单独查询。以下面的示例为例，默认的 `otel_logs` schema 使用表达式 `toDate(Timestamp)` 按天分区。随着行被插入 ClickHouse，系统会对每一行计算该表达式，并将其路由到对应的分区；如果某一天的第一行到来，则会创建该分区。
 

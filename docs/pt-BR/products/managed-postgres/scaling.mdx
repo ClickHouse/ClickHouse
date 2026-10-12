@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
 O ClickHouse Managed Postgres oferece opções de escalonamento flexível para atender às exigências da sua carga de trabalho. Com mais de 50 tipos de instância com NVMe à disposição, você pode dimensionar CPU, memória e armazenamento de forma independente para otimizar o desempenho e o custo do seu caso de uso específico.
@@ -22,7 +20,7 @@ O ClickHouse Managed Postgres oferece uma ampla variedade de tipos de instância
 * **Armazenamento com NVMe** em todos os tipos de instância para E/S de disco consistente e de alto desempenho
 * **Escalonamento independente de recursos**: escolha o equilíbrio ideal entre CPU, memória e armazenamento com base na sua carga de trabalho
 
-<Image img="/images/managed-postgres/instance-types.webp" alt="Tipos de instância" size="md" border />
+![Tipos de instância](/images/managed-postgres/instance-types.webp)
 
 <div id="choosing-instance">
   ### Como escolher o tipo de instância certo
@@ -44,7 +42,7 @@ Diferentes cargas de trabalho se beneficiam de diferentes configurações de rec
 
 Quando você altera os tipos de instância, o ClickHouse Managed Postgres realiza uma operação de escalonamento vertical que provisiona uma nova infraestrutura e migra seu banco de dados com o mínimo de indisponibilidade.
 
-<Image img="/images/managed-postgres/scaling-settings.webp" alt="Configurações de escalonamento" size="md" border />
+![Configurações de escalonamento](/images/managed-postgres/scaling-settings.webp)
 
 <div id="scaling-process">
   ### Processo de escalonamento

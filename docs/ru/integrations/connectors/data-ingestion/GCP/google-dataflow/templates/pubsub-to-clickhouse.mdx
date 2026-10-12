@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Dataflow', 'Pub/Sub', 'PubSub', 'стриминг', 'dead-letter']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Шаблон Pub/Sub to ClickHouse — это стриминговый конвейер, который читает сообщения в формате JSON из подписки Pub/Sub и записывает их в таблицу ClickHouse.
 Сообщения, которые не удалось разобрать или сопоставить с целевой схемой, направляются в пункт назначения dead-letter: таблицу ClickHouse, тему Pub/Sub или в оба сразу.
 
@@ -163,7 +161,7 @@ ORDER BY failed_at;
 Войдите в Google Cloud Console и найдите Dataflow.
 
 1. Нажмите кнопку `CREATE JOB FROM TEMPLATE`.
-   <Image img="/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp" border alt="Консоль Dataflow" />
+   ![Консоль Dataflow](/images/integrations/data-ingestion/google-dataflow/create_job_from_template_button.webp)
 
 2. Когда откроется форма шаблона, введите имя задачи и выберите нужный регион.
 
@@ -190,7 +188,7 @@ ORDER BY failed_at;
 
 Перейдите на [вкладку задач Dataflow](https://console.cloud.google.com/dataflow/jobs) в Google Cloud Console, чтобы отслеживать состояние задачи. Там вы найдете сведения о задаче, включая ход выполнения и возможные ошибки:
 
-<Image img="/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp" size="lg" border alt="Консоль Dataflow с выполняющейся задачей Pub/Sub to ClickHouse" />
+![Консоль Dataflow с выполняющейся задачей Pub/Sub to ClickHouse](/images/integrations/data-ingestion/google-dataflow/pubsub-inqueue-job.webp)
 
 Шаблон также отправляет следующие пользовательские метрики в пространстве имен `PubSubToClickHouse`; их можно просмотреть на странице задачи Dataflow:
 

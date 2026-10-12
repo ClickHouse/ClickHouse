@@ -7,8 +7,6 @@ keywords: ['Iceberg', 'RBAC', 'Amazon S3', 'аутентификация']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 ClickHouse Cloud поддерживает безопасный ролевой доступ к данным Iceberg, хранящимся в Объектном хранилище (обычно S3), с использованием доверительной связи AWS IAM на основе ARN. В этом руководстве используется тот же подход к безопасной настройке, что и в [Безопасный доступ к данным S3](/ru/products/cloud/guides/data-sources/accessing-s3-data-securely), а также добавляется специфичная для Iceberg конфигурация в ClickHouse.
 
 <div id="overview">
@@ -36,7 +34,7 @@ ClickHouse Cloud поддерживает безопасный ролевой д
   <Step title={<>5. Скопируйте значение <strong>Идентификатор сервисной роли (IAM)</strong>.</>} id="service-role-iam-value">
     Этот ARN требуется для политики доверия роли IAM в AWS, которая будет использоваться для доступа к вашим данным Iceberg.
 
-    <Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="Получение ARN сервисной роли IAM ClickHouse" border />
+    ![Получение ARN сервисной роли IAM ClickHouse](/images/cloud/security/secures3_arn.webp)
   </Step>
 </Steps>
 

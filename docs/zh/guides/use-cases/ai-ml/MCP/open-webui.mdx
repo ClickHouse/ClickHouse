@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 > 本指南介绍如何配置 [Open WebUI](https://github.com/open-webui/open-webui) 与 ClickHouse MCP 服务器，
 > 并将其连接到 ClickHouse 示例数据集。
 
@@ -47,47 +45,47 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     访问 [http://localhost:8000/docs](http://localhost:8000/docs) 即可查看已创建的端点列表。
 
-    <Image img="/images/use-cases/AI_ML/MCP/0_endpoints.webp" alt="Open API 端点" size="md" />
+    ![Open API 端点](/images/use-cases/AI_ML/MCP/0_endpoints.webp)
 
     要在 Open WebUI 中使用这些端点，需要进入设置：
 
-    <Image img="/images/use-cases/AI_ML/MCP/1_settings.webp" alt="Open WebUI 设置" size="md" />
+    ![Open WebUI 设置](/images/use-cases/AI_ML/MCP/1_settings.webp)
 
     点击 `Tools`：
 
-    <Image img="/images/use-cases/AI_ML/MCP/2_tools_page.webp" alt="Open WebUI 工具" size="md" />
+    ![Open WebUI 工具](/images/use-cases/AI_ML/MCP/2_tools_page.webp)
 
     将 [http://localhost:8000](http://localhost:8000) 添加为工具 URL：
 
-    <Image img="/images/use-cases/AI_ML/MCP/3_add_tool.webp" alt="Open WebUI 工具" size="md" />
+    ![Open WebUI 工具](/images/use-cases/AI_ML/MCP/3_add_tool.webp)
 
     完成后，聊天栏中的工具图标旁应该会显示一个 `1`：
 
-    <Image img="/images/use-cases/AI_ML/MCP/4_tools_available.webp" alt="Open WebUI 可用工具" size="md" />
+    ![Open WebUI 可用工具](/images/use-cases/AI_ML/MCP/4_tools_available.webp)
 
     点击工具图标后，即可查看可用工具列表：
 
-    <Image img="/images/use-cases/AI_ML/MCP/5_list_of_tools.webp" alt="Open WebUI 工具列表" size="md" />
+    ![Open WebUI 工具列表](/images/use-cases/AI_ML/MCP/5_list_of_tools.webp)
   </Step>
 
   <Step title="配置 OpenAI" id="configure-openai">
     默认情况下，Open WebUI 使用 Ollama 模型，但也可以添加与 OpenAI 兼容的端点。
     这些内容可通过设置菜单进行配置，这里需要点击 `Connections` 选项卡：
 
-    <Image img="/images/use-cases/AI_ML/MCP/6_connections.webp" alt="Open WebUI 连接" size="md" />
+    ![Open WebUI 连接](/images/use-cases/AI_ML/MCP/6_connections.webp)
 
     添加该端点以及 OpenAI 密钥：
 
-    <Image img="/images/use-cases/AI_ML/MCP/7_add_connection.webp" alt="Open WebUI - 添加 OpenAI 作为连接" size="md" />
+    ![Open WebUI - 添加 OpenAI 作为连接](/images/use-cases/AI_ML/MCP/7_add_connection.webp)
 
     随后，OpenAI 模型就会出现在顶部菜单中：
 
-    <Image img="/images/use-cases/AI_ML/MCP/8_openai_models_more.webp" alt="Open WebUI - 模型" size="md" />
+    ![Open WebUI - 模型](/images/use-cases/AI_ML/MCP/8_openai_models_more.webp)
   </Step>
 
   <Step title="通过 Open WebUI 与 ClickHouse MCP 服务器聊天" id="chat-to-clickhouse-mcp-server">
     接下来即可开始对话，Open WebUI 会在需要时调用 MCP 服务器：
 
-    <Image img="/images/use-cases/AI_ML/MCP/9_conversation.webp" alt="Open WebUI - 与 ClickHouse MCP 服务器聊天" size="md" />
+    ![Open WebUI - 与 ClickHouse MCP 服务器聊天](/images/use-cases/AI_ML/MCP/9_conversation.webp)
   </Step>
 </Steps>

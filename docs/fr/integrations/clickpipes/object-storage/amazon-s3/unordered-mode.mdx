@@ -6,8 +6,6 @@ description: 'Guide pas à pas pour configurer le mode non ordonné pour l’ing
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Par défaut, le S3 ClickPipe part du principe que les fichiers sont ajoutés à un bucket dans un [ordre lexicographique](/fr/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-lexicographical-order). Il est possible de configurer un S3 ClickPipe pour ingérer des fichiers qui n&#39;ont pas d&#39;ordre implicite en configurant une file d&#39;attente [Amazon SQS](https://aws.amazon.com/sqs/) connectée au bucket, éventuellement avec [Amazon EventBridge](https://aws.amazon.com/eventbridge/) comme routeur d&#39;événements. Cela permet à ClickPipes d&#39;écouter les événements `ObjectCreated:*` et d&#39;ingérer tous les nouveaux fichiers, quelle que soit la convention de nommage utilisée.
 
 <Note>
@@ -44,11 +42,11 @@ Différents types de défaillances peuvent survenir lors de l’ingestion des do
       <Tab title="via EventBridge">
         **a.** Dans les propriétés du bucket S3, accédez à **Event notifications &gt; Amazon EventBridge** et activez l’envoi de notifications vers EventBridge. Cliquez sur **Save changes**.
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp" alt="Activation des notifications Amazon EventBridge dans les propriétés du bucket S3" size="lg" border />
+        ![Activation des notifications Amazon EventBridge dans les propriétés du bucket S3](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp)
 
         **b.** Dans la Console AWS, accédez à **Amazon EventBridge &gt; Rules &gt; Create rule**. Nommez la règle (par ex. `S3ObjectCreated`), choisissez le bus d’événements **default**, puis cliquez sur **Next**. À l’étape **Build event pattern**, sélectionnez **AWS events or EventBridge partner events** comme source d’événement, puis saisissez manuellement le modèle d’événement suivant en remplaçant `<bucket-name>` par le nom de votre bucket :
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp" alt="Définition du nom de la règle EventBridge et du bus d’événements" size="lg" border />
+        ![Définition du nom de la règle EventBridge et du bus d’événements](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp)
 
         ```json
         {
@@ -66,9 +64,9 @@ Différents types de défaillances peuvent survenir lors de l’ingestion des do
 
         **c.** À l’étape **Select target(s)**, choisissez **AWS service** comme type de cible et sélectionnez **SQS queue**. Choisissez la file d’attente créée à l’étape précédente. Laissez **Use execution role (recommended)** coché pour permettre à EventBridge de créer automatiquement le rôle IAM requis, puis cliquez sur **Next** et terminez l’assistant.
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="Définition de la file d’attente SQS comme cible de la règle EventBridge" size="lg" border />
+        ![Définition de la file d’attente SQS comme cible de la règle EventBridge](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp)
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="Règle EventBridge créée avec succès" size="lg" border />
+        ![Règle EventBridge créée avec succès](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp)
 
         **d.** Modifiez la stratégie d’accès de la file d’attente SQS pour autoriser EventBridge à lui envoyer des messages. Remplacez `<sqs-queue-arn>` et `<eventbridge-rule-arn>` par les valeurs appropriées :
 

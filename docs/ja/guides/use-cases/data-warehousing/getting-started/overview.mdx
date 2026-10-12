@@ -7,8 +7,6 @@ keywords: ['データレイク', 'レイクハウス', 'はじめに', 'Iceberg'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <Info>
   **要点**
 
@@ -41,7 +39,7 @@ ClickHouse では、オープンテーブルフォーマットを読み取る方
     LIMIT 5
     ```
 
-    <Image img="/images/datalake/iceberg-query-direct.webp" alt="Iceberg クエリ" />
+    ![Iceberg クエリ](/images/datalake/iceberg-query-direct.webp)
 
     ClickHouse は S3 から Iceberg のメタデータを直接読み取り、スキーマを自動的に推論します。同じアプローチは [`deltaLake()`](/ja/reference/functions/table-functions/deltalake)、[`hudi()`](/ja/reference/functions/table-functions/hudi)、[`paimon()`](/ja/reference/functions/table-functions/paimon) でも使用できます。
 
@@ -68,7 +66,7 @@ ClickHouse では、オープンテーブルフォーマットを読み取る方
     LIMIT 5
     ```
 
-    <Image img="/images/datalake/iceberg-query-engine.webp" alt="Iceberg クエリ" />
+    ![Iceberg クエリ](/images/datalake/iceberg-query-engine.webp)
 
     このテーブルエンジンでは、データキャッシュ、メタデータキャッシュ、スキーマ進化、タイムトラベルをサポートしています。テーブルエンジンの機能の詳細については[直接クエリ](/ja/guides/use-cases/data-warehousing/getting-started/querying-directly)ガイドを、機能の完全な比較については[サポートマトリクス](/ja/guides/use-cases/data-warehousing/support-matrix)を参照してください。
   </Step>
@@ -160,7 +158,7 @@ ClickHouse では、オープンテーブルフォーマットを読み取る方
 
     このクエリでは、Iceberg は `counterid` フィルターを認識しないため、S3 内のデータセット全体がスキャンされます。数秒かかることがあります。
 
-    <Image img="/images/datalake/iceberg-query.webp" alt="Iceberg クエリ" />
+    ![Iceberg クエリ](/images/datalake/iceberg-query.webp)
 
     次に、MergeTree テーブルを作成してデータを読み込みます。
 
@@ -194,7 +192,7 @@ ClickHouse では、オープンテーブルフォーマットを読み取る方
     LIMIT 5
     ```
 
-    <Image img="/images/datalake/clickhouse-query.webp" alt="ClickHouse クエリ" />
+    ![ClickHouse クエリ](/images/datalake/clickhouse-query.webp)
 
     `counterid` は `ORDER BY` キーの先頭カラムであるため、ClickHouse のスパースプライマリインデックスは該当するグラニュールまで直接絞り込み、1 億行すべてをスキャンする代わりに `counterid = 38` の行だけを読み取ります。その結果、処理速度が大幅に向上します。
 

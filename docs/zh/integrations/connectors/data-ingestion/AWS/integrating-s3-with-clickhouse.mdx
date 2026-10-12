@@ -12,8 +12,6 @@ integration:
 
 import BucketDetails from '/snippets/zh/_S3_authentication_and_bucket.mdx';
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 您可以将 S3 中的数据插入 ClickHouse，也可以将 S3 用作导出目标端，从而与“数据湖”架构进行交互。此外，S3 还能提供“冷”存储层级，并有助于实现存储与计算分离。在下面的章节中，我们将以纽约市出租车数据集为例，演示如何在 S3 和 ClickHouse 之间移动数据，同时介绍关键配置参数，并提供一些性能优化建议。
 
 ## S3 表函数 {#s3-table-functions}
@@ -859,7 +857,7 @@ SELECT * FROM s3_table1;
 6. 在 AWS 控制台中，进入存储桶列表，选择新建的存储桶和相应文件夹。
    你应该会看到类似下面这样的内容：
 
-<Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="AWS 控制台中的 S3 存储桶视图，显示存储在 S3 中的 ClickHouse 数据文件" />
+![AWS 控制台中的 S3 存储桶视图，显示存储在 S3 中的 ClickHouse 数据文件](/images/integrations/data-ingestion/s3/s3-j.webp)
 
 <div id="s3-multi-region">
   ## 使用 S3 对象存储在两个 AWS 区域之间复制单个分片
@@ -1298,9 +1296,9 @@ sudo service clickhouse-server start
 
   检查每个 S3 存储桶中的数据 (这里未显示总量，但插入后两个存储桶中都大约存储了 36 MiB)：
 
-<Image img="/images/integrations/data-ingestion/s3/bucket1.webp" size="lg" border alt="第一个 S3 存储桶中的数据大小，显示存储使用指标" />
+![第一个 S3 存储桶中的数据大小，显示存储使用指标](/images/integrations/data-ingestion/s3/bucket1.webp)
 
-<Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="第二个 S3 存储桶中的数据大小，显示存储使用指标" />
+![第二个 S3 存储桶中的数据大小，显示存储使用指标](/images/integrations/data-ingestion/s3/bucket2.webp)
 
 <div id="s3express">
   ## S3Express

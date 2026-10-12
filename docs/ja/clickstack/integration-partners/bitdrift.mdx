@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['bitdrift', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'モバイルオブザーバビリティ', 'トレーシング']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -39,7 +37,7 @@ import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.
 
 bitdrift はリクエストされるまでモバイルテレメトリーをエッジに保持するため、チームは固定の事前サンプリング済みシグナルセットに頼るのではなく、クラッシュやパフォーマンス上の問題につながった完全で未サンプリングのセッションを取得できます。bitdrift Capture プラットフォームは、bitdrift がホストする SaaS として、または AWS account 内の独自のクラウド (または bucket) にデプロイして利用できます。
 
-<Image img="/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png" alt="ANR に至る経路を示す bitdrift User Journey ダッシュボード" size="lg" />
+![ANR に至る経路を示す bitdrift User Journey ダッシュボード](/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png)
 
 *ユーザーが ANR に至るまでの経路を示す bitdrift User Journey ダッシュボード。*
 
@@ -85,7 +83,7 @@ ClickStack は、バックエンドサービス、Web フロントエンド、�
 
 設定後、bitdrift のタイムラインログの行と span ビューに、キャプチャされた trace ID を ClickStack UI (HyperDX) に渡す **View Trace** リンクが表示されます。
 
-<Image img="/images/clickstack/bitdrift/bitdrift-view-trace.jpg" alt="ClickStack UI の分散トレースにリンクする bitdrift トレース" size="lg" />
+![ClickStack UI の分散トレースにリンクする bitdrift トレース](/images/clickstack/bitdrift/bitdrift-view-trace.jpg)
 
 *bitdrift セッションから **View Trace** リンクをたどって、ClickStack UI (HyperDX) の分散トレースを表示する例。*
 

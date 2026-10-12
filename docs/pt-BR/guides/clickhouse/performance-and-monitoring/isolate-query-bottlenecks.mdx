@@ -9,7 +9,6 @@ doc_type: 'guide'
 keywords: ['otimização de consultas', 'gargalos em consultas', 'desempenho', 'benchmarking']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import NYCTaxiExampleDataset from '/snippets/pt-BR/_nyc_taxi_example_dataset.mdx';
 
 A otimização de consultas fica mais fácil quando você altera uma parte da consulta por vez e compara os resultados com uma base de referência estável. Este guia mostra como simplificar progressivamente uma consulta e usar as diferenças entre execuções para identificar quais operações mais contribuem para sua duração. Em seguida, você pode validar o possível gargalo antes de escolher uma otimização.
@@ -71,7 +70,7 @@ SET optimize_use_implicit_projections = 0;
 
 O fluxo de trabalho combina execuções controladas de consultas com medições do log de consultas:
 
-<Image img="/images/guides/best-practices/query_optimization_diagram_1.webp" size="lg" alt="Fluxo de trabalho para identificar consultas candidatas nos logs de consultas e testar alterações de forma isolada" />
+![Fluxo de trabalho para identificar consultas candidatas nos logs de consultas e testar alterações de forma isolada](/images/guides/best-practices/query_optimization_diagram_1.webp)
 
 Colete as medições de cada execução da seguinte forma:
 

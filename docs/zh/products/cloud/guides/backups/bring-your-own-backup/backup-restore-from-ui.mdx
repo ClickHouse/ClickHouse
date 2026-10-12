@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['备份', '灾难恢复', '数据保护', '恢复', '云功能']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <Note>
   向您的外部存储桶执行的自动备份是完整且独立的备份，遵循为该服务配置的备份频率和开始时间 (默认每 24 小时一次) 。此外，ClickHouse 还会每 24 小时在由 ClickHouse 托管的存储桶中另外创建一份备份，该周期是固定的。
 </Note>
@@ -39,7 +37,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     * a. 在 ClickHouse Cloud 服务设置页面的 Network security 信息下获取 ARN，格式类似如下：
 
-    <Image img="/images/cloud/manage/backups/arn.webp" alt="AWS S3 ARN" size="lg" />
+    ![AWS S3 ARN](/images/cloud/manage/backups/arn.webp)
 
     * b. 为此角色按如下方式创建信任策略：
 
@@ -112,13 +110,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="更改外部备份" id="configure-external-bucket">
     在 “Settings” 页面上，点击 Set up external backup：
 
-    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="更改外部备份" size="lg" />
+    ![更改外部备份](/images/cloud/manage/backups/change_external_backup.webp)
   </Step>
 
   <Step title="配置 AWS IAM Role ARN 和 S3 存储桶详细信息" id="configure-aws-iam-role-arn-and-s3-bucket-details">
     在下一页中，填写你刚刚创建的 AWS IAM Role ARN，以及以下格式的 S3 存储桶 URL：
 
-    <Image img="/images/cloud/manage/backups/configure_arn_s3_details.webp" alt="配置 AWS IAM Role ARN 和 S3 存储桶详细信息" size="lg" />
+    ![配置 AWS IAM Role ARN 和 S3 存储桶详细信息](/images/cloud/manage/backups/configure_arn_s3_details.webp)
   </Step>
 
   <Step title="保存更改" id="save-changes">
@@ -137,7 +135,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     Backups 页面会在单独的表中显示存储在你的存储桶中的这些备份，
     如下所示：
 
-    <Image img="/images/cloud/manage/backups/view_backups.webp" alt="查看存储在你的存储桶中的备份" size="lg" />
+    ![查看存储在你的存储桶中的备份](/images/cloud/manage/backups/view_backups.webp)
   </Step>
 </Steps>
 
@@ -159,7 +157,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     点击
     UI 中备份列表上方的“访问或恢复备份”链接，以获取用于恢复备份的 SQL 命令。该命令类似如下：
 
-    <Image img="/images/cloud/manage/backups/backup_command.webp" alt="获取用于恢复备份的 SQL 命令" size="md" />
+    ![获取用于恢复备份的 SQL 命令](/images/cloud/manage/backups/backup_command.webp)
 
     <Warning>
       **将备份移动到其他位置**
@@ -229,13 +227,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="更改外部备份" id="gcp-configure-external-bucket">
     在 `Settings` 页面中，点击 `Change external backup`
 
-    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="更改外部备份" size="lg" />
+    ![更改外部备份](/images/cloud/manage/backups/change_external_backup.webp)
   </Step>
 
   <Step title="配置 GCP HMAC Key 和 Secret" id="gcp-configure-gcp-hmac-key-and-secret">
     在弹出的对话框中，填写上一节中创建的 GCP 存储桶路径、HMAC key 和 Secret。
 
-    <Image img="/images/cloud/manage/backups/gcp_configure.webp" alt="配置 GCP HMAC Key 和 Secret" size="md" />
+    ![配置 GCP HMAC Key 和 Secret](/images/cloud/manage/backups/gcp_configure.webp)
   </Step>
 
   <Step title="保存外部存储桶" id="gcp-save-external-bucket">
@@ -253,7 +251,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="查看存储在你的存储桶中的备份" id="gcp-view-backups-stored-in-your-bucket">
     Backups 页面应会在单独的表中显示存储在你的存储桶中的这些备份，如下所示：
 
-    <Image img="/images/cloud/manage/backups/gcp_stored_backups.webp" alt="查看存储在你的存储桶中的备份" size="lg" />
+    ![查看存储在你的存储桶中的备份](/images/cloud/manage/backups/gcp_stored_backups.webp)
   </Step>
 </Steps>
 
@@ -272,7 +270,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
     命令。你需要将你的秘密访问密钥
     添加到该命令中：
 
-    <Image img="/images/cloud/manage/backups/gcp_restore_command.webp" alt="获取用于恢复备份的 SQL 命令" size="md" />
+    ![获取用于恢复备份的 SQL 命令](/images/cloud/manage/backups/gcp_restore_command.webp)
 
     <Warning>
       **将备份移动到其他位置**
@@ -329,13 +327,13 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="更改外部备份" id="azure-configure-external-bucket">
     在 `Settings` 页面中，点击 `Change external backup`。
 
-    <Image img="/images/cloud/manage/backups/change_external_backup.webp" alt="更改外部备份" size="lg" />
+    ![更改外部备份](/images/cloud/manage/backups/change_external_backup.webp)
   </Step>
 
   <Step title="提供 Azure 存储账户的连接字符串和容器名称" id="azure-provide-connection-string-and-container-name-azure">
     在下一页中，输入上一节创建的 Azure 存储账户的连接字符串和 Container Name：
 
-    <Image img="/images/cloud/manage/backups/azure_connection_details.webp" alt="提供 Azure 存储账户的连接字符串和容器名称" size="md" />
+    ![提供 Azure 存储账户的连接字符串和容器名称](/images/cloud/manage/backups/azure_connection_details.webp)
   </Step>
 
   <Step title="保存外部存储桶" id="azure-save-external-bucket">
@@ -349,7 +347,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="查看存储在你的存储桶中的备份" id="azure-view-backups-stored-in-your-bucket">
     Backups 页面会在单独的表中显示存储在你的存储桶中的这些备份，如下所示：
 
-    <Image img="/images/cloud/manage/backups/view_backups_azure.webp" alt="查看存储在你的存储桶中的备份" size="md" />
+    ![查看存储在你的存储桶中的备份](/images/cloud/manage/backups/view_backups_azure.webp)
   </Step>
 </Steps>
 
@@ -365,7 +363,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
   <Step title="获取用于恢复备份的 SQL 命令" id="azure-obtain-sql-command-to-restore-backup">
     在 UI 中，点击备份列表上方的 `访问或恢复备份` 链接，获取用于恢复备份的 SQL 命令。该命令应类似于下面这样，你还可以从下拉列表中选择相应的备份，以获取该特定备份的恢复命令。你需要将 Azure 存储账户连接字符串添加到该命令中。
 
-    <Image img="/images/cloud/manage/backups/restore_backups_azure.webp" alt="在 Azure 中恢复备份" size="md" />
+    ![在 Azure 中恢复备份](/images/cloud/manage/backups/restore_backups_azure.webp)
 
     <Warning>
       **将备份移动到其他位置**

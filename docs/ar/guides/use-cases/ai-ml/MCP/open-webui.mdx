@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 > يشرح هذا الدليل كيفية إعداد [Open WebUI](https://github.com/open-webui/open-webui) مع ClickHouse MCP server
 > وتوصيله بمجموعات البيانات التجريبية في ClickHouse.
 
@@ -47,47 +45,47 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     يمكنك الاطلاع على قائمة بنقاط النهاية التي تم إنشاؤها بالانتقال إلى [http://localhost:8000/docs](http://localhost:8000/docs)
 
-    <Image img="/images/use-cases/AI_ML/MCP/0_endpoints.webp" alt="نقاط نهاية Open API" size="md" />
+    ![نقاط نهاية Open API](/images/use-cases/AI_ML/MCP/0_endpoints.webp)
 
     لاستخدام نقاط النهاية هذه مع Open WebUI، نحتاج إلى الانتقال إلى الإعدادات:
 
-    <Image img="/images/use-cases/AI_ML/MCP/1_settings.webp" alt="إعدادات Open WebUI" size="md" />
+    ![إعدادات Open WebUI](/images/use-cases/AI_ML/MCP/1_settings.webp)
 
     انقر على `Tools`:
 
-    <Image img="/images/use-cases/AI_ML/MCP/2_tools_page.webp" alt="أدوات Open WebUI" size="md" />
+    ![أدوات Open WebUI](/images/use-cases/AI_ML/MCP/2_tools_page.webp)
 
     أضف [http://localhost:8000](http://localhost:8000) باعتباره URL الأداة:
 
-    <Image img="/images/use-cases/AI_ML/MCP/3_add_tool.webp" alt="أداة Open WebUI" size="md" />
+    ![أداة Open WebUI](/images/use-cases/AI_ML/MCP/3_add_tool.webp)
 
     بمجرد الانتهاء من ذلك، ينبغي أن نرى `1` بجانب أيقونة الأداة في شريط الدردشة:
 
-    <Image img="/images/use-cases/AI_ML/MCP/4_tools_available.webp" alt="أدوات Open WebUI المتاحة" size="md" />
+    ![أدوات Open WebUI المتاحة](/images/use-cases/AI_ML/MCP/4_tools_available.webp)
 
     إذا نقرنا على أيقونة الأداة، يمكننا بعد ذلك عرض الأدوات المتاحة:
 
-    <Image img="/images/use-cases/AI_ML/MCP/5_list_of_tools.webp" alt="قائمة أدوات Open WebUI" size="md" />
+    ![قائمة أدوات Open WebUI](/images/use-cases/AI_ML/MCP/5_list_of_tools.webp)
   </Step>
 
   <Step title="تهيئة OpenAI" id="configure-openai">
     بشكل افتراضي، يعمل Open WebUI مع نماذج Ollama، لكن يمكننا أيضًا إضافة نقاط نهاية متوافقة مع OpenAI.
     تُضبط هذه الإعدادات عبر قائمة الإعدادات، لكن هذه المرة نحتاج إلى النقر على علامة التبويب `Connections`:
 
-    <Image img="/images/use-cases/AI_ML/MCP/6_connections.webp" alt="اتصالات Open WebUI" size="md" />
+    ![اتصالات Open WebUI](/images/use-cases/AI_ML/MCP/6_connections.webp)
 
     لنضف نقطة النهاية ومفتاح OpenAI الخاص بنا:
 
-    <Image img="/images/use-cases/AI_ML/MCP/7_add_connection.webp" alt="Open WebUI - إضافة OpenAI كاتصال" size="md" />
+    ![Open WebUI - إضافة OpenAI كاتصال](/images/use-cases/AI_ML/MCP/7_add_connection.webp)
 
     ستصبح نماذج OpenAI بعد ذلك متاحة في القائمة العلوية:
 
-    <Image img="/images/use-cases/AI_ML/MCP/8_openai_models_more.webp" alt="Open WebUI - النماذج" size="md" />
+    ![Open WebUI - النماذج](/images/use-cases/AI_ML/MCP/8_openai_models_more.webp)
   </Step>
 
   <Step title="الدردشة مع ClickHouse MCP server باستخدام Open WebUI" id="chat-to-clickhouse-mcp-server">
     يمكننا بعد ذلك بدء محادثة، وسيتواصل Open WebUI مع MCP server إذا لزم الأمر:
 
-    <Image img="/images/use-cases/AI_ML/MCP/9_conversation.webp" alt="Open WebUI - الدردشة مع ClickHouse MCP server" size="md" />
+    ![Open WebUI - الدردشة مع ClickHouse MCP server](/images/use-cases/AI_ML/MCP/9_conversation.webp)
   </Step>
 </Steps>

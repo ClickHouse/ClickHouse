@@ -11,8 +11,6 @@ integration:
   - website: 'https://github.com/ClickHouse/clickhouse-cs'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 عميل C# الرسمي للاتصال بـ ClickHouse.
 تتوفّر الشيفرة المصدرية للعميل في [مستودع GitHub](https://github.com/ClickHouse/clickhouse-cs).
 طوّره في الأصل [Oleg V. Kozlyuk](https://github.com/DarkWanderer).
@@ -310,11 +308,11 @@ await client.InsertBinaryAsync("my_table", columns, batch2, options);
 
 حدّد خدمة وانقر على **Connect**:
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="زر الاتصال بخدمة ClickHouse Cloud" border />
+![زر الاتصال بخدمة ClickHouse Cloud](/images/_snippets/cloud-connect-button.webp)
 
 اختر **C#**. ستُعرض تفاصيل الاتصال أدناه.
 
-<Image img="/images/_snippets/connection-details-csharp.webp" size="md" alt="تفاصيل اتصال ClickHouse Cloud لـ C#" border />
+![تفاصيل اتصال ClickHouse Cloud لـ C#](/images/_snippets/connection-details-csharp.webp)
 
 إذا كنت تستخدم ClickHouse مُدارًا ذاتيًا، فسيُحدِّد مسؤول ClickHouse لديك تفاصيل الاتصال.
 

@@ -7,8 +7,6 @@ description: 'وصف لمحرك الجدول SharedMergeTree'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تُعد عائلة محرك الجداول SharedMergeTree بديلاً سحابيًا أصليًا لمحركات ReplicatedMergeTree، وقد صُممت للعمل فوق التخزين المشترك (مثل Amazon S3 وGoogle Cloud Storage وMinIO وAzure Blob Storage). ويوجد نظير من SharedMergeTree لكل نوع محدد من محركات MergeTree، أي إن SharedReplacingMergeTree يحل محل ReplicatedReplacingMergeTree.
 
 تعتمد ClickHouse Cloud على عائلة محرك الجداول SharedMergeTree. وبالنسبة إلى المستخدم النهائي، لا حاجة إلى تغيير أي شيء للبدء في استخدام عائلة محركات SharedMergeTree بدلًا من المحركات المستندة إلى ReplicatedMergeTree. وهي توفّر المزايا الإضافية التالية:
@@ -21,11 +19,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 ومن أبرز التحسينات التي يقدّمها SharedMergeTree أنه يوفّر فصلًا أعمق بين compute وStorage مقارنةً بـ ReplicatedMergeTree. ويمكنك أن ترى أدناه كيف يفصل ReplicatedMergeTree بين compute وStorage:
 
-<Image img="/images/cloud/reference/shared-merge-tree-1.png" alt="مخطط ReplicatedMergeTree" size="md" />
+![مخطط ReplicatedMergeTree](/images/cloud/reference/shared-merge-tree-1.png)
 
 كما ترى، رغم أن البيانات المخزنة في ReplicatedMergeTree موجودة في object storage، فإن البيانات الوصفية لا تزال موجودة على كل خادم من خوادم clickhouse-server. وهذا يعني أنه في كل عملية replicated، يجب أيضًا نسخ البيانات الوصفية إلى جميع replicas.
 
-<Image img="/images/cloud/reference/shared-merge-tree-2.png" alt="مخطط ReplicatedMergeTree مع البيانات الوصفية" size="md" />
+![مخطط ReplicatedMergeTree مع البيانات الوصفية](/images/cloud/reference/shared-merge-tree-2.png)
 
 وعلى عكس ReplicatedMergeTree، لا يتطلب SharedMergeTree أن تتواصل replicas مع بعضها البعض. وبدلًا من ذلك، تتم جميع الاتصالات عبر التخزين المشترك وclickhouse-keeper. ويعتمد SharedMergeTree على replication غير متزامن ومن دون leader، ويستخدم clickhouse-keeper لأغراض coordination وmetadata storage. وهذا يعني أن البيانات الوصفية لا تحتاج إلى replication مع توسع خدمتك أو تقليصها. ويؤدي ذلك إلى تسريع replication وmutation وmerges وعمليات scale-up. كما يتيح SharedMergeTree وجود مئات replicas لكل table، مما يجعل التوسع الديناميكي ممكنًا من دون shards. ويُستخدم نهج distributed query execution في ClickHouse Cloud للاستفادة من مزيد من موارد compute للاستعلام.
 

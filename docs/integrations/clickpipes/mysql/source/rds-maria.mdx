@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/clickpipes/_iam_authentication.mdx";
 
 This is a step-by-step guide on how to configure your RDS MariaDB instance for replicating its data via the MySQL ClickPipe.
@@ -27,7 +26,7 @@ The binary log is a set of log files that contain information about data modific
 
 The automated backups feature determines whether binary logging is turned on or off for MySQL. It can be set in the AWS console:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Enabling automated backups in RDS" size="lg" border/>
+![Enabling automated backups in RDS](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
 
 Setting backup retention to a reasonably long value depending on the replication use-case is advisable.
 
@@ -48,25 +47,25 @@ mysql=> call mysql.rds_set_configuration('binlog retention hours', 24);
 
 The parameter group can be found when you click on your MariaDB instance in the RDS Console, and then navigate to the `Configurations` tab.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp" alt="Where to find parameter group in RDS" size="lg" border/>
+![Where to find parameter group in RDS](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/rds_config.webp)
 
 Upon clicking on the parameter group link, you will be taken to the parameter group link page. You will see an Edit button in the top-right:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="Edit parameter group" size="lg" border/>
+![Edit parameter group](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
 
 Settings `binlog_format`, `binlog_row_metadata` and `binlog_row_image` need to be set as follows:
 
 1. `binlog_format` to `ROW`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Binlog format to ROW" size="lg" border/>
+![Binlog format to ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
 
 2. `binlog_row_metadata` to `FULL`
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Binlog row metadata to FULL" size="lg" border/>
+![Binlog row metadata to FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
 
 3. `binlog_row_image` to `FULL`
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Binlog row image to FULL" size="lg" border/>
+![Binlog row image to FULL](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
 
 Next, click on `Save Changes` in the top-right. You may need to reboot your instance for the changes to take effect. If you see `Pending reboot` next to the parameter group link in the Configurations tab of the RDS instance, this is a good indication that a reboot of your instance is needed.
 
@@ -115,9 +114,9 @@ AWS [introduced IAM database authentication for RDS for MariaDB in version 10.6.
 
 If you want to restrict traffic to your RDS instance, please add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the `Inbound rules` of your RDS security group.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Where to find security group in RDS?" size="lg" border/>
+![Where to find security group in RDS?](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Edit inbound rules for the above security group" size="lg" border/>
+![Edit inbound rules for the above security group](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
 
 ### Private access via AWS PrivateLink {#private-access-via-aws-privatelink}
 

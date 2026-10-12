@@ -8,15 +8,13 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 This dataset contains every `Posts`, `Users`, `Votes`, `Comments`, `Badges`, `PostHistory`, and `PostLinks` that has occurred on Stack Overflow.
 
 You can either download pre-prepared Parquet versions of the data, containing every post up to April 2024, or download the latest data in XML format and load this. Stack Overflow provide updates to this data periodically - historically every 3 months.
 
 The following diagram shows the schema for the available tables assuming Parquet format.
 
-<Image img="/images/getting-started/example-datasets/stackoverflow.webp" alt="Stack Overflow schema" size="md"/>
+![Stack Overflow schema](/images/getting-started/example-datasets/stackoverflow.webp)
 
 A description of the schema of this data can be found [here](https://meta.stackexchange.com/questions/2677/database-schema-documentation-for-the-public-data-dump-and-sede).
 

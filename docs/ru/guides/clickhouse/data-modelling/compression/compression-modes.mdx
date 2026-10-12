@@ -6,8 +6,6 @@ keywords: ['сжатие', 'кодек', 'кодирование', 'режимы
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Протокол ClickHouse поддерживает **сжатие блоков данных** с контрольными суммами.
 Если не уверены, какой режим выбрать, используйте `LZ4`.
 &#96;&#96;
@@ -47,7 +45,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 | mode                | byte    | Режим сжатия                                                                               |
 | compressed&#95;data | binary  | Блок сжатых данных                                                                         |
 
-<Image img="/images/data-compression/ch_compression_block.webp" size="md" alt="Диаграмма, иллюстрирующая структуру блока сжатия ClickHouse" />
+![Диаграмма, иллюстрирующая структуру блока сжатия ClickHouse](/images/data-compression/ch_compression_block.webp)
 
 Заголовок имеет вид (raw&#95;size + data&#95;size + mode), а raw&#95;size равен len(header + compressed&#95;data).
 

@@ -9,8 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このガイドでは、クラスターから Managed ClickStack にログ、インフラストラクチャのメトリクス、Kubernetes イベントを収集し、組み込みの Kubernetes ダッシュボードで表示する方法を説明します。
 
 この構成は、標準的な OpenTelemetry のパターンに従っています。[OpenTelemetry Helm チャート](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector) を使用して 2 つの collector をデプロイし、それぞれが OTLP 経由で ClickStack ゲートウェイ collector に転送します。**デーモンセット** は各ノードで実行され、コンテナのログとキューブレットのメトリクスを収集します。単一レプリカの **デプロイメント** は、Kubernetes イベントとクラスター全体のメトリクスを収集します。ゲートウェイ ロールの詳細については、[Collector roles](/ja/clickstack/ingesting-data/collector#collector-roles) を参照してください。
@@ -302,15 +300,15 @@ Kubernetes 上で稼働するワークロードの場合、ゲートウェイ co
   <Step title="ClickStack UIで確認する" id="confirm-in-ui">
     [ClickHouse Cloud console](https://console.clickhouse.cloud)でサービスを開き、左側のメニューから**ClickStack**を選択します。
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="ClickStackを起動" border />
+    ![ClickStackを起動](/images/use-cases/observability/clickstack-cloud-v2.webp)
 
     **Search**ビューで、ログソースを`Logs`に切り替え、時間範囲を**Last 15 minutes**に設定します。数秒以内に、`k8s.namespace.name`、`k8s.pod.name`、`k8s.node.name`などの属性が付与された、クラスター全体のコンテナーログが表示されるはずです。
 
-    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="Kubernetesログを表示したClickStack Searchビュー" />
+    ![Kubernetesログを表示したClickStack Searchビュー](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
 
     インフラストラクチャのメトリクスやイベントを関連付けて確認するには、**Dashboards** -&gt; **Kubernetes** の順に移動し、組み込みの**Kubernetes**ダッシュボードを開きます。`Pods`、`Nodes`、`Namespaces`の各タブには、いずれもデータが表示されるはずです。
 
-    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="ClickStack Kubernetesダッシュボード" border />
+    ![ClickStack Kubernetesダッシュボード](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
 
     何も表示されない場合:
 

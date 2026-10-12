@@ -8,8 +8,6 @@ doc_type: 'リファレンス'
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <BetaBadge />
 
 ClickHouse Agents は階層化された権限モデルを採用しています。ロールは、ユーザーがどの機能を利用できるかを制御し、リソースレベルのアクセスリストは、特定のエージェントやその他のリソースを利用できるユーザーを制御し、管理者権限は、すべてを管理できるユーザーを制御します。
@@ -55,11 +53,11 @@ Admin は、よりきめ細かく制御できるよう、独自のトグル設�
 
 エージェントビルダーの下部にある**share**アイコンをクリックします。アイコン上のバッジには、現在アクセス権を持っているユーザーまたはグループの数が表示されます。
 
-<Image img="/images/cloud/agent-builder/sharing/sharing.webp" alt="share アイコンが強調表示され、共有先が 1 件あることを示すバッジが表示されたエージェントビルダーパネルの下部" size="sm" />
+![share アイコンが強調表示され、共有先が 1 件あることを示すバッジが表示されたエージェントビルダーパネルの下部](/images/cloud/agent-builder/sharing/sharing.webp)
 
 **Share**モーダルが開きます。名前またはメールアドレスでユーザーまたはグループを検索し、アクセスレベル (**Viewer**、**Editor**、または **Owner**) を選択して、**Save Changes**をクリックします。組織全体に共有するには、**Share with everyone in ClickHouse**トグルを有効にします。
 
-<Image img="/images/cloud/agent-builder/sharing/share-agent-modal.webp" alt="User and Group Permissions セクション、検索入力欄、Owner ロールを持つ既存ユーザー、Share with everyone in ClickHouse トグル、Cancel ボタン、Save Changes ボタンがある Share モーダル" size="md" />
+![User and Group Permissions セクション、検索入力欄、Owner ロールを持つ既存ユーザー、Share with everyone in ClickHouse トグル、Cancel ボタン、Save Changes ボタンがある Share モーダル](/images/cloud/agent-builder/sharing/share-agent-modal.webp)
 
 共有相手には、次回更新時に利用可能なエージェント一覧にそのエージェントが表示されます。アクセスを取り消すには、同じモーダルで該当する行を削除します。共有相手は直ちにアクセスできなくなります。進行中の会話は完了しますが、新しい会話は開始できません。
 

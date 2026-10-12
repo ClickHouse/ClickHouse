@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/es/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <BetaBadge />
 
 Los servicios de ClickHouse Cloud escalan automáticamente en función del uso de CPU y memoria, pero muchas cargas de trabajo siguen patrones predecibles: picos diarios de ingestión, trabajos por lotes que se ejecutan por la noche o tráfico que disminuye drásticamente los fines de semana. Para estos casos de uso, escalado programado le permite definir exactamente cuándo debe escalar su servicio, ya sea hacia arriba o hacia abajo, independientemente de las métricas en tiempo real.
@@ -26,9 +24,9 @@ Actualmente, el escalado programado está disponible en **Beta**.
 
 Para configurar una programación, ve a tu servicio en la consola de ClickHouse Cloud y entra en la configuración. Desde allí, selecciona **Schedule Override** y añade una regla nueva.
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="La interfaz de Scaling Schedules en la consola de ClickHouse Cloud, que muestra reglas de escalado basadas en el tiempo" border />
+![La interfaz de Scaling Schedules en la consola de ClickHouse Cloud, que muestra reglas de escalado basadas en el tiempo](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="Configuración de una regla de escalado programado en la consola de ClickHouse Cloud" border />
+![Configuración de una regla de escalado programado en la consola de ClickHouse Cloud](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
 
 Cada regla requiere:
 

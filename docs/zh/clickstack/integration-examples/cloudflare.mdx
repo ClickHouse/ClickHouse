@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Cloudflare', 'logs', 'ClickStack', 'ClickPipes', 'S3', 'HTTP', 'Logpush']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -70,7 +68,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     1. ClickHouse Cloud 控制台 → **数据源** → **创建 ClickPipe**
     2. **源**：Amazon S3
 
-    <Image img="/images/clickstack/cloudflare/clickpipe-s3.webp" alt="Clickpipe s3" />
+    ![Clickpipe s3](/images/clickstack/cloudflare/clickpipe-s3.webp)
 
     **连接：**
 
@@ -86,7 +84,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     * 打开 **持续摄取**
     * **排序**：词典序
 
-    <Image img="/images/clickstack/cloudflare/continuous-ingestion.webp" alt="Continuous ingestion" />
+    ![Continuous ingestion](/images/clickstack/cloudflare/continuous-ingestion.webp)
 
     Cloudflare Logpush 使用基于日期的命名方式写入文件 (例如 `20250127/...`) ，天然符合词典序。ClickPipes 每 30 秒轮询一次新文件，并摄取所有名称大于上一个已处理文件的文件。
 
@@ -94,7 +92,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
 
     点击 **解析信息**。ClickPipes 会对您的日志文件进行采样，并自动检测 schema。请检查映射后的列，并根据需要调整类型。为目标表定义一个 **排序键**——对于 Cloudflare 日志，一个不错的选择是 `(EdgeStartTimestamp, ClientCountry, EdgeResponseStatus)`。
 
-    <Image img="/images/clickstack/cloudflare/parse-information.webp" alt="Parse information" />
+    ![Parse information](/images/clickstack/cloudflare/parse-information.webp)
 
     点击 **完成设置**。
 
@@ -108,11 +106,11 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
 
     1. 打开 HyperDX → **Team Settings** → **Sources**
 
-    <Image img="/images/clickstack/cloudflare/add-source.webp" alt="添加数据源" />
+    ![添加数据源](/images/clickstack/cloudflare/add-source.webp)
 
     2. 点击 **Add source** 并按以下内容进行配置。点击 **Configure Optional Fields** 可查看所有字段：
 
-    <Image img="/images/clickstack/cloudflare/configure-optional-fields.webp" alt="配置可选项" />
+    ![配置可选项](/images/clickstack/cloudflare/configure-optional-fields.webp)
 
     | 设置           | 值                                                                                                                                                                                                                                                                                                                 |
     | ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -131,7 +129,7 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
 
     3. 点击 **Save Source**
 
-    <Image img="/images/clickstack/cloudflare/save-source.webp" alt="保存数据源" />
+    ![保存数据源](/images/clickstack/cloudflare/save-source.webp)
 
     这样就能将 Cloudflare 的原生列直接映射到 HyperDX 的日志查看器中，无需进行任何数据转换或重复存储。**Body** 会显示类似 `GET /api/v1/users 200` 的请求摘要，同时所有 Cloudflare 字段都可作为可搜索属性使用。
   </Step>
@@ -143,9 +141,9 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
     * 按 HTTP 状态码以不同颜色显示的严重级别 (2xx 为 INFO，4xx 为 WARN，5xx 为 ERROR)
     * 可搜索的属性，例如 `http.status_code`、`client.country`、`cache.status` 和 `bot.score`
 
-    <Image img="/images/clickstack/cloudflare/search-view.webp" alt="搜索视图" />
+    ![搜索视图](/images/clickstack/cloudflare/search-view.webp)
 
-    <Image img="/images/clickstack/cloudflare/log-view.webp" alt="日志视图" />
+    ![日志视图](/images/clickstack/cloudflare/log-view.webp)
   </Step>
 </Steps>
 
@@ -184,9 +182,9 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
 
     你应当能看到包含请求摘要、可搜索的 Cloudflare attribute，以及基于 HTTP 状态码的严重性级别的日志条目。
 
-    <Image img="/images/clickstack/cloudflare/search-view.webp" alt="搜索视图" />
+    ![搜索视图](/images/clickstack/cloudflare/search-view.webp)
 
-    <Image img="/images/clickstack/cloudflare/log-view.webp" alt="日志视图" />
+    ![日志视图](/images/clickstack/cloudflare/log-view.webp)
 
     <Info>
       **时区显示**
@@ -208,15 +206,15 @@ Cloudflare [Logpush](https://developers.cloudflare.com/logs/about/) 可将 HTTP 
   <Step title="导入仪表盘" id="import-dashboard">
     1. HyperDX → **仪表盘** → **导入仪表盘**
 
-    <Image img="/images/clickstack/cloudflare/import-dashboard.webp" alt="导入仪表盘" />
+    ![导入仪表盘](/images/clickstack/cloudflare/import-dashboard.webp)
 
     2. 上传 `cloudflare-logs-dashboard.json` → **完成导入**
 
-    <Image img="/images/clickstack/cloudflare/finish-import.webp" alt="导入仪表盘" />
+    ![导入仪表盘](/images/clickstack/cloudflare/finish-import.webp)
   </Step>
 
   <Step title="查看仪表盘" id="view-dashboard">
-    <Image img="/images/clickstack/cloudflare/example-dashboard.webp" alt="示例仪表盘" />
+    ![示例仪表盘](/images/clickstack/cloudflare/example-dashboard.webp)
 
     <Note>
       对于演示数据集，请将时间范围设置为 **2026-02-24 00:00:00 - 2026-02-25 00:00:00 (UTC)** (请根据您的本地时区调整) 。导入后的仪表盘默认不会指定时间范围。

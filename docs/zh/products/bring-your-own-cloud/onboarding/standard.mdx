@@ -7,8 +7,6 @@ description: '在您自己的云基础设施上部署 ClickHouse'
 doc_type: '参考'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="what-is-standard-onboarding">
   ## 什么是标准引导流程？
 </div>
@@ -41,7 +39,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 <Steps>
   <Step title="选择云提供商" id="choose-cloud-provider">
-    <Image img="/images/cloud/reference/byoc-onboarding-1.webp" size="lg" alt="BYOC 选择云服务提供商" background="black" />
+    ![BYOC 选择云服务提供商](/images/cloud/reference/byoc-onboarding-1.webp)
   </Step>
 
   <Step title="账户/项目/订阅设置" id="account-setup">
@@ -51,7 +49,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
       **请严格按原样应用 onboarding 制品。** 未经 ClickHouse 明确批准，请勿修改 CloudFormation 模板或 Terraform 模块中的任何内容，包括重命名资源或添加 `PermissionsBoundary` 等参数。ClickHouse 自动化依赖这些制品创建的确切资源；支持的自定义项均以参数形式提供。尤其是在 AWS 上，除非 ClickHouse 已事先明确同意使用其他名称，否则 IAM role 必须保留默认名称 `ClickHouseManagementRole`，不得添加前缀或后缀。Terraform 模块在技术上提供了 `role_name` 输入参数，但 ClickHouse 自动化也必须配置为与其匹配。因此，未经协调便修改该参数 (或重命名 CloudFormation 模板中没有对应参数的 role) 会导致堆栈虽能成功应用，但基础设施配置会失败，因为 ClickHouse 无法 assume 预期的 role。
     </Warning>
 
-    <Image img="/images/cloud/reference/byoc-onboarding-2.webp" size="lg" alt="初始化 BYOC 账号" background="black" />
+    ![初始化 BYOC 账号](/images/cloud/reference/byoc-onboarding-2.webp)
 
     <Note>
       运行 ClickHouse 所需的存储桶、VPC/VNet、Kubernetes 集群和计算资源不包含在此初始设置中。它们将在下一步中预配。
@@ -100,7 +98,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     * **可用区**：如果计划使用 VPC 对等连接，将源账户与 BYOC 账户的可用区对齐有助于降低跨可用区流量成本。例如，在 AWS 中，可用区后缀 (`a`、`b`、`c`) 在不同账户中可能对应不同的物理可用区 ID。有关详细信息，请参阅 [AWS 指南](https://docs.aws.amazon.com/prescriptive-guidance/latest/patterns/use-consistent-availability-zones-in-vpcs-across-different-aws-accounts.html)。
 
-    <Image img="/images/cloud/reference/byoc-onboarding-3.webp" size="lg" alt="配置 BYOC 基础设施" background="black" />
+    ![配置 BYOC 基础设施](/images/cloud/reference/byoc-onboarding-3.webp)
 
 #### 预检验证
 
@@ -116,7 +114,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
     当检查未通过时，每一项都会列出其对应的操作及失败原因 (例如 `iam:CreateRole · explicitDeny`) 。展开 **Show passed checks** 即可查看所有通过的检查项。
 
-    <Image img="/images/cloud/reference/byoc-onboarding-preflight-failed.png" size="lg" alt="BYOC 预检验证报告 cloud-setup 检查失败" background="black" />
+    ![BYOC 预检验证报告 cloud-setup 检查失败](/images/cloud/reference/byoc-onboarding-preflight-failed.png)
 
     要解决这些失败，请重新运行最新的 ClickHouse CloudFormation 或 Terraform 堆栈 — 或将报告中列出的 actions 授予管理身份 (IAM role / 服务账号 / 服务主体) — 然后选择以下方式之一：
 
@@ -142,7 +140,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 在 BYOC 基础设施预配完成后，您就可以开始创建第一个 ClickHouse 服务。打开 ClickHouse Cloud 控制台，选择您的 BYOC 环境，并按照提示创建新服务。
 
-<Image img="/images/cloud/reference/byoc-new-service-1.webp" size="md" alt="BYOC 创建新服务" />
+![BYOC 创建新服务](/images/cloud/reference/byoc-new-service-1.webp)
 
 在创建服务过程中，您需要配置以下选项：
 

@@ -6,8 +6,6 @@ keywords: ['データの非正規化', '非正規化', 'クエリ最適化']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 データの非正規化は、JOINを回避してクエリのレイテンシを最小限に抑えるために、ClickHouseでフラットなテーブルを使用する手法です。
 
 <div id="comparing-normalized-vs-denormalized-schemas">
@@ -18,7 +16,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 このプロセスにより、クエリ時の複雑な JOIN が不要になり、読み取り処理を大幅に高速化できるため、読み取り負荷が高く複雑なクエリを伴うアプリケーションに適しています。一方で、書き込み処理や保守の複雑さは増す可能性があります。整合性を維持するには、複製されたデータへの変更をすべてのインスタンスに反映させる必要があるためです。
 
-<Image img="/images/data-modeling/denormalization-diagram.webp" size="lg" alt="ClickHouse における非正規化" />
+![ClickHouse における非正規化](/images/data-modeling/denormalization-diagram.webp)
 
 <br />
 
@@ -147,7 +145,7 @@ LIMIT 5
 
 次に、`Users` と `Badges` を見ていきましょう。
 
-<Image img="/images/data-modeling/denormalization-schema.webp" size="lg" alt="Users と Badges のスキーマ" />
+![Users と Badges のスキーマ](/images/data-modeling/denormalization-schema.webp)
 
 <p />
 

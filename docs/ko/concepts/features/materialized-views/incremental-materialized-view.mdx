@@ -7,8 +7,6 @@ score: 10000
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="background">
   ## 배경
 </div>
@@ -21,7 +19,7 @@ Materialized Views의 주된 목적은 대상 테이블에 삽입되는 결과�
 
 ClickHouse의 materialized view는 기반 테이블로 데이터가 유입되면 실시간으로 갱신되며, 지속적으로 업데이트되는 인덱스와 비슷하게 동작합니다. 이는 Materialized Views가 일반적으로 갱신이 필요한 정적인 쿼리 스냅샷인 다른 데이터베이스와는 대조적입니다(ClickHouse의 [갱신 가능 구체화 뷰](/ko/reference/statements/create/view#refreshable-materialized-view)와 유사합니다).
 
-<Image img="/images/materialized-view/materialized-view-diagram.webp" size="md" alt="materialized view 다이어그램" />
+![materialized view 다이어그램](/images/materialized-view/materialized-view-diagram.webp)
 
 <div id="example">
   ## 예시

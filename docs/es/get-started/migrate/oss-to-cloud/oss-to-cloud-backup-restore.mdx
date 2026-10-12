@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['migración', 'ClickHouse Cloud', 'OSS', 'Migrar de autogestionado a Cloud', 'BACKUP', 'RESTORE']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="overview-migration-approaches">
   ## Descripción general
 </div>
@@ -277,19 +275,19 @@ Sigue estos pasos para crear un nuevo servicio de Cloud.
   </Step>
 
   <Step title="Crea un nuevo servicio" id="create-new-service">
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="crear un nuevo servicio" />
+    ![crear un nuevo servicio](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
   </Step>
 
   <Step title="Configura y crea un servicio" id="configure-and-create">
     Elige la región y la configuración que prefieras y, a continuación, haz clic en `Create service`
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="configurar las preferencias del servicio" />
+    ![configurar las preferencias del servicio](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
   </Step>
 
   <Step title="Crea un rol de acceso" id="create-an-access-role">
     Abre SQL Console
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="configurar las preferencias del servicio" />
+    ![configurar las preferencias del servicio](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
 
     ### Configura el acceso a S3
 
@@ -393,7 +391,7 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 
 Si revisa su bucket de S3, que antes estaba vacío, ahora verá que han aparecido algunas carpetas:
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="copia de seguridad, datos y metadatos" />
+![copia de seguridad, datos y metadatos](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
 
 Si está realizando una migración completa, puede ejecutar el siguiente comando para hacer una copia de seguridad de todo el servidor:
 

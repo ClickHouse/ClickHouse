@@ -8,8 +8,6 @@ sidebarTitle: '第1部'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 > これは、PostgreSQL から ClickHouse への移行ガイドの**第1部**です。実践的な例を用いて、リアルタイムレプリケーション (CDC (変更データキャプチャ) ) のアプローチで移行を効率的に進める方法を解説します。ここで取り上げる概念の多くは、PostgreSQL から ClickHouse への手動による大規模データ転送にも適用できます。
 
 <div id="dataset">
@@ -18,7 +16,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 Postgres から ClickHouse への典型的な移行例を示すサンプルデータセットとして、[こちら](/ja/get-started/sample-datasets/stackoverflow)で説明している Stack Overflow データセットを使用します。これには、2008 年から 2024 年 4 月までに Stack Overflow で発生したすべての `post`、`vote`、`user`、`comment`、`badge` が含まれています。このデータの PostgreSQL スキーマを以下に示します。
 
-<Image img="/images/migrations/postgres-stackoverflow-schema.webp" size="lg" alt="PostgreSQL Stack Overflow スキーマ" />
+![PostgreSQL Stack Overflow スキーマ](/images/migrations/postgres-stackoverflow-schema.webp)
 
 *PostgreSQL でテーブルを作成するための DDL コマンドは、[こちら](https://pastila.nl/?001c0102/eef2d1e4c82aab78c4670346acb74d83#TeGvJWX9WTA1V/5dVVZQjg==)から入手できます。*
 

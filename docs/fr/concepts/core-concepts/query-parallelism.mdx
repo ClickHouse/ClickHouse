@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['traitement parallèle', 'optimisation des requêtes', 'performance', 'multithreading', 'bonnes pratiques']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse est [conçu pour la vitesse](/fr/get-started/about/why-clickhouse-is-so-fast). Il exécute les requêtes de manière hautement parallèle, en utilisant tous les cœurs de CPU disponibles, en répartissant les données entre les voies de traitement et en poussant souvent le matériel près de ses limites.
 
 Ce guide explique le fonctionnement du parallélisme des requêtes dans ClickHouse et comment l’ajuster ou le surveiller pour améliorer les performances sur des charges de travail importantes.
@@ -21,7 +19,7 @@ Nous utilisons une requête d’agrégation sur le jeu de données [uk&#95;price
 
 Lorsque ClickHouse ① exécute une requête d’agrégation avec un filtre sur la clé primaire de la table, il ② charge l’index primaire en mémoire afin d’③ identifier les granules à traiter et celles qui peuvent être ignorées sans risque :
 
-<Image img="/images/guides/best-practices/query-parallelism_01.webp" size="md" alt="Analyse de l’index" />
+![Analyse de l’index](/images/guides/best-practices/query-parallelism_01.webp)
 
 <div id="distributing-work-across-processing-lanes">
   ### Répartition du travail entre les voies de traitement
@@ -29,7 +27,7 @@ Lorsque ClickHouse ① exécute une requête d’agrégation avec un filtre sur 
 
 Les données sélectionnées sont ensuite réparties [dynamiquement](#load-balancing-across-processing-lanes) entre `n` [voies de traitement](/fr/concepts/core-concepts/academic-overview#4-2-multi-core-parallelization) parallèles, qui acheminent et traitent les données [bloc](/fr/resources/develop-contribute/introduction/architecture#block) par bloc jusqu’au résultat final :
 
-<Image img="/images/guides/best-practices/query-parallelism_02.webp" size="md" alt="4 voies de traitement parallèles" />
+![4 voies de traitement parallèles](/images/guides/best-practices/query-parallelism_02.webp)
 
 <br />
 
@@ -39,7 +37,7 @@ Le nombre de `n` voies de traitement parallèles est contrôlé par le paramètr
 
 Sur une machine avec `8` cœurs, le débit du traitement des requêtes doublerait approximativement (mais l’utilisation mémoire augmenterait également en conséquence), car davantage de voies traitent les données en parallèle :
 
-<Image img="/images/guides/best-practices/query-parallelism_03.webp" size="md" alt="8 voies de traitement parallèles" />
+![8 voies de traitement parallèles](/images/guides/best-practices/query-parallelism_03.webp)
 
 <br />
 
@@ -53,7 +51,7 @@ Une répartition efficace des voies est essentielle pour maximiser l’utilisati
 
 Lorsque les données d&#39;une table sont réparties sur plusieurs serveurs en [shards](/fr/guides/oss/deployment-and-scaling/shards), chaque serveur traite son shard en parallèle. Sur chaque serveur, les données locales sont traitées via des voies de traitement parallèles, comme décrit ci-dessus :
 
-<Image img="/images/guides/best-practices/query-parallelism_04.webp" size="md" alt="Lanes distribuées" />
+![Lanes distribuées](/images/guides/best-practices/query-parallelism_04.webp)
 
 <br />
 
@@ -127,7 +125,7 @@ Remarque : lisez le plan des opérateurs ci-dessus de bas en haut. Chaque ligne
 
 L’[interface web intégrée](/fr/concepts/features/interfaces/http) de ClickHouse (disponible sur l’endpoint `/play`) peut représenter le plan physique ci-dessus sous forme de visualisation graphique. Dans cet exemple, nous définissons `max_threads` sur `4` afin de conserver une visualisation compacte, avec seulement 4 voies de traitement parallèles affichées :
 
-<Image img="/images/guides/best-practices/query-parallelism_05.webp" alt="Pipeline de requête" />
+![Pipeline de requête](/images/guides/best-practices/query-parallelism_05.webp)
 
 Remarque : lisez la visualisation de gauche à droite. Chaque ligne représente une voie de traitement parallèle qui fait circuler les blocs de données bloc par bloc, en appliquant des transformations telles que le filtrage, l’agrégation et les étapes finales de traitement. Dans cet exemple, vous pouvez voir quatre voies parallèles correspondant au paramètre `max_threads = 4`.
 

@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/pt-BR/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Este guia fornece instruções passo a passo para migrar seu banco de dados PostgreSQL para o ClickHouse Managed Postgres usando a replicação lógica nativa do Postgres.
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.logical-replication-beta" />
@@ -51,7 +49,7 @@ Para que a replicação lógica funcione, precisamos garantir que o banco de dad
 
 Certifique-se de que o banco de dados de origem esteja configurado desta forma:
 
-<Image img="/images/managed-postgres/logical_replication/source-setup.webp" alt="Configuração da replicação do PostgreSQL de origem" size="md" border />
+![Configuração da replicação do PostgreSQL de origem](/images/managed-postgres/logical_replication/source-setup.webp)
 
 <div id="migration-logical-replication-schema-dump">
   ## Dump apenas do schema do banco de dados de origem
@@ -76,7 +74,7 @@ Aqui:
 
 No nosso caso, temos duas tabelas: `events` e `users`. `events` tem um milhão de linhas, e `users` tem mil linhas.
 
-<Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="Configuração das tabelas de origem no PostgreSQL" size="xl" border />
+![Configuração das tabelas de origem no PostgreSQL](/images/managed-postgres/pg_dump_restore/source-setup.webp)
 
 <div id="migration-pgdump-pg-restore-create-pg">
   ### Crie uma instância do ClickHouse Managed Postgres
@@ -84,7 +82,7 @@ No nosso caso, temos duas tabelas: `events` e `users`. `events` tem um milhão d
 
 Primeiro, certifique-se de ter uma instância do ClickHouse Managed Postgres configurada, de preferência na mesma região da origem. Você pode seguir o guia rápido [aqui](/pt-BR/products/managed-postgres/quickstart#create-postgres-database). Veja o que vamos provisionar neste guia:
 
-<Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="Criar instância do ClickHouse Managed Postgres" size="md" border />
+![Criar instância do ClickHouse Managed Postgres](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
 
 <div id="migration-logical-replication-restore-schema">
   ## Restaurar o schema no ClickHouse Managed Postgres
@@ -107,7 +105,7 @@ Aqui:
 
 No nosso caso, após executar esse comando, temos duas tabelas, e elas estão vazias:
 
-<Image img="/images/managed-postgres/logical_replication/target-initial-setup.webp" alt="Configuração inicial do ClickHouse Managed Postgres de destino" size="xl" border />
+![Configuração inicial do ClickHouse Managed Postgres de destino](/images/managed-postgres/logical_replication/target-initial-setup.webp)
 
 <div id="migration-logical-replication-setup-replication">
   ## Configurar a replicação lógica
@@ -145,7 +143,7 @@ Isso criará automaticamente um slot de replicação no banco de dados de origem
 
 No nosso caso, após configurar a assinatura, os dados começaram a fluir:
 
-<Image img="/images/managed-postgres/logical_replication/migration-result.webp" alt="Resultado da migração após a replicação lógica" size="xl" border />
+![Resultado da migração após a replicação lógica](/images/managed-postgres/logical_replication/migration-result.webp)
 
 As novas linhas inseridas no banco de dados de origem agora serão replicadas para o banco de dados de destino ClickHouse Managed Postgres quase em tempo real.
 

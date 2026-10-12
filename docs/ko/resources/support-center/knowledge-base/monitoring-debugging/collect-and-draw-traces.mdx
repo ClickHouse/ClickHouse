@@ -6,8 +6,6 @@ keywords: ['쿼리 trace', 'OTel', 'Grafana']
 description: "이 가이드에서는 기본 제공 메서드 또는 Grafana를 사용해 자가 관리형 ClickHouse에서 쿼리 trace를 수집하고 시각화하는 방법을 설명합니다. 특히 복잡한 쿼리를 다루면서 EXPLAIN만으로는 파악하기 어려운 내부 실행 메커니즘을 이해해야 할 때 유용합니다."
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 **사전 요구 사항**:
 
 * ClickHouse [구성 파일](/ko/concepts/features/configuration/server-config/configuration-files)에 대한 이해
@@ -145,7 +143,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     다음 호스팅된 trace 시각화 도구를 사용하십시오: [https://trace-visualizer.clickhouse.com/](https://trace-visualizer.clickhouse.com/).
     이전 단계의 `trace.json` 파일을 불러와 trace를 시각화하십시오.
 
-    <Image img="/images/knowledgebase/trace-visualizer-example.png" size="md" alt="ClickHouse trace 시각화 도구 예시" />
+    ![ClickHouse trace 시각화 도구 예시](/images/knowledgebase/trace-visualizer-example.png)
   </Step>
 
   <Step title="Grafana를 사용해 트레이스 시각화하기" id="using-grafana">
@@ -174,10 +172,10 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     `Query type`을 `Traces`로 설정하십시오:
 
-    <Image img="/images/knowledgebase/trace-visualization-grafana.png" size="md" alt="Grafana의 ClickHouse 트레이스 시각화" />
+    ![Grafana의 ClickHouse 트레이스 시각화](/images/knowledgebase/trace-visualization-grafana.png)
 
     &quot;Run Query&quot;를 클릭한 다음 트레이스 다이어그램을 살펴보십시오:
 
-    <Image img="/images/knowledgebase/trace-visualization-diagram.png" size="md" alt="Grafana의 ClickHouse 트레이스 시각화" />
+    ![Grafana의 ClickHouse 트레이스 시각화](/images/knowledgebase/trace-visualization-diagram.png)
   </Step>
 </Steps>

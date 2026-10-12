@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['index de saut', 'saut de données', 'performance', 'indexation', 'bonnes pratiques']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="introduction">
   ## Introduction
 </div>
@@ -104,7 +102,7 @@ Au lieu de traiter 100 millions de lignes représentant 800 mégaoctets, Click
 Sous une forme plus visuelle, voici comment les 4096 lignes dont `my_value` vaut 125 ont été lues et sélectionnées, et comment les lignes suivantes
 ont été ignorées sans être lues sur le disque :
 
-<Image img="/images/guides/best-practices/simple_skip.webp" size="md" alt="Saut simple" />
+![Saut simple](/images/guides/best-practices/simple_skip.webp)
 
 Vous pouvez obtenir des informations détaillées sur l’utilisation des index de saut en activant la trace lors de l’exécution des requêtes. Depuis
 clickhouse-client, définissez `send_logs_level` :
@@ -223,7 +221,7 @@ Les index de saut ne sont pas intuitifs, surtout pour les personnes habituées a
 
 Considérez la distribution des données suivante :
 
-<Image img="/images/guides/best-practices/bad_skip.webp" size="md" alt="Skip inefficace" />
+![Skip inefficace](/images/guides/best-practices/bad_skip.webp)
 
 Supposons que la clé primaire / ORDER BY soit `timestamp` et qu’il existe un index sur `visitor_id`. Considérez la requête suivante :
 

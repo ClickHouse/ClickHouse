@@ -6,7 +6,6 @@ description: 'ClickHouse Cloud 中的计算-计算分离'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="Compute-compute separation" />
@@ -21,7 +20,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 * 用于连接服务的一个端点 (或通过 ClickHouse Cloud UI 控制台创建的多个端点) ，例如 `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`，供本地应用和第三方应用连接
 * 一个对象存储文件夹，服务会在其中存储所有数据以及部分元数据：
 
-<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="ClickHouse Cloud 中的单个服务" />
+![ClickHouse Cloud 中的单个服务](/images/cloud/reference/compute-compute-1.webp)
 
 <br />
 
@@ -35,7 +34,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 
 计算-计算分离还可以将读操作与写操作分离，避免它们相互干扰：
 
-<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="ClickHouse Cloud 中的计算分离" />
+![ClickHouse Cloud 中的计算分离](/images/cloud/reference/compute-compute-2.webp)
 
 <br />
 
@@ -52,7 +51,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 * 主节点 `DWH Prod`
 * 次级服务 `DWH Prod Subservice`
 
-<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="包含主节点和次级服务的仓库示例" background="white" />
+![包含主节点和次级服务的仓库示例](/images/cloud/reference/compute-compute-8.webp)
 
 <br />
 
@@ -77,7 +76,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 这意味着，在服务 1 中创建的所有数据库用户，也都可以使用服务 2，并且拥有相同的权限 (针对表、视图等的授权) ，反之亦然。
 每个服务使用不同的端点，但所有服务共用相同的用户名和密码。换句话说，**使用相同存储的服务之间，用户是共享的**，如下图所示：
 
-<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="共享相同数据的服务之间的用户访问" />
+![共享相同数据的服务之间的用户访问](/images/cloud/reference/compute-compute-3.webp)
 
 <br />
 
@@ -93,7 +92,7 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 
 在下面的示例中，Alice 被限制访问仓库中的服务 2：
 
-<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="网络访问控制设置" />
+![网络访问控制设置](/images/cloud/reference/compute-compute-4.webp)
 
 <br />
 
@@ -118,7 +117,7 @@ IP 过滤设置可针对每个服务单独配置，这意味着你可以控制�
 有时，你可能希望将某个服务设为只读，以便将关键读取工作负载与写入/合并带来的额外开销隔离开来。
 你可以对第二个服务以及之后创建的任何其他服务这样做；不过，第一个服务始终是读写服务，如下图所示：
 
-<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="仓库中的读写与只读服务" />
+![仓库中的读写与只读服务](/images/cloud/reference/compute-compute-5.webp)
 
 <br />
 
@@ -208,7 +207,7 @@ SETTINGS distributed_ddl_task_timeout=0
 
 要创建一个仓库，您需要创建第二个服务，并与现有服务共享数据。您可以点击任意现有服务上的加号来完成此操作：
 
-<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="在仓库中创建新服务" />
+![在仓库中创建新服务](/images/cloud/reference/compute-compute-7.webp)
 
 <br />
 

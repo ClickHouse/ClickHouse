@@ -7,8 +7,6 @@ doc_type: 'guide'
 sidebarTitle: 'ReplacingMergeTree 엔진 사용하기'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 트랜잭션 데이터베이스는 트랜잭션성 업데이트 및 삭제 워크로드에 최적화되어 있지만, OLAP 데이터베이스는 이러한 작업에 대해서는 더 제한적인 보장을 제공합니다. 대신 훨씬 더 빠른 분석 쿼리를 위해 batch로 삽입되는 불변 데이터에 최적화되어 있습니다. ClickHouse는 뮤테이션을 통한 업데이트 작업과 행을 삭제하는 경량 방식도 제공하지만, 컬럼 지향 구조이므로 앞서 설명한 대로 이러한 작업은 신중하게 계획하여 수행해야 합니다. 이러한 작업은 비동기적으로 처리되고, 단일 스레드로 처리되며, (업데이트의 경우) 데이터를 디스크에 다시 기록해야 합니다. 따라서 작은 변경이 대량으로 발생하는 경우에는 사용하지 않아야 합니다.
 위와 같은 사용 패턴을 피하면서 업데이트 및 삭제 행의 스트림을 처리하려면 ClickHouse 테이블 엔진 ReplacingMergeTree를 사용할 수 있습니다.
 
@@ -32,7 +30,7 @@ ReplacingMergeTree에서는 deleted 컬럼도 추가로 지정할 수 있습니�
 
 <br />
 
-<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="ReplacingMergeTree 프로세스" />
+![ReplacingMergeTree 프로세스](/images/migrations/postgres-replacingmergetree.webp)
 
 <br />
 

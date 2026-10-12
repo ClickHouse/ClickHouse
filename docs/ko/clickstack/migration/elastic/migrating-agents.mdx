@@ -8,8 +8,6 @@ keywords: ['ClickStack']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="migrating-agents-from-elastic">
   ## Elastic에서 에이전트 마이그레이션하기
 </div>
@@ -62,7 +60,7 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
 
 아래에서는 이 두 가지 아키텍처를 모두 보여줍니다.
 
-<Image img="/images/use-cases/observability/clickstack-migrating-agents.webp" alt="에이전트 마이그레이션" size="lg" background />
+![에이전트 마이그레이션](/images/use-cases/observability/clickstack-migrating-agents.webp)
 
 다음 예시에서는 Lumberjack 프로토콜을 통해 Filebeat에서 로그 이벤트를 수신하도록 Vector를 구성하는 초기 단계를 설명합니다. 또한 수신한 ECS 이벤트를 OTel 사양에 맞게 매핑하는 VRL도 제공합니다. 그런 다음 이를 OTLP를 통해 ClickStack OpenTelemetry collector로 전송합니다. Kafka에서 이벤트를 가져오는 경우에는 Vector Logstash source를 [Kafka source](https://vector.dev/docs/reference/configuration/sources/kafka/)로 대체하면 되며, 나머지 단계는 모두 동일합니다.
 
@@ -251,7 +249,7 @@ Filebeat 에이전트가 Beats에서 지원하는 출력 대상인 Kafka로 데�
 
     여기서 `YOUR_INGESTION_API_KEY`는 ClickStack에서 생성됩니다. ClickStack UI(HyperDX)의 `Team Settings → API Keys`에서 해당 키를 확인할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="수집용 키" size="lg" />
+    ![수집용 키](/images/use-cases/observability/ingestion-keys.webp)
 
     최종 완성된 구성은 다음과 같습니다:
 
@@ -339,11 +337,11 @@ Elastic Agent를 배포한 사용자는 여러 마이그레이션 경로 중에�
 
     Kibana를 통한 중앙 구성은 [Fleet에 Output을 추가](https://www.elastic.co/docs/reference/fleet/fleet-settings#output-settings)하여 수행할 수 있습니다.
 
-    <Image img="/images/use-cases/observability/add-logstash-output.webp" alt="Logstash 출력 추가" size="md" />
+    ![Logstash 출력 추가](/images/use-cases/observability/add-logstash-output.webp)
 
     이 Output은 이후 [에이전트 policy](https://www.elastic.co/docs/reference/fleet/agent-policy)에서 사용할 수 있습니다. 그러면 해당 policy를 사용하는 모든 에이전트가 자동으로 데이터를 Vector로 전송하게 됩니다.
 
-    <Image img="/images/use-cases/observability/agent-output-settings.webp" alt="Agent 설정" size="md" />
+    ![Agent 설정](/images/use-cases/observability/agent-output-settings.webp)
 
     이를 위해서는 TLS를 통한 보안 통신을 구성해야 하므로, Vector 인스턴스가 Logstash 역할을 수행한다고 보고 [&quot;Logstash output에 대해 SSL/TLS 구성&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output) 가이드를 따를 것을 권장합니다.
 
@@ -398,7 +396,7 @@ exporters:
 
 여기서 `YOUR_INGESTION_API_KEY`는 ClickStack에서 발급됩니다. 이 키는 ClickStack UI의 `Team Settings → API Keys`에서 확인할 수 있습니다.
 
-<Image img="/images/use-cases/observability/ingestion-keys.webp" alt="수집 키" size="lg" />
+![수집 키](/images/use-cases/observability/ingestion-keys.webp)
 
 Vector가 상호 TLS를 사용하도록 구성되어 있고, 인증서와 키가 [&quot;Logstash 출력용 SSL/TLS 구성&quot;](https://www.elastic.co/docs/reference/fleet/secure-logstash-connections#use-ls-output) 가이드의 단계에 따라 생성된 경우 `otlp` exporter도 이에 맞게 구성해야 합니다. 예를 들면 다음과 같습니다.
 

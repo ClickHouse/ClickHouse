@@ -6,7 +6,6 @@ keywords: ['파티션', 'partition by']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { RunnableCode } from "/snippets/ko/components/RunnableCode/RunnableCode.jsx";
 
 <div id="what-are-table-partitions-in-clickhouse">
@@ -46,7 +45,7 @@ ClickHouse SQL Playground에서 [이 테이블을 쿼리할 수 있습니다](ht
 
 테이블에 행 집합이 삽입될 때마다, 삽입된 모든 행을 담은 단일 데이터 파트 하나를 (적어도 [하나](/ko/reference/settings/session-settings/max-insert#max_insert_block_size)) 생성하는 대신([여기](/ko/concepts/core-concepts/parts)에서 설명한 대로), ClickHouse는 삽입된 행들에서 고유한 각 파티션 키 값마다 새로운 데이터 파트 하나를 생성합니다:
 
-<Image img="/images/managing-data/core-concepts/partitions.webp" size="lg" alt="삽입 처리" />
+![삽입 처리](/images/managing-data/core-concepts/partitions.webp)
 
 <br />
 
@@ -61,7 +60,7 @@ ClickHouse SQL Playground에서 [이 테이블을 쿼리할 수 있습니다](ht
 
 파티셔닝이 활성화되면 ClickHouse는 파티션 간에는 머지하지 않고, 각 파티션 내부에서만 데이터 파트를 [머지](/ko/concepts/core-concepts/merges)합니다. 위의 예시 테이블을 기준으로 이를 도식화하면 다음과 같습니다:
 
-<Image img="/images/managing-data/core-concepts/merges_with_partitions.webp" size="lg" alt="파트 병합" />
+![파트 병합](/images/managing-data/core-concepts/merges_with_partitions.webp)
 
 <br />
 
@@ -158,7 +157,7 @@ TTL date + INTERVAL 12 MONTH TO VOLUME 'slow_but_cheap';
 
 ClickHouse는 관련 없는 데이터를 처리하지 않기 위해 일련의 프루닝 기법을 적용하여 이 쿼리를 수행합니다:
 
-<Image img="/images/managing-data/core-concepts/partition-pruning.webp" size="lg" alt="파트 병합 2" />
+![파트 병합 2](/images/managing-data/core-concepts/partition-pruning.webp)
 
 <br />
 

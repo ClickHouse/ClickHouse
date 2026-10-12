@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/pt-BR/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -50,7 +48,7 @@ O tipo de consulta mais flexível é a consulta de Table. Ela funciona como uma 
 | Limite             | Adiciona uma instrução [LIMIT](/pt-BR/reference/statements/select/limit) ao final da consulta. Se definido como `0`, será omitido. Algumas visualizações podem exigir que isso seja definido como `0` para exibir todos os dados. |
 | Filtros            | Uma lista de filtros a serem aplicados na cláusula `WHERE`.                                                                                                                                                                       |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="Exemplo de consulta de Table agregada" border />
+![Exemplo de consulta de Table agregada](/images/integrations/data-visualization/grafana/demo_table_query.webp)
 
 Esse tipo de consulta exibirá os dados como uma tabela.
 
@@ -78,7 +76,7 @@ O tipo de consulta de logs oferece suporte a [links de dados](#data-links).
 | Filtros            | Uma lista de filtros a serem aplicados na cláusula `WHERE`.                                                                                                                                    |
 | Filtro de mensagem | Um campo de texto para filtrar logs de forma prática usando `LIKE %value%`. Excluído quando a entrada estiver vazia.                                                                           |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="Exemplo de consulta de logs OTel" border />
+![Exemplo de consulta de logs OTel](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
 
 <br />
 
@@ -86,7 +84,7 @@ Esse tipo de consulta renderiza os dados no painel de logs, juntamente com um pa
 
 As colunas extras selecionadas na consulta podem ser visualizadas na linha de log expandida:
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="Exemplo de campos extras na consulta de logs" border />
+![Exemplo de campos extras na consulta de logs](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
 
 ### Séries temporais {#time-series}
 
@@ -118,7 +116,7 @@ As duas visualizações são, em grande parte, iguais, com estas diferenças imp
 | Limite             | Adiciona uma instrução [LIMIT](/pt-BR/reference/statements/select/limit) ao final da consulta. Se for definido como `0`, ele será omitido; isso é recomendado para alguns conjuntos de dados de séries temporais a fim de exibir a visualização completa. |
 | Filters            | Uma lista de filtros a serem aplicados na cláusula `WHERE`.                                                                                                                                                                                         |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="Exemplo de consulta de séries temporais" border />
+![Exemplo de consulta de séries temporais](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
 
 Esse tipo de consulta exibirá os dados no painel de séries temporais.
 
@@ -155,7 +153,7 @@ O tipo de consulta de trace oferece suporte a [links de dados](#data-links).
 | Filters               | Uma lista de filtros a serem aplicados na cláusula `WHERE`.                                                                                                                                                 |
 | Trace ID              | O Trace ID pelo qual filtrar. Usado apenas no modo Trace ID e ao abrir um [link de dados](#data-links) de Trace ID.                                                                                         |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="Exemplo de consulta de Traces OTel" border />
+![Exemplo de consulta de Traces OTel](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
 
 Esse tipo de consulta renderiza os dados na visualização de tabela no modo Trace Search e no painel de trace no modo Trace ID.
 
@@ -171,7 +169,7 @@ O SQL Editor pode ser aberto selecionando &quot;SQL Editor&quot; na parte superi
 Você pode alternar entre tipos de consulta para obter a visualização que melhor se adapta à sua consulta.
 Essa alternância também tem efeito na visualização de dashboard, especialmente com dados de séries temporais.
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="Exemplo de consulta SQL pura" border />
+![Exemplo de consulta SQL pura](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
 
 ## Links de dados {#data-links}
 
@@ -182,13 +180,13 @@ Esse recurso foi habilitado no plugin do ClickHouse para vincular um trace a log
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   Exemplo de links de trace em uma tabela
 
-  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="Links de trace em uma tabela" border />
+  ![Links de trace em uma tabela](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Exemplo de links de trace em logs
 
-  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="Links de trace em logs" border />
+  ![Links de trace em logs](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
 </div>
 
 ### Como criar um link de dados {#how-to-make-a-data-link}
@@ -213,7 +211,7 @@ Se o link for clicado em um dashboard em vez da visualização Explore, ele ser�
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   Exemplo de visualização de um trace (painel direito) a partir de uma consulta de logs (painel esquerdo)
 
-  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="Exemplo de vinculação por links de dados" border />
+  ![Exemplo de vinculação por links de dados](/images/integrations/data-visualization/grafana/demo_data_links.webp)
 </div>
 
 <div id="macros">

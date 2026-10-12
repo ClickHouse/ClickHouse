@@ -8,15 +8,13 @@ sidebarTitle: '迁移指南'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <div id="why-use-clickhouse-cloud-over-bigquery">
   ## 为什么选择 ClickHouse Cloud 而非 BigQuery？
 </div>
 
 简而言之：在现代数据分析场景中，ClickHouse 比 BigQuery 更快、更便宜，功能也更强大：
 
-<Image img="/images/migrations/bigquery-2.webp" size="md" alt="ClickHouse 与 BigQuery" />
+![ClickHouse 与 BigQuery](/images/migrations/bigquery-2.webp)
 
 <div id="loading-data-from-bigquery-to-clickhouse-cloud">
   ## 将 BigQuery 数据加载到 ClickHouse Cloud
@@ -28,7 +26,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 作为展示从 BigQuery 迁移到 ClickHouse Cloud 的典型示例数据集，我们使用 [这里](/zh/get-started/sample-datasets/stackoverflow) 介绍的 Stack Overflow 数据集。该数据集包含 Stack Overflow 自 2008 年至 2024 年 4 月期间的所有 `post`、`vote`、`user`、`comment` 和 `badge` 数据。该数据的 BigQuery schema 如下所示：
 
-<Image img="/images/migrations/bigquery-3.webp" size="lg" alt="Schema" />
+![Schema](/images/migrations/bigquery-3.webp)
 
 对于希望将此数据集导入 BigQuery 实例以测试迁移步骤的用户，我们已在一个 GCS 存储桶中提供了这些表的 Parquet 格式数据，并在 [这里](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==) 提供了用于在 BigQuery 中创建和加载这些表的 DDL 命令。
 
@@ -51,7 +49,7 @@ BigQuery 支持将数据导出到 Google 的对象存储 (GCS) 。以我们的�
 
 2. 将数据导入 ClickHouse Cloud。为此，可以使用 [gcs 表函数](/zh/reference/functions/table-functions/gcs)。DDL 和导入查询可在[此处](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==)查看。请注意，由于 ClickHouse Cloud 实例由多个计算节点组成，因此这里使用的是 [s3Cluster 表函数](/zh/reference/functions/table-functions/s3Cluster)，而不是 `gcs` 表函数。该函数同样适用于 gcs 存储桶，并且会[利用 ClickHouse Cloud 服务的所有节点](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers)并行加载数据。
 
-<Image img="/images/migrations/bigquery-4.webp" size="md" alt="批量加载" />
+![批量加载](/images/migrations/bigquery-4.webp)
 
 这种方法有多项优势：
 
@@ -161,7 +159,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
 * 对于 ClickHouse 常见的使用规模而言，内存和磁盘效率至关重要。数据会以称为 parts 的块写入 ClickHouse 表，并按照规则在后台合并这些 parts。在 ClickHouse 中，每个 part 都有自己的主索引。当 parts 被合并时，合并后 part 的主索引也会一并合并。需要注意的是，这些索引并不是为每一行单独构建的。相反，一个 part 的主索引会为每组行保存一个索引条目——这种技术称为稀疏索引。
 * 稀疏索引之所以可行，是因为 ClickHouse 会按指定键对 part 中的行排序后存储到磁盘上。稀疏主索引不会像基于 B-Tree 的索引那样直接定位到单行，而是让 ClickHouse 能够快速地 (通过对索引条目进行 binary search) 识别出可能匹配查询的行组。随后，这些可能匹配的行组会被并行流式传输到 ClickHouse engine 中，以查找真正匹配的行。这种索引设计使主索引可以非常小 (可完全装入主内存) ，同时仍能显著提升查询执行速度，尤其适合数据分析场景中常见的范围查询。更多细节，建议阅读[这篇深入指南](/zh/guides/clickhouse/data-modelling/sparse-primary-indexes)。
 
-<Image img="/images/migrations/bigquery-5.webp" size="md" alt="ClickHouse 主键" />
+![ClickHouse 主键](/images/migrations/bigquery-5.webp)
 
 在 ClickHouse 中，所选主键不仅决定索引，还决定数据写入磁盘时的排列顺序。因此，它会显著影响压缩效果，而压缩效果又会进一步影响查询性能。如果某个排序键能让大多数列的值以连续顺序写入，那么所选的压缩算法 (以及编解码器) 就能更高效地压缩数据。
 
@@ -189,7 +187,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
 
 在 ClickHouse 中，分区是在表初始定义时通过 [`PARTITION BY`](/zh/reference/engines/table-engines/mergetree-family/custom-partitioning-key) 子句指定的。该子句可以包含基于任意列的 SQL 表达式，其结果将决定某一行会被发送到哪个分区。
 
-<Image img="/images/migrations/bigquery-6.webp" size="md" alt="分区" />
+![分区](/images/migrations/bigquery-6.webp)
 
 磁盘上的数据分区片段在逻辑上都隶属于各自的分区，并且可以单独查询。在下面的示例中，我们使用表达式 [`toYear(CreationDate)`](/zh/reference/functions/regular-functions/date-time-functions#toYear) 按年份对 posts 表进行分区。随着行被插入 ClickHouse，系统会对每一行计算该表达式的结果——随后，这些行会以属于相应分区的新数据分区片段的形式被写入对应分区。
 
@@ -400,7 +398,7 @@ WHERE UserId = 8592047
 此外，查询只需发送到单个表，在可能的情况下就会利用投影来加快响应
 时间。
 
-<Image img="/images/migrations/bigquery-7.webp" size="md" alt="投影" />
+![投影](/images/migrations/bigquery-7.webp)
 
 这与 materialized view 不同；对于后者，用户必须根据过滤器
 选择合适的优化目标表，或者重写查询。
@@ -426,7 +424,7 @@ WHERE UserId = 8592047
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-8.webp" size="sm" alt="改写 BigQuery 查询" border />
+![改写 BigQuery 查询](/images/migrations/bigquery-8.webp)
 
 *ClickHouse*
 
@@ -461,7 +459,7 @@ Peak memory usage: 323.37 MiB.
 
 <br />
 
-<Image img="/images/migrations/bigquery-9.webp" size="sm" alt="BigQuery 1" border />
+![BigQuery 1](/images/migrations/bigquery-9.webp)
 
 *ClickHouse*
 
@@ -497,9 +495,9 @@ Peak memory usage: 567.41 MiB.
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-10.webp" border size="sm" alt="聚合函数 1" />
+![聚合函数 1](/images/migrations/bigquery-10.webp)
 
-<Image img="/images/migrations/bigquery-11.webp" border size="sm" alt="聚合函数 2" />
+![聚合函数 2](/images/migrations/bigquery-11.webp)
 
 *ClickHouse*
 
@@ -555,7 +553,7 @@ Peak memory usage: 377.26 MiB.
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-12.webp" size="sm" border alt="条件判断与数组" />
+![条件判断与数组](/images/migrations/bigquery-12.webp)
 
 *ClickHouse*
 

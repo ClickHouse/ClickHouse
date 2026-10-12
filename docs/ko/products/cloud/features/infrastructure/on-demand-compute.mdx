@@ -9,8 +9,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from "/snippets/ko/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 <Note>
@@ -250,7 +248,7 @@ ClickHouse에 접속하는 방식은 전혀 달라지지 않습니다. 클라이
 
 worker가 서비스에 임대되어 있는 동안 플랫폼은 해당 worker와 서비스 간의 네트워크 트래픽만 허용하고 그 외의 모든 트래픽은 차단합니다. 이 제한은 query engine이 아니라 네트워크 계층에서 적용되므로 쿼리, 쿼리 설정, 최적화기가 생성한 계획과 무관하게 동작합니다.
 
-<Image img="/images/cloud/reference/on-demand-compute-worker-isolation.svg" size="lg" alt="Network isolation explanation diagram" />
+![Network isolation explanation diagram](/images/cloud/reference/on-demand-compute-worker-isolation.svg)
 
 * **사용자의 서비스만 해당 worker에 연결할 수 있습니다.** 이 경로는 worker의 현재 임대 기간 동안, 그리고 해당 서비스 하나에 대해서만 존재합니다.
 * **할당되지 않은 worker에는 연결할 수 없습니다.** 풀에서 대기 중인 worker는 임대되기 전까지 어떤 서비스와도 오가는 네트워크 경로가 없습니다.

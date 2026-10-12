@@ -5,8 +5,6 @@ description: "Узнайте, как профилировать ClickHouse с п
 tags: ['Производительность и оптимизация', 'Инструменты и утилиты']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="types-of-profilers">
   ## Типы профилировщиков
 </div>
@@ -51,7 +49,7 @@ SYSTEM INSTRUMENT REMOVE ALL
 
 Мы преобразуем данные, собранные в system.trace&#95;log, [в формат Chrome](/ru/reference/system-tables/trace_log#chrome-event-trace-format), чтобы визуализировать их в [Perfetto](https://ui.perfetto.dev). Обратите внимание на query&#95;id, cpu&#95;id и трассировку стека для каждой записи.
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp" size="md" alt="по времени" />
+![по времени](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/profile.webp)
 
 <div id="profiling-a-native-application-using-xray">
   ## Профилирование нативного приложения с помощью XRay
@@ -161,19 +159,19 @@ llvm-xray convert --symbolize --instr_map=./test --output-format=trace_event xra
   #### Хронологический порядок
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp" size="md" alt="time-order" />
+![time-order](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/time-order.webp)
 
 <div id="left-heavy">
   #### Перекос влево
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp" size="md" alt="перекос влево" />
+![перекос влево](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/left-heavy.webp)
 
 <div id="sandwitch">
   #### Сэндвич
 </div>
 
-<Image img="/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp" size="md" alt="сэндвич" />
+![сэндвич](/images/knowledgebase/profiling-clickhouse-with-llvm-xray/sandwich.webp)
 
 <div id="check-out-the-docs">
   ## Ознакомьтесь с документацией

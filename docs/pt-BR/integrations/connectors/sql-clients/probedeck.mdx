@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/pt-BR/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/pt-BR/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -73,7 +72,7 @@ Algumas seções de monitoramento dependem de tabelas de log opcionais ou de tab
     O ClickHouse Cloud usa chaves no nível da organização, disponíveis na página **API Keys**, para a Cloud API e os
     endpoints da Query API. O fluxo de conexão SQL do ProbeDeck não usa essas chaves.
 
-    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="Formulário de conexão do ProbeDeck configurado para HTTPS na porta 8443 com um nome de usuário do ClickHouse" />
+    ![Formulário de conexão do ProbeDeck configurado para HTTPS na porta 8443 com um nome de usuário do ClickHouse](/images/integrations/sql-clients/probedeck-add-connection.png)
   </Step>
 </Steps>
 
@@ -148,11 +147,11 @@ Abra a conexão salva e selecione **Monitor**. O dashboard resume as seguintes f
 | Métricas de memória e do servidor                              | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | Taxas históricas de consultas e de disco                       | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
-<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="Dashboard de monitoramento do ProbeDeck mostrando consultas em execução, replicação, disks, partes, mutações, merges, taxa de consultas e memória" />
+![Dashboard de monitoramento do ProbeDeck mostrando consultas em execução, replicação, disks, partes, mutações, merges, taxa de consultas e memória](/images/integrations/sql-clients/probedeck-dashboard.png)
 
 Clique em **consultas em execução** para ordenar as consultas ativas por tempo decorrido e verificar o uso de memória e as linhas lidas.
 
-<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="Lista de consultas em execução do ProbeDeck ordenada por tempo decorrido" />
+![Lista de consultas em execução do ProbeDeck ordenada por tempo decorrido](/images/integrations/sql-clients/probedeck-running-queries.png)
 
 <div id="query-the-uk-property-price-dataset">
   ## Consulte o conjunto de dados de preços de imóveis do Reino Unido

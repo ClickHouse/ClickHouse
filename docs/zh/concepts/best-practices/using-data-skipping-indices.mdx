@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 在遵循前述最佳实践后，才应考虑使用数据跳过索引，也就是说，类型已完成优化、已选择合适的主键，并且已充分利用 materialized view。如果你刚开始接触跳过索引，[本指南](/zh/concepts/features/performance/skip-indexes/skipping-indexes)会是一个不错的起点。
 
 这类索引如果在充分理解其工作原理的前提下谨慎使用，可以用来提升查询性能。
@@ -192,7 +190,7 @@ ORDER BY (PostTypeId, toDate(CreationDate))
 
 下面的动画演示了如何为示例表构建 minmax 跳过索引，它会记录表中每个行块 (粒度) 的最小和最大 `ViewCount` 值：
 
-<Image img="/images/bestpractices/building_skipping_indices.webp" size="lg" alt="构建跳过索引" />
+![构建跳过索引](/images/bestpractices/building_skipping_indices.webp)
 
 再次执行前面的查询，可以看到性能显著提升。请注意，扫描的行数减少了：
 
@@ -257,7 +255,7 @@ WHERE (CreationDate > '2009-01-01') AND (ViewCount > 10000000)
 
 我们还展示了一个动画，演示在示例查询中，minmax 跳过索引如何裁剪掉所有不可能包含满足 `ViewCount` &gt; 10,000,000 条件的匹配行的行块：
 
-<Image img="/images/bestpractices/using_skipping_indices.webp" size="lg" alt="使用跳过索引" />
+![使用跳过索引](/images/bestpractices/using_skipping_indices.webp)
 
 <div id="related-docs">
   ## 相关文档

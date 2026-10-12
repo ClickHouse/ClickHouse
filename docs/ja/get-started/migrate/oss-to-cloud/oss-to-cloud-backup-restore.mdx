@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['移行', 'ClickHouse Cloud', 'OSS', 'セルフマネージドから Cloud へ移行', 'BACKUP', 'RESTORE']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 <div id="overview-migration-approaches">
   ## 概要
 </div>
@@ -277,19 +275,19 @@ FROM s3(
   </Step>
 
   <Step title="新しいサービスを作成する" id="create-new-service">
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp" size="md" alt="新しいサービスを作成する" />
+    ![新しいサービスを作成する](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/create_service.webp)
   </Step>
 
   <Step title="サービスを設定して作成する" id="configure-and-create">
     使用するリージョンと構成を選択し、`Create service` をクリックします
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp" size="md" alt="サービスの設定を行う" />
+    ![サービスの設定を行う](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/service_details.webp)
   </Step>
 
   <Step title="アクセスロールを作成する" id="create-an-access-role">
     SQL Console を開きます
 
-    <Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp" size="md" alt="サービスの設定を行う" />
+    ![サービスの設定を行う](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/open_console.webp)
 
     ### S3 アクセスを設定する
 
@@ -393,7 +391,7 @@ Query id: efcaf053-75ed-4924-aeb1-525547ea8d45
 
 先ほどまで空だった S3 バケットを確認すると、いくつかのフォルダが作成されているのがわかります。
 
-<Image img="/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp" size="md" alt="バックアップ、データ、メタデータ" />
+![バックアップ、データ、メタデータ](/images/cloud/onboard/migrate/oss_to_cloud_via_backup/backup_in_s3_bucket.webp)
 
 完全な移行を行う場合は、次のコマンドを実行してサーバー全体をバックアップできます。
 

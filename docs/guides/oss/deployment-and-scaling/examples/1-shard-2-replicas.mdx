@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['replication', 'high availability', 'cluster setup', 'data redundancy', 'fault tolerance']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 import ConfigExplanation from '/snippets/_config_explanation.mdx';
 import ListenHost from '/snippets/_listen_host.mdx';
 import ServerParameterTable from '/snippets/_server_parameter_table.mdx';
@@ -26,7 +24,7 @@ of data.
 
 The architecture of the cluster you will be setting up is shown below:
 
-<Image img="/images/deployment-guides/replication-sharding-examples/replication.webp" size="md" alt="Architecture diagram for 1 shard and 2 replicas with ReplicatedMergeTree" />
+![Architecture diagram for 1 shard and 2 replicas with ReplicatedMergeTree](/images/deployment-guides/replication-sharding-examples/replication.webp)
 
 <DedicatedKeeperServers/>
 

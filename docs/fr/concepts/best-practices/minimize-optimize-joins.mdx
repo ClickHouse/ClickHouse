@@ -8,8 +8,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 ClickHouse prend en charge un large éventail de types et d’algorithmes de JOIN, et les performances des JOIN se sont nettement améliorées dans les versions récentes. Cependant, les JOIN sont intrinsèquement plus coûteux qu’une requête sur une seule table dénormalisée. La dénormalisation déplace la charge de calcul du moment de la requête vers l’insertion ou le prétraitement, ce qui se traduit souvent par une latence nettement plus faible à l’exécution. Pour les requêtes analytiques en temps réel ou sensibles à la latence, **la dénormalisation est fortement recommandée**.
 
 En général, dénormalisez lorsque :
@@ -56,7 +54,7 @@ ClickHouse prend en charge plusieurs algorithmes de JOIN, chacun offrant un comp
 * **Partial Merge JOIN :** minimise la consommation mémoire, mais est plus lent — convient le mieux pour joindre de grandes tables lorsque la mémoire est limitée.
 * **Grace Hash JOIN :** flexible et ajustable en mémoire, bien adapté aux grands jeux de données avec des caractéristiques de performance modulables.
 
-<Image img="/images/bestpractices/joins-speed-memory.png" size="md" alt="Joins — vitesse vs mémoire" />
+![Joins — vitesse vs mémoire](/images/bestpractices/joins-speed-memory.png)
 
 <Note>
   La prise en charge des types de JOIN varie selon l’algorithme. La liste complète des types de JOIN pris en charge par chaque algorithme est disponible [ici](/fr/concepts/features/operations/select/joining-tables#choosing-a-join-algorithm).

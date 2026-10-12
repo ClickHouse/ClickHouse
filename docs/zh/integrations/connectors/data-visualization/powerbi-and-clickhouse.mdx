@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -74,7 +72,7 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
 
 运行随附的 `.msi` 安装程序，并按照安装向导完成安装。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_install.webp" alt="显示安装选项的 ClickHouse ODBC 驱动程序 安装向导" border />
+![显示安装选项的 ClickHouse ODBC 驱动程序 安装向导](/images/integrations/data-visualization/powerbi_odbc_install.webp)
 
 <br />
 
@@ -90,13 +88,13 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
 
 在开始菜单中搜索 ODBC，然后选择“ODBC 数据源 **(64-bit)**”。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="Windows 搜索中显示“ODBC 数据源 (64-bit)”选项" border />
+![Windows 搜索中显示“ODBC 数据源 (64-bit)”选项](/images/integrations/data-visualization/powerbi_odbc_search.webp)
 
 <br />
 
 确认列表中包含 ClickHouse Driver。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_verify.webp" alt="ODBC 数据源管理器在“驱动程序”选项卡中显示 ClickHouse 驱动程序" border />
+![ODBC 数据源管理器在“驱动程序”选项卡中显示 ClickHouse 驱动程序](/images/integrations/data-visualization/powerbi_odbc_verify.webp)
 
 <br />
 
@@ -110,13 +108,13 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
 
 在 Power BI Desktop 启动界面上，点击“获取数据”。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="显示“获取数据”按钮的 Power BI Desktop 启动界面" border />
+![显示“获取数据”按钮的 Power BI Desktop 启动界面](/images/integrations/data-visualization/powerbi_get_data.webp)
 
 <br />
 
 搜索“ClickHouse”
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_search_clickhouse.webp" alt="Power BI“获取数据”对话框，搜索栏中已搜索 ClickHouse" border />
+![Power BI“获取数据”对话框，搜索栏中已搜索 ClickHouse](/images/integrations/data-visualization/powerbi_search_clickhouse.webp)
 
 <br />
 
@@ -132,7 +130,7 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
 * Options - [ClickHouse ODBC GitHub 页面](https://github.com/ClickHouse/clickhouse-odbc#configuration)中列出的任意 ODBC 选项
 * Data Connectivity mode - DirectQuery
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_connect_db.webp" alt="显示主机、端口、数据库和连接模式字段的 ClickHouse 连接对话框" border />
+![显示主机、端口、数据库和连接模式字段的 ClickHouse 连接对话框](/images/integrations/data-visualization/powerbi_connect_db.webp)
 
 <br />
 
@@ -144,7 +142,7 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
 
 * 指定用户名和密码
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_connect_user.webp" alt="用于输入用户名和密码的 ClickHouse 连接凭据对话框" border />
+![用于输入用户名和密码的 ClickHouse 连接凭据对话框](/images/integrations/data-visualization/powerbi_connect_user.webp)
 
 <br />
 
@@ -155,7 +153,7 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
 最后，你应该能在 Navigator 视图中看到数据库和表。选择所需的表，然后点击“Load”，以
 从 ClickHouse 导入数据。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_table_navigation.webp" alt="Power BI Navigator 视图显示 ClickHouse 数据库表和样本数据" border />
+![Power BI Navigator 视图显示 ClickHouse 数据库表和样本数据](/images/integrations/data-visualization/powerbi_table_navigation.webp)
 
 <br />
 
@@ -185,25 +183,25 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
 
 驱动程序安装完成后，即可创建 ODBC 数据源。在开始菜单中搜索 ODBC，然后选择“ODBC 数据源 (64-bit) ”。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="Windows 搜索中显示“ODBC 数据源 (64-bit)”选项" border />
+![Windows 搜索中显示“ODBC 数据源 (64-bit)”选项](/images/integrations/data-visualization/powerbi_odbc_search.webp)
 
 <br />
 
 我们需要在这里添加一个新的用户 DSN。点击左侧的“添加”按钮。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_add_dsn.webp" alt="ODBC 数据源管理器中高亮显示用于创建新 DSN 的“添加”按钮" border />
+![ODBC 数据源管理器中高亮显示用于创建新 DSN 的“添加”按钮](/images/integrations/data-visualization/powerbi_add_dsn.webp)
 
 <br />
 
 选择 ODBC 驱动程序的 Unicode 版本。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_select_unicode.webp" alt="“创建新数据源”对话框中显示已选择 ClickHouse Unicode Driver" border />
+![“创建新数据源”对话框中显示已选择 ClickHouse Unicode Driver](/images/integrations/data-visualization/powerbi_select_unicode.webp)
 
 <br />
 
 填写连接信息。
 
-<Image size="sm" img="/images/integrations/data-visualization/powerbi_connection_details.webp" alt="包含连接参数的 ClickHouse ODBC Driver 配置对话框" border />
+![包含连接参数的 ClickHouse ODBC Driver 配置对话框](/images/integrations/data-visualization/powerbi_connection_details.webp)
 
 <br />
 
@@ -223,19 +221,19 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
 
 在 Power BI Desktop 启动屏幕上，单击“获取数据”。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="显示“获取数据”按钮的 Power BI Desktop 主屏幕" border />
+![显示“获取数据”按钮的 Power BI Desktop 主屏幕](/images/integrations/data-visualization/powerbi_get_data.webp)
 
 <br />
 
 选择“Other”-&gt;“ODBC”。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_select_odbc.webp" alt="Power BI“获取数据”对话框，其中“Other”类别下已选中“ODBC”选项" border />
+![Power BI“获取数据”对话框，其中“Other”类别下已选中“ODBC”选项](/images/integrations/data-visualization/powerbi_select_odbc.webp)
 
 <br />
 
 从列表中选择您之前创建的数据源。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_select_dsn.webp" alt="显示已配置 ClickHouse DSN 的 ODBC 驱动程序选择对话框" border />
+![显示已配置 ClickHouse DSN 的 ODBC 驱动程序选择对话框](/images/integrations/data-visualization/powerbi_select_dsn.webp)
 
 <br />
 
@@ -243,13 +241,13 @@ Power BI 要求你先在 Desktop 版本中创建仪表盘，然后将其发布�
   如果您在创建数据源时未指定凭据，系统会提示您输入用户名和密码。
 </Note>
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_dsn_credentials.webp" alt="ODBC DSN 连接的凭据对话框" border />
+![ODBC DSN 连接的凭据对话框](/images/integrations/data-visualization/powerbi_dsn_credentials.webp)
 
 <br />
 
 最后，您应会在 Navigator 视图中看到数据库和表。选择所需的表，然后单击“Load”从 ClickHouse 导入数据。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_table_navigation.webp" alt="显示 ClickHouse 数据库表和样本数据的 Power BI Navigator 视图" border />
+![显示 ClickHouse 数据库表和样本数据的 Power BI Navigator 视图](/images/integrations/data-visualization/powerbi_table_navigation.webp)
 
 <br />
 
@@ -315,7 +313,7 @@ UInt64 及更大的无符号整数类型不会自动加载到数据集中，因�
 点击“转换数据”会打开 Power Query Editor，我们可以在其中重新指定该列的类型，例如将其设置为
 文本。
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_16.webp" alt="Power Query Editor 中显示 UInt64 列的数据类型转换" border />
+![Power Query Editor 中显示 UInt64 列的数据类型转换](/images/integrations/data-visualization/powerbi_16.webp)
 
 <br />
 

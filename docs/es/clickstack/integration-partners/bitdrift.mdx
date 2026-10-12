@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['bitdrift', 'ClickStack', 'ClickHouse', 'OpenTelemetry', 'observabilidad móvil', 'tracing']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -39,7 +37,7 @@ import { PartnerBadge } from "/snippets/es/components/PartnerBadge/PartnerBadge.
 
 bitdrift mantiene la telemetría móvil en el edge hasta que se solicita, de modo que los equipos pueden recuperar la sesión completa sin muestrear que provocó un crash o un problema de rendimiento, en lugar de trabajar con un conjunto fijo de señales muestreadas previamente. La plataforma bitdrift Capture está disponible como SaaS alojado por bitdrift o como una implementación en su propia Cloud (o bucket) dentro de su cuenta de AWS.
 
-<Image img="/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png" alt="Un dashboard de User Journey de bitdrift que muestra rutas hacia un ANR" size="lg" />
+![Un dashboard de User Journey de bitdrift que muestra rutas hacia un ANR](/images/clickstack/bitdrift/bitdrift-user-journey-dashboard.png)
 
 *Un dashboard de User Journey de bitdrift que muestra las rutas que siguen los usuarios hasta un ANR.*
 
@@ -85,7 +83,7 @@ Para obtener información específica de cada plataforma sobre cada paso, consul
 
 Una vez configurado, las filas de logs de la cronología de bitdrift y las vistas de spans muestran un enlace de **Ver traza** que lleva el trace ID capturado a la UI de ClickStack (HyperDX).
 
-<Image img="/images/clickstack/bitdrift/bitdrift-view-trace.jpg" alt="Una traza de bitdrift que enlaza con una traza distribuida en la UI de ClickStack" size="lg" />
+![Una traza de bitdrift que enlaza con una traza distribuida en la UI de ClickStack](/images/clickstack/bitdrift/bitdrift-view-trace.jpg)
 
 *Al seguir un enlace de Ver traza desde una sesión de bitdrift a una traza distribuida en la UI de ClickStack (HyperDX).*
 

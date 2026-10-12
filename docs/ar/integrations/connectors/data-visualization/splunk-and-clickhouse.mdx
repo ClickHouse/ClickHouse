@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -34,7 +32,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 باستخدام هذا الدليل، ستتمكن من إنشاء لوحة معلومات متصلة بـ ClickHouse مشابهة لهذه:
 
-<Image img="/images/integrations/splunk/splunk-1.webp" size="lg" border alt="لوحة معلومات في Splunk تعرض تصورات لبيانات سيارات الأجرة في مدينة نيويورك" />
+![لوحة معلومات في Splunk تعرض تصورات لبيانات سيارات الأجرة في مدينة نيويورك](/images/integrations/splunk/splunk-1.webp)
 
 <Note>
   يستخدم هذا الدليل [مجموعة بيانات سيارات الأجرة في مدينة نيويورك](/ar/get-started/sample-datasets/nyc-taxi). وهناك العديد من مجموعات البيانات الأخرى التي يمكنك استخدامها من [وثائقنا](http://localhost:3000/docs/getting-started/example-datasets).
@@ -71,7 +69,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 بعد التأكد من تثبيت تطبيق DB Connect App، أضف مسار `java_home` إلى تطبيق DB Connect App ضمن Configuration -&gt; Settings، ثم انقر على save وبعدها reset.
 
-<Image img="/images/integrations/splunk/splunk-2.webp" size="md" border alt="صفحة إعدادات Splunk DB Connect التي تعرض إعداد Java Home" />
+![صفحة إعدادات Splunk DB Connect التي تعرض إعداد Java Home](/images/integrations/splunk/splunk-2.webp)
 
 <div id="configure-jdbc-for-clickhouse">
   ## تهيئة JDBC لـ ClickHouse
@@ -106,7 +104,7 @@ ui_default_catalog = $database$
 
 ارجع إلى تطبيق DB Connect App، ثم انتقل إلى Configuration &gt; Settings &gt; Drivers. ينبغي أن ترى علامة صح خضراء بجوار ClickHouse:
 
-<Image img="/images/integrations/splunk/splunk-3.webp" size="lg" border alt="صفحة برامج التشغيل في Splunk DB Connect تعرض تثبيت برنامج تشغيل ClickHouse بنجاح" />
+![صفحة برامج التشغيل في Splunk DB Connect تعرض تثبيت برنامج تشغيل ClickHouse بنجاح](/images/integrations/splunk/splunk-3.webp)
 
 <div id="connect-splunk-search-to-clickhouse">
   ## ربط بحث Splunk بـ ClickHouse
@@ -116,13 +114,13 @@ ui_default_catalog = $database$
 
 أنشئ اتصالًا جديدًا بـ ClickHouse من Configuration -&gt; Databases -&gt; Connections، ثم اختر &quot;New Connection&quot;.
 
-<Image img="/images/integrations/splunk/splunk-4.webp" size="sm" border alt="زر اتصال جديد في Splunk DB Connect" />
+![زر اتصال جديد في Splunk DB Connect](/images/integrations/splunk/splunk-4.webp)
 
 <br />
 
 أضف بيانات مضيف ClickHouse، وتأكد من تحديد &quot;Enable SSL&quot;:
 
-<Image img="/images/integrations/splunk/splunk-5.webp" size="md" border alt="صفحة إعداد اتصال Splunk لـ ClickHouse" />
+![صفحة إعداد اتصال Splunk لـ ClickHouse](/images/integrations/splunk/splunk-5.webp)
 
 بعد حفظ الاتصال، ستكون قد نجحت في توصيل ClickHouse بـ Splunk!
 
@@ -138,11 +136,11 @@ ui_default_catalog = $database$
 
 حدِّد تفاصيل الاتصال في SQL Explorer ضمن قسم DataLab في تطبيق DB Connect App. سنستخدم جدول `trips` في هذا العرض التوضيحي:
 
-<Image img="/images/integrations/splunk/splunk-6.webp" size="md" border alt="يحدِّد SQL Explorer في Splunk اتصالًا بـ ClickHouse" />
+![يحدِّد SQL Explorer في Splunk اتصالًا بـ ClickHouse](/images/integrations/splunk/splunk-6.webp)
 
 نفِّذ استعلام SQL على جدول `trips` لإرجاع عدد جميع السجلات في الجدول:
 
-<Image img="/images/integrations/splunk/splunk-7.webp" size="md" border alt="تنفيذ استعلام SQL في Splunk لعرض عدد السجلات في جدول trips" />
+![تنفيذ استعلام SQL في Splunk لعرض عدد السجلات في جدول trips](/images/integrations/splunk/splunk-7.webp)
 
 إذا نُفِّذ الاستعلام بنجاح، فسترى النتائج.
 
@@ -164,7 +162,7 @@ ORDER BY count DESC LIMIT 10;" connection="chc"
 
 اختر علامة تبويب التصور لعرض مخطط الأعمدة الذي تم إنشاؤه:
 
-<Image img="/images/integrations/splunk/splunk-8.webp" size="lg" border alt="تصور لمخطط أعمدة في Splunk يعرض أفضل 10 أحياء لالتقاط الركاب" />
+![تصور لمخطط أعمدة في Splunk يعرض أفضل 10 أحياء لالتقاط الركاب](/images/integrations/splunk/splunk-8.webp)
 
 سننشئ الآن لوحة معلومات بالنقر على Save As &gt; Save to a Dashboard.
 
@@ -177,7 +175,7 @@ FROM default.trips GROUP BY passenger_count;" connection="chc"
 
 هذه المرة، لنُنشئ تصورًا على هيئة مخطط أعمدة ونحفظه في لوحة المعلومات السابقة.
 
-<Image img="/images/integrations/splunk/splunk-9.webp" size="lg" border alt="مخطط أعمدة في Splunk يُظهر متوسط الأجرة حسب عدد الركاب" />
+![مخطط أعمدة في Splunk يُظهر متوسط الأجرة حسب عدد الركاب](/images/integrations/splunk/splunk-9.webp)
 
 أخيرًا، لنُضِف استعلامًا آخر يُظهر العلاقة بين عدد الركاب ومسافة الرحلة:
 
@@ -190,7 +188,7 @@ ORDER BY year, count(*) DESC; " connection="chc"
 
 ينبغي أن تبدو لوحة المعلومات النهائية لدينا كما يلي:
 
-<Image img="/images/integrations/splunk/splunk-10.webp" size="lg" border alt="لوحة معلومات Splunk النهائية مع تصورات متعددة لبيانات سيارات الأجرة في نيويورك" />
+![لوحة معلومات Splunk النهائية مع تصورات متعددة لبيانات سيارات الأجرة في نيويورك](/images/integrations/splunk/splunk-10.webp)
 
 <div id="time-series-data">
   ## بيانات السلاسل الزمنية

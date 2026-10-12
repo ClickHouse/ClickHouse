@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Node.js', 'traces', 'OTEL', 'ClickStack', 'traçage distribué']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/fr/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -47,7 +45,7 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre envir
     3. Accédez à **Team Settings → API Keys**
     4. Copiez votre **clé API d’ingestion**
 
-    <Image img="/images/clickstack/api-key.webp" alt="Clé API ClickStack" />
+    ![Clé API ClickStack](/images/clickstack/api-key.webp)
   </Step>
 
   <Step title="Exécuter votre application" id="run-application">
@@ -76,11 +74,11 @@ Si vous souhaitez tester l’intégration avant de configurer votre propre envir
   <Step title="Vérifier les traces dans HyperDX" id="verify-traces">
     Une fois la configuration terminée, connectez-vous à HyperDX et vérifiez que les traces remontent correctement. Vous devriez voir quelque chose comme ceci. Si vous ne voyez pas de traces, essayez d’ajuster votre intervalle de temps :
 
-    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Vue de recherche des traces" />
+    ![Vue de recherche des traces](/images/clickstack/nodejs/traces-search-view.webp)
 
     Cliquez sur une trace pour afficher la vue détaillée avec les spans, les durées et les attributs :
 
-    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="Vue d’une trace individuelle" />
+    ![Vue d’une trace individuelle](/images/clickstack/nodejs/trace-view.webp)
   </Step>
 </Steps>
 
@@ -119,7 +117,7 @@ Pour les utilisateurs qui souhaitent tester le tracing Node.js avec ClickStack a
     3. Accédez à **Team Settings → API Keys**
     4. Copiez votre **clé API d’ingestion**
 
-    <Image img="/images/clickstack/api-key.webp" alt="Clé API ClickStack" />
+    ![Clé API ClickStack](/images/clickstack/api-key.webp)
 
     Définissez votre clé API comme variable d’environnement :
 
@@ -144,9 +142,9 @@ Pour les utilisateurs qui souhaitent tester le tracing Node.js avec ClickStack a
     2. Accédez à la vue **Search** et définissez la source sur **Traces**
     3. Définissez l’intervalle de temps sur **2025-10-25 13:00:00 - 2025-10-28 13:00:00**
 
-    <Image img="/images/clickstack/nodejs/traces-search-view.webp" alt="Vue de recherche des traces" />
+    ![Vue de recherche des traces](/images/clickstack/nodejs/traces-search-view.webp)
 
-    <Image img="/images/clickstack/nodejs/trace-view.webp" alt="Vue d’une trace individuelle" />
+    ![Vue d’une trace individuelle](/images/clickstack/nodejs/trace-view.webp)
 
     <Info>
       **Affichage du fuseau horaire**
@@ -171,15 +169,15 @@ Pour vous aider à commencer à surveiller les performances de l’application N
     1. Ouvrez HyperDX et accédez à la section **Dashboards**
     2. Cliquez sur **Import Dashboard** dans l’angle supérieur droit (sous les points de suspension)
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Importer un tableau de bord" />
+    ![Importer un tableau de bord](/images/clickstack/import-dashboard.webp)
 
     3. Téléversez le fichier `nodejs-traces-dashboard.json`, puis cliquez sur **Finish Import**
 
-    <Image img="/images/clickstack/nodejs/finish-import.webp" alt="Terminer l’import" />
+    ![Terminer l’import](/images/clickstack/nodejs/finish-import.webp)
   </Step>
 
   <Step title="Le tableau de bord sera créé avec toutes les visualisations préconfigurées" id="created-dashboard">
-    <Image img="/images/clickstack/nodejs/example-traces-dashboard.webp" alt="Exemple de tableau de bord" />
+    ![Exemple de tableau de bord](/images/clickstack/nodejs/example-traces-dashboard.webp)
 
     <Note>
       Pour le jeu de données de démonstration, définissez l’intervalle de temps sur **2025-10-26 13:00:00 - 2025-10-27 13:00:00 (UTC)** (à ajuster selon votre fuseau horaire local). Par défaut, aucun intervalle de temps ne sera défini pour le tableau de bord importé.

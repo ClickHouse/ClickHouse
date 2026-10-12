@@ -10,8 +10,6 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ko/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -72,7 +70,7 @@ Azure Synapse는 [패키지 관리](https://learn.microsoft.com/en-us/azure/syna
 
 다음과 같이 첫 번째 셀에 표시되는지 확인하십시오:
 
-<Image img="/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp" size="xl" alt="노트북에서 Spark 구성 설정" border />
+![노트북에서 Spark 구성 설정](/images/integrations/data-ingestion/azure-synapse/spark_notebook_conf.webp)
 
 추가 설정은 [ClickHouse Spark configurations page](/ko/integrations/connectors/data-ingestion/apache-spark/spark-native-connector#configurations)를 참조하십시오.
 
@@ -87,7 +85,7 @@ Azure Synapse는 [패키지 관리](https://learn.microsoft.com/en-us/azure/syna
 의존성과 구성이 성공적으로 설정되었는지 확인하려면 현재 세션의 Spark UI로 이동한 후 `Environment` 탭을 여십시오.
 여기에서 ClickHouse 관련 설정을 찾으십시오:
 
-<Image img="/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp" size="xl" alt="Spark UI를 사용한 ClickHouse 설정 확인" border />
+![Spark UI를 사용한 ClickHouse 설정 확인](/images/integrations/data-ingestion/azure-synapse/spark_ui_ch_settings.webp)
 
 <div id="additional-resources">
   ## 추가 자료

@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 Kinesis ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以使用 [OpenAPI](/zh/integrations/clickpipes/programmatic-access/openapi) 和 [Terraform](/zh/integrations/clickpipes/programmatic-access/terraform) 以编程方式部署和管理。
 
 <div id="prerequisite">
@@ -24,37 +22,37 @@ Kinesis ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
 
 1. 进入你的 ClickHouse Cloud 服务的 SQL 控制台。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 服务" size="lg" border />
+![ClickPipes 服务](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
 
 2. 在左侧菜单中选择 `数据源` 按钮，然后点击“Set up a ClickPipe”
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="选择导入" size="lg" border />
+![选择导入](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
 
 3. 选择你的数据源。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step1.webp" alt="选择数据源类型" size="lg" border />
+![选择数据源类型](/images/integrations/data-ingestion/clickpipes/cp_step1.webp)
 
 4. 填写表单，为 ClickPipe 提供名称、描述 (可选) 、IAM 角色 或凭证，以及其他连接详细信息。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp" alt="填写连接详细信息" size="lg" border />
+![填写连接详细信息](/images/integrations/data-ingestion/clickpipes/cp_step2_kinesis.webp)
 
 5. 选择 Kinesis 数据流、**数据格式** 和起始偏移量。对于 `Protobuf`，请上传 `.proto` 文件或序列化的 `FileDescriptorSet` (最大 768 KiB) 。无需 Schema Registry。
 
    UI 会显示所选数据流中的样本数据。**Use Kinesis Enhanced Fan-Out** 默认已启用。详情请参见 [Amazon Kinesis 文档](https://docs.aws.amazon.com/streams/latest/dev/enhanced-consumers.html)。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp" alt="设置数据格式和 topic" size="lg" border />
+![设置数据格式和 topic](/images/integrations/data-ingestion/clickpipes/cp_step3_kinesis.webp)
 
 6. 在下一步中，你可以选择将数据摄取到新的 ClickHouse 表中，或复用现有表。按照界面上的说明修改表名、schema 和设置。你可以在顶部的样本表中实时预览这些更改。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a.webp" alt="设置表、schema 和设置" size="lg" border />
+![设置表、schema 和设置](/images/integrations/data-ingestion/clickpipes/cp_step4a.webp)
 
 你还可以使用提供的控件自定义高级设置
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp" alt="设置高级控件" size="lg" border />
+![设置高级控件](/images/integrations/data-ingestion/clickpipes/cp_step4a3.webp)
 
 7. 或者，你也可以选择将数据摄取到现有的 ClickHouse 表中。在这种情况下，UI 会允许你将源中的字段映射到所选目标表中的 ClickHouse 字段。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step4b.webp" alt="使用现有表" size="lg" border />
+![使用现有表](/images/integrations/data-ingestion/clickpipes/cp_step4b.webp)
 
 8. 最后，你可以为内部 ClickPipes 用户配置权限。
 
@@ -63,21 +61,21 @@ Kinesis ClickPipes 可以通过 ClickPipes UI 手动部署和管理，也可以�
 * `Full access`：对集群具有完全访问权限。如果你在目标表中使用 materialized view 或字典，这可能会很有用。
   * `Only destination table`：仅具有目标表的 `INSERT` 权限。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step5.webp" alt="权限" border />
+![权限](/images/integrations/data-ingestion/clickpipes/cp_step5.webp)
 
 9. 点击“Complete Setup”后，系统将注册你的 ClickPipe，你将能够在摘要表中看到它。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_success.webp" alt="成功通知" size="sm" border />
+![成功通知](/images/integrations/data-ingestion/clickpipes/cp_success.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_remove.webp" alt="移除通知" size="lg" border />
+![移除通知](/images/integrations/data-ingestion/clickpipes/cp_remove.webp)
 
 摘要表提供了相关控件，可显示源中的样本数据或 ClickHouse 中目标表的数据
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_destination.webp" alt="查看目标端" size="lg" border />
+![查看目标端](/images/integrations/data-ingestion/clickpipes/cp_destination.webp)
 
 以及用于移除 ClickPipe 并显示摄取作业摘要的控件。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_overview.webp" alt="查看概览" size="lg" border />
+![查看概览](/images/integrations/data-ingestion/clickpipes/cp_overview.webp)
 
 10. **恭喜！** 你已成功设置第一个 ClickPipe。如果这是一个流式 ClickPipe，它将持续运行，实时从远程数据源摄取数据。否则，它会摄取该批次的数据并完成。
 

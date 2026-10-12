@@ -6,8 +6,6 @@ tags: ['Erreurs et exceptions']
 keywords: ['Vérification du développeur', 'MacOS']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <div id="fix-the-developer-verification-error-in-macos">
   ## Corriger l’erreur de vérification du développeur dans MacOS
 </div>
@@ -17,7 +15,7 @@ Par défaut, MacOS n’exécute pas les applications ou les outils créés par u
 
 Lorsque vous essayez d’exécuter une commande `clickhouse`, cette erreur peut s’afficher :
 
-<Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp" size="md" alt="Boîte de dialogue d’erreur de vérification du développeur sur MacOS" border />
+![Boîte de dialogue d’erreur de vérification du développeur sur MacOS](/images/knowledgebase/fix-the-developer-verification-error-in-macos/dev-verification-error.webp)
 
 Pour contourner cette erreur de vérification, vous devez retirer l’application de la zone de quarantaine de MacOS, soit en trouvant le réglage approprié dans la fenêtre Réglages Système, soit en utilisant le terminal, soit en réinstallant ClickHouse.
 
@@ -31,13 +29,13 @@ Le moyen le plus simple de retirer l’exécutable `clickhouse` de la zone de qu
 
 2. Accédez à **Confidentialité et sécurité** :
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp" size="md" alt="Vue par défaut des réglages MacOS Confidentialité et sécurité" border />
+   ![Vue par défaut des réglages MacOS Confidentialité et sécurité](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-default-view.webp)
 
 3. Faites défiler jusqu’en bas de la fenêtre pour trouver un message indiquant que *« clickhouse-macos-aarch64 »* a été bloqué, car il ne provient pas d’un développeur identifié.
 
 4. Cliquez sur **Autoriser quand même**.
 
-   <Image img="/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp" size="md" alt="Réglages MacOS Confidentialité et sécurité affichant le bouton Autoriser quand même" border />
+   ![Réglages MacOS Confidentialité et sécurité affichant le bouton Autoriser quand même](/images/knowledgebase/fix-the-developer-verification-error-in-macos/privacy-and-security-screen-allow-anyway.webp)
 
 5. Saisissez le mot de passe de votre compte MacOS.
 

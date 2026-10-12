@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', '세션 리플레이', '브라우저 SDK', '프런트엔드 관측성', '사용자 세션', '디버깅']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickStack의 세션 리플레이는 웹 애플리케이션에서의 사용자 상호작용을 캡처하고 재구성하여, 세션 동안 사용자가 정확히 무엇을 보고 무엇을 했는지 시각적으로 다시 볼 수 있게 합니다. 비디오를 녹화하는 방식이 아니라 SDK가 DOM 변경, 마우스 이동, 클릭, 스크롤, 키보드 입력, 콘솔 로그, 네트워크 요청(XHR, Fetch, WebSocket), JavaScript 예외를 기록한 뒤 브라우저에서 해당 경험을 재구성합니다.
 
 세션 리플레이는 로그, 트레이스, 메트릭과 함께 ClickHouse에 저장되므로, 사용자의 경험을 살펴보는 것에서 이를 뒷받침한 백엔드 트레이스와 데이터베이스 쿼리를 확인하는 것까지 몇 번의 클릭만으로 이어서 수행할 수 있습니다. 따라서 세션 리플레이는 운영 환경의 문제를 디버깅하고, 사용자 행동을 이해하며, UX 마찰 지점을 파악하고, 지원팀에 보고된 문제를 시각적으로 확인하는 데 유용합니다.
@@ -95,11 +93,11 @@ Browser SDK는 개인정보 보호가 중요한 애플리케이션을 위해 [�
 
 ClickStack UI(HyperDX)의 왼쪽 사이드바에서 **Client Sessions**로 이동합니다. 이 화면에는 캡처된 모든 브라우저 세션이 지속 시간과 이벤트 수와 함께 표시됩니다.
 
-<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="세션 리플레이 검색 화면" size="lg" />
+![세션 리플레이 검색 화면](/images/clickstack/session-replay/replay-search-view.webp)
 
 리플레이하려는 세션의 재생 버튼을 클릭합니다. 리플레이 화면의 오른쪽에는 재구성된 사용자 경험이 표시되고, 왼쪽에는 네트워크 요청, 콘솔 로그, 오류 등 브라우저 이벤트의 타임라인이 표시됩니다.
 
-<Image img="/images/clickstack/session-replay/session-replay.webp" alt="세션 리플레이 재생" size="lg" />
+![세션 리플레이 재생](/images/clickstack/session-replay/session-replay.webp)
 
 타임라인에 표시되는 세부 정보 수준을 조정하려면 **Highlighted** 모드와 **All Events** 모드 사이를 전환합니다. 오류는 빨간색으로 표시되며, 이벤트를 클릭하면 리플레이가 세션의 해당 시점으로 이동합니다.
 
@@ -121,7 +119,7 @@ ClickStack UI(HyperDX)의 왼쪽 사이드바에서 **Client Sessions**로 이�
 
 이 상관관계는 반대 방향에서도 유효합니다. **검색** 보기에서 트레이스를 확인할 때 해당 항목을 클릭해 트레이스 상세 정보를 연 다음, **세션 리플레이** 탭을 선택하면 그 트레이스 시점에 사용자가 실제로 무엇을 겪고 있었는지 정확히 확인할 수 있습니다. 이는 특히 오류나 느린 요청을 조사할 때 매우 유용합니다. 백엔드 문제에서 바로 출발해 곧바로 사용자 관점까지 확인할 수 있기 때문입니다.
 
-<Image img="/images/clickstack/session-replay/trace-to-replay.webp" alt="세션 리플레이 트레이스 보기" size="lg" />
+![세션 리플레이 트레이스 보기](/images/clickstack/session-replay/trace-to-replay.webp)
 
 <div id="data-storage">
   ## 세션 데이터 저장 방식

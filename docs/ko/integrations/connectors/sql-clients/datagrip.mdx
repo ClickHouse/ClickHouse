@@ -11,7 +11,6 @@ integration:
 keywords: ['DataGrip', '데이터베이스 IDE', 'JetBrains', 'SQL 클라이언트', '통합 개발 환경']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import ConnectionDetails from '/snippets/ko/_gather_your_details_http.mdx';
 
 import { CommunityMaintainedBadge } from "/snippets/ko/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
@@ -32,7 +31,7 @@ DataGrip은 https://www.jetbrains.com/datagrip/ 에서 사용할 수 있습니�
   <Step title="ClickHouse 드라이버 로드" id="2-load-the-clickhouse-driver">
     1. DataGrip을 실행한 다음 **Data Sources and Drivers** 대화상자의 **Data Sources** 탭에서 **+** 아이콘을 클릭합니다
 
-    <Image img="/images/integrations/sql-clients/datagrip-5.webp" size="lg" border alt="DataGrip Data Sources 탭에서 + 아이콘이 강조 표시된 모습" />
+    ![DataGrip Data Sources 탭에서 + 아이콘이 강조 표시된 모습](/images/integrations/sql-clients/datagrip-5.webp)
 
     **ClickHouse**를 선택합니다
 
@@ -40,13 +39,13 @@ DataGrip은 https://www.jetbrains.com/datagrip/ 에서 사용할 수 있습니�
       연결을 설정하면 목록 순서가 바뀌므로 아직 ClickHouse가 목록 맨 위에 없을 수 있습니다.
     </Tip>
 
-    <Image img="/images/integrations/sql-clients/datagrip-6.webp" size="sm" border alt="DataGrip 데이터 소스 목록에서 ClickHouse를 선택하는 모습" />
+    ![DataGrip 데이터 소스 목록에서 ClickHouse를 선택하는 모습](/images/integrations/sql-clients/datagrip-6.webp)
 
     * **Drivers** 탭으로 전환하여 ClickHouse 드라이버를 로드합니다
 
       DataGrip은 다운로드 크기를 최소화하기 위해 드라이버를 기본 포함하지 않습니다. **Drivers** 탭의 **Complete Support** 목록에서 **ClickHouse**를 선택하고 **+** 기호를 펼칩니다. 그런 다음 **Provided Driver** 옵션에서 **Latest stable** 드라이버를 선택합니다:
 
-    <Image img="/images/integrations/sql-clients/datagrip-1.webp" size="lg" border alt="ClickHouse 드라이버 설치를 보여주는 DataGrip Drivers 탭" />
+    ![ClickHouse 드라이버 설치를 보여주는 DataGrip Drivers 탭](/images/integrations/sql-clients/datagrip-1.webp)
   </Step>
 
   <Step title="ClickHouse에 연결" id="3-connect-to-clickhouse">
@@ -65,7 +64,7 @@ DataGrip은 https://www.jetbrains.com/datagrip/ 에서 사용할 수 있습니�
       JDBC URL 설정에 대한 자세한 내용은 [ClickHouse JDBC 드라이버](https://github.com/ClickHouse/clickhouse-java) 리포지토리를 참조하십시오.
     </Tip>
 
-    <Image img="/images/integrations/sql-clients/datagrip-7.webp" border alt="ClickHouse 설정이 포함된 DataGrip 연결 정보 양식" />
+    ![ClickHouse 설정이 포함된 DataGrip 연결 정보 양식](/images/integrations/sql-clients/datagrip-7.webp)
   </Step>
 </Steps>
 

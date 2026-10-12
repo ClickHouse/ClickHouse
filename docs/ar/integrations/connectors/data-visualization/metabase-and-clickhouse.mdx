@@ -12,7 +12,6 @@ integration:
   - website: 'https://github.com/clickhouse/metabase-clickhouse-driver'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
 import ConnectionDetails from '/snippets/ar/_gather_your_details_http.mdx';
 
 import { PartnerBadge } from "/snippets/ar/components/PartnerBadge/PartnerBadge.jsx";
@@ -27,7 +26,7 @@ Metabase هي أداة واجهة مستخدم سهلة الاستخدام وم�
 
 في هذا الدليل، ستطرح بعض الأسئلة على بيانات ClickHouse باستخدام Metabase وتعرض الإجابات بصريًا. وستبدو إحدى هذه الإجابات كما يلي:
 
-<Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="تصور مخطط دائري في Metabase يعرض بيانات من ClickHouse" border />
+![تصور مخطط دائري في Metabase يعرض بيانات من ClickHouse](/images/integrations/data-visualization/metabase_08.webp)
 
 <p />
 
@@ -61,13 +60,13 @@ Metabase هي أداة واجهة مستخدم سهلة الاستخدام وم�
 
     3. إذا تم تثبيت برنامج التشغيل بنجاح، فسترى **ClickHouse** في القائمة المنسدلة الخاصة بـ **نوع قاعدة البيانات**:
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_01.webp" alt="اختيار قاعدة البيانات في Metabase مع ظهور ClickHouse كأحد الخيارات" border />
+       ![اختيار قاعدة البيانات في Metabase مع ظهور ClickHouse كأحد الخيارات](/images/integrations/data-visualization/metabase_01.webp)
 
     4. امنح قاعدة البيانات **اسمًا معروضًا**، وهو إعداد في Metabase، لذا يمكنك استخدام أي اسم تريده.
 
     5. أدخِل تفاصيل الاتصال لقاعدة بيانات ClickHouse. فعِّل اتصالًا آمنًا إذا كان ClickHouse server مُعدًّا لاستخدام SSL. على سبيل المثال:
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_02.webp" alt="نموذج تفاصيل الاتصال في Metabase لقاعدة بيانات ClickHouse" border />
+       ![نموذج تفاصيل الاتصال في Metabase لقاعدة بيانات ClickHouse](/images/integrations/data-visualization/metabase_02.webp)
 
     6. انقر على زر **حفظ**، وسيقوم Metabase بفحص قاعدة البيانات بحثًا عن الجداول.
   </Step>
@@ -77,25 +76,25 @@ Metabase هي أداة واجهة مستخدم سهلة الاستخدام وم�
 
     2. في الزاوية العلوية اليمنى، انقر على قائمة **+ New** وستلاحظ أنه يمكنك طرح أسئلة وتشغيل استعلامات SQL وإنشاء لوحة المعلومات:
 
-       <Image size="sm" img="/images/integrations/data-visualization/metabase_03.webp" alt="قائمة New في Metabase تعرض خيارات إنشاء أسئلة واستعلامات SQL ولوحات معلومات" border />
+       ![قائمة New في Metabase تعرض خيارات إنشاء أسئلة واستعلامات SQL ولوحات معلومات](/images/integrations/data-visualization/metabase_03.webp)
 
     3. على سبيل المثال، إليك استعلام SQL يعمل على table باسم `uk_price_paid` ويُرجع متوسط السعر المدفوع حسب السنة من 1995 إلى 2022:
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_04.webp" alt="محرر SQL في Metabase يعرض استعلامًا على بيانات UK price paid" border />
+       ![محرر SQL في Metabase يعرض استعلامًا على بيانات UK price paid](/images/integrations/data-visualization/metabase_04.webp)
   </Step>
 
   <Step title="اطرح سؤالًا" id="5-ask-a-question">
     1. انقر على **+ New** واختر **Question**. لاحظ أنه يمكنك إنشاء سؤال بدءًا من database وtable. على سبيل المثال، يُطرح السؤال التالي على table باسم `uk_price_paid` في قاعدة البيانات `default`. إليك سؤالًا بسيطًا يحسب متوسط السعر حسب البلدة ضمن مقاطعة Greater Manchester:
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_06.webp" alt="واجهة منشئ الأسئلة في Metabase مع بيانات أسعار UK" border />
+       ![واجهة منشئ الأسئلة في Metabase مع بيانات أسعار UK](/images/integrations/data-visualization/metabase_06.webp)
 
     2. انقر على زر **Visualize** لعرض النتائج في شكل table.
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_07.webp" alt="تصور في Metabase يعرض نتائج جدولية لمتوسط الأسعار حسب البلدة" border />
+       ![تصور في Metabase يعرض نتائج جدولية لمتوسط الأسعار حسب البلدة](/images/integrations/data-visualization/metabase_07.webp)
 
     3. أسفل النتائج، انقر على زر **تصور** لتغيير التصور إلى مخطط شريطي (أو أي خيار آخر متاح):
 
-       <Image size="md" img="/images/integrations/data-visualization/metabase_08.webp" alt="تصور مخطط دائري في Metabase لمتوسط الأسعار حسب البلدة في Greater Manchester" border />
+       ![تصور مخطط دائري في Metabase لمتوسط الأسعار حسب البلدة في Greater Manchester](/images/integrations/data-visualization/metabase_08.webp)
   </Step>
 </Steps>
 

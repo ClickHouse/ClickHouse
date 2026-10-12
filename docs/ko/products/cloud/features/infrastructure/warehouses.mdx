@@ -6,7 +6,6 @@ description: 'ClickHouse Cloud의 컴퓨트-컴퓨트 분리'
 doc_type: '참고'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 <ScalePlanFeatureBadge feature="컴퓨트-컴퓨트 분리" />
@@ -21,7 +20,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureB
 * 서비스에 연결하기 위한 엔드포인트(또는 ClickHouse Cloud UI 콘솔을 통해 생성한 여러 엔드포인트)로, 로컬 및 서드파티 앱 연결에 사용됩니다(예: `https://dv2fzne24g.us-east-1.aws.clickhouse.cloud:8443`)
 * 서비스의 모든 데이터와 일부 메타데이터를 저장하는 객체 스토리지 폴더:
 
-<Image img="/images/cloud/reference/compute-compute-1.webp" size="md" alt="ClickHouse Cloud의 단일 서비스" />
+![ClickHouse Cloud의 단일 서비스](/images/cloud/reference/compute-compute-1.webp)
 
 <br />
 
@@ -35,7 +34,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ko/components/ScalePlanFeatureB
 
 또한 컴퓨트-컴퓨트 분리를 사용하면 읽기 작업과 쓰기 작업을 분리하여 서로 간섭하지 않도록 할 수 있습니다:
 
-<Image img="/images/cloud/reference/compute-compute-2.webp" size="md" alt="ClickHouse Cloud의 컴퓨트 분리" />
+![ClickHouse Cloud의 컴퓨트 분리](/images/cloud/reference/compute-compute-2.webp)
 
 <br />
 
@@ -50,7 +49,7 @@ ClickHouse Cloud에서 *웨어하우스*는 동일한 데이터를 공유하는 
 * 기본 서비스 `DWH Prod`
 * 보조 서비스 `DWH Prod Subservice`
 
-<Image img="/images/cloud/reference/compute-compute-8.webp" size="lg" alt="기본 서비스와 보조 서비스가 있는 웨어하우스 예시" background="white" />
+![기본 서비스와 보조 서비스가 있는 웨어하우스 예시](/images/cloud/reference/compute-compute-8.webp)
 
 <br />
 
@@ -75,7 +74,7 @@ ClickHouse Cloud에서 *웨어하우스*는 동일한 데이터를 공유하는 
 즉, Service 1에서 생성된 모든 데이터베이스 사용자는 동일한 권한(테이블, 뷰 등에 대한 권한 부여)으로 Service 2도 사용할 수 있으며, 반대의 경우도 마찬가지입니다.
 각 서비스는 서로 다른 엔드포인트를 사용하지만, 모든 서비스에서 동일한 사용자 이름과 비밀번호를 사용합니다. 다시 말해, 아래 그림과 같이 **동일한 스토리지를 사용하는 서비스 간에는 사용자가 공유됩니다**.
 
-<Image img="/images/cloud/reference/compute-compute-3.webp" size="md" alt="동일한 데이터를 공유하는 서비스 간 사용자 액세스" />
+![동일한 데이터를 공유하는 서비스 간 사용자 액세스](/images/cloud/reference/compute-compute-3.webp)
 
 <br />
 
@@ -91,7 +90,7 @@ IP 필터링 설정은 각 서비스에 개별적으로 적용할 수 있으므�
 
 아래 예시에서는 Alice가 웨어하우스의 서비스 2에 액세스하지 못하도록 제한되어 있습니다:
 
-<Image img="/images/cloud/reference/compute-compute-4.webp" size="md" alt="네트워크 액세스 제어 설정" />
+![네트워크 액세스 제어 설정](/images/cloud/reference/compute-compute-4.webp)
 
 <br />
 
@@ -116,7 +115,7 @@ IP 필터링 설정은 각 서비스에 개별적으로 적용할 수 있으므�
 중요한 읽기 워크로드를 쓰기/머지 오버헤드로부터 분리하기 위해 서비스를 읽기 전용으로 설정해야 할 때가 있습니다.
 이 설정은 두 번째 서비스와 그 이후에 추가로 생성하는 서비스에 적용할 수 있지만, 첫 번째 서비스는 아래 그림과 같이 항상 읽기-쓰기입니다.
 
-<Image img="/images/cloud/reference/compute-compute-5.webp" size="lg" alt="웨어하우스의 읽기-쓰기 및 읽기 전용 서비스" />
+![웨어하우스의 읽기-쓰기 및 읽기 전용 서비스](/images/cloud/reference/compute-compute-5.webp)
 
 <br />
 
@@ -206,7 +205,7 @@ SETTINGS distributed_ddl_task_timeout=0
 
 웨어하우스를 생성하려면 기존 서비스와 데이터를 공유할 두 번째 서비스를 만들어야 합니다. 기존 서비스에서 더하기 기호를 클릭하면 됩니다.
 
-<Image img="/images/cloud/reference/compute-compute-7.webp" size="md" alt="웨어하우스에서 새 서비스 생성하기" />
+![웨어하우스에서 새 서비스 생성하기](/images/cloud/reference/compute-compute-7.webp)
 
 <br />
 

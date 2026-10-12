@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.scaling-beta" />
 
 ClickHouse Managed Postgres 提供灵活扩缩容选项，以满足您的工作负载需求。提供 50 多种采用 NVMe 的实例类型，您可以独立对 CPU、内存和存储进行扩缩容，从而根据具体用例优化性能和成本。
@@ -22,7 +20,7 @@ ClickHouse Managed Postgres 提供丰富的实例类型，可针对不同的工�
 * 所有实例类型均配备 **基于 NVMe 的存储**，可提供稳定、高性能的磁盘 I/O
 * **独立资源扩缩容**：可根据工作负载选择合适的 CPU、内存和存储组合
 
-<Image img="/images/managed-postgres/instance-types.webp" alt="实例类型" size="md" border />
+![实例类型](/images/managed-postgres/instance-types.webp)
 
 <div id="choosing-instance">
   ### 选择合适的实例类型
@@ -44,7 +42,7 @@ ClickHouse Managed Postgres 提供丰富的实例类型，可针对不同的工�
 
 当您更改实例类型时，ClickHouse Managed Postgres 会执行垂直扩缩容操作，创建新的基础设施资源，并在将停机时间降到最低的情况下迁移您的数据库。
 
-<Image img="/images/managed-postgres/scaling-settings.webp" alt="扩缩容设置" size="md" border />
+![扩缩容设置](/images/managed-postgres/scaling-settings.webp)
 
 <div id="scaling-process">
   ### 扩缩容流程

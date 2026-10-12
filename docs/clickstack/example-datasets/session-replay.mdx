@@ -6,8 +6,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'session replay', 'browser sdk', 'demo', 'observability', 'instrumentation']
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 <Info>
 **TL;DR**
 
@@ -57,7 +55,7 @@ docker-compose up -d clickstack
 3. Navigate to **Team Settings → API Keys**
 4. Copy your **Ingestion API Key**
 
-<Image img="/images/clickstack/api-key.webp" alt="ClickStack API Key"/>
+![ClickStack API Key](/images/clickstack/api-key.webp)
 
 5. Set it as an environment variable:
 
@@ -77,7 +75,7 @@ Ensure you run this command in the same terminal where you exported the `CLICKST
 
 Open [http://localhost:3000](http://localhost:3000) in your browser and interact with the app — search for topics, filter by category, view code examples, and bookmark items.
 
-<Image img="/images/clickstack/session-replay/demo-app.webp" alt="Session replay demo app"/>
+![Session replay demo app](/images/clickstack/session-replay/demo-app.webp)
 
 All interactions are automatically captured by the ClickStack Browser SDK.
 </Step>
@@ -85,11 +83,11 @@ All interactions are automatically captured by the ClickStack Browser SDK.
 
 Return to HyperDX at [http://localhost:8080](http://localhost:8080) and navigate to **Client Sessions** from the left sidebar.
 
-<Image img="/images/clickstack/session-replay/replay-search-view.webp" alt="Session replay search"/>
+![Session replay search](/images/clickstack/session-replay/replay-search-view.webp)
 
 You should see your session listed with its duration and event count. Click the ▶️ button to replay it.
 
-<Image img="/images/clickstack/session-replay/session-replay.webp" alt="Session replay"/>
+![Session replay](/images/clickstack/session-replay/session-replay.webp)
 
 Switch between **Highlighted** and **All Events** modes to adjust the level of detail on the timeline.
 </Step>

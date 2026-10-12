@@ -11,8 +11,6 @@ hidden: true
 
 import { CloudNotSupportedBadge } from "/snippets/pt-BR/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Esta página explica como configurar CDC do DynamoDB para o ClickHouse usando ClickPipes. Há 2 componentes nesta integração:
 
 1. O snapshot inicial via S3 ClickPipes
@@ -28,14 +26,14 @@ Os dados serão inseridos em uma `ReplacingMergeTree`. Esse mecanismo de tabela 
     Primeiro, habilite um Kinesis Stream na sua tabela do DynamoDB para capturar alterações em tempo real. É importante fazer isso antes de criar o snapshot para evitar a perda de dados.
     Consulte o guia da AWS [aqui](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/kds.html).
 
-    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp" size="lg" alt="Kinesis Stream do DynamoDB" border />
+    ![Kinesis Stream do DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-kinesis-stream.webp)
   </Step>
 
   <Step title="Crie o snapshot" id="2-create-the-snapshot">
     Em seguida, criaremos um snapshot da tabela do DynamoDB. Isso pode ser feito por meio de uma exportação do AWS para o S3. Encontre o guia da AWS [aqui](https://docs.aws.amazon.com/amazondynamodb/latest/developerguide/S3DataExport.HowItWorks.html).
     **Você vai querer fazer uma &quot;Exportação completa&quot; no formato DynamoDB JSON.**
 
-    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp" size="md" alt="Exportação do DynamoDB para S3" border />
+    ![Exportação do DynamoDB para S3](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-s3-export.webp)
   </Step>
 
   <Step title="Carregue o snapshot no ClickHouse" id="3-load-the-snapshot-into-clickhouse">
@@ -128,7 +126,7 @@ Os dados serão inseridos em uma `ReplacingMergeTree`. Esse mecanismo de tabela 
       * `ApproximateCreationDateTime`: `version`
       * Mapeie os outros campos para as colunas de destino apropriadas, conforme mostrado abaixo
 
-    <Image img="/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp" size="md" alt="Mapeamento de colunas do DynamoDB" border />
+    ![Mapeamento de colunas do DynamoDB](/images/integrations/data-ingestion/dbms/dynamodb/dynamodb-map-columns.webp)
   </Step>
 
   <Step title="Limpeza (opcional)" id="5-cleanup-optional">

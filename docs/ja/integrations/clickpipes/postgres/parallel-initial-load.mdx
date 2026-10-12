@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このドキュメントでは、Postgres ClickPipe における並列化されたスナップショット/初期ロードの仕組みと、それを制御するために使用できるスナップショット パラメータについて説明します。
 
 <div id="overview-pg-snapshot">
@@ -35,7 +33,7 @@ Postgres ClickPipe は、ソーステーブルを論理的にパーティショ�
 
 以下の設定について説明します。
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp" alt="スナップショット パラメータ" size="md" />
+![スナップショット パラメータ](/images/integrations/data-ingestion/clickpipes/postgres/snapshot_params.webp)
 
 <div id="numrows-pg-snapshot">
   #### パーティションごとのスナップショット行数

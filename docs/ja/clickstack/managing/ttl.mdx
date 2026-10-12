@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'ttl', 'データ保持', 'ライフサイクル', 'ストレージ管理']
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import OtelLogsSchema from '/snippets/ja/clickstack/_schema_otel_logs.mdx';
 
 <div id="ttl-clickstack">
@@ -26,7 +25,7 @@ ClickHouse のパーティション化では、カラムまたは SQL 式に基�
 
 上記の例にあるように、パーティション化はテーブルを最初に定義する際に `PARTITION BY` 句で指定します。この句には任意のカラムに対する SQL 式を含めることができ、その結果によって行が送られるパーティションが決まります。これにより、データはディスク上で各パーティションと論理的に関連付けられ (共通のフォルダ名プレフィックスを介して)、その後は個別にクエリできます。上記の例では、デフォルトの `otel_logs` スキーマは `toDate(Timestamp)` 式を使って日単位でパーティション化します。行が ClickHouse に挿入されると、この式が各行に対して評価され、対応するパーティションが存在すればそこに振り分けられます (その日で最初の行であれば、パーティションが作成されます)。パーティション化とそのほかの用途の詳細については、[&quot;Table Partitions&quot;](/ja/concepts/core-concepts/partitions) を参照してください。
 
-<Image img="/images/use-cases/observability/observability-14.webp" alt="Partitions" size="lg" />
+![Partitions](/images/use-cases/observability/observability-14.webp)
 
 テーブルのスキーマには、`TTL toDateTime(Timestamp) + ${TABLES_TTL}` と設定 `ttl_only_drop_parts = 1` も含まれています。前者の句により、データは設定された 有効期限 (TTL) (デフォルトでは 3 日) を超えると削除されます。設定 `ttl_only_drop_parts = 1` は、行を部分的に削除しようとするのではなく、すべてのデータが期限切れになったデータパーツのみを削除するようにします。さらに、パーティション化によって別々の日のデータが決して「マージ」されないため、データを効率的に削除できます。
 

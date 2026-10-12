@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -50,7 +48,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 | Limit      | クエリの末尾に [LIMIT](/ja/reference/statements/select/limit) ステートメントを追加します。`0` に設定すると追加されません。すべてのデータを表示するには、一部の可視化でこれを `0` に設定する必要がある場合があります。 |
 | Filters    | `WHERE` 句に適用するフィルターの一覧です。                                                                                                            |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_table_query.webp" alt="集約テーブルクエリの例" border />
+![集約テーブルクエリの例](/images/integrations/data-visualization/grafana/demo_table_query.webp)
 
 このクエリタイプでは、データがテーブルとして表示されます。
 
@@ -78,7 +76,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 | Filters        | `WHERE` 句に適用するフィルターの一覧です。                                                                                     |
 | Message Filter | `LIKE %value%` を使ってログを簡単に絞り込むためのテキスト入力です。入力が空の場合は除外されます。                                                      |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query.webp" alt="OTel ログクエリの例" border />
+![OTel ログクエリの例](/images/integrations/data-visualization/grafana/demo_logs_query.webp)
 
 <br />
 
@@ -86,7 +84,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 
 クエリで選択した追加カラムは、展開したログの行で確認できます。
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp" alt="ログクエリの追加フィールドの例" border />
+![ログクエリの追加フィールドの例](/images/integrations/data-visualization/grafana/demo_logs_query_fields.webp)
 
 <div id="time-series">
   ### 時系列
@@ -120,7 +118,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 | Limit      | クエリの末尾に [LIMIT](/ja/reference/statements/select/limit) ステートメントを追加します。`0` に設定すると追加されません。可視化全体を表示するため、一部の時系列データセットではこの設定を推奨します。 |
 | Filters    | `WHERE` 句に適用するフィルターの一覧です。                                                                                                     |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_time_series_query.webp" alt="時系列クエリの例" border />
+![時系列クエリの例](/images/integrations/data-visualization/grafana/demo_time_series_query.webp)
 
 このクエリタイプでは、データが時系列パネルで表示されます。
 
@@ -157,7 +155,7 @@ ClickHouse プラグインでは、あらゆるクエリを実行できます。
 | Filters               | `WHERE` 句に適用するフィルターの一覧。                                                                                         |
 | Trace ID              | フィルター対象の Trace ID。Trace ID モードの場合、および トレース ID の[データリンク](#data-links)を開く場合にのみ使用されます。                            |
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_trace_query.webp" alt="OTel トレースクエリの例" border />
+![OTel トレースクエリの例](/images/integrations/data-visualization/grafana/demo_trace_query.webp)
 
 このクエリタイプでは、Trace Search モードではデータがテーブルビューで表示され、Trace ID モードではトレースパネルで表示されます。
 
@@ -173,7 +171,7 @@ SQL エディタは、クエリエディタ上部の &quot;SQL Editor&quot; を�
 クエリに最適な可視化を表示するために、クエリタイプを切り替えることもできます。
 この切り替えはダッシュボード表示にも影響し、特に時系列データで顕著です。
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp" alt="生の SQL クエリの例" border />
+![生の SQL クエリの例](/images/integrations/data-visualization/grafana/demo_raw_sql_query.webp)
 
 ## データリンク {#data-links}
 
@@ -184,13 +182,13 @@ Grafana の [データリンク](https://grafana.com/docs/grafana/latest/panels-
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between', marginBottom: '15px' }}>
   テーブル内のトレースリンクの例
 
-  <Image size="sm" img="/images/integrations/data-visualization/grafana/trace_id_in_table.webp" alt="テーブル内のトレースリンク" border />
+  ![テーブル内のトレースリンク](/images/integrations/data-visualization/grafana/trace_id_in_table.webp)
 </div>
 
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   ログ内のトレースリンクの例
 
-  <Image size="md" img="/images/integrations/data-visualization/grafana/trace_id_in_logs.webp" alt="ログ内のトレースリンク" border />
+  ![ログ内のトレースリンク](/images/integrations/data-visualization/grafana/trace_id_in_logs.webp)
 </div>
 
 <div id="how-to-make-a-data-link">
@@ -217,7 +215,7 @@ Explore ビューではなくダッシュボードからリンクをクリック
 <div style={{display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'space-between' }}>
   ログ クエリ (左パネル) から trace (右パネル) を表示する例
 
-  <Image size="md" img="/images/integrations/data-visualization/grafana/demo_data_links.webp" alt="データリンクの例" border />
+  ![データリンクの例](/images/integrations/data-visualization/grafana/demo_data_links.webp)
 </div>
 
 <div id="macros">

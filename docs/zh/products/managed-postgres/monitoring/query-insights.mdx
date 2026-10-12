@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/zh/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.query-insights-beta" />
 
 Query Insights 会从你的
@@ -62,7 +60,7 @@ ClickHouse Cloud。遥测数据会在离开 Postgres 之前于数据库内部完
 随应用流量同步变化，错误率持平或为零，各个百分位
 延迟彼此贴近。
 
-<Image img="/images/managed-postgres/monitoring/query-insights-overview.webp" alt="显示 6 个统计卡片的 Query Insights 概览：每秒查询数、查询延迟百分位、操作分解环形图、返回行数面积图、95.2% 的缓冲区命中率环形图，以及错误柱状图" size="lg" border />
+![显示 6 个统计卡片的 Query Insights 概览：每秒查询数、查询延迟百分位、操作分解环形图、返回行数面积图、95.2% 的缓冲区命中率环形图，以及错误柱状图](/images/managed-postgres/monitoring/query-insights-overview.webp)
 
 <div id="slow-patterns">
   ## 慢查询模式
@@ -70,7 +68,7 @@ ClickHouse Cloud。遥测数据会在离开 Postgres 之前于数据库内部完
 
 当概览显示存在问题时，模式表就是调查的起点。每个归一化查询模式各占一行，字面量值已被去除，因此同一语句的多次执行都会归并到同一行。
 
-<Image img="/images/managed-postgres/monitoring/query-insights-patterns.webp" alt="慢查询模式表，显示每个归一化查询模式各占一行，并包含 Database、User、Operation、Calls、Errors、Avg latency、P95、Max latency、Total runtime、Rows returned 和 Cache hit 列" size="lg" border />
+![慢查询模式表，显示每个归一化查询模式各占一行，并包含 Database、User、Operation、Calls、Errors、Avg latency、P95、Max latency、Total runtime、Rows returned 和 Cache hit 列](/images/managed-postgres/monitoring/query-insights-patterns.webp)
 
 <div id="sort">
   ### 按你怀疑的因素排序
@@ -116,7 +114,7 @@ SQL 语句占一行，而不是每个模式占一行。当你想查看原始事�
 流而非聚合结果时，就可以使用它；例如，可用来抽查某项修复是否已生效，
 或找出错误发生的确切时刻。
 
-<Image img="/images/managed-postgres/monitoring/query-insights-recent-queries.webp" alt="“最近查询”表，包含 Database、User、Operation 和 Application 过滤器下拉菜单，以及 Time、Operation、Query、Duration、Rows、Database、User 和 Blks read 列" size="lg" border />
+![“最近查询”表，包含 Database、User、Operation 和 Application 过滤器下拉菜单，以及 Time、Operation、Query、Duration、Rows、Database、User 和 Blks read 列](/images/managed-postgres/monitoring/query-insights-recent-queries.webp)
 
 默认列为 Time、Operation、Query、Duration、Rows、
 Database、User 和 Blks read。打开 **列** 选择器可查看
@@ -149,9 +147,9 @@ CPU time 排序。
 * **最近执行** — 同一模式的各次独立执行，
   包含每次执行的计数器。
 
-<Image img="/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp" alt="显示查询模式代码块和聚合资源使用情况网格的查询详情弹出面板，该网格包含十三个统计卡片，包括总调用次数、延迟百分位数、总运行时间、返回行数、缓存命中率、读取块数、命中块数、CPU 时间、WAL 字节数和错误数" size="md" border />
+![显示查询模式代码块和聚合资源使用情况网格的查询详情弹出面板，该网格包含十三个统计卡片，包括总调用次数、延迟百分位数、总运行时间、返回行数、缓存命中率、读取块数、命中块数、CPU 时间、WAL 字节数和错误数](/images/managed-postgres/monitoring/query-insights-detail-aggregate.webp)
 
-<Image img="/images/managed-postgres/monitoring/query-insights-detail-recent.webp" alt="查询详情弹出面板的后续部分，展示了包含数据库、用户、操作和应用程序的查询上下文部分，以及一个最近执行卡片，其中包含时间戳、OK 状态、服务器角色、主机 ID，以及每次执行的耗时、行数、缓存命中、CPU、共享读取块数和共享命中块数等计数器" size="md" border />
+![查询详情弹出面板的后续部分，展示了包含数据库、用户、操作和应用程序的查询上下文部分，以及一个最近执行卡片，其中包含时间戳、OK 状态、服务器角色、主机 ID，以及每次执行的耗时、行数、缓存命中、CPU、共享读取块数和共享命中块数等计数器](/images/managed-postgres/monitoring/query-insights-detail-recent.webp)
 
 <div id="counters">
   ### 单次执行计数器

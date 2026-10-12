@@ -9,8 +9,6 @@ doc_type: 'guide'
 
 import { CloudNotSupportedBadge } from "/snippets/zh/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本指南介绍了 ClickHouse Cloud 中备份的工作方式、可为你的服务配置备份的选项，以及如何从备份中恢复。
 
 **前置条件**
@@ -21,7 +19,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 无论采用默认的每日计划，还是您自行选择的[自定义计划](/zh/products/cloud/guides/backups/configurable-backups)，系统都会按照为您的服务配置的计划执行备份。您可以在服务的 **Backups** 选项卡中查看所有可用备份。在这里，您可以查看备份状态、耗时和备份大小。您还可以通过 **Actions** 列恢复特定备份。
 
-<Image img="/images/cloud/manage/backup-status-list.webp" size="md" alt="ClickHouse Cloud 中的备份状态列表" border />
+![ClickHouse Cloud 中的备份状态列表](/images/cloud/manage/backup-status-list.webp)
 
 ## 了解备份成本 {#understanding-backup-cost}
 
@@ -29,7 +27,7 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 要了解备份成本，你可以在用量页面中查看每个服务的备份成本 (如下所示) 。当你按自定义计划运行备份几天后，就可以大致了解相关成本，并据此推算出每月的备份成本。
 
-<Image img="/images/cloud/manage/backup-usage.webp" size="md" alt="ClickHouse Cloud 中的备份使用情况图表" border />
+![ClickHouse Cloud 中的备份使用情况图表](/images/cloud/manage/backup-usage.webp)
 
 要估算备份的总成本，你需要先设定备份计划。在设置计划之前，你可以使用[定价计算器](https://clickhouse.com/pricing)，通过提供以下信息来获取每月成本估算：
 
@@ -48,11 +46,11 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 点击 **Restore** 备份图标后，您可以指定将要创建的新服务名称，然后恢复此备份：
 
-<Image img="/images/cloud/manage/backup-restore.webp" size="md" alt="在 ClickHouse Cloud 中恢复备份" />
+![在 ClickHouse Cloud 中恢复备份](/images/cloud/manage/backup-restore.webp)
 
 在新服务就绪之前，它会在服务列表中显示为 `Provisioning`：
 
-<Image img="/images/cloud/manage/backup-service-provisioning.webp" size="md" alt="服务正在预配中" border />
+![服务正在预配中](/images/cloud/manage/backup-service-provisioning.webp)
 
 <div id="working-with-your-restored-service">
   ## 使用已恢复的服务

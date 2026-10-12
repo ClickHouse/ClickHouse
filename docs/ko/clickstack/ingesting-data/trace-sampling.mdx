@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', '트레이스 샘플링', '테일 샘플링', '샘플 비율', '가중 집계', 'OpenTelemetry', 'SampleRate']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 처리량이 높은 서비스는 초당 수백만 개의 스팬을 생성할 수 있습니다. 모든 스팬을 저장하는 데는 비용이 많이 들기 때문에, 팀에서는 일반적으로 OpenTelemetry Collector의 [tail-sampling 프로세서](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/processor/tailsamplingprocessor)를 사용해 N개 중 1개의 스팬만 유지합니다. 유지된 각 스팬에는 N을 기록하는 `SampleRate` 속성이 포함됩니다.
 
 데이터가 샘플링되면 단순 집계는 잘못된 결과를 냅니다. `count()`는 실제 발생한 이벤트보다 N배 적은 값을 반환하고, `sum()`과 `avg()`는 편향되며, 백분위수도 달라집니다. 그 결과 대시보드에는 요청 수, 처리량, 오류율이 실제보다 낮게 표시되어 잘못된 인상을 줄 수 있습니다.
@@ -51,6 +49,6 @@ greatest(toUInt64OrZero(toString(expr)), 1)
 
 예를 들어, OpenTelemetry tail-sampling 프로세서가 비율을 `SpanAttributes['SampleRate']`에 기록하는 경우:
 
-<Image img="/images/clickstack/trace-sampling-source-settings.webp" alt="ClickStack Source Settings의 Sample Rate Expression 필드" size="lg" />
+![ClickStack Source Settings의 Sample Rate Expression 필드](/images/clickstack/trace-sampling-source-settings.webp)
 
 설정을 마치면 모든 차트, 대시보드, 알림, 서비스 대시보드 패널에 샘플 비율 가중 집계가 자동으로 적용됩니다. 개별 쿼리는 변경할 필요가 없습니다.

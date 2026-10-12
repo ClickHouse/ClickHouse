@@ -7,8 +7,6 @@ title: 'واجهة MySQL'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 يدعم ClickHouse بروتوكول MySQL على مستوى الشبكة. يتيح ذلك لبعض العملاء الذين لا تتوفر لهم موصلات ClickHouse أصلية استخدام بروتوكول MySQL بدلًا من ذلك، وقد تم التحقق من توافقه مع أدوات ذكاء الأعمال التالية:
 
 * [Looker Studio](/ar/integrations/connectors/data-visualization/looker-studio-and-clickhouse)
@@ -37,23 +35,23 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 <br />
 
-<Image img="/images/interfaces/mysql0.webp" alt="شاشة بيانات الاعتماد - Prompt" size="md" />
+![شاشة بيانات الاعتماد - Prompt](/images/interfaces/mysql0.webp)
 
 2. غيّر خيار `Connect with` من القائمة المنسدلة إلى `MySQL`.
 
 <br />
 
-<Image img="/images/interfaces/mysql1.webp" alt="شاشة بيانات الاعتماد - تم تحديد MySQL" size="md" />
+![شاشة بيانات الاعتماد - تم تحديد MySQL](/images/interfaces/mysql1.webp)
 
 3. فعّل زر التبديل لتمكين واجهة MySQL لهذه الخدمة تحديدًا. سيؤدي ذلك إلى إتاحة المنفذ `3306` لهذه الخدمة، وستظهر لك شاشة اتصال MySQL التي تتضمن اسم مستخدم MySQL الفريد الخاص بك. وستكون كلمة المرور هي نفسها كلمة مرور مستخدم الخدمة `default`.
 
 <br />
 
-<Image img="/images/interfaces/mysql2.webp" alt="شاشة بيانات الاعتماد - تم تمكين MySQL" size="md" />
+![شاشة بيانات الاعتماد - تم تمكين MySQL](/images/interfaces/mysql2.webp)
 
 انسخ سلسلة اتصال MySQL الظاهرة.
 
-<Image img="/images/interfaces/mysql3.webp" alt="شاشة بيانات الاعتماد - سلسلة الاتصال" size="md" />
+![شاشة بيانات الاعتماد - سلسلة الاتصال](/images/interfaces/mysql3.webp)
 
 <div id="creating-multiple-mysql-users-in-clickhouse-cloud">
   ## إنشاء عدة مستخدمي MySQL في ClickHouse Cloud

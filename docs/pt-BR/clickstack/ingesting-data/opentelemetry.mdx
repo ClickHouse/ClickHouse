@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'opentelemetry', 'traces', 'observabilidade', 'telemetria']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 Todos os dados são enviados ao ClickStack por meio de uma instância do **OpenTelemetry (OTel) collector**, que atua como ponto de entrada principal para logs, métricas, traces e dados de sessão. Recomendamos usar a [distribuição oficial do ClickStack](#installing-otel-collector) do collector para essa instância.
 
 <Tip>
@@ -127,7 +125,7 @@ Os usuários enviam dados para esse collector a partir de [SDKs de linguagem](/p
 
     Além disso, é necessário um header de autorização contendo a chave de ingestão da API. Você pode encontrar a chave no app HyperDX em `Team Settings → API Keys`.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Chaves de ingestão" size="lg" />
+    ![Chaves de ingestão](/images/use-cases/observability/ingestion-keys.webp)
 
     Para SDKs de linguagem, isso pode ser definido em uma função `init` ou por meio da variável de ambiente `OTEL_EXPORTER_OTLP_HEADERS`, por exemplo:
 

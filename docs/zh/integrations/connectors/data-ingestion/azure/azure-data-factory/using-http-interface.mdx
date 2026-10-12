@@ -10,8 +10,6 @@ integration:
    - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 [`azureBlobStorage` 表函数](/zh/reference/functions/table-functions/azureBlobStorage)
 是将 Azure Blob 存储中的数据摄取到
 ClickHouse 的一种快速便捷的方法。不过，出于以下原因，它并不总是适用：
@@ -106,21 +104,21 @@ ClickHouse 的 `JSONEachRow` 输入完全兼容。
 
 1. 登录 [Microsoft Azure 门户](https://portal.azure.com/)，然后点击
    **Create a resource**。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp" size="lg" alt="Azure 门户主页" border />
+   ![Azure 门户主页](/images/integrations/data-ingestion/azure-data-factory/azure-home-page.webp)
 
 2. 在左侧的 Categories 窗格中，选择 **Analytics**，然后点击
    热门服务列表中的 **Data Factory**。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp" size="lg" alt="Azure 门户新建资源" border />
+   ![Azure 门户新建资源](/images/integrations/data-ingestion/azure-data-factory/azure-new-resource-analytics.webp)
 
 3. 选择你的订阅和资源组，为新的 Data
    Factory 实例输入名称，选择区域，并将版本保留为 V2。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp" size="lg" alt="Azure 门户新建 Data Factory" border />
+   ![Azure 门户新建 Data Factory](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory.webp)
 
 4. 点击 **Review + Create**，然后点击 **Create** 以开始部署。
 
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp" size="lg" alt="Azure 门户新建 Data Factory 确认" border />
+   ![Azure 门户新建 Data Factory 确认](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-confirm.webp)
 
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp" size="lg" alt="Azure 门户新建 Data Factory 成功" border />
+   ![Azure 门户新建 Data Factory 成功](/images/integrations/data-ingestion/azure-data-factory/azure-new-data-factory-success.webp)
 
 部署成功完成后，你就可以开始使用新的 Azure
 Data Factory 实例了。
@@ -130,34 +128,34 @@ Data Factory 实例了。
 </div>
 
 1. 登录 Microsoft Azure 门户，并打开你的 Data Factory 实例。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp" size="lg" alt="带有 Data Factory 的 Azure 门户主页" border />
+   ![带有 Data Factory 的 Azure 门户主页](/images/integrations/data-ingestion/azure-data-factory/azure-home-with-data-factory.webp)
 
 2. 在 Data Factory 概述页面中，点击 **Launch Studio**。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp" size="lg" alt="Azure 门户 Data Factory 页面" border />
+   ![Azure 门户 Data Factory 页面](/images/integrations/data-ingestion/azure-data-factory/azure-data-factory-page.webp)
 
 3. 在左侧菜单中，选择 **Manage**，然后进入 **Linked services**，
    再点击 **+ New** 创建新的链接服务。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp" size="lg" alt="Azure Data Factory 新建链接服务按钮" border />
+   ![Azure Data Factory 新建链接服务按钮](/images/integrations/data-ingestion/azure-data-factory/adf-create-linked-service-button.webp)
 
 4. 在 **New linked service** 搜索栏中，输入 **REST**，选择 **REST**，然后点击 **Continue**
    以创建一个 [REST 连接器](https://learn.microsoft.com/en-us/azure/data-factory/connector-rest)
    实例。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp" size="lg" alt="Azure Data Factory 新建链接服务搜索" border />
+   ![Azure Data Factory 新建链接服务搜索](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-search.webp)
 
 5. 在链接服务配置面板中，为你的新服务输入一个名称，
    点击 **Base URL** 字段，然后点击 **Add dynamic content** (只有在
    选中该字段后才会显示此链接) 。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp" size="lg" alt="新建链接服务面板" border />
+   ![新建链接服务面板](/images/integrations/data-ingestion/azure-data-factory/adf-new-lined-service-pane.webp)
 
 6. 在动态内容面板中，你可以创建参数化 URL，
    这样稍后为不同
    表创建数据集时即可定义查询——从而让该链接服务能够复用。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp" size="lg" alt="新建链接服务 Base URL 为空" border />
+   ![新建链接服务 Base URL 为空](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-base-url-empty.webp)
 
 7. 点击过滤器输入框旁边的 **&quot;+&quot;**，添加一个新参数，并将其命名为
    `pQuery`，将类型设置为 String，并将默认值设置为 `SELECT 1`。
    点击 **Save**。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp" size="lg" alt="新建链接服务参数" border />
+   ![新建链接服务参数](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-params.webp)
 
 8. 在表达式字段中，输入以下内容并点击 **OK**。将
    `your-clickhouse-url.com` 替换为你的 ClickHouse
@@ -165,16 +163,16 @@ Data Factory 实例了。
    ```text
    @{concat('https://your-clickhouse-url.com:8443/?query=', encodeUriComponent(linkedService().pQuery))}
    ```
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp" size="lg" alt="已填写的新建链接服务表达式字段" border />
+   ![已填写的新建链接服务表达式字段](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-expression-field-filled.webp)
 
 9. 返回主表单后，选择 basic authentication，输入用于连接到 ClickHouse HTTP 接口的
    用户名和密码，然后点击 **Test
    connection**。如果配置正确，你将看到一条成功
    消息。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp" size="lg" alt="新建链接服务检查连接" border />
+   ![新建链接服务检查连接](/images/integrations/data-ingestion/azure-data-factory/adf-new-linked-service-check-connection.webp)
 
 10. 点击 **Create** 完成设置。
-    <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp" size="lg" alt="链接服务列表" border />
+    ![链接服务列表](/images/integrations/data-ingestion/azure-data-factory/adf-linked-services-list.webp)
 
 现在，你应该可以在列表中看到新注册的基于 REST 的链接服务。
 
@@ -207,19 +205,19 @@ Data](/zh/get-started/sample-datasets/environmental-sensors)。
 
 2. 在 Azure Data Factory Studio 中，在左侧窗格选择 Author。将鼠标悬停
    在 Dataset 项上，点击三点图标，然后选择 New dataset。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp" size="lg" alt="新建数据集项" border />
+   ![新建数据集项](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-item.webp)
 
 3. 在搜索栏中输入 **REST**，选择 **REST**，然后点击 **Continue**。
    为数据集输入名称，并选择你在上一步中创建的 **链接服务**。
    点击 **OK** 以创建数据集。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp" size="lg" alt="新建数据集页面" border />
+   ![新建数据集页面](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-page.webp)
 
 4. 现在，你应该能在左侧 Factory Resources 窗格中的 Datasets
    部分看到新创建的数据集。选择该数据集以
    打开其属性。你会看到在
    链接服务中定义的 `pQuery` 参数。点击 **Value** 文本字段，然后点击 **Add dynamic**
    content。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp" size="lg" alt="新建数据集属性" border />
+   ![新建数据集属性](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-properties.webp)
 
 5. 在打开的窗格中，粘贴以下查询：
    ```sql
@@ -238,12 +236,12 @@ Data](/zh/get-started/sample-datasets/environmental-sensors)。
   必须写成 `''best_effort''`。
 </Danger>
 
-<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp" size="xl" alt="新建数据集查询" border />
+![新建数据集查询](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-query.webp)
 
 6. 点击 OK 保存表达式。点击 Test connection。如果一切都已
    配置正确，你会看到 Connection successful 消息。点击页面顶部的 Publish
    all 以保存更改。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp" size="xl" alt="新建数据集连接成功" border />
+   ![新建数据集连接成功](/images/integrations/data-ingestion/azure-data-factory/adf-new-dataset-connection-successful.webp)
 
 <div id="setting-up-an-example-dataset">
   ### 设置示例数据集
@@ -276,14 +274,14 @@ Data](/zh/get-started/sample-datasets/environmental-sensors)。
 1. 打开 **Azure Data Factory Studio**，进入 **Author** 选项卡。在
    **Factory Resources** 窗格中，将鼠标悬停在 **Pipeline** 上，点击三点
    图标，然后选择 **New pipeline**。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp" size="lg" alt="ADF 新建管道项" border />
+   ![ADF 新建管道项](/images/integrations/data-ingestion/azure-data-factory/adf-new-pipeline-item.webp)
 
 2. 在 **Activities** 窗格中，展开 **Move and transform** 部分，然后将
    **Copy data** 活动拖到画布上。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp" size="lg" alt="新建复制数据项" border />
+   ![新建复制数据项](/images/integrations/data-ingestion/azure-data-factory/adf-new-copy-data-item.webp)
 
 3. 选择 **Source** 选项卡，然后选择你之前创建的源数据集。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp" size="lg" alt="复制数据源" border />
+   ![复制数据源](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-source.webp)
 
 4. 转到 **Sink** 选项卡，选择为
    `sensors` 表创建的 ClickHouse 数据集。将 **Request method** 设置为 POST。确保 **HTTP compression
@@ -301,12 +299,12 @@ Data](/zh/get-started/sample-datasets/environmental-sensors)。
   [选择插入策略 / 同步时的批次插入](/zh/concepts/best-practices/selecting-an-insert-strategy#batch-inserts-if-synchronous)。
 </Info>
 
-<Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp" size="lg" alt="复制数据接收端选择 POST" border />
+![复制数据接收端选择 POST](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-sink-select-post.webp)
 
 5. 点击画布顶部的 **Debug** 以运行该管道。稍等片刻后，
    该活动将进入队列并开始执行。如果所有配置都正确，
    任务应以 **Success** 状态完成。
-   <Image img="/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp" size="lg" alt="复制数据调试成功" border />
+   ![复制数据调试成功](/images/integrations/data-ingestion/azure-data-factory/adf-copy-data-debug-success.webp)
 
 6. 完成后，点击 **Publish all** 以保存管道和数据集的更改。
 

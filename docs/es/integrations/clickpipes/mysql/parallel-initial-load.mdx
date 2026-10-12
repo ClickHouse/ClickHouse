@@ -10,8 +10,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Este documento explica cómo funciona la instantánea/carga inicial en paralelo en el ClickPipe para MySQL y describe los parámetros de la instantánea que pueden utilizarse para controlarla.
 
 <div id="overview-mysql-snapshot">
@@ -27,7 +25,7 @@ Sin embargo, el ClickPipe para MySQL puede paralelizar este proceso, lo que pued
 
 Una vez habilitada la feature flag, deberías ver la siguiente configuración en el selector de tablas de ClickPipe (tanto al crear como al editar un ClickPipe):
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp" alt="Columna de clave de partición" size="md" />
+![Columna de clave de partición](/images/integrations/data-ingestion/clickpipes/mysql/partition_key.webp)
 
 El ClickPipe para MySQL usa una columna de la tabla de origen para particionar lógicamente las tablas de origen. Esta columna se llama **columna de clave de partición**. Se utiliza para dividir la tabla de origen en particiones, que luego el ClickPipe puede procesar en paralelo.
 
@@ -41,7 +39,7 @@ El ClickPipe para MySQL usa una columna de la tabla de origen para particionar l
 
 Veamos la siguiente configuración:
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp" alt="Parámetros de la instantánea" size="md" />
+![Parámetros de la instantánea](/images/integrations/data-ingestion/clickpipes/mysql/snapshot_params.webp)
 
 <div id="numrows-mysql-snapshot">
   #### Número de filas en la instantánea por partición

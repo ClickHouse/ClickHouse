@@ -7,7 +7,6 @@ doc_type: 'guide'
 keywords: ['ClickHouse Cloud', 'шифрование', 'CMEK', 'опрос ключа KMS']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { EnterprisePlanFeatureBadge } from "/snippets/ru/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 <div id="storage-encryption">
@@ -161,4 +160,4 @@ TDE необходимо включить при создании сервиса
 
 Для шифрования на уровне базы данных и защиты данных используется встроенная в ClickHouse [возможность Virtual File System for Data Encryption](/ru/concepts/features/configuration/server-config/storing-data#encrypted-virtual-file-system). В этой возможности используется алгоритм `AES_256_CTR`; ожидаемое снижение производительности составляет 5–15% в зависимости от рабочей нагрузки:
 
-<Image img="/images/_snippets/cmek-performance.webp" size="lg" alt="Снижение производительности CMEK" />
+![Снижение производительности CMEK](/images/_snippets/cmek-performance.webp)

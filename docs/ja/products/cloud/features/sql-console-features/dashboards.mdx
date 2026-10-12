@@ -8,8 +8,6 @@ keywords: ['ClickHouse Cloud', 'ダッシュボード', 'データ可視化', 'S
 ---
 
 import { BetaBadge } from "/snippets/ja/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 SQL Console のダッシュボード機能では、保存クエリから可視化を集約し、共有できます。まずはクエリを保存して可視化し、その可視化をダッシュボードに追加して、クエリパラメータを使ってダッシュボードをインタラクティブにしましょう。
 
 <div id="core-concepts">
@@ -48,17 +46,17 @@ SQL Console のダッシュボード機能では、保存クエリから可視�
 
 新しいクエリタブを開きます。ClickHouseのシステムテーブルを使って、あるサービスの日別のクエリ数を集計するクエリを書いてみましょう。
 
-<Image img="/images/cloud/dashboards/2_dashboards.webp" size="md" alt="保存クエリを作成する" border />
+![保存クエリを作成する](/images/cloud/dashboards/2_dashboards.webp)
 
 クエリの結果はテーブル形式で表示することも、チャートビューから可視化の作成を始めることもできます。次の手順に進むため、このクエリを `queries over time` として保存します。
 
-<Image img="/images/cloud/dashboards/3_dashboards.webp" size="md" alt="クエリを保存" border />
+![クエリを保存](/images/cloud/dashboards/3_dashboards.webp)
 
 保存クエリの詳細については、[Saving a Query セクション](/ja/products/cloud/features/sql-console-features/sql-console#saving-a-query)を参照してください。
 
 別のクエリ `query count by query kind` を作成して保存し、query kindごとのクエリ数を集計することもできます。以下は、SQL Consoleでこのデータを棒グラフとして可視化したものです。
 
-<Image img="/images/cloud/dashboards/4_dashboards.webp" size="md" alt="クエリ結果の棒グラフによる可視化" border />
+![クエリ結果の棒グラフによる可視化](/images/cloud/dashboards/4_dashboards.webp)
 
 これでクエリが2つそろったので、これらを可視化してまとめるためのダッシュボードを作成しましょう。
 
@@ -68,7 +66,7 @@ SQL Console のダッシュボード機能では、保存クエリから可視�
 
 「Dashboards」パネルに移動し、「New Dashboard」をクリックします。名前を付けると、最初のダッシュボードが作成されます。
 
-<Image img="/images/cloud/dashboards/5_dashboards.webp" size="md" alt="新しいダッシュボードを作成する" border />
+![新しいダッシュボードを作成する](/images/cloud/dashboards/5_dashboards.webp)
 
 <div id="add-a-visualization">
   ### 可視化を追加する
@@ -76,13 +74,13 @@ SQL Console のダッシュボード機能では、保存クエリから可視�
 
 `queries over time` と `query count by query kind` という 2 つの保存クエリがあります。まずは 1 つ目を折れ線チャートとして可視化しましょう。可視化にタイトルとサブタイトルを付け、可視化するクエリを選択します。次に、「Line」チャートタイプを選択し、x 軸と y 軸を指定します。
 
-<Image img="/images/cloud/dashboards/6_dashboards.webp" size="md" alt="可視化を追加する" border />
+![可視化を追加する](/images/cloud/dashboards/6_dashboards.webp)
 
 ここでは、数値のフォーマット、凡例のレイアウト、軸ラベルなど、スタイルに関する追加の調整も行えます。
 
 次に、2 つ目のクエリをテーブルとして可視化し、折れ線チャートの下に配置しましょう。
 
-<Image img="/images/cloud/dashboards/7_dashboards.webp" size="md" alt="クエリ結果をテーブルとして可視化する" border />
+![クエリ結果をテーブルとして可視化する](/images/cloud/dashboards/7_dashboards.webp)
 
 これで、2 つの保存クエリを可視化した最初のダッシュボードが完成しました！
 
@@ -94,18 +92,18 @@ SQL Console のダッシュボード機能では、保存クエリから可視�
 
 折れ線チャートの横にある 3 点メニューをクリックし、クエリの横にある鉛筆ボタンをクリックしてインラインのクエリエディタを開きます。ここでは、ダッシュボードから直接、元の保存クエリを編集できます。
 
-<Image img="/images/cloud/dashboards/8_dashboards.webp" size="md" alt="元のクエリを編集する" border />
+![元のクエリを編集する](/images/cloud/dashboards/8_dashboards.webp)
 
 ここで黄色のクエリ実行ボタンを押すと、先ほどと同じクエリが Insert クエリのみに絞り込まれて表示されます。保存ボタンをクリックしてクエリを更新します。グラフ設定に戻ると、折れ線チャートにフィルタを適用できるようになります。
 
 これで、上部リボンの Global フィルタ を使って、入力を変更することでフィルタを切り替えられます。
 
-<Image img="/images/cloud/dashboards/9_dashboards.webp" size="md" alt="グローバルフィルタを調整する" border />
+![グローバルフィルタを調整する](/images/cloud/dashboards/9_dashboards.webp)
 
 折れ線チャートのフィルタをテーブルに連動させたいとします。これを行うには、可視化設定に戻って `query_kind` クエリパラメータの value source をテーブルに変更し、連動させるフィールドとして `query_kind` カラムを選択します。
 
-<Image img="/images/cloud/dashboards/10_dashboards.webp" size="md" alt="クエリパラメータを変更する" border />
+![クエリパラメータを変更する](/images/cloud/dashboards/10_dashboards.webp)
 
 これで、queries by kind テーブルから直接、折れ線チャートのフィルタを操作できるようになり、ダッシュボードをインタラクティブにできます。
 
-<Image img="/images/cloud/dashboards/11_dashboards.webp" size="md" alt="折れ線チャートのフィルタを制御する" border />
+![折れ線チャートのフィルタを制御する](/images/cloud/dashboards/11_dashboards.webp)

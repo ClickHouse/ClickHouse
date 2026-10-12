@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 Grafana represents the preferred visualization tool for Observability data in ClickHouse. This is achieved using the official ClickHouse plugin for Grafana. You can follow the installation instructions found [here](/integrations/connectors/data-visualization/grafana/index).
 
 V4 of the plugin makes logs and traces a first-class citizen in a new query builder experience. This minimizes the need for SREs to write SQL queries and simplifies SQL-based Observability, moving the needle forward for this emerging paradigm.
@@ -28,7 +26,7 @@ The Logs configuration requires a time, log level, and message column in order f
 
 The Traces configuration is slightly more complex (full list [here](/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage)). The required columns here are needed such that subsequent queries, which build a full trace profile, can be abstracted. These queries assume data is structured similarly to OTel, so users deviating significantly from the standard schema will need to use views to benefit from this feature.
 
-<Image img="/images/use-cases/observability/observability-15.webp" alt="Connector config" size="sm"/>
+![Connector config](/images/use-cases/observability/observability-15.webp)
 
 Once configured you can navigate to [Grafana Explore](https://grafana.com/docs/grafana/latest/explore/) and begin searching logs and traces.
 
@@ -40,7 +38,7 @@ If adhering to the Grafana requirements for logs, you can select `Query Type: Lo
 SELECT Timestamp as timestamp, Body as body, SeverityText as level, TraceId as traceID FROM "default"."otel_logs" WHERE ( timestamp >= $__fromTime AND timestamp <= $__toTime ) ORDER BY timestamp DESC LIMIT 1000
 ```
 
-<Image img="/images/use-cases/observability/observability-16.webp" alt="Connector logs config" size="lg" border/>
+![Connector logs config](/images/use-cases/observability/observability-16.webp)
 
 The query builder provides a simple means of modifying the query, avoiding the need for you to write SQL. Filtering, including finding logs containing keywords, can be performed from the query builder. Users wishing to write more complex queries can switch to the SQL editor. Provided the appropriate columns are returned, and `logs` selected as the Query Type, the results will be rendered as logs. The required columns for log rendering are listed [here](https://grafana.com/developers/plugin-tools/tutorials/build-a-logs-data-source-plugin#logs-data-frame-format).
 
@@ -48,7 +46,7 @@ The query builder provides a simple means of modifying the query, avoiding the n
 
 If logs contain trace Ids, you can benefit from being able to navigate through to a trace for a specific log line.
 
-<Image img="/images/use-cases/observability/observability-17.webp" alt="Logs to traces" size="lg" border/>
+![Logs to traces](/images/use-cases/observability/observability-17.webp)
 
 ## Traces {#traces}
 
@@ -69,7 +67,7 @@ WHERE ( Timestamp >= $__fromTime AND Timestamp <= $__toTime )
 
 This query returns the column names expected by Grafana, rendering a table of traces as shown below. Filtering on duration or other columns can be performed without needing to write SQL.
 
-<Image img="/images/use-cases/observability/observability-18.webp" alt="Traces" size="lg" border/>
+![Traces](/images/use-cases/observability/observability-18.webp)
 
 Users wishing to write more complex queries can switch to the `SQL Editor`.
 
@@ -105,7 +103,7 @@ LIMIT 1000
 Note how the above query uses the materialized view `otel_traces_trace_id_ts` to perform the trace id lookup. See [Accelerating Queries - Using Materialized views for lookups](/guides/use-cases/observability/build-your-own/schema-design#using-materialized-views-incremental--for-fast-lookups) for further details.
 </Note>
 
-<Image img="/images/use-cases/observability/observability-19.webp" alt="Trace Details" size="lg" border/>
+![Trace Details](/images/use-cases/observability/observability-19.webp)
 
 ### Traces to logs {#traces-to-logs}
 
@@ -119,7 +117,7 @@ WHERE ( traceID = '<trace_id>' )
 ORDER BY timestamp ASC LIMIT 1000
 ```
 
-<Image img="/images/use-cases/observability/observability-20.webp" alt="Traces to logs" size="lg" border/>
+![Traces to logs](/images/use-cases/observability/observability-20.webp)
 
 ## Dashboards {#dashboards}
 
@@ -127,7 +125,7 @@ You can build dashboards in Grafana using the ClickHouse data source. We recomme
 
 The plugin provides several out-of-the-box dashboards, including an example dashboard, "Simple ClickHouse OTel dashboarding," for logging and tracing data conforming to the OTel specification. This requires users to conform to the default column names for OTel and can be installed from the data source configuration.
 
-<Image img="/images/use-cases/observability/observability-21.webp" alt="Dashboards" size="lg" border/>
+![Dashboards](/images/use-cases/observability/observability-21.webp)
 
 We provide some simple tips for building visualizations below.
 
@@ -148,7 +146,7 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
-<Image img="/images/use-cases/observability/observability-22.webp" alt="Time series" size="lg" border/>
+![Time series](/images/use-cases/observability/observability-22.webp)
 
 ### Multi-line charts {#multi-line-charts}
 
@@ -173,7 +171,7 @@ ORDER BY time ASC
 LIMIT 100000
 ```
 
-<Image img="/images/use-cases/observability/observability-23.webp" alt="Multi-line charts" size="lg" border/>
+![Multi-line charts](/images/use-cases/observability/observability-23.webp)
 
 ### Visualizing geo data {#visualizing-geo-data}
 
@@ -197,4 +195,4 @@ FROM coords
 GROUP BY hash
 ```
 
-<Image img="/images/use-cases/observability/observability-24.webp" alt="Visualizing geo data" size="lg" border/>
+![Visualizing geo data](/images/use-cases/observability/observability-24.webp)

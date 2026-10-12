@@ -10,7 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
 import ConnectionDetails from '/snippets/zh/_gather_your_details_http.mdx';
 
 import { PartnerBadge } from "/snippets/zh/components/PartnerBadge/PartnerBadge.jsx";
@@ -27,25 +26,25 @@ Looker 可通过官方 ClickHouse 数据源连接到 ClickHouse Cloud 或本地�
   <Step title="创建 ClickHouse 数据源" id="2-create-a-clickhouse-data-source">
     前往 Admin -&gt; Database -&gt; Connections，然后点击右上角的 “Add Connection” 按钮。
 
-    <Image size="md" img="/images/integrations/data-visualization/looker_01.webp" alt="在 Looker 的数据库管理界面中添加新连接" border />
+    ![在 Looker 的数据库管理界面中添加新连接](/images/integrations/data-visualization/looker_01.webp)
 
     <br />
 
     为数据源命名，并在 dialect 下拉菜单中选择 `ClickHouse`。然后在表单中输入您的凭据。
 
-    <Image size="md" img="/images/integrations/data-visualization/looker_02.webp" alt="在 Looker 连接表单中指定您的 ClickHouse 凭据" border />
+    ![在 Looker 连接表单中指定您的 ClickHouse 凭据](/images/integrations/data-visualization/looker_02.webp)
 
     <br />
 
     如果您使用的是 ClickHouse Cloud，或者您的部署需要 SSL，请确保已在附加设置中启用 SSL。
 
-    <Image size="md" img="/images/integrations/data-visualization/looker_03.webp" alt="在 Looker 设置中为 ClickHouse 连接启用 SSL" border />
+    ![在 Looker 设置中为 ClickHouse 连接启用 SSL](/images/integrations/data-visualization/looker_03.webp)
 
     <br />
 
     请先测试连接；完成后，再连接到新的 ClickHouse 数据源。
 
-    <Image size="md" img="/images/integrations/data-visualization/looker_04.webp" alt="测试并连接到 ClickHouse 数据源" border />
+    ![测试并连接到 ClickHouse 数据源](/images/integrations/data-visualization/looker_04.webp)
 
     <br />
 

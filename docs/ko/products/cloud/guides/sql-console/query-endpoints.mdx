@@ -7,8 +7,6 @@ title: 'Query API endpoint 설정'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 **Query API endpoint** 기능을 사용하면 ClickHouse Cloud 콘솔에 저장된 모든 SQL 쿼리로부터 API 엔드포인트를 직접 생성할 수 있습니다. 네이티브 드라이버로 ClickHouse Cloud 서비스에 연결하지 않아도 HTTP를 통해 API 엔드포인트에 액세스하여 저장된 쿼리를 실행할 수 있습니다.
 
 <div id="quick-start-guide">
@@ -68,11 +66,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     Let&#39;s quickly run this query to make sure that it works by specifying the year `2010` in the 쿼리 변수 input box on the right side of the SQL editor:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-testquery.webp" size="md" alt="Test the example query" />
+    ![Test the example query](/images/cloud/sqlconsole/endpoints-testquery.webp)
 
     Next, save the query:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-savequery.webp" size="md" alt="Save example query" />
+    ![Save example query](/images/cloud/sqlconsole/endpoints-savequery.webp)
 
     More documentation around 저장된 쿼리 can be found in section [&quot;Saving a query&quot;](/ko/products/cloud/features/sql-console-features/sql-console#saving-a-query).
   </Step>
@@ -81,7 +79,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
     Query API endpoint can be configured directly from query view by clicking the **Share** button and selecting `API Endpoint`.
     You&#39;ll be prompted to specify which API Keys should be able to access the endpoint:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-configure.webp" size="md" alt="Configure query endpoint" />
+    ![Configure query endpoint](/images/cloud/sqlconsole/endpoints-configure.webp)
 
     After selecting an API Key, you will be asked to:
 
@@ -92,7 +90,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
     An example `curl` command will be displayed so you can send a test request:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-completed.webp" size="md" alt="Endpoint curl command" />
+    ![Endpoint curl command](/images/cloud/sqlconsole/endpoints-completed.webp)
 
     The curl command displayed in the interface is given below for convenience:
 
@@ -108,11 +106,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
   <Step title="Testing and monitoring" id="testing-and-monitoring">
     Once a Query API 엔드포인트 is created, you can test that it works by using `curl` or any other HTTP client:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-curltest.webp" size="md" alt="endpoint curl test" />
+    ![endpoint curl test](/images/cloud/sqlconsole/endpoints-curltest.webp)
 
     After you&#39;ve sent your first request, a new button should appear immediately to the right of the **Share** button. Clicking it will open a flyout containing monitoring data about the query:
 
-    <Image img="/images/cloud/sqlconsole/endpoints-monitoring.webp" size="sm" alt="Endpoint monitoring" />
+    ![Endpoint monitoring](/images/cloud/sqlconsole/endpoints-monitoring.webp)
   </Step>
 </Steps>
 

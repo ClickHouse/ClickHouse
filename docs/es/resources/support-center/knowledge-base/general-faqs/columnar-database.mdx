@@ -6,8 +6,6 @@ tags: ['Conceptos fundamentales de datos']
 keywords: ['Base de datos columnar']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="introduction">
   ## Introducción
 </div>
@@ -32,10 +30,10 @@ A continuación se ilustra la diferencia entre los sistemas tradicionales orient
 
 **Tradicional orientado a filas**
 
-<Image img="/images/row-oriented.webp" alt="Ilustración del almacenamiento tradicional de una base de datos orientada a filas" size="md" />
+![Ilustración del almacenamiento tradicional de una base de datos orientada a filas](/images/row-oriented.webp)
 
 **Columnar**
 
-<Image img="/images/column-oriented.webp" alt="Ilustración del almacenamiento de una base de datos columnar" size="md" />
+![Ilustración del almacenamiento de una base de datos columnar](/images/column-oriented.webp)
 
 Una base de datos columnar es la opción preferida para las aplicaciones analíticas porque permite tener muchas columnas en una tabla por si se necesitan, sin asumir el costo de las columnas no utilizadas en el tiempo de ejecución de las consultas de lectura (una base de datos OLTP tradicional lee todos los datos durante las consultas, ya que los datos se almacenan en filas y no en columnas). Las bases de datos orientadas a columnas están diseñadas para el procesamiento de big data y el data warehousing. A menudo escalan de forma nativa mediante clústeres distribuidos de hardware de bajo costo para aumentar el throughput. ClickHouse lo hace con la combinación de tablas [distributed](/es/reference/engines/table-engines/special/distributed) y [replicated](/es/reference/engines/table-engines/mergetree-family/replication).

@@ -7,8 +7,6 @@ show_related_blogs: true
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 <div id="introduction">
   ## 소개
 </div>
@@ -17,7 +15,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 ClickHouse만으로는 관측성을 위한 즉시 사용 가능한 솔루션이 아닙니다. 하지만 탁월한 압축률과 매우 빠른 쿼리 응답 시간을 제공하는 관측성 데이터용 고효율 저장 엔진으로 활용할 수 있습니다. ClickHouse를 관측성 솔루션에서 사용하려면 사용자 인터페이스와 데이터 수집 프레임워크가 모두 필요합니다. 현재는 관측성 신호 시각화에 **Grafana**를, 데이터 수집에는 **OpenTelemetry**를 사용할 것을 권장합니다(둘 다 공식 지원되는 통합입니다).
 
-<Image img="/images/use-cases/observability/observability-1.webp" alt="간단한 OTel" size="md" />
+![간단한 OTel](/images/use-cases/observability/observability-1.webp)
 
 <br />
 
@@ -103,6 +101,6 @@ ClickHouse는 뛰어난 성능과 비용 효율성을 바탕으로, 관측성 �
 
 대부분의 관측성 공급업체는 이 정보를 폭포수 형태로 시각화하며, 상대적인 시간은 길이에 비례하는 가로 막대로 표시합니다. 예를 들어, Grafana에서는 다음과 같습니다:
 
-<Image img="/images/use-cases/observability/observability-2.webp" alt="예시 트레이스" size="lg" border />
+![예시 트레이스](/images/use-cases/observability/observability-2.webp)
 
 로그와 트레이스의 개념을 깊이 이해해야 한다면 [OpenTelemetry 문서](https://opentelemetry.io/docs/concepts/)를 참고할 것을 강력히 권장합니다。

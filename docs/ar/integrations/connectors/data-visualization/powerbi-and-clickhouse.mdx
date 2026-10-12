@@ -10,8 +10,6 @@ integration:
   - category: 'data_visualization'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -74,7 +72,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 شغّل مُثبّت `.msi` المرفق واتبع معالج التثبيت.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_install.webp" alt="معالج تثبيت برنامج تشغيل ClickHouse ODBC يعرض خيارات التثبيت" border />
+![معالج تثبيت برنامج تشغيل ClickHouse ODBC يعرض خيارات التثبيت](/images/integrations/data-visualization/powerbi_odbc_install.webp)
 
 <br />
 
@@ -90,13 +88,13 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 ابحث عن ODBC في قائمة Start، ثم اختر &quot;ODBC Data Sources **(64-bit)**&quot;.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="بحث Windows يُظهر خيار ODBC Data Sources (64-bit)" border />
+![بحث Windows يُظهر خيار ODBC Data Sources (64-bit)](/images/integrations/data-visualization/powerbi_odbc_search.webp)
 
 <br />
 
 تأكد من أن ClickHouse Driver مدرج في القائمة.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_verify.webp" alt="تعرض ODBC Data Source Administrator برامج تشغيل ClickHouse في علامة التبويب Drivers" border />
+![تعرض ODBC Data Source Administrator برامج تشغيل ClickHouse في علامة التبويب Drivers](/images/integrations/data-visualization/powerbi_odbc_verify.webp)
 
 <br />
 
@@ -110,13 +108,13 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 في شاشة البدء في Power BI Desktop، انقر على &quot;Get Data&quot;.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="شاشة البدء في Power BI Desktop تعرض زر Get Data" border />
+![شاشة البدء في Power BI Desktop تعرض زر Get Data](/images/integrations/data-visualization/powerbi_get_data.webp)
 
 <br />
 
 ابحث عن &quot;ClickHouse&quot;
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_search_clickhouse.webp" alt="مربع الحوار Get Data في Power BI مع البحث عن ClickHouse في شريط البحث" border />
+![مربع الحوار Get Data في Power BI مع البحث عن ClickHouse في شريط البحث](/images/integrations/data-visualization/powerbi_search_clickhouse.webp)
 
 <br />
 
@@ -133,7 +131,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
   في [ClickHouse ODBC GitHub Page](https://github.com/ClickHouse/clickhouse-odbc#configuration)
 * وضع اتصال البيانات - DirectQuery
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_connect_db.webp" alt="مربع حوار اتصال ClickHouse يعرض حقول المضيف والمنفذ وقاعدة البيانات ووضع الاتصال" border />
+![مربع حوار اتصال ClickHouse يعرض حقول المضيف والمنفذ وقاعدة البيانات ووضع الاتصال](/images/integrations/data-visualization/powerbi_connect_db.webp)
 
 <br />
 
@@ -145,7 +143,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 * حدّد اسم المستخدم وكلمة المرور
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_connect_user.webp" alt="مربع حوار بيانات اعتماد اتصال ClickHouse لاسم المستخدم وكلمة المرور" border />
+![مربع حوار بيانات اعتماد اتصال ClickHouse لاسم المستخدم وكلمة المرور](/images/integrations/data-visualization/powerbi_connect_user.webp)
 
 <br />
 
@@ -156,7 +154,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 أخيرًا، ينبغي أن تظهر لك قواعد البيانات والجداول في عرض Navigator. حدّد الجدول المطلوب وانقر على &quot;Load&quot; لكي
 تستورد البيانات من ClickHouse.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_table_navigation.webp" alt="عرض Navigator في Power BI يُظهر جداول قاعدة بيانات ClickHouse وبيانات عيّنة" border />
+![عرض Navigator في Power BI يُظهر جداول قاعدة بيانات ClickHouse وبيانات عيّنة](/images/integrations/data-visualization/powerbi_table_navigation.webp)
 
 <br />
 
@@ -186,25 +184,25 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 عند اكتمال تثبيت برنامج التشغيل، يمكنك إنشاء مصدر بيانات ODBC. ابحث عن ODBC في قائمة Start وحدد &quot;ODBC Data Sources (64-bit)&quot;.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_odbc_search.webp" alt="بحث Windows يُظهر خيار ODBC Data Sources (64-bit)" border />
+![بحث Windows يُظهر خيار ODBC Data Sources (64-bit)](/images/integrations/data-visualization/powerbi_odbc_search.webp)
 
 <br />
 
 نحتاج هنا إلى إضافة User DSN جديد. انقر على زر &quot;Add&quot; الموجود على اليسار.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_add_dsn.webp" alt="ODBC Data Source Administrator مع تمييز زر Add لإنشاء DSN جديد" border />
+![ODBC Data Source Administrator مع تمييز زر Add لإنشاء DSN جديد](/images/integrations/data-visualization/powerbi_add_dsn.webp)
 
 <br />
 
 اختر إصدار Unicode من برنامج تشغيل ODBC.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_select_unicode.webp" alt="مربع حوار Create New Data Source يُظهر تحديد ClickHouse Unicode Driver" border />
+![مربع حوار Create New Data Source يُظهر تحديد ClickHouse Unicode Driver](/images/integrations/data-visualization/powerbi_select_unicode.webp)
 
 <br />
 
 أدخل تفاصيل الاتصال.
 
-<Image size="sm" img="/images/integrations/data-visualization/powerbi_connection_details.webp" alt="مربع حوار تهيئة ClickHouse ODBC Driver مع معلمات الاتصال" border />
+![مربع حوار تهيئة ClickHouse ODBC Driver مع معلمات الاتصال](/images/integrations/data-visualization/powerbi_connection_details.webp)
 
 <br />
 
@@ -224,19 +222,19 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 
 في شاشة البدء في Power BI Desktop، انقر على &quot;Get Data&quot;.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_get_data.webp" alt="شاشة الصفحة الرئيسية في Power BI Desktop تعرض زر Get Data" border />
+![شاشة الصفحة الرئيسية في Power BI Desktop تعرض زر Get Data](/images/integrations/data-visualization/powerbi_get_data.webp)
 
 <br />
 
 اختر &quot;Other&quot; -&gt; &quot;ODBC&quot;.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_select_odbc.webp" alt="مربع حوار Get Data في Power BI مع تحديد خيار ODBC ضمن فئة Other" border />
+![مربع حوار Get Data في Power BI مع تحديد خيار ODBC ضمن فئة Other](/images/integrations/data-visualization/powerbi_select_odbc.webp)
 
 <br />
 
 اختر مصدر البيانات الذي أنشأته سابقًا من القائمة.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_select_dsn.webp" alt="مربع حوار اختيار برنامج تشغيل ODBC يعرض ClickHouse DSN الذي تم إعداده" border />
+![مربع حوار اختيار برنامج تشغيل ODBC يعرض ClickHouse DSN الذي تم إعداده](/images/integrations/data-visualization/powerbi_select_dsn.webp)
 
 <br />
 
@@ -244,13 +242,13 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
   إذا لم تحدد بيانات الاعتماد أثناء إنشاء مصدر البيانات، فسيُطلب منك إدخال اسم المستخدم وكلمة المرور.
 </Note>
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_dsn_credentials.webp" alt="مربع حوار بيانات الاعتماد لاتصال ODBC DSN" border />
+![مربع حوار بيانات الاعتماد لاتصال ODBC DSN](/images/integrations/data-visualization/powerbi_dsn_credentials.webp)
 
 <br />
 
 أخيرًا، ينبغي أن تظهر لك قواعد البيانات والجداول في عرض Navigator. اختر الجدول المطلوب وانقر على &quot;Load&quot; لاستيراد البيانات من ClickHouse.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_table_navigation.webp" alt="عرض Navigator في Power BI يعرض جداول قاعدة بيانات ClickHouse وبيانات sample" border />
+![عرض Navigator في Power BI يعرض جداول قاعدة بيانات ClickHouse وبيانات sample](/images/integrations/data-visualization/powerbi_table_navigation.webp)
 
 <br />
 
@@ -316,7 +314,7 @@ import { ClickHouseSupportedBadge } from "/snippets/ar/components/ClickHouseSupp
 يفتح &quot;Transform Data&quot; محرر Power Query، حيث يمكننا إعادة تعيين نوع العمود وتعيينه، على سبيل المثال، إلى
 Text.
 
-<Image size="md" img="/images/integrations/data-visualization/powerbi_16.webp" alt="محرر Power Query يعرض تحويل نوع البيانات لعمود UInt64" border />
+![محرر Power Query يعرض تحويل نوع البيانات لعمود UInt64](/images/integrations/data-visualization/powerbi_16.webp)
 
 <br />
 

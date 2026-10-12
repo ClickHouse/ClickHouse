@@ -7,8 +7,6 @@ sidebarTitle: '通知'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 ClickHouse Cloud は、サービスまたは組織に関連する重要なイベントについて通知を送信します。通知の送信方法や設定方法を理解するうえで、押さえておくべき概念がいくつかあります。
 
 1. **通知カテゴリ**: 請求通知やサービス関連通知など、通知の分類を指します。各カテゴリには、配信方法を設定できる通知が複数含まれます。
@@ -21,9 +19,9 @@ ClickHouse Cloud は、サービスまたは組織に関連する重要なイベ
 
 通知は、さまざまなチャネルで受け取ることができます。ClickHouse Cloud では、メール、ClickHouse Cloud UI、Slack 経由で通知を受信できます。現在の通知を確認するには、左上のメニューにあるベルアイコンをクリックします。すると、フライアウトが開きます。フライアウト下部の **View All** ボタンをクリックすると、すべての通知のアクティビティログが表示されるページに移動します。
 
-<Image img="/images/cloud/manage/notifications-1.webp" size="md" alt="ClickHouse Cloud の通知フライアウト" border />
+![ClickHouse Cloud の通知フライアウト](/images/cloud/manage/notifications-1.webp)
 
-<Image img="/images/cloud/manage/notifications-2.webp" size="md" alt="ClickHouse Cloud の通知アクティビティログ" border />
+![ClickHouse Cloud の通知アクティビティログ](/images/cloud/manage/notifications-2.webp)
 
 <div id="customizing-notifications">
   ## 通知のカスタマイズ
@@ -35,9 +33,9 @@ Cloud UI 経由で配信される通知はカスタマイズでき、設定は�
 
 特定の通知の配信先を設定するには、鉛筆アイコンをクリックして通知の配信チャネルを変更します。
 
-<Image img="/images/cloud/manage/notifications-3.webp" size="md" alt="ClickHouse Cloud 通知設定画面" border />
+![ClickHouse Cloud 通知設定画面](/images/cloud/manage/notifications-3.webp)
 
-<Image img="/images/cloud/manage/notifications-4.webp" size="md" alt="ClickHouse Cloud 通知配信設定" border />
+![ClickHouse Cloud 通知配信設定](/images/cloud/manage/notifications-4.webp)
 
 <Note>
   **Payment failed** など、一部の**必須**通知は設定できません。

@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/clickpipes/_iam_authentication.mdx";
 
 This step-by-step guide shows you how to configure Amazon Aurora MySQL to replicate data into ClickHouse Cloud using the [MySQL ClickPipe](/integrations/clickpipes/mysql/index). For common questions around MySQL CDC, see the [MySQL FAQs page](/integrations/clickpipes/mysql/faq).
@@ -24,7 +23,7 @@ The binary log is a set of log files that contain information about data modific
 
 The automated backups feature determines whether binary logging is turned on or off for MySQL. Automated backups can be configured for your instance in the RDS Console by navigating to **Modify** > **Additional configuration** > **Backup** and selecting the **Enable automated backups** checkbox (if not selected already).
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp" alt="Enabling automated backups in Aurora" size="lg" border/>
+![Enabling automated backups in Aurora](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/rds-backups.webp)
 
 We recommend setting the **Backup retention period** to a reasonably long value, depending on the replication use case.
 
@@ -56,27 +55,27 @@ The parameter group can be found when you click on your MySQL instance in the RD
 If you have a MySQL cluster, the parameters below can be found in the [DB cluster](https://docs.aws.amazon.com/AmazonRDS/latest/AuroraUserGuide/USER_WorkingWithParamGroups.CreatingCluster.html) parameter group instead of the DB instance group.
 </Tip>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/aurora_config.webp" alt="Where to find parameter group in Aurora" size="lg" border/>
+![Where to find parameter group in Aurora](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/aurora_config.webp)
 
 <br/>
 Click the parameter group link, which will take you to its dedicated page. You should see an **Edit** button in the top right.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp" alt="Edit parameter group" size="lg" border/>
+![Edit parameter group](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/edit_button.webp)
 
 <br/>
 The following parameters need to be set as follows:
 
 1. `binlog_format` to `ROW`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp" alt="Binlog format to ROW" size="lg" border/>
+![Binlog format to ROW](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_format.webp)
 
 2. `binlog_row_metadata` to `FULL`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp" alt="Binlog row metadata" size="lg" border/>
+![Binlog row metadata](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_metadata.webp)
 
 3. `binlog_row_image` to `FULL`.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp" alt="Binlog row image" size="lg" border/>
+![Binlog row image](/images/integrations/data-ingestion/clickpipes/mysql/parameter_group/binlog_row_image.webp)
 
 <br/>
 Then, click on **Save Changes** in the top right corner. You may need to reboot your instance for the changes to take effect — a way of knowing this is if you see `Pending reboot` next to the parameter group link in the **Configuration** tab of the Aurora instance.
@@ -100,7 +99,7 @@ GTID-based replication is supported for Amazon Aurora MySQL v2 (MySQL 5.7) and v
 7. Click on **Save Changes** in the top right corner.
 8. Reboot your instance for the changes to take effect.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp" alt="GTID enabled" size="lg" border/>
+![GTID enabled](/images/integrations/data-ingestion/clickpipes/mysql/enable_gtid.webp)
 
 ## Configure a database user {#configure-database-user}
 
@@ -135,9 +134,9 @@ Connect to your Aurora MySQL instance as an admin user and execute the following
 
 To restrict traffic to your Aurora MySQL instance, add the [documented static NAT IPs](/integrations/clickpipes/networking/static-ips) to the **Inbound rules** of your Aurora security group.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp" alt="Where to find security group in Aurora MySQL?" size="lg" border/>
+![Where to find security group in Aurora MySQL?](/images/integrations/data-ingestion/clickpipes/mysql/source/rds/security-group-in-rds-mysql.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Edit inbound rules for the above security group" size="lg" border/>
+![Edit inbound rules for the above security group](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
 
 ### Private access via AWS PrivateLink {#private-access-via-aws-privatelink}
 

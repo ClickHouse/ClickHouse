@@ -12,8 +12,6 @@ integration:
 
 import BucketDetails from '/snippets/es/_S3_authentication_and_bucket.mdx';
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Puede insertar datos de S3 en ClickHouse y también usar S3 como destino de exportación, lo que permite interactuar con arquitecturas de &quot;lago de datos&quot;. Además, S3 puede proporcionar niveles de almacenamiento &quot;en frío&quot; y ayudar a separar el almacenamiento del cómputo. En las secciones siguientes, usamos el conjunto de datos de taxis de la ciudad de Nueva York para mostrar el proceso de transferir datos entre S3 y ClickHouse, así como identificar parámetros clave de configuración y ofrecer sugerencias para optimizar el rendimiento.
 
 ## Funciones de tabla S3 {#s3-table-functions}
@@ -859,7 +857,7 @@ SELECT * FROM s3_table1;
 6. En la consola de AWS, ve a los buckets y selecciona el bucket nuevo y la carpeta.
    Deberías ver algo parecido a lo siguiente:
 
-<Image img="/images/integrations/data-ingestion/s3/s3-j.webp" size="lg" border alt="Vista del bucket de S3 en la consola de AWS que muestra archivos de datos de ClickHouse almacenados en S3" />
+![Vista del bucket de S3 en la consola de AWS que muestra archivos de datos de ClickHouse almacenados en S3](/images/integrations/data-ingestion/s3/s3-j.webp)
 
 <div id="s3-multi-region">
   ## Replicar un único segmento entre dos regiones de AWS mediante almacenamiento de objetos en S3
@@ -1298,9 +1296,9 @@ Estas pruebas verificarán que los datos se estén replicando entre los dos serv
 
   Compruebe los datos de S3 en cada bucket de S3 (no se muestran los totales, pero ambos buckets tienen aproximadamente 36 MiB almacenados después de las inserciones):
 
-<Image img="/images/integrations/data-ingestion/s3/bucket1.webp" size="lg" border alt="Tamaño de los datos en el primer bucket de S3, con métricas de uso de almacenamiento" />
+![Tamaño de los datos en el primer bucket de S3, con métricas de uso de almacenamiento](/images/integrations/data-ingestion/s3/bucket1.webp)
 
-<Image img="/images/integrations/data-ingestion/s3/bucket2.webp" size="lg" border alt="Tamaño de los datos en el segundo bucket de S3, con métricas de uso de almacenamiento" />
+![Tamaño de los datos en el segundo bucket de S3, con métricas de uso de almacenamiento](/images/integrations/data-ingestion/s3/bucket2.webp)
 
 <div id="s3express">
   ## S3Express

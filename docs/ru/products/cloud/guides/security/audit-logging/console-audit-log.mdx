@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['журнал аудита']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Действия в консоли записываются в журнал аудита. Пользователи, имеющие доступ, могут просматривать журнал и интегрировать его со своими системами логирования. Доступ к журналу аудита определяется разрешением **View audit logs** (`control-plane:organization:view-activities`):
 
 * Пользователи с ролью организации Admin имеют доступ по умолчанию.
@@ -23,7 +21,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Выберите организацию" id="select-org">
     В ClickHouse Cloud перейдите к сведениям о своей организации.
 
-    <Image img="/images/cloud/security/activity_log1.webp" size="md" alt="Вкладка активности ClickHouse Cloud" border />
+    ![Вкладка активности ClickHouse Cloud](/images/cloud/security/activity_log1.webp)
 
     <br />
   </Step>
@@ -38,7 +36,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     * **IP Address:** Если применимо, в этом поле указан IP-адрес пользователя, инициировавшего событие
     * **Time:** Временная метка события
 
-    <Image img="/images/cloud/security/activity_log2.webp" size="md" alt="Таблица активности ClickHouse Cloud" border />
+    ![Таблица активности ClickHouse Cloud](/images/cloud/security/activity_log2.webp)
 
     <br />
   </Step>
@@ -49,7 +47,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 </Steps>
 
 <div class="eighty-percent">
-  <Image img="/images/cloud/security/activity_log3.webp" size="lg" alt="Экспорт CSV активности ClickHouse Cloud" border />
+  ![Экспорт CSV активности ClickHouse Cloud](/images/cloud/security/activity_log3.webp)
 </div>
 
 <div id="console-audit-log-api">

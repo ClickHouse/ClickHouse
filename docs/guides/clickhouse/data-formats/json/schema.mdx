@@ -7,8 +7,6 @@ score: 20
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/components/Image.jsx";
-
 While [schema inference](/guides/clickhouse/data-formats/json/inference) can be used to establish an initial schema for JSON data and query JSON data files in place, e.g., in S3, you should aim to establish an optimized versioned schema for your data. We discuss the recommended approach for modeling JSON structures below.
 
 ## Static vs dynamic JSON {#static-vs-dynamic-json}
@@ -969,19 +967,19 @@ As a result, for datasets that are mostly consistent but still benefit from the 
 
 ClickHouse stores each JSON path as a subcolumn in a true columnar layout, enabling the same performance benefits seen with traditional columns—such as compression, SIMD-accelerated processing, and minimal disk I/O. Each unique path and type combination in your JSON data can become its own column file on disk.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="Column per JSON path" />
+![Column per JSON path](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
 
 For example, when two JSON paths are inserted with differing types, ClickHouse stores the values of each [concrete type in distinct sub-columns](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). These sub-columns can be accessed independently, minimizing unnecessary I/O. Note that when querying a column with multiple types, its values are still returned as a single columnar response.
 
 Additionally, by leveraging offsets, ClickHouse ensures that these sub-columns remain dense, with no default values stored for absent JSON paths. This approach maximizes compression and further reduces I/O.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="JSON offsets" />
+![JSON offsets](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
 
 However, in scenarios with high-cardinality or highly variable JSON structures—such as telemetry pipelines, logs, or machine-learning feature stores - this behavior can lead to an explosion of column files. Each new unique JSON path results in a new column file, and each type variant under that path results in an additional column file. While this is optimal for read performance, it introduces operational challenges: file descriptor exhaustion, increased memory usage, and slower merges due to a high number of small files.
 
 To mitigate this, ClickHouse introduces the concept of an overflow subcolumn: once the number of distinct JSON paths exceeds a threshold, additional paths are stored in a single shared file using a compact encoded format. This file is still queryable but doesn't benefit from the same performance characteristics as dedicated subcolumns.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="Shared JSON column" />
+![Shared JSON column](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
 
 This threshold is controlled by the [`max_dynamic_paths`](/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) parameter in the JSON type declaration.
 

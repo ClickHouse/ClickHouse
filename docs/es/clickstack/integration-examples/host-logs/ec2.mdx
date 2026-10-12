@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['EC2', 'AWS', 'logs de host', 'systemd', 'syslog', 'OTEL', 'ClickStack', 'monitorización del sistema', 'metadatos de la nube']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/es/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -292,9 +290,9 @@ Si desea probar la integración de logs de host de EC2 antes de configurar su in
        * `host.type` (tipo de instancia)
        * `cloud.availability_zone`
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view.webp" alt="Vista de búsqueda de logs de EC2" />
+    ![Vista de búsqueda de logs de EC2](/images/clickstack/host-logs/ec2/search-view.webp)
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view.webp" alt="Detalle de log de EC2 con metadatos" />
+    ![Detalle de log de EC2 con metadatos](/images/clickstack/host-logs/ec2/log-view.webp)
   </Step>
 </Steps>
 
@@ -417,9 +415,9 @@ Para quienes quieran probar la integración de log de host de EC2 antes de confi
     4. Filtra por `source:ec2-demo`
     5. Expande una entrada de log para ver los metadatos de EC2 en los atributos del recurso
 
-    <Image img="/images/clickstack/host-logs/ec2/search-view-demo.webp" alt="Vista de búsqueda de logs de EC2" />
+    ![Vista de búsqueda de logs de EC2](/images/clickstack/host-logs/ec2/search-view-demo.webp)
 
-    <Image img="/images/clickstack/host-logs/ec2/log-view-demo.webp" alt="Detalle de log de EC2 con metadatos" />
+    ![Detalle de log de EC2 con metadatos](/images/clickstack/host-logs/ec2/log-view-demo.webp)
 
     <Info>
       **Visualización de la zona horaria**
@@ -451,17 +449,17 @@ Para ayudarte a empezar a monitorizar los logs de host de EC2 con ClickStack, pr
     1. Abre HyperDX y ve a la sección dashboard
     2. Haz clic en **Import Dashboard** en la esquina superior derecha, en el menú de los tres puntos
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Botón para importar dashboard" />
+    ![Botón para importar dashboard](/images/clickstack/import-dashboard.webp)
 
     3. Sube el archivo `host-logs-dashboard.json` y haz clic en **Finish Import**
 
-    <Image img="/images/clickstack/host-logs/import-dashboard.webp" alt="Finalizar importación" />
+    ![Finalizar importación](/images/clickstack/host-logs/import-dashboard.webp)
   </Step>
 
   <Step title="Ver el dashboard" id="created-dashboard">
     El dashboard se creará con todas las visualizaciones ya configuradas:
 
-    <Image img="/images/clickstack/host-logs/host-logs-dashboard.webp" alt="Dashboard de logs de EC2" />
+    ![Dashboard de logs de EC2](/images/clickstack/host-logs/host-logs-dashboard.webp)
 
     Puedes filtrar las visualizaciones del dashboard por contexto de EC2:
 

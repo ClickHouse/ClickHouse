@@ -8,8 +8,6 @@ title: 'لوحة المعلومات المتقدمة في ClickHouse Cloud'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 تُعد مراقبة نظام قاعدة بياناتك في بيئة الإنتاج أمرًا بالغ الأهمية
 لفهم حالة النشر لديك، حتى تتمكن من منع الانقطاعات أو معالجتها.
 
@@ -30,7 +28,7 @@ Cloud.
 * اللوحة الجانبية اليسرى
   * `Monitoring` → `Advanced dashboard`
 
-<Image img="/images/cloud/manage/monitoring/advanced_dashboard.webp" size="lg" alt="لوحة المعلومات المتقدمة" />
+![لوحة المعلومات المتقدمة](/images/cloud/manage/monitoring/advanced_dashboard.webp)
 
 <div id="accessing-the-native-advanced-dashboard">
   ## الوصول إلى لوحة المعلومات المتقدمة الأصلية
@@ -45,12 +43,12 @@ Cloud.
 سيؤدي ذلك إلى فتح لوحة المعلومات المتقدمة الأصلية في علامة تبويب جديدة. وستحتاج إلى
 المصادقة للوصول إلى لوحة المعلومات.
 
-<Image img="/images/cloud/manage/monitoring/native_advanced_dashboard.webp" size="lg" alt="لوحة المعلومات المتقدمة" />
+![لوحة المعلومات المتقدمة](/images/cloud/manage/monitoring/native_advanced_dashboard.webp)
 
 يرتبط بكل تصوّر استعلام SQL يزوّده بالبيانات. يمكنك
 تعديل هذا الاستعلام بالنقر على أيقونة القلم.
 
-<Image img="/images/cloud/manage/monitoring/edit_visualization.webp" size="lg" alt="لوحة المعلومات المتقدمة" />
+![لوحة المعلومات المتقدمة](/images/cloud/manage/monitoring/edit_visualization.webp)
 
 <div id="out-of-box-visualizations">
   ## التصورات الجاهزة
@@ -137,7 +135,7 @@ Cloud.
 المقاييس الأساسية لاكتشاف عمليات الإدراج غير المُحسّنة هي **Inserted Rows/sec** و
 **الحد الأقصى لعدد الأجزاء لكل قسم**
 
-<Image img="/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp" size="lg" alt="عمليات الإدراج غير المجمّعة" />
+![عمليات الإدراج غير المجمّعة](/images/cloud/manage/monitoring/inserted_rows_max_parts_for_partition.webp)
 
 يوضح المثال أعلاه ارتفاعين حادين في **Inserted Rows/sec** و **الحد الأقصى لعدد الأجزاء لكل قسم**
 بين الساعة 13 والساعة 14. يشير هذا إلى أننا ندخل البيانات بسرعة معقولة.
@@ -163,7 +161,7 @@ CPU أو الذاكرة. ومع ذلك، من المهم مراقبة هذه ا�
 فيما يلي مثال على وصول استخدام CPU إلى ذروته من دون تغيّر ملحوظ في
 عدد الاستعلامات المنفذة في الثانية.
 
-<Image img="/images/cloud/manage/monitoring/resource_intensive_query.webp" size="lg" alt="استعلام كثيف الموارد" />
+![استعلام كثيف الموارد](/images/cloud/manage/monitoring/resource_intensive_query.webp)
 
 <div id="bad-primary-key-design">
   ### تصميم سيّئ للمفتاح الأساسي
@@ -179,7 +177,7 @@ CPU أو الذاكرة. ومع ذلك، من المهم مراقبة هذه ا�
 إلى زيادة عامة في إجمالي إنتاجية الاستعلامات، كما قد تشير أيضًا إلى وجود استعلامات
 تحدد عددًا كبيرًا من الصفوف لتنفيذها.
 
-<Image img="/images/cloud/manage/monitoring/selected_rows_sec.webp" size="lg" alt="استعلام كثيف الموارد" />
+![استعلام كثيف الموارد](/images/cloud/manage/monitoring/selected_rows_sec.webp)
 
 وباستخدام الطابع الزمني كعامل تصفية، يمكنك العثور على الاستعلامات التي نُفذت وقت
 الذروة في جدول `system.query_log`.

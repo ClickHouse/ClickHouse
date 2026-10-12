@@ -9,8 +9,6 @@ custom_edit_url: null
 hide_advert: true
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 가이드는 클러스터에서 로그, 인프라 메트릭, Kubernetes 이벤트를 Managed ClickStack으로 수집한 다음, 기본 제공 Kubernetes 대시보드에서 확인하는 과정을 안내합니다.
 
 이 패턴은 표준 OpenTelemetry 방식입니다. [OpenTelemetry Helm 차트](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)를 통해 2개의 collector를 배포하며, 각 collector는 OTLP를 통해 ClickStack 게이트웨이 collector로 전달합니다. **데몬셋**은 모든 노드에서 실행되어 컨테이너 로그와 큐블릿 메트릭을 수집합니다. 단일 레플리카를 사용하는 **배포**는 Kubernetes 이벤트와 클러스터 전체 메트릭을 수집합니다. 게이트웨이 역할에 대한 자세한 내용은 [Collector roles](/ko/clickstack/ingesting-data/collector#collector-roles)를 참조하십시오.
@@ -302,15 +300,15 @@ Kubernetes에서 실행되는 워크로드의 경우, 게이트웨이 collector 
   <Step title="ClickStack UI에서 확인" id="confirm-in-ui">
     [ClickHouse Cloud 콘솔](https://console.clickhouse.cloud)에서 서비스를 열고 왼쪽 메뉴에서 **ClickStack**을 선택합니다.
 
-    <Image img="/images/use-cases/observability/clickstack-cloud-v2.webp" size="lg" alt="ClickStack 시작" border />
+    ![ClickStack 시작](/images/use-cases/observability/clickstack-cloud-v2.webp)
 
     **검색** 뷰에서 소스를 `Logs`로 전환하고 시간 범위를 **Last 15 minutes**로 설정합니다. 그러면 클러스터 전반의 컨테이너 로그가 몇 초 안에 표시되며, `k8s.namespace.name`, `k8s.pod.name`, `k8s.node.name`과 같은 속성으로 보강되어 나타납니다.
 
-    <Image img="/images/use-cases/observability/clickstack-search-with-k8-logs.webp" size="lg" alt="Kubernetes 로그가 포함된 ClickStack 검색 뷰" />
+    ![Kubernetes 로그가 포함된 ClickStack 검색 뷰](/images/use-cases/observability/clickstack-search-with-k8-logs.webp)
 
     인프라 메트릭과 이벤트를 함께 보려면 **Dashboards** -&gt; **Kubernetes**로 이동해 기본 제공 **Kubernetes** 대시보드를 엽니다. `Pods`, `Nodes`, `Namespaces` 탭에 모두 데이터가 표시되어야 합니다.
 
-    <Image img="/images/use-cases/observability/clickstack-dashboard-kubernetes.webp" size="lg" alt="ClickStack Kubernetes 대시보드" border />
+    ![ClickStack Kubernetes 대시보드](/images/use-cases/observability/clickstack-dashboard-kubernetes.webp)
 
     아무것도 표시되지 않으면:
 

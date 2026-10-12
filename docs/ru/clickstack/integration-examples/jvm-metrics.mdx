@@ -6,8 +6,6 @@ description: 'Мониторинг JVM с помощью ClickStack'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -41,7 +39,7 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     3. Перейдите в **Team Settings → API Keys**
     4. Скопируйте свой **ключ API для приёма данных**
 
-    <Image img="/images/clickstack/api-key.webp" alt="Ключ API ClickStack" />
+    ![Ключ API ClickStack](/images/clickstack/api-key.webp)
   </Step>
 
   <Step title="Скачайте Java-агент OpenTelemetry" id="download-agent">
@@ -210,17 +208,17 @@ import { TrackedLink } from "/snippets/ru/components/GalaxyTrackedLink/GalaxyTra
     1. Откройте HyperDX и перейдите в раздел Dashboards
     2. Нажмите **Import Dashboard** в правом верхнем углу в меню с многоточием
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="Кнопка импорта дашборда" />
+    ![Кнопка импорта дашборда](/images/clickstack/import-dashboard.webp)
 
     3. Загрузите файл `jvm-metrics-dashboard.json` и нажмите **Finish Import**
 
-    <Image img="/images/clickstack/jvm/jvm-metrics-import.webp" alt="Завершение импорта" />
+    ![Завершение импорта](/images/clickstack/jvm/jvm-metrics-import.webp)
   </Step>
 
   <Step title="Просмотрите дашборд" id="created-dashboard">
     Дашборд будет создан со всеми преднастроенными визуализациями:
 
-    <Image img="/images/clickstack/jvm/jvm-metrics-dashboard.webp" alt="Дашборд Kafka Metrics" />
+    ![Дашборд Kafka Metrics](/images/clickstack/jvm/jvm-metrics-dashboard.webp)
 
     <Note>
       Для демо-набора данных установите временной диапазон **2025-12-07 14:00:00 - 2025-12-08 14:00:00 (UTC)**. При необходимости скорректируйте его с учетом вашего часового пояса.

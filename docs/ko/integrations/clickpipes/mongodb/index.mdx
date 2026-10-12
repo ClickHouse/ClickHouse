@@ -12,7 +12,6 @@ integration:
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
 
-import { Image } from "/snippets/ko/components/Image.jsx";
 import ChangingTLSSettings from '/snippets/ko/clickpipes/_changing_tls_settings.mdx';
 
 <BetaBadge />
@@ -51,15 +50,15 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 
 1. ClickHouse Cloud 콘솔에서 ClickHouse Cloud 서비스로 이동합니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_service.webp" alt="ClickPipes 서비스" size="lg" border />
+![ClickPipes 서비스](/images/integrations/data-ingestion/clickpipes/cp_service.webp)
 
 2. 왼쪽 메뉴에서 `Data Sources` 버튼을 선택한 다음 &quot;Set up a ClickPipe&quot;를 클릭합니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="가져오기 선택" size="lg" border />
+![가져오기 선택](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
 
 3. `MongoDB CDC` 타일을 선택합니다.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp" alt="MongoDB 선택" size="lg" border />
+![MongoDB 선택](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-tile.webp)
 
 <div id="add-your-source-mongodb-database-connection">
   ### 원본 MongoDB 데이터베이스 연결 추가
@@ -72,7 +71,7 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
   자세한 내용은 [이 페이지 상단](#prerequisites)에 링크된 소스 MongoDB 설정 가이드를 참조하십시오.
 </Info>
 
-<Image img="/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp" alt="연결 정보 입력" size="lg" border />
+![연결 정보 입력](/images/integrations/data-ingestion/clickpipes/mongodb/mongodb-connection-details.webp)
 
 <div id="optional-changing-tls-settings">
   #### (선택 사항) TLS 설정 변경하기
@@ -90,7 +89,7 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 
 2. SSH 연결 정보를 입력합니다.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg" alt="SSH 터널링" size="lg" border />
+   ![SSH 터널링](/images/integrations/data-ingestion/clickpipes/postgres/ssh-tunnel.jpg)
 
 3. 키 기반 인증을 사용하려면 &quot;Revoke and generate key pair&quot;를 클릭하여 새 키 쌍을 생성한 다음, 생성된 공개 키를 SSH 서버의 `~/.ssh/authorized_keys`에 복사합니다.
 
@@ -118,7 +117,7 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 
 5. 여기에서 ClickPipe의 대상 데이터베이스를 선택할 수 있습니다. 기존 데이터베이스를 선택하거나 새로 만들 수 있습니다.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp" alt="대상 데이터베이스 선택" size="lg" border />
+   ![대상 데이터베이스 선택](/images/integrations/data-ingestion/clickpipes/mongodb/select-destination-db.webp)
 
 6. 원본 MongoDB 데이터베이스에서 복제할 테이블을 선택할 수 있습니다. 테이블을 선택할 때 대상 ClickHouse 데이터베이스에서 테이블 이름을 변경할 수도 있습니다.
 
@@ -128,7 +127,7 @@ ClickHouse Cloud 계정에 로그인되어 있는지 확인하십시오. 아직 
 
 7. 권한 드롭다운에서 &quot;Full access&quot; Role을 선택한 다음 &quot;Complete Setup&quot;을 클릭합니다.
 
-   <Image img="/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg" alt="권한 검토" size="lg" border />
+   ![권한 검토](/images/integrations/data-ingestion/clickpipes/postgres/ch-permissions.jpg)
 
 <div id="whats-next">
   ## 다음 단계는?

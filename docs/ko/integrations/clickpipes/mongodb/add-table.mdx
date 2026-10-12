@@ -11,8 +11,6 @@ integration:
   - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 특정 테이블(table)을 파이프에 추가하는 것이 유용한 상황이 있습니다. 트랜잭션 처리 또는 분석 워크로드가 커질수록 이는 흔히 필요한 작업이 됩니다.
 
 <div id="add-tables-steps">
@@ -28,7 +26,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 <br />
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+![](/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp)
 
 5. &quot;update&quot;를 클릭합니다.
 6. 업데이트가 성공하면 파이프 상태는 순서대로 `Setup`, `Snapshot`, `Running`이 됩니다. 테이블의 초기 적재 진행 상황은 **Tables** 탭에서 확인할 수 있습니다.

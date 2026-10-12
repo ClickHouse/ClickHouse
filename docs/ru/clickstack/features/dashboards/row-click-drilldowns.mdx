@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'панели мониторинга', 'детализация', 'таблица', 'щелчок по строке', 'исследование', 'обсервабилити']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Табличная плитка часто представляет собой **каталог**: одна строка на каждый сервис, хост, конечную точку или группу ошибок, с несколькими столбцами, которые дают оценку каждому из них. Действия при щелчке по строке превращают этот каталог в сценарий исследования. Вы просматриваете каталог, чтобы найти нужную строку, щёлкаете по ней, и ClickStack подставляет значения выбранной строки в качестве фильтров. После этого пункт назначения открывается уже с фильтрацией по этому элементу — без необходимости вручную заново собирать запрос.
 
 Щелчок может привести в одно из двух мест:
@@ -40,7 +38,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Упорядочьте по `Requests` по убыванию, чтобы самые загруженные сервисы были вверху. Эта таблица — каталог: одна строка на сервис с оценкой по RED.
 
-    <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="Таблица инвентаря сервисов со столбцами RED (Requests, Errors, P95 Duration) для каждого сервиса, упорядоченная по объёму запросов, над трендом requests over time" size="lg" />
+    ![Таблица инвентаря сервисов со столбцами RED (Requests, Errors, P95 Duration) для каждого сервиса, упорядоченная по объёму запросов, над трендом requests over time](/images/clickstack/dashboards/row-click-catalog.webp)
 
     <Tip>
       **Ставьте столбец группировки первым**
@@ -63,7 +61,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Щёлкните по строке" id="click-dashboard">
     При наведении на строку у правого края таблицы появляется ссылка с подсказкой, описывающей действие (`Open dashboard "Service Detail"`). Щелчок по строке открывает панель мониторинга `Service Detail`, где фильтр `Service` установлен в значение выбранной строки, поэтому все плитки (ключевые показатели RED, процентиль latency, разбивка по конечным точкам) сразу ограничиваются этим сервисом.
 
-    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="Панель мониторинга Service Detail после щелчка по строке: фильтр Service установлен на выбранный сервис, а ключевые показатели RED, процентили latency и разбивка по конечным точкам ограничены этим сервисом" size="lg" />
+    ![Панель мониторинга Service Detail после щелчка по строке: фильтр Service установлен на выбранный сервис, а ключевые показатели RED, процентили latency и разбивка по конечным точкам ограничены этим сервисом](/images/clickstack/dashboards/row-click-drilldown.webp)
   </Step>
 </Steps>
 
@@ -88,7 +86,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   <Step title="Нажмите на строку" id="click-search">
     Теперь при щелчке по строке сервиса открывается страница Search для этого источника трассировок, отфильтрованная по `ServiceName = <service>`, и вы сразу попадаете на спаны только этого сервиса в том же временном диапазоне.
 
-    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="Страница Search, открытая для источника трассировок после щелчка по строке и отфильтрованная по выбранному сервису" size="lg" />
+    ![Страница Search, открытая для источника трассировок после щелчка по строке и отфильтрованная по выбранному сервису](/images/clickstack/dashboards/row-click-search-drilldown.webp)
   </Step>
 </Steps>
 
@@ -100,7 +98,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 Действия по щелчку на строке настраиваются прямо в плитке таблицы; отдельной страницы для них нет. Добавьте плитку или измените существующую и задайте для нее тип визуализации **Table**. После этого на панели инструментов редактора рядом с **Display Settings** появится кнопка **Row Click Action**. Она показывается только для плиток таблиц, а ее метка отражает текущее действие: `Row Click Action: Default`, `Row Click Action: Search` или `Row Click Action: Dashboard`. Нажмите ее, чтобы открыть выдвижную панель.
 
-<Image img="/images/clickstack/dashboards/row-click-drawer.webp" alt="Выдвижная панель Row Click Action в режиме Dashboard, где в качестве цели выбрана панель мониторинга Service Detail, а фильтр ServiceName шаблонизируется на основе строки, по которой щелкнули" size="lg" />
+![Выдвижная панель Row Click Action в режиме Dashboard, где в качестве цели выбрана панель мониторинга Service Detail, а фильтр ServiceName шаблонизируется на основе строки, по которой щелкнули](/images/clickstack/dashboards/row-click-drawer.webp)
 
 Выдвижная панель предлагает три действия:
 

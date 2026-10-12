@@ -7,8 +7,6 @@ keywords: ['ML', 'Jupyer', 'chDB', 'pandas']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 在本指南中，你将了解如何借助 [chDB](/zh/chdb/index) (由 ClickHouse 提供支持的高性能进程内 SQL OLAP Engine) ，在 Jupyter 笔记本中探索 ClickHouse Cloud 上的数据集。
 
 **前置条件**：
@@ -39,15 +37,15 @@ import { Image } from "/snippets/zh/components/Image.jsx";
 
 在左侧菜单中，点击 `Data sources`。然后点击 `Predefined sample data`：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/1.webp" alt="添加示例数据集" />
+![添加示例数据集](/images/use-cases/AI_ML/jupyter/1.webp)
 
 在英国房产成交价格数据 (4GB) 卡片中点击 `Get started`：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/2.webp" alt="选择英国房价成交数据集" />
+![选择英国房价成交数据集](/images/use-cases/AI_ML/jupyter/2.webp)
 
 然后点击 `Import dataset`：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/3.webp" alt="导入英国房价成交数据集" />
+![导入英国房价成交数据集](/images/use-cases/AI_ML/jupyter/3.webp)
 
 ClickHouse 将自动在 `default` 数据库中创建 `pp_complete` 表，并向该表填充 2892 万行价格点数据。
 
@@ -80,12 +78,12 @@ jupyter notebook
 此时应会打开一个新的浏览器窗口，并显示 `localhost:8888` 上的 Jupyter 界面。
 点击 `File` &gt; `New` &gt; `Notebook`，创建一个新的笔记本。
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/4.webp" alt="创建新笔记本" />
+![创建新笔记本](/images/use-cases/AI_ML/jupyter/4.webp)
 
 系统会提示你选择一个内核。
 选择任意一个可用的 Python 内核，本示例中我们选择 `ipykernel`：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/5.webp" alt="选择内核" />
+![选择内核](/images/use-cases/AI_ML/jupyter/5.webp)
 
 在空白单元格中，输入以下命令安装 chDB，我们将使用它连接到远程 ClickHouse Cloud 实例：
 
@@ -165,7 +163,7 @@ df.head()
 
 `df.head` 仅显示返回数据的前几行：
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/6.webp" alt="数据框预览" />
+![数据框预览](/images/use-cases/AI_ML/jupyter/6.webp)
 
 在新单元格中运行以下命令，以检查各列的数据类型：
 
@@ -202,7 +200,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/7.webp" alt="数据框预览" />
+![数据框预览](/images/use-cases/AI_ML/jupyter/7.webp)
 
 不出所料，伦敦的房价随着时间推移已经大幅上涨。
 
@@ -258,7 +256,7 @@ df_2.head()
   ```
 </Accordion>
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/8.webp" alt="数据框预览" />
+![数据框预览](/images/use-cases/AI_ML/jupyter/8.webp)
 
 虽然缺少 2020 年及之后的数据，但我们仍然可以将这两个数据集在 1995 年到 2019 年期间绘制在同一张图中进行对比。
 在新的单元格中运行以下命令：
@@ -304,7 +302,7 @@ plt.tight_layout()
 plt.show()
 ```
 
-<Image size="md" img="/images/use-cases/AI_ML/jupyter/9.webp" alt="远程数据集和本地数据集的图表" />
+![远程数据集和本地数据集的图表](/images/use-cases/AI_ML/jupyter/9.webp)
 
 从图中可以看出，1995 年的销售量起步于约 160,000，随后快速攀升，并在 1999 年达到约 540,000 的峰值。
 此后，成交量一路大幅下滑，至 2000 年代中期持续走低，在 2007—2008 年金融危机期间更是明显萎缩，降至约 140,000。

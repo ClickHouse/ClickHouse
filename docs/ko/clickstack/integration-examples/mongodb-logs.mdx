@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['MongoDB', '로그', 'OTEL', 'ClickStack', '데이터베이스 모니터링', '느린 쿼리']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -177,9 +175,9 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
   <Step title="HyperDX에서 로그 확인" id="verifying-logs">
     구성이 완료되면 HyperDX에 로그인하여 로그가 정상적으로 수집되는지 확인합니다:
 
-    <Image img="/images/clickstack/mongodb/search-view.webp" alt="MongoDB 로그 검색 화면" />
+    ![MongoDB 로그 검색 화면](/images/clickstack/mongodb/search-view.webp)
 
-    <Image img="/images/clickstack/mongodb/log-view.webp" alt="MongoDB 로그 상세 화면" />
+    ![MongoDB 로그 상세 화면](/images/clickstack/mongodb/log-view.webp)
   </Step>
 </Steps>
 
@@ -277,9 +275,9 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     2. 검색 보기로 이동한 다음 소스를 `Logs`로 설정합니다
     3. 시간 범위에 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**가 포함되도록 설정합니다
 
-    <Image img="/images/clickstack/mongodb/search-view.webp" alt="MongoDB 로그 검색 보기" />
+    ![MongoDB 로그 검색 보기](/images/clickstack/mongodb/search-view.webp)
 
-    <Image img="/images/clickstack/mongodb/log-view.webp" alt="MongoDB 로그 상세 보기" />
+    ![MongoDB 로그 상세 보기](/images/clickstack/mongodb/log-view.webp)
   </Step>
 </Steps>
 
@@ -296,17 +294,17 @@ import { TrackedLink } from "/snippets/ko/components/GalaxyTrackedLink/GalaxyTra
     1. HyperDX를 열고 Dashboards 섹션으로 이동합니다.
     2. 오른쪽 상단의 줄임표 메뉴에서 &quot;Import Dashboard&quot;를 클릭합니다.
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="대시보드 가져오기" />
+    ![대시보드 가져오기](/images/clickstack/import-dashboard.webp)
 
     3. mongodb-logs-dashboard.json 파일을 업로드한 다음 &quot;Finish Import&quot;를 클릭합니다.
 
-    <Image img="/images/clickstack/mongodb/finish-import.webp" alt="MongoDB 로그 대시보드 가져오기 완료" />
+    ![MongoDB 로그 대시보드 가져오기 완료](/images/clickstack/mongodb/finish-import.webp)
   </Step>
 
   <Step title="대시보드가 생성되며 모든 시각화가 미리 구성됩니다" id="created-dashboard">
     데모 데이터세트를 사용하는 경우 시간 범위에 **2026-03-09 00:00:00 - 2026-03-10 00:00:00 (UTC)**가 포함되도록 설정합니다.
 
-    <Image img="/images/clickstack/mongodb/example-dashboard.webp" alt="MongoDB 로그 대시보드" />
+    ![MongoDB 로그 대시보드](/images/clickstack/mongodb/example-dashboard.webp)
   </Step>
 </Steps>
 

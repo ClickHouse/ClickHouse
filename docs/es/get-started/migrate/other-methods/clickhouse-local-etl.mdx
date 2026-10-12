@@ -7,11 +7,9 @@ description: 'Guía sobre cómo migrar a ClickHouse con clickhouse-local'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import AddARemoteSystem from '/snippets/es/_add_remote_ip_access_list_detail.mdx';
 
-<Image img="/images/integrations/migration/ch-local-01.webp" size="lg" alt="Migración de ClickHouse autogestionado" />
+![Migración de ClickHouse autogestionado](/images/integrations/migration/ch-local-01.webp)
 
 Puede usar ClickHouse o, más concretamente, [`clickhouse-local`](/es/concepts/features/tools-and-utilities/clickhouse-local)
 como herramienta ETL para migrar datos desde su sistema de base de datos actual a ClickHouse Cloud, siempre que para dicho sistema exista un
@@ -27,7 +25,7 @@ Para todos los demás sistemas de bases de datos populares, el proveedor del sis
   ## ¿Qué es clickhouse-local?
 </div>
 
-<Image img="/images/integrations/migration/ch-local-02.webp" size="lg" alt="Migración de ClickHouse autogestionado" />
+![Migración de ClickHouse autogestionado](/images/integrations/migration/ch-local-02.webp)
 
 Normalmente, ClickHouse se ejecuta como un clúster, en el que varias instancias del motor de base de datos ClickHouse se ejecutan de forma distribuida en distintos servidores.
 
@@ -95,7 +93,7 @@ En ese host, descargue la compilación adecuada de `clickhouse-local` según el 
 Usaremos el [motor de tabla de integración](/es/reference/engines/table-engines/integrations/mysql) (creado sobre la marcha por la [función de tabla mysql](/es/reference/functions/table-functions/mysql)) para leer datos de la base de datos MySQL de origen y usaremos la [función de tabla remoteSecure](/es/reference/functions/table-functions/remote)
 para escribir los datos en una tabla de destino de su servicio de ClickHouse Cloud.
 
-<Image img="/images/integrations/migration/ch-local-03.webp" size="lg" alt="Migración de ClickHouse autogestionado" />
+![Migración de ClickHouse autogestionado](/images/integrations/migration/ch-local-03.webp)
 
 <div id="on-the-destination-clickhouse-cloud-service">
   ### En el servicio de destino de ClickHouse Cloud:

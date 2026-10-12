@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/fr/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <BetaBadge />
 
 Les services ClickHouse Cloud s’adaptent automatiquement en fonction de l’utilisation du CPU et de la mémoire, mais de nombreuses charges de travail suivent des schémas prévisibles : pics quotidiens d’ingestion, traitements par lots exécutés la nuit ou trafic en forte baisse le week-end. Pour ces cas d’usage, Scheduled Scaling vous permet de définir précisément quand votre service doit augmenter ou réduire sa capacité, indépendamment des métriques en temps réel.
@@ -26,9 +24,9 @@ Scheduled Scaling est actuellement disponible en **Beta**.
 
 Pour configurer une planification, accédez à votre service dans la console ClickHouse Cloud, puis ouvrez les paramètres. Sélectionnez ensuite **Schedule Override** et ajoutez une nouvelle règle.
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-1.webp" size="md" alt="Interface des planifications de mise à l’échelle dans la console ClickHouse Cloud, avec des règles de mise à l’échelle définies selon l’heure" border />
+![Interface des planifications de mise à l’échelle dans la console ClickHouse Cloud, avec des règles de mise à l’échelle définies selon l’heure](/images/cloud/features/autoscaling/scheduled-scaling-1.webp)
 
-<Image img="/images/cloud/features/autoscaling/scheduled-scaling-2.webp" size="md" alt="Configuration d’une règle de mise à l’échelle planifiée dans la console ClickHouse Cloud" border />
+![Configuration d’une règle de mise à l’échelle planifiée dans la console ClickHouse Cloud](/images/cloud/features/autoscaling/scheduled-scaling-2.webp)
 
 Chaque règle nécessite :
 

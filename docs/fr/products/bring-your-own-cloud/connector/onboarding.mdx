@@ -7,8 +7,6 @@ doc_type: 'guide'
 ---
 
 import { PrivatePreviewBadge } from '/snippets/fr/components/PrivatePreviewBadge/PrivatePreviewBadge.jsx';
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 <PrivatePreviewBadge />
 
 Cette page vous guide depuis le jeton d’inscription jusqu’à un connector vérifié en mode managé, où l’executor applique le cycle de vie du service piloté par ClickHouse Cloud. Le connector s’installe sur un cluster Kubernetes (Helm) ou une VM Linux (systemd). L’inscription par token est le flux standard. Si votre environnement ne peut pas accéder directement à votre connector endpoint, consultez [les installations isolées et mises en miroir](#air-gapped-and-mirrored-installs). Pour observer une instance ClickHouse que vous exploitez vous-même, sans l’executor, utilisez `--no-managed`.
@@ -88,7 +86,7 @@ ClickHouse Cloud délivre ensuite votre connector endpoint ainsi qu&#39;un jeton
   <Step title="Enregistrer et installer le connecteur" id="enroll-and-install">
     `init --enroll` consomme votre token, obtient un certificat client signé ainsi que le grant cluster-wide de l&#39;executor, puis installe et vérifie le connector.
 
-    <Image img="/images/cloud/reference/byoc-connector-enrollment-flow.svg" size="lg" alt="Flux d’enrollment du ClickHouse Connector" />
+    ![Flux d’enrollment du ClickHouse Connector](/images/cloud/reference/byoc-connector-enrollment-flow.svg)
 
     Dans un terminal, `init` demande `Enable managed mode (ClickHouse manages the lifecycle of ClickHouse services in this cluster)?` avec `yes` présélectionné. Passez `--managed` pour ignorer le prompt, ou `--no-managed` pour une installation en observation seule, sans l&#39;executor. Une installation neuve non assistée sans aucun de ces flags laisse le mode Managed désactivé (une réexécution avec `--force` conserve la posture de la configuration remplacée) : passez donc toujours `--managed` dans vos scripts.
 

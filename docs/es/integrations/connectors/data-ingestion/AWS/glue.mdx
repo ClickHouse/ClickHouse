@@ -10,8 +10,6 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 import { ClickHouseSupportedBadge } from "/snippets/es/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
@@ -41,13 +39,13 @@ Para integrar su código de Glue con ClickHouse, puede usar nuestro conector de 
       <Step title="Activar el conector y crear una conexión" id="activate-the-connector">
         Después de suscribirse, seleccione la versión de Glue que coincida con los requisitos de su job. En la sección **Additional details**, en **Usage instructions**, haga clic en el enlace para **Open Glue Studio - Add ClickHouse connector**. Esto abre la página de creación de conexiones de Glue con los campos clave ya rellenados. Asigne un nombre a la conexión y haga clic en Create (no es necesario proporcionar los detalles de conexión de ClickHouse en esta etapa).
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png" size="md" alt="Instrucciones de uso de AWS Marketplace para el conector ClickHouse Glue" />
+        ![Instrucciones de uso de AWS Marketplace para el conector ClickHouse Glue](/images/integrations/data-ingestion/aws-glue/marketplace-usage-instructions.png)
       </Step>
 
       <Step title="Usarlo en un job de Glue" id="use-in-glue-job">
         En su job de Glue, seleccione la pestaña `Job details` y expanda la ventana `Advanced properties`. En la sección `Connections`, seleccione la conexión que acaba de crear. El conector inyecta automáticamente los JARs necesarios en el entorno de ejecución del job.
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp" size="md" alt="Configuración de conexiones de Notebook de Glue" force="true" />
+        ![Configuración de conexiones de Notebook de Glue](/images/integrations/data-ingestion/aws-glue/notebook-connections-config.webp)
 
         <Note>
           Asegúrese de seleccionar la versión del conector que coincida con la configuración de su job de Glue:
@@ -74,7 +72,7 @@ Para integrar su código de Glue con ClickHouse, puede usar nuestro conector de 
       <Step title="Configurar la ruta de JAR dependientes">
         En la pestaña `Job details`, desplácese hacia abajo, expanda el menú desplegable `Advanced properties` y complete la ruta de los JARs en `Dependent JARs path`:
 
-        <Image img="/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp" size="md" alt="Opciones de ruta de JAR del Notebook de Glue" force="true" />
+        ![Opciones de ruta de JAR del Notebook de Glue](/images/integrations/data-ingestion/aws-glue/dependent_jars_path_option.webp)
       </Step>
     </Steps>
   </Tab>
@@ -155,7 +153,7 @@ Si asoció un secreto de AWS a la propia conexión (opción 1 en [Uso de AWS Sec
   <Tab title="Editor visual">
     Puede usar el conector de ClickHouse como origen o destino en el editor visual de Glue Studio. Solo tiene que arrastrar el componente ClickHouse Spark Connector al lienzo y conectarlo a su pipeline de datos.
 
-    <Image img="/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png" size="md" alt="Editor visual de Glue Studio con el conector de ClickHouse" />
+    ![Editor visual de Glue Studio con el conector de ClickHouse](/images/integrations/data-ingestion/aws-glue/glue-studio-visual-editor.png)
   </Tab>
 
   <Tab title="Scala">

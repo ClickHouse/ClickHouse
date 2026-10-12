@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['Redis', '指标', 'OTel', 'ClickStack']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTrackedLink.jsx";
 
 <Info>
@@ -215,7 +213,7 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     2. 搜索以 `redis.` 开头的指标 (例如：`redis.commands.processed`、`redis.memory.used`)
     3. 你应会看到指标数据点按你配置的采集间隔持续出现
 
-    {/* <Image img={metrics_view} alt="Redis 指标视图"/> */}
+    {/* ![Redis 指标视图](/images/clickstack/redis-metrics-dashboard.webp) */}
   </Step>
 </Steps>
 
@@ -303,17 +301,17 @@ import { TrackedLink } from "/snippets/zh/components/GalaxyTrackedLink/GalaxyTra
     1. 打开 HyperDX 并导航到仪表盘部分
     2. 点击右上角省略号菜单中的 **Import Dashboard**
 
-    <Image img="/images/clickstack/import-dashboard.webp" alt="导入仪表盘按钮" />
+    ![导入仪表盘按钮](/images/clickstack/import-dashboard.webp)
 
     3. 上传 `redis-metrics-dashboard.json` 文件，然后点击 **Finish Import**
 
-    <Image img="/images/clickstack/import-redis-metrics-dashboard.webp" alt="完成导入对话框" />
+    ![完成导入对话框](/images/clickstack/import-redis-metrics-dashboard.webp)
   </Step>
 
   <Step title="查看仪表盘" id="created-dashboard">
     仪表盘创建完成后，所有可视化都将预先配置好：
 
-    <Image img="/images/clickstack/redis-metrics-dashboard.webp" alt="Redis 指标 仪表盘" />
+    ![Redis 指标 仪表盘](/images/clickstack/redis-metrics-dashboard.webp)
 
     <Note>
       对于演示数据集，请将时间范围设置为 **2025-10-20 05:00:00 - 2025-10-21 05:00:00 (UTC)** (请根据你的本地时区调整) 。导入的仪表盘默认不会指定时间范围。

@@ -6,8 +6,6 @@ description: 'S3 ClickPipes에서 지속적인 수집용 비순차 모드를 구
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 기본적으로 S3 ClickPipe는 파일이 버킷에 [사전순](/ko/integrations/clickpipes/object-storage/amazon-s3/overview#continuous-ingestion-lexicographical-order)으로 추가된다고 가정합니다. [Amazon SQS](https://aws.amazon.com/sqs/) 큐를 버킷에 연결하고, 필요에 따라 [Amazon EventBridge](https://aws.amazon.com/eventbridge/)를 이벤트 라우터로 사용하도록 설정하면 파일명만으로는 순서를 알 수 없는 파일도 수집하도록 S3 ClickPipe를 구성할 수 있습니다. 이렇게 하면 ClickPipes가 `ObjectCreated:*` 이벤트를 수신하여 파일 이름 규칙과 관계없이 새 파일을 모두 수집할 수 있습니다.
 
 <Note>
@@ -44,11 +42,11 @@ import { Image } from "/snippets/ko/components/Image.jsx";
       <Tab title="EventBridge 사용">
         **a.** S3 버킷 속성에서 **Event notifications &gt; Amazon EventBridge**로 이동한 다음, EventBridge로 알림을 전송하도록 활성화합니다. **Save changes**를 클릭합니다.
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp" alt="S3 버킷 속성에서 Amazon EventBridge 알림 활성화" size="lg" border />
+        ![S3 버킷 속성에서 Amazon EventBridge 알림 활성화](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_s3_enable.webp)
 
         **b.** AWS Console에서 **Amazon EventBridge &gt; Rules &gt; Create rule**로 이동합니다. 규칙 이름(예: `S3ObjectCreated`)을 지정하고 **default** 이벤트 버스를 선택한 다음 **다음**을 클릭합니다. **Build event pattern** 단계에서 이벤트 소스로 **AWS events or EventBridge partner events**를 선택한 후, 아래 이벤트 패턴을 수동으로 입력합니다. 이때 `<bucket-name>`은 버킷 이름으로 바꾸십시오.
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp" alt="EventBridge 규칙 이름 및 이벤트 버스 정의" size="lg" border />
+        ![EventBridge 규칙 이름 및 이벤트 버스 정의](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_define.webp)
 
         ```json
         {
@@ -66,9 +64,9 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
         **c.** **Select target(s)** 단계에서 대상 유형으로 **AWS service**를 선택하고 **SQS queue**를 선택합니다. 이전 단계에서 생성한 큐를 선택합니다. EventBridge가 필요한 IAM role을 자동 생성할 수 있도록 &#42;&#42;Use execution role (recommended)&#42;&#42;은 체크된 상태로 그대로 둔 다음, **다음**을 클릭하고 마법사를 완료합니다.
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp" alt="EventBridge 규칙 대상으로 SQS 큐 설정" size="lg" border />
+        ![EventBridge 규칙 대상으로 SQS 큐 설정](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_target.webp)
 
-        <Image img="/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp" alt="EventBridge 규칙이 성공적으로 생성됨" size="lg" border />
+        ![EventBridge 규칙이 성공적으로 생성됨](/images/integrations/data-ingestion/clickpipes/object-storage/amazon-s3/cp_eb_rule_created.webp)
 
         **d.** EventBridge가 이 큐로 메시지를 전송할 수 있도록 SQS 큐 액세스 정책을 편집합니다. `<sqs-queue-arn>` 및 `<eventbridge-rule-arn>`을 적절한 값으로 바꾸십시오:
 

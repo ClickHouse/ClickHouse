@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['индексы пропуска данных', 'пропуск данных', 'производительность', 'индексирование', 'рекомендации']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="introduction">
   ## Введение
 </div>
@@ -103,7 +101,7 @@ SELECT * FROM skip_table WHERE my_value IN (125, 700)
 Более наглядно это выглядит так: были прочитаны и отобраны 4096 строк, у которых `my_value` равно 125, а следующие строки
 были пропущены без чтения с диска:
 
-<Image img="/images/guides/best-practices/simple_skip.webp" size="md" alt="Простой пропуск" />
+![Простой пропуск](/images/guides/best-practices/simple_skip.webp)
 
 Подробную информацию об использовании индекса пропуска данных можно получить, включив trace при выполнении запросов.  В
 clickhouse-client задайте `send_logs_level`:
@@ -222,7 +220,7 @@ SET send_logs_level='trace';
 
 Рассмотрим следующее распределение данных:
 
-<Image img="/images/guides/best-practices/bad_skip.webp" size="md" alt="Плохой пропуск" />
+![Плохой пропуск](/images/guides/best-practices/bad_skip.webp)
 
 Предположим, что primary/ключ ORDER BY — `timestamp`, и есть индекс по `visitor_id`. Рассмотрим следующий запрос:
 

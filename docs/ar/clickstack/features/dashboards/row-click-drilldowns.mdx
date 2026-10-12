@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'لوحات المعلومات', 'التعمق', 'جدول', 'النقر على الصف', 'الفحص', 'الرصد']
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 غالبًا ما تكون بطاقة الجدول **فهرسًا**: صف واحد لكل خدمة، أو مضيف، أو نقطة نهاية، أو مجموعة أخطاء، مع بضعة أعمدة تُقيِّم كلًّا منها. وتحوِّل إجراءات النقر على الصف هذا الفهرس إلى مسار عمل للفحص. تستعرض الفهرس للعثور على الصف المهم، ثم تنقر عليه، فيمرّر ClickStack قيم الصف الذي نُقر عليه كعوامل تصفية. ثم تُفتح الوجهة وهي محددة النطاق مسبقًا لذلك العنصر وحده، من دون الحاجة إلى إعادة إنشاء الاستعلام يدويًا.
 
 يمكن أن ينقلك النقر إلى أحد موضعين:
@@ -40,7 +38,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     رتّب حسب `Requests` ترتيبًا تنازليًا بحيث تظهر أكثر الخدمات نشاطًا في الأعلى. هذا الجدول هو الفهرس: صف واحد لكل خدمة، مع تقييمها وفق RED.
 
-    <Image img="/images/clickstack/dashboards/row-click-catalog.webp" alt="جدول قائمة الخدمات مع أعمدة RED (`Requests` و`Errors` و`P95 Duration`) لكل خدمة، مرتبًا حسب حجم الطلبات، وفوقه اتجاه للطلبات بمرور الوقت" size="lg" />
+    ![جدول قائمة الخدمات مع أعمدة RED (`Requests` و`Errors` و`P95 Duration`) لكل خدمة، مرتبًا حسب حجم الطلبات، وفوقه اتجاه للطلبات بمرور الوقت](/images/clickstack/dashboards/row-click-catalog.webp)
 
     <Tip>
       **ابدأ بعمود Group By**
@@ -63,7 +61,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="انقر على صف" id="click-dashboard">
     يكشف تمرير المؤشر فوق صف عن رابط على الحافة اليمنى للجدول، مع تلميح يصف الإجراء (`Open dashboard "Service Detail"`). ويؤدي النقر على الصف إلى فتح لوحة معلومات `Service Detail` مع ضبط عامل التصفية `Service` على القيمة التي نُقر عليها، بحيث يُعاد ضبط نطاق كل بطاقة (مؤشرات RED الأساسية، والنسب المئوية لزمن الاستجابة، والتقسيم بحسب نقطة النهاية) على تلك الخدمة وحدها بنقرة واحدة.
 
-    <Image img="/images/clickstack/dashboards/row-click-drilldown.webp" alt="لوحة معلومات `Service Detail` بعد النقر على صف، مع ضبط عامل التصفية `Service` على الخدمة التي نُقر عليها، بحيث تقتصر عليها مؤشرات RED الأساسية والنسب المئوية لزمن الاستجابة والتقسيم بحسب نقطة النهاية جميعًا" size="lg" />
+    ![لوحة معلومات `Service Detail` بعد النقر على صف، مع ضبط عامل التصفية `Service` على الخدمة التي نُقر عليها، بحيث تقتصر عليها مؤشرات RED الأساسية والنسب المئوية لزمن الاستجابة والتقسيم بحسب نقطة النهاية جميعًا](/images/clickstack/dashboards/row-click-drilldown.webp)
   </Step>
 </Steps>
 
@@ -88,7 +86,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="انقر على صف" id="click-search">
     يؤدي النقر على صف خدمة الآن إلى فتح صفحة Search لهذا المصدر الخاص بالتتبعات، مع تصفيتها إلى `ServiceName = <service>`، بحيث تصل إلى spans الخاصة بتلك الخدمة فقط ضمن النطاق الزمني نفسه.
 
-    <Image img="/images/clickstack/dashboards/row-click-search-drilldown.webp" alt="تم فتح صفحة Search على مصدر التتبعات بعد النقر على صف، مع تصفيتها إلى الخدمة التي نُقر عليها" size="lg" />
+    ![تم فتح صفحة Search على مصدر التتبعات بعد النقر على صف، مع تصفيتها إلى الخدمة التي نُقر عليها](/images/clickstack/dashboards/row-click-search-drilldown.webp)
   </Step>
 </Steps>
 
@@ -100,7 +98,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 تُضبط إجراءات النقر على الصف من بطاقة الجدول نفسها؛ ولا توجد لها صفحة منفصلة. أضف بطاقة أو حرّرها، واضبط نوع التصور فيها على **Table**. عندها يظهر زر **Row Click Action** في شريط أدوات المحرر بجانب **Display Settings**. لا يظهر هذا الزر إلا لبطاقات الجدول، ويعكس عنوانه الإجراء الحالي: `Row Click Action: Default` أو `Row Click Action: Search` أو `Row Click Action: Dashboard`. انقر عليه لفتح الدرج.
 
-<Image img="/images/clickstack/dashboards/row-click-drawer.webp" alt="درج Row Click Action في وضع Dashboard، مع تحديد لوحة المعلومات Service Detail كوجهة وتعيين عامل تصفية ServiceName من الصف المنقور باستخدام قالب" size="lg" />
+![درج Row Click Action في وضع Dashboard، مع تحديد لوحة المعلومات Service Detail كوجهة وتعيين عامل تصفية ServiceName من الصف المنقور باستخدام قالب](/images/clickstack/dashboards/row-click-drawer.webp)
 
 يوفّر الدرج ثلاثة إجراءات:
 

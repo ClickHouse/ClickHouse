@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['clickstack', 'тестовые данные', 'тестовый набор данных', 'журналы', 'обсервабилити']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 Это руководство по началу работы поможет вам собирать локальные журналы и метрики вашей системы и отправлять их в ClickStack для визуализации и анализа.
 
 **Этот пример работает только в системах OSX и Linux**
@@ -123,7 +121,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
       <Step title="Выберите сервис" id="select-your-service">
         На главной странице ClickHouse Cloud выберите сервис с Управляемым ClickStack.
 
-        <Image img="/images/clickstack/select_service.webp" alt="Выберите сервис" size="lg" />
+        ![Выберите сервис](/images/clickstack/select_service.webp)
       </Step>
 
       <Step title="Просмотр системных журналов" id="navigate-to-the-hyperdx-ui">
@@ -131,7 +129,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
         В интерфейсе поиска уже должны отображаться локальные системные журналы. Разверните фильтры и выберите `system.log`:
 
-        <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="Локальные журналы HyperDX" size="lg" />
+        ![Локальные журналы HyperDX](/images/use-cases/observability/hyperdx-20.webp)
       </Step>
 
       <Step title="Изучение системных метрик" id="explore-system-metrics">
@@ -143,15 +141,15 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
         Нажмите кнопку `Run`, чтобы увидеть использование памяти с течением времени.
 
-        <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Использование памяти с течением времени" size="lg" />
+        ![Использование памяти с течением времени](/images/use-cases/observability/hyperdx-21.webp)
 
         Обратите внимание, что значение возвращается в виде числа с плавающей точкой в `%`. Чтобы отобразить его нагляднее, выберите `Set number format`.
 
-        <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="Формат числа" size="lg" />
+        ![Формат числа](/images/use-cases/observability/hyperdx-22.webp)
 
         В следующем меню выберите `Percentage` в раскрывающемся списке `Output format`, затем нажмите `Apply`.
 
-        <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="Процент использования памяти с течением времени" size="lg" />
+        ![Процент использования памяти с течением времени](/images/use-cases/observability/hyperdx-23.webp)
       </Step>
     </Steps>
   </Tab>
@@ -268,7 +266,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Источники данных должны быть созданы автоматически. В поисковом интерфейсе должны отображаться локальные системные журналы. Разверните фильтры и выберите `system.log`:
 
-    <Image img="/images/use-cases/observability/hyperdx-20.webp" alt="Локальные журналы HyperDX" size="lg" />
+    ![Локальные журналы HyperDX](/images/use-cases/observability/hyperdx-20.webp)
 
     ### Изучение системных метрик
 
@@ -280,14 +278,14 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
     Нажмите кнопку `Run`, чтобы увидеть использование памяти с течением времени.
 
-    <Image img="/images/use-cases/observability/hyperdx-21.webp" alt="Использование памяти с течением времени" size="lg" />
+    ![Использование памяти с течением времени](/images/use-cases/observability/hyperdx-21.webp)
 
     Обратите внимание, что значение возвращается в виде числа с плавающей точкой в `%`. Чтобы отобразить его нагляднее, выберите `Set number format`.
 
-    <Image img="/images/use-cases/observability/hyperdx-22.webp" alt="Формат числа" size="lg" />
+    ![Формат числа](/images/use-cases/observability/hyperdx-22.webp)
 
     В следующем меню выберите `Percentage` в раскрывающемся списке `Output format`, затем нажмите `Apply`.
 
-    <Image img="/images/use-cases/observability/hyperdx-23.webp" alt="Процент использования памяти с течением времени" size="lg" />
+    ![Процент использования памяти с течением времени](/images/use-cases/observability/hyperdx-23.webp)
   </Tab>
 </Tabs>

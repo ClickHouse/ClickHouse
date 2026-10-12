@@ -6,8 +6,6 @@ description: 'معلومات إضافية حول الترحيل من PostgreSQL'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <div id="postgres-vs-clickhouse-equivalent-and-different-concepts">
   ## Postgres مقابل ClickHouse: المفاهيم المتكافئة والمختلفة
 </div>
@@ -40,7 +38,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
 تبدأ عملية النسخ المتماثل في ClickHouse (1) عندما تُدرَج البيانات في أي نسخة متماثلة. وتُكتَب هذه البيانات، بصيغة insert الخام الخاصة بها، (2) على القرص مع checksums الخاصة بها. وبعد اكتمال الكتابة، تحاول النسخة المتماثلة (3) تسجيل جزء البيانات الجديد هذا في Keeper من خلال تخصيص رقم block فريد وتسجيل تفاصيل الجزء الجديد. ثم تقوم النسخ المتماثلة الأخرى، عند (4) اكتشاف إدخالات جديدة في سجل النسخ المتماثل، (5) بتنزيل جزء البيانات المقابل عبر بروتوكول HTTP داخلي، مع التحقق منه بمطابقته مع checksums المدرجة في ZooKeeper. وتضمن هذه الطريقة أن تمتلك جميع النسخ المتماثلة، في نهاية المطاف، بيانات متسقة ومحدّثة رغم اختلاف سرعات المعالجة أو احتمال حدوث تأخيرات. وعلاوة على ذلك، يستطيع النظام التعامل مع عمليات متعددة بالتوازي، مما يحسّن عمليات إدارة البيانات ويتيح للنظام قابلية التوسع والمتانة في مواجهة تفاوت العتاد.
 
-<Image img="/images/integrations/data-ingestion/dbms/postgres-replicas.webp" size="md" alt="الاتساق النهائي" />
+![الاتساق النهائي](/images/integrations/data-ingestion/dbms/postgres-replicas.webp)
 
 لاحظ أن ClickHouse Cloud يستخدم [آلية نسخ متماثل محسّنة للسحابة](https://clickhouse.com/blog/clickhouse-cloud-boosts-performance-with-sharedmergetree-and-lightweight-updates) ومكيّفة مع معمارية الفصل بين التخزين والحوسبة. ومن خلال تخزين البيانات في تخزين كائني مشترك، تصبح البيانات متاحة تلقائيًا لجميع عقد الحوسبة من دون الحاجة إلى نسخها ماديًا بين العقد. وبدلًا من ذلك، يُستخدم Keeper فقط لمشاركة البيانات الوصفية (أي ما البيانات الموجودة وأين توجد في التخزين الكائني) بين عقد الحوسبة.
 

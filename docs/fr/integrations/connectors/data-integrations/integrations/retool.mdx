@@ -11,8 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/fr/_gather_your_details_http.mdx';
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -25,32 +23,32 @@ import { PartnerBadge } from "/snippets/fr/components/PartnerBadge/PartnerBadge.
   <Step title="Créer une ressource ClickHouse" id="2-create-a-clickhouse-resource">
     Connectez-vous à votre compte Retool et accédez à l’onglet *Resources*. Choisissez &quot;Create New&quot; -&gt; &quot;Resource&quot; :
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="Création d’une nouvelle ressource" />
+    ![Création d’une nouvelle ressource](/images/integrations/tools/data-integration/retool/retool_01.webp)
 
     <br />
 
     Sélectionnez &quot;JDBC&quot; dans la liste des connecteurs disponibles :
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="Choix du connecteur JDBC" />
+    ![Choix du connecteur JDBC](/images/integrations/tools/data-integration/retool/retool_02.webp)
 
     <br />
 
     Dans l’assistant de configuration, assurez-vous de sélectionner `com.clickhouse.jdbc.ClickHouseDriver` comme &quot;Driver name&quot; :
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="Sélection du bon driver" />
+    ![Sélection du bon driver](/images/integrations/tools/data-integration/retool/retool_03.webp)
 
     <br />
 
     Renseignez vos identifiants ClickHouse au format suivant : `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`.
     Si votre instance nécessite SSL ou si vous utilisez ClickHouse Cloud, ajoutez `&ssl=true` à la chaîne de connexion, afin d’obtenir `jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true`
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="Saisie de vos identifiants" />
+    ![Saisie de vos identifiants](/images/integrations/tools/data-integration/retool/retool_04.webp)
 
     <br />
 
     Ensuite, testez votre connexion :
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="Test de votre connexion" />
+    ![Test de votre connexion](/images/integrations/tools/data-integration/retool/retool_05.webp)
 
     <br />
 

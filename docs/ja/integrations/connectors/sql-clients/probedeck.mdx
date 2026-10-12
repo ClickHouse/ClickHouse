@@ -12,7 +12,6 @@ integration:
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
 
-import { Image } from "/snippets/ja/components/Image.jsx";
 import { CommunityMaintainedBadge } from "/snippets/ja/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -71,7 +70,7 @@ ProbeDeckが設定済みのメモリ制限の取得に使用する`system.server
     ClickHouse Cloud では、Cloud API およびクエリ API エンドポイントに対して、**API Keys** ページの組織レベルのキーを使用します。
     ProbeDeck の SQL 接続フローでは、これらのキーは使用しません。
 
-    <Image img="/images/integrations/sql-clients/probedeck-add-connection.png" size="sm" border alt="ClickHouse ユーザー名を使用し、ポート 8443 の HTTPS 向けに設定された ProbeDeck の接続フォーム" />
+    ![ClickHouse ユーザー名を使用し、ポート 8443 の HTTPS 向けに設定された ProbeDeck の接続フォーム](/images/integrations/sql-clients/probedeck-add-connection.png)
   </Step>
 </Steps>
 
@@ -147,11 +146,11 @@ ProbeDeck は、接続のシークレットとインポートした鍵素材を�
 | メモリとサーバーメトリクス              | `system.metrics`, `system.asynchronous_metrics`, `system.server_settings` |
 | クエリレートとディスクレートの履歴          | `system.metric_log`, `system.asynchronous_metric_log`                     |
 
-<Image img="/images/integrations/sql-clients/probedeck-dashboard.png" size="sm" border alt="実行中のクエリ、レプリケーション、ディスク、パーツ、ミューテーション、マージ、クエリレート、メモリを表示する ProbeDeck の監視ダッシュボード" />
+![実行中のクエリ、レプリケーション、ディスク、パーツ、ミューテーション、マージ、クエリレート、メモリを表示する ProbeDeck の監視ダッシュボード](/images/integrations/sql-clients/probedeck-dashboard.png)
 
 **実行中のクエリ**をタップすると、アクティブなクエリを経過時間順にソートし、メモリ使用量と読み取り行数を確認できます。
 
-<Image img="/images/integrations/sql-clients/probedeck-running-queries.png" size="sm" border alt="経過時間順にソートされた ProbeDeck の実行中クエリ一覧" />
+![経過時間順にソートされた ProbeDeck の実行中クエリ一覧](/images/integrations/sql-clients/probedeck-running-queries.png)
 
 <div id="query-the-uk-property-price-dataset">
   ## UK property price dataset をクエリする

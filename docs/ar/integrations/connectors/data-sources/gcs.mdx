@@ -8,8 +8,6 @@ keywords: ['Google Cloud Storage ClickHouse', 'تكامل GCS مع ClickHouse', 
 ---
 
 import BucketDetails from '/snippets/ar/_GCS_authentication_and_bucket.mdx';
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <Note>
   إذا كنت تستخدم ClickHouse Cloud على [Google Cloud](https://cloud.google.com)، فلا تنطبق عليك هذه الصفحة لأن خدماتك تستخدم بالفعل [Google Cloud Storage](https://cloud.google.com/storage). وإذا كنت تبحث عن كيفية تنفيذ `SELECT` أو `INSERT` على بيانات GCS، فيُرجى مراجعة [دالة الجدول `gcs`](/ar/reference/functions/table-functions/gcs).
 </Note>
@@ -685,10 +683,10 @@ formatReadableSize(total_bytes): 36.42 MiB
   #### الحاوية الخاصة بالنسخة المتماثلة الأولى
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp" size="lg" border alt="حاوية النسخة المتماثلة الأولى في Google Cloud Storage تُظهر بنية المجلدات مع أقسام البيانات" />
+![حاوية النسخة المتماثلة الأولى في Google Cloud Storage تُظهر بنية المجلدات مع أقسام البيانات](/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp)
 
 <div id="bucket-for-replica-two">
   #### حاوية النسخة المتماثلة الثانية
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp" size="lg" border alt="حاوية النسخة المتماثلة الثانية في Google Cloud Storage تُظهر بنية المجلدات مع أقسام البيانات" />
+![حاوية النسخة المتماثلة الثانية في Google Cloud Storage تُظهر بنية المجلدات مع أقسام البيانات](/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp)

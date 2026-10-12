@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['kafka', 'mecanismo de tabela', 'streaming', 'tempo real', 'fila de mensagens']
 ---
 
-import { Image } from "/snippets/pt-BR/components/Image.jsx";
-
 O motor de tabela Kafka pode ser usado para [**ler** dados do](#kafka-to-clickhouse) e [**gravar** dados no](#clickhouse-to-kafka) Apache Kafka e em outros brokers compatíveis com a API do Kafka (por exemplo, Redpanda, Amazon MSK).
 
 <div id="kafka-to-clickhouse">
@@ -31,7 +29,7 @@ O motor de tabela Kafka permite que o ClickHouse leia diretamente de um tópico 
 
 Para persistir esses dados a partir de uma leitura do motor de tabela, precisamos de uma forma de capturá-los e inseri-los em outra tabela. Visões materializadas baseadas em trigger fornecem essa funcionalidade de forma nativa. Uma visão materializada inicia uma leitura no motor de tabela, recebendo lotes de documentos. A cláusula TO determina o destino dos dados — normalmente uma tabela da [família MergeTree](/pt-BR/reference/engines/table-engines/mergetree-family/index). Esse processo é ilustrado abaixo:
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_01.webp" size="lg" alt="Diagrama da arquitetura do motor de tabela Kafka" style={{width: '80%'}} />
+![Diagrama da arquitetura do motor de tabela Kafka](/images/integrations/data-ingestion/kafka/kafka_01.webp)
 
 <div id="steps">
   #### Etapas
@@ -355,7 +353,7 @@ Embora seja um caso de uso menos comum, os dados do ClickHouse também podem ser
 
 Nosso objetivo inicial é ilustrado da melhor forma a seguir:
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_02.webp" size="lg" alt="Diagrama do motor de tabela Kafka com inserções" />
+![Diagrama do motor de tabela Kafka com inserções](/images/integrations/data-ingestion/kafka/kafka_02.webp)
 
 Pressupomos que você tenha as tabelas e views criadas nas etapas de [Kafka para ClickHouse](#kafka-to-clickhouse) e que o tópico tenha sido totalmente consumido.
 
@@ -399,7 +397,7 @@ Pressupomos que você tenha as tabelas e views criadas nas etapas de [Kafka para
   <Step title="Usando visões materializadas" id="2-using-materialized-views">
     Podemos usar visões materializadas para enviar mensagens a um motor Kafka (e a um tópico) quando documentos são inseridos em uma tabela. Quando linhas são inseridas na tabela GitHub, uma visão materializada é acionada, fazendo com que as linhas sejam reinseridas em um motor Kafka e em um novo tópico. Mais uma vez, isso fica mais claro na ilustração:
 
-    <Image img="/images/integrations/data-ingestion/kafka/kafka_03.webp" size="lg" alt="Diagrama do motor de tabela Kafka com visões materializadas" />
+    ![Diagrama do motor de tabela Kafka com visões materializadas](/images/integrations/data-ingestion/kafka/kafka_03.webp)
 
     Crie um novo tópico Kafka `github_out` ou equivalente. Certifique-se de que um motor de tabela Kafka `github_out_queue` aponte para esse tópico.
 
@@ -493,7 +491,7 @@ Por meio de grupos de consumidores do Kafka, várias instâncias do ClickHouse p
 
 Várias instâncias do ClickHouse podem ser configuradas para ler de um tópico usando o mesmo ID de grupo de consumidores, especificado durante a criação do motor de tabela Kafka. Assim, cada instância lerá de uma ou mais partições, inserindo segmentos em sua tabela de destino local. As tabelas de destino, por sua vez, podem ser configuradas para usar um ReplicatedMergeTree para lidar com a duplicação dos dados. Essa abordagem permite escalar as leituras do Kafka com o cluster do ClickHouse, desde que haja partições do Kafka suficientes.
 
-<Image img="/images/integrations/data-ingestion/kafka/kafka_04.webp" size="lg" alt="Diagrama do motor de tabela Kafka com clusters do ClickHouse" />
+![Diagrama do motor de tabela Kafka com clusters do ClickHouse](/images/integrations/data-ingestion/kafka/kafka_04.webp)
 
 <div id="tuning-performance">
   #### Ajuste de desempenho

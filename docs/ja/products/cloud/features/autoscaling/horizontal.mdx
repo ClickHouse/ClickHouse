@@ -7,8 +7,6 @@ title: '水平スケーリング'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { ScalePlanFeatureBadge } from "/snippets/ja/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 
 ## 手動水平スケーリング {#manual-horizontal-scaling}
@@ -29,11 +27,11 @@ ClickHouse Cloudの[public APIs](/ja/products/cloud/api-reference/service/instan
 
 クラスターを水平スケーリングするには、API 経由で `PATCH` リクエストを送信してレプリカ数を調整します。以下のスクリーンショットは、`3` レプリカのクラスターを `6` レプリカへスケールアウトする API 呼び出しと、それに対応するレスポンスを示しています。
 
-<Image img="/images/cloud/manage/scaling-patch-request.webp" size="lg" alt="スケーリング PATCH リクエスト" border />
+![スケーリング PATCH リクエスト](/images/cloud/manage/scaling-patch-request.webp)
 
 *`numReplicas` を更新する `PATCH` リクエスト*
 
-<Image img="/images/cloud/manage/scaling-patch-response.webp" size="md" alt="スケーリング PATCH レスポンス" border />
+![スケーリング PATCH レスポンス](/images/cloud/manage/scaling-patch-response.webp)
 
 *`PATCH` リクエストのレスポンス*
 
@@ -43,10 +41,10 @@ ClickHouse Cloudの[public APIs](/ja/products/cloud/api-reference/service/instan
 
 UI からサービスを水平スケーリングするには、**Settings** ページでそのサービスのレプリカ数を調整します。
 
-<Image img="/images/cloud/manage/scaling-configure.webp" size="md" alt="スケーリング設定" border />
+![スケーリング設定](/images/cloud/manage/scaling-configure.webp)
 
 *ClickHouse Cloud Console のサービスのスケーリング設定*
 
 サービスのスケーリングが完了すると、ClickHouse Cloud Console のメトリクスダッシュボードに、そのサービスへの割り当てが正しく表示されます。以下のスクリーンショットでは、クラスターは合計メモリ `96 GiB` までスケールしており、これはそれぞれ `16 GiB` のメモリが割り当てられた `6` 個のレプリカに相当します。
 
-<Image img="/images/cloud/manage/scaling-memory-allocation.webp" size="md" alt="スケーリング時のメモリ割り当て" border />
+![スケーリング時のメモリ割り当て](/images/cloud/manage/scaling-memory-allocation.webp)

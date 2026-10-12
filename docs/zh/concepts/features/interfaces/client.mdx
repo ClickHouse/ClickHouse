@@ -6,8 +6,6 @@ title: 'ClickHouse 客户端'
 doc_type: 'reference'
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 ClickHouse 提供原生命令行客户端，可直接向 ClickHouse 服务器执行 SQL 查询。
 它同时支持交互模式 (用于实时执行查询) 和批次模式 (用于脚本编写和自动化) 。
 查询结果既可显示在终端中，也可导出到文件，并支持所有 ClickHouse 输出[格式](/zh/reference/formats/index)，例如 Pretty、CSV、JSON 等。
@@ -68,7 +66,7 @@ Connected to ClickHouse server version 24.12.2.
 
 你可以在 ClickHouse Cloud 控制台中查看 ClickHouse Cloud 服务的详细信息。选择要连接的服务，然后点击 **Connect**：
 
-<Image img="/images/_snippets/cloud-connect-button.webp" size="md" alt="ClickHouse Cloud 服务连接按钮" />
+![ClickHouse Cloud 服务连接按钮](/images/_snippets/cloud-connect-button.webp)
 
 <br />
 
@@ -76,7 +74,7 @@ Connected to ClickHouse server version 24.12.2.
 
 选择 **Native**，即可看到详细信息以及一个 `clickhouse-client` 命令示例：
 
-<Image img="/images/_snippets/connection-details-native.webp" size="md" alt="ClickHouse Cloud Native TCP 连接详细信息" />
+![ClickHouse Cloud Native TCP 连接详细信息](/images/_snippets/connection-details-native.webp)
 
 ### 在配置文件中存储连接信息 {#connection-credentials}
 

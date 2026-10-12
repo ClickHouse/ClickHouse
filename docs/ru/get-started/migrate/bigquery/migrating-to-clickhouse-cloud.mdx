@@ -8,15 +8,13 @@ sidebarTitle: 'Руководство по миграции'
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <div id="why-use-clickhouse-cloud-over-bigquery">
   ## Почему стоит использовать ClickHouse Cloud вместо BigQuery?
 </div>
 
 Коротко: ClickHouse быстрее, дешевле и мощнее BigQuery для современной аналитики данных:
 
-<Image img="/images/migrations/bigquery-2.webp" size="md" alt="ClickHouse и BigQuery" />
+![ClickHouse и BigQuery](/images/migrations/bigquery-2.webp)
 
 <div id="loading-data-from-bigquery-to-clickhouse-cloud">
   ## Загрузка данных из BigQuery в ClickHouse Cloud
@@ -28,7 +26,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 
 В качестве примера датасета, чтобы показать типичную миграцию из BigQuery в ClickHouse Cloud, мы используем датасет Stack Overflow, описанный [здесь](/ru/get-started/sample-datasets/stackoverflow). Он содержит все `post`, `vote`, `user`, `comment` и `badge`, появившиеся на Stack Overflow с 2008 года по апрель 2024 года. Схема BigQuery для этих данных показана ниже:
 
-<Image img="/images/migrations/bigquery-3.webp" size="lg" alt="Схема" />
+![Схема](/images/migrations/bigquery-3.webp)
 
 Для пользователей, которые хотят загрузить этот датасет в экземпляр BigQuery, чтобы протестировать шаги миграции, мы предоставили данные для этих таблиц в формате Parquet в бакете GCS, а команды DDL для создания и загрузки таблиц в BigQuery доступны [здесь](https://pastila.nl/?003fd86b/2b93b1a2302cfee5ef79fd374e73f431#hVPC52YDsUfXg2eTLrBdbA==).
 
@@ -51,7 +49,7 @@ BigQuery поддерживает экспорт данных в объектн�
 
 2. Импортируйте данные в ClickHouse Cloud. Для этого можно использовать [табличную функцию gcs](/ru/reference/functions/table-functions/gcs). DDL и запросы для импорта доступны [здесь](https://pastila.nl/?00531abf/f055a61cc96b1ba1383d618721059976#Wf4Tn43D3VCU5Hx7tbf1Qw==). Обратите внимание: поскольку экземпляр ClickHouse Cloud состоит из нескольких вычислительных узлов, вместо табличной функции `gcs` мы используем [табличную функцию s3Cluster](/ru/reference/functions/table-functions/s3Cluster). Эта функция также работает с бакетами GCS и [задействует все узлы сервиса ClickHouse Cloud](https://clickhouse.com/blog/supercharge-your-clickhouse-data-loads-part1#parallel-servers), чтобы загружать данные параллельно.
 
-<Image img="/images/migrations/bigquery-4.webp" size="md" alt="Пакетная загрузка" />
+![Пакетная загрузка](/images/migrations/bigquery-4.webp)
 
 У этого подхода есть ряд преимуществ:
 
@@ -161,7 +159,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
 * Эффективное использование памяти и диска критически важно для тех масштабов, на которых часто применяется ClickHouse. Данные записываются в таблицы ClickHouse фрагментами, называемыми частями, а затем к этим частям в фоновом режиме применяются правила слияния. В ClickHouse у каждой части есть собственный первичный индекс. Когда части сливаются, первичные индексы также объединяются в индекс слитой части. При этом эти индексы строятся не для каждой строки. Вместо этого первичный индекс части содержит одну запись индекса на группу строк — этот подход называется разреженной индексацией.
 * Разреженная индексация возможна потому, что ClickHouse хранит строки каждой части на диске в порядке, заданном указанным ключом. Вместо прямого поиска отдельных строк (как в индексе на основе B-Tree) разреженный первичный индекс позволяет быстро — с помощью двоичного поиска по записям индекса — определить группы строк, которые потенциально могут соответствовать запросу. Затем найденные группы потенциально подходящих строк параллельно передаются в движок ClickHouse для поиска совпадений. Такая структура индекса позволяет сделать первичный индекс компактным (он полностью помещается в оперативную память) и при этом существенно ускорить выполнение запросов, особенно диапазонных запросов, типичных для аналитики данных. Подробнее см. [в этом подробном руководстве](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes).
 
-<Image img="/images/migrations/bigquery-5.webp" size="md" alt="Первичные ключи ClickHouse" />
+![Первичные ключи ClickHouse](/images/migrations/bigquery-5.webp)
 
 Выбранный первичный ключ в ClickHouse определяет не только индекс, но и порядок, в котором данные записываются на диск. Поэтому он может существенно влиять на степень сжатия, что, в свою очередь, сказывается на производительности запросов. Ключ сортировки, при котором значения большинства столбцов записываются последовательно, позволит выбранному алгоритму сжатия (и кодекам) эффективнее сжимать данные.
 
@@ -189,7 +187,7 @@ INSERT INTO stackoverflow.posts SELECT * FROM gcs( 'gs://clickhouse-public-datas
 
 В ClickHouse партиционирование задается для таблицы при ее первоначальном создании с помощью предложения [`PARTITION BY`](/ru/reference/engines/table-engines/mergetree-family/custom-partitioning-key). Это предложение может содержать SQL-выражение по одному или нескольким столбцам, результат которого определяет, в какую партицию будет направлена строка.
 
-<Image img="/images/migrations/bigquery-6.webp" size="md" alt="Партиции" />
+![Партиции](/images/migrations/bigquery-6.webp)
 
 Части данных на диске логически связаны с каждой партицией и могут запрашиваться по отдельности. В приведенном ниже примере мы партиционируем таблицу posts по году с помощью выражения [`toYear(CreationDate)`](/ru/reference/functions/regular-functions/date-time-functions#toYear). По мере вставки строк в ClickHouse это выражение будет вычисляться для каждой строки, после чего строки будут направляться в соответствующую партицию в виде новых частей данных, принадлежащих этой партиции.
 
@@ -405,7 +403,7 @@ WHERE UserId = 8592047
 таблице, а проекции будут по возможности использоваться для ускорения
 времени отклика.
 
-<Image img="/images/migrations/bigquery-7.webp" size="md" alt="Проекции" />
+![Проекции](/images/migrations/bigquery-7.webp)
 
 В отличие от materialized view, здесь пользователю не нужно выбирать
 подходящую оптимизированную целевую таблицу или переписывать запрос в зависимости от фильтров.
@@ -430,7 +428,7 @@ WHERE UserId = 8592047
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-8.webp" size="sm" alt="Как переписать запросы BigQuery" border />
+![Как переписать запросы BigQuery](/images/migrations/bigquery-8.webp)
 
 *ClickHouse*
 
@@ -465,7 +463,7 @@ Peak memory usage: 323.37 MiB.
 
 <br />
 
-<Image img="/images/migrations/bigquery-9.webp" size="sm" alt="BigQuery 1" border />
+![BigQuery 1](/images/migrations/bigquery-9.webp)
 
 *ClickHouse*
 
@@ -501,9 +499,9 @@ Peak memory usage: 567.41 MiB.
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-10.webp" border size="sm" alt="Агрегатные функции 1" />
+![Агрегатные функции 1](/images/migrations/bigquery-10.webp)
 
-<Image img="/images/migrations/bigquery-11.webp" border size="sm" alt="Агрегатные функции 2" />
+![Агрегатные функции 2](/images/migrations/bigquery-11.webp)
 
 *ClickHouse*
 
@@ -559,7 +557,7 @@ Peak memory usage: 377.26 MiB.
 
 *BigQuery*
 
-<Image img="/images/migrations/bigquery-12.webp" size="sm" border alt="Условные выражения и массивы" />
+![Условные выражения и массивы](/images/migrations/bigquery-12.webp)
 
 *ClickHouse*
 

@@ -7,8 +7,6 @@ doc_type: 'reference'
 keywords: ['ClickHouse Cloud', '数据恢复能力', '灾难恢复']
 ---
 
-import { Image } from "/snippets/zh/components/Image.jsx";
-
 本页介绍 ClickHouse Cloud 的灾难恢复建议，以及客户在发生中断后进行恢复的指导。
 ClickHouse Cloud 目前不支持自动故障转移，也不支持跨多个地理区域的自动同步。
 
@@ -104,7 +102,7 @@ Backup和恢复耗时会因数据规模、schema复杂度和表数量而有显�
 2. 在要恢复的目标 Backup 对应的“Actions”下，点击三点菜单。
 3. 为新服务指定名称，然后从该 Backup 中恢复
 
-<Image img="/images/cloud/guides/restore_backup.webp" size="md" alt="从 Backup 中恢复" />
+![从 Backup 中恢复](/images/cloud/guides/restore_backup.webp)
 
 <div id="primary-region-downtime">
   ### 主区域停机

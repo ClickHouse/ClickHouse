@@ -7,8 +7,6 @@ doc_type: 'changelog'
 keywords: ['registro de cambios', 'notas de la versión', 'actualizaciones', 'nuevas características', 'cambios en Cloud', '2024']
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 <div id="december-20-2024">
   ## 20 de diciembre de 2024
 </div>
@@ -19,7 +17,7 @@ import { Image } from "/snippets/es/components/Image.jsx";
 
 Ahora puede asociar su nueva suscripción de Marketplace a una organización existente de ClickHouse Cloud. Una vez que complete la suscripción en Marketplace y sea redirigido a ClickHouse Cloud, podrá vincular una organización existente creada anteriormente con la nueva suscripción de Marketplace. A partir de ese momento, los recursos de la organización se facturarán a través de Marketplace.
 
-<Image img="/images/cloud/reference/add_marketplace.webp" size="md" alt="Interfaz de ClickHouse Cloud que muestra cómo añadir una suscripción de Marketplace a una organización existente" border />
+![Interfaz de ClickHouse Cloud que muestra cómo añadir una suscripción de Marketplace a una organización existente](/images/cloud/reference/add_marketplace.webp)
 
 <div id="force-openapi-key-expiration">
   ### Forzar la caducidad de las claves de OpenAPI
@@ -55,7 +53,7 @@ Esta integración lista para usar permite a los clientes replicar sus bases de d
 
 Esta semana, nos complace anunciar el lanzamiento en Beta de Dashboards en ClickHouse Cloud. Con Dashboards, puede convertir consultas guardadas en visualizaciones, organizar las visualizaciones en dashboards e interactuar con los dashboards mediante parámetros de consulta. Para empezar, siga la [documentación de Dashboards](/es/products/cloud/features/sql-console-features/dashboards).
 
-<Image img="/images/cloud/reference/beta_dashboards.webp" size="lg" alt="Interfaz de ClickHouse Cloud que muestra la nueva función de Dashboards en Beta con visualizaciones" border />
+![Interfaz de ClickHouse Cloud que muestra la nueva función de Dashboards en Beta con visualizaciones](/images/cloud/reference/beta_dashboards.webp)
 
 <div id="query-api-endpoints-ga">
   ### Query API endpoints (GA)
@@ -73,7 +71,7 @@ Además de estas mejoras, nos complace anunciar los endpoints genéricos de Quer
 
 Para empezar, siga la [documentación de Query API Endpoints](/es/products/cloud/guides/sql-console/query-endpoints).
 
-<Image img="/images/cloud/reference/api_endpoints.webp" size="lg" alt="Interfaz de ClickHouse Cloud que muestra la configuración de API Endpoints con varias opciones" border />
+![Interfaz de ClickHouse Cloud que muestra la configuración de API Endpoints con varias opciones](/images/cloud/reference/api_endpoints.webp)
 
 <div id="native-json-support-beta">
   ### Soporte nativo de JSON (Beta)
@@ -108,7 +106,7 @@ Actualice a:
 
 Ahora puede conceder acceso unidireccional a un origen de datos específico, como AWS MSK. Con el acceso a recursos entre VPC mediante AWS PrivateLink y VPC Lattice, puede compartir recursos individuales entre distintas VPC y cuentas, o incluso desde redes on-premise, sin comprometer la privacidad ni la seguridad al atravesar una red pública. Para empezar y configurar un recurso compartido, puede consultar el [anuncio](https://clickhouse.com/blog/clickpipes-crossvpc-resource-endpoints?utm_medium=web\&utm_source=changelog).
 
-<Image img="/images/cloud/reference/cross-vpc-clickpipes.webp" size="lg" alt="Diagrama que muestra la arquitectura de acceso a recursos entre VPC para ClickPipes al conectarse a AWS MSK" border />
+![Diagrama que muestra la arquitectura de acceso a recursos entre VPC para ClickPipes al conectarse a AWS MSK](/images/cloud/reference/cross-vpc-clickpipes.webp)
 
 <div id="clickpipes-now-supports-iam-for-aws-msk">
   ### ClickPipes ahora admite autenticación IAM para AWS MSK
@@ -134,7 +132,7 @@ Anteriormente, el panel de observabilidad avanzada que le permite supervisar las
 
 Este panel le permite ver consultas basadas en la tabla [system.dashboards](/es/reference/system-tables/dashboards) desde una sola UI. Visite la página **Monitoring &gt; Service Health** para empezar a usar hoy mismo el panel de observabilidad avanzada.
 
-<Image img="/images/cloud/reference/nov-22-dashboard.webp" size="lg" alt="Panel de observabilidad avanzada de ClickHouse Cloud que muestra métricas del servidor y uso de recursos" border />
+![Panel de observabilidad avanzada de ClickHouse Cloud que muestra métricas del servidor y uso de recursos](/images/cloud/reference/nov-22-dashboard.webp)
 
 <div id="ai-powered-sql-autocomplete">
   ### Autocompletado SQL con IA
@@ -142,7 +140,7 @@ Este panel le permite ver consultas basadas en la tabla [system.dashboards](/es/
 
 Hemos mejorado considerablemente el autocompletado, lo que le permite obtener sugerencias SQL en línea mientras escribe sus consultas con el nuevo AI Copilot. Esta función puede habilitarse activando la opción **&quot;Enable Inline Code Completion&quot;** para cualquier servicio de ClickHouse Cloud.
 
-<Image img="/images/cloud/reference/nov-22-copilot.gif" size="lg" alt="Animación que muestra al AI Copilot ofreciendo sugerencias de autocompletado SQL mientras un usuario escribe" border />
+![Animación que muestra al AI Copilot ofreciendo sugerencias de autocompletado SQL mientras un usuario escribe](/images/cloud/reference/nov-22-copilot.gif)
 
 <div id="new-billing-role">
   ### Nuevo rol &quot;Billing&quot;
@@ -164,7 +162,7 @@ En el futuro, añadiremos notificaciones para otros eventos, así como formas ad
 
 Consulte la [documentación de ClickHouse](/es/products/cloud/features/monitoring/notifications) para obtener más información sobre cómo habilitar las notificaciones para su servicio.
 
-<Image img="/images/cloud/reference/nov-8-notifications.webp" size="lg" alt="Interfaz del centro de notificaciones de ClickHouse Cloud que muestra opciones de configuración para distintos tipos de notificaciones" border />
+![Interfaz del centro de notificaciones de ClickHouse Cloud que muestra opciones de configuración para distintos tipos de notificaciones](/images/cloud/reference/nov-8-notifications.webp)
 
 <br />
 
@@ -208,7 +206,7 @@ ClickPipes for Kafka ahora admite certificados de autenticación personalizados 
 
 La visibilidad del rendimiento es crucial. ClickPipes ahora incluye un gráfico de latencia que le permite ver el tiempo transcurrido entre la producción del mensaje (ya sea desde un topic de Kafka o un Kinesis Stream) y su ingestión en ClickHouse Cloud. Con esta nueva métrica, puede supervisar más de cerca el rendimiento de sus canalizaciones de datos y optimizarlas en consecuencia.
 
-<Image img="/images/cloud/reference/oct-4-latency-insights.webp" size="lg" alt="Interfaz de ClickPipes que muestra un gráfico de métricas de latencia para el rendimiento de la ingestión de datos" border />
+![Interfaz de ClickPipes que muestra un gráfico de métricas de latencia para el rendimiento de la ingestión de datos](/images/cloud/reference/oct-4-latency-insights.webp)
 
 <br />
 
@@ -252,7 +250,7 @@ En los servicios existentes de ClickHouse Cloud, las réplicas gestionan tanto l
 
 Nuestra nueva funcionalidad Compute-compute separation le permite crear varios grupos de nodos de compute, cada uno con su propio endpoint, que utilizan la misma carpeta de almacenamiento de objetos y, por lo tanto, las mismas tablas, vistas, etc. Obtenga más información sobre [Compute-compute separation aquí](/es/products/cloud/features/infrastructure/warehouses). Si desea acceder a esta funcionalidad en vista previa privada, [contacte con el equipo de soporte](https://clickhouse.com/support/program).
 
-<Image img="/images/cloud/reference/aug-15-compute-compute.webp" size="lg" alt="Diagrama que muestra una arquitectura de ejemplo de compute-compute separation con grupos de servicios de lectura y escritura y de solo lectura" border />
+![Diagrama que muestra una arquitectura de ejemplo de compute-compute separation con grupos de servicios de lectura y escritura y de solo lectura](/images/cloud/reference/aug-15-compute-compute.webp)
 
 <div id="clickpipes-for-s3-and-gcs-now-in-ga-continuous-mode-support">
   ### ClickPipes para S3 y GCS ahora en GA, con soporte para el modo continuo
@@ -278,7 +276,7 @@ ClickHouse tiene comandos como [`DESCRIBE`](/es/reference/statements/describe-ta
 
 Recientemente lanzamos un **Inspector de tablas** en la consola de Cloud que le permite obtener información importante sobre tablas y columnas en la UI, sin tener que escribir SQL. Puede probar el Inspector de tablas para sus servicios visitando la consola de Cloud. Proporciona información sobre su esquema, almacenamiento, compresión y mucho más en una interfaz unificada.
 
-<Image img="/images/cloud/reference/july-18-table-inspector.webp" size="lg" alt="Interfaz del Inspector de tablas de ClickHouse Cloud que muestra información detallada sobre el esquema y el almacenamiento" border />
+![Interfaz del Inspector de tablas de ClickHouse Cloud que muestra información detallada sobre el esquema y el almacenamiento](/images/cloud/reference/july-18-table-inspector.webp)
 
 <div id="new-java-client-api">
   ### Nueva API del cliente Java
@@ -318,7 +316,7 @@ Si desea que se admita alguna región específica, [contáctenos](https://clickh
 
 La nueva interfaz de Query Insights en la consola de Cloud hace que el registro de consultas integrado de ClickHouse sea mucho más fácil de usar. La tabla `system.query_log` de ClickHouse es una fuente clave de información para la optimización de consultas, la depuración y la supervisión del estado general y del rendimiento del clúster. Solo hay una salvedad: con más de 70 campos y varios registros por consulta, interpretar el registro de consultas supone una curva de aprendizaje considerable. Esta versión inicial de Query Insights sienta las bases para futuros esfuerzos destinados a simplificar los patrones de depuración y optimización de consultas. Nos encantaría conocer sus comentarios mientras seguimos iterando en esta funcionalidad, así que no dude en ponerse en contacto con nosotros: valoraremos enormemente su opinión.
 
-<Image img="/images/cloud/reference/june-28-query-insights.webp" size="lg" alt="Interfaz de Query Insights de ClickHouse Cloud que muestra métricas y análisis del rendimiento de las consultas" border />
+![Interfaz de Query Insights de ClickHouse Cloud que muestra métricas y análisis del rendimiento de las consultas](/images/cloud/reference/june-28-query-insights.webp)
 
 <div id="prometheus-endpoint-for-metrics-private-preview">
   ### Endpoint de Prometheus para métricas (vista previa privada)
@@ -326,7 +324,7 @@ La nueva interfaz de Query Insights en la consola de Cloud hace que el registro 
 
 Quizá una de las funciones más solicitadas: ahora puede exportar métricas de [Prometheus](https://prometheus.io/) desde ClickHouse Cloud a [Grafana](https://grafana.com/) y [Datadog](https://www.datadoghq.com/) para visualizarlas. Prometheus ofrece una solución de código abierto para supervisar ClickHouse y configurar alertas personalizadas. El acceso a las métricas de Prometheus para su servicio de ClickHouse Cloud está disponible a través de la [ClickHouse Cloud API](/es/products/cloud/features/monitoring/prometheus). Esta funcionalidad se encuentra actualmente en vista previa privada. Póngase en contacto con el [equipo de soporte](https://clickhouse.com/support/program) para habilitar esta funcionalidad en su organización.
 
-<Image img="/images/cloud/reference/june-28-prometheus.webp" size="lg" alt="Panel de Grafana que muestra métricas de Prometheus de ClickHouse Cloud" border />
+![Panel de Grafana que muestra métricas de Prometheus de ClickHouse Cloud](/images/cloud/reference/june-28-prometheus.webp)
 
 <div id="other-features">
   ### Otras funcionalidades
@@ -352,7 +350,7 @@ Están disponibles las siguientes opciones:
 * Desde el más reciente: comience a consumir datos desde el offset más reciente. Esto resulta útil si solo le interesan los mensajes nuevos.
 * Desde un timestamp: comience a consumir datos de mensajes generados en un timestamp específico o después de este. Esta funcionalidad permite un control más preciso, lo que le permite reanudar el procesamiento desde un punto exacto en el tiempo.
 
-<Image img="/images/cloud/reference/june-13-kafka-config.webp" size="lg" alt="Interfaz de configuración del conector Kafka de ClickPipes que muestra opciones de selección de offset" border />
+![Interfaz de configuración del conector Kafka de ClickPipes que muestra opciones de selección de offset](/images/cloud/reference/june-13-kafka-config.webp)
 
 <div id="enroll-services-to-the-fast-release-channel">
   ### Inscribir servicios en el canal de lanzamientos rápidos
@@ -360,7 +358,7 @@ Están disponibles las siguientes opciones:
 
 El canal de lanzamientos rápidos permite que sus servicios reciban actualizaciones antes de lo previsto en el calendario de lanzamientos. Anteriormente, era necesario contar con la ayuda del equipo de soporte para habilitar esta función. Ahora puede usar la consola de ClickHouse Cloud para habilitarla directamente para sus servicios. Solo tiene que ir a **Settings** y hacer clic en **Enroll in fast releases**. A partir de ese momento, su servicio recibirá las actualizaciones en cuanto estén disponibles.
 
-<Image img="/images/cloud/reference/june-13-fast-releases.webp" size="lg" alt="Página de configuración de ClickHouse Cloud que muestra la opción de inscribirse en lanzamientos rápidos" border />
+![Página de configuración de ClickHouse Cloud que muestra la opción de inscribirse en lanzamientos rápidos](/images/cloud/reference/june-13-fast-releases.webp)
 
 <div id="terraform-support-for-horizontal-scaling">
   ### Soporte de Terraform para el escalado horizontal
@@ -382,7 +380,7 @@ Cuando escribes una consulta SQL, es muy probable que a otras personas de tu equ
 
 Nos complace anunciar que ahora puedes compartir consultas fácilmente desde la consola de ClickHouse Cloud. Desde el editor de consultas, puedes compartir una consulta directamente con todo tu equipo o con un miembro concreto del equipo. También puedes especificar si tienen acceso de solo lectura o de escritura. Haz clic en el botón **Share** del editor de consultas para probar la nueva función de consultas compartidas.
 
-<Image img="/images/cloud/reference/may-30-share-queries.webp" size="lg" alt="Editor de consultas de ClickHouse Cloud que muestra la función de compartir con opciones de permisos" border />
+![Editor de consultas de ClickHouse Cloud que muestra la función de compartir con opciones de permisos](/images/cloud/reference/may-30-share-queries.webp)
 
 <div id="clickhouse-cloud-for-microsoft-azure-is-now-in-beta">
   ### ClickHouse Cloud para Microsoft Azure ya está en beta
@@ -402,7 +400,7 @@ Nuestra funcionalidad de Private Link le permite conectar sus servicios de Click
 
 Ahora puede configurar endpoints privados con solo unos clics directamente desde la consola de ClickHouse Cloud. Solo tiene que ir a **Configuración** en su servicio, abrir la sección **Seguridad** y hacer clic en **Configurar endpoint privado**.
 
-<Image img="/images/cloud/reference/may-30-private-endpoints.webp" size="lg" alt="Consola de ClickHouse Cloud que muestra la interfaz de configuración de endpoints privados en la configuración de seguridad" border />
+![Consola de ClickHouse Cloud que muestra la interfaz de configuración de endpoints privados en la configuración de seguridad](/images/cloud/reference/may-30-private-endpoints.webp)
 
 <div id="may-17-2024">
   ## 17 de mayo de 2024
@@ -416,7 +414,7 @@ ClickPipes es un servicio exclusivo de ClickHouse Cloud para ingestar datos sin 
 
 Puede probar la nueva integración de Amazon Kinesis para ClickPipes en la Cloud Console:
 
-<Image img="/images/cloud/reference/may-17-kinesis.webp" size="lg" alt="Interfaz de ClickPipes que muestra las opciones de configuración de la integración de Amazon Kinesis" border />
+![Interfaz de ClickPipes que muestra las opciones de configuración de la integración de Amazon Kinesis](/images/cloud/reference/may-17-kinesis.webp)
 
 <div id="configurable-backups-private-preview">
   ### Copias de seguridad configurables (vista previa privada)
@@ -430,7 +428,7 @@ Las copias de seguridad son importantes para cualquier base de datos (por muy fi
 
 Cuando escribe una consulta SQL para ClickHouse, aún necesita conectarse a ClickHouse mediante un driver para exponerla en su aplicación. Ahora, con nuestra funcionalidad **Query Endpoints**, puede ejecutar consultas SQL directamente desde una API sin ninguna configuración. Puede especificar que Query Endpoints devuelva JSON, CSV o TSV. Haga clic en el botón &quot;Share&quot; en la Cloud Console para probar esta nueva funcionalidad con sus consultas. Lea más sobre Query Endpoints [aquí](https://clickhouse.com/blog/automatic-query-endpoints).
 
-<Image img="/images/cloud/reference/may-17-query-endpoints.webp" size="lg" alt="Interfaz de ClickHouse Cloud que muestra la configuración de Query Endpoints con opciones de formato de salida" border />
+![Interfaz de ClickHouse Cloud que muestra la configuración de Query Endpoints con opciones de formato de salida](/images/cloud/reference/may-17-query-endpoints.webp)
 
 <div id="official-clickhouse-certification-is-now-available">
   ### La certificación oficial de ClickHouse ya está disponible
@@ -450,7 +448,7 @@ Puede que haya notado que, en nuestra Cloud Console lanzada recientemente, hay u
 
 La actualización más reciente de ClickPipes incorpora la capacidad de cargar datos directamente desde Amazon S3 y Google Cloud Storage. Aunque todavía puede usar nuestras funciones de tabla integradas, ClickPipes es un servicio totalmente gestionado a través de nuestra UI que le permitirá ingestar datos desde S3 y GCS con solo unos clics. Esta funcionalidad sigue en vista previa privada, pero ya puede probarla hoy mismo desde la Cloud Console.
 
-<Image img="/images/cloud/reference/clickpipes-s3-gcs.webp" size="lg" alt="Interfaz de ClickPipes que muestra opciones de configuración para cargar datos desde buckets de S3 y GCS" border />
+![Interfaz de ClickPipes que muestra opciones de configuración para cargar datos desde buckets de S3 y GCS](/images/cloud/reference/clickpipes-s3-gcs.webp)
 
 <div id="use-fivetran-to-load-data-from-500-sources-into-clickhouse-cloud">
   ### Usa Fivetran para cargar datos desde más de 500 fuentes en ClickHouse Cloud
@@ -483,7 +481,7 @@ Se trata de una integración de código abierto desarrollada a lo largo de mucho
 
 Esta versión incorpora la nueva región de Tokio de AWS (`ap-northeast-1`) para ClickHouse Cloud. Como queremos que ClickHouse sea la base de datos más rápida, seguimos añadiendo más regiones en cada nube para reducir al máximo la latencia. Puedes crear tu nuevo servicio en Tokio desde la Cloud Console actualizada.
 
-<Image img="/images/cloud/reference/create-tokyo-service.webp" size="lg" alt="Interfaz de creación de un servicio de ClickHouse Cloud que muestra la selección de la región de Tokio" border />
+![Interfaz de creación de un servicio de ClickHouse Cloud que muestra la selección de la región de Tokio](/images/cloud/reference/create-tokyo-service.webp)
 
 Otros cambios:
 
@@ -521,7 +519,7 @@ Miles de usuarios de ClickHouse Cloud ejecutan miles de millones de consultas en
 
 Algunos clientes seleccionados recibirán una vista previa de la experiencia de nuestra nueva Cloud Console: una forma unificada e inmersiva de explorar y administrar sus datos en ClickHouse. Póngase en contacto con nosotros en support@clickhouse.com si desea acceso prioritario.
 
-<Image img="/images/cloud/reference/new-cloud-console.webp" size="lg" alt="Animación que muestra la interfaz de la nueva consola de ClickHouse Cloud con editor SQL integrado y funciones de administración" border />
+![Animación que muestra la interfaz de la nueva consola de ClickHouse Cloud con editor SQL integrado y funciones de administración](/images/cloud/reference/new-cloud-console.webp)
 
 <div id="march-28-2024">
   ## 28 de marzo de 2024

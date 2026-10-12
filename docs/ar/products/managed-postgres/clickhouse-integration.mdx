@@ -8,15 +8,13 @@ doc_type: 'دليل'
 ---
 
 import { BetaBadge } from "/snippets/ar/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.clickhouse-integration-beta" />
 
 يأتي كل مثيل من ClickHouse Managed Postgres مزوّدًا بإمكانات CDC مدمجة للنسخ إلى أي من خدمات ClickHouse لديك. يتيح لك ذلك نقل بعض البيانات أو كلها من مثيل Postgres الخاص بك إلى ClickHouse، بحيث تنعكس التغييرات التي تطرأ على البيانات في Postgres على ClickHouse بشكل مستمر وبصورة شبه آنية. ويعتمد ذلك داخليًا على [ClickPipes](/ar/integrations/clickpipes/home).
 
 للوصول إلى ذلك، انقر على **المزامنة إلى ClickHouse** في الشريط الجانبي لمثيل Postgres الخاص بك.
 
-<Image img="/images/managed-postgres/clickhouse-integration-intro.webp" alt="الصفحة الرئيسية لـ تكامل ClickHouse التي تعرض خيار التكامل في الشريط الجانبي" size="md" border />
+![الصفحة الرئيسية لـ تكامل ClickHouse التي تعرض خيار التكامل في الشريط الجانبي](/images/managed-postgres/clickhouse-integration-intro.webp)
 
 <Note>
   قبل المتابعة، تأكد من أن خدمة Postgres الخاصة بك متاحة لخدمة ClickPipes. ينبغي أن يكون هذا هو الإعداد الافتراضي، ولكن إذا كنت قد قيّدت الوصول عبر IP، فقد تحتاج إلى السماح لبعض عناوين IP المصدر الواردة في [هذه](/ar/integrations/clickpipes/networking/static-ips) القائمة، وذلك بحسب المنطقة التي توجد فيها **خدمة ClickHouse** الخاصة بك.
@@ -36,7 +34,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       * **التحميل الأولي فقط**: لقطة لمرة واحدة للبيانات الحالية بدون تحديثات مستمرة
       * **CDC فقط**: تخطَّ اللقطة الأولية والتقط فقط التغييرات الجديدة من الآن فصاعدًا
 
-    <Image img="/images/managed-postgres/replication-service-step.webp" alt="إعداد خدمة النسخ المتماثل الذي يعرض اسم التكامل وخدمة الوجهة وخيارات طريقة النسخ المتماثل" size="md" border />
+    ![إعداد خدمة النسخ المتماثل الذي يعرض اسم التكامل وخدمة الوجهة وخيارات طريقة النسخ المتماثل](/images/managed-postgres/replication-service-step.webp)
 
     انقر **التالي** للمتابعة.
   </Step>
@@ -50,7 +48,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
     * **عدد الصفوف لكل partition في اللقطة**: عدد الصفوف لكل partition أثناء اللقطة الأولية (الافتراضي: 100000)
     * **عدد الجداول في اللقطة بالتوازي**: عدد الجداول التي تؤخذ لها لقطات بالتزامن (الافتراضي: 1)
 
-    <Image img="/images/managed-postgres/integration-replication-settings.webp" alt="خطوة إعدادات النسخ المتماثل التي تعرض فاصل المزامنة والخيوط المتوازية وحجم دفعة السحب وخيارات إعداد اللقطة" size="md" border />
+    ![خطوة إعدادات النسخ المتماثل التي تعرض فاصل المزامنة والخيوط المتوازية وحجم دفعة السحب وخيارات إعداد اللقطة](/images/managed-postgres/integration-replication-settings.webp)
 
     انقر **التالي** للمتابعة.
   </Step>
@@ -65,7 +63,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     وسّع المخططات وحدد الجداول الفردية المطلوب نسخها متماثلًا. يمكنك أيضًا تخصيص أسماء جداول الوجهة وإعدادات الأعمدة.
 
-    <Image img="/images/managed-postgres/select-tables-step.webp" alt="خطوة اختيار الجداول التي تعرض تحديد قاعدة البيانات وخيارات النسخ المتماثل ومحدد الجداول المجمّعة حسب schema" size="md" border />
+    ![خطوة اختيار الجداول التي تعرض تحديد قاعدة البيانات وخيارات النسخ المتماثل ومحدد الجداول المجمّعة حسب schema](/images/managed-postgres/select-tables-step.webp)
 
     انقر **Replicate data to ClickHouse** لبدء النسخ المتماثل.
   </Step>
@@ -73,7 +71,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="راقب ClickPipe الخاص بك" id="monitor-clickpipe">
     بمجرد بدء ClickPipe، ستراه مُدرجًا في القائمة نفسها. قد تستغرق اللقطة الأولية لجميع البيانات بعض الوقت، حسب حجم جداولك.
 
-    <Image img="/images/managed-postgres/integration-running.webp" alt="قائمة تكامل ClickHouse تعرض ClickPipe قيد التشغيل مع خدمة الوجهة الخاصة به وحالته" size="md" border />
+    ![قائمة تكامل ClickHouse تعرض ClickPipe قيد التشغيل مع خدمة الوجهة الخاصة به وحالته](/images/managed-postgres/integration-running.webp)
 
     انقر على اسم التكامل لعرض الحالة التفصيلية ومراقبة التقدم وعرض الأخطاء وإدارة ClickPipe. راجع [Lifecycle of a Postgres ClickPipe](/ar/integrations/clickpipes/postgres/lifecycle) لفهم الحالات المختلفة التي قد يكون ClickPipe الخاص بك فيها.
   </Step>

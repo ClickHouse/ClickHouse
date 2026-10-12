@@ -10,8 +10,6 @@ integration:
   - category: 'sql_client'
 ---
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 import { CommunityMaintainedBadge } from "/snippets/ar/components/CommunityMaintainedBadge/CommunityMaintainedBadge.jsx";
 
 <CommunityMaintainedBadge />
@@ -385,7 +383,7 @@ WHERE trip_distance < 6.3
 <AxesSubplot: title={'center': "'trip_distance' from 'short-trips'"}, xlabel='trip_distance', ylabel='Count'>
 ```
 
-<Image img="/images/integrations/sql-clients/jupysql-plot-1.webp" size="md" alt="مُدرَّج تكراري يوضح توزيع مسافات الرحلات ضمن 10 فئات من مجموعة بيانات الرحلات القصيرة" border />
+![مُدرَّج تكراري يوضح توزيع مسافات الرحلات ضمن 10 فئات من مجموعة بيانات الرحلات القصيرة](/images/integrations/sql-clients/jupysql-plot-1.webp)
 
 ```python
 ax = %sqlplot histogram --table short-trips --column trip_distance --bins 50 --with short-trips
@@ -394,4 +392,4 @@ ax.set_title("Trip distance from trips < 6.3")
 _ = ax.set_xlabel("Trip distance")
 ```
 
-<Image img="/images/integrations/sql-clients/jupysql-plot-2.webp" size="md" alt="مُدرَّج تكراري يوضح توزيع مسافات الرحلات باستخدام 50 فئة مع شبكة، بعنوان 'Trip distance from trips < 6.3'" border />
+![مُدرَّج تكراري يوضح توزيع مسافات الرحلات باستخدام 50 فئة مع شبكة، بعنوان 'Trip distance from trips < 6.3'](/images/integrations/sql-clients/jupysql-plot-2.webp)

@@ -8,8 +8,6 @@ doc_type: 'guide'
 keywords: ['capteurs environnementaux', 'Sensor.Community', 'données sur la qualité de l''air', 'données environnementales', 'prise en main']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 [Sensor.Community](https://sensor.community/en/) est un réseau mondial de capteurs porté par des contributeurs, qui produit des données environnementales ouvertes. Les données sont collectées par des capteurs partout dans le monde. N’importe qui peut acheter un capteur et l’installer où bon lui semble. Les API permettant de télécharger les données sont disponibles sur [GitHub](https://github.com/opendata-stuttgart/meta/wiki/APIs), et les données sont librement accessibles sous la licence [Database Contents License (DbCL)](https://opendatacommons.org/licenses/dbcl/1-0/).
 
 <Warning>
@@ -158,7 +156,7 @@ ORDER BY date ASC;
 
 Nous pouvons créer un graphique dans la console SQL pour visualiser les résultats :
 
-<Image img="/images/getting-started/example-datasets/sensors_01.webp" size="md" alt="Nombre d’événements par jour" />
+![Nombre d’événements par jour](/images/getting-started/example-datasets/sensors_01.webp)
 
 6. Cette requête compte le nombre de jours très chauds et humides :
 
@@ -173,4 +171,4 @@ ORDER BY day ASC;
 
 Voici une visualisation du résultat :
 
-<Image img="/images/getting-started/example-datasets/sensors_02.webp" size="md" alt="Journées chaudes et humides" />
+![Journées chaudes et humides](/images/getting-started/example-datasets/sensors_02.webp)

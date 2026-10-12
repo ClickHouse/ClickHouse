@@ -8,8 +8,6 @@ toc_max_heading_level: 2
 keywords: ['clickstack', 'production', 'déploiement', 'meilleures pratiques', 'opérations']
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 import ResourceEstimation from '/snippets/fr/_resource_estimation.mdx';
 
 Lors du déploiement de ClickStack en production, plusieurs points supplémentaires doivent être pris en compte pour garantir la sécurité, la stabilité et une configuration correcte. Ils varient selon la distribution utilisée — Open Source ou Managed.
@@ -132,7 +130,7 @@ Lors du déploiement de ClickStack en production, plusieurs points supplémentai
 
     Toute ingestion doit s&#39;effectuer via les ports OTLP exposés par la distribution ClickStack du collecteur OpenTelemetry (OTel). Par défaut, cela nécessite une clé API d&#39;ingestion sécurisée générée au démarrage. Cette clé est requise pour envoyer des données vers les ports OTel et se trouve dans l&#39;interface HyperDX UI sous `Team Settings → API Keys`.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Clés d’ingestion" size="lg" />
+    ![Clés d’ingestion](/images/use-cases/observability/ingestion-keys.webp)
 
     Il est également recommandé d&#39;activer le TLS pour les endpoints OTLP.
 

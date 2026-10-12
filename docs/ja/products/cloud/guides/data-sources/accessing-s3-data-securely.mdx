@@ -7,12 +7,10 @@ keywords: ['RBAC', 'Amazon S3', '認証']
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 このガイドでは、ClickHouse Cloud のお客様がロールベースのアクセス制御を利用して Amazon Simple Storage Service (S3) で認証し、データへ安全にアクセスする方法を説明します。
 安全な S3 アクセスの設定に入る前に、その仕組みを理解しておくことが重要です。以下は、お客様の AWS アカウント内のロールを引き受けることで、ClickHouseサービスがプライベートな S3 バケットにアクセスする仕組みの概要です。
 
-<Image img="/images/cloud/security/secures3.webp" size="lg" alt="ClickHouse による安全な S3 アクセスの概要" />
+![ClickHouse による安全な S3 アクセスの概要](/images/cloud/security/secures3.webp)
 
 <br />
 
@@ -33,7 +31,7 @@ import { Image } from "/snippets/ja/components/Image.jsx";
 
 5. 以下に示すように、そのサービスの **Service role ID (IAM)** の値をコピーします。
 
-<Image img="/images/cloud/security/secures3_arn.webp" size="lg" alt="ClickHouseサービスの IAM ロール ARN を取得する" border />
+![ClickHouseサービスの IAM ロール ARN を取得する](/images/cloud/security/secures3_arn.webp)
 
 <div id="setting-up-iam-assume-role">
   ## IAM Assume Role を設定する
@@ -81,7 +79,7 @@ IAM Assume Role は、次の 2 つの方法のいずれかで設定できます�
 
 10. このインテグレーションの **RoleArn** 値をコピーします。これは S3 バケットにアクセスするために必要な値です。
 
-<Image img="/images/cloud/security/secures3_output.webp" size="lg" alt="IAM Role ARN を示す CloudFormation スタックの出力" border />
+![IAM Role ARN を示す CloudFormation スタックの出力](/images/cloud/security/secures3_output.webp)
 
 <div id="option-2-manually-create-iam-role">
   ### IAM ロールを手動で作成する

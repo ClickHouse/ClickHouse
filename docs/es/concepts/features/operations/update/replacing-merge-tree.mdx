@@ -7,8 +7,6 @@ doc_type: 'guide'
 sidebarTitle: 'Uso del motor ReplacingMergeTree'
 ---
 
-import { Image } from "/snippets/es/components/Image.jsx";
-
 Mientras que las bases de datos transaccionales están optimizadas para cargas de trabajo transaccionales con actualizaciones y eliminaciones, las bases de datos OLAP ofrecen menos garantías para este tipo de operaciones. En su lugar, están optimizadas para datos inmutables insertados en lotes, lo que permite consultas analíticas significativamente más rápidas. Aunque ClickHouse ofrece operaciones de actualización mediante mutaciones, así como un mecanismo ligero para eliminar filas, su estructura orientada a columnas implica que estas operaciones deben planificarse con cuidado, como se ha descrito anteriormente. Estas operaciones se gestionan de forma asíncrona, se procesan con un único hilo y requieren (en el caso de las actualizaciones) que los datos se reescriban en disco. Por lo tanto, no deben usarse para grandes cantidades de cambios pequeños.
 Para procesar un flujo de filas con actualizaciones y eliminaciones evitando los patrones de uso anteriores, podemos usar el motor de tabla ReplacingMergeTree de ClickHouse.
 
@@ -32,7 +30,7 @@ Como resultado de este proceso de fusión, tenemos cuatro filas que representan 
 
 <br />
 
-<Image img="/images/migrations/postgres-replacingmergetree.webp" size="md" alt="Proceso de ReplacingMergeTree" />
+![Proceso de ReplacingMergeTree](/images/migrations/postgres-replacingmergetree.webp)
 
 <br />
 

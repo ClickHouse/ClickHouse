@@ -7,8 +7,6 @@ doc_type: 'guide'
 keywords: ['쿼리 실행', '분석기', '쿼리 최적화', 'EXPLAIN', '성능']
 ---
 
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 ClickHouse는 쿼리를 매우 빠르게 처리하지만, 쿼리 실행 과정은 그리 단순하지 않습니다. `SELECT` 쿼리가 어떻게 실행되는지 살펴보겠습니다. 이를 설명하기 위해 ClickHouse의 테이블에 데이터를 몇 개 추가해 보겠습니다:
 
 ```sql
@@ -29,7 +27,7 @@ INSERT INTO session_events SELECT * FROM generateRandom('clientId UUID,
 
 이제 ClickHouse에 데이터가 어느 정도 준비되었으므로, 몇 가지 쿼리를 실행하고 그 실행 과정을 살펴보겠습니다. 쿼리 실행은 여러 단계로 나뉩니다. 각 단계는 해당 `EXPLAIN` 쿼리를 사용해 분석하고 문제를 진단할 수 있습니다. 이러한 단계는 아래 차트에 요약되어 있습니다:
 
-<Image img="/images/guides/developer/analyzer1.webp" alt="Explain 쿼리 단계" size="md" />
+![Explain 쿼리 단계](/images/guides/developer/analyzer1.webp)
 
 이제 쿼리 실행 중 각 엔터티가 어떻게 동작하는지 살펴보겠습니다. 몇 가지 쿼리를 예로 들어 `EXPLAIN` 구문을 사용해 자세히 살펴보겠습니다.
 
@@ -357,7 +355,7 @@ digraph
 
 이 출력 결과를 복사하여 [여기](https://dreampuf.github.io/GraphvizOnline)에 붙여넣으면 다음과 같은 그래프가 생성됩니다:
 
-<Image img="/images/guides/developer/analyzer3.webp" alt="그래프 출력" size="md" />
+![그래프 출력](/images/guides/developer/analyzer3.webp)
 
 흰색 직사각형은 파이프라인 노드를, 회색 직사각형은 쿼리 실행 계획 단계를 나타내며, `x` 뒤에 오는 숫자는 사용 중인 입력/출력의 수를 나타냅니다. `compact` 형식으로 표시하지 않으려면 `compact=0`을 추가하세요:
 
@@ -397,7 +395,7 @@ digraph
 }
 ```
 
-<Image img="/images/guides/developer/analyzer4.webp" alt="Compact 그래프 출력" size="md" />
+![Compact 그래프 출력](/images/guides/developer/analyzer4.webp)
 
 ClickHouse가 왜 여러 스레드를 사용해 테이블을 읽지 않을까요? 테이블에 데이터를 더 추가해 보겠습니다:
 
@@ -456,7 +454,7 @@ digraph
 }
 ```
 
-<Image img="/images/guides/developer/analyzer5.webp" alt="병렬 그래프 출력" size="md" />
+![병렬 그래프 출력](/images/guides/developer/analyzer5.webp)
 
 따라서 데이터 양이 충분히 크지 않아 실행기는 작업을 병렬화하지 않았습니다. 이후 행을 더 추가하자, 그래프에 표시된 것처럼 실행기는 여러 스레드를 사용하기로 했습니다.
 

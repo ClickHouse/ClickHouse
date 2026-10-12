@@ -8,8 +8,6 @@ doc_type: 'guide'
 
 import IntroClickPipe from '/snippets/ar/_intro.mdx';
 
-import { Image } from "/snippets/ar/components/Image.jsx";
-
 <IntroClickPipe />
 
 <div id="pre-requisites">
@@ -24,11 +22,11 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="اختر مصدر البيانات" id="1-select-the-data-source">
     **1.** في ClickHouse Cloud، اختر **Data sources** من قائمة التنقل الرئيسية، ثم انقر على **Create ClickPipe**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/cp_step0.webp" alt="اختر عمليات الاستيراد" size="lg" border />
+    ![اختر عمليات الاستيراد](/images/integrations/data-ingestion/clickpipes/cp_step0.webp)
 
     **2.** انقر على لوحة **BigQuery**.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp" alt="اختر لوحة BigQuery" size="lg" border />
+    ![اختر لوحة BigQuery](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step1.webp)
   </Step>
 
   <Step title="أعدّ اتصال ClickPipe الخاص بك" id="2-setup-your-clickpipe-connection">
@@ -36,7 +34,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     **1.** ارفع مفتاح `.json` الخاص بحساب الخدمة الذي أنشأته لـ ClickPipes. تأكد من أن حساب الخدمة يمتلك الحد الأدنى المطلوب من [الأذونات](/ar/integrations/clickpipes/bigquery/overview#permissions).
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp" alt="ارفع مفتاح حساب الخدمة" size="lg" border />
+    ![ارفع مفتاح حساب الخدمة](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step2.webp)
 
     **2.** اختر **Replication method**. في مرحلة Private Preview، الخيار المدعوم الوحيد هو [**Initial load only**](/ar/integrations/clickpipes/bigquery/overview#initial-load).
 
@@ -54,7 +52,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 
     **2.** اختر الجداول، وعند الحاجة الأعمدة، التي تريد نسخها. لن تظهر إلا مجموعات البيانات التي يملك حساب الخدمة المقدم صلاحية الوصول إليها.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp" alt="الأذونات" size="lg" border />
+    ![الأذونات](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step3.webp)
 
     **3.** لكل جدول محدد، احرص على تحديد مفتاح فرز مخصص ضمن **Advanced settings** &gt; **Use a custom sorting key**. مستقبلًا، سيُستدل على مفتاح الفرز تلقائيًا استنادًا إلى مفاتيح التجميع العنقودي أو مفاتيح التقسيم الموجودة في قاعدة البيانات الأصلية.
 
@@ -62,7 +60,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
       **يجب** تحديد [مفتاح فرز](/ar/concepts/best-practices/choosing-a-primary-key) للجداول المنسوخة لتحسين أداء الاستعلامات في ClickHouse. وإلا فسيُضبط مفتاح الفرز على `tuple()`، ما يعني عدم إنشاء فهرس أساسي، وسيُجري ClickHouse فحصًا كاملًا للجدول في جميع الاستعلامات عليه.
     </Warning>
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp" alt="الأذونات" size="lg" border />
+    ![الأذونات](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step4.webp)
   </Step>
 
   <Step title="اضبط الأذونات" id="6-configure-permissions">
@@ -77,6 +75,6 @@ import { Image } from "/snippets/ar/components/Image.jsx";
   <Step title="أكمل الإعداد" id="7-complete-setup">
     انقر على **Create ClickPipe** لإكمال الإعداد. ستتم إعادة توجيهك إلى صفحة النظرة العامة، حيث يمكنك متابعة تقدم التحميل الأولي والنقر للاطلاع على تفاصيل BigQuery ClickPipes الخاصة بك.
 
-    <Image img="/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp" alt="الأذونات" size="lg" border />
+    ![الأذونات](/images/integrations/data-ingestion/clickpipes/bigquery/cp_step5.webp)
   </Step>
 </Steps>

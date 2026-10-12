@@ -11,8 +11,6 @@ integration:
 ---
 
 import ConnectionDetails from '/snippets/ja/_gather_your_details_http.mdx';
-import { Image } from "/snippets/ja/components/Image.jsx";
-
 import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.jsx";
 
 <PartnerBadge />
@@ -25,32 +23,32 @@ import { PartnerBadge } from "/snippets/ja/components/PartnerBadge/PartnerBadge.
   <Step title="ClickHouse リソースを作成する" id="2-create-a-clickhouse-resource">
     Retool アカウントにログインし、*Resources* タブに移動します。次に、「Create New」-&gt;「Resource」を選択します。
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_01.webp" size="lg" border alt="新しいリソースの作成" />
+    ![新しいリソースの作成](/images/integrations/tools/data-integration/retool/retool_01.webp)
 
     <br />
 
     使用可能なコネクタの一覧から「JDBC」を選択します。
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_02.webp" size="lg" border alt="JDBC コネクタの選択" />
+    ![JDBC コネクタの選択](/images/integrations/tools/data-integration/retool/retool_02.webp)
 
     <br />
 
     セットアップウィザードで、「Driver name」に `com.clickhouse.jdbc.ClickHouseDriver` が選択されていることを確認します。
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_03.webp" size="lg" border alt="適切なドライバーの選択" />
+    ![適切なドライバーの選択](/images/integrations/tools/data-integration/retool/retool_03.webp)
 
     <br />
 
     次の形式で ClickHouse の認証情報を入力します。`jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD`
     インスタンスで SSL が必要な場合、または ClickHouse Cloud を使用している場合は、接続文字列に `&ssl=true` を追加して、`jdbc:clickhouse://HOST:PORT/DATABASE?user=USERNAME&password=PASSWORD&ssl=true` のようにします。
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_04.webp" size="lg" border alt="認証情報の指定" />
+    ![認証情報の指定](/images/integrations/tools/data-integration/retool/retool_04.webp)
 
     <br />
 
     その後、接続をテストします。
 
-    <Image img="/images/integrations/tools/data-integration/retool/retool_05.webp" size="lg" border alt="接続のテスト" />
+    ![接続のテスト](/images/integrations/tools/data-integration/retool/retool_05.webp)
 
     <br />
 

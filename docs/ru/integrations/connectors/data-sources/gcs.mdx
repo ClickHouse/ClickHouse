@@ -8,8 +8,6 @@ keywords: ['Google Cloud Storage ClickHouse', 'интеграция GCS с Click
 ---
 
 import BucketDetails from '/snippets/ru/_GCS_authentication_and_bucket.mdx';
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 <Note>
   Если вы используете ClickHouse Cloud в [Google Cloud](https://cloud.google.com), эта страница к вам не относится, поскольку ваши сервисы уже используют [Google Cloud Storage](https://cloud.google.com/storage). Если вы хотите выполнять `SELECT` или `INSERT` данных из GCS, см. [табличную функцию `gcs`](/ru/reference/functions/table-functions/gcs).
 </Note>
@@ -685,10 +683,10 @@ formatReadableSize(total_bytes): 36.42 MiB
   #### Бакет для первой реплики
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp" size="lg" border alt="Бакет первой реплики в Google Cloud Storage со структурой папок с партициями данных" />
+![Бакет первой реплики в Google Cloud Storage со структурой папок с партициями данных](/images/integrations/data-ingestion/s3/GCS-examine-bucket-1.webp)
 
 <div id="bucket-for-replica-two">
   #### Бакет для второй реплики
 </div>
 
-<Image img="/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp" size="lg" border alt="Бакет второй реплики в Google Cloud Storage со структурой папок и партициями данных" />
+![Бакет второй реплики в Google Cloud Storage со структурой папок и партициями данных](/images/integrations/data-ingestion/s3/GCS-examine-bucket-2.webp)

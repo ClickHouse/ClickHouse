@@ -8,8 +8,6 @@ toc_max_heading_level: 2
 keywords: ['ClickStack', 'OpenTelemetry collector', 'обсервабилити ClickHouse', 'конфигурация OTel collector', 'OpenTelemetry ClickHouse']
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
-
 import ExtendingConfig from '/snippets/ru/_extending_config.mdx';
 
 <Tip>
@@ -420,7 +418,7 @@ import ExtendingConfig from '/snippets/ru/_extending_config.mdx';
 
     Эта интеграция обеспечивает защиту конечной точки OTLP с помощью автоматически сгенерированного ключа API для приёма данных, который создаётся при развёртывании приложения HyperDX. Все телеметрические данные, отправляемые в коллектор, должны включать этот ключ API для аутентификации. Найти ключ можно в приложении HyperDX в разделе `Team Settings → API Keys`.
 
-    <Image img="/images/use-cases/observability/ingestion-keys.webp" alt="Ключи для приёма данных" size="lg" />
+    ![Ключи для приёма данных](/images/use-cases/observability/ingestion-keys.webp)
 
     Чтобы дополнительно защитить развёртывание, рекомендуем:
 
@@ -559,7 +557,7 @@ service:
 
 Если нельзя гарантировать большие батчи, можно делегировать пакетирование ClickHouse с помощью [Asynchronous Inserts](/ru/concepts/best-practices/selecting-an-insert-strategy#asynchronous-inserts). При асинхронной вставке данные сначала попадают в буфер, а затем позже, то есть асинхронно, записываются в хранилище базы данных.
 
-<Image img="/images/use-cases/observability/observability-6.webp" alt="Асинхронные вставки" size="md" />
+![Асинхронные вставки](/images/use-cases/observability/observability-6.webp)
 
 Когда [асинхронная вставка включена](/ru/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts), ClickHouse ① при получении запроса на вставку ② сразу записывает данные запроса в буфер в памяти. Когда ③ происходит следующий flush буфера, данные из буфера [сортируются](/ru/guides/clickhouse/data-modelling/sparse-primary-indexes#data-is-stored-on-disk-ordered-by-primary-key-columns) и записываются как часть в хранилище базы данных. Обратите внимание: до записи в хранилище базы данных эти данные недоступны для поиска запросами; flush буфера [настраивается](/ru/concepts/features/operations/insert/asyncinserts).
 
@@ -583,7 +581,7 @@ service:
 
 Коллектор ClickStack OTel выступает в роли экземпляра шлюза — см. [Роли коллектора](#collector-roles). Такие экземпляры предоставляют автономный сервис, обычно на каждый дата-центр или регион. Они принимают события от приложений (или других коллекторов в роли агента) через единую конечную точку OTLP. Обычно развертывается набор экземпляров коллектора, а для распределения нагрузки между ними используется встроенный балансировщик нагрузки.
 
-<Image img="/images/use-cases/observability/clickstack-with-gateways.webp" alt="Масштабирование со шлюзами" size="lg" />
+![Масштабирование со шлюзами](/images/use-cases/observability/clickstack-with-gateways.webp)
 
 Цель этой архитектуры — вынести ресурсоемкую обработку с агентов, тем самым минимизируя потребление ими ресурсов. Эти шлюзы ClickStack могут выполнять задачи преобразования, которые в противном случае пришлось бы выполнять агентам. Кроме того, агрегируя события от множества агентов, шлюзы могут обеспечивать отправку в ClickHouse крупных батчей, что делает вставку более эффективной. Эти коллекторы-шлюзы легко масштабировать по мере добавления новых агентов и источников SDK, а также роста пропускной способности потока событий.
 
@@ -599,7 +597,7 @@ service:
 
 Тем не менее, если вам нужны высокие гарантии доставки или возможность повторного воспроизведения данных (возможно, в несколько источников), Kafka может стать полезным дополнением к архитектуре.
 
-<Image img="/images/use-cases/observability/observability-8.webp" alt="Добавление Kafka" size="lg" />
+![Добавление Kafka](/images/use-cases/observability/observability-8.webp)
 
 В этом случае агенты OTel можно настроить на отправку данных в Kafka через [экспортер Kafka](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/kafkaexporter/README.md). Экземпляры шлюза, в свою очередь, получают сообщения с помощью [приёмника Kafka](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/receiver/kafkareceiver/README.md). За дополнительными подробностями рекомендуем обратиться к документации Confluent и OTel.
 

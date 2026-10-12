@@ -10,7 +10,6 @@ integration:
    - category: 'clickpipes'
 ---
 
-import { Image } from "/snippets/ru/components/Image.jsx";
 import { IAMAuthentication } from "/snippets/ru/clickpipes/_iam_authentication.mdx";
 
 <div id="supported-postgres-versions">
@@ -42,17 +41,17 @@ postgres=> SHOW rds.logical_replication ;
 1. Создайте новую группу параметров для вашей версии Postgres с требуемыми настройками:
    * Установите `rds.logical_replication` в значение 1
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp" alt="Где в RDS находятся группы параметров?" size="lg" border />
+![Где в RDS находятся группы параметров?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/parameter_group_in_blade.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp" alt="Изменение значения rds.logical_replication" size="lg" border />
+![Изменение значения rds.logical_replication](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/change_rds_logical_replication.webp)
 
 2. Примените новую группу параметров к вашей базе данных RDS Postgres
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp" alt="Изменение RDS Postgres с использованием новой группы параметров" size="lg" border />
+![Изменение RDS Postgres с использованием новой группы параметров](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/modify_parameter_group.webp)
 
 3. Перезагрузите экземпляр RDS, чтобы изменения вступили в силу
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp" alt="Перезагрузка RDS Postgres" size="lg" border />
+![Перезагрузка RDS Postgres](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/reboot_rds.webp)
 
 <div id="configure-database-user">
   ## Настройка пользователя базы данных
@@ -120,9 +119,9 @@ postgres=> SHOW rds.logical_replication ;
 
 Если вы хотите ограничить трафик к своему экземпляру RDS, добавьте [задокументированные статические NAT IP-адреса](/ru/integrations/clickpipes/networking/static-ips) в раздел `Inbound rules` группы безопасности RDS.
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp" alt="Где найти группу безопасности в RDS Postgres?" size="lg" border />
+![Где найти группу безопасности в RDS Postgres?](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/security_group_in_rds_postgres.webp)
 
-<Image img="/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp" alt="Изменение inbound rules для указанной выше группы безопасности" size="lg" border />
+![Изменение inbound rules для указанной выше группы безопасности](/images/integrations/data-ingestion/clickpipes/postgres/source/rds/edit_inbound_rules.webp)
 
 <div id="private-access-via-aws-privatelink">
   ### Частный доступ через AWS PrivateLink

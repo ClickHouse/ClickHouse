@@ -8,8 +8,6 @@ doc_type: 'guide'
 ---
 
 import { BetaBadge } from "/snippets/ko/components/BetaBadge/BetaBadge.jsx";
-import { Image } from "/snippets/ko/components/Image.jsx";
-
 이 가이드에서는 `pg_dump` 및 `pg_restore` 유틸리티를 사용하여 PostgreSQL 데이터베이스를 ClickHouse Managed Postgres로 마이그레이션하는 방법을 단계별로 안내합니다.
 
 <BetaBadge link="https://clickhouse.com/cloud/postgres" galaxyTrack={true} galaxyEvent="docs.managed-postgres.pg_dump-pg_restore-beta" />
@@ -27,7 +25,7 @@ import { Image } from "/snippets/ko/components/Image.jsx";
 
 단계를 따라 진행하기 위해 원본 데이터베이스로 샘플 RDS Postgres 데이터베이스를 사용하겠습니다. 예시는 다음과 같습니다:
 
-<Image img="/images/managed-postgres/pg_dump_restore/source-setup.webp" alt="원본 PostgreSQL 데이터베이스 설정" size="xl" border />
+![원본 PostgreSQL 데이터베이스 설정](/images/managed-postgres/pg_dump_restore/source-setup.webp)
 
 구성은 다음과 같습니다:
 
@@ -62,7 +60,7 @@ pg_dump \
 
 이 명령을 실행하면 다음과 같습니다:
 
-<Image img="/images/managed-postgres/pg_dump_restore/dump-command.webp" alt="pg_dump 명령 실행" size="xl" border />
+![pg_dump 명령 실행](/images/managed-postgres/pg_dump_restore/dump-command.webp)
 
 <div id="migration-pgdump-pg-restore-restore">
   ## 덤프를 ClickHouse Managed Postgres로 복원하기
@@ -76,7 +74,7 @@ pg_dump \
 
 먼저 ClickHouse Managed Postgres 인스턴스가 준비되어 있는지 확인하십시오. 가능하면 소스와 동일한 리전에 설정하는 것이 좋습니다. 간단한 가이드는 [여기](/ko/products/managed-postgres/quickstart#create-postgres-database)에서 확인할 수 있습니다. 이 가이드에서는 다음과 같은 구성을 생성합니다:
 
-<Image img="/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp" alt="ClickHouse Managed Postgres 인스턴스 생성" size="md" border />
+![ClickHouse Managed Postgres 인스턴스 생성](/images/managed-postgres/pg_dump_restore/create-pg-for-migration.webp)
 
 <div id="migration-pgdump-pg-restore-restore-dump">
   ### 덤프 복원
@@ -100,7 +98,7 @@ ClickHouse Managed Postgres 인스턴스의 connection string은 ClickHouse Clou
 
 이 예에서는 다음과 같습니다:
 
-<Image img="/images/managed-postgres/pg_dump_restore/restore-command.webp" alt="pg_restore 명령 실행" size="xl" border />
+![pg_restore 명령 실행](/images/managed-postgres/pg_dump_restore/restore-command.webp)
 
 <div id="migration-pgdump-pg-restore-verify">
   ## 마이그레이션 확인
@@ -109,7 +107,7 @@ ClickHouse Managed Postgres 인스턴스의 connection string은 ClickHouse Clou
 복원 프로세스가 완료되면 ClickHouse Managed Postgres 인스턴스에 연결하여 모든 데이터와 객체가 성공적으로 마이그레이션되었는지 확인할 수 있습니다. PostgreSQL 클라이언트는 어떤 것이든 사용하여 연결하고 쿼리를 실행할 수 있습니다.
 마이그레이션 후 ClickHouse Managed Postgres 설정은 다음과 같습니다.
 
-<Image img="/images/managed-postgres/pg_dump_restore/target-setup.webp" alt="대상 ClickHouse Managed Postgres 데이터베이스 설정" size="xl" border />
+![대상 ClickHouse Managed Postgres 데이터베이스 설정](/images/managed-postgres/pg_dump_restore/target-setup.webp)
 
 모든 테이블, 인덱스, 뷰, 시퀀스가 온전히 유지되고 있으며 데이터 건수도 일치하는 것을 확인할 수 있습니다.
 

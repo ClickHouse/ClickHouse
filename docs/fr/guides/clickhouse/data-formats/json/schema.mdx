@@ -7,8 +7,6 @@ score: 20
 doc_type: 'guide'
 ---
 
-import { Image } from "/snippets/fr/components/Image.jsx";
-
 Bien que l’[inférence de schéma](/fr/guides/clickhouse/data-formats/json/inference) puisse être utilisée pour définir un schéma initial pour des données JSON et interroger directement des fichiers de données JSON, par exemple dans S3, vous devriez viser à définir pour vos données un schéma versionné optimisé. Nous présentons ci-dessous l’approche recommandée pour modéliser les structures JSON.
 
 <div id="static-vs-dynamic-json">
@@ -989,19 +987,19 @@ Ainsi, pour les jeux de données globalement cohérents qui bénéficient malgr�
 
 ClickHouse stocke chaque chemin JSON sous forme de sous-colonne dans une véritable structure columnar, ce qui permet de bénéficier des mêmes gains de performance qu’avec des colonnes traditionnelles — notamment la compression, le traitement accéléré par SIMD et des E/S disque minimales. Chaque combinaison unique de chemin et de type dans vos données JSON peut devenir son propre fichier de colonne sur disque.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="Une colonne par chemin JSON" />
+![Une colonne par chemin JSON](/images/integrations/data-ingestion/data-formats/json_column_per_type.webp)
 
 Par exemple, lorsque deux chemins JSON sont insérés avec des types différents, ClickHouse stocke les valeurs de chaque [type concret dans des sous-colonnes distinctes](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). Ces sous-colonnes peuvent être consultées indépendamment, ce qui limite les E/S inutiles. Notez toutefois que lors de l’interrogation d’une colonne contenant plusieurs types, les valeurs sont toujours renvoyées sous la forme d’une seule réponse columnar.
 
 En outre, grâce aux offsets, ClickHouse garantit que ces sous-colonnes restent denses, sans stocker de valeurs par défaut pour les chemins JSON absents. Cette approche maximise la compression et réduit encore les E/S.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="Offsets JSON" />
+![Offsets JSON](/images/integrations/data-ingestion/data-formats/json_offsets.webp)
 
 Cependant, dans les scénarios avec des structures JSON à forte cardinalité ou très variables — comme les pipelines de télémétrie, les logs ou les feature stores de machine learning — ce comportement peut entraîner une explosion du nombre de fichiers de colonnes. Chaque nouveau chemin JSON unique crée un nouveau fichier de colonne, et chaque variante de type sous ce chemin crée un fichier de colonne supplémentaire. Bien que cela soit optimal pour les performances de lecture, cela pose des difficultés opérationnelles : épuisement des descripteurs de fichiers, augmentation de l’utilisation mémoire et merges plus lents en raison d’un grand nombre de petits fichiers.
 
 Pour atténuer ce problème, ClickHouse introduit le concept de sous-colonne de débordement : une fois que le nombre de chemins JSON distincts dépasse un seuil, les chemins supplémentaires sont stockés dans un seul fichier partagé à l’aide d’un format compact encodé. Ce fichier reste interrogeable, mais ne bénéficie pas des mêmes caractéristiques de performance que les sous-colonnes dédiées.
 
-<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="Colonne JSON partagée" />
+![Colonne JSON partagée](/images/integrations/data-ingestion/data-formats/json_shared_column.webp)
 
 Ce seuil est contrôlé par le paramètre [`max_dynamic_paths`](/fr/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) dans la déclaration du type JSON.
 
