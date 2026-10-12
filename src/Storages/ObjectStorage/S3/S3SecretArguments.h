@@ -27,6 +27,6 @@ void maskHeadersAndExtraCredentials(FunctionSecretArgumentsFinder & finder);
 
 /// Masks credential material embedded in an S3 URL itself: the userinfo part and the values of
 /// presigned-URL query parameters. Returns true if anything was masked.
-bool maskS3URICredentials(String & url);
+bool maskS3URICredentials(String & value, bool value_is_url);
 
 }
