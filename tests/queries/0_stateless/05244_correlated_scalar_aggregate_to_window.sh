@@ -9,7 +9,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # `optimize_correlated_scalar_aggregate_to_window` must not change any answer. The cases where the subquery is
 # not rewritten are in `05385_correlated_scalar_aggregate_to_window_not_rewritten`.
 
-create_tables t u x u64 dq nn nk r fk ts
+create_tables t u x u64 dq nn nk r fk ts tc
 
 section "--- aggregates ---"
 check "max" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v"
@@ -48,6 +48,8 @@ check "non-deterministic condition" "SELECT countIf(c != multiIf(k = 1, 30, k = 
 check "inside a correlated subquery" "SELECT o, (SELECT max(t.v) FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 100 AND z.o = 1 AND t.v >= (SELECT max(v) FROM t AS s WHERE s.k = u.k)) AS c FROM (SELECT number + 1 AS o FROM numbers(3)) AS z ORDER BY o"
 check "FINAL on both" "SELECT u.k AS k, r.v AS v, (SELECT max(v) FROM r AS s FINAL WHERE s.k = u.k) AS c FROM u INNER JOIN r FINAL ON u.k = r.k WHERE u.w > 0 ORDER BY k, v"
 check "additional_table_filters" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS additional_table_filters = {'t': 'v < 20'}"
+check "self-join" "SELECT a.k AS k, a.v AS v, (SELECT max(v) FROM t AS s WHERE s.k = a.k) AS c FROM t AS a INNER JOIN t AS b ON a.k = b.k WHERE a.k > 0 ORDER BY k, v"
+check "column named like a window column" "SELECT o.k AS k, o.__correlated_aggregate_0 AS a, (SELECT max(__correlated_aggregate_0) FROM tc AS s WHERE s.k = o.k) AS c FROM tc AS o WHERE o.k > 0 ORDER BY k, a"
 check "subcolumn" "SELECT o.k AS k, o.s AS s FROM ts AS o WHERE o.k > 0 AND length(o.s) * 2 < (SELECT sum(length(s)) FROM ts AS z WHERE z.k = o.k) ORDER BY k, s"
 # The window reads the subcolumn `s.size` instead of the whole column. The plan is checked without parallel replicas,
 # which describe the window step differently.

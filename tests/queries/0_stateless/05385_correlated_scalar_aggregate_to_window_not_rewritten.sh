@@ -8,7 +8,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `optimize_correlated_scalar_aggregate_to_window` must not change any answer, also where the subquery is not rewritten.
 
-create_tables t u x nn nk r tn tc vt tp
+create_tables t u x nn nk r tn vt tp
 
 check "nothing restricts the keys, the decorrelated plan needs less memory" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.k = t.k ORDER BY k, v"
 check "non-deterministic condition on the key, not pushed below the window" "SELECT countIf(c != multiIf(k = 1, 30, k = 2, 1e308, -7)) FROM (SELECT o.k AS k, (SELECT max(v) FROM t AS s WHERE s.k = o.k) AS c FROM t AS o WHERE rand64(o.k) % 2 = 0)"
@@ -17,7 +17,6 @@ check "correlated table on the NULL-extended side" "SELECT u.k AS k, t.v AS v, $
 check "RIGHT join" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u RIGHT JOIN t ON u.k = t.k WHERE t.v > 0 ORDER BY k, v"
 check "non-equality correlation" "SELECT u.k AS k, t.v AS v, (SELECT max(v) FROM t AS s WHERE s.k <= u.k) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v"
 check "no equality between the keys" "SELECT u.k AS k, t.v AS v, $SQ AS c FROM u INNER JOIN t ON u.w = t.k * 100 WHERE u.w > 0 ORDER BY k, v"
-check "self-join" "SELECT a.k AS k, a.v AS v, (SELECT max(v) FROM t AS s WHERE s.k = a.k) AS c FROM t AS a INNER JOIN t AS b ON a.k = b.k WHERE a.k > 0 ORDER BY k, v"
 check "FINAL only in the subquery" "SELECT u.k AS k, r.v AS v, (SELECT max(v) FROM r AS s FINAL WHERE s.k = u.k) AS c FROM u INNER JOIN r ON u.k = r.k WHERE u.w > 0 ORDER BY k, v"
 check "GROUP BY in the subquery" "SELECT u.k AS k, t.v AS v, (SELECT max(v) FROM t AS s WHERE s.k = u.k GROUP BY s.k) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v"
 check "arrayJoin in the subquery" "SELECT count(), sum(v), max(k) FROM (SELECT u.k AS k, t.v AS v, (SELECT arrayJoin(arrayFilter(x -> x < 0, [max(v)])) FROM t AS s WHERE s.k = u.k) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0)"
@@ -31,7 +30,6 @@ check "argument that may throw on rows the condition skips" "SELECT u.w AS w, x.
 check "count of a Nullable column" "SELECT nk.k AS k, nn.v AS v, (SELECT count(v) FROM nn AS s WHERE s.k = nk.k) AS c FROM nk INNER JOIN nn ON nk.k = nn.k WHERE nk.w > 0 ORDER BY k, v"
 check "outer key inside an expression argument" "SELECT u.k AS k, t.v AS v, (SELECT sum(intDiv(10, u.k)) FROM t AS s WHERE s.k = u.k) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v"
 check "NULL inside a Tuple key" "SELECT toString(o.k) AS k, o.v AS v, (SELECT count() FROM tn AS s WHERE s.k = o.k) AS c FROM tn AS o WHERE toString(o.k) != '' ORDER BY v"
-check "column named like a window column" "SELECT o.k AS k, o.__correlated_aggregate_0 AS a, (SELECT max(__correlated_aggregate_0) FROM tc AS s WHERE s.k = o.k) AS c FROM tc AS o WHERE o.k > 0 ORDER BY k, a"
 check "NULL in a Variant key" "SELECT o.v AS v, (SELECT count() FROM vt AS s WHERE s.k = o.k) AS c FROM vt AS o WHERE toString(variantType(o.k)) != 'x' ORDER BY v"
 check "PASTE JOIN" "SELECT n.number AS n, o.id AS id, (SELECT sum(v) FROM tp AS s WHERE s.k = o.k) AS c FROM (SELECT number FROM numbers(4)) AS n PASTE JOIN tp AS o WHERE n.number >= 0 AND o.k < 5 ORDER BY n"
 check "expression over no matching rows without short-circuit" "SELECT u.k AS k, t.v AS v, (SELECT intDiv(10, count()) FROM t AS s WHERE s.k = u.k AND s.v > 100) AS c FROM u INNER JOIN t ON u.k = t.k WHERE u.w > 0 ORDER BY k, v SETTINGS short_circuit_function_evaluation = 'disable'"
