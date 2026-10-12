@@ -825,6 +825,16 @@ void WindowTransform::computeReadyRows()
                 peer_group_start = current;
             }
 
+            if (params.separate_order_by_peer_groups && order_by_peer_group_start.location != current.location
+                && blocks.blockAt(current.location.block).index.order_by_peer_group_starts[current.location.row])
+            {
+                order_by_peer_group_start = RowPoint{
+                    .location = current.location,
+                    .row_index_in_partition = current.row_index_in_partition,
+                    .peer_group_index_in_partition = order_by_peer_group_start.peer_group_index_in_partition + 1,
+                };
+            }
+
             // Advance the frame start.
             advanceFrameStart();
 
@@ -936,6 +946,7 @@ void WindowTransform::startNextPartition()
     chassert(current.location == partition_start);
     current = RowPoint{.location = partition_start};
     peer_group_start = current;
+    order_by_peer_group_start = current;
     frame_start_group_number = 1;
     frame_end_group_number = 1;
 

@@ -14,6 +14,9 @@ struct SlidingIndex
 {
     std::vector<bool> partition_starts;
     std::vector<bool> peer_group_starts;
+    /// Peer group starts by the ORDER BY values whatever the frame type, filled only if
+    /// WindowTransformParams::separate_order_by_peer_groups is set.
+    std::vector<bool> order_by_peer_group_starts;
 };
 
 class SlidingIndexes
@@ -25,6 +28,7 @@ public:
 
 private:
     const WindowTransformParams & params;
+    const bool has_order_by_collation;
     std::optional<Columns> last_partition_key;
     std::optional<Columns> last_order_key;
 };

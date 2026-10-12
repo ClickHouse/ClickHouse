@@ -100,6 +100,12 @@ public:
     void updateAggregationState();
     void writeOutCurrentRow();
 
+    // The start of the current ORDER BY peer group, which rank() and dense_rank() read whatever the frame type.
+    const RowPoint & orderByPeerGroupStart() const
+    {
+        return params.separate_order_by_peer_groups ? order_by_peer_group_start : peer_group_start;
+    }
+
     /// Data for window transform itself.
     const WindowTransformParams params;
 
@@ -133,6 +139,8 @@ public:
     RowPoint current;
     // The start of current peer group.
     RowPoint peer_group_start;
+    // Updated only if params.separate_order_by_peer_groups is set, see orderByPeerGroupStart().
+    RowPoint order_by_peer_group_start;
 
     // Peer group index (1-based) of the row that frame_start / frame_end currently point to. Used
     // by GROUPS offset frames to count peer groups while advancing the boundaries. Reset together
