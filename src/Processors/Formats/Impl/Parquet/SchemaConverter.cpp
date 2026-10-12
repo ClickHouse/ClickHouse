@@ -61,18 +61,29 @@ SchemaConverter::SchemaConverter(
     }
 }
 
-void SchemaConverter::checkHasColumns()
+void SchemaConverter::validateSchema()
 {
     if (file_metadata.schema.size() < 2)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Parquet file has no columns");
     if (file_metadata.schema.at(0).num_children <= 0)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Schema root has no children");
+
+    /// Thrift deserialization stores any integer in the enum field. Check all elements before the traversal, because
+    /// it looks ahead at the repetition types of descendants (e.g. in `tupleSubtreeIsAllRequired`): loading an
+    /// out-of-range enum value is undefined behavior, hence the copy to the underlying type.
+    for (const auto & element : file_metadata.schema)
+    {
+        std::underlying_type_t<parq::FieldRepetitionType::type> repetition_type = 0;
+        memcpy(&repetition_type, &element.repetition_type, sizeof(repetition_type));
+        if (repetition_type < parq::FieldRepetitionType::REQUIRED || repetition_type > parq::FieldRepetitionType::REPEATED)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition type {} of parquet column {}", repetition_type, element.name);
+    }
 }
 
 void SchemaConverter::prepareForReading()
 {
     chassert(sample_block);
-    checkHasColumns();
+    validateSchema();
 
     /// DFS the schema tree.
     size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
@@ -132,7 +143,7 @@ void SchemaConverter::prepareForReading()
 NamesAndTypesList SchemaConverter::inferSchema()
 {
     chassert(!sample_block);
-    checkHasColumns();
+    validateSchema();
     size_t top_level_columns = size_t(file_metadata.schema.at(0).num_children);
     NamesAndTypesList res;
     for (size_t i = 0; i < top_level_columns; ++i)
@@ -229,13 +240,6 @@ void SchemaConverter::processSubtree(TraversalNode & node)
         throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid parquet schema tree");
     node.element = &file_metadata.schema.at(schema_idx);
     schema_idx += 1;
-
-    /// Thrift deserialization stores any integer in the enum field. Check it before the first comparison:
-    /// loading an out-of-range enum value is undefined behavior, hence the copy to the underlying type.
-    std::underlying_type_t<parq::FieldRepetitionType::type> repetition_type;
-    memcpy(&repetition_type, &node.element->repetition_type, sizeof(repetition_type));
-    if (repetition_type < parq::FieldRepetitionType::REQUIRED || repetition_type > parq::FieldRepetitionType::REPEATED)
-        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid repetition type {} of parquet column {}", repetition_type, node.element->name);
 
     std::optional<size_t> idx_in_output_block;
     size_t wrap_in_arrays = 0;

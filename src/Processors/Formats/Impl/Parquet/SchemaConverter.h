@@ -132,7 +132,7 @@ private:
         }
     };
 
-    void checkHasColumns();
+    void validateSchema();
 
     void processSubtree(TraversalNode & node);
 
