@@ -607,10 +607,15 @@ void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id,
 
     /// Only an attached table can be renamed, so a detached entry recorded under its name is a leftover
     /// of an earlier detach: erase it, the metadata file under the old name is gone after the rename.
+    /// An `EXCHANGE` renames both tables, so the same holds for the other name.
     std::erase_if(
         detached_dependencies,
         [&](const auto & entry)
-        { return std::get<1>(entry) == from_table_id.database_name && std::get<2>(entry) == from_table_id.table_name; });
+        {
+            auto matches = [&](const StorageID & table_id)
+            { return std::get<1>(entry) == table_id.database_name && std::get<2>(entry) == table_id.table_name; };
+            return matches(from_table_id) || (exchange && matches(to_table_id));
+        });
 
     /// The rename interpreter passes StorageIDs without UUIDs.
     /// If either ID has a UUID, it's not a standard rename operation, so nothing to do.
@@ -625,30 +630,30 @@ void NamedCollectionFactory::renameDependencies(const StorageID & from_table_id,
     /// under another name than the table's current one is exactly the leftover of such a failed create.
     /// An entry of a different table under the same name cannot be moved by mistake: a live entry
     /// carries its table's current name, and the rename source name has no other live owner.
-    /// An `EXCHANGE` calls this once per direction, and re-keying UUID entries by name would apply the
-    /// second call to the entries the first one just moved, so there the exchanged tables keep their
-    /// old entry names: the drop check resolves them by UUID and keeps refusing the drop.
+    /// An `EXCHANGE` swaps the entries of the two names in one step, so that the entries of each table
+    /// follow it to its new name, and the leftovers of failed creates under a name follow that name -
+    /// they keep being recorded under another name than the current one of the table with their UUID.
     auto & name_idx = dependencies.get<TableName>();
-    auto name_range = name_idx.equal_range(std::make_tuple(from_table_id.database_name, from_table_id.table_name));
 
     /// A single table can depend on several named collections, so all the entries of the name are
     /// re-inserted with the new one.
-    std::vector<std::pair<String, UUID>> moved;
-    std::vector<decltype(name_range.first)> to_erase;
-    for (auto it = name_range.first; it != name_range.second; ++it)
+    std::vector<std::pair<String, StorageID>> moved;
+    auto take_entries = [&](const StorageID & old_name, const StorageID & new_name)
     {
-        if (exchange && it->table_id.uuid != UUIDHelpers::Nil)
-            continue;
+        auto range = name_idx.equal_range(std::make_tuple(old_name.database_name, old_name.table_name));
+        for (auto it = range.first; it != range.second;)
+        {
+            moved.emplace_back(it->collection_name, StorageID{new_name.database_name, new_name.table_name, it->table_id.uuid});
+            it = name_idx.erase(it);
+        }
+    };
 
-        moved.emplace_back(it->collection_name, it->table_id.uuid);
-        to_erase.push_back(it);
-    }
+    take_entries(from_table_id, to_table_id);
+    if (exchange)
+        take_entries(to_table_id, from_table_id);
 
-    for (auto it : to_erase)
-        name_idx.erase(it);
-
-    for (const auto & [collection_name, uuid] : moved)
-        dependencies.emplace(collection_name, StorageID{to_table_id.database_name, to_table_id.table_name, uuid});
+    for (auto & [collection_name, table_id] : moved)
+        dependencies.emplace(collection_name, std::move(table_id));
 }
 
 void NamedCollectionFactory::rekeyDependencies(const StorageID & from_table_id, const StorageID & to_table_id)
