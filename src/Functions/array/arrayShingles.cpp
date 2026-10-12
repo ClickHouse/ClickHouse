@@ -62,13 +62,13 @@ public:
             if (shingle_length < 1)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shingle argument of function {} must be a positive integer.", getName());
 
-            const size_t array_length = arr_offsets[row] - arr_offsets[row - 1];
+            const size_t array_length = arr_offsets[row] - arr_offsets[static_cast<ssize_t>(row) - 1];
             if (static_cast<size_t>(shingle_length) > array_length)
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Shingle argument of function {} must less or equal than the array length.", getName());
 
             for (size_t i = 0; i < array_length - shingle_length + 1; ++i)
             {
-                col_res_data->insertRangeFrom(arr_values, arr_offsets[row - 1] + i, shingle_length);
+                col_res_data->insertRangeFrom(arr_values, arr_offsets[static_cast<ssize_t>(row) - 1] + i, shingle_length);
                 pos1 += shingle_length;
                 out_offsets_2.push_back(pos1);
             }

@@ -50,7 +50,7 @@ struct ArrayFirstLastIndexImpl
                 size_t offsets_size = offsets.size();
                 for (size_t offset_index = 0; offset_index < offsets_size; ++offset_index)
                 {
-                    size_t start_offset = offsets[offset_index - 1];
+                    size_t start_offset = offsets[static_cast<ssize_t>(offset_index) - 1];
                     size_t end_offset = offsets[offset_index];
 
                     if (end_offset > start_offset)
@@ -81,7 +81,7 @@ struct ArrayFirstLastIndexImpl
 
         for (size_t offset_index = 0; offset_index < offsets_size; ++offset_index)
         {
-            size_t start_offset = offsets[offset_index - 1];
+            size_t start_offset = offsets[static_cast<ssize_t>(offset_index) - 1];
             size_t end_offset = offsets[offset_index];
             size_t result_index = 0;
 

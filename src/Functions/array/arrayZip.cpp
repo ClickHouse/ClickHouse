@@ -152,7 +152,7 @@ private:
             {
                 const auto * array_column = array_columns[arg_i];
                 const auto & offsets = array_column->getOffsets();
-                size_t array_offset = offsets[row_i - 1];
+                size_t array_offset = offsets[static_cast<ssize_t>(row_i) - 1];
                 size_t array_size = offsets[row_i] - array_offset;
 
                 res_tuple_columns[arg_i]->insertRangeFrom(*tuple_columns[arg_i], array_offset, array_size);
@@ -163,7 +163,7 @@ private:
             {
                 const auto * array_column = array_columns[arg_i];
                 const auto & offsets = array_column->getOffsets();
-                size_t array_offset = offsets[row_i - 1];
+                size_t array_offset = offsets[static_cast<ssize_t>(row_i) - 1];
                 size_t array_size = offsets[row_i] - array_offset;
 
                 res_tuple_columns[arg_i]->insertManyDefaults(max_size - array_size);

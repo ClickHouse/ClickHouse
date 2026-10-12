@@ -327,7 +327,7 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
 
             for (size_t i = 0; i < rows; ++i)
             {
-                offsets[i] = offsets[i - 1];
+                offsets[i] = offsets[static_cast<ssize_t>(i) - 1];
 
                 if (time_limit_exceeded)
                     continue;
@@ -337,7 +337,6 @@ StoragesInfoStream::StoragesInfoStream(std::optional<ActionsDAG> filter_by_datab
                 const bool check_access_for_tables_in_db
                     = check_access_for_tables && !access->isGranted(AccessType::SHOW_TABLES, database_name);
 
-                offsets[i] = offsets[i - 1];
                 auto iterator = database->getTablesIterator(context, table_name_filter, /* skip_not_loaded */ false);
                 for (; iterator->isValid(); iterator->next())
                 {

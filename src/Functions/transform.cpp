@@ -394,13 +394,13 @@ namespace
                 if (it)
                 {
                     const auto idx = it->getMapped();
-                    const auto start = to_offsets[idx - 1];
+                    const auto start = to_offsets[static_cast<ssize_t>(idx) - 1];
                     to = &to_data[start];
                     to_size = to_offsets[idx] - start;
                 }
                 else if constexpr (std::is_same_v<DefData, ColumnString::Chars>)
                 {
-                    const auto start = def_offsets[i - 1];
+                    const auto start = def_offsets[static_cast<ssize_t>(i) - 1];
                     to = &def_data[start];
                     to_size = def_offsets[i] - start;
                 }
@@ -595,13 +595,13 @@ namespace
                 if (it)
                 {
                     const auto idx = it->getMapped();
-                    const auto start = to_offsets[idx - 1];
+                    const auto start = to_offsets[static_cast<ssize_t>(idx) - 1];
                     to = &to_data[start];
                     to_size = to_offsets[idx] - start;
                 }
                 else if constexpr (std::is_same_v<DefData, ColumnString::Chars>)
                 {
-                    const auto start = def_offsets[i - 1];
+                    const auto start = def_offsets[static_cast<ssize_t>(i) - 1];
                     to = &def_data[start];
                     to_size = def_offsets[i] - start;
                 }

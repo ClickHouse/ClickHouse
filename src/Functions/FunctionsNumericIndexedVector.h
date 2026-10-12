@@ -99,7 +99,7 @@ public:
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            size_t from = is_column_const ? 0 : (i == 0 ? 0 : offsets[i - 1]);
+            size_t from = is_column_const ? 0 : (i == 0 ? 0 : offsets[static_cast<ssize_t>(i) - 1]);
             size_t to = is_column_const ? offsets[0] : offsets[i];
             col_to->insertDefault();
             auto res = reinterpret_cast<AggregateFunctionGroupNumericIndexedVectorData<VectorImpl> *>(col_to->getData()[i]);

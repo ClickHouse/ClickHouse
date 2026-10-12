@@ -84,7 +84,7 @@ void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t
 
     /// Our seek is within working_buffer, so just move the position
     if (size_compressed &&
-        offset_in_compressed_file == file_in.getPosition() - size_compressed &&
+        offset_in_compressed_file + size_compressed == static_cast<size_t>(file_in.getPosition()) &&
         offset_in_decompressed_block <= working_buffer.size())
     {
         pos = working_buffer.begin() + offset_in_decompressed_block;

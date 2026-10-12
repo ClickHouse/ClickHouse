@@ -5,6 +5,8 @@
 
 #include <roaring/roaring.hh>
 
+#include <limits>
+
 namespace DB
 {
 
@@ -317,8 +319,12 @@ std::unique_ptr<IPostingListEncoder> PostingListCodecNone::createEncoder(size_t 
 /// Every container takes at most 2 bytes per value: arrays hold up to 4096 values of 2 bytes, bitsets take 8192 bytes
 /// for more values, and `runOptimize` turns them into runs only when the runs are smaller (see `finishSegment`).
 /// The header takes 8 bytes plus at most 9 bytes per container, and every container holds at least one value.
+/// `max_cardinality` also comes from disk, so the bound has to saturate: a wrapped product is a huge
+/// number again and would let any size prefix through the check this feeds.
 static UInt64 getMaxPortableBitmapBytes(UInt64 max_cardinality)
 {
+    if (max_cardinality > (std::numeric_limits<UInt64>::max() - 8) / 11)
+        return std::numeric_limits<UInt64>::max();
     return 8 + 11 * max_cardinality;
 }
 

@@ -8,6 +8,7 @@
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Common/ThreadPool.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -48,6 +49,7 @@ private:
             set(0);
         }
 
+        NO_SANITIZE_UNSIGNED_OVERFLOW
         void set(size_t new_size)
         {
             if (new_size == bytes)

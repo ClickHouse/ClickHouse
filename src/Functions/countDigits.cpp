@@ -7,6 +7,7 @@
 #include <Core/callOnTypeIndex.h>
 #include <base/extended_types.h>
 #include <base/itoa.h>
+#include <base/sanitizer_defs.h>
 #include <Common/digits10.h>
 
 namespace DB
@@ -88,6 +89,7 @@ public:
 
 private:
     template <typename T, typename ColVecType>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static void execute(const ColVecType & col, ColumnUInt8 & result_column, size_t rows_count)
     {
         using NativeT = make_unsigned_t<NativeType<T>>;

@@ -2,6 +2,8 @@
 
 #include <IO/VarInt.h>
 #include <base/sort.h>
+#include <base/arithmeticOverflow.h>
+#include <base/sanitizer_defs.h>
 #include <Common/AllocatorWithMemoryTracking.h>
 #include <Common/ArenaUtils.h>
 #include <Common/ArenaWithFreeLists.h>
@@ -180,6 +182,11 @@ public:
         }
     }
 
+    /// Every sum here is over weights straight from the caller's column, so `topKWeighted(k)(x, -2)`
+    /// contributes 2^64-2 and all of them are modular, as `merge` below already states. The attribute
+    /// is on the function rather than its individual sums because there are three of them - the two
+    /// below and the alpha-map one at the end - and annotating them one at a time kept missing one.
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void insert(const TKey & key, UInt64 increment = 1, UInt64 error = 0)
     {
         // Increase weight of a key that already exists
@@ -208,6 +215,7 @@ public:
      * Parallel Space Saving reduction and combine step from:
      *  https://arxiv.org/pdf/1401.0702.pdf
      */
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void merge(const Self & rhs)
     {
         if (rhs.empty())
@@ -421,7 +429,7 @@ protected:
             for (size_t i = requested_capacity; i < counter_list.size(); ++i)
             {
                 size_t pos = counter_list[i].hash & alpha_mask;
-                alpha_map[pos] = std::min(alpha_map[pos] + counter_list[i].count - counter_list[i].error, MAX_ALPHA_VALUE);
+                alpha_map[pos] = std::min(common::addIgnoreOverflow(alpha_map[pos], counter_list[i].count - counter_list[i].error), MAX_ALPHA_VALUE);
                 arena.free(counter_list[i].key);
             }
 

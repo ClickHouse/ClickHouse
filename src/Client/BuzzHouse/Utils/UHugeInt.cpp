@@ -4,6 +4,8 @@
 
 #include <cmath>
 
+/// Every operation below wraps by construction, so this file is excluded from the
+/// `unsigned-integer-overflow` check in `tests/ubsan_ignorelist.txt`.
 namespace BuzzHouse
 {
 

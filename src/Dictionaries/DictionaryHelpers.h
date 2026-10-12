@@ -686,7 +686,9 @@ Block mergeBlockWithPipe(
     });
 
     size_t result_fetched_rows = result_fetched_columns.front()->size();
-    size_t filter_hint = filter.size() - indexes_to_remove_count;
+    /// `filter` takes an `ssize_t` hint where a negative value means "unknown". More indexes can be
+    /// removed than the filter has rows, so compute the shortfall signed rather than letting it wrap.
+    ssize_t filter_hint = static_cast<ssize_t>(filter.size()) - static_cast<ssize_t>(indexes_to_remove_count);
 
     Block result_block = block_to_update.cloneEmpty();
     for (size_t column_index = 0; column_index < block_to_update.columns(); ++column_index)

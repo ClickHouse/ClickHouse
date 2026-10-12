@@ -20,7 +20,7 @@ namespace
 {
 
 /// Deterministic splitmix64 -> uniform size_t in [0, bound).
-UInt64 splitmix64(UInt64 & state)
+UInt64 NO_SANITIZE_UNSIGNED_OVERFLOW splitmix64(UInt64 & state)
 {
     UInt64 z = (state += 0x9E3779B97F4A7C15ULL);
     z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9ULL;

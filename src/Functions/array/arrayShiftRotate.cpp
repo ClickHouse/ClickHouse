@@ -192,12 +192,16 @@ struct ArrayRotateImpl
             }
 
             size_t shift_num = static_cast<size_t>(shift_num_value);
-            if (nested_size > 0 && shift_num >= nested_size)
+            /// An empty array is rotated by nothing at all: the loop below does not run, and
+            /// `nested_size - shift_num` would underflow here, having had no size to reduce against.
+            if (nested_size > 0)
+            {
                 shift_num %= nested_size;
 
-            // Rotating left to N is the same as shifting right to (size - N).
-            if (actual_direction == ShiftRotateDirection::Right)
-                shift_num = nested_size - shift_num;
+                // Rotating left to N is the same as shifting right to (size - N).
+                if (actual_direction == ShiftRotateDirection::Right)
+                    shift_num = nested_size - shift_num;
+            }
 
             for (size_t j = 0; j < nested_size; ++j)
                 permutation[current_offset + j] = current_offset + (j + shift_num) % nested_size;

@@ -291,8 +291,8 @@ public:
                 {
                     auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
                     col_offsets.getData().resize_assume_reserved(offsets_before);
-                    for (size_t i = transferred; i-- > 0;)
-                        nested_function->rollbackInsertResult(place + i * size_of_data, col.getData());
+                    for (size_t i = transferred; i > 0; --i)
+                        nested_function->rollbackInsertResult(place + (i - 1) * size_of_data, col.getData());
                     throw;
                 }
 
@@ -319,8 +319,8 @@ public:
         auto & col_offsets = assert_cast<ColumnArray::ColumnOffsets &>(col.getOffsetsColumn());
 
         col_offsets.getData().resize_assume_reserved(col_offsets.size() - 1);
-        for (size_t i = total; i-- > 0;)
-            nested_function->rollbackInsertResult(place + i * size_of_data, col.getData());
+        for (size_t i = total; i > 0; --i)
+            nested_function->rollbackInsertResult(place + (i - 1) * size_of_data, col.getData());
     }
 
     AggregateFunctionPtr getNestedFunction() const override { return nested_function; }

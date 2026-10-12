@@ -16,6 +16,7 @@
 #include <mutex>
 #include <chrono>
 #include <functional>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -196,9 +197,11 @@ private:
     /// Unregisters specified thread from leased set
     /// If shutdown is true, ConcurrencyControlDownscales profile event is not incremented
     /// (shutdown-induced termination is normal, not resource contention)
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void downscale(size_t thread_num, bool shutdown = false);
 
     /// Preempted thread set management
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void setPreempted(size_t thread_num);
     void resetPreempted(size_t thread_num);
 

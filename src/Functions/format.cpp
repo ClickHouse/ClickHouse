@@ -86,7 +86,7 @@ public:
             {
                 has_column_string = true;
                 data[i - 1] = &col->getChars();
-                offsets[i - 1] = &col->getOffsets();
+                offsets[static_cast<ssize_t>(i) - 1] = &col->getOffsets();
             }
             else if (const ColumnFixedString * fixed_col = checkAndGetColumn<ColumnFixedString>(column.get()))
             {
@@ -120,7 +120,7 @@ public:
                 /// Same as the normal `ColumnString` branch
                 has_column_string = true;
                 data[i - 1] = &converted_col_ptrs[i - 1]->getChars();
-                offsets[i - 1] = &converted_col_ptrs[i - 1]->getOffsets();
+                offsets[static_cast<ssize_t>(i) - 1] = &converted_col_ptrs[i - 1]->getOffsets();
             }
         }
 

@@ -115,7 +115,7 @@ void RowInputMissingColumnsFiller::addDefaults(MutableColumns & columns, size_t 
                                     "Column with Array type is not represented by ColumnArray column: {}",
                                     column_j->dumpStructure());
                 const auto & offsets = column_array->getOffsets();
-                size_of_array = offsets[row_num] - offsets[row_num - 1];
+                size_of_array = offsets[row_num] - offsets[static_cast<ssize_t>(row_num) - 1];
                 break;
             }
         }

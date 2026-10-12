@@ -1,5 +1,6 @@
 #include <Coordination/ACLMap.h>
 #include <Common/SipHash.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -63,7 +64,7 @@ ACLMap::MapEntry & ACLMap::numToAcl(ACLId id)
     return it->second;
 }
 
-ACLId ACLMap::convertACLs(const Coordination::ACLs & acls)
+ACLId NO_SANITIZE_UNSIGNED_OVERFLOW ACLMap::convertACLs(const Coordination::ACLs & acls)
 {
     if (acls.empty())
         return 0;

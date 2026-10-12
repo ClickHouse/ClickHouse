@@ -268,7 +268,7 @@ struct PositionImpl
             /// We check that the entry does not pass through the boundaries of strings.
             if (pos + needle.size() <= begin + haystack_offsets[i])
             {
-                auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[i - 1]), reinterpret_cast<const char *>(pos));
+                auto res_pos = 1 + Impl::countChars(reinterpret_cast<const char *>(begin + haystack_offsets[static_cast<ssize_t>(i) - 1]), reinterpret_cast<const char *>(pos));
                 if (res_pos < start)
                 {
                     pos = reinterpret_cast<const UInt8 *>(Impl::advancePos(

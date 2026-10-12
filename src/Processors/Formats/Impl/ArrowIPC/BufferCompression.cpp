@@ -13,6 +13,7 @@
 #define ZSTD_STATIC_LINKING_ONLY
 #include <zstd.h>
 #include <lz4frame.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -111,6 +112,7 @@ UInt64 lz4BlockOutputBound(const LZ4F_frameInfo_t & info, const char * src, size
 }
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 FrameContentBound frameContentBound(CompressionCodec codec, const char * src, size_t size)
 {
     if (codec == CompressionCodec::Zstd)

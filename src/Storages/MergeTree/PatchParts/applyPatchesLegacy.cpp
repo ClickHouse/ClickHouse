@@ -298,7 +298,7 @@ PatchIndicesPtr applyPatchMerge(const Block & result_block, const Block & patch_
     const auto & result_offset_data = getColumnUInt64Data(result_block, "_part_offset");
 
     UInt64 first_result_offset = result_offset_data[0];
-    UInt64 last_result_offset = result_offset_data[num_rows - 1];
+    UInt64 last_result_offset = result_offset_data[static_cast<ssize_t>(num_rows) - 1];
 
     auto [patch_begin, patch_end] = getPartNameOffsetRange(
         patch_name_column,

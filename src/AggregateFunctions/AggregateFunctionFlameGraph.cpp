@@ -1,3 +1,4 @@
+#include <base/arithmeticOverflow.h>
 #include <AggregateFunctions/AggregateFunctionFactory.h>
 #include <AggregateFunctions/FactoryHelpers.h>
 #include <AggregateFunctions/IAggregateFunction.h>
@@ -14,6 +15,7 @@
 #include <Common/UnorderedMapWithMemoryTracking.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Common/typeid_cast.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -377,6 +379,7 @@ struct AggregateFunctionFlameGraphData
         return nullptr;
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void add(UInt64 ptr, Int64 size, const UInt64 * stack, size_t stack_size, Arena * arena)
     {
         /// In case if argument is nullptr, only track allocations.
@@ -415,7 +418,7 @@ struct AggregateFunctionFlameGraphData
         }
         else if (size < 0)
         {
-            UInt64 abs_size = -static_cast<UInt64>(size);
+            UInt64 abs_size = common::negateIgnoreOverflow(static_cast<UInt64>(size));
             if (auto * allocation = tryFindMatchAndRemove(place.allocation, abs_size))
             {
                 untrack(allocation);
@@ -473,6 +476,7 @@ struct AggregateFunctionFlameGraphData
         }
     }
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void merge(const AggregateFunctionFlameGraphData & other, Arena * arena)
     {
         is_string_mode = is_string_mode || other.is_string_mode;
@@ -591,7 +595,7 @@ public:
         const auto & trace_offsets = trace.getOffsets();
         UInt64 prev_offset = 0;
         if (row_num)
-            prev_offset = trace_offsets[row_num - 1];
+            prev_offset = trace_offsets[static_cast<ssize_t>(row_num) - 1];
         UInt64 trace_size = trace_offsets[row_num] - prev_offset;
 
         Int64 allocated = 1;

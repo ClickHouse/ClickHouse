@@ -68,7 +68,7 @@ public:
         out_offsets.resize(input_rows_count);
 
         for (size_t row = 0; row < input_rows_count; ++row)
-            out_offsets[row] = size_per_row + out_offsets[row - 1];
+            out_offsets[row] = size_per_row + out_offsets[static_cast<ssize_t>(row) - 1];
 
         Columns columns_holder(arguments.size());
         for (size_t idx = 0; idx < arguments.size(); ++idx)

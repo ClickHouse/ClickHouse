@@ -14,6 +14,7 @@
 
 #include <Parsers/NullsAction.h>
 #include <Functions/IFunction.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -155,6 +156,7 @@ private:
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
 
     static void convertLimitOffsetExpression(QueryTreeNodePtr & expression_node, const String & expression_description, IdentifierResolveScope & scope);

@@ -327,7 +327,8 @@ private:
             size_t data_new_offset = data_width == 0 ? (*data_offsets)[i] : data_prev_offset + data_width;
 
             /// NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
-            while (human_readable_part_width > 0 && human_readable_part_vec[human_readable_part_new_offset - 1] == 0 && human_readable_part_new_offset > human_readable_part_prev_offset)
+            while (human_readable_part_width > 0 && human_readable_part_new_offset > human_readable_part_prev_offset
+                   && human_readable_part_vec[human_readable_part_new_offset - 1] == 0)
                 --human_readable_part_new_offset;
 
             /// max encodable data to stay within 90-char limit on Bech32 output
@@ -585,7 +586,7 @@ private:
             size_t new_offset = col_width == 0 ? (*in_offsets)[i] : prev_offset + col_width;
 
             /// NUL chars are used to pad fixed width strings, so we remove them here since they are not valid inputs anyway
-            while (col_width > 0 && in_vec[new_offset - 1] == 0 && new_offset > prev_offset)
+            while (col_width > 0 && new_offset > prev_offset && in_vec[new_offset - 1] == 0)
                 --new_offset;
 
             /// enforce char limit

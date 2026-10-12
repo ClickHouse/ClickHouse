@@ -81,8 +81,8 @@ struct FunctionDetectLanguageImpl
 
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * str = data.data() + offsets[i - 1];
-            const size_t str_len = offsets[i] - offsets[i - 1];
+            const UInt8 * str = data.data() + offsets[static_cast<ssize_t>(i) - 1];
+            const size_t str_len = offsets[i] - offsets[static_cast<ssize_t>(i) - 1];
 
             std::string_view res;
 
@@ -179,8 +179,8 @@ public:
         IColumn::Offset current_offset = 0;
         for (size_t i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * str = input_data.data() + input_offsets[i - 1];
-            const size_t str_len = input_offsets[i] - input_offsets[i - 1];
+            const UInt8 * str = input_data.data() + input_offsets[static_cast<ssize_t>(i) - 1];
+            const size_t str_len = input_offsets[i] - input_offsets[static_cast<ssize_t>(i) - 1];
 
             if (UTF8::isValidUTF8(str, str_len))
             {

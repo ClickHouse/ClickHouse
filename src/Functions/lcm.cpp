@@ -2,6 +2,7 @@
 #include <Functions/FunctionBinaryArithmetic.h>
 #include <Functions/GCDLCMImpl.h>
 
+#include <base/arithmeticOverflow.h>
 #include <base/extended_types.h>
 
 #include <boost/integer/common_factor.hpp>
@@ -58,7 +59,7 @@ struct LCMImpl : public GCDLCMImpl<A, B, LCMImpl<A, B>, NameLCM>
         Unsigned val2 = abs_impl::abs<Int>(b);
 
         /// Overflow in implementation specific way.
-        return ResultType(val1 * val2);
+        return ResultType(common::mulIgnoreOverflow(val1, val2));
     }
 };
 

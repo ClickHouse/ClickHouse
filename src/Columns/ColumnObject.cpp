@@ -13,6 +13,7 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <Common/checkStackSize.h>
 #include <Common/logger_useful.h>
+#include <base/sanitizer_defs.h>
 
 namespace DB
 {
@@ -1363,6 +1364,7 @@ void ColumnObject::updateHashWithValueRange(size_t begin, size_t end, SipHash & 
     shared_data->updateHashWithValueRange(begin, end, hash);
 }
 
+NO_SANITIZE_UNSIGNED_OVERFLOW
 void ColumnObject::computeHashInto(size_t row_begin, size_t row_end, UInt32 * hash_out, bool initial) const
 {
     /// A logically equal object must hash the same regardless of how its paths are split between
@@ -2366,7 +2368,7 @@ ColumnObject::SortedPathsIterator::SortedPathsIterator(const ColumnObject & colu
 {
     std::tie(shared_data_paths, shared_data_values) = column_object.getSharedDataPathsAndValues();
     const auto & shared_data_offsets = column_object.getSharedDataOffsets();
-    shared_data_it = shared_data_offsets[row - 1];
+    shared_data_it = shared_data_offsets[static_cast<ssize_t>(row) - 1];
     shared_data_end = shared_data_offsets[row];
     setCurrentPath();
 }
@@ -2583,7 +2585,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
     size_t size = shared_data_offsets.size();
     for (size_t i = offset; i < size; ++i)
     {
-        size_t shared_data_start = shared_data_offsets[i - 1];
+        size_t shared_data_start = shared_data_offsets[static_cast<ssize_t>(i) - 1];
         size_t shared_data_end = shared_data_offsets[i];
         for (size_t j = shared_data_start; j < shared_data_end; ++j)
         {
@@ -2612,7 +2614,7 @@ void ColumnObject::repairDuplicatesInDynamicPathsAndSharedData(size_t offset)
     PathToColumnMap new_dynamic_paths;
     for (size_t i = *first_row_with_duplicates; i < size; ++i)
     {
-        size_t shared_data_start = shared_data_offsets[i - 1];
+        size_t shared_data_start = shared_data_offsets[static_cast<ssize_t>(i) - 1];
         size_t shared_data_end = shared_data_offsets[i];
         for (size_t j = shared_data_start; j < shared_data_end; ++j)
         {

@@ -73,7 +73,7 @@ struct TranslateImpl
         UInt64 data_size = 0;
         for (UInt64 i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * src = data.data() + offsets[i - 1];
+            const UInt8 * src = data.data() + offsets[static_cast<ssize_t>(i) - 1];
             const UInt8 * src_end = data.data() + offsets[i];
 
             while (src < src_end)
@@ -216,7 +216,7 @@ struct TranslateUTF8Impl
 
         for (UInt64 i = 0; i < input_rows_count; ++i)
         {
-            const UInt8 * src = data.data() + offsets[i - 1];
+            const UInt8 * src = data.data() + offsets[static_cast<ssize_t>(i) - 1];
             const UInt8 * src_end = data.data() + offsets[i];
 
             while (src < src_end)

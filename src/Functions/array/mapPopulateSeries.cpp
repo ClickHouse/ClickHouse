@@ -1,4 +1,5 @@
 #include <base/sort.h>
+#include <base/sanitizer_defs.h>
 
 #include <Core/ColumnWithTypeAndName.h>
 #include <Core/callOnTypeIndex.h>
@@ -144,6 +145,7 @@ private:
     }
 
     template <typename KeyType, typename ValueType>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     void executeImplTyped(
         const ColumnPtr & key_column,
         const ColumnPtr & value_column,
@@ -181,7 +183,7 @@ private:
 
         for (size_t offset_index = 0; offset_index < key_offsets_size; ++offset_index)
         {
-            size_t start_offset = offsets[offset_index - 1];
+            size_t start_offset = offsets[static_cast<ssize_t>(offset_index) - 1];
             size_t end_offset = offsets[offset_index];
 
             sorted_keys_values.clear();

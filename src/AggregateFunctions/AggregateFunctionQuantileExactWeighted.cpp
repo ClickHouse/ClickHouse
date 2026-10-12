@@ -8,6 +8,8 @@
 #include <Common/NaNUtils.h>
 
 #include <numeric>
+#include <base/arithmeticOverflow.h>
+#include <base/sanitizer_defs.h>
 
 
 namespace DB
@@ -58,7 +60,10 @@ struct QuantileExactWeighted
             ++map[x];
     }
 
-    void add(const Value & x, Weight weight)
+    /// The weight comes straight from the caller's column, so a negative one arrives as a huge
+    /// `UInt64` and the per-value sums are modular. Annotated rather than rewritten so the hash
+    /// map is still looked up once per row.
+    void NO_SANITIZE_UNSIGNED_OVERFLOW add(const Value & x, Weight weight)
     {
         if constexpr (!interpolated)
         {
@@ -74,7 +79,7 @@ struct QuantileExactWeighted
         }
     }
 
-    void merge(const QuantileExactWeighted & rhs)
+    void NO_SANITIZE_UNSIGNED_OVERFLOW merge(const QuantileExactWeighted & rhs)
     {
         for (const auto & pair : rhs.map)
             map[pair.getKey()] += pair.getMapped();
@@ -316,7 +321,8 @@ private:
         }
 
         ::sort(array, array + size, [](const Pair & a, const Pair & b) { return a.first < b.first; });
-        std::partial_sum(array, array + size, array, [](const Pair & acc, const Pair & p) { return Pair(p.first, acc.second + p.second); });
+        std::partial_sum(array, array + size, array,
+            [](const Pair & acc, const Pair & p) { return Pair(p.first, common::addIgnoreOverflow(acc.second, p.second)); });
         return array[size - 1].second - 1;
     }
 

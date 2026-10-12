@@ -1,5 +1,6 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionBinaryArithmetic.h>
+#include <base/sanitizer_defs.h>
 
 #if USE_EMBEDDED_COMPILER
 #    include <llvm/IR/Intrinsics.h>
@@ -24,6 +25,7 @@ struct BitRotateRightImpl
     static const constexpr bool allow_string_integer = false;
 
     template <typename Result = ResultType>
+    NO_SANITIZE_UNSIGNED_OVERFLOW
     static Result apply(A a [[maybe_unused]], B b [[maybe_unused]])
     {
         if constexpr (is_big_int_v<A> || is_big_int_v<B>)
