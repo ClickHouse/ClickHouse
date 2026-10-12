@@ -7,6 +7,7 @@
 #include <Poco/MD5Engine.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
+#include <Common/Stopwatch.h>
 #include <Common/Exception.h>
 #include <Common/SipHash.h>
 
@@ -362,7 +363,7 @@ Aws::Auth::AWSCredentials Client::getCredentials() const
 
 bool Client::checkIfCredentialsChanged(const Aws::S3::S3Error & error) const
 {
-    return (error.GetExceptionName() == "AuthenticationRequired");
+    return error.GetExceptionName() == "AuthenticationRequired" || error.GetExceptionName() == "ExpiredToken";
 }
 
 bool Client::checkIfWrongRegionDefined(const std::string & bucket, const Aws::S3::S3Error & error, std::string & region) const
@@ -766,8 +767,15 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
         }
     );
 
-    for (size_t attempt = 0; attempt <= max_redirects; ++attempt)
+    std::optional<Stopwatch> expired_token_retry_watch;
+    size_t expired_token_retries = 0;
+    for (size_t attempt = 0; ; ++attempt)
     {
+        chassert(attempt >= expired_token_retries);
+        const size_t effective_redirect_attempt = attempt - expired_token_retries;
+        if (effective_redirect_attempt > max_redirects)
+            break;
+
         auto result = request_fn(request);
         if (result.IsSuccess())
             return result;
@@ -778,8 +786,36 @@ Client::doRequest(RequestType & request, RequestFn request_fn) const
 
         if (checkIfCredentialsChanged(error))
         {
-            LOG_INFO(log, "Credentials changed, attempting again");
+            if (error.GetExceptionName() != "ExpiredToken")
+            {
+                LOG_INFO(log, "Credentials changed, attempting again");
+                credentials_provider->SetNeedRefresh();
+                continue;
+            }
+
+            const auto timeout_ms = client_configuration.expired_token_retry_timeout_ms;
+            if (timeout_ms == 0)
+                return result;
+
+            if (!expired_token_retry_watch)
+                expired_token_retry_watch.emplace(CLOCK_MONOTONIC);
+
+            const auto elapsed_ms = expired_token_retry_watch->elapsedMilliseconds();
+            if (expired_token_retries >= client_configuration.retry_strategy.max_retries || elapsed_ms >= timeout_ms)
+                return result;
+
+            RetryStrategy retry_strategy(client_configuration.retry_strategy);
+            const auto retry_delay_ms = static_cast<UInt64>(retry_strategy.CalculateDelayBeforeNextRetry(error, expired_token_retries));
+            if (retry_delay_ms >= timeout_ms - elapsed_ms)
+                return result;
+
+            if (expired_token_retries == 0)
+                LOG_INFO(log, "ExpiredToken on S3 request, refreshing credentials and retrying");
+            ++expired_token_retries;
             credentials_provider->SetNeedRefresh();
+            sleepForMilliseconds(retry_delay_ms);
+            if (expired_token_retry_watch->elapsedMilliseconds() >= timeout_ms)
+                return result;
             continue;
         }
 
