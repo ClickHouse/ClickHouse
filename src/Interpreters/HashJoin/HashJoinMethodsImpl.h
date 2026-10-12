@@ -354,12 +354,15 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
             chassert(!dense_keys.empty() && dense_keys.front()->size() == selector.size());
             slot_key_getter.emplace(createKeyGetter<KeyGetter, is_asof_join>(JoinCommon::getRawPointers(dense_keys), key_sizes));
         }
-        KeyGetter & key_getter = keys_are_dense ? *slot_key_getter : *block_key_getter;
 
+        /// `keys_are_dense` is passed as a template argument, so the loop in `insertSlotRows` does not test it on every row.
         auto insert_rows = [&](const auto & rows)
         {
-            return insertSlotRows(
-                join, map, key_getter, keys_are_dense, key_columns, stored_block_no, rows, null_map, join_mask, slots.arena(slot));
+            if (keys_are_dense)
+                return insertSlotRows<true>(
+                    join, map, *slot_key_getter, key_columns, stored_block_no, rows, null_map, join_mask, slots.arena(slot));
+            return insertSlotRows<false>(
+                join, map, *block_key_getter, key_columns, stored_block_no, rows, null_map, join_mask, slots.arena(slot));
         };
         const BuildResult slot_result
             = selector.isContinuousRange() ? insert_rows(selector.getRange()) : insert_rows(selector.getIndexes());
@@ -377,12 +380,11 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertFromBlockImpl
 }
 
 template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
-template <typename KeyGetter, typename HashMap, typename Selector>
+template <bool keys_are_dense, typename KeyGetter, typename HashMap, typename Selector>
 BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertSlotRows(
     HashJoin & join,
     HashMap & map,
-    KeyGetter & slot_key_getter,
-    bool keys_are_dense,
+    KeyGetter & key_getter_,
     const ColumnRawPtrs & key_columns,
     UInt32 stored_block_no,
     const Selector & selector,
@@ -395,7 +397,7 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertSlotRows(
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
 
     /// Copy the getter when that is cheap: the loop reloads a getter behind a reference after every out-of-line `RowRefList::insert`.
-    std::conditional_t<std::is_trivially_copyable_v<KeyGetter>, KeyGetter, KeyGetter &> key_getter = slot_key_getter;
+    std::conditional_t<std::is_trivially_copyable_v<KeyGetter>, KeyGetter, KeyGetter &> key_getter = key_getter_;
 
     const IColumn * asof_column [[maybe_unused]] = nullptr;
     [[maybe_unused]] TypeIndex asof_type{};

@@ -165,12 +165,11 @@ private:
     /// Inserts the rows of one slot. The `is_inserted` it returns comes from these rows only, without `isInsertedWithoutRows`.
     /// With `keys_are_dense`, `key_getter` reads the keys gathered for the slot,
     /// so the key of the `i`-th row of `selector` is at row `i`.
-    template <typename KeyGetter, typename HashMap, typename Selector>
+    template <bool keys_are_dense, typename KeyGetter, typename HashMap, typename Selector>
     static BuildResult insertSlotRows(
         HashJoin & join,
         HashMap & map,
         KeyGetter & key_getter,
-        bool keys_are_dense,
         const ColumnRawPtrs & key_columns,
         UInt32 stored_block_no,
         const Selector & selector,
