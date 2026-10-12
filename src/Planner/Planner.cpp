@@ -120,6 +120,7 @@ namespace Setting
     extern const SettingsUInt64 aggregation_memory_efficient_merge_threads;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsBool apply_deleted_mask;
+    extern const SettingsBool use_partial_aggregate_cache;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool distributed_aggregation_memory_efficient;
     extern const SettingsBool enable_memory_bound_merging_of_aggregation_results;
@@ -782,7 +783,9 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     const bool has_row_level_filter = hasRowPolicyOnTableInputs(select_query_info, query_context);
     const bool has_additional_table_filters = !settings[Setting::additional_table_filters].value.empty();
     const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
-    const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
+    /// The partial aggregate cache key analyzes the whole query: compute it only when the cache is enabled.
+    const bool use_partial_aggregate_cache = settings[Setting::use_partial_aggregate_cache];
+    const UInt64 partial_aggregate_semantic_key = !use_partial_aggregate_cache ? 0 : partialAggregateCacheSemanticKey(
         select_query_info.query,
         query_context->getCurrentDatabase(),
         apply_deleted_mask_value,
@@ -810,8 +813,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
     if (tmp_data_scope)
         tmp_data_scope = tmp_data_scope->childScope(/* metrics */{}, settings[Setting::temporary_files_buffer_size], settings[Setting::temporary_files_codec]);
     /// Prefer query context: stateful functions (e.g. `timeSeriesIdToGroup`) need it in `FunctionFactory::tryGet`.
-    const bool has_nondeterministic_functions
-        = astContainsNonDeterministicFunctions(select_query_info.query, query_context);
+    const bool has_nondeterministic_functions = partial_aggregate_semantic_key != 0
+        && astContainsNonDeterministicFunctions(select_query_info.query, query_context);
     const UInt64 partial_cache_semantic_key = has_nondeterministic_functions ? 0 : partial_aggregate_semantic_key;
 
     /// For the trivial `GROUP BY ... LIMIT` shape, cap the aggregation at `LIMIT + OFFSET` keys

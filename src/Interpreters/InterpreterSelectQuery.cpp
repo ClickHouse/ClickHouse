@@ -149,6 +149,7 @@ namespace Setting
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_mode;
     extern const SettingsBool apply_deleted_mask;
+    extern const SettingsBool use_partial_aggregate_cache;
     extern const SettingsBool async_socket_for_remote;
     extern const SettingsBool collect_hash_table_stats_during_aggregation;
     extern const SettingsBool compile_sort_description;
@@ -2964,7 +2965,9 @@ static Aggregator::Params getAggregatorParams(
     const bool has_row_level_filter = static_cast<bool>(select_query_info.row_level_filter);
     const bool has_additional_table_filters = !settings[Setting::additional_table_filters].value.empty();
     const bool apply_deleted_mask_value = settings[Setting::apply_deleted_mask];
-    const UInt64 partial_aggregate_semantic_key = partialAggregateCacheSemanticKey(
+    /// The partial aggregate cache key analyzes the whole query: compute it only when the cache is enabled.
+    const bool use_partial_aggregate_cache = settings[Setting::use_partial_aggregate_cache];
+    const UInt64 partial_aggregate_semantic_key = !use_partial_aggregate_cache ? 0 : partialAggregateCacheSemanticKey(
         query_ptr,
         context.getCurrentDatabase(),
         apply_deleted_mask_value,
@@ -2984,8 +2987,8 @@ static Aggregator::Params getAggregatorParams(
     ContextPtr context_for_function_check = context.getGlobalContext();
     if (context.hasQueryContext())
         context_for_function_check = context.getQueryContext();
-    const bool has_nondeterministic_functions
-        = astContainsNonDeterministicFunctions(query_ptr, context_for_function_check);
+    const bool has_nondeterministic_functions = partial_aggregate_semantic_key != 0
+        && astContainsNonDeterministicFunctions(query_ptr, context_for_function_check);
     const UInt64 partial_cache_semantic_key
         = has_nondeterministic_functions ? 0 : partial_aggregate_semantic_key;
 
