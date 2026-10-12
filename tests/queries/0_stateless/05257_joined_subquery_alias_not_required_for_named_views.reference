@@ -1,0 +1,12 @@
+-- inlined view
+1	left
+1	left
+right
+k	v	v_named.k	v_named.v
+1	left	1	right
+-- parameterized view
+1	left
+right
+k	v	pv_named.k	pv_named.v
+1	left	1	right
+-- controls: a subquery and a table function have no name

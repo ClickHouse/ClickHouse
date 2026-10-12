@@ -109,6 +109,30 @@ public:
         const IdentifierLookup & identifier_lookup,
         const IdentifierResolveScope & scope);
 
+    /** If the resolved expression is a column (possibly wrapped into a subcolumn or `Nested` accessor function) of a subquery,
+      * union or table function that has neither an alias nor a name of its own (a CTE name, the name of a parameterized
+      * view or of an inlined view), return that table expression.
+      * Columns of such a table expression cannot be qualified with a name. Otherwise return nullptr.
+      * A key of a `JOIN ... USING` is owned by the join result and stays unqualifiable with any alias, so nullptr is
+      * returned for it too.
+      */
+    static QueryTreeNodePtr getUnaliasedSubqueryOrTableFunctionSource(const QueryTreeNodePtr & resolved_expression, const IdentifierResolveScope & scope);
+
+    /** For two equally named columns of different table expressions combined by a join, return the unaliased subquery, union
+      * or table function (see getUnaliasedSubqueryOrTableFunctionSource) that makes them unqualifiable, or nullptr.
+      *
+      * `PASTE JOIN` concatenates the operands positionally and allows equally named columns: the duplicate column names of
+      * its unaliased subqueries are validated separately (see QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin),
+      * so when `combining_join_node` is a `PASTE JOIN`, an unaliased subquery that is its operand (directly or through nested
+      * `PASTE JOIN`s) does not require an alias. That validation does not cover unions, table functions and subqueries
+      * behind `ARRAY JOIN`, so they still require it.
+      */
+    static QueryTreeNodePtr getUnaliasedTableExpressionRequiringAlias(
+        const QueryTreeNodePtr & first_resolved_expression,
+        const QueryTreeNodePtr & second_resolved_expression,
+        const JoinNode * combining_join_node,
+        const IdentifierResolveScope & scope);
+
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
         const Identifier & table_identifier,
         const ContextPtr & context);
