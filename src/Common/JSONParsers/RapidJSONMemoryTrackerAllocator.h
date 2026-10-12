@@ -37,6 +37,29 @@ public:
     bool operator!=(const RapidJSONMemoryTrackerAllocator &) const noexcept { return false; }
 };
 
+/// Allocator for rapidjson parse stacks: an inline buffer rewound by `reset`, `RapidJSONMemoryTrackerAllocator` for the rest.
+class RapidJSONStackAllocator /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - buffer is arena storage, written before read
+{
+public:
+    static constexpr bool kNeedFree = true;
+
+    RapidJSONStackAllocator() = default; /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
+    RapidJSONStackAllocator(const RapidJSONStackAllocator &) = delete;
+    RapidJSONStackAllocator & operator=(const RapidJSONStackAllocator &) = delete;
+
+    void * Malloc(size_t size);
+    void * Realloc(void * original_ptr, size_t original_size, size_t new_size);
+    static void Free(void * ptr) noexcept;
+
+    /// Only valid while no block from the buffer is in use.
+    void reset() { buffer_used = 0; }
+
+private:
+    static constexpr size_t buffer_size = 2048;
+    alignas(std::max_align_t) char buffer[buffer_size];
+    size_t buffer_used = 0;
+};
+
 }
 
 #endif

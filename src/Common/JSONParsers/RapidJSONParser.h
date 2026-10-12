@@ -22,8 +22,8 @@ namespace DB
 struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - value_pool_buffer is arena storage, written before read
 {
     RapidJSONParser() = default; /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init)
-    /// `document` points to `value_pool`, whose bookkeeping lives inside `value_pool_buffer`, so a
-    /// copy or a move would leave one of the three aiming into the other object.
+    /// `document` points to `value_pool` and `stack_allocator`, which keep their memory inline, so a
+    /// copy or a move would leave one of them aiming into the other object.
     RapidJSONParser(const RapidJSONParser &) = delete;
     RapidJSONParser & operator=(const RapidJSONParser &) = delete;
     RapidJSONParser(RapidJSONParser &&) = delete;
@@ -34,7 +34,7 @@ struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-m
     /// without bound (see RapidJSONMemoryTrackerAllocator).
     using PoolAllocator = rapidjson::MemoryPoolAllocator<RapidJSONMemoryTrackerAllocator>;
     using Value = rapidjson::GenericValue<rapidjson::UTF8<>, PoolAllocator>;
-    using Document = rapidjson::GenericDocument<rapidjson::UTF8<>, PoolAllocator, RapidJSONMemoryTrackerAllocator>;
+    using Document = rapidjson::GenericDocument<rapidjson::UTF8<>, PoolAllocator, RapidJSONStackAllocator>;
 
     class Array;
     class Object;
@@ -191,6 +191,7 @@ struct RapidJSONParser /// NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-m
     bool parse(std::string_view json, Element & result)
     {
         value_pool.Clear();
+        stack_allocator.reset();
         rapidjson::MemoryStream ms(json.data(), json.size());
         rapidjson::EncodedInputStream<rapidjson::UTF8<>, rapidjson::MemoryStream> is(ms);
         document.ParseStream(is);
@@ -213,7 +214,9 @@ private:
     static constexpr size_t value_pool_buffer_size = 8192;
     alignas(8) char value_pool_buffer[value_pool_buffer_size];
     PoolAllocator value_pool{value_pool_buffer, value_pool_buffer_size};
-    Document document{&value_pool};
+    RapidJSONStackAllocator stack_allocator;
+    static constexpr size_t document_stack_capacity = 1024;
+    Document document{&value_pool, document_stack_capacity, &stack_allocator};
 };
 
 inline ALWAYS_INLINE RapidJSONParser::Array RapidJSONParser::Element::getArray() const
