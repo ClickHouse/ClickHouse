@@ -14,6 +14,8 @@
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Interpreters/HashJoin/gatherJoinOutputColumns.h>
 #include <Interpreters/RowDataStore.h>
+#include <base/Decimal.h>
+#include <base/sort.h>
 #include <base/types.h>
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
@@ -21,6 +23,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 
+#include <algorithm>
 #include <limits>
 #include <mutex>
 
@@ -65,6 +68,21 @@ void callWithType(TypeIndex type, F && f)
     UNREACHABLE();
 }
 
+/** Sorted lookup structure for the right side of an ASOF JOIN, one per equality key.
+  *
+  * The entries are sorted by the ASOF column in ascending order with a *stable* sort, so rows with
+  * equal ASOF values keep the order in which they were inserted. The lookup then returns the row
+  * adjacent to the left value in that order:
+  *  - `left >= right` / `left > right`: the last entry that satisfies the inequality, i.e. among
+  *    equal ASOF values the row inserted last;
+  *  - `left <= right` / `left < right`: the first entry that satisfies the inequality, i.e. among
+  *    equal ASOF values the row inserted first.
+  * This is the same row that the full sorting merge join produces when it scans the sorted right
+  * side, so both algorithms agree on ties when the right side arrives in the same order
+  * (see https://github.com/ClickHouse/ClickHouse/issues/115164). Before, the entries were sorted
+  * with an unstable sort below 256 rows and with a stable radix sort above, so the chosen tied row
+  * changed with the number of rows on the right side and with the type of the ASOF column.
+  */
 template <typename TKey, ASOFJoinInequality inequality>
 class SortedLookupVector : public SortedLookupVectorBase
 {
@@ -89,21 +107,25 @@ class SortedLookupVector : public SortedLookupVectorBase
         }
     };
 
-    struct GreaterEntryOperator
-    {
-        ALWAYS_INLINE bool operator()(const Entry & lhs, const Entry & rhs) const
-        {
-            return lhs.value > rhs.value;
-        }
-    };
-
+    /// The native integer behind the key: the key itself for the numeric types, `Int64` for
+    /// `DateTime64`, and so on. Radix sort works on it.
+    using KeyNative = NativeType<TKey>;
+    static constexpr bool can_radix_sort = std::is_arithmetic_v<KeyNative> && !is_floating_point<KeyNative>;
 
 public:
     using Entries = PODArrayWithStackMemory<Entry, sizeof(Entry)>;
     using RowRefs = PODArrayWithStackMemory<RowRef, sizeof(RowRef)>;
 
+    /// `left > right` and `left >= right` look for the largest right value not exceeding the left one,
+    /// that is the last satisfying entry in ascending order. The other two look for the first one.
     static constexpr bool is_descending = (inequality == ASOFJoinInequality::Greater || inequality == ASOFJoinInequality::GreaterOrEquals);
-    static constexpr bool is_strict = (inequality == ASOFJoinInequality::Less) || (inequality == ASOFJoinInequality::Greater);
+
+    /// Which boundary of the run of entries equal to the left value is needed:
+    ///  - `left < right`  wants the first entry greater than the value         -> upper_bound
+    ///  - `left <= right` wants the first entry not less than the value        -> lower_bound
+    ///  - `left > right`  wants the last entry less than the value             -> lower_bound - 1
+    ///  - `left >= right` wants the last entry not greater than the value      -> upper_bound - 1
+    static constexpr bool use_upper_bound = (inequality == ASOFJoinInequality::Less || inequality == ASOFJoinInequality::GreaterOrEquals);
 
     void insert(const IColumn & asof_column, UInt32 block_no, size_t row_num) override
     {
@@ -117,7 +139,9 @@ public:
         row_refs.emplace_back(RowRef(block_no, row_num));
     }
 
-    /// Unrolled version of upper_bound and lower_bound
+    /// Unrolled version of upper_bound and lower_bound over the ascending `entries`.
+    /// Returns the index of the first entry greater than `value` (upper_bound) or not less than
+    /// `value` (lower_bound), or `entries.size()` if there is none.
     /// Loosely based on https://academy.realm.io/posts/how-we-beat-cpp-stl-binary-search/
     /// In the future it'd interesting to replace it with a B+Tree Layout as described
     /// at https://en.algorithmica.org/hpc/data-structures/s-tree/
@@ -126,9 +150,9 @@ public:
         size_t size = entries.size();
         size_t low = 0;
 
-        /// This is a single binary search iteration as a macro to unroll. Takes into account the inequality:
-        /// is_strict -> Equal values are not requested
-        /// is_descending -> The vector is sorted in reverse (for greater or greaterOrEquals)
+        /// This is a single binary search iteration as a macro to unroll.
+        /// The probe is skipped (`low` moves past it) when it is still on the left of the wanted boundary:
+        /// upper_bound -> entries not greater than the value, lower_bound -> entries less than the value.
 #define BOUND_ITERATION \
     { \
         size_t half = size / 2; \
@@ -137,20 +161,10 @@ public:
         size_t other_low = low + other_half; \
         TKey & v = entries[probe].value; \
         size = half; \
-        if constexpr (is_descending) \
-        { \
-            if constexpr (is_strict) \
-                low = value <= v ? other_low : low; \
-            else \
-                low = value < v ? other_low : low; \
-        } \
+        if constexpr (use_upper_bound) \
+            low = value >= v ? other_low : low; \
         else \
-        { \
-            if constexpr (is_strict) \
-                low = value >= v ? other_low : low; \
-            else \
-                low = value > v ? other_low : low; \
-        } \
+            low = value > v ? other_low : low; \
     }
 
         while (size >= 8)
@@ -178,13 +192,21 @@ public:
         TKey k = column.getElement(row_num);
 
         size_t pos = boundSearch(k);
-        if (pos != entries.size())
+        if constexpr (is_descending)
         {
-            size_t row_ref_index = entries[pos].row_ref_index;
-            return &row_refs[row_ref_index];
+            /// The wanted entry is the last one before the boundary.
+            if (pos == 0)
+                return nullptr;
+            --pos;
+        }
+        else
+        {
+            if (pos == entries.size())
+                return nullptr;
         }
 
-        return nullptr;
+        size_t row_ref_index = entries[pos].row_ref_index;
+        return &row_refs[row_ref_index];
     }
 
 private:
@@ -208,31 +230,47 @@ private:
         if (sorted.load(std::memory_order_relaxed))
             return;
 
-        if constexpr (std::is_arithmetic_v<TKey> && !is_floating_point<TKey>)
+        sortEntries();
+        sorted.store(true, std::memory_order_release);
+    }
+
+    /// Sorts `entries` by value in ascending order. The sort must be stable, whatever the size of
+    /// the array and the type of the key: the order of entries with equal values decides which of
+    /// the tied rows an ASOF JOIN returns, see the class comment.
+    void sortEntries()
+    {
+        /// The right side often arrives already ordered by the ASOF column (a table sorted by it,
+        /// or a subquery with ORDER BY). A sorted array is trivially stably sorted, and the check
+        /// is cheaper than any of the sorts below.
+        if (std::is_sorted(entries.begin(), entries.end(), LessEntryOperator()))
+            return;
+
+        if constexpr (can_radix_sort)
         {
+            /// LSD radix sort is stable. Below this size the comparison sort is faster.
             if (likely(entries.size() > 256))
             {
-                struct RadixSortTraits : RadixSortNumTraits<TKey>
+                struct RadixSortTraits : RadixSortNumTraits<KeyNative>
                 {
                     using Element = Entry;
                     using Result = Element;
 
-                    static TKey & extractKey(Element & elem) { return elem.value; }
+                    static KeyNative & extractKey(Element & elem)
+                    {
+                        if constexpr (is_decimal<TKey>)
+                            return elem.value.value;
+                        else
+                            return elem.value;
+                    }
                     static Result extractResult(Element & elem) { return elem; }
                 };
 
-                RadixSort<RadixSortTraits>::executeLSDWithTrySort(entries.data(), entries.size(), is_descending /*reverse*/);
-                sorted.store(true, std::memory_order_release);
+                RadixSort<RadixSortTraits>::executeLSD(entries.data(), entries.size());
                 return;
             }
         }
 
-        if constexpr (is_descending)
-            ::sort(entries.begin(), entries.end(), GreaterEntryOperator());
-        else
-            ::sort(entries.begin(), entries.end(), LessEntryOperator());
-
-        sorted.store(true, std::memory_order_release);
+        ::stableSort(entries.begin(), entries.end(), LessEntryOperator());
     }
 };
 
