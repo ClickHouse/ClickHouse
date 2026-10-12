@@ -347,7 +347,7 @@ void ExecutorTasks::resume(size_t)
     ++total_slots;
 }
 
-void ExecutorTasks::processAsyncTasks()
+void ExecutorTasks::processAsyncTasks(const std::function<void()> & before_async_job)
 {
 #if defined(OS_LINUX) || defined(OS_DARWIN)
     {
@@ -355,6 +355,9 @@ void ExecutorTasks::processAsyncTasks()
         std::unique_lock lock(mutex);
         while (auto task = async_task_queue.wait(lock))
         {
+            if (before_async_job)
+                before_async_job();
+
             auto * processor = static_cast<IProcessor *>(task.data);
             processor->onAsyncJobReady();
 
@@ -379,6 +382,9 @@ void ExecutorTasks::processAsyncTasks()
             }
         }
     }
+#else
+    /// Async tasks are only supported on Linux and macOS.
+    (void)before_async_job;
 #endif
 }
 

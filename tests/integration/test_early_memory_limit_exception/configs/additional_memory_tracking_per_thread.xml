@@ -1,0 +1,3 @@
+<clickhouse>
+    <additional_memory_tracking_per_thread>0</additional_memory_tracking_per_thread>
+</clickhouse>

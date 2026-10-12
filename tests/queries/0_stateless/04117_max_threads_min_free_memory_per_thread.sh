@@ -17,6 +17,11 @@ run_local() {
         # we cannot use cgroups since this will sum RSS of all processes and clickhouse-local may fail with MEMORY_LIMIT_EXCEEDED
         --memory_worker_use_cgroup=0
         --memory_worker_dynamic_hard_limit=false
+        # Production default (4 MiB) reserves memory at every pipeline job spawn and
+        # trips the tight `max_server_memory_usage` here. Disable for the test; we are
+        # exercising `max_threads_min_free_memory_per_thread`, not the per-thread
+        # speculative reservation.
+        --additional_memory_tracking_per_thread=0
     )
     ${CLICKHOUSE_LOCAL} "$@" -- "${server_opts[@]}"
 }
