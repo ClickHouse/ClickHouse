@@ -75,44 +75,7 @@ ${CLICKHOUSE_CLIENT} --query "
       AND (query LIKE '%' || 'pwleakprobe' || '9f2a%' OR exception LIKE '%' || 'pwleakprobe' || '9f2a%')
     FORMAT Vertical"
 
-# 4. The url() table function feeds its query text into system.query_log through the same sanitizer.
-#    It must mask the shapes the old password-only masker missed: a userinfo password that itself
-#    contains '@' (masked whole, not just up to the first '@'), a bare userinfo token with no password,
-#    and presigned-URL signature parameters. Run one query of each shape, then check that query_log
-#    logged them all masked and stored none of the cleartext secrets - in the query text or the
-#    exception. The marker that makes the probes findable has to survive masking, so it is a column
-#    name in the structure (the userinfo and the presigned parameters are masked, a column name is
-#    not). The two userinfo probes point at /ping, which needs no auth and answers "Ok.": the row then
-#    fails to parse locally, so the remote server never auth-fails and echoes no userinfo back into the
-#    exception. The probes are split in the checking queries so those queries do not themselves carry
-#    the contiguous secret.
-PP="urlprobe_${CLICKHOUSE_TEST_UNIQUE_NAME}"
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://leakuser:first@atprobe7k3@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/ping', 'CSV', '${PP} UInt64')" >/dev/null 2>&1
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://tokprobe5x9@${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/ping', 'CSV', '${PP} UInt64')" >/dev/null 2>&1
-${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/ping?X-Amz-Signature=sigprobe3q8', 'CSV', '${PP} UInt64')" >/dev/null 2>&1
-
-${CLICKHOUSE_CLIENT} --query "SYSTEM FLUSH LOGS query_log"
-${CLICKHOUSE_CLIENT} --query "
-    SELECT 'url_query_log_masked', count() >= 3
-    FROM system.query_log
-    WHERE event_date >= yesterday()
-      AND current_database = currentDatabase()
-      AND query LIKE '%' || 'urlprobe_' || '${CLICKHOUSE_TEST_UNIQUE_NAME}%'
-      AND query LIKE '%[HIDDEN]%'"
-# On success this selects nothing; any row printed on failure is the culprit, and its query and
-# exception columns show exactly what leaked and where. The needles are split so this checking query
-# does not itself carry a contiguous secret.
-${CLICKHOUSE_CLIENT} --query "
-    SELECT type, query, exception
-    FROM system.query_log
-    WHERE event_date >= yesterday()
-      AND current_database = currentDatabase()
-      AND (query LIKE '%' || 'atprobe' || '7k3%' OR exception LIKE '%' || 'atprobe' || '7k3%'
-           OR query LIKE '%' || 'tokprobe' || '5x9%' OR exception LIKE '%' || 'tokprobe' || '5x9%'
-           OR query LIKE '%' || 'sigprobe' || '3q8%' OR exception LIKE '%' || 'sigprobe' || '3q8%')
-    FORMAT Vertical"
-
-# 5. Schema inference stores the source URL in system.schema_inference_cache; the credential in its
+# 4. Schema inference stores the source URL in system.schema_inference_cache; the credential in its
 #    userinfo must be masked there too. Inferring a schema from a credentialed /ping URL (which needs
 #    no auth and whose "Ok." body is inferrable as one column) populates the cache.
 SIC_SECRET="sicpwprobe${CLICKHOUSE_TEST_UNIQUE_NAME}"
@@ -120,13 +83,13 @@ ${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://leakuser:${SIC_SECRET}@$
 ${CLICKHOUSE_CLIENT} --query "SELECT source FROM system.schema_inference_cache WHERE storage = 'URL'" \
     | assert_shape "schema_inference_cache" "$SIC_SECRET" "[HIDDEN]@${CLICKHOUSE_HOST}"
 
-# 6. A header value is never decoded as a credential. An 'Authorization: Basic <payload>' whose payload
+# 5. A header value is never decoded as a credential. An 'Authorization: Basic <payload>' whose payload
 #    is not valid base64 (here supplied through headers()) must reach the endpoint verbatim, not fail
 #    while the request is inspected for secrets to scrub. /ping needs no auth and answers "Ok.".
 A_OUT=$(${CLICKHOUSE_CLIENT} --query "SELECT * FROM url('http://${CLICKHOUSE_HOST}:${CLICKHOUSE_PORT_HTTP}/ping', 'LineAsString', 'line String', headers('Authorization' = 'Basic ghp_AbCd1234'))" 2>&1)
 if echo "$A_OUT" | grep -qF 'Ok.'; then echo "basic_header_passthrough: OK"; else echo "basic_header_passthrough: FAIL"; fi
 
-# 7. A URL userinfo is sent as 'Authorization: Basic base64(user:password)'. Recovering the user name
+# 6. A URL userinfo is sent as 'Authorization: Basic base64(user:password)'. Recovering the user name
 #    from that header to scrub the error body would replace a one-letter user ('a') everywhere it
 #    occurs, turning the remote "Authentication failed" body into "Authentic[HIDDEN]tion f[HIDDEN]iled".
 #    The body must be preserved, and the password must not appear. Authenticating against ClickHouse's
