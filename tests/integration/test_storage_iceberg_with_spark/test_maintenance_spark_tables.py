@@ -48,15 +48,15 @@ def test_maintenance_on_spark_table(started_cluster_iceberg_with_spark, format_v
     # The files replaced here stay reachable from older snapshots until they expire.
     spark.sql(f"CALL spark_catalog.system.rewrite_data_files(table => 'default.{table}', options => map('rewrite-all', 'true'))")
     spark.sql(f"CALL spark_catalog.system.compute_table_stats(table => 'default.{table}')")
-    expected = spark.sql(f"SELECT count(), sum(id) FROM {table}").first()
+    expected = spark.sql(f"SELECT count(*), sum(id) FROM {table}").first()
 
     default_upload_directory(cluster, storage_type, f"/iceberg_data/default/{table}/", f"/iceberg_data/default/{table}/")
     create_iceberg_table(storage_type, instance, table, cluster)
 
     expired = metrics(instance, table, "expire_snapshots(retention_period = '1ms', retain_last = 1)")
     assert expired["deleted_data_files_count"] > 0
-    if format_version == "2":
-        assert expired["deleted_position_delete_files_count"] > 0
+    # Position delete files in v2 and deletion vectors in v3 are counted together.
+    assert expired["deleted_position_delete_files_count"] > 0
 
     orphan = f"{local_path}/data/orphan.parquet"
     if storage_type == "s3":
@@ -82,7 +82,7 @@ def test_maintenance_on_spark_table(started_cluster_iceberg_with_spark, format_v
     shutil.rmtree(local_path)
     default_download_directory(cluster, storage_type, local_path, local_path)
     spark.sql(f"REFRESH TABLE {table}")
-    assert tuple(spark.sql(f"SELECT count(), sum(id) FROM {table}").first()) == tuple(expected)
+    assert tuple(spark.sql(f"SELECT count(*), sum(id) FROM {table}").first()) == tuple(expected)
     with pytest.raises(Exception, match="Cannot find snapshot"):
         spark.read.option("snapshot-id", first_snapshot).format("iceberg").load(local_path).count()
 

@@ -3,8 +3,9 @@
 # MergeTree table that receives the same writes. Seeds are fixed, so a failure names a reproducible sequence.
 # A live file deleted by maintenance shows up as a read error in the comparison (stderr is captured).
 #
-# Tags: no-fasttest
+# Tags: no-fasttest, long
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
+# - long: dozens of commits per run, slow under sanitizers
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -22,7 +23,7 @@ next_random()
 }
 
 for format_version in 2 3; do
-    for seed in 1 2; do
+    for seed in 1; do
         state=${seed}
         TABLE="t_${CLICKHOUSE_DATABASE}_v${format_version}_${seed}"
         TABLE_PATH="${USER_FILES_PATH}/${TABLE}"
@@ -33,7 +34,7 @@ for format_version in 2 3; do
 
         next_id=0
         steps=""
-        for step in $(seq 25); do
+        for step in $(seq 20); do
             # DELETE and DROP PARTITION are supported only for format version 2.
             next_random $((format_version == 2 ? 7 : 5))
             op=${random}

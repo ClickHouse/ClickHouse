@@ -597,18 +597,26 @@ def test_expired_vended_credentials_are_refreshed_mid_scan(started_cluster, use_
     skip_if_no_delta_kernel(node)
     with vended_s3_delta_table(started_cluster, use_v2) as table:
         node.query(f"INSERT INTO {table} VALUES (1, 'a'), (2, 'b')", settings=DELTA_WRITE_SETTINGS)
+        query = f"SELECT * FROM {table} ORDER BY id"
         proxy_control(node, "reset_credential_operations")
-        node.query(f"SELECT * FROM {table}")
+        node.query(query)
         requests_without_refresh = len(json.loads(proxy_control(node, "credential_operations")))
         proxy_control(node, "reset_credential_operations")
 
         # The first S3 read of the data fails as if the vended token had expired.
+        query_id = uuid.uuid4().hex
         node.query("SYSTEM ENABLE FAILPOINT s3_send_request_throw_expired_token")
         try:
-            assert node.query(f"SELECT * FROM {table} ORDER BY id") == "1\ta\n2\tb\n"
+            assert node.query(query, query_id=query_id) == "1\ta\n2\tb\n"
         finally:
             node.query("SYSTEM DISABLE FAILPOINT s3_send_request_throw_expired_token")
 
+        node.query("SYSTEM FLUSH LOGS query_log")
+        read_errors = node.query(
+            "SELECT ProfileEvents['ReadBufferFromS3RequestsErrors'] FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+        assert int(read_errors) >= 1
         assert len(json.loads(proxy_control(node, "credential_operations"))) > requests_without_refresh
 
 

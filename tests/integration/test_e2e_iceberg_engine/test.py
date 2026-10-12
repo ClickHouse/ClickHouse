@@ -892,7 +892,7 @@ def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
     )
     assert expired["deleted_data_files_count"] == 1
     assert expired["deleted_manifest_lists_count"] == snapshot_count - 1
-    assert node.query_and_get_error(
+    assert "No snapshot found" in node.query_and_get_error(
         f"SELECT count() FROM {tbl}",
         settings={"iceberg_snapshot_id": snapshot_ids[0]},
     )

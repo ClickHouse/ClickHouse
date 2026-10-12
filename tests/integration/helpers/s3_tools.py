@@ -306,7 +306,7 @@ def minio_user(cluster, actions):
     access_key, secret_key = uuid.uuid4().hex[:16], uuid.uuid4().hex
     policy = {
         "Version": "2012-10-17",
-        "Statement": [{"Effect": "Allow", "Action": actions, "Resource": ["arn:aws:s3:::*"]}],
+        "Statement": [{"Effect": "Allow", "Action": actions, "Resource": ["arn:aws:s3:::*", "arn:aws:s3:::*/*"]}],
     }
     admin = minio_admin(cluster)
     admin.policy_add(access_key, policy=policy)

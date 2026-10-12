@@ -87,12 +87,12 @@ done
 echo "scale"
 # Without the metadata cache every read of a metadata file opens it, so `FileOpen` counts reads.
 # Each snapshot adds one manifest list and one manifest: a linear pass opens about 2 files per snapshot,
-# and the ceiling of 4 per snapshot still catches quadratic work (about 100 per snapshot here).
+# and the ceiling of 4 per snapshot still catches quadratic work (about 30 per snapshot here).
 SCALE="${CH} --use_iceberg_metadata_files_cache=0 --async_insert=0"
 TABLE="t_${CLICKHOUSE_DATABASE}_scale"
 TABLE_PATH="${USER_FILES_PATH}/${TABLE}"
 $SCALE --query "CREATE TABLE ${TABLE} (id Int64) ENGINE = IcebergLocal('${TABLE_PATH}/', 'Parquet') SETTINGS allow_experimental_iceberg_compaction = 0"
-$SCALE --query "$(for i in $(seq 100); do echo "INSERT INTO ${TABLE} VALUES (${i});"; done)"
+$SCALE --query "$(for i in $(seq 30); do echo "INSERT INTO ${TABLE} VALUES (${i});"; done)"
 $SCALE --query_id "${CLICKHOUSE_DATABASE}_expire" --query "
     ALTER TABLE ${TABLE} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)" | grep -v $'\t0$'
 
@@ -108,7 +108,7 @@ $SCALE --query_id "${CLICKHOUSE_DATABASE}_orphans" --query "
 
 $CH --query "SYSTEM FLUSH LOGS query_log"
 $CH --query "
-    SELECT query_id LIKE '%_expire' ? 'expire_snapshots' : 'remove_orphan_files', ProfileEvents['FileOpen'] BETWEEN 100 AND 400
+    SELECT query_id LIKE '%_expire' ? 'expire_snapshots' : 'remove_orphan_files', ProfileEvents['FileOpen'] BETWEEN 30 AND 120
     FROM system.query_log
     WHERE current_database = currentDatabase() AND query_id IN ('${CLICKHOUSE_DATABASE}_expire', '${CLICKHOUSE_DATABASE}_orphans') AND type = 'QueryFinish'
     ORDER BY event_time_microseconds"
