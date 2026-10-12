@@ -25,7 +25,18 @@ $CLICKHOUSE_CLIENT -q "
     CREATE TABLE t_parquet_file (id UInt64) ENGINE = File(Parquet, '${FILE}');"
 
 QUERY="SELECT count() > 0 FROM system.columns_cache WHERE endsWith(part, '/${FILE}')"
-QUERY_TABLE="SELECT DISTINCT database = currentDatabase(), table FROM system.columns_cache WHERE endsWith(part, '/${FILE}')"
+QUERY_TABLE="SELECT DISTINCT database = currentDatabase(), table FROM system.columns_cache WHERE endsWith(part, '/${FILE}') AND table != ''"
+
+function populate_table_function()
+{
+    for _ in {1..20}; do
+        $CLICKHOUSE_CLIENT -q "SELECT sum(id) FROM file('${FILE}', Parquet, 'id UInt64') FORMAT Null
+            SETTINGS use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1,
+                columns_cache_max_bytes_to_write_to_cache = 0, columns_cache_max_estimated_bytes_to_write_to_cache = 0"
+        [ "$($CLICKHOUSE_CLIENT -q "${QUERY} AND table_uuid = toUUID('00000000-0000-0000-0000-000000000000')")" = 1 ] && return
+    done
+    echo "the entries of the table function are not in the cache"
+}
 
 function populate()
 {
@@ -35,9 +46,9 @@ function populate()
         $CLICKHOUSE_CLIENT -q "SELECT sum(id) FROM t_parquet_file FORMAT Null
             SETTINGS use_columns_cache = 1, enable_reads_from_columns_cache = 1, enable_writes_to_columns_cache = 1,
                 columns_cache_max_bytes_to_write_to_cache = 0, columns_cache_max_estimated_bytes_to_write_to_cache = 0"
-        [ "$($CLICKHOUSE_CLIENT -q "${QUERY}")" = 1 ] && return
+        [ "$($CLICKHOUSE_CLIENT -q "${QUERY} AND table != ''")" = 1 ] && return
     done
-    echo "the entries of the file are not in the cache"
+    echo "the entries of the table are not in the cache"
 }
 
 $CLICKHOUSE_CLIENT -q "
@@ -46,16 +57,20 @@ $CLICKHOUSE_CLIENT -q "
     GRANT SELECT ON system.columns_cache TO ${USER};
     GRANT READ ON FILE TO ${USER};"
 
+echo "--- a read by the table function warmed first does not give its entries to the table"
+populate_table_function
+populate
+$CLICKHOUSE_CLIENT --user "${USER}" -q "SELECT countIf(table_uuid != toUUID('00000000-0000-0000-0000-000000000000')) FROM system.columns_cache WHERE endsWith(part, '/${FILE}')"
 echo "--- the default user sees the entries of the table"
 populate
 $CLICKHOUSE_CLIENT -q "${QUERY_TABLE}"
 echo "--- READ ON FILE without access to the table"
 populate
-$CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY}"
+$CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY} AND table != ''"
 echo "--- SHOW COLUMNS on the table"
 $CLICKHOUSE_CLIENT -q "GRANT SHOW COLUMNS ON ${CLICKHOUSE_DATABASE}.t_parquet_file TO ${USER}"
 populate
-$CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY}"
+$CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY} AND table != ''"
 
 $CLICKHOUSE_CLIENT -q "DROP USER ${USER}; DROP TABLE t_parquet_file;"
 rm -f "${FILE_PATH}"

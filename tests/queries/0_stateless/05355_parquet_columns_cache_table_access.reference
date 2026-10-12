@@ -1,3 +1,5 @@
+--- a read by the table function warmed first does not give its entries to the table
+0
 --- the default user sees the entries of the table
 1	t_parquet_file
 --- READ ON FILE without access to the table

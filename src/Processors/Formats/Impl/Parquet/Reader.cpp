@@ -3957,7 +3957,10 @@ void Reader::initColumnsCache()
     /// file, its version and the format settings (all in `file_identity`), the columns of the file it
     /// is read from, and the types it is decoded into and converted to. The name of the column alone
     /// is not enough: a data lake can map a name to another column of the file after a schema change,
-    /// and the same column can be read as different types.
+    /// and the same column can be read as different types. The owning table (the nil UUID for a
+    /// table function) is a part of the identity too: the same file read by a table and by a table
+    /// function gives different entries, so an entry never takes the access rules of another path
+    /// in `system.columns_cache`.
     columns_cache_identities.assign(extended_sample_block.columns(), 0);
     bool any_column = false;
     for (size_t idx = 0; idx < extended_sample_block.columns(); ++idx)
@@ -3991,7 +3994,7 @@ void Reader::initColumnsCache()
             continue;
 
         columns_cache_identities[idx] = getColumnsCacheColumnIdentity(
-            UUIDHelpers::Nil, cache_options.file_path, extended_sample_block.getByPosition(idx).name, hash.get64());
+            cache_options.table_uuid, cache_options.file_path, extended_sample_block.getByPosition(idx).name, hash.get64());
         any_column = true;
     }
 
