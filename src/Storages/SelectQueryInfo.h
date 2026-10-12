@@ -220,6 +220,10 @@ struct SelectQueryInfo
     /// Whether the table expression has the STREAM modifier.
     bool isStream() const;
 
+    /// The `SAMPLE` and `SAMPLE ... OFFSET` ratios of the table expression.
+    std::optional<TableExpressionModifiers::Rational> getSampleSizeRatio() const;
+    std::optional<TableExpressionModifiers::Rational> getSampleOffsetRatio() const;
+
     /// Analyzer generates unique ColumnIdentifiers like __table1.__partition_id in filter nodes,
     /// while key analysis still requires unqualified column names.
     /// This function generates a map that maps the unique names to table column names,
