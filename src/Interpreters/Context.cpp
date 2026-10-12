@@ -171,6 +171,9 @@
 
 #include <Processors/QueryPlan/Optimizations/RuntimeDataflowStatistics.h>
 #include <Processors/QueryPlan/RuntimeFilterLookup.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/CascadesParams.h>
+#include <Server/StatelessWorker/StatelessWorkersProviderRegistry.h>
+#include <Server/StatelessWorker/StatelessWorkerAllocation.h>
 
 namespace fs = std::filesystem;
 
@@ -319,6 +322,9 @@ namespace Setting
     extern const SettingsString cluster_for_parallel_replicas;
     extern const SettingsBool cloud_mode;
     extern const SettingsString default_format;
+    extern const SettingsString distributed_plan_worker_cluster;
+    extern const SettingsUInt64 distributed_plan_workers_num;
+    extern const SettingsUInt64 distributed_plan_workers_provisioning_timeout_ms;
     extern const SettingsBoolAuto force_read_through_distributed_cache;
     extern const SettingsBoolAuto force_write_through_distributed_cache;
     extern const SettingsBool enable_filesystem_cache;
@@ -883,6 +889,9 @@ struct ContextSharedPart : boost::noncopyable
     mutable std::shared_ptr<KeeperDispatcher> keeper_dispatcher;
 #endif
 
+    mutable std::mutex stateless_worker_provider_mutex;
+    mutable StatelessWorkersProviderRegistryPtr stateless_workers_registry TSA_GUARDED_BY(stateless_worker_provider_mutex);
+
     ContextSharedPart()
         : access_control(std::make_unique<AccessControl>()), global_overcommit_tracker(&process_list), macros(std::make_unique<Macros>())
     {
@@ -1232,6 +1241,20 @@ struct ContextSharedPart : boost::noncopyable
                 /// Some classes (such as ZooKeeper, ReplicatedAccessStorage) will finalize the keeper session while deconstructing,
                 /// which will trigger the callback and make ClusterDiscovery reconnect to keeper again (unnecessary).
                 cluster_discovery.reset();
+            }
+        }
+
+        {
+            /// Detach under the lock (a racing query may read it), then shut down outside the lock.
+            StatelessWorkersProviderRegistryPtr registry;
+            {
+                std::lock_guard lock(stateless_worker_provider_mutex);
+                registry.swap(stateless_workers_registry);
+            }
+            if (registry)
+            {
+                LOG_TRACE(log, "Shutting down stateless worker providers");
+                registry->shutdown();
             }
         }
 
@@ -9272,6 +9295,62 @@ OrdinaryBackgroundExecutorPtr Context::getCommonExecutor() const
 {
     SharedLockGuard lock(shared->background_executors_mutex);
     return shared->common_executor;
+}
+
+StatelessWorkersProviderPtr Context::getStatelessWorkersProvider() const
+{
+    auto query_context_ptr = getQueryContext();
+    std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
+    if (!query_context_ptr->stateless_worker_provider)
+        query_context_ptr->stateless_worker_provider = query_context_ptr->getStatelessWorkersProvider(
+            query_context_ptr->getSettingsRef()[Setting::distributed_plan_worker_cluster]);
+    return query_context_ptr->stateless_worker_provider;
+}
+
+StatelessWorkerAllocationPtr Context::getOrCreateStatelessWorkerAllocation() const
+{
+    /// Sized from the query context's settings, as planning is, so a subquery's `SETTINGS` cannot change it.
+    auto query_context_ptr = getQueryContext();
+
+    /// Resolve the provider before locking (it takes the same mutex).
+    auto provider = query_context_ptr->getStatelessWorkersProvider();
+
+    /// Held across the blocking allocation: a concurrent caller waits, then reuses the stored handle.
+    std::lock_guard lock(query_context_ptr->stateless_worker_allocation_mutex);
+    if (!query_context_ptr->stateless_worker_allocation)
+    {
+        const auto & settings = query_context_ptr->getSettingsRef();
+        UInt64 workers_num = settings[Setting::distributed_plan_workers_num];
+        /// The plans are built for at most this many nodes, so `TaskToHostMap` uses no more workers.
+        if (const size_t node_count = getCascadesClusterNodeCountParam(query_context_ptr); node_count > 0)
+            workers_num = std::min<UInt64>(workers_num, node_count);
+        query_context_ptr->stateless_worker_allocation
+            = provider->allocate(workers_num, settings[Setting::distributed_plan_workers_provisioning_timeout_ms]);
+    }
+    return query_context_ptr->stateless_worker_allocation;
+}
+
+StatelessWorkersProviderRegistryPtr Context::getStatelessWorkersProviderRegistry() const
+{
+    std::lock_guard lock(shared->stateless_worker_provider_mutex);
+    if (!shared->stateless_workers_registry)
+        shared->stateless_workers_registry = std::make_shared<StatelessWorkersProviderRegistry>();
+    return shared->stateless_workers_registry;
+}
+
+StatelessWorkersProviderPtr Context::getStatelessWorkersProvider(const String & cluster_name) const
+{
+    return getStatelessWorkersProviderRegistry()->getProvider(cluster_name);
+}
+
+StatelessWorkersProviderPtr Context::tryGetStatelessWorkersProvider(const String & cluster_name) const
+{
+    return getStatelessWorkersProviderRegistry()->tryGetProvider(cluster_name);
+}
+
+void Context::reloadStatelessWorkersConfig(const Poco::Util::AbstractConfiguration & config) const
+{
+    getStatelessWorkersProviderRegistry()->reloadConfig(config);
 }
 
 IAsynchronousReader & Context::getThreadPoolReader(FilesystemReaderType type) const
