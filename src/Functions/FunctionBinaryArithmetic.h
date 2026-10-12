@@ -654,8 +654,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<true>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        castToNative(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        castToNative(unwrap<op_case, OpCase::RightConstant>(b, i)),
                         scale_a);
                 return;
             }
@@ -663,8 +663,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        castToNative(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        castToNative(unwrap<op_case, OpCase::RightConstant>(b, i)),
                         scale_b);
                 return;
             }
@@ -675,8 +675,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<true, false>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        castToNative(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        castToNative(unwrap<op_case, OpCase::RightConstant>(b, i)),
                         scale_a);
                 return;
             }
@@ -684,8 +684,8 @@ public:
             {
                 for (size_t i = 0; i < size; ++i)
                     c[i] = applyScaled<false, false>(
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::LeftConstant>(a, i)),
-                        static_cast<NativeResultType>(unwrap<op_case, OpCase::RightConstant>(b, i)),
+                        castToNative(unwrap<op_case, OpCase::LeftConstant>(a, i)),
+                        castToNative(unwrap<op_case, OpCase::RightConstant>(b, i)),
                         scale_b);
                 return;
             }
@@ -695,7 +695,7 @@ public:
             processWithRightNullmapImpl<op_case>(a, b, c, size, right_nullmap, [&scale_a](const auto & left, const auto & right)
             {
                 return applyScaledDiv<is_decimal_a>(
-                    static_cast<NativeResultType>(left), right, scale_a);
+                    castToNative(left), right, scale_a);
             });
             return;
         }
@@ -704,9 +704,7 @@ public:
             a, b, c, size, right_nullmap,
             [](const auto & left, const auto & right)
             {
-                return apply(
-                    static_cast<NativeResultType>(left),
-                    static_cast<NativeResultType>(right));
+                return apply(castToNative(left), castToNative(right));
             });
     }
 
@@ -715,16 +713,16 @@ public:
         requires(!is_decimal<A> && !is_decimal<B>)
     {
         if constexpr (is_division && is_decimal_b)
-            return applyScaledDiv<is_decimal_a>(a, b, scale_a);
+            return applyScaledDiv<is_decimal_a>(castToNative(a), b, scale_a);
         else if constexpr (is_plus_minus_compare)
         {
             if (scale_a != 1)
-                return applyScaled<true>(a, b, scale_a);
+                return applyScaled<true>(castToNative(a), castToNative(b), scale_a);
             if (scale_b != 1)
-                return applyScaled<false>(a, b, scale_b);
+                return applyScaled<false>(castToNative(a), castToNative(b), scale_b);
         }
 
-        return apply(a, b);
+        return apply(castToNative(a), castToNative(b));
     }
 
 private:
@@ -784,6 +782,35 @@ private:
             return undec(elem);
         else
             return undec(elem[i]);
+    }
+
+    /** The operation runs in the native width of the decimal result, so an operand that does not
+      * survive the narrowing into that width would wrap and make every row of the result silently
+      * wrong - `toDecimal32(1.5, 4) * 9223372036854775807` answered `-1.5`, because the multiplier
+      * narrowed to `-1`. Comparing the same pair already reports `DECIMAL_OVERFLOW`, and the
+      * documented contract of `Decimal` is that excessive digits in the integer part raise.
+      *
+      * Only the conversions that can lose information are checked, so the ones that cannot (a
+      * narrower integer into a wider native type) stay free.
+      */
+    template <typename T>
+    static NativeResultType castToNative(const T & value)
+    {
+        const auto result = static_cast<NativeResultType>(value);
+
+        using Value = std::decay_t<T>;
+        if constexpr (
+            check_overflow && is_integer<Value> && is_integer<NativeResultType>
+            && (sizeof(Value) > sizeof(NativeResultType) || is_signed_v<Value> != is_signed_v<NativeResultType>))
+        {
+            if (!accurate::equalsOp(value, result))
+                throw Exception(
+                    ErrorCodes::DECIMAL_OVERFLOW,
+                    "Decimal math overflow: the operand does not fit into the {} bits of the result",
+                    sizeof(NativeResultType) * 8);
+        }
+
+        return result;
     }
 
     /// there's implicit type conversion here
@@ -1578,7 +1605,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             const ColumnWithTypeAndName & argument;
             const ColumnDateTime64 * col{};
             ColumnPtr converted_col;
-            UInt64 const_val{};
+            Int64 const_val{};
             bool is_const{};
             UInt64 scale{};
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
@@ -1677,7 +1704,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             const ColumnWithTypeAndName & argument;
             const ColumnTime64 * col{};
             ColumnPtr converted_col;
-            UInt64 const_val{};
+            Int64 const_val{};
             bool is_const{};
             UInt64 scale{};
         } cols[2]{ColumnInfo{arguments[0]}, ColumnInfo{arguments[1]}};
@@ -1696,7 +1723,7 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             {
                 if (WhichDataType(to_be_checked.argument.type).isTime())
                 {
-                    to_be_checked.const_val = checkAndGetColumnConst<ColumnTime>(col_raw)->template getValue<UInt32>();
+                    to_be_checked.const_val = checkAndGetColumnConst<ColumnTime>(col_raw)->template getValue<Int32>();
                     /// the output type is the same as the other argument, which is Time64
                     to_be_checked.scale = type->getScaleMultiplier();
                 }
@@ -2153,6 +2180,29 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
             return col_const->template getValue<T>();
     }
 
+    /// The decimal operation runs in the native width of its result, so a constant operand that does
+    /// not survive the narrowing into that width would wrap and make every row silently wrong. Checked
+    /// here rather than inside the operation, because only this class knows the setting.
+    template <typename NativeResultType, typename T>
+    NativeResultType castConstantToNative(const T & value) const
+    {
+        const auto result = static_cast<NativeResultType>(value);
+
+        using Value = std::decay_t<T>;
+        if constexpr (
+            is_integer<Value> && is_integer<NativeResultType>
+            && (sizeof(Value) > sizeof(NativeResultType) || is_signed_v<Value> != is_signed_v<NativeResultType>))
+        {
+            if (check_decimal_overflow && !accurate::equalsOp(value, result))
+                throw Exception(
+                    ErrorCodes::DECIMAL_OVERFLOW,
+                    "Decimal math overflow: the operand does not fit into the {} bits of the result",
+                    sizeof(NativeResultType) * 8);
+        }
+
+        return result;
+    }
+
     template <OpCase op_case, bool left_decimal, bool right_decimal, typename OpImpl, typename OpImplCheck>
     void helperInvokeEither(const auto& left, const auto& right, auto& vec_res, auto scale_a, auto scale_b, const NullMap * right_nullmap) const
     {
@@ -2224,14 +2274,16 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
         /// non-vector result
         if (col_left_const && col_right_const)
         {
-            const NativeResultType const_a = static_cast<NativeResultType>(
-                helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
-            const NativeResultType const_b = static_cast<NativeResultType>(
-                helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
-
+            /// A `NULL` divisor makes the result `NULL` whatever the operands are, so they are not narrowed
+            /// (and cannot raise `DECIMAL_OVERFLOW`) in that case.
             ResultType res = {};
             if (!right_nullmap || !(*right_nullmap)[0])
             {
+                const NativeResultType const_a
+                    = castConstantToNative<NativeResultType>(helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
+                const NativeResultType const_b
+                    = castConstantToNative<NativeResultType>(helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
+
                 res = helperInvokeEither<left_is_decimal, right_is_decimal, OpImpl, OpImplCheck, ResultType>(
                      const_a, const_b, scale_a, scale_b);
             }
@@ -2245,6 +2297,15 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
         auto & vec_res = col_res->getData();
         vec_res.resize(col_left_size);
 
+        /// Likewise, when every divisor row is `NULL`, the whole result is `NULL`, so the constant operand
+        /// is not narrowed (and cannot raise `DECIMAL_OVERFLOW`).
+        if (right_nullmap && (col_left_const || col_right_const)
+            && std::all_of(right_nullmap->begin(), right_nullmap->end(), [](UInt8 is_null) { return is_null != 0; }))
+        {
+            std::fill(vec_res.begin(), vec_res.end(), ResultType());
+            return col_res;
+        }
+
         if (col_left && col_right)
         {
             helperInvokeEither<OpCase::Vector, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
@@ -2252,16 +2313,16 @@ class FunctionBinaryArithmetic : public IFunction, WithContext
         }
         else if (col_left_const && col_right)
         {
-            const NativeResultType const_a = static_cast<NativeResultType>(
-                helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
+            const NativeResultType const_a
+                = castConstantToNative<NativeResultType>(helperGetOrConvert<T0, ResultDataType>(col_left_const, left));
 
             helperInvokeEither<OpCase::LeftConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
                 const_a, col_right->getData(), vec_res, scale_a, scale_b, right_nullmap);
         }
         else if (col_left && col_right_const)
         {
-            const NativeResultType const_b = static_cast<NativeResultType>(
-                helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
+            const NativeResultType const_b
+                = castConstantToNative<NativeResultType>(helperGetOrConvert<T1, ResultDataType>(col_right_const, right));
 
             helperInvokeEither<OpCase::RightConstant, left_is_decimal, right_is_decimal, OpImpl, OpImplCheck>(
                 col_left->getData(), const_b, vec_res, scale_a, scale_b, right_nullmap);
@@ -3830,6 +3891,64 @@ public:
         if (isCompoundForMonotonicity(type) || (return_type && isCompoundForMonotonicity(*return_type)))
             return {false, true, false, false};
 
+        /** A `divide` or `multiply` by a constant that can turn a legal input into `NaN` is not monotonic
+          * even when the endpoints of the range are unknown - which is how the read-in-order match asks,
+          * with Null points. `ORDER BY x / inf` over a key holding `-inf` returned that `NaN` row first,
+          * because the forward read of the key was kept while the transformed value sorts last, and under
+          * `LIMIT` the `NaN` row displaced a correct one.
+          *
+          * The constants that can do it are exactly `0` and `±inf`, plus a `NaN` constant, which maps
+          * every input to `NaN`. Which inputs reach the `NaN` depends on the operation: `0 / 0` and
+          * `±inf * 0` happen at a zero input, which any numeric domain contains; `±inf / ±inf`,
+          * `±inf * 0` with the constant `0`, and `c / ±inf` need an infinite input, which only a `Float`
+          * domain contains. So `UInt64 / inf` and `UInt64 * 0.` keep their (constant) monotonicity, and
+          * the key stays readable in order.
+          *
+          * With concrete endpoints (`KeyCondition` passes the bounds of a range of marks), the range itself
+          * tells whether it reaches those inputs: a closed range with finite endpoints holds no `±inf`, and
+          * one on either side of zero holds no zero. Such a range keeps its monotonicity, so `x / inf` over
+          * the `Float64` range `[1, 10]` still prunes.
+          */
+        if ((name_view == "divide" || name_view == "multiply") && return_type
+            && isFloat(*removeNullable(recursiveRemoveLowCardinality(return_type))))
+        {
+            const bool left_is_const = left.column && isColumnConst(*left.column);
+            const bool right_is_const = right.column && isColumnConst(*right.column);
+
+            if (left_is_const || right_is_const)
+            {
+                const Field constant = left_is_const ? (*left.column)[0] : (*right.column)[0];
+                const bool constant_is_number = isNumber(removeNullable(recursiveRemoveLowCardinality(left_is_const ? left.type : right.type)));
+                const auto varying_type = removeNullable(recursiveRemoveLowCardinality(left_is_const ? right.type : left.type));
+                bool varying_can_be_inf = isFloat(varying_type);
+                bool varying_can_be_zero = true;
+
+                /// The endpoints are compared with a numeric `0` only for a numeric domain: native numbers, `BFloat16`
+                /// (whose points are `Float64`) and `Decimal` (whose `DecimalField` points compare with an integer).
+                /// The points of an `IPv4` key do not compare with it, so such a range is assumed to hold zero.
+                if (!left_point.isNull() && !right_point.isNull() && isNumber(varying_type))
+                {
+                    const bool ordered = accurateLessOrEqual(left_point, right_point);
+                    const Field & range_min = ordered ? left_point : right_point;
+                    const Field & range_max = ordered ? right_point : left_point;
+
+                    varying_can_be_inf = varying_can_be_inf && (range_min.isInf() || range_max.isInf());
+                    varying_can_be_zero = accurateLessOrEqual(range_min, Field(0)) && accurateLessOrEqual(Field(0), range_max);
+                }
+
+                bool yields_nan = false;
+                if (constant.isNaN())
+                    yields_nan = true;
+                else if (constant.isInf())
+                    yields_nan = name_view == "multiply" ? varying_can_be_zero : varying_can_be_inf; /// `±inf * 0`, `±inf / ±inf`
+                else if (constant_is_number && accurateEquals(constant, Field(0)))
+                    yields_nan = name_view == "divide" ? varying_can_be_zero : varying_can_be_inf; /// `0 / 0`, `±inf * 0`
+
+                if (yields_nan)
+                    return {false, true, false, false};
+            }
+        }
+
         if ((name_view == "divide" || name_view == "intDiv") && left.column && isColumnConst(*left.column))
         {
             // `const / variable` monotonicity is modelled only for plain numeric operands. `IPv4`/`IPv6`
@@ -4052,6 +4171,10 @@ public:
                     return {false, true, false, false};
                 }
 
+                /// `±inf / variable` is `±inf` for every finite nonzero `variable`: not strict.
+                if (constant.isInf())
+                    is_strict = false;
+
                 bool is_constant_positive = accurateLess(Field(0), constant);
                 if (name_view == "intDiv"
                     && intDivConstDividendReinterpretsNegative(const_type, arg_type, constant))
@@ -4071,6 +4194,12 @@ public:
                 auto constant = (*right.column)[0];
                 if (accurateEquals(constant, Field(0)))
                     return {false, true, false, false}; // variable / 0 is undefined, let's treat it as non-monotonic
+
+                /// `variable / ±inf` is `0` for every finite `variable` (an infinite one is declined above),
+                /// so it is monotonic but collapses all values into one: not strict, otherwise the
+                /// read-in-order match would keep taking the next `ORDER BY` terms from the key.
+                if (constant.isInf())
+                    is_strict = false;
 
                 bool is_constant_positive = accurateLess(Field(0), constant);
 

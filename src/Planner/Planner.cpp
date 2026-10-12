@@ -172,6 +172,7 @@ namespace Setting
     extern const SettingsBool enable_adaptive_aggregator;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const SettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+    extern const SettingsBool use_aggregation_memory_tracker;
     extern const SettingsUInt64 max_bytes_to_transfer;
     extern const SettingsUInt64 max_rows_to_transfer;
     extern const SettingsOverflowMode transfer_overflow_mode;
@@ -793,7 +794,8 @@ Aggregator::Params getAggregatorParams(const PlannerContextPtr & planner_context
         settings[Setting::enable_packed_string_keys_in_aggregation],
         settings[Setting::enable_adaptive_aggregator],
         settings[Setting::adaptive_aggregator_freeze_threshold],
-        settings[Setting::adaptive_aggregator_freeze_threshold_bytes]);
+        settings[Setting::adaptive_aggregator_freeze_threshold_bytes],
+        settings[Setting::use_aggregation_memory_tracker]);
     aggregator_params.shared_kept_keys_for_overflow_any = trivial_group_by_limit.has_value();
 
     return aggregator_params;
@@ -920,6 +922,7 @@ void applyTopKPushdownToPartialAggregation(
             .key_columns = sort_description.size(),
             .observation_rows = settings[Setting::group_by_top_k_optimization_observation_rows],
             .shared_boundary = settings[Setting::group_by_top_k_optimization_shared_boundary],
+            .threshold_tracker = nullptr,
         });
 }
 
