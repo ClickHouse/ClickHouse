@@ -88,6 +88,10 @@ public:
     /// Execute the join shard by shard, pairing the input ports positionally.
     /// The names of the key columns are required for EXPLAIN only.
     void enableJoinByLayers(JoinSharding sharding_) { sharding = std::move(sharding_); }
+
+    /// Gate the probe-side reads on the build completion seal carrying the given runtime
+    /// filter. Set by markSealGatedReading; not serialized (the key is per-plan-build).
+    void enableSealGatedProbeReading(const String & runtime_filter_key) { seal_gate = runtime_filter_key; }
     void keepLeftPipelineInOrder(bool disable_squashing = false);
 
     bool isOptimized() const { return optimized; }
@@ -127,6 +131,9 @@ private:
     bool use_join_disjunctions_push_down;
     bool disjunctions_optimization_applied = false;    /// Flag that indicates that disjunction optimization was already applied
     /// to prevent infinite optimization loop
+
+    /// See enableSealGatedProbeReading.
+    std::optional<String> seal_gate;
 
 public:
     /// Check if disjunction optimization was already applied to this JoinStep
