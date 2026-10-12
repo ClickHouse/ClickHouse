@@ -39,11 +39,21 @@ When adding a host with the `\<host\>` xml tag:
 - if the host is specified as an IP address, then it is checked as specified in the URL. For example: `[2a02:6b8:a::a]`.
 - if there are redirects and support for redirects is enabled, then every redirect (the location field) is checked.
 
+When adding a regular expression with the `\<host_regexp\>` xml tag, the RE2 engine is used and the whole host is matched. For example: `<host_regexp>^.*\.clickhouse\.com$</host_regexp>`
+
+When adding a single S3 bucket with the `\<s3_bucket\>` xml tag, as `host/bucket` or `host:port/bucket`:
+- it is useful when the endpoint is shared by many parties, for example the path-style AWS endpoint `s3.us-west-2.amazonaws.com`, and allowing the whole host would allow every bucket on it.
+- the bucket is taken from the parsed S3 URL, so the entry matches both `https://s3.us-west-2.amazonaws.com/my-bucket/...` and `https://my-bucket.s3.us-west-2.amazonaws.com/...`.
+- it applies to S3 URLs only: the `s3` table functions and engines, the `S3` database engine, `BACKUP`/`RESTORE` to `S3`, and S3 disks created in SQL with the `disk` function.
+- a permanent (301) redirect returned by S3 is checked against the bucket entries as well, but a temporary (307) redirect is checked by host only, so it is rejected when the list contains only `\<s3_bucket\>` entries.
+
 For example:
 
 ```sql
 <remote_url_allow_hosts>
     <host>clickhouse.com</host>
+    <host_regexp>^.*\.clickhouse\.com$</host_regexp>
+    <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
 </remote_url_allow_hosts>
 ```
 

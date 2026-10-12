@@ -44,6 +44,8 @@ Yes, if the brokers are part of the same quorum they can be configured together 
 Yes, ClickPipes for streaming can be scaled both horizontally and vertically.
 Horizontal scaling adds more replicas to increase throughput, while vertical scaling increases the resources (CPU and RAM) allocated to each replica to handle more intensive workloads.
 This can be configured during ClickPipe creation, or at any other point under **Settings** -> **Advanced Settings** -> **Scaling**.
+
+If the ClickPipe uses an AWS PrivateLink reverse private endpoint, the total number of replicas across all ClickPipes sharing that endpoint is limited. See [replica limit per reverse private endpoint](/integrations/clickpipes/networking/aws-privatelink#rpe-replica-limit).
 </Accordion>
 
 <Accordion title="I can't find some of my Kafka topics in the ClickPipes setup UI. Why?">

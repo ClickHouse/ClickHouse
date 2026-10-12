@@ -39,6 +39,7 @@ cluster = ClickHouseCluster(__file__)
 node = cluster.add_instance(
     "node",
     main_configs=["configs/remote_host_filter.xml"],
+    user_configs=["configs/users.xml"],
     with_arrowflight=True,
     stay_alive=True,
 )
