@@ -92,6 +92,8 @@ class Labels:
     CI_FUNCTIONAL = "ci-functional-test"
     CI_TOOLCHAIN = "ci-toolchain"
     CI_NO_COVERAGE = "ci-no-coverage"
+    # Disables the unresolved-review-threads CI gate (see review_threads.py)
+    IGNORE_UNRESOLVED_THREADS = "ignore-unresolved-threads"
     # Pull requests run the LLVM coverage jobs only with this label.
     CI_COVERAGE = "ci-coverage"
 
