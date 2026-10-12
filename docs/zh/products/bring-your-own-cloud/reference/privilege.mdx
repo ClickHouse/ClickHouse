@@ -7,13 +7,9 @@ description: '在自有云基础设施上部署 ClickHouse'
 doc_type: 'reference'
 ---
 
-<div id="aws-iam-roles">
-  ## AWS IAM 角色
-</div>
+## AWS IAM 角色 {#aws-iam-roles}
 
-<div id="bootstrap-iam-role">
-  ### 引导 IAM 角色
-</div>
+### 引导 IAM 角色 {#bootstrap-iam-role}
 
 引导 IAM 角色需要具备以下权限：
 
@@ -22,9 +18,7 @@ doc_type: 'reference'
 * **IAM 操作 (例如 `iam:CreatePolicy`)&#x20;**：供控制器创建其他角色所需 (详见下一节) 。
 * **EKS 操作**：仅限名称以前缀 `clickhouse-cloud` 开头的资源。
 
-<div id="additional-iam-roles-created-by-the-controller">
-  ### 控制器创建的其他 IAM 角色
-</div>
+### 控制器创建的其他 IAM 角色 {#additional-iam-roles-created-by-the-controller}
 
 除了通过 CloudFormation 创建的 `ClickHouseManagementRole` 之外，控制器还会创建其他几个角色。
 
@@ -42,18 +36,17 @@ doc_type: 'reference'
   * 为 BYOC 服务域预配 TLS 证书。
 * **集群自动扩缩器**
   * 根据需要调整节点组规模。
+* **监控存储 (Thanos)&#x20;**
+  * 由集群中的 Prometheus 和 Thanos 工作负载承担。
+  * 写入和读取长期保留的指标数据，范围限定为您自己账户中的监控存储桶。
 
 **K8s-control-plane** 和 **k8s-worker** 角色由 AWS EKS 服务承担。
 
 最后，**`data-plane-mgmt`** 允许 ClickHouse Cloud 控制平面组件协调所需的自定义资源，例如 `ClickHouseCluster` 以及 Istio Virtual Service/Gateway。
 
-<div id="gcp-service-accounts">
-  ## GCP 服务账号
-</div>
+## GCP 服务账号 {#gcp-service-accounts}
 
-<div id="bootstrap-service-account">
-  ### 引导服务账号
-</div>
+### 引导服务账号 {#bootstrap-service-account}
 
 引导服务账号会被授予项目级自定义角色，这些角色具备以下权限：
 
@@ -63,30 +56,25 @@ doc_type: 'reference'
 * **存储**：用于管理存放 ClickHouse 备份、共享状态和监控数据的 Cloud Storage 存储桶。
 * **IAM 角色**：管理项目内的服务账号和自定义角色。此角色不授予创建服务账号密钥、绑定组织策略或操作其他项目中任何资源的能力。
 
-<div id="additional-service-accounts-created-by-the-controller">
-  ### 控制器创建的其他服务账号
-</div>
+### 控制器创建的其他服务账号 {#additional-service-accounts-created-by-the-controller}
 
-除了在 onboarding 过程中通过 Terraform 创建的 `clickhouse-management` 服务账号外，当你预配首个 BYOC 服务时，ClickHouse 的 控制平面 (以 `clickhouse-management` 身份进行身份验证) 会在你的项目中为特定的集群内 workload 创建其他服务账号。每个账号都只授予一组权限范围严格且用途单一的权限。
+除了在 onboarding 过程中通过 Terraform 创建的 `clickhouse-management` 服务账号外，当你预配首个 BYOC 服务时，ClickHouse 的 控制平面 (以 `clickhouse-management` 身份进行身份验证) 会在你的项目中为特定的集群内工作负载创建其他服务账号。每个账号都只授予一组权限范围严格且用途单一的权限。
 
 * **GKE 节点运行时身份**
   * 附加到你的 BYOC 集群中的每个 GKE 节点虚拟机。
   * 供 kubelet 节点代理、节点本地 agent 以及 Cloud Operations collectors 发送日志和指标，也供镜像拉取子系统下载容器镜像。
 * **计费抓取器身份**
-  * 由独立运行的抓取器 workload 用于收集计费 telemetry。
+  * 由独立运行的抓取器工作负载用于收集计费 telemetry。
 * **监控身份**
-  * 作为在你的集群中运行的 monitoring stack 的目标身份。
-  * 用于对专用于此部署的 GCS 存储桶中的长期指标存储进行读写。
+  * 作为在你的集群中运行的 monitoring stack 的目标身份。用于对专用于此部署的 GCS 存储桶中的长期指标存储进行读写。
 * **ClickHouse 运行时管理身份**
   * 由 ClickHouse 的运行时数据平面管理控制器使用，该控制器负责处理第 2 天运维操作，例如 Private Service Connect 端点管理、存储桶生命周期调整以及服务账号轮换。
 
-<div id="azure-roles-and-identities">
-  ## Azure 角色与身份
-</div>
+向 ClickHouse Cloud 发布服务和备份状态事件的状态导出器有意未列入其中：在 GCP 上，其发布身份是位于 ClickHouse 自有项目中的 ClickHouse 自有服务账号，而非在你的项目中创建的账号。你的项目中创建的只是一个工作负载 identity 绑定，使集群内的 `state-exporter` 服务账号能够模拟该身份。整个过程不涉及任何密钥材料，且向 Pub/Sub 发布数据的身份在你的项目中不持有任何权限。
 
-<div id="onboarding-service-principal">
-  ### Onboarding 服务主体
-</div>
+## Azure 角色与身份 {#azure-roles-and-identities}
+
+### Onboarding 服务主体 {#onboarding-service-principal}
 
 使用 [Azure Terraform 模块](https://github.com/ClickHouse/terraform-byoc-onboarding/tree/main/modules/azure) 进行 Onboarding 时，将遵循 Azure 的跨租户身份验证指南，在你的租户中将多租户应用程序预配为 Enterprise Application (服务主体) 。该服务主体会被授予作用域为目标订阅的最小权限自定义角色，包含以下权限：
 
@@ -96,9 +84,7 @@ doc_type: 'reference'
 * **身份**：管理订阅中的用户分配托管标识及其联合身份凭据。
 * **授权**：管理自定义角色定义和角色分配。所有权限均限定在目标订阅范围内——该角色无法操作其他订阅或租户中的资源。
 
-<div id="additional-managed-identities-created-by-the-controller">
-  ### 控制器创建的其他托管标识
-</div>
+### 控制器创建的其他托管标识 {#additional-managed-identities-created-by-the-controller}
 
 预配 BYOC 服务时，ClickHouse 控制平面会在您的订阅中创建用户分配的托管标识。每个标识都与特定的 Kubernetes 服务账号 (Workload Identity) 建立联合，并仅具有范围有限、用途单一的权限集：
 
@@ -107,3 +93,12 @@ doc_type: 'reference'
   * 从备份还原服务时，该服务还会获得对源服务备份容器的只读访问权限。
 * **共享基础设施标识**
   * ClickHouse 运行时数据平面管理控制器将其用于 Private Link 服务管理等第 2 天运维操作。
+* **监控标识**
+  * 通过作用域限定为监控存储访问的自定义角色，与您集群中的 Thanos 工作负载建立联合。
+  * 在您自己的订阅中写入和读取长期保留的指标。
+
+与 GCP 上一样，状态导出器有意未列入此列表：其发布标识是位于 ClickHouse 所属订阅中的、由 ClickHouse 拥有的用户分配托管标识。在您这一侧创建的是一个联合身份凭据，允许集群内的 `state-exporter` 服务账号为其获取标记，无需交换任何机密。向 Service Bus 发布消息的标识在您的订阅中不持有任何权限。
+
+<Note>
+  这与 AWS 不同：在 AWS 上，发布角色是在您自己的账户中创建的，并通过担任 ClickHouse 侧的角色来访问队列。而在 GCP 和 Azure 上，发布标识完全位于 ClickHouse 侧，您的集群仅与其建立联合，因此对于该流程，您无需审计任何额外的账户内权限。出站流量本身已在[网络边界](/zh/products/bring-your-own-cloud/reference/network-security#outbound-connections)中列明。
+</Note>

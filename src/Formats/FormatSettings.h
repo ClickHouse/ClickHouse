@@ -59,6 +59,9 @@ struct FormatSettings
     bool try_infer_datetimes_only_datetime64 = false;
     bool try_infer_exponent_floats = false;
 
+    /// The maximum number of steps of the search for the structure of a `Freeform` row, 0 means unlimited.
+    UInt64 freeform_max_search_steps = 4096;
+
     bool allow_special_serialization_kinds = false;
 
     /// Infers a number, not a `String`, for an integer with leading zeros
@@ -324,6 +327,10 @@ struct FormatSettings
         bool quote_decimals = false;
         bool escape_forward_slashes = true;
         bool read_named_tuples_as_objects = false;
+        /// Set from `json_extract_named_tuples_as_objects` by the JSON functions only, not by
+        /// `getFormatSettings`: the setting governs the `JSONExtract` family, and the `JSON` data
+        /// type must keep filling named tuples from arrays positionally.
+        bool extract_named_tuples_as_objects = false;
         bool use_string_type_for_ambiguous_paths_in_named_tuples_inference_from_objects = false;
         bool write_named_tuples_as_objects = true;
         bool skip_null_value_in_named_tuples = false;
@@ -393,8 +400,11 @@ struct FormatSettings
         bool filter_push_down = true;
         bool bloom_filter_push_down = true;
         size_t dictionary_filter_push_down = 1024 * 1024;
+        size_t footer_read_size = 0;
         bool page_filter_push_down = true;
         bool use_offset_index = true;
+        /// Copied from the `apply_string_filters_during_scan` query setting.
+        bool apply_string_filters = false;
 
         bool enable_json_parsing = true;
         bool preserve_order = false;
@@ -429,6 +439,7 @@ struct FormatSettings
         double bloom_filter_bits_per_value = 10.5;
         size_t bloom_filter_flush_threshold_bytes = 1024 * 1024 * 128;
         bool allow_geoparquet_parser = true;
+        bool detect_variant_by_structure = true;
         bool spatial_filter_push_down = true;
         bool write_geometadata = true;
         size_t max_dictionary_size = 1024 * 1024;
@@ -444,6 +455,7 @@ struct FormatSettings
         UInt64 max_value_width_apply_for_single_value = false;
         bool highlight_digit_groups = true;
         bool highlight_trailing_spaces = true;
+        bool display_control_characters = true;
         bool multiline_fields = true;
         /// Set to 2 for auto
         UInt64 color = 2;
@@ -640,6 +652,12 @@ struct FormatSettings
         bool use_replace = false;
         bool quote_names = true;
     } sql_insert{};
+
+    struct
+    {
+        String input_table_name;
+        String output_table_name = "table";
+    } sqlite{};
 
     struct
     {

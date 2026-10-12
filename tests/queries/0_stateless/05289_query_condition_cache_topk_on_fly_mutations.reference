@@ -1,0 +1,28 @@
+ALTER UPDATE applied on fly
+0
+1
+2
+3
+4
+1000
+1001
+1002
+1003
+1004
+after KILL MUTATION
+1000
+1001
+1002
+1003
+1004
+patch parts
+0
+1
+2
+3
+4
+1000
+1001
+1002
+1003
+1004

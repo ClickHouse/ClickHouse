@@ -255,7 +255,7 @@ export const AskAILink = ({ children }) => {
             id="home-assistant-entry"
             data-galaxy-event="docs.home.ask-ai"
             onClick={openKapa}
-            className="inline-flex items-center gap-1.5 text-sm text-gray-500 dark:text-zinc-500 hover:text-gray-900 dark:hover:text-[#fdff75] transition-colors bg-transparent border-0 p-0 cursor-pointer"
+            className="w-full sm:w-auto flex-none inline-flex items-center justify-center gap-1.5 pl-3 pr-3.5 h-9 shadow-none bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 border border-white/10 rounded text-gray-500 dark:text-white/50 cursor-pointer"
         >
             <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 18 18" aria-hidden="true" className="shrink-0"><g fill="currentColor"><path d="M5.658,2.99l-1.263-.421-.421-1.263c-.137-.408-.812-.408-.949,0l-.421,1.263-1.263,.421c-.204,.068-.342,.259-.342,.474s.138,.406,.342,.474l1.263,.421,.421,1.263c.068,.204,.26,.342,.475,.342s.406-.138,.475-.342l.421-1.263,1.263-.421c.204-.068,.342-.259,.342-.474s-.138-.406-.342-.474Z" fill="currentColor" data-stroke="none" stroke="none"></path><polygon points="9.5 2.75 11.412 7.587 16.25 9.5 11.412 11.413 9.5 16.25 7.587 11.413 2.75 9.5 7.587 7.587 9.5 2.75" fill="none" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5"></polygon></g></svg>
             {children}
@@ -303,7 +303,7 @@ export const PageWrapper = ({ children }) => {
     <div className="absolute -top-14 left-0 right-0 opacity-80">
       <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV84MjcpIj4KPHJlY3Qgb3BhY2l0eT0iMC4wMSIgd2lkdGg9IjExNTIiIGhlaWdodD0iMzg4IiBmaWxsPSJ1cmwoI3BhaW50MF9saW5lYXJfMjMxXzgyNykiLz4KPC9nPgo8ZGVmcz4KPGxpbmVhckdyYWRpZW50IGlkPSJwYWludDBfbGluZWFyXzIzMV84MjciIHgxPSI1NzYiIHkxPSIwIiB4Mj0iNTc2IiB5Mj0iMzg4IiBncmFkaWVudFVuaXRzPSJ1c2VyU3BhY2VPblVzZSI+CjxzdG9wIHN0b3AtY29sb3I9IiM3MzczNzMiLz4KPHN0b3Agb2Zmc2V0PSIxIiBzdG9wLWNvbG9yPSIjRDlEOUQ5IiBzdG9wLW9wYWNpdHk9IjAiLz4KPC9saW5lYXJHcmFkaWVudD4KPGNsaXBQYXRoIGlkPSJjbGlwMF8yMzFfODI3Ij4KPHJlY3Qgd2lkdGg9IjExNTIiIGhlaWdodD0iMzg4IiBmaWxsPSJ3aGl0ZSIvPgo8L2NsaXBQYXRoPgo8L2RlZnM+Cjwvc3ZnPgo=" className="block dark:hidden pointer-events-none w-full h-auto" alt="Imagem de fundo decorativa." />
 
-      <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV83MzApIj4KPGcgb3BhY2l0eT0iMC4xMiIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjBfZl8yMzFfNzMwKSI+CjxjaXJjbGUgY3g9Ijg0My41IiBjeT0iLTIzMS41IiByPSIyMDMuNSIgZmlsbD0id2hpdGUiLz4KPC9nPgo8L2c+CjxkZWZzPgo8ZmlsdGVyIGlkPSJmaWx0ZXIwX2ZfMjMxXzczMCIgeD0iNTguMTk4OSIgeT0iLTEwMTYuOCIgd2lkdGg9IjE1NzAuNiIgaGVpZ2h0PSIxNTcwLjYiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0ic2hhcGUiLz4KPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMjkwLjkwMSIgcmVzdWx0PSJlZmZlY3QxX2ZvcmVncm91bmRCbHVyXzIzMV83MzAiLz4KPC9maWx0ZXI+CjxjbGlwUGF0aCBpZD0iY2xpcDBfMjMxXzczMCI+CjxyZWN0IHdpZHRoPSIxMTUyIiBoZWlnaHQ9IjM4OCIgZmlsbD0id2hpdGUiLz4KPC9jbGlwUGF0aD4KPC9kZWZzPgo8L3N2Zz4K" className="hidden dark:block pointer-events-none w-full h-auto" alt="Imagem decorativa de fundo." />
+      <img src="data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTE1MiIgaGVpZ2h0PSIzODgiIHZpZXdCb3g9IjAgMCAxMTUyIDM4OCIgZmlsbD0ibm9uZSIgeG1sbnM9Imh0dHA6Ly93d3cudzMub3JnLzIwMDAvc3ZnIj4KPGcgY2xpcC1wYXRoPSJ1cmwoI2NsaXAwXzIzMV83MzApIj4KPGcgb3BhY2l0eT0iMC4xMiIgZmlsdGVyPSJ1cmwoI2ZpbHRlcjBfZl8yMzFfNzMwKSI+CjxjaXJjbGUgY3g9Ijg0My41IiBjeT0iLTIzMS41IiByPSIyMDMuNSIgZmlsbD0id2hpdGUiLz4KPC9nPgo8L2c+CjxkZWZzPgo8ZmlsdGVyIGlkPSJmaWx0ZXIwX2ZfMjMxXzczMCIgeD0iNTguMTk4OSIgeT0iLTEwMTYuOCIgd2lkdGg9IjE1NzAuNiIgaGVpZ2h0PSIxNTcwLjYiIGZpbHRlclVuaXRzPSJ1c2VyU3BhY2VPblVzZSIgY29sb3ItaW50ZXJwb2xhdGlvbi1maWx0ZXJzPSJzUkdCIj4KPGZlRmxvb2QgZmxvb2Qtb3BhY2l0eT0iMCIgcmVzdWx0PSJCYWNrZ3JvdW5kSW1hZ2VGaXgiLz4KPGZlQmxlbmQgbW9kZT0ibm9ybWFsIiBpbj0iU291cmNlR3JhcGhpYyIgaW4yPSJCYWNrZ3JvdW5kSW1hZ2VGaXgiIHJlc3VsdD0ic2hhcGUiLz4KPGZlR2F1c3NpYW5CbHVyIHN0ZERldmlhdGlvbj0iMjkwLjkwMSIgcmVzdWx0PSJlZmZlY3QxX2ZvcmVncm91bmRCbHVyXzIzMV83MzAiLz4KPC9maWx0ZXI+CjxjbGlwUGF0aCBpZD0iY2xpcDBfMjMxXzczMCI+CjxyZWN0IHdpZHRoPSIxMTUyIiBoZWlnaHQ9IjM4OCIgZmlsbD0id2hpdGUiLz4KPC9jbGlwUGF0aD4KPC9kZWZzPgo8L3N2Zz4K" className="hidden dark:block pointer-events-none w-full h-auto" alt="Imagem de fundo decorativa." />
     </div>
 
     <div className="relative z-10 px-0 py-16 lg:py-12 lg:pb-40 max-w-6xl mx-auto">
@@ -319,15 +319,15 @@ export const PageWrapper = ({ children }) => {
         Documentação da plataforma de dados mais rápida
       </div>
 
-      <div className="flex items-center justify-center mx-auto mt-8 px-4">
-        <button type="button" id="home-search-entry" data-galaxy-event="docs.home.search" className="flex pointer-events-auto items-center text-sm leading-6 h-11 pl-3.5 pr-4 text-gray-500 dark:text-white/50 dark:brightness-[1.1] dark:hover:brightness-[1.25] gap-2 w-full max-w-[560px] bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-gray-950/10 dark:border-white/10 ring-0 dark:ring-0 rounded-lg" aria-label="Abrir a busca">
+      <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-center gap-2 mx-auto mt-8 px-4 max-w-[480px]">
+        <button type="button" id="home-search-entry" data-galaxy-event="docs.home.search" className="flex w-full sm:flex-1 pointer-events-auto items-center text-sm leading-6 h-9 pl-3.5 pr-4 text-gray-500 dark:text-white/50 gap-2 min-w-0 bg-gray-950/[0.03] dark:bg-white/[0.03] hover:bg-gray-950/10 dark:hover:bg-white/10 shadow-none border border-gray-950/10 dark:border-white/10 ring-0 dark:ring-0 rounded" aria-label="Abrir a busca">
           <div className="flex items-center gap-2 min-w-0"><svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-search min-w-4 flex-none text-gray-700 hover:text-gray-800 dark:text-gray-400 hover:dark:text-gray-200"><circle cx="11" cy="11" r="8" /><path d="m21 21-4.3-4.3" /></svg><div className="truncate min-w-0">Busca...</div></div>
         </button>
+        <AskAILink>Pergunte à IA</AskAILink>
       </div>
 
-      <div className="flex items-center justify-center gap-6 my-6">
-        <McpLink>servidor MCP</McpLink>
-        <AskAILink>Pergunte à IA</AskAILink>
+      <div className="flex items-center justify-center mt-4">
+        <McpLink>Configurar o servidor MCP da documentação</McpLink>
       </div>
 
       <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-4 mt-24">

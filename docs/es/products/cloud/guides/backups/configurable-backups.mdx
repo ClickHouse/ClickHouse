@@ -10,21 +10,36 @@ doc_type: 'guide'
 import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 import { ScalePlanFeatureBadge } from "/snippets/es/components/ScalePlanFeatureBadge/ScalePlanFeatureBadge.jsx";
 import { Image } from "/snippets/es/components/Image.jsx";
+import ConfigurableBackupsCLI from "/snippets/es/cloud/backups/_configurable_backups_cli.mdx";
 
-<ScalePlanFeatureBadge feature="Copias de seguridad configurables" linking_verb_are="True" />
+<Visibility for="agents">
+  <ConfigurableBackupsCLI />
+</Visibility>
 
-Para configurar la programación de las copias de seguridad de un servicio, ve a la pestaña **Configuración** de la consola y haz clic en **Cambiar la configuración de las copias de seguridad**.
+<Visibility for="humans">
+  <View title="UI de Cloud">
+    <ScalePlanFeatureBadge feature="Copias de seguridad configurables" linking_verb_are="True" />
 
-<Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="Configurar las opciones de las copias de seguridad" border />
+    Para configurar la programación de las copias de seguridad de un servicio, ve a la pestaña **Configuración** de la consola y haz clic en **Cambiar la configuración de las copias de seguridad**.
 
-Se abrirá una pestaña a la derecha donde podrás elegir los valores de retención, frecuencia y hora de inicio. Tendrás que guardar la configuración seleccionada para que los cambios surtan efecto.
+    <Image img="/images/cloud/manage/backup-settings.webp" size="lg" alt="Configurar las opciones de las copias de seguridad" border />
 
-<Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Seleccionar la retención y la frecuencia de las copias de seguridad" border />
+    Se abrirá una pestaña a la derecha donde podrás elegir los valores de retención, frecuencia y hora de inicio. Tendrás que guardar la configuración seleccionada para que los cambios surtan efecto.
 
-<Note>
-  La hora de inicio y la frecuencia son mutuamente excluyentes. La hora de inicio tiene prioridad.
-</Note>
+    <Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Seleccionar la retención y la frecuencia de las copias de seguridad" border />
 
-<Note>
-  Cambiar la programación de las copias de seguridad puede aumentar los cargos mensuales por almacenamiento, ya que es posible que algunas copias de seguridad no estén cubiertas por las copias de seguridad predeterminadas del servicio. Consulta [&quot;Comprender el costo de las copias de seguridad&quot;](/es/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
-</Note>
+    <Note>
+      La hora de inicio y la frecuencia son mutuamente excluyentes. La hora de inicio tiene prioridad.
+    </Note>
+
+    <Note>
+      Cambiar la programación de las copias de seguridad puede aumentar los cargos mensuales por almacenamiento, ya que es posible que algunas copias de seguridad no estén cubiertas por las copias de seguridad predeterminadas del servicio. Consulta [&quot;Comprender el costo de las copias de seguridad&quot;](/es/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+    </Note>
+  </View>
+
+  <View title="CLI">
+    Puedes seguir esta ruta por tu cuenta, automatizarla con un script o delegarla a un agente de IA. Cambia a la vista **UI de Cloud** para ver la versión de la consola.
+
+    <ConfigurableBackupsCLI />
+  </View>
+</Visibility>

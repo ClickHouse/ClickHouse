@@ -19,6 +19,7 @@
 #include <Common/Exception.h>
 #include <Common/FailPoint.h>
 #include <Common/ThreadPool.h>
+#include <Common/ThreadStatus.h>
 #include <Common/TransactionID.h>
 #include <Common/ZooKeeper/IKeeper.h>
 #include <Common/ZooKeeper/Types.h>
@@ -391,6 +392,7 @@ std::vector<MergeTreeTransaction::AffectedSMTTable> MergeTreeTransaction::getAff
     std::unordered_map<Int64, size_t> row_index_by_cross_replica_id;
     for (const auto & storage : storages)
     {
+        /// NOLINT(storage-cast): the tables register themselves here via `shared_from_this`, never through the catalog.
         const auto * smt = dynamic_cast<const StorageSharedMergeTree *>(storage.get());
         if (!smt)
             continue;
@@ -466,6 +468,8 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    /// A cancelled query or merge must not interrupt this: an escaping exception terminates the server.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
 
     DataPartsVector created_parts;
     std::vector<LockedPart> removed_parts;
@@ -534,6 +538,8 @@ MergeTreeTransaction::RollbackResult MergeTreeTransaction::rollback() noexcept
 {
     auto blocker = CannotAllocateThreadFaultInjector::blockFaultInjections();
     LockMemoryExceptionInThread memory_tracker_lock(VariableContext::Global);
+    /// A cancelled query or merge must not interrupt this: an escaping exception terminates the server.
+    ThreadStatus::QueryCancellationBlocker cancellation_blocker;
     /// Exclusive like `beforeCommit`: a background merge holds the gate across both its commit `multi`
     /// and the adoption that registers its parts here, so rollback cannot land between the two.
     bool need_rollback = false;
