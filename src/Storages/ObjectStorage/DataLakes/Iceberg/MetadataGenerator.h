@@ -64,8 +64,7 @@ public:
         FileNamesGenerator & generator,
         Int64 parent_snapshot_id);
 
-    /// Records the file this metadata object was read from in `metadata-log`.
-    /// Call it before anything changes `last-updated-ms`.
+    /// Appends the file this object was read from to `metadata-log`; call it before `last-updated-ms` changes.
     void addPreviousMetadataFile(const Iceberg::IcebergPathFromMetadata & previous_metadata_file);
 
     /// Callers that retry a commit generate the id once so their manifests stay valid across attempts.
