@@ -11,6 +11,7 @@ namespace DB
 class LazilyReadFromObjectStorage;
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
+struct ObjectStorageTopKQueryConditionCacheKey;
 
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
@@ -82,6 +83,9 @@ private:
     ObjectStoragePtr object_storage;
     StorageObjectStorageConfigurationPtr configuration;
     std::shared_ptr<IObjectIterator> iterator_wrapper;
+    /// The metadata `iterator_wrapper` was created with: for a data lake, it always has the table state
+    /// (see `StorageObjectStorageSource::ensureDataLakeTableState`).
+    StorageMetadataPtr iterator_metadata;
 
     /// Lazy materialization: set iff keepOnlyRequiredColumnsAndCreateLazyReadStep was called.
     LazyObjectStorageFileRegistryPtr lazy_row_index_registry;
@@ -105,6 +109,11 @@ private:
 #endif
 
     void createIterator();
+
+    std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const;
+
+    /// Whether every read of an object is pinned to the generation (`ETag`) the object had when it was listed.
+    bool isReadPinnedToListedGeneration() const;
 };
 
 }

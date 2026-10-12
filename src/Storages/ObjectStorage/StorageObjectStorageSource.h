@@ -1,6 +1,7 @@
 #pragma once
 
 #include <future>
+#include <mutex>
 #include <optional>
 #include <Common/re2.h>
 #include <Common/threadPoolCallbackRunner.h>
@@ -20,6 +21,66 @@ class SchemaCache;
 
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
+
+/// The query condition cache key of a TopN (`ORDER BY ... LIMIT n`) read. Which row groups of a file
+/// the TopN filter lets through depends on the running threshold, which is established from the rows
+/// of *every* file the query reads, so the key covers the TopK plan, the predicate and the set of files
+/// (see `ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey`). For a data lake, the snapshot
+/// identifies the set of files, as the data files are never modified in place. For plain object
+/// storage, the key covers the ETags of all objects, which are known only once they are listed, see
+/// `ObjectIteratorListingAllForTopKQueryConditionCache`.
+struct ObjectStorageTopKQueryConditionCacheKey
+{
+    /// Unset while the objects are not listed yet, and if they turn out not to be suitable for the key.
+    /// It is assigned before the iterator returns the first object, so a source reading it after having
+    /// received an object sees its final value.
+    std::optional<UInt64> condition_hash;
+    /// The hash of the TopK plan and the predicate, to which the hash of the set of files is added.
+    UInt64 condition_hash_without_files = 0;
+    /// A printable description of the key for `system.query_condition_cache`.
+    String condition;
+    /// The filter info to read a file that uses the key with: the one of the query, but with
+    /// `FormatTopKFilterInfo::track_row_group_best_values`.
+    FormatFilterInfoPtr format_filter_info_tracking_best_values;
+};
+using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey>;
+
+/// Plain object storage: lists all objects of the query before returning the first one, to make the
+/// TopK query condition cache key from their ETags (see `ObjectStorageTopKQueryConditionCacheKey`).
+/// The objects are listed on the first call of `next`, which happens when the pipeline already runs:
+/// some iterators apply a `_path` / `_file` filter only then. A TopN read reads all objects anyway, so
+/// listing them first costs no extra requests.
+class ObjectIteratorListingAllForTopKQueryConditionCache : public IObjectIterator
+{
+public:
+    ObjectIteratorListingAllForTopKQueryConditionCache(ObjectIterator iterator_, std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key_);
+
+    ObjectInfoPtr next(size_t processor) override;
+    size_t estimatedKeysCount() override { return iterator->estimatedKeysCount(); }
+    std::optional<UInt64> getSnapshotVersion() const override { return iterator->getSnapshotVersion(); }
+
+    void setEmitProfileEvents(bool value) override
+    {
+        emit_profile_events = value;
+        iterator->setEmitProfileEvents(value);
+    }
+
+    /// With more objects, the key is not made, so as not to keep all of them in memory.
+    static constexpr size_t MAX_OBJECTS = 100000;
+
+private:
+    void listObjects(size_t processor);
+
+    const ObjectIterator iterator;
+    const std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> key;
+
+    std::once_flag listed;
+    std::exception_ptr listing_exception;
+    ObjectInfos objects;
+    /// Whether `objects` are all objects of the query. Otherwise the rest comes from `iterator`.
+    bool listed_all = false;
+    std::atomic<size_t> index = 0;
+};
 
 class StorageObjectStorageSource final : public ISource
 {
@@ -45,7 +106,8 @@ public:
         FormatParserSharedResourcesPtr parser_shared_resources_,
         FormatFilterInfoPtr format_filter_info_,
         bool need_only_count_,
-        LazyObjectStorageFileRegistryPtr lazy_row_index_registry_ = nullptr);
+        LazyObjectStorageFileRegistryPtr lazy_row_index_registry_ = nullptr,
+        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key_ = nullptr);
 
     ~StorageObjectStorageSource() override;
 
@@ -72,6 +134,11 @@ public:
         bool skip_object_metadata = false,
         bool with_tags = false);
 
+    /// For a data lake configuration, returns the metadata with `datalake_table_state` set: the given
+    /// one if it already has the state, otherwise a copy with the current snapshot of the table.
+    static StorageMetadataPtr ensureDataLakeTableState(
+        const StorageObjectStorageConfiguration & configuration, StorageMetadataPtr storage_metadata, const ContextPtr & local_context);
+
     static std::string getUniqueStoragePathIdentifier(
         const StorageObjectStorageConfiguration & configuration, const ObjectInfo & object_info, bool include_connection_info = true);
 
@@ -92,6 +159,20 @@ protected:
     const bool need_only_count;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
+    ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key;
+
+    /// A file read by a TopN read, whose query condition cache entry is written only when the source
+    /// is destroyed: the row groups without a row of the result are known only once the threshold is
+    /// final, and while the file is read, its rows may still wait for the sorting transforms.
+    struct PendingTopKQueryConditionCacheEntry
+    {
+        String cache_file_key;
+        size_t total_row_groups = 0;
+        std::vector<size_t> matched_row_groups;
+        /// The best value of the sort column in each matched row group, see `IInputFormat::getTopKBestValuesOfBuckets`.
+        std::vector<std::pair<size_t, Field>> best_values;
+    };
+    std::vector<PendingTopKQueryConditionCacheEntry> pending_top_k_query_condition_cache_entries;
 
     ReadFromFormatInfo read_from_format_info;
     const std::shared_ptr<ThreadPool> create_reader_pool;
@@ -122,6 +203,13 @@ protected:
         const PullingPipelineExecutor * operator->() const { return reader.get(); }
 
         ObjectInfoPtr getObjectInfo() const { return object_info; }
+
+        /// Whether the file is read as a whole (not as a bucket the iterator split it into), so it may
+        /// consult and populate `top_k_query_condition_cache_key`.
+        bool use_top_k_query_condition_cache_key = false;
+        /// Whether the entries under `top_k_query_condition_cache_key` made the file skip row groups that
+        /// the entries of the predicate alone did not.
+        bool skipped_row_groups_by_top_k_entry = false;
         const IInputFormat * getInputFormat() const { return dynamic_cast<const IInputFormat *>(source.get()); }
         ReadBuffer * readBuffer() const { return read_buf.get(); }
 
@@ -159,9 +247,13 @@ protected:
         size_t max_block_size,
         FormatParserSharedResourcesPtr parser_shared_resources,
         FormatFilterInfoPtr format_filter_info,
-        bool need_only_count);
+        bool need_only_count,
+        ObjectStorageTopKQueryConditionCacheKeyPtr top_k_query_condition_cache_key = nullptr);
 
     ReaderHolder createReader();
+
+    /// Writes `pending_top_k_query_condition_cache_entries` to the query condition cache.
+    void writePendingTopKQueryConditionCacheEntries();
 
     std::future<ReaderHolder> createReaderAsync();
 
