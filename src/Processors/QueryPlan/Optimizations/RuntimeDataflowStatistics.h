@@ -107,10 +107,18 @@ struct RuntimeDataflowStatisticsBlock
     {
         std::atomic_size_t counter{0};
 
+        /// Aggregate-state values covered by `serialized_state_bytes` below. Written under the mutex,
+        /// but read without it to decide whether a block that is not sampled can be extrapolated instead
+        /// of serialized (the value only grows, so a non-zero read stays valid).
+        std::atomic_size_t serialized_state_values{0};
+
         std::mutex mutex;
         size_t bytes TSA_GUARDED_BY(mutex) = 0;
         size_t sample_bytes TSA_GUARDED_BY(mutex) = 0;
         size_t compressed_bytes TSA_GUARDED_BY(mutex) = 0;
+        /// Serialized size of the aggregate-state columns of the sampled blocks; together with
+        /// `serialized_state_values` it gives the per-value figure used to extrapolate unsampled blocks.
+        size_t serialized_state_bytes TSA_GUARDED_BY(mutex) = 0;
         size_t elapsed_microseconds TSA_GUARDED_BY(mutex) = 0;
     };
 
@@ -129,9 +137,13 @@ struct RuntimeDataflowStatisticsBlock
         MaxOutputType = 3,
     };
 
-    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_)
+    /// `wire_codec_` is the codec a replica sends its output with (`network_compression_method`); the
+    /// compression samples of the output columns are measured with it. The factory default is used when
+    /// it is null.
+    RuntimeDataflowStatisticsBlock(size_t cache_key_, size_t total_rows_to_read_, CompressionCodecPtr wire_codec_ = nullptr)
         : cache_key(cache_key_)
         , total_rows_to_read(total_rows_to_read_)
+        , wire_codec(std::move(wire_codec_))
     {
         if (cache_key == 0)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, "Cache key for RuntimeDataflowStatisticsBlock cannot be zero");
@@ -144,6 +156,7 @@ struct RuntimeDataflowStatisticsBlock
 
     const size_t cache_key = 0;
     const size_t total_rows_to_read = 0;
+    const CompressionCodecPtr wire_codec;
 
     std::atomic_bool unsupported_case{false};
 
@@ -222,8 +235,12 @@ private:
 
     /// `full_bytes` overrides the byte count taken from the columns, for callers whose columns
     /// are only a sample of the dataflow being accounted.
-    static void
-    recordColumns(Statistics & statistics, size_t num_rows, const ColumnsWithTypeAndName & cols, std::optional<size_t> full_bytes = {});
+    static void recordColumns(
+        Statistics & statistics,
+        size_t num_rows,
+        const ColumnsWithTypeAndName & cols,
+        const CompressionCodecPtr & wire_codec,
+        std::optional<size_t> full_bytes = {});
 
     const std::shared_ptr<RuntimeDataflowStatisticsBlock> block;
     const bool duplicated;

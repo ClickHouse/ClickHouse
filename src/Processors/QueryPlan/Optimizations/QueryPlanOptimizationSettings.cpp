@@ -125,6 +125,8 @@ namespace Setting
     extern const SettingsSeconds lock_acquire_timeout;
     extern const SettingsString distributed_plan_force_exchange_kind;
     extern const SettingsString force_optimize_projection_name;
+    extern const SettingsString network_compression_method;
+    extern const SettingsInt64 network_zstd_compression_level;
     extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
     extern const SettingsUInt64 automatic_parallel_replicas_min_bytes_per_replica;
     extern const SettingsFloat automatic_parallel_replicas_max_duplicated_read_ratio;
@@ -403,6 +405,8 @@ QueryPlanOptimizationSettings::QueryPlanOptimizationSettings(
     max_threads = from[Setting::max_threads];
 
     automatic_parallel_replicas_mode = from[Setting::automatic_parallel_replicas_mode];
+    network_compression_method = from[Setting::network_compression_method].toString();
+    network_zstd_compression_level = from[Setting::network_zstd_compression_level];
     automatic_parallel_replicas_min_bytes_per_replica = from[Setting::automatic_parallel_replicas_min_bytes_per_replica];
     automatic_parallel_replicas_max_duplicated_read_ratio = from[Setting::automatic_parallel_replicas_max_duplicated_read_ratio];
 
