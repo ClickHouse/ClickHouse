@@ -29,7 +29,7 @@ To follow this guide, you will need:
 ClickPipes for Pub/Sub supports two authentication methods:
 
 - **Service account key:** You create a Google service account and upload its [JSON key](https://cloud.google.com/iam/docs/keys-create-delete) in the ClickPipes UI or provide it through the API. ClickPipes encrypts the key at rest.
-- **GCP workload identity (Private Preview):** ClickPipes uses short-lived credentials for a ClickPipes-managed Google service account. No customer service account key is stored. This method requires a ClickHouse Cloud service and ClickPipes deployment running on GCP and is currently available through OpenAPI and Terraform only.
+- **GCP workload identity (Private Preview):** ClickPipes uses short-lived credentials for a ClickPipes-managed Google service account. No customer service account key is stored. This method requires a ClickHouse Cloud service and ClickPipes deployment running on GCP.
 
 With either method, the service account is used to:
 

@@ -119,7 +119,7 @@ Service Account authentication is required when using [unordered mode](#continuo
 
 #### GCP workload identity (Private Preview) {#gcp-workload-identity}
 
-GCP workload identity lets ClickPipes authenticate as a ClickPipes-managed Google service account without storing your service account key. It requires a ClickHouse Cloud service and ClickPipes deployment running on GCP and is currently available through OpenAPI and Terraform only.
+GCP workload identity lets ClickPipes authenticate as a ClickPipes-managed Google service account without storing your service account key. It requires a ClickHouse Cloud service and ClickPipes deployment running on GCP.
 
 Follow the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity) to retrieve the managed service account from the ClickPipes service context. Grant it `roles/storage.objectViewer` on the source bucket, and create the pipe with `SERVICE_ACCOUNT_WORKLOAD_IDENTITY` authentication. For unordered ingestion, also grant it `roles/pubsub.subscriber` and `roles/pubsub.viewer` on the existing notification subscription and use its fully-qualified name: `projects/<project-id>/subscriptions/<subscription-id>`.
 
