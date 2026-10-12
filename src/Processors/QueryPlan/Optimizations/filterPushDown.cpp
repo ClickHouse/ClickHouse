@@ -1502,10 +1502,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
-        /// The way out if this push-down misbehaves in production: the condition stays above the read
-        /// and the fragment is left as it was, which is what versions before 26.10 did. Asked of the
-        /// fragment's own context, the same one the splice answers to, so that the two cannot disagree
-        /// about whether the condition travels.
         if (!parallel_replicas_local_plan->getContext()->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
             return 0;
 

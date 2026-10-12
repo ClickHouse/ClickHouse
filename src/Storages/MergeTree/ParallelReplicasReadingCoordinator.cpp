@@ -217,7 +217,7 @@ public:
     /// spurious `false` only costs one exact scan, and a spurious `true` only misses an early
     /// release and falls back to the previous behaviour. The default is deliberately the latter.
     virtual bool mayHaveUnassignedRanges() const { return true; }
-    virtual bool initializedWithEmptyRanges() const { return false; }
+    virtual bool initializedWithEmptyRanges() const = 0;
     /// The working set of parts for this stream — what the coordinator will actually serve in
     /// handleRequest. Captured from the first announcement (in the snapshot-pinned topology that
     /// is the initiator's own pre-split parts list, so this is exactly the per-split assignment)

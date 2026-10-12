@@ -646,11 +646,16 @@ ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
         throw Exception(ErrorCodes::LOGICAL_ERROR, "A copy of a filter condition has {} conjuncts, the condition {}",
             copied_atoms.size(), atoms.size());
 
+    /// A dropped node is a child of an `and` in the chain from the root, so its atoms are atoms of the root.
     ActionsDAG::NodeRawConstPtrs left_out;
     for (const auto * node : dropped)
         for (const auto * copied_atom : ActionsDAG::extractConjunctionAtoms(node))
-            if (auto it = std::ranges::find(copied_atoms, copied_atom); it != copied_atoms.end())
-                left_out.push_back(atoms[it - copied_atoms.begin()]);
+        {
+            auto it = std::ranges::find(copied_atoms, copied_atom);
+            if (it == copied_atoms.end())
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "A conjunct the conversion dropped is not one of the condition's");
+            left_out.push_back(atoms[it - copied_atoms.begin()]);
+        }
     return left_out;
 }
 
