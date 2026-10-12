@@ -2,7 +2,7 @@
 
 #include <Core/Joins.h>
 #include <Core/SettingsEnums.h>
-#include <Common/Logger.h>
+#include <Common/Logger_fwd.h>
 #include <Interpreters/Context_fwd.h>
 #include <Interpreters/ExpressionActionsSettings.h>
 #include <Interpreters/FutureSetSettings.h>
