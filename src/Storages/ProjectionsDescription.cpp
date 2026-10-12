@@ -4,6 +4,7 @@
 #include <base/sort.h>
 #include <Access/AccessControl.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/FilterDescription.h>
 #include <Common/iota.h>
 #include <Core/Defines.h>
 #include <Core/Settings.h>
@@ -726,39 +727,10 @@ Block ProjectionDescription::calculateByQuery(
     /// It is needed for compatibility with existing projections that use positional arguments to allow successful cluster upgrade.
     mut_context->setSetting("enable_positional_arguments", positional_arguments_for_projections);
 
-    ASTPtr query_ast_copy = nullptr;
-
     /// Only keep required columns
     Block source_block;
     for (const auto & column : required_columns)
         source_block.insert(block.getByName(column));
-
-    /// Respect the _row_exists column.
-    if (block.has(RowExistsColumn::name))
-    {
-        query_ast_copy = query_ast->clone();
-        auto * select_row_exists = query_ast_copy->as<ASTSelectQuery>();
-        if (!select_row_exists)
-            throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot get ASTSelectQuery when adding _row_exists = 1. It's a bug");
-
-        auto row_exists_condition = makeASTOperator("equals", make_intrusive<ASTIdentifier>(RowExistsColumn::name), make_intrusive<ASTLiteral>(1));
-
-        /// If the projection already has a WHERE clause (e.g., from a filtered projection),
-        /// we must AND the _row_exists condition with the existing WHERE rather than replacing it.
-        /// Otherwise the projection's own filter would be lost during mutations.
-        auto existing_where = select_row_exists->where();
-        if (existing_where)
-        {
-            auto combined_where = makeASTFunction("and", std::move(existing_where), std::move(row_exists_condition));
-            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(combined_where));
-        }
-        else
-        {
-            select_row_exists->setExpression(ASTSelectQuery::Expression::WHERE, std::move(row_exists_condition));
-        }
-
-        source_block.insert(block.getByName(RowExistsColumn::name));
-    }
 
     /// Create "_part_offset" column when needed for projection with parent part offsets
     if (with_parent_part_offset)
@@ -785,8 +757,20 @@ Block ProjectionDescription::calculateByQuery(
         source_block.insert({std::move(column), std::move(uint64), "_part_offset"});
     }
 
+    /// Drop lightweight-deleted rows, after `_part_offset` is generated so the survivors keep their parent offsets
+    if (block.has(RowExistsColumn::name))
+    {
+        FilterDescription row_exists_filter(*block.getByName(RowExistsColumn::name).column);
+        const size_t existing_rows = row_exists_filter.countBytesInFilter();
+        if (existing_rows == 0)
+            return sample_block.cloneEmpty();
+        if (existing_rows != block.rows())
+            for (auto & column : source_block)
+                column.column = row_exists_filter.filter(*column.column, static_cast<ssize_t>(existing_rows));
+    }
+
     auto builder = InterpreterSelectQuery(
-                       query_ast_copy ? query_ast_copy : query_ast,
+                       query_ast,
                        mut_context,
                        Pipe(std::make_shared<ProjectionDataSource>(std::make_shared<const Block>(std::move(source_block)))),
                        SelectQueryOptions{

@@ -118,9 +118,7 @@ for w in "b >= 4000" "b < 2000"; do
     echo "${w}: within a granule of the real count: $(( est >= real - 1 && est <= real + 1 ? 1 : 0 ))"
 done
 
-# a lightweight delete leaves the dead rows in the part, and a projection without a WHERE keeps them:
-
-# the rebuild ANDs `_row_exists` into the projection's WHERE, and there is none here to AND it into
+# a lightweight delete leaves the dead rows in the part, and the rebuilt projection drops them
 echo "--- a materialized lightweight delete ---"
 $CLICKHOUSE_CLIENT -q "
     DROP TABLE IF EXISTS t_est_d; DROP TABLE IF EXISTS t_real_d;
@@ -138,6 +136,57 @@ $CLICKHOUSE_CLIENT -q "
 "
 compare p_d "(SELECT a, b, v ORDER BY b)" "SELECT a, v FROM TABLE WHERE b < 30" t_est_d t_real_d
 
+# the read limit counts the deleted rows the scan reads, and a part with every row deleted gets no projection part
+echo "--- a part whose rows are mostly, then all deleted ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_z;
+    CREATE TABLE t_est_z (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    INSERT INTO t_est_z SELECT number, number % 100, number FROM numbers(1000);
+    DELETE FROM t_est_z WHERE a >= 100 SETTINGS lightweight_deletes_sync = 2;
+    CREATE HYPOTHETICAL PROJECTION p_z ON t_est_z (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT a, v FROM t_est_z WHERE a < 100 AND b < 30 SETTINGS ${PIN}, max_bytes_to_read = 10000;
+    DELETE FROM t_est_z WHERE 1 SETTINGS lightweight_deletes_sync = 2;
+    EXPLAIN WHATIF SELECT a, v FROM t_est_z WHERE b < 30 SETTINGS ${PIN};
+" | grep -E '^\s+(empirical_status|empirical_reason):' | awk '{$1=$1; print}'
+
+# next to a live part, the read takes the parent's ranges of the part with every row deleted
+echo "--- a part with every row deleted next to a live part ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_m; DROP TABLE IF EXISTS t_real_m;
+    CREATE TABLE t_est_m (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree PARTITION BY a < 1000 ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0,
+                 lightweight_mutation_projection_mode = 'rebuild';
+    CREATE TABLE t_real_m AS t_est_m;
+    ALTER TABLE t_real_m ADD PROJECTION p_m (SELECT a, b, v ORDER BY b);
+    INSERT INTO t_est_m SELECT number, number % 100, number FROM numbers(2000);
+    INSERT INTO t_real_m SELECT number, number % 100, number FROM numbers(2000);
+    DELETE FROM t_est_m WHERE a < 1000 SETTINGS lightweight_deletes_sync = 2;
+    DELETE FROM t_real_m WHERE a < 1000 SETTINGS lightweight_deletes_sync = 2;
+    CREATE HYPOTHETICAL PROJECTION p_m ON t_est_m (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT a, v FROM t_est_m WHERE b < 30 SETTINGS ${PIN};
+    -- the EXPLAIN header of the parent read counts both parts, so take what the read selects
+    SELECT 'real marks:', marks FROM (EXPLAIN ESTIMATE SELECT a, v FROM t_real_m WHERE b < 30 SETTINGS ${PIN}, force_optimize_projection = 1);
+" | grep -E '^\s+(marks|rows|verdict):|^real marks:' | awk '{$1=$1; print}'
+
+# a byte-driven granularity is sized from the rows the projection keeps, not from the deleted ones read
+echo "--- a mostly deleted part with a byte-driven granularity ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_g; DROP TABLE IF EXISTS t_real_g;
+    CREATE TABLE t_est_g (a UInt64, b UInt64, v UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 8192, index_granularity_bytes = 1024, use_const_adaptive_granularity = 0,
+                 min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0, lightweight_mutation_projection_mode = 'rebuild';
+    CREATE TABLE t_real_g AS t_est_g;
+    ALTER TABLE t_real_g ADD PROJECTION p_g (SELECT a, b, v ORDER BY b);
+    INSERT INTO t_est_g SELECT number, number % 100, number FROM numbers(10000);
+    INSERT INTO t_real_g SELECT number, number % 100, number FROM numbers(10000);
+    DELETE FROM t_est_g WHERE a % 10 != 0 SETTINGS lightweight_deletes_sync = 2;
+    DELETE FROM t_real_g WHERE a % 10 != 0 SETTINGS lightweight_deletes_sync = 2;
+    CREATE HYPOTHETICAL PROJECTION p_g ON t_est_g (SELECT a, b, v ORDER BY b);
+    EXPLAIN WHATIF SELECT a, v FROM t_est_g WHERE b < 30 SETTINGS ${PIN};
+    SELECT 'real marks:', marks FROM (EXPLAIN ESTIMATE SELECT a, v FROM t_real_g WHERE b < 30 SETTINGS ${PIN}, force_optimize_projection = 1);
+" | grep -E '^\s+(marks|rows|verdict):|^real marks:' | awk '{$1=$1; print}'
+
 # a projection that stores less per row gets bigger granules, so a full scan of it beats the base read
 
 # even when the predicate cannot prune its key and there is no ORDER BY to help
@@ -152,3 +201,15 @@ $CLICKHOUSE_CLIENT -q "
     INSERT INTO t_real_n SELECT number, number % 1000, repeat('x', 500) FROM numbers(5000);
 "
 compare p_n "(SELECT a, b ORDER BY b)" "SELECT sum(b) FROM TABLE WHERE a % 7 = 3" t_est_n t_real_n
+
+# a projection that stores `_row_exists` reads the mask once and keeps it
+echo "--- a projection that stores _row_exists on a part with deleted rows ---"
+$CLICKHOUSE_CLIENT -q "
+    DROP TABLE IF EXISTS t_est_x;
+    CREATE TABLE t_est_x (a UInt64, b UInt64) ENGINE = MergeTree ORDER BY a
+        SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    INSERT INTO t_est_x SELECT number, number % 100 FROM numbers(1000);
+    DELETE FROM t_est_x WHERE a % 2 = 0 SETTINGS lightweight_deletes_sync = 2;
+    CREATE HYPOTHETICAL PROJECTION p_x ON t_est_x (SELECT a, b, _row_exists ORDER BY b);
+    EXPLAIN WHATIF SELECT a, b FROM t_est_x WHERE b < 30 SETTINGS ${PIN};
+" | grep -E '^\s+(marks|rows|status):' | awk '{$1=$1; print}'

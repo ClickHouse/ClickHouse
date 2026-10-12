@@ -60,20 +60,39 @@ Granules: 3
 b >= 4000: within a granule of the real count: 1
 b < 2000: within a granule of the real count: 1
 --- a materialized lightweight delete ---
-rows the rebuilt projection kept:	1000
+rows the rebuilt projection kept:	500
 hypothetical:
 marks: 10
 rows: 1000
 status: applicable
-marks: 3
-rows: 300
-read_ratio: 0.30x
+marks: 2
+rows: 200
+read_ratio: 0.20x
 verdict: chosen
-reason: 3 marks would be read instead of 10 from the base table
+reason: 2 marks would be read instead of 10 from the base table
 source: empirical
 real:
 ReadFromMergeTree (p_d)
-Granules: 3
+Granules: 2
+--- a part whose rows are mostly, then all deleted ---
+empirical_status: unsupported
+empirical_reason: The projection scan hit the read limit of the query (max_rows_to_read / max_bytes_to_read)
+empirical_status: unsupported
+empirical_reason: Every row of the parts read is deleted, so the projection would store no part to read
+--- a part with every row deleted next to a live part ---
+marks: 20
+rows: 2000
+marks: 13
+rows: 1300
+verdict: chosen
+real marks: 13
+--- a mostly deleted part with a byte-driven granularity ---
+marks: 239
+rows: 10000
+marks: 7
+rows: 301
+verdict: chosen
+real marks: 7
 --- a full projection scan that is cheaper than the base read ---
 hypothetical:
 marks: 162
@@ -88,3 +107,9 @@ source: empirical
 real:
 ReadFromMergeTree (p_n)
 Granules: 4
+--- a projection that stores _row_exists on a part with deleted rows ---
+marks: 10
+rows: 1000
+status: applicable
+marks: 2
+rows: 200
