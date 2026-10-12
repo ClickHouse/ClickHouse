@@ -16,6 +16,8 @@
 namespace DB
 {
 
+/// A storage layer (see the terminology in IWorkloadEntityStorage.h): keeps own entities, inherits the visible
+/// entities of `next_storage` and exposes the merged visible entities with shadowing by claim keys.
 class WorkloadEntityStorageBase : public IWorkloadEntityStorage
 {
 public:
@@ -29,6 +31,8 @@ public:
     bool has(const String & entity_name) const override;
 
     std::vector<std::pair<String, ASTPtr>> getAllEntities() const override;
+
+    String getEntitySource(const String & entity_name) const override;
 
     bool empty() const override;
 
@@ -85,27 +89,75 @@ protected:
 
     std::unique_lock<std::recursive_mutex> getLock() const;
 
-    /// Replace current `local_entities` with `new_entities`, merge them with entities in the next storage and notifies subscribers.
-    /// Note that subscribers will be notified with a sequence of events.
-    /// It is guaranteed that all itermediate states (between every pair of consecutive events)
-    /// will be consistent (all references between entities will be valid)
-    void setLocalEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities);
+    /// How loading own entities treats conflicts between them (see "Conflict" in IWorkloadEntityStorage.h)
+    enum class OnOwnConflict
+    {
+        Throw, /// The load is rejected (configuration)
+        Hide, /// The entity with the smaller name wins, the others are hidden (persisted data written earlier)
+    };
 
-    /// Serialize `local_entities` stored in memory plus one optional `change` into multiline string
-    String serializeLocalEntities(std::optional<Event> change);
+    /// Replaces own entities with loaded `new_entities` (configuration, Keeper or disk) and notifies subscribers
+    /// with one transaction. Throws on invalid entities; conflicts and broken references between them are handled
+    /// by `on_conflict`; overlap with inherited entities is resolved by shadowing or hiding.
+    void setOwnEntities(const std::vector<std::pair<String, ASTPtr>> & new_entities, OnOwnConflict on_conflict);
+
+    /// Replaces own entities with `new_own_entities` without validation, and notifies subscribers with one
+    /// transaction. The caller holds `lock` (see `getLock`) and guarantees that the entities do not conflict.
+    /// Unlocks `lock`.
+    void replaceOwnEntities(std::unique_lock<std::recursive_mutex> & lock, std::unordered_map<String, ASTPtr> new_own_entities);
+
+    /// Whether this layer owns the implicit entities, whose names are reserved for all other layers
+    virtual bool ownsImplicitEntities() const { return false; }
+
+    /// Whether an own workload may name a parent unknown to this layer: it may be defined by an outer layer
+    virtual bool allowsParentsFromOuterLayers() const { return false; }
+
+    /// Adds entities derived from the visible entities (own entities that are not shadowed plus inherited
+    /// ones) to `visible_entities`. Called with the lock held on every change of own or inherited entities.
+    virtual void addDerivedEntities(std::unordered_map<String, ASTPtr> & /*visible_entities*/) const {}
+
+    /// Inner layer of the chain, if any.
+    IWorkloadEntityStorage * getNextStorage() const { return next_storage.get(); }
+
+    /// Stops receiving transactions of the next storage. Waits for an in-flight one. Derived classes that
+    /// override `addDerivedEntities` call it in their destructor.
+    void unsubscribeFromNextStorage() { subscription.reset(); }
+
+    /// Serialize own entities stored in memory plus one optional `change` into multiline string
+    String serializeOwnEntities(std::optional<Event> change);
 
     /// Shared parsing function for both keeper and config storage
     static std::vector<std::pair<String, ASTPtr>> parseEntitiesFromString(const String & data, LoggerPtr log);
 
 private:
-    /// Change state in memory
+    /// Recomputes visible entities from own and inherited entities and notifies subscribers about the
+    /// difference with one transaction. Unlocks `lock`.
+    void updateVisibleEntities(std::unique_lock<std::recursive_mutex> & lock);
+
+    /// Change visible entities in memory
     void applyEvent(std::unique_lock<std::recursive_mutex> & lock, const Event & event);
 
-    /// Notify subscribers about changes describe by vector of events `tx`
+    /// Sets the resource names of access-mode roles from visible entities
+    void updateRoleResources();
+
+    /// Returns own or inherited entity by name, inherited one first (it is visible if both exist)
+    ASTPtr findKnownEntity(const String & entity_name, const std::unordered_map<String, ASTPtr> & own) const;
+
+    /// Throws if `entity` claims a key also claimed by an own entity with another name or by an inherited entity
+    void checkClaimConflicts(const String & entity_name, const ASTPtr & entity) const;
+
+    /// Throws if an own or inherited workload references `entity_name` as an entity of another kind than `entity`
+    void checkInboundReferences(const String & entity_name, const ASTPtr & entity) const;
+
+    /// Throws if references of loaded `new_own_entities` are broken (see "References" in IWorkloadEntityStorage.h)
+    void checkLoadedReferences(const std::unordered_map<String, ASTPtr> & new_own_entities) const;
+
+    /// Notify subscribers about changes describe by vector of events `tx`. Takes `notify_mutex` before unlocking
+    /// `lock`, so transactions are delivered in the order they were computed.
     void unlockAndNotify(std::unique_lock<std::recursive_mutex> & lock, const std::vector<Event> & tx);
 
-    /// Return true iff `references` has a path from `source` to `target`
-    bool isIndirectlyReferenced(const String & target, const String & source);
+    /// Return true iff own and inherited entities (inherited first) have a reference path from `source` to `target`
+    bool isIndirectlyReferenced(const String & target, const String & source) const;
 
     /// Adds references that are described by `entity` to `references`
     void insertReferences(const ASTPtr & entity);
@@ -144,25 +196,32 @@ private:
     std::shared_ptr<Handlers> handlers;
 
     mutable std::recursive_mutex mutex;
-    std::unordered_map<String, ASTPtr> entities; /// Maps entity name into CREATE entity query (including entities from the next storage)
-    std::unordered_map<String, ASTPtr> local_entities; /// Entities that are stored in this storage (excluding entities from the next storage)
-    std::unordered_map<String, ASTPtr> other_entities; /// Entities that are stored in the next storage (a copy to be accessed under own mutex)
+    std::unordered_map<String, ASTPtr> visible_entities; /// Maps entity name into CREATE entity query (the merged view of this layer)
+    std::unordered_map<String, ASTPtr> own_entities; /// Entities that are stored in this layer, including shadowed ones
+    std::unordered_map<String, ASTPtr> inherited_entities; /// Visible entities of the next storage (a copy to be accessed under own mutex)
+    std::unordered_set<String> shadowed_entities; /// Names of own entities that are currently shadowed
+    std::unordered_set<String> conflicting_entities; /// Names of own entities hidden by a conflict or a parent cycle
+    std::unordered_set<String> orphaned_entities; /// Names of workloads hidden because their parent is not a visible workload
+
+    /// Serializes deliveries of transactions to subscribers. Taken while `mutex` is held, then held without
+    /// `mutex` while handlers run.
+    std::mutex notify_mutex;
 
     // Workload entities collected from a backup before being restored together (see restore()).
     // Keyed by the restore operation's UUID so concurrent restores do not share or overwrite each other's accumulated entities.
     std::unordered_map<UUID, std::unordered_map<String, ASTPtr>> entities_to_restore;
 
-    // A single consistent snapshot of local_entities taken once per backup operation (keyed by the backup UUID),
+    // A single consistent snapshot of own_entities taken once per backup operation (keyed by the backup UUID),
     // so that system.workloads and system.resources -- backed up via two separate backup() calls on this shared
     // storage -- are captured from the same view (see backup()).
     mutable std::unordered_map<UUID, std::unordered_map<String, ASTPtr>> entities_to_backup;
 
     // Validation
-    std::unordered_map<String, std::unordered_set<String>> references; /// Keep track of references between entities. Key is target. Value is set of sources
-    String master_thread_resource; /// current resource name for worker threads
-    String worker_thread_resource; /// current resource name for master threads
-    String query_resource; /// current resource name for queries
-    String memory_reservation_resource; /// current resource name for memory reservations
+    std::unordered_map<String, std::unordered_set<String>> references; /// References between visible entities. Key is target. Value is set of sources
+    String master_thread_resource; /// visible resource for master threads
+    String worker_thread_resource; /// visible resource for worker threads
+    String query_resource; /// visible resource for queries
+    String memory_reservation_resource; /// visible resource for memory reservations
 
     // Chain of storages
     std::unique_ptr<IWorkloadEntityStorage> next_storage; /// Next storage in the chain (e.g. `disk -> config` or `keeper -> config`)

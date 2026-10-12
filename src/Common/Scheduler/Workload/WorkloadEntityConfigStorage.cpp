@@ -29,7 +29,7 @@ void WorkloadEntityConfigStorage::loadEntities(const Poco::Util::AbstractConfigu
     }
 
     // Update entities in memory and notify subscribers
-    setLocalEntities(new_entities);
+    setOwnEntities(new_entities, OnOwnConflict::Throw);
     LOG_DEBUG(log, "Loaded {} workload entities from configuration", new_entities.size());
 }
 

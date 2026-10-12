@@ -18,7 +18,8 @@ ColumnsDescription StorageSystemWorkloads::getColumnsDescription()
     {
         {"name", std::make_shared<DataTypeString>(), "The name of the workload."},
         {"parent", std::make_shared<DataTypeString>(), "The name of the parent workload."},
-        {"create_query", std::make_shared<DataTypeString>(), "CREATE query of the workload."},
+        {"create_query", std::make_shared<DataTypeString>(), "CREATE query of the workload. For an implicit workload (`source` = `implicit`) it describes the workload and cannot be executed. The root workload, whose name is empty, is shown as ``CREATE WORKLOAD `` SETTINGS ...``."},
+        {"source", std::make_shared<DataTypeString>(), "The name of the storage that defines the workload: `configuration` for the server configuration, `disk` or `keeper` for SQL, `implicit` for workloads created implicitly by the server."},
     };
 }
 
@@ -34,6 +35,7 @@ void StorageSystemWorkloads::fillData(MutableColumns & res_columns, ContextPtr c
             res_columns[0]->insert(name);
             res_columns[1]->insert(workload->getWorkloadParent());
             res_columns[2]->insert(ast->formatForLogging());
+            res_columns[3]->insert(storage->getEntitySource(name));
         }
     }
 }

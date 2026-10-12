@@ -1231,7 +1231,7 @@ def test_config_based_workloads_and_resources():
 def test_config_and_sql_root_workloads_coexist():
     # A root workload defined in the server configuration and a root workload created via SQL must
     # coexist as independent roots of the workload forest. This exercises the configuration carrier
-    # (loaded via setLocalEntities) alongside the SQL carrier (storeEntity) - two different paths.
+    # (loaded via setOwnEntities) alongside the SQL carrier (storeEntity) - two different paths.
     update_workloads_config(node, resources_and_workloads="CREATE WORKLOAD config_root")
     node.query("CREATE WORKLOAD sql_root")
 

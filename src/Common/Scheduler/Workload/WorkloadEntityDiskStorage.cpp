@@ -179,7 +179,7 @@ void WorkloadEntityDiskStorage::loadEntitiesImpl()
         }
     }
 
-    setLocalEntities(entities_name_and_queries);
+    setOwnEntities(entities_name_and_queries, OnOwnConflict::Hide);
 
     LOG_DEBUG(log, "Workload entities loaded");
 }

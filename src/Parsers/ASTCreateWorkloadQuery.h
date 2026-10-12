@@ -11,6 +11,7 @@ namespace DB
 class ASTCreateWorkloadQuery : public IAST, public ASTQueryWithOnCluster
 {
 public:
+    /// Null for the root workload, whose name is empty. Such a query is never parsed: an empty identifier has no SQL text form.
     ASTPtr workload_name;
     ASTPtr workload_parent;
 

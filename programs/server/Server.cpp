@@ -422,6 +422,9 @@ namespace ServerSetting
     extern const ServerSettingsUInt64 total_memory_profiler_step;
     extern const ServerSettingsDouble total_memory_tracker_sample_probability;
     extern const ServerSettingsBool throw_on_unknown_workload;
+    extern const ServerSettingsBool workloads_respect_server_cpu_limit;
+    extern const ServerSettingsBool workloads_respect_server_memory_limit;
+    extern const ServerSettingsBool implicit_default_workload;
     extern const ServerSettingsBool cpu_slot_preemption;
     extern const ServerSettingsUInt64 cpu_slot_quantum_ns;
     extern const ServerSettingsUInt64 cpu_slot_preemption_timeout_ms;
@@ -2952,8 +2955,31 @@ try
                     "has been removed and is ignored. Use 'CREATE RESOURCE' and 'CREATE WORKLOAD' queries instead.");
             }
 
-            /// Load WORKLOADs and RESOURCEs.
-            global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
+            /// Load WORKLOADs and RESOURCEs. A rejected reload keeps the previous entities and the rest of the reload proceeds.
+            try
+            {
+                global_context->getWorkloadEntityStoragePtr()->loadEntities(config());
+            }
+            catch (...)
+            {
+                if (initial_loading)
+                    throw;
+                tryLogCurrentException(log, "Failed to reload workload entities from the configuration");
+            }
+
+            /// Synthesize implicit WORKLOADs and RESOURCEs from the server limits resolved above.
+            {
+                ImplicitWorkloadEntitiesConfig implicit_entities_config;
+                implicit_entities_config.respect_cpu_limit = new_server_settings[ServerSetting::workloads_respect_server_cpu_limit];
+                implicit_entities_config.respect_memory_limit = new_server_settings[ServerSetting::workloads_respect_server_memory_limit];
+                implicit_entities_config.implicit_default_workload = new_server_settings[ServerSetting::implicit_default_workload];
+                if (implicit_entities_config.respect_cpu_limit && concurrent_threads_soft_limit != UnlimitedSlots)
+                    implicit_entities_config.cpu_slots = static_cast<Int64>(concurrent_threads_soft_limit);
+                /// Zero means no limit.
+                if (implicit_entities_config.respect_memory_limit && max_server_memory_usage != 0)
+                    implicit_entities_config.memory_bytes = static_cast<Int64>(max_server_memory_usage);
+                global_context->getWorkloadEntityStoragePtr()->updateImplicitEntities(implicit_entities_config);
+            }
 
             if (!initial_loading)
             {
