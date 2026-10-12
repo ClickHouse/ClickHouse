@@ -4044,6 +4044,7 @@ def test_rabbitmq_reconnect_drops_stale_deliveries(rabbitmq_cluster, db, unique)
     duplicates = view_rows() - messages_num
     logging.info(f"{duplicates} duplicates after the reconnect")
     assert bad_acks == "0", f"{bad_acks} acks with a delivery tag of a replaced channel"
-    # Blocks inserted but not yet acked when the connection dropped come back legitimately (a few blocks). Replaying the
-    # queued deliveries duplicates most of the backlog.
-    assert duplicates < messages_num // 10, f"{duplicates} duplicates"
+    # With one consumer, only the block in flight when the connection dropped comes back legitimately. If the connection
+    # drops while that block is being acked, the next cycle may read one more block from the old channel before it
+    # notices, hence at most two blocks. Replaying the queued deliveries duplicates most of the backlog.
+    assert duplicates <= 2 * block_size, f"{duplicates} duplicates"
