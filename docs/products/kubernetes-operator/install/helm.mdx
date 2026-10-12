@@ -66,5 +66,34 @@ cd clickhouse-operator
 helm install clickhouse-operator ./dist/chart
 ```
 
+### Watch specific namespaces {#watch-namespaces}
+
+By default the operator watches all namespaces. Set `controller.watchNamespaces` to limit it.
+Entries are rendered as templates, so `{{ .Release.Namespace }}` resolves to the release namespace
+and can be combined with static namespaces:
+
+```yaml
+controller:
+  watchNamespaces:
+    - "{{ .Release.Namespace }}"
+    - team-a
+```
+
+On the command line, `--set` parses braces as list syntax, so use `--set-json` (Helm v3.10 or later):
+`--set-json 'controller.watchNamespaces=["{{ .Release.Namespace }}"]'`.
+
+To watch only the release namespace with namespace-scoped RBAC:
+
+```yaml
+controller:
+  watchNamespaces:
+    - "{{ .Release.Namespace }}"
+rbac:
+  namespaced: true
+```
+
+With `rbac.namespaced: true` the manager's permissions become a Role/RoleBinding in the release namespace,
+so watching other namespaces requires cluster-scoped RBAC (the default).
+
 ### Configuration options {#configuration-options}
 For advanced configuration options, refer to the [values.yaml](https://github.com/ClickHouse/clickhouse-operator/blob/main/dist/chart/values.yaml) file in the Helm chart

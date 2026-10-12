@@ -21,6 +21,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+    extern const int LOGICAL_ERROR;
 }
 }
 
@@ -574,69 +575,66 @@ ExtendedDayNum DateLUTImpl::makeDayNumOutOfRange(Int64 year, UInt8 month, UInt8 
     return ExtendedDayNum{static_cast<ExtendedDayNum::UnderlyingType>(dayIndexOfCivilDay(date) - daynum_offset_epoch)};
 }
 
+namespace
+{
+[[noreturn]] void throwUnexpectedScaleMultiplier(Int64 scale_multiplier)
+{
+    throw DB::Exception(DB::ErrorCodes::LOGICAL_ERROR, "Unexpected scale multiplier {}", scale_multiplier);
+}
+
+template <Int64 target_multiplier, Int64 scale_multiplier>
+ALWAYS_INLINE unsigned subsecondComponent(Int64 value)
+{
+    Int64 fractional = value % scale_multiplier;
+    if (fractional < 0)
+        fractional += scale_multiplier;
+    if constexpr (scale_multiplier > target_multiplier)
+        return static_cast<unsigned>(fractional / (scale_multiplier / target_multiplier));
+    else
+        return static_cast<unsigned>(fractional * (target_multiplier / scale_multiplier));
+}
+
+template <Int64 target_multiplier>
+unsigned subsecondComponentDispatch(Int64 value, Int64 scale_multiplier)
+{
+    /// The scale of `DateTime64` and `Time64` is 0..9; a compile-time multiplier turns the per-row divisions into multiplications.
+    switch (scale_multiplier)
+    {
+        case 1: return subsecondComponent<target_multiplier, 1>(value);
+        case 10: return subsecondComponent<target_multiplier, 10>(value);
+        case 100: return subsecondComponent<target_multiplier, 100>(value);
+        case 1'000: return subsecondComponent<target_multiplier, 1'000>(value);
+        case 10'000: return subsecondComponent<target_multiplier, 10'000>(value);
+        case 100'000: return subsecondComponent<target_multiplier, 100'000>(value);
+        case 1'000'000: return subsecondComponent<target_multiplier, 1'000'000>(value);
+        case 10'000'000: return subsecondComponent<target_multiplier, 10'000'000>(value);
+        case 100'000'000: return subsecondComponent<target_multiplier, 100'000'000>(value);
+        case 1'000'000'000: return subsecondComponent<target_multiplier, 1'000'000'000>(value);
+        default: throwUnexpectedScaleMultiplier(scale_multiplier);
+    }
+}
+}
+
+/// Called per row. `ALWAYS_INLINE`: ThinLTO would not inline the ten cases into the row loops otherwise. Without
+/// `xray_never_instrument` the ten cases can exceed the XRay instruction threshold, and an entry sled costs up to 20% per row.
+[[clang::xray_never_instrument]] ALWAYS_INLINE
 unsigned int DateLUTImpl::toMillisecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
 {
-    constexpr Int64 millisecond_multiplier = 1'000;
-    constexpr Int64 microsecond_multiplier = 1'000 * millisecond_multiplier;
-    constexpr Int64 divider = microsecond_multiplier / millisecond_multiplier;
-
-    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
-
-    if (datetime.value < 0 && components.fractional)
-    {
-        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
-        --components.whole;
-    }
-    Int64 fractional = components.fractional;
-    if (scale_multiplier > microsecond_multiplier)
-        fractional = fractional / (scale_multiplier / microsecond_multiplier);
-    else if (scale_multiplier < microsecond_multiplier)
-        fractional = fractional * (microsecond_multiplier / scale_multiplier);
-
-    UInt16 millisecond = static_cast<UInt16>(fractional / divider);
-    return millisecond;
+    return subsecondComponentDispatch<1'000>(datetime.value, scale_multiplier);
 }
 
 
+[[clang::xray_never_instrument]] ALWAYS_INLINE
 unsigned int DateLUTImpl::toMicrosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
 {
-    constexpr Int64 microsecond_multiplier = 1'000'000;
-
-    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
-
-    if (datetime.value < 0 && components.fractional)
-    {
-        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
-        --components.whole;
-    }
-    Int64 fractional = components.fractional;
-    if (scale_multiplier > microsecond_multiplier)
-        fractional = fractional / (scale_multiplier / microsecond_multiplier);
-    else if (scale_multiplier < microsecond_multiplier)
-        fractional = fractional * (microsecond_multiplier / scale_multiplier);
-
-    return static_cast<unsigned>(fractional);
+    return subsecondComponentDispatch<1'000'000>(datetime.value, scale_multiplier);
 }
 
 
+[[clang::xray_never_instrument]] ALWAYS_INLINE
 unsigned int DateLUTImpl::toNanosecond(const DB::DateTime64 & datetime, Int64 scale_multiplier) const
 {
-    constexpr Int64 nanosecond_multiplier = 1'000'000'000;
-
-    auto components = DB::DecimalUtils::splitWithScaleMultiplier(datetime, scale_multiplier);
-
-    if (datetime.value < 0 && components.fractional)
-    {
-        components.fractional = scale_multiplier + (components.whole ? Int64(-1) : Int64(1)) * components.fractional;
-        --components.whole;
-    }
-    Int64 fractional = components.fractional;
-    if (scale_multiplier > nanosecond_multiplier)
-        fractional = fractional / (scale_multiplier / nanosecond_multiplier);
-    else if (scale_multiplier < nanosecond_multiplier)
-        fractional = fractional * (nanosecond_multiplier / scale_multiplier);
-
-    return static_cast<unsigned>(fractional);
+    return subsecondComponentDispatch<1'000'000'000>(datetime.value, scale_multiplier);
 }
 
 
