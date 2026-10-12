@@ -174,8 +174,8 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                     rpn_stack.push(&element);
                 else
                 {
-                    left_element->finalize(column_estimators, metadata);
-                    right_element->finalize(column_estimators, metadata);
+                    left_element->finalize(payload->column_estimators, metadata);
+                    right_element->finalize(payload->column_estimators, metadata);
                     /// P(c1 and c2) = P(c1) * P(c2)
                     if (element.function == RPNElement::FUNCTION_AND)
                         element.selectivity = left_element->selectivity.applyAnd(right_element->selectivity);
@@ -198,7 +198,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
                 /// to report the selectivity of the un-negated predicate. Finalize both first, so the
                 /// negation applies to a plain selectivity.
                 if (!last_element->finalized && (last_element->hasAbsorbed() || last_element->isConstantFactor()))
-                    last_element->finalize(column_estimators, metadata);
+                    last_element->finalize(payload->column_estimators, metadata);
                 if (last_element->finalized)
                     last_element->selectivity = last_element->selectivity.applyNot();
                 else
@@ -223,17 +223,18 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
         }
     }
     auto * final_element = rpn_stack.top();
-    final_element->finalize(column_estimators, metadata);
+    final_element->finalize(payload->column_estimators, metadata);
     RelationProfile result;
-    Float64 final_rows = final_element->selectivity.true_sel * static_cast<Float64>(total_rows);
+    const Float64 total_rows = static_cast<Float64>(payload->total_rows);
+    Float64 final_rows = final_element->selectivity.true_sel * total_rows;
     /// Clamp to [0, total_rows] and handle NaN/Inf to avoid undefined behavior
     /// in the float-to-UInt64 cast below (UBSAN float-cast-overflow).
     if (!std::isfinite(final_rows) || final_rows < 0)
         final_rows = 0;
-    else if (final_rows > static_cast<Float64>(total_rows))
-        final_rows = static_cast<Float64>(total_rows);
+    else if (final_rows > total_rows)
+        final_rows = total_rows;
     result.rows = static_cast<UInt64>(final_rows);
-    for (const auto & [column_name, estimator] : column_estimators)
+    for (const auto & [column_name, estimator] : payload->column_estimators)
     {
         if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
             continue;
@@ -247,8 +248,8 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
 {
     RelationProfile result;
-    result.rows = total_rows;
-    for (const auto & [column_name, estimator] : column_estimators)
+    result.rows = payload->total_rows;
+    for (const auto & [column_name, estimator] : payload->column_estimators)
     {
         result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
     }
@@ -262,12 +263,12 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
 
 bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & data_parts) const
 {
-    if (data_parts.size() != parts_names.size())
+    if (data_parts.size() != payload->parts_names.size())
         return true;
     size_t idx = 0;
     for (const auto & data_part : data_parts)
     {
-        if (parts_names[idx++] != data_part->name)
+        if (payload->parts_names[idx++] != data_part->name)
             return true;
     }
     return false;
@@ -275,12 +276,12 @@ bool ConditionSelectivityEstimator::isStale(const std::vector<DataPartPtr> & dat
 
 bool ConditionSelectivityEstimator::isStale(const RangesInDataParts & parts) const
 {
-    if (parts.size() != parts_names.size())
+    if (parts.size() != payload->parts_names.size())
         return true;
     size_t idx = 0;
     for (const auto & part : parts)
     {
-        if (parts_names[idx++] != part.data_part->name)
+        if (payload->parts_names[idx++] != part.data_part->name)
             return true;
     }
     return false;
@@ -629,20 +630,26 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
     return false;
 }
 
+ConditionSelectivityEstimator::ConditionSelectivityEstimator(PayloadPtr payload_, ContextPtr context_)
+    : WithContext(context_), payload(std::move(payload_))
+{
+    chassert(payload);
+}
+
 ConditionSelectivityEstimatorBuilder::ConditionSelectivityEstimatorBuilder(ContextPtr context_)
-    : estimator(std::make_shared<ConditionSelectivityEstimator>(context_))
+    : context(std::move(context_)), payload(std::make_shared<ConditionSelectivityEstimator::Payload>())
 {
 }
 
 void ConditionSelectivityEstimatorBuilder::incrementRowCount(UInt64 rows)
 {
-    estimator->total_rows += rows;
+    payload->total_rows += rows;
 }
 
 void ConditionSelectivityEstimatorBuilder::markDataPart(const DataPartPtr & data_part)
 {
-    estimator->parts_names.push_back(data_part->name);
-    estimator->total_rows += data_part->rows_count;
+    payload->parts_names.push_back(data_part->name);
+    payload->total_rows += data_part->rows_count;
 }
 
 void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_name, const ColumnStatisticsPtr & column_stats)
@@ -650,7 +657,7 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
     if (column_stats != nullptr)
     {
         has_data = true;
-        auto & column_estimator = estimator->column_estimators[column_name];
+        auto & column_estimator = payload->column_estimators[column_name];
 
         if (column_estimator.stats == nullptr)
             column_estimator.stats = column_stats;
@@ -662,9 +669,16 @@ void ConditionSelectivityEstimatorBuilder::addStatistics(const String & column_n
     }
 }
 
+ConditionSelectivityPayloadPtr ConditionSelectivityEstimatorBuilder::getPayload() const
+{
+    return has_data ? payload : nullptr;
+}
+
 ConditionSelectivityEstimatorPtr ConditionSelectivityEstimatorBuilder::getEstimator() const
 {
-    return has_data ? estimator : nullptr;
+    if (!has_data)
+        return nullptr;
+    return std::make_shared<ConditionSelectivityEstimator>(payload, context);
 }
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Selectivity::applyNot() const
@@ -733,8 +747,8 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::estima
     /// set's exact number of distinct values, directly comparable with the column's estimated cardinality.
     const size_t set_size = set_elements.size();
 
-    auto it = column_estimators.find(column_name);
-    if (it == column_estimators.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
+    auto it = payload->column_estimators.find(column_name);
+    if (it == payload->column_estimators.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
     {
         /// No statistics: match what `finalize` assumes for a list of point ranges on an unknown column.
         const Selectivity selectivity{std::min(static_cast<Float64>(set_size) * default_cond_equal_factor, 1.0), 0};

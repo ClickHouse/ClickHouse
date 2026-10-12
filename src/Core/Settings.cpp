@@ -10492,6 +10492,8 @@ Allows defining columns with [statistics](/reference/engines/table-engines/merge
     DECLARE(Bool, use_statistics_cache, true, R"(Use statistics cache in a query to avoid the overhead of loading statistics of every parts)", 0, \
         {"26.2", false, true, "Enable statistics cache"}, \
         {"25.11", 0, 0, "New setting"}) \
+    DECLARE(UInt64, statistics_cache_max_entries, 1024, R"(Maximal number of merged part statistics the statistics cache of one query keeps. That cache serves the reads the table's statistics cache (see `refresh_statistics_interval`) cannot, and once it is full, reads needing statistics it does not hold load them again. The limit counts entries, not bytes: the size of an entry grows with the number of columns it covers and with the statistics types declared on them. 0 disables only the cache of one query; `use_statistics_cache = 0` disables both.)", 0, \
+        {"26.10", 1024, 1024, "New setting to cap how many merged part statistics the statistics cache of one query keeps, so a query whose reads never share statistics holds a bounded number of them."}) \
     \
     DECLARE_WITH_ALIAS(Bool, enable_full_text_index, true, R"(
 If set to true, allow using the text index.
