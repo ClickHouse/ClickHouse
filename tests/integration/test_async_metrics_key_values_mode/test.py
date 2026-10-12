@@ -53,6 +53,16 @@ node_legacy_names_labels = cluster.add_instance(
         "configs/legacy_names.xml",
     ],
 )
+# The same endpoint with the constant label given on the command line instead of in the file.
+node_command_line_labels = cluster.add_instance(
+    "node_command_line_labels",
+    main_configs=[
+        "configs/prometheus.xml",
+        "configs/asynchronous_metric_log.xml",
+        "configs/legacy_names.xml",
+    ],
+    extra_args="--prometheus.labels.disk=the_whole_node",
+)
 
 
 @pytest.fixture(scope="module")
@@ -228,3 +238,42 @@ def test_switching_back_rejects_the_reload_and_changes_nothing(start_cluster):
 
     assert get_current_metrics(node_legacy_names_labels) == ("1", "")
     assert get_prometheus_metrics(node_legacy_names_labels) == (True, False)
+
+
+def test_command_line_label_rejects_the_reload_and_changes_nothing(start_cluster):
+    """A constant label given on the command line is checked like one in the file: the switch to the
+    key-value form is rejected as a whole, and the endpoint keeps serving with the label.
+    """
+    node = node_command_line_labels
+
+    def serves_the_label():
+        node.query("SYSTEM RELOAD ASYNCHRONOUS METRICS")
+        return any(
+            line.startswith(
+                f'ClickHouseAsyncMetrics_{LEGACY_NAME}{{disk="the_whole_node"}} '
+            )
+            for line in fetch_prometheus_metrics(node).split("\n")
+        )
+
+    assert serves_the_label()
+
+    node.replace_in_config(
+        "/etc/clickhouse-server/config.d/legacy_names.xml",
+        ">legacy_names<",
+        ">key_values<",
+    )
+
+    with pytest.raises(
+        QueryRuntimeException, match="Invalid Prometheus label name 'disk'"
+    ):
+        node.query("SYSTEM RELOAD CONFIG")
+
+    assert get_current_metrics(node) == ("", "1")
+    assert (
+        node.query(
+            "SELECT value FROM system.server_settings"
+            " WHERE name = 'asynchronous_metrics_key_values_mode'"
+        ).strip()
+        == "legacy_names"
+    )
+    assert serves_the_label()

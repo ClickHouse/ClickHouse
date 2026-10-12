@@ -2625,6 +2625,13 @@ try
                     incoming_server_settings[ServerSetting::reader_executor_memory_pressure_critical_level_pct]);
             }
 
+            /// The Prometheus check below, the reloaders and `latest_config` keep the configuration
+            /// they are given, so it must have the command line on top of the file.
+            Poco::AutoPtr<Poco::Util::LayeredConfiguration> file_and_command_line(new Poco::Util::LayeredConfiguration);
+            file_and_command_line->add(loaded_config, PRIO_DEFAULT);
+            argsToConfig(argv(), *file_and_command_line, PRIO_APPLICATION - 100);
+            const ConfigurationPtr reload_config = file_and_command_line;
+
             /// Fail closed on a Prometheus constant label that collides with a label an endpoint writes
             /// itself. `asynchronous_metrics_key_values_mode` takes part in this check, because it decides
             /// whether the key of a key-value asynchronous metric is written as a label (`device="sda"`),
@@ -2634,7 +2641,7 @@ try
             /// so validating afterwards would leave a rejected reload publishing the new form while the
             /// endpoints keep serving with the labels of the old one.
             validatePrometheusConstantLabels(
-                *loaded_config, servedHTTPHandlersKeys(*loaded_config), hasPrometheusListener(*loaded_config));
+                *reload_config, servedHTTPHandlersKeys(*reload_config), hasPrometheusListener(*reload_config));
 
             config().replace("default", loaded_config, PRIO_DEFAULT, true);
 
@@ -2959,11 +2966,11 @@ try
             {
                 /// We do not load ZooKeeper configuration on the first config loading
                 /// because TestKeeper server is not started yet.
-                if (zkutil::hasZooKeeperConfig(config()))
-                    global_context->reloadZooKeeperIfChanged(loaded_config);
+                if (zkutil::hasZooKeeperConfig(*reload_config))
+                    global_context->reloadZooKeeperIfChanged(reload_config);
 
-                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(loaded_config);
-                global_context->reloadQueryMaskingRulesIfChanged(loaded_config);
+                global_context->reloadAuxiliaryZooKeepersConfigIfChanged(reload_config);
+                global_context->reloadQueryMaskingRulesIfChanged(reload_config);
 
                 if (global_context->isServerCompletelyStarted())
                 {
@@ -3073,7 +3080,7 @@ try
             ProfileEvents::increment(ProfileEvents::MainConfigLoads);
 
             /// Must be the last.
-            latest_config = loaded_config;
+            latest_config = reload_config;
         });
 
     const auto listen_hosts = getListenHosts(config());
