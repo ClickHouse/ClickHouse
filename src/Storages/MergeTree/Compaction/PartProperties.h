@@ -26,17 +26,37 @@ struct PartProperties
     const MergeTreePartInfo info;
     const std::set<std::string> projection_names = {};
 
+    /// The projections among `projection_names` whose projection part lacks a column the current projection
+    /// metadata expects (after an `ALTER` of an `ALIAS` column it selects). A merge rebuilds such a projection
+    /// from the parent part instead of merging the projection parts, see
+    /// `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`.
+    const std::set<std::string> projections_missing_columns = {};
+
+    /// The parent columns required by some projection that the part does not have and that have no default
+    /// expression. A column absent from every source part of a merge is expired by the merge, and a merge that
+    /// expires a column of a projection rebuilds the projection from the parent part, see
+    /// `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`.
+    const std::set<std::string> absent_projection_source_columns = {};
+
     const bool all_ttl_calculated_if_any = false;
     const bool is_in_volume_where_merges_avoid = false;
 
     /// Size of data part in bytes.
     const size_t size = 0;
 
+    /// Uncompressed size of the columns of the part in bytes, as used by `MergeTask` and
+    /// `MergeTreeData::choosePartFormat` to choose the merge algorithm and the format of the result.
+    const size_t size_uncompressed = 0;
+
     /// How old this data part in seconds.
     const time_t age = 0;
 
     /// Number of rows in part.
     const size_t rows = 0;
+
+    /// Whether the part carries a lightweight delete mask. A merge that removes expired values cannot run
+    /// vertically over such parts, see `MergeTask::canVerticalTTLDelete`.
+    const bool has_lightweight_delete = false;
 
     /// Information about different TTLs for part. Used by Part/Row Delete Merge Selectors.
     struct GeneralTTLInfo
@@ -49,6 +69,10 @@ struct PartProperties
         /// The earliest due time among the unfinished column TTLs, as opposed to `part_min_ttl`,
         /// which is the minimum across the row TTLs as well.
         const time_t column_min_ttl;
+        /// The earliest due time among the `GROUP BY` TTLs, finished or not. A merge treats the finished ones as
+        /// unfinished again (see `MergeTreeDataPartTTLInfos::update`), so they are not in `part_min_ttl` of the
+        /// part but are in that of the merged part.
+        const time_t group_by_min_ttl;
     };
     const std::optional<GeneralTTLInfo> general_ttl_info = std::nullopt;
 

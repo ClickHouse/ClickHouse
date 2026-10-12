@@ -21,6 +21,11 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
     if (!metadata_snapshot->hasAnyTTL())
         return std::nullopt;
 
+    time_t group_by_min_ttl = 0;
+    for (const auto & [name, info] : part->ttl_infos.group_by_ttl)
+        if (info.min && (!group_by_min_ttl || info.min < group_by_min_ttl))
+            group_by_min_ttl = info.min;
+
     return PartProperties::GeneralTTLInfo{
         .has_any_non_finished_ttls = part->ttl_infos.hasAnyNonFinishedTTLs(),
         .has_any_non_finished_row_ttls = part->ttl_infos.hasAnyNonFinishedRowTTLs(),
@@ -28,6 +33,7 @@ std::optional<PartProperties::GeneralTTLInfo> buildGeneralTTLInfo(StorageMetadat
         .part_min_ttl = part->ttl_infos.part_min_ttl,
         .part_max_ttl = part->ttl_infos.part_max_ttl,
         .column_min_ttl = part->ttl_infos.getMinimalNonFinishedColumnTTL(),
+        .group_by_min_ttl = group_by_min_ttl,
     };
 }
 
@@ -75,6 +81,54 @@ std::set<std::string> getCalculatedProjectionNames(const MergeTreeDataPartPtr & 
     return projection_names;
 }
 
+/// Mirrors the `projection_part_misses_column` check of `MergeTask::ExecuteAndFinalizeHorizontalPart::prepareProjectionsToMergeAndRebuild`:
+/// a parent table column that the parent part also lacks is a legitimate late addition and does not count.
+std::set<std::string> getProjectionsMissingColumns(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot)
+{
+    std::set<std::string> projection_names;
+
+    const auto & parent_table_columns = metadata_snapshot->getColumns();
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        auto it = part->getProjectionParts().find(projection.name);
+        if (it == part->getProjectionParts().end() || it->second->is_broken)
+            continue;
+
+        for (const auto & column : projection.metadata->getColumns().getAllPhysical())
+        {
+            if (!it->second->tryGetColumn(column.name)
+                && (part->tryGetColumn(column.name)
+                    || !parent_table_columns.hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column.name)))
+            {
+                projection_names.insert(projection.name);
+                break;
+            }
+        }
+    }
+
+    return projection_names;
+}
+
+/// Mirrors how `MergeTask::ExecuteAndFinalizeHorizontalPart::prepare` fills `expired_columns`, limited to the
+/// columns the projections require. It leans towards reporting a column as absent: a column whose values
+/// sit only in patch parts, or that is the target of a pending rename, is still reported.
+std::set<std::string> getAbsentProjectionSourceColumns(const MergeTreeDataPartPtr & part, const StorageMetadataPtr & metadata_snapshot)
+{
+    std::set<std::string> absent_columns;
+
+    const auto & columns = metadata_snapshot->getColumns();
+    for (const auto & projection : metadata_snapshot->getProjections())
+    {
+        for (const auto & column : projection.getRequiredColumns())
+        {
+            if (columns.hasPhysical(column) && !columns.getDefault(column) && !part->tryGetColumn(column))
+                absent_columns.insert(column);
+        }
+    }
+
+    return absent_columns;
+}
+
 }
 
 PartProperties buildPartProperties(
@@ -87,11 +141,15 @@ PartProperties buildPartProperties(
         .name = part->name,
         .info = part->info,
         .projection_names = getCalculatedProjectionNames(part),
+        .projections_missing_columns = getProjectionsMissingColumns(part, metadata_snapshot),
+        .absent_projection_source_columns = getAbsentProjectionSourceColumns(part, metadata_snapshot),
         .all_ttl_calculated_if_any = part->checkAllTTLCalculated(metadata_snapshot),
         .is_in_volume_where_merges_avoid = !part->shallParticipateInMerges(storage_policy),
         .size = part->getExistingBytesOnDisk(),
+        .size_uncompressed = part->getTotalColumnsSize().data_uncompressed,
         .age = current_time - part->modification_time,
         .rows = part->rows_count,
+        .has_lightweight_delete = part->hasLightweightDelete(),
         .general_ttl_info = buildGeneralTTLInfo(metadata_snapshot, part),
         .recompression_ttl_info = buildRecompressTTLInfo(metadata_snapshot, part, current_time),
     };
