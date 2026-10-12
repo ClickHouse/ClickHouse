@@ -220,8 +220,8 @@ struct SortedToken
 {
     std::string_view token;
     PostingListBuilder * postings = nullptr;
-    /// Up to 8 bytes of the token as a big-endian integer. Used only while sorting the tokens.
-    UInt64 chunk = 0;
+    /// The first 8 bytes of the token as a big-endian integer. Used only while sorting the tokens.
+    UInt64 prefix = 0;
 };
 
 using SortedTokens = std::vector<SortedToken>;

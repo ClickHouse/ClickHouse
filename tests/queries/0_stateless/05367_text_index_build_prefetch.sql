@@ -1,5 +1,5 @@
--- Builds text indexes of parts with large vocabularies. The tokens of a part are sorted by 8-byte chunks of their bytes,
--- and once the token map outgrows the CPU cache, the tokens of many rows are inserted together with prefetching.
+-- Builds text indexes of parts with large vocabularies: once the token map outgrows the CPU cache,
+-- the tokens of many rows are inserted together with prefetching.
 -- Checks that the dictionaries are sorted and that the posting lists match the rows.
 
 SET enable_analyzer = 1;
@@ -13,7 +13,7 @@ DROP TABLE IF EXISTS tab_array;
 DROP TABLE IF EXISTS tab_string;
 DROP TABLE IF EXISTS tab_map;
 
-SELECT '-- Tokens that sort in tricky ways';
+SELECT '-- Array columns with tokens that sort in tricky ways';
 
 CREATE TABLE tab_array
 (

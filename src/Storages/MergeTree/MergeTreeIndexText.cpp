@@ -2061,73 +2061,18 @@ void MergeTreeIndexTextGranuleBuilder::addDocumentsFromLowCardinality(
     }
 }
 
-namespace
+/// The first 8 bytes of the token as a big-endian integer padded with zero bytes,
+/// so that comparing the prefixes of two tokens compares these bytes lexicographically.
+static UInt64 getTokenPrefix(std::string_view token)
 {
-
-/// Up to 8 bytes of the token starting at `offset` as a big-endian integer padded with zero bytes,
-/// so that comparing two chunks compares these bytes lexicographically.
-UInt64 loadTokenChunk(std::string_view token, size_t offset)
-{
-    UInt64 chunk = 0;
-    if (offset < token.size())
-        memcpy(&chunk, token.data() + offset, std::min(token.size() - offset, sizeof(chunk)));
+    UInt64 prefix = 0;
+    if (!token.empty())
+        memcpy(&prefix, token.data(), std::min(token.size(), sizeof(prefix)));
 
     if constexpr (std::endian::native == std::endian::little)
-        chunk = std::byteswap(chunk);
+        prefix = std::byteswap(prefix);
 
-    return chunk;
-}
-
-/// Sorts distinct tokens that are equal in their first `offset` bytes.
-/// The token bytes live in the hash table cells and in the arena, so comparing the tokens directly misses
-/// the CPU cache in most comparisons of a large granule. Instead, the next 8 bytes of every token are copied
-/// into the array, the tokens are sorted by them, and each run of tokens with equal bytes is sorted the same way
-/// by the following 8 bytes. One chunk is not enough: `keyValuePairs` tokens start with the key, URLs share prefixes.
-void sortTokensByChunks(SortedToken * begin, SortedToken * end, size_t offset)
-{
-    static constexpr size_t chunk_size = sizeof(SortedToken::chunk);
-    static constexpr ptrdiff_t min_tokens_to_sort_by_chunks = 16;
-    static constexpr size_t max_offset = 8 * chunk_size;
-
-    if (end - begin < min_tokens_to_sort_by_chunks || offset >= max_offset)
-    {
-        std::sort(begin, end, [](const SortedToken & lhs, const SortedToken & rhs) { return lhs.token < rhs.token; });
-        return;
-    }
-
-    for (auto * it = begin; it != end; ++it)
-        it->chunk = loadTokenChunk(it->token, offset);
-
-    /// A token that ends in the chunk sorts before the longer tokens with the same zero-padded chunk: "ab" < "ab\0".
-    auto bytes_in_chunk = [offset](const SortedToken & token)
-    {
-        return token.token.size() > offset ? std::min(token.token.size() - offset, chunk_size) : 0;
-    };
-
-    auto less = [&](const SortedToken & lhs, const SortedToken & rhs)
-    {
-        if (lhs.chunk != rhs.chunk)
-            return lhs.chunk < rhs.chunk;
-        return bytes_in_chunk(lhs) < bytes_in_chunk(rhs);
-    };
-
-    std::sort(begin, end, less);
-
-    /// The tokens are distinct, so the tokens of a run fill the whole chunk and differ further on.
-    for (auto * run_begin = begin; run_begin != end;)
-    {
-        auto * run_end = std::find_if(run_begin + 1, end, [&](const SortedToken & token) { return less(*run_begin, token); });
-
-        if (run_end - run_begin > 1)
-        {
-            chassert(bytes_in_chunk(*run_begin) == chunk_size);
-            sortTokensByChunks(run_begin, run_end, offset + chunk_size);
-        }
-
-        run_begin = run_end;
-    }
-}
-
+    return prefix;
 }
 
 std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuilder::build()
@@ -2137,13 +2082,16 @@ std::unique_ptr<MergeTreeIndexGranuleTextWritable> MergeTreeIndexTextGranuleBuil
 
     tokens_map.forEachValue([&](const auto & key, auto & mapped)
     {
-        std::string_view token = static_cast<std::string_view>(key);
         if (mapped.isFiltered())
             return;
-        sorted_tokens.push_back(SortedToken{token, &mapped});
+
+        std::string_view token = static_cast<std::string_view>(key);
+        sorted_tokens.push_back(SortedToken{token, &mapped, getTokenPrefix(token)});
     });
 
-    sortTokensByChunks(sorted_tokens.data(), sorted_tokens.data() + sorted_tokens.size(), 0);
+    /// The tokens live in the hash table cells and in the arena, so comparing them misses the CPU cache
+    /// for a large granule. The prefixes copied into the array decide most of the comparisons.
+    std::ranges::sort(sorted_tokens, [](const auto & lhs, const auto & rhs) { return std::tie(lhs.prefix, lhs.token) < std::tie(rhs.prefix, rhs.token); });
 
     return std::make_unique<MergeTreeIndexGranuleTextWritable>(
         params,
