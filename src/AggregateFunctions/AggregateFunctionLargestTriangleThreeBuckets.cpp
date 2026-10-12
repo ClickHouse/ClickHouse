@@ -307,10 +307,10 @@ public:
 
         for (Float64 value : values)
         {
-            if (!(value >= range.first && value <= range.second))
+            if (!(value >= range.first && value <= range.second) || value != std::trunc(value))
                 throw Exception(
                     ErrorCodes::INCORRECT_DATA,
-                    "Value {} is out of range of type {} in the state of {}",
+                    "Value {} is not a valid value of type {} in the state of {}",
                     value,
                     argument_types[argument_index]->getName(),
                     getName());
