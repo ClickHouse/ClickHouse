@@ -114,13 +114,14 @@ public:
 
         datasketches::hll_union * u = getSkUnion(lg_config_k);
 
-        /// `rhs` may hold both sketches; take both without modifying it.
-        if (rhs_has_update)
-            u->update(*rhs.sk_update);
-
+        /// `rhs` may hold both sketches; take both without modifying it, in the order of `foldUpdateIntoUnionIfNeeded`: the union, then the
+        /// updates. The registers of the result do not depend on the order, but the HIP estimate and the bytes of the sketch do.
         /// The union accepts a sketch of any type, and `HLL_8` is its own type, so there is no re-encoding.
         if (rhs.sk_union)
             u->update(rhs.sk_union->get_result(datasketches::HLL_8));
+
+        if (rhs_has_update)
+            u->update(*rhs.sk_update);
 
         foldUpdateIntoUnionIfNeeded();
     }
