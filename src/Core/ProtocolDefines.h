@@ -166,6 +166,10 @@ static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_BLOCK_NESTE
 /// First query-plan serialization version that writes the optimizer's estimate next to every step. Below it the
 /// bytes are not written: the older peer would read them as the step header.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_STEP_ESTIMATES = 20;
+/// First query-plan serialization version that knows `use_aggregation_memory_tracker`. Below it, the name is not
+/// written, because a strict named schema makes an older peer throw on an unknown name; that peer then runs the
+/// aggregation with its own two-level decision.
+static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_AGGREGATION_MEMORY_TRACKER = 20;
 /// First query-plan serialization version that registers a "Window" step. Used to gate serializing a
 /// `WindowStep` for `make_distributed_plan`.
 static constexpr auto DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_WINDOW_STEP = 4;
