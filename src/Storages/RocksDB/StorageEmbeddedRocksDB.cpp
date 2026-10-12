@@ -1522,7 +1522,7 @@ void registerStorageEmbeddedRocksDB(StorageFactory & factory)
         .has_builtin_setting_fn = RocksDBSettings::hasBuiltin,
     };
 
-    factory.registerStorage("EmbeddedRocksDB", create, features, Documentation{
+    factory.registerStorage("EmbeddedRocksDB", create, SecretArgumentsSpec{}, features, Documentation{
         .description = R"DOCS_MD(
 import CloudNotSupportedBadge from '@theme/badges/CloudNotSupportedBadge';
 
