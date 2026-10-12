@@ -21,8 +21,11 @@ CREATE TABLE t_json (id UInt64, j JSON) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 CREATE TABLE t_tuple (id UInt64, t Tuple(kind String, payload String)) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+-- Bucketed, with as many buckets as keys, so that `m['k1']` reads one bucket and not the whole Map.
 CREATE TABLE t_map (id UInt64, m Map(String, String)) ENGINE = MergeTree ORDER BY id
-SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets',
+    map_buckets_strategy = 'constant', max_buckets_in_map = 16, map_buckets_min_avg_size = 0;
 CREATE TABLE t_maps (id UInt64, c Tuple(left Map(String, String), right Map(String, String))) ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
 
@@ -34,6 +37,7 @@ INSERT INTO t_maps SELECT number, tuple(map('k', 'a'), map('k', repeat('x', 1000
 SELECT count() FROM t_json WHERE j.kind = 'b' FORMAT Null SETTINGS log_comment = 'json_cheap';
 SELECT count() FROM t_tuple WHERE t.kind = 'b' FORMAT Null SETTINGS log_comment = 'tuple_cheap';
 SELECT count() FROM t_map WHERE length(m) = 3 FORMAT Null SETTINGS log_comment = 'map_cheap';
+SELECT count() FROM t_map WHERE m['k1'] = 'x' FORMAT Null SETTINGS log_comment = 'map_key_cheap';
 SELECT count() FROM t_maps WHERE c.left['k'] = 'b' FORMAT Null SETTINGS log_comment = 'maps_cheap';
 
 SELECT count() FROM t_json WHERE j.kind = 'b' AND length(toString(j)) > 10 FORMAT Null SETTINGS log_comment = 'json_whole';
@@ -42,6 +46,7 @@ SELECT count() FROM t_json WHERE j.kind = 'b' AND length(toString(j.payload)) > 
 SELECT count() FROM t_tuple WHERE t.kind = 'b' AND length(toString(t)) > 10 FORMAT Null SETTINGS log_comment = 'tuple_whole';
 SELECT count() FROM t_map WHERE length(m) = 3 AND m['k1'] != '' FORMAT Null SETTINGS log_comment = 'map_size_and_key';
 SELECT count() FROM t_maps WHERE c.left['k'] = 'b' AND c.right['k'] != '' FORMAT Null SETTINGS log_comment = 'maps_other_map';
+SELECT count() FROM t_map WHERE m['k1'] = 'x' AND length(toString(m)) > 10 FORMAT Null SETTINGS log_comment = 'map_key_and_whole';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -52,7 +57,8 @@ FROM VALUES('idx UInt8, case_name String, base_name String',
     (3, 'json_other_path', 'json_cheap'),
     (4, 'tuple_whole', 'tuple_cheap'),
     (5, 'map_size_and_key', 'map_cheap'),
-    (6, 'maps_other_map', 'maps_cheap')) AS c
+    (6, 'maps_other_map', 'maps_cheap'),
+    (7, 'map_key_and_whole', 'map_key_cheap')) AS c
 INNER JOIN
 (
     SELECT log_comment, max(read_bytes) AS bytes FROM system.query_log

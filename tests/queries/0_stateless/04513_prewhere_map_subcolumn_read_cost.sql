@@ -1,7 +1,8 @@
 -- Regression test: the PREWHERE optimizer must account for Map-key subcolumn read cost.
 -- When `optimize_functions_to_subcolumns` rewrites `h['k']` to the `h.key_k` subcolumn,
--- the optimizer must see its actual on-disk size (the whole Map) via getSubcolumnSize
--- and place the cheap `modality` filter before the expensive Map-key predicate.
+-- the optimizer must see its actual on-disk size via getSubcolumnSize and place the cheap
+-- `modality` filter before the expensive Map-key predicate. The rewrite applies only to bucketed
+-- Maps, and with two keys per row the single bucket holds the whole Map.
 --
 -- We disable statistics so that only columns_size drives the ordering,
 -- and use equality conditions on both sides so that both are "good" conditions
@@ -16,7 +17,9 @@ SET explain_query_plan_default = 'legacy';
 
 DROP TABLE IF EXISTS t_prewhere_map_cost;
 CREATE TABLE t_prewhere_map_cost (id UInt64, modality LowCardinality(String), h Map(String, String))
-ENGINE = MergeTree ORDER BY id SETTINGS min_bytes_for_wide_part = 0;
+ENGINE = MergeTree ORDER BY id
+SETTINGS min_bytes_for_wide_part = 0,
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 
 INSERT INTO t_prewhere_map_cost
 SELECT number, if(number < 1000, 'active', ''), map('k', repeat('v', 300), 'k2', repeat('w', 300))

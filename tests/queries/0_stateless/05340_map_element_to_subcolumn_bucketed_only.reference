@@ -1,0 +1,30 @@
+bucketed MergeTree
+1
+MergeTree with bucketed zero-level parts
+1
+basic MergeTree
+1
+Memory
+1
+explicit key subcolumn of a basic Map
+8	8
+9	9
+results
+8	8
+9	9
+8	8
+9	9
+8	8
+9	9
+Merge over a bucketed table
+1
+MaterializedView with a bucketed target
+1
+Buffer with a bucketed destination
+1
+Merge over a bucketed and a basic table
+1
+8	8
+8	8
+9	9
+9	9

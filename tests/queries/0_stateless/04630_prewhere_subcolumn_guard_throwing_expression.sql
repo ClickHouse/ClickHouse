@@ -226,14 +226,13 @@ SETTINGS optimize_prewhere_after_pushdown = 1, query_plan_merge_filters = 0;
 
 DROP TABLE t_prewhere_guard_nested;
 
--- Conditions that cannot throw are still rewritten to subcolumns of one physical column.
--- That they also share a single read step is asserted in the .sh companion of this test, which can
--- count read steps through ProfileEvents.
+-- On a bucketed Map, conditions that cannot throw are still rewritten to key subcolumns.
 DROP TABLE IF EXISTS t_prewhere_group_map;
 CREATE TABLE t_prewhere_group_map (id UInt64, tags Map(String, String))
 ENGINE = MergeTree ORDER BY id
 SETTINGS min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
-         ratio_of_defaults_for_sparse_serialization = 1.0;
+         ratio_of_defaults_for_sparse_serialization = 1.0,
+         map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 
 INSERT INTO t_prewhere_group_map
 SELECT number, mapFromArrays(arrayMap(i -> 'k' || toString(i), range(4)), arrayMap(i -> toString(number + i), range(4)))
@@ -364,10 +363,10 @@ SELECT count() = 1 FROM (
 DROP TABLE t_prewhere_guard_rf_parse_build;
 DROP TABLE t_prewhere_guard_rf_parse_probe;
 
--- A later step's columns over the same storage column are read ahead by the first step of the run, but
--- not while a part stores a column with another type: the reader converts it on the whole block before
--- any step filter, so the conversion would see the rows the guard rejects. The failing conversion keeps
--- the mutation pending, so the part keeps its old type for the query below.
+-- The column of a later step must not be read before the guard filters while a part stores it with
+-- another type: the reader converts it on the whole block it reads, so the conversion would see the rows
+-- the guard rejects. The failing conversion keeps the mutation pending, so the part keeps its old type
+-- for the query below.
 DROP TABLE IF EXISTS t_prewhere_guard_alter;
 CREATE TABLE t_prewhere_guard_alter (id UInt64, payload Tuple(safe String, val String))
 ENGINE = MergeTree ORDER BY id

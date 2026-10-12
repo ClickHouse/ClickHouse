@@ -71,6 +71,7 @@ struct SubcolumnSupportAnswers
 {
     bool all_transformers;
     std::optional<bool> tuple_element_only;
+    std::optional<bool> bucketed_map_serialization;
 };
 
 using SubcolumnSupportCache = std::unordered_map<const IStorage *, SubcolumnSupportAnswers>;
@@ -1224,6 +1225,16 @@ bool storageAllowsTransformer(
     const IStorage & storage, const IDataType & type, const String & function_name, SubcolumnSupportCache & cache)
 {
     auto & answers = getSubcolumnSupportAnswers(storage, cache);
+
+    /// Without buckets the key subcolumn `m.key_<key>` reads the whole Map, so `m['key']` is not rewritten to it.
+    if (function_name == "arrayElement" && isMap(type))
+    {
+        if (!answers.bucketed_map_serialization)
+            answers.bucketed_map_serialization = storage.hasBucketedMapSerialization();
+        if (!*answers.bucketed_map_serialization)
+            return false;
+    }
+
     if (answers.all_transformers)
         return true;
     if (!answers.tuple_element_only)

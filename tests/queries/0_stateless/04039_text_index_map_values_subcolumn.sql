@@ -1,7 +1,7 @@
 -- Tags: no-random-settings
 
 -- Tests that text indexes built on mapValues(m) work correctly when the analyzer
--- rewrites arrayElement(m, 'key') into the map.key_* subcolumn form.
+-- rewrites arrayElement(m, 'key') into the map.key_* subcolumn form, which it does only for bucketed Maps.
 SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
@@ -17,7 +17,8 @@ CREATE TABLE tab
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS index_granularity = 1, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0;
+SETTINGS index_granularity = 1, index_granularity_bytes = '10M', min_bytes_for_wide_part = 0,
+    map_serialization_version = 'with_buckets', map_serialization_version_for_zero_level_parts = 'with_buckets';
 
 INSERT INTO tab VALUES (0, {'service':'web-api'}), (1, {'service':'backend'}), (2, {'service':'frontend'});
 

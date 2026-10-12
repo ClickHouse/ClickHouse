@@ -1,8 +1,6 @@
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 
 #include <Columns/ColumnConst.h>
-#include <DataTypes/Serializations/SerializationMap.h>
-#include <Storages/ColumnsDescription.h>
 
 
 namespace DB
@@ -19,15 +17,10 @@ namespace ErrorCodes
 namespace
 {
 
-/// A storage column and the substreams cache key of the part of it that is read ("" for the whole column).
-using StorageColumnPart = std::pair<String, String>;
-
 /// Stores the list of columns required to compute a node in the DAG.
 struct NodeInfo
 {
     NameSet required_columns;
-    /// The columns the condition reads, a key subcolumn of a Map counted as the Map that owns it.
-    std::set<StorageColumnPart> required_storage_columns;
     /// True if computing this node may throw an exception, so it must not be evaluated on rows
     /// that a preceding condition rejects.
     bool may_throw = false;
@@ -45,32 +38,8 @@ DataTypesWithConstInfo getArgumentTypesWithConstInfo(const ActionsDAG::NodeRawCo
     return types;
 }
 
-/// A key subcolumn of a Map (`map.key_k0`) reads the keys and values of the whole Map, so it is identified
-/// with the Map that owns it. Any other column or subcolumn is identified by its own substreams.
-StorageColumnPart resolveStorageColumnName(const String & column_name, const ColumnsDescription * columns)
-{
-    if (columns)
-    {
-        auto column = columns->tryGetColumnOrSubcolumn(GetColumnsOptions::AllPhysical, column_name);
-        if (column && column->isSubcolumn())
-        {
-            if (auto subcolumn = column->getTypeInStorage()->tryGetSubcolumnInfo(column->getSubcolumnName()))
-            {
-                auto & path = subcolumn->substreams_path;
-                if (SerializationMap::isKeyValueSubcolumn(path))
-                    path.pop_back();
-                return {column->getNameInStorage(), ISerialization::getSubstreamsCacheKeyForStream(path)};
-            }
-        }
-    }
-    return {column_name, ""};
-}
-
 /// Fills the list of required columns for a node in the DAG.
-void fillRequiredColumns(
-    const ActionsDAG::Node * node,
-    std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info,
-    const ColumnsDescription * columns)
+void fillRequiredColumns(const ActionsDAG::Node * node, std::unordered_map<const ActionsDAG::Node *, NodeInfo> & nodes_info)
 {
     if (nodes_info.contains(node))
         return;
@@ -80,16 +49,14 @@ void fillRequiredColumns(
     if (node->type == ActionsDAG::ActionType::INPUT)
     {
         node_info.required_columns.insert(node->result_name);
-        node_info.required_storage_columns.insert(resolveStorageColumnName(node->result_name, columns));
         return;
     }
 
     for (const auto & child : node->children)
     {
-        fillRequiredColumns(child, nodes_info, columns);
+        fillRequiredColumns(child, nodes_info);
         const auto & child_info = nodes_info[child];
         node_info.required_columns.insert(child_info.required_columns.begin(), child_info.required_columns.end());
-        node_info.required_storage_columns.insert(child_info.required_storage_columns.begin(), child_info.required_storage_columns.end());
         node_info.may_throw = node_info.may_throw || child_info.may_throw;
     }
 
@@ -266,7 +233,6 @@ bool tryBuildPrewhereSteps(
     const ExpressionActionsSettings & actions_settings,
     PrewhereExprInfo & prewhere,
     bool force_short_circuit_execution,
-    const ColumnsDescription * columns,
     bool read_ahead_columns)
 {
     if (!prewhere_info)
@@ -288,30 +254,31 @@ bool tryBuildPrewhereSteps(
     std::unordered_map<const ActionsDAG::Node *, NodeInfo> nodes_info;
     for (const auto & node : condition_nodes)
     {
-        fillRequiredColumns(node, nodes_info, columns);
+        fillRequiredColumns(node, nodes_info);
     }
 
     /// 3. Sort condition nodes by the number of columns used in them and the overall size of those columns
     /// TODO: not sorting for now because the conditions are already sorted by Where Optimizer
 
-    /// 4. Group adjacent conditions that read the same columns into a single step.
-    /// Conditions on key subcolumns of the same Map (e.g. `map.key_k0` and `map.key_k1`) read the same columns.
+    /// 4. Group adjacent conditions that read the same set of columns into a single step.
+    /// A subcolumn is a separate column here, so a condition on a subcolumn and a condition on
+    /// the whole column get separate steps.
     ///
     /// The condition list is the flattened conjunction, so a nested AND contributes its own conditions
     /// rather than a single opaque one. The flattening keeps the original left to right order, for the
     /// same evaluation order reason spelled out below.
     ///
     /// Only adjacent conditions are merged to preserve the user's explicit PREWHERE evaluation order.
-    /// Non-adjacent conditions on the same storage column are kept in separate steps even though this
+    /// Non-adjacent conditions on the same columns are kept in separate steps even though this
     /// may cause redundant reads, because the user may have intentionally interleaved a guard predicate
     /// (e.g. `PREWHERE tags['safe'] != '' AND value > 0 AND toUInt64(tags['unsafe']) > 0` — the
     /// `value > 0` step must filter rows before evaluating the potentially-throwing conversion).
     ///
     /// Adjacency alone is not enough: all conditions of one step are evaluated on the same unfiltered
     /// block, so a condition that may throw must never share a step with a preceding condition.
-    /// `MergeTreeWhereOptimizer` groups conditions by their physical storage columns, which makes a
-    /// guard and a throwing predicate over the same column adjacent, so the may_throw check below is
-    /// what keeps the guard effective.
+    /// `MergeTreeWhereOptimizer` groups conditions by the columns they read, which makes a guard and
+    /// a throwing predicate over the same column adjacent, so the may_throw check below is what keeps
+    /// the guard effective.
     std::vector<std::vector<const ActionsDAG::Node *>> condition_groups;
     /// Indices of groups whose first condition may throw. Steps are not required to materialize their
     /// filter, so the preceding step is asked to do it, otherwise the throwing condition is evaluated
@@ -319,9 +286,9 @@ bool tryBuildPrewhereSteps(
     /// two steps read, because a step never filters the block it hands over on its own.
     std::unordered_set<size_t> groups_requiring_filtered_input;
     /// For every group, the index of the group whose step reads its columns. A group that was split
-    /// from the previous one only because it may throw reads the same storage columns, so with
+    /// from the previous one only because it may throw reads the same columns, so with
     /// `read_ahead_columns` its columns are read by the first step of that run and only the evaluation
-    /// waits for the filter. Otherwise every such step would deserialize the same storage column again
+    /// waits for the filter. Otherwise every such step would deserialize the same columns again
     /// (for example a whole `Map` for each of its keys). Reading is safe only when the reader does not
     /// convert the column or fill it from a default expression, because that runs on the whole block
     /// before any filter, so the caller decides (see `MergeTreeReaderSettings::read_ahead_prewhere_columns`).
@@ -329,10 +296,10 @@ bool tryBuildPrewhereSteps(
     for (const auto & node : condition_nodes)
     {
         const auto & node_info = nodes_info[node];
-        const bool same_storage_columns = !condition_groups.empty()
-            && nodes_info[condition_groups.back().front()].required_storage_columns == node_info.required_storage_columns;
+        const bool same_columns = !condition_groups.empty()
+            && nodes_info[condition_groups.back().front()].required_columns == node_info.required_columns;
 
-        if (same_storage_columns && !node_info.may_throw)
+        if (same_columns && !node_info.may_throw)
         {
             condition_groups.back().push_back(node);
             continue;
@@ -341,7 +308,7 @@ bool tryBuildPrewhereSteps(
         if (!condition_groups.empty() && node_info.may_throw)
             groups_requiring_filtered_input.insert(condition_groups.size());
 
-        group_read_step.push_back(same_storage_columns && read_ahead_columns ? group_read_step.back() : condition_groups.size());
+        group_read_step.push_back(same_columns && read_ahead_columns ? group_read_step.back() : condition_groups.size());
         condition_groups.push_back({node});
     }
 
