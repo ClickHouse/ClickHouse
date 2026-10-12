@@ -1,4 +1,5 @@
 #include <Interpreters/ProcessList.h>
+#include <Interpreters/QuerySchedulingGroup.h>
 #include <Core/Settings.h>
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
@@ -161,8 +162,9 @@ ProcessList::EntryPtr ProcessList::insert(
         String query_resource_name = workload_entity_storage->getQueryResourceName();
         if (!query_resource_name.empty())
         {
+            // Parts of one query share its query slot, see `QuerySchedulingGroup`.
             if (ResourceLink link = query_context->getWorkloadClassifier()->get(query_resource_name))
-                query_slot = std::make_unique<QuerySlot>(link, admission_deadline);
+                query_slot = query_context->getSchedulingGroup()->acquireQuerySlot(link, admission_deadline);
         }
         String memory_reservation_resource_name = workload_entity_storage->getMemoryReservationResourceName();
         if (!memory_reservation_resource_name.empty())

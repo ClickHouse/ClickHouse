@@ -116,6 +116,8 @@ void InterpreterSetQuery::executeForCurrentContext(bool ignore_setting_constrain
     }
     getContext()->applySettingsChanges(changes);
     getContext()->resetSettingsToDefaultValue(ast.default_settings);
+    /// All parts of a query are scheduled under the query's settings, e.g. a `PARALLEL WITH` subquery.
+    getContext()->checkSchedulingSettingsOfQueryPart(changes, ast.default_settings);
 }
 
 static void applySettingsFromSelectWithUnion(const ASTSelectWithUnionQuery & select_with_union, ContextMutablePtr context)
