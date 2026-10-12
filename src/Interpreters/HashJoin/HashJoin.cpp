@@ -127,6 +127,22 @@ void correctNullabilityInplace(ColumnWithTypeAndName & column, bool nullable)
     }
 }
 
+/// With zero-copy approach we won't copy the source columns, but will store them as they are.
+/// This is not beneficial when the whole set of columns is e.g. a single small column.
+/// The threshold is the size of one selector index. `ConcurrentHashJoin` chose it because its zero-copy approach stored an index per row.
+bool useZeroCopyApproach(const Block & from_block)
+{
+    constexpr auto threshold = sizeof(IColumn::Selector::value_type);
+    const auto & data_types = from_block.getDataTypes();
+    return std::accumulate(
+              data_types.begin(),
+              data_types.end(),
+              0u,
+              [](size_t sum, const DataTypePtr & type)
+              { return sum + (type->haveMaximumSizeOfValue() ? type->getMaximumSizeOfValueInMemory() : threshold + 1); })
+        > threshold;
+}
+
 Block filterColumnsPresentInSampleBlock(const Block & block, const Block & sample_block)
 {
     Block filtered_block;
@@ -1113,7 +1129,10 @@ bool HashJoin::addBlockToJoin(const Block & source_block, size_t /* num_rows */,
     }
 
     Block block_to_save = filterColumnsPresentInSampleBlock(block, savedBlockSample());
-    if (shrink_blocks.load(std::memory_order_relaxed))
+    /// A stored source column stays allocated, so the stream that produced it must fault in fresh memory for every block.
+    /// For narrow rows a parallel build stores copies instead: the copy is made here, on one of its several build streams,
+    /// and the producer can reuse the source memory. `shrinkToFit` copies every column.
+    if ((data->slots.size() > 1 && !useZeroCopyApproach(block)) || shrink_blocks.load(std::memory_order_relaxed))
         block_to_save = block_to_save.shrinkToFit();
 
     const auto maps_kind = getMapsKind();
