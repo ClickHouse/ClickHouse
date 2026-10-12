@@ -685,6 +685,10 @@ def main():
     if is_parallel_replicas and parallel_replicas_job_runs_autopr(info.sha):
         config_installs_args = config_installs_args.replace(OPTIONS_TO_INSTALL_ARGUMENTS["ParallelReplicas"], AUTOPR_ARGUMENT)
         runner_options += f" {AUTOPR_ARGUMENT}"
+        # The loop above has already announced the plain option as enabled; say that it is gone.
+        print(
+            f"NOTE: Replaced config option [{OPTIONS_TO_INSTALL_ARGUMENTS['ParallelReplicas']}] with [{AUTOPR_ARGUMENT}]"
+        )
         autopr_mode_note = "Ran with automatic parallel replicas (automatic_parallel_replicas_mode = 1)."
         print(f"NOTE: {autopr_mode_note}")
 
