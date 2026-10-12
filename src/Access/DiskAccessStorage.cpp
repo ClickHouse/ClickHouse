@@ -254,7 +254,15 @@ bool DiskAccessStorage::readLists()
         try
         {
             for (auto & [id, name] : readListFile(file_path))
+            {
+                /// The list files must not reference an entity without its `<id>.sql` file: such an entity throws when read.
+                if (!std::filesystem::exists(getEntityFilePath(directory_path, id)))
+                {
+                    LOG_WARNING(getLogger(), "Access entity {} ({}) is listed in {} but the corresponding .sql file doesn't exist", name, toString(id), file_path);
+                    return false;
+                }
                 ids_entities.emplace_back(id, std::make_shared<EntityOnDisk>(std::move(name), type));
+            }
         }
         catch (...)
         {
