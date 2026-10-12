@@ -811,14 +811,20 @@ InterpreterSelectQuery::InterpreterSelectQuery(
     if (view && !view->isParameterizedView() && view->isSealed(*metadata_snapshot, context))
         view = nullptr;
 
-    if (!settings[Setting::additional_table_filters].value.empty() && storage && !joined_tables.tablesWithColumns().empty())
+    /// The filters keyed by the name of a table must not be applied to a synthetic data source which
+    /// only borrows that name.
+    if (!settings[Setting::additional_table_filters].value.empty() && storage && !storage->isSyntheticDataSource()
+        && !joined_tables.tablesWithColumns().empty())
         query_info.additional_filter_ast = parseAdditionalFilterConditionForTable(
             settings[Setting::additional_table_filters], joined_tables.tablesWithColumns().front().table, *context);
 
     ASTPtr parallel_replicas_custom_filter_ast = nullptr;
     /// Set when this server only ships the custom key to the replicas instead of applying it itself.
     ASTPtr parallel_replicas_custom_key_ast_to_check = nullptr;
-    if (storage && context->canUseParallelReplicasCustomKey() && !joined_tables.tablesWithColumns().empty())
+    /// A synthetic data source is not split between the replicas: a replica which calculates a
+    /// projection must see all the rows of the block it is given.
+    if (storage && !storage->isSyntheticDataSource() && context->canUseParallelReplicasCustomKey()
+        && !joined_tables.tablesWithColumns().empty())
     {
         if (settings[Setting::parallel_replicas_count] > 1)
         {
