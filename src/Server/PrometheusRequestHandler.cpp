@@ -3,6 +3,7 @@
 #include <IO/HTTPCommon.h>
 #include <IO/ReadBuffer.h>
 #include <Server/HTTP/WriteBufferFromHTTPServerResponse.h>
+#include <Server/HTTP/exceptionCodeToHTTPStatus.h>
 #include <Server/HTTP/sendExceptionToHTTPClient.h>
 #include <Server/HTTPHandler.h>
 #include <Server/IServer.h>
@@ -187,6 +188,9 @@ protected:
         catch (...)
         {
             thread_trace_context.root_span.addAttribute(std::current_exception());
+            /// The outer handler sends the error status for this exception code unless the response is already sent.
+            thread_trace_context.root_span.addAttribute("clickhouse.http_status",
+                response.sent() ? response.getStatus() : exceptionCodeToHTTPStatus(getCurrentExceptionCode()));
             throw;
         }
         thread_trace_context.root_span.addAttribute("clickhouse.http_status", response.getStatus());

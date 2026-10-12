@@ -171,6 +171,28 @@ def test_query_api_traceparent_appears_in_opentelemetry_span_log():
     )
 
 
+def test_remote_write_failure_records_http_status_in_span_log():
+    """
+    A failed remote write with a W3C traceparent header should record the HTTP status
+    that the client got on its PrometheusRequestHandler span.
+    """
+    trace_id = str(uuid.uuid4())
+    traceparent = f"00-{trace_id.replace('-', '')}-{123:016x}-01"
+    protobuf = convert_time_series_to_protobuf([({"job": "test"}, {1753176720.0: 1})])
+    response = get_response_to_remote_write(
+        node.ip_address, 9093, "/write", protobuf, headers={"traceparent": traceparent}
+    )
+    assert response.status_code >= 400
+
+    node.query("SYSTEM FLUSH LOGS system.opentelemetry_span_log")
+    assert_eq_with_retry(
+        node,
+        f"SELECT attribute['clickhouse.http_status'] FROM system.opentelemetry_span_log "
+        f"WHERE trace_id = '{trace_id}' AND operation_name = 'PrometheusRequestHandler'",
+        f"{response.status_code}\n",
+    )
+
+
 def test_remote_write_appears_in_query_log_with_written_rows():
     """
     A remote write to /write should produce one parent TimeSeries row in
