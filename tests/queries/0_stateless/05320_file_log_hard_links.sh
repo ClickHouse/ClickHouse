@@ -13,7 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 logs_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 rm -rf "${logs_dir}"
-mkdir -p "${logs_dir}"/{d1,d2,d3,d4,d5}
+mkdir -p "${logs_dir}"/{d1,d2,d3,d4,d5,d6}
 d1=${logs_dir}/d1
 held=${logs_dir}/held.log
 held2=${logs_dir}/held2.log
@@ -270,9 +270,30 @@ printf '3\n' >> "${d5}/hidden.txt"
 ${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_glob_symlink"
 read_until file_log_glob_symlink 3
 
+echo '-- with a glob, names made before CREATE: a hard link that the glob excludes reads on, and a symbolic link to an excluded name reads on'
+d6=${logs_dir}/d6
+printf '1\n' > "${d6}/app.log"
+ln "${d6}/app.log" "${d6}/app.log.1"
+printf '10\n' > "${d6}/hidden.txt"
+ln "${d6}/hidden.txt" "${d6}/b.log"
+ln -s hidden.txt "${d6}/alias.log"
+printf '20\n' > "${d6}/hidden2.txt"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_glob_create (id UInt64) ENGINE = FileLog('${d6}/*.log', 'TSV') SETTINGS poll_timeout_ms = 100"
+read_log file_log_glob_create
+sync_watch file_log_glob_create "${d6}/app.log"
+ln "${d6}/hidden2.txt" "${d6}/c.log"
+read_until file_log_glob_create 20
+ln -s hidden2.txt "${d6}/alias2.log"
+rm "${d6}/app.log" "${d6}/b.log" "${d6}/c.log"
+printf '2\n' >> "${d6}/app.log.1"
+printf '11\n' >> "${d6}/hidden.txt"
+printf '21\n' >> "${d6}/hidden2.txt"
+read_until file_log_glob_create 2 11 21
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_create"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_symlink"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob_symlink"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob_create"
 rm -rf "${logs_dir}"

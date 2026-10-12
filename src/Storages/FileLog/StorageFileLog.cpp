@@ -311,8 +311,8 @@ void StorageFileLog::loadFiles()
     absolute_path = absolute_path.lexically_normal(); /// Normalize path.
 
     std::vector<String> matching_files;
-    /// Files that the glob excludes but whose inode has a stored meta, with that inode.
-    std::vector<std::pair<String, UInt64>> rotated_files;
+    /// Files that the glob excludes, with their inodes.
+    std::vector<std::pair<String, UInt64>> excluded_files;
 
     if (std::filesystem::is_regular_file(absolute_path))
     {
@@ -354,8 +354,8 @@ void StorageFileLog::loadFiles()
             struct stat file_stat{};
             if (fileNameMatches(file_name))
                 matching_files.push_back(std::move(file_name));
-            else if (stat(dir_entry.path().c_str(), &file_stat) == 0 && file_infos.meta_by_inode.contains(file_stat.st_ino))
-                rotated_files.emplace_back(std::move(file_name), file_stat.st_ino);
+            else if (stat(dir_entry.path().c_str(), &file_stat) == 0)
+                excluded_files.emplace_back(std::move(file_name), file_stat.st_ino);
         }
     }
 
@@ -370,7 +370,7 @@ void StorageFileLog::loadFiles()
     };
     std::vector<FoundFile> found_files;
     std::ranges::sort(matching_files);
-    std::ranges::sort(rotated_files);
+    std::ranges::sort(excluded_files);
     auto add_found_file = [&](String name, UInt64 inode, bool matches)
     {
         const bool is_symlink = isSymlink(getFullDataPath(name));
@@ -382,8 +382,12 @@ void StorageFileLog::loadFiles()
         auto inode = getInode(getFullDataPath(file));
         add_found_file(std::move(file), inode, true);
     }
-    for (auto & [file, inode] : rotated_files)
-        add_found_file(std::move(file), inode, false);
+    std::unordered_set<UInt64> matching_inodes;
+    for (const auto & file : found_files)
+        matching_inodes.insert(file.inode);
+    for (auto & [file, inode] : excluded_files)
+        if (matching_inodes.contains(inode) || file_infos.meta_by_inode.contains(inode))
+            add_found_file(std::move(file), inode, false);
 
     auto is_meta_name = [&](const FoundFile & file)
     {
@@ -396,12 +400,13 @@ void StorageFileLog::loadFiles()
             inodes_with_meta_name.insert(file.inode);
 
     /// A file with several names is read under one of them: a hard link, then a symbolic link that does not resolve through another
-    /// name in the directory, but never a name the glob excludes over the name it was read under; then that name, then a matching
-    /// name, then the smallest. A file renamed to a non-matching name while it was read (log rotation) keeps being read.
+    /// name in the directory, but a name the glob excludes only if the name it was read under is gone; then that name, then a
+    /// matching name, then the smallest. A file renamed to a non-matching name while it was read (log rotation) keeps being read.
     auto read_key = [&](const FoundFile & file)
     {
         const bool meta_name = is_meta_name(file);
-        const bool excluded_other = !file.matches && !meta_name && inodes_with_meta_name.contains(file.inode);
+        const bool excluded_other = !file.matches && !meta_name
+            && (inodes_with_meta_name.contains(file.inode) || !file_infos.meta_by_inode.contains(file.inode));
         return std::tuple<bool, bool, bool, bool, bool, const String &>(
             excluded_other, file.is_symlink, file.follows, !meta_name, !file.matches, file.name);
     };
@@ -1293,9 +1298,11 @@ bool StorageFileLog::resolvesIntoDirectory(const String & file_name) const
         const auto dir = std::filesystem::canonical(target.parent_path(), ec);
         if (ec)
             return false;
-        if (dir == root)
+        const String name = target.filename();
+        /// The events of a name the glob excludes are ignored unless the table records that name.
+        if (dir == root && (fileNameMatches(name) || file_infos.context_by_name.contains(name) || file_infos.other_names.contains(name)))
             return true;
-        link = dir / target.filename();
+        link = dir / name;
     }
     return false;
 }

@@ -86,3 +86,10 @@ app.log.1	3
 alias.log	1
 alias.log	2
 alias.log	3
+-- with a glob, names made before CREATE: a hard link that the glob excludes reads on, and a symbolic link to an excluded name reads on
+app.log	1
+b.log	10
+c.log	20
+alias2.log	21
+app.log.1	2
+hidden.txt	11
