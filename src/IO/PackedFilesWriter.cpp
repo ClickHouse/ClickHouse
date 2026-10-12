@@ -1,8 +1,12 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
+#include <IO/ReadBuffer.h>
 #include <IO/WriteSettings.h>
 #include <IO/WriteHelpers.h>
 #include <IO/PackedFilesWriter.h>
+#include <IO/copyData.h>
 #include <Common/escapeForFileName.h>
+
+#include <algorithm>
 
 
 namespace DB
@@ -12,6 +16,27 @@ namespace ErrorCodes
 {
     extern const int FILE_ALREADY_EXISTS;
     extern const int FILE_DOESNT_EXIST;
+    extern const int LOGICAL_ERROR;
+}
+
+PackedFilesWriter::PackedFilesWriter()
+    : state(std::make_shared<SharedState>())
+{
+    state->writer = this;
+}
+
+PackedFilesWriter::~PackedFilesWriter()
+{
+    state->writer = nullptr;
+}
+
+void PackedFilesWriter::setSpillSettings(SpillSettings spill_settings_)
+{
+    if (spill_settings_.max_bytes_in_memory && !spill_settings_.create_temporary_file)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Spilling of packed files is enabled, but temporary files cannot be created");
+
+    spill_settings = std::move(spill_settings_);
+    spillIfNeeded();
 }
 
 std::unique_ptr<WriteBufferFromFileBase>
@@ -40,7 +65,7 @@ PackedFilesWriter::writeFile(const String & file_name)
             "File {} already exists in packed archive (existing files: [{}])", file_name, existing_files);
     }
 
-    it->second = std::make_shared<Data>();
+    it->second = std::make_shared<Data>(state);
     return std::make_unique<FakeWriteBufferFromFile>(file_name, it->second);
 }
 
@@ -214,7 +239,10 @@ PackedFilesWriter::FinalizePlan PackedFilesWriter::prepareFinalize(const Strings
     for (const auto & name : ordered_file_names)
     {
         const auto & data = written_files.at(name);
-        const UInt64 data_size = data->chars.size();
+        if (!data->is_finalized)
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "File {} is not finalized before finalization of packed archive", name);
+
+        const UInt64 data_size = data->size;
 
         index[name] = {data_offset, data_size, data->uncompressed_size};
         data_offset += data_size;
@@ -246,7 +274,25 @@ void PackedFilesWriter::finalize(WriteBuffer & out, const FinalizePlan & plan) c
     for (const auto & name : plan.ordered_file_names)
     {
         const auto & data = written_files.at(name);
-        out.write(reinterpret_cast<const char *>(data->chars.data()), data->chars.size());
+        UInt64 written_size = 0;
+
+        for (const auto & range : data->ranges_in_temporary_files)
+        {
+            auto in = temporary_files.at(range.temporary_file_index)->readRange(range.position);
+            copyData(*in, out, range.size);
+            written_size += range.size;
+        }
+
+        for (size_t i = 0; i < data->chunks.size(); ++i)
+        {
+            const size_t chunk_data_size = data->getChunkDataSize(i);
+            out.write(data->chunks[i].data(), chunk_data_size);
+            written_size += chunk_data_size;
+        }
+
+        if (written_size != plan.index.at(name).size)
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Wrote {} bytes of file {} into packed archive, expected {}", written_size, name, plan.index.at(name).size);
     }
 }
 
@@ -263,22 +309,141 @@ size_t PackedFilesWriter::getSizeOfHeader()
     return sizeof(UInt8) + sizeof(UInt64);
 }
 
+void PackedFilesWriter::spillIfNeeded()
+{
+    if (spill_settings.max_bytes_in_memory && state->bytes_in_memory > spill_settings.max_bytes_in_memory)
+        spill();
+}
+
+void PackedFilesWriter::spill()
+{
+    /// Free half of the limit at once, so that a writer that keeps receiving data
+    /// does not move it out of memory by small pieces on every new chunk.
+    const size_t target_bytes_in_memory = spill_settings.max_bytes_in_memory / 2;
+
+    struct Candidate
+    {
+        Data * data;
+        size_t num_chunks;
+        size_t bytes;
+    };
+
+    std::vector<Candidate> candidates;
+    for (const auto & [_, data] : written_files)
+    {
+        const size_t num_chunks = data->getNumSpillableChunks();
+        size_t bytes = 0;
+        for (size_t i = 0; i < num_chunks; ++i)
+            bytes += data->chunks[i].size();
+
+        if (bytes)
+            candidates.push_back({data.get(), num_chunks, bytes});
+    }
+
+    if (candidates.empty())
+        return;
+
+    /// Move the largest files first to get fewer ranges to read back.
+    std::sort(candidates.begin(), candidates.end(), [](const auto & lhs, const auto & rhs) { return lhs.bytes > rhs.bytes; });
+
+    auto & temporary_file = temporary_files.emplace_back(spill_settings.create_temporary_file());
+    const size_t temporary_file_index = temporary_files.size() - 1;
+
+    for (const auto & candidate : candidates)
+    {
+        if (state->bytes_in_memory <= target_bytes_in_memory)
+            break;
+
+        Data & data = *candidate.data;
+        RangeInTemporaryFile range{.temporary_file_index = temporary_file_index, .position = temporary_file->startRange(), .size = 0};
+
+        for (size_t i = 0; i < candidate.num_chunks; ++i)
+        {
+            const size_t chunk_data_size = data.getChunkDataSize(i);
+            temporary_file->write(data.chunks[i].data(), chunk_data_size);
+            range.size += chunk_data_size;
+        }
+
+        if (range.size)
+            data.ranges_in_temporary_files.push_back(range);
+        data.removeChunks(candidate.num_chunks);
+    }
+
+    temporary_file->finishWriting();
+}
+
+PackedFilesWriter::Data::Data(std::shared_ptr<SharedState> state_)
+    : state(std::move(state_))
+{
+}
+
+PackedFilesWriter::Data::~Data()
+{
+    for (const auto & chunk : chunks)
+        state->bytes_in_memory -= chunk.size();
+}
+
+void PackedFilesWriter::Data::addChunk()
+{
+    chunks.emplace_back(next_chunk_size);
+    state->bytes_in_memory += next_chunk_size;
+    next_chunk_size = std::min(next_chunk_size * 2, MAX_CHUNK_SIZE);
+}
+
+size_t PackedFilesWriter::Data::getChunkDataSize(size_t chunk_index) const
+{
+    if (chunk_index + 1 < chunks.size())
+        return chunks[chunk_index].size();
+
+    chassert(is_finalized);
+    return last_chunk_data_size;
+}
+
+size_t PackedFilesWriter::Data::getNumSpillableChunks() const
+{
+    if (is_finalized || chunks.empty())
+        return chunks.size();
+    return chunks.size() - 1;
+}
+
+void PackedFilesWriter::Data::removeChunks(size_t num_chunks)
+{
+    chassert(num_chunks <= chunks.size());
+    for (size_t i = 0; i < num_chunks; ++i)
+        state->bytes_in_memory -= chunks[i].size();
+    chunks.erase(chunks.begin(), chunks.begin() + num_chunks);
+}
+
+PackedFilesWriter::FakeWriteBufferFromFile::FakeWriteBufferFromFile(const String & file_name_, std::shared_ptr<Data> data_)
+    : WriteBufferFromFileBase(0, nullptr, 0)
+    , file_name(file_name_)
+    , data(std::move(data_))
+{
+    data->addChunk();
+    set(data->chunks.back().data(), data->chunks.back().size());
+}
+
 void PackedFilesWriter::FakeWriteBufferFromFile::nextImpl()
 {
-    SwapGuard guard(*this);
-    impl->next();
+    /// Flush before the current chunk is filled: continue writing into the rest of it.
+    if (hasPendingData())
+    {
+        buffer() = Buffer(pos, buffer().end());
+        return;
+    }
+
+    data->addChunk();
+    set(data->chunks.back().data(), data->chunks.back().size());
+
+    if (auto * writer = data->state->writer)
+        writer->spillIfNeeded();
 }
 
 void PackedFilesWriter::FakeWriteBufferFromFile::finalizeImpl()
 {
-    SwapGuard guard(*this);
-    impl->finalize();
-}
-
-void PackedFilesWriter::FakeWriteBufferFromFile::cancelImpl() noexcept
-{
-    SwapGuard guard(*this);
-    impl->cancel();
+    data->last_chunk_data_size = pos - data->chunks.back().data();
+    data->size = count();
+    data->is_finalized = true;
 }
 
 }

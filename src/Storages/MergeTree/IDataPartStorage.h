@@ -79,6 +79,9 @@ struct WriteSettings;
 
 class TemporaryFileOnDisk;
 
+class TemporaryDataOnDiskScope;
+using TemporaryDataOnDiskScopePtr = std::shared_ptr<TemporaryDataOnDiskScope>;
+
 
 struct HardlinkedFiles
 {
@@ -393,6 +396,12 @@ public:
     /// It may be flush of buffered data or similar.
     virtual void precommitTransaction() = 0;
     virtual bool hasActiveTransaction() const = 0;
+
+    /// Lets the active transaction move the buffered data of the files being written to `tmp_data`
+    /// once it takes more than `max_bytes_in_memory` of memory. Applies until the transaction
+    /// is committed or rolled back, and to the projections that share the transaction.
+    /// Storages that write files directly instead of buffering them ignore it.
+    virtual void setTemporaryDataForTransaction(const TemporaryDataOnDiskScopePtr & /*tmp_data*/, size_t /*max_bytes_in_memory*/) {}
 
     /// Returns true if underlying filesystem is case-insensitive,
     /// e.g. file_name and FILE_NAME are the same files.

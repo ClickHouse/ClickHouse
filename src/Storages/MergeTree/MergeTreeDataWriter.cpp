@@ -95,6 +95,7 @@ namespace Setting
 namespace MergeTreeSetting
 {
     extern const MergeTreeSettingsBool assign_part_uuids;
+    extern const MergeTreeSettingsUInt64 max_bytes_to_buffer_for_packed_part;
     extern const MergeTreeSettingsBool fsync_after_insert;
     extern const MergeTreeSettingsBool fsync_part_directory;
     extern const MergeTreeSettingsBool materialize_skip_indexes_on_merge;
@@ -1043,6 +1044,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
 
     auto data_part_storage = new_data_part->getDataPartStoragePtr();
     data_part_storage->beginTransaction();
+    if (auto max_bytes_to_buffer = (*data_settings)[MergeTreeSetting::max_bytes_to_buffer_for_packed_part])
+        data_part_storage->setTemporaryDataForTransaction(context->getTempDataOnDisk(), max_bytes_to_buffer);
 
     if ((*data.storage_settings.get())[MergeTreeSetting::assign_part_uuids])
         new_data_part->uuid = UUIDHelpers::generateV4();

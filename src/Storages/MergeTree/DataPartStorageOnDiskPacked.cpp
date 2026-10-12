@@ -11,10 +11,25 @@
 #include <IO/copyData.h>
 #include <Disks/SingleDiskVolume.h>
 #include <Disks/IDiskTransaction.h>
+#include <Interpreters/TemporaryDataOnDisk.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
+#include <Common/CurrentMetrics.h>
+#include <Common/ProfileEvents.h>
 #include <Common/logger_useful.h>
+
+namespace ProfileEvents
+{
+    extern const Event ExternalPackedPartWriterWritePart;
+    extern const Event ExternalPackedPartWriterCompressedBytes;
+    extern const Event ExternalPackedPartWriterUncompressedBytes;
+}
+
+namespace CurrentMetrics
+{
+    extern const Metric TemporaryFilesForPackedParts;
+}
 
 namespace DB
 {
@@ -63,12 +78,24 @@ MutableDataPartStoragePtr DataPartStorageOnDiskPacked::create(
 
 MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings()));
+    auto projection = std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings()));
+    if (projection->writer && temporary_data_for_transaction)
+    {
+        projection->temporary_data_for_transaction = temporary_data_for_transaction;
+        projection->setTemporaryDataToWriter();
+    }
+    return projection;
 }
 
 MutableDataPartStoragePtr DataPartStorageOnDiskPacked::getProjectionNoInitialize(const std::string & name, bool use_parent_transaction) // NOLINT
 {
-    return std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings(), false));
+    auto projection = std::shared_ptr<DataPartStorageOnDiskPacked>(new DataPartStorageOnDiskPacked(volume, fs::path(root_path) / part_dir, name, use_parent_transaction ? transaction : nullptr, getReadSettings(), false));
+    if (projection->writer && temporary_data_for_transaction)
+    {
+        projection->temporary_data_for_transaction = temporary_data_for_transaction;
+        projection->setTemporaryDataToWriter();
+    }
+    return projection;
 }
 
 DataPartStoragePtr DataPartStorageOnDiskPacked::getProjection(const std::string & name) const
@@ -574,7 +601,45 @@ void DataPartStorageOnDiskPacked::undoTransaction()
     /// Release the writer as the commit paths do; otherwise beginTransaction's `transaction || writer`
     /// guard would reject the next transaction on this same live storage after a non-precommitted undo.
     writer.reset();
+    temporary_data_for_transaction.reset();
     is_precommitted = false;
+}
+
+void DataPartStorageOnDiskPacked::checkpointTransaction()
+{
+    auto temporary_data = temporary_data_for_transaction;
+    commitTransaction();
+    beginTransaction();
+
+    if (temporary_data)
+    {
+        temporary_data_for_transaction = std::move(temporary_data);
+        setTemporaryDataToWriter();
+    }
+}
+
+void DataPartStorageOnDiskPacked::setTemporaryDataForTransaction(const TemporaryDataOnDiskScopePtr & tmp_data, size_t max_bytes_in_memory)
+{
+    if (!writer)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot set temporary data for {}: there is no active transaction", getRelativePath());
+
+    if (!tmp_data)
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Temporary data storage for packed part {} is not provided", getRelativePath());
+
+    /// The files of a part are mostly compressed already, so they are not compressed again.
+    auto scope = tmp_data->childScope(
+        {
+            .current_metric = CurrentMetrics::TemporaryFilesForPackedParts,
+            .bytes_compressed = ProfileEvents::ExternalPackedPartWriterCompressedBytes,
+            .bytes_uncompressed = ProfileEvents::ExternalPackedPartWriterUncompressedBytes,
+            .num_files = ProfileEvents::ExternalPackedPartWriterWritePart,
+            .spilled_to_disk_operator = "packed_part_writer",
+        },
+        /*buffer_size_=*/ 0,
+        /*compression_codec_=*/ "NONE");
+
+    temporary_data_for_transaction = TemporaryDataForTransaction{std::move(scope), max_bytes_in_memory};
+    setTemporaryDataToWriter();
 }
 
 #if CLICKHOUSE_CLOUD
@@ -733,6 +798,41 @@ void DataPartStorageOnDiskPacked::resetWriterFromTransaction()
     is_precommitted = false;
 }
 
+namespace
+{
+
+/// Temporary file for the data that PackedFilesWriter moves out of memory, in the temporary data of the server.
+class PackedFilesTemporaryFile final : public IPackedFilesTemporaryFile
+{
+public:
+    explicit PackedFilesTemporaryFile(const TemporaryDataOnDiskScopePtr & tmp_data)
+        : buffer(tmp_data)
+    {
+    }
+
+    size_t startRange() override { return buffer.startNewBlock(); }
+    void write(const char * data, size_t size) override { buffer.write(data, size); }
+    void finishWriting() override { buffer.finishWriting(); }
+    std::unique_ptr<ReadBuffer> readRange(size_t position) override { return buffer.readFromPosition(position); }
+
+private:
+    TemporaryDataBuffer buffer;
+};
+
+}
+
+void DataPartStorageOnDiskPacked::setTemporaryDataToWriter()
+{
+    chassert(writer && temporary_data_for_transaction);
+    writer->setSpillSettings({
+        .create_temporary_file = [tmp_data = temporary_data_for_transaction->tmp_data]
+        {
+            return std::make_unique<PackedFilesTemporaryFile>(tmp_data);
+        },
+        .max_bytes_in_memory = temporary_data_for_transaction->max_bytes_in_memory,
+    });
+}
+
 void DataPartStorageOnDiskPacked::finalizeWriter()
 {
     chassert(writer);
@@ -741,6 +841,7 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
     if (!writer->hasModifiedFiles())
     {
         writer.reset();
+        temporary_data_for_transaction.reset();
         return;
     }
 
@@ -781,7 +882,7 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
     /// away, so a throwing preparation would leave a truncated archive behind.
     auto plan = writer->prepareFinalize(preferred_file_order, PackedFilesIO::VERSION_WITHOUT_UNCOMPRESSED_SIZE);
 
-    /// The writer keeps the whole part in memory, so stream the archive directly into the
+    /// The writer keeps the part in memory (or in temporary files), so stream the archive directly into the
     /// destination file: serializing it into a string first would hold a second copy of the part.
     auto buf = transaction->writeFile(
         archive_path, DBMS_DEFAULT_BUFFER_SIZE,
@@ -797,7 +898,9 @@ void DataPartStorageOnDiskPacked::finalizeWriter()
         transaction->replaceFile(archive_path, getRelativeDataPath());
 
     reader.emplace(plan.index);
+    /// Removes the temporary files of the writer.
     writer.reset();
+    temporary_data_for_transaction.reset();
 }
 
 template <typename Op>
