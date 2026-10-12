@@ -1095,6 +1095,16 @@
             Regexps are not aligned: don't forget to add ^ and $. Also don't forget to escape dot (.) metacharacter
             (forgetting to do so is a common source of error).
         -->
+
+        <!-- A single bucket on an S3-like endpoint can be allowed with the s3_bucket xml tag, as host/bucket or host:port/bucket.
+            Use it when the endpoint is shared by many parties, e.g. a path-style AWS endpoint such as s3.us-west-2.amazonaws.com,
+            and allowing the whole host would allow every bucket on it. The bucket is taken from the parsed S3 URL,
+            so the entry matches both https://s3.us-west-2.amazonaws.com/my-bucket/ and https://my-bucket.s3.us-west-2.amazonaws.com/.
+            Applies to S3 URLs only (the s3 table functions and engines, the S3 database engine, BACKUP and RESTORE to S3,
+            and S3 disks created in SQL with the disk function). A permanent (301) redirect returned by S3 is checked against
+            the bucket entries as well; a temporary (307) redirect is checked by host only and is rejected under a bucket-only list:
+                    <s3_bucket>s3.us-west-2.amazonaws.com/my-bucket</s3_bucket>
+        -->
     <!--</remote_url_allow_hosts>-->
 
     <!-- The list of HTTP headers forbidden to use in HTTP-related storage engines and table functions.
