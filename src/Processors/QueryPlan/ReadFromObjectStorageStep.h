@@ -11,6 +11,8 @@ namespace DB
 class LazilyReadFromObjectStorage;
 struct LazyObjectStorageFileRegistry;
 using LazyObjectStorageFileRegistryPtr = std::shared_ptr<LazyObjectStorageFileRegistry>;
+struct ObjectStorageTopKQueryConditionCacheKey;
+using ObjectStorageTopKQueryConditionCacheKeyPtr = std::shared_ptr<const ObjectStorageTopKQueryConditionCacheKey>;
 
 class ReadFromObjectStorageStep : public SourceStepWithFilter
 {
@@ -105,6 +107,8 @@ private:
 #endif
 
     void createIterator();
+
+    ObjectStorageTopKQueryConditionCacheKeyPtr makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const;
 };
 
 }
