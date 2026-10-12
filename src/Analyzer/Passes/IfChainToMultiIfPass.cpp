@@ -92,7 +92,10 @@ void IfChainToMultiIfPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr co
     auto multi_if_function_ptr = createInternalMultiIfOverloadResolver(
         settings[Setting::allow_execute_multiif_columnar],
         settings[Setting::use_variant_as_common_type],
-        settings[Setting::allow_lossy_numeric_supertype]);
+        settings[Setting::allow_lossy_numeric_supertype],
+        /// `if` keeps the zero padding of a `FixedString` branch converted to `String` regardless of
+        /// `cast_fixed_string_to_string_strip_trailing_zeros`, so the rewritten `multiIf` must keep it too.
+        /* cast_fixed_string_to_string_strip_trailing_zeros = */ false);
     IfChainToMultiIfPassVisitor visitor(std::move(multi_if_function_ptr), std::move(context));
     visitor.visit(query_tree_node);
 }

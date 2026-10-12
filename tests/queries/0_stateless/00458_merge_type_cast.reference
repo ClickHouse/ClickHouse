@@ -21,7 +21,6 @@
 2147483650
  String | FixedString(16) 
 1
-1
  DateTime | UInt64 
 1
 1

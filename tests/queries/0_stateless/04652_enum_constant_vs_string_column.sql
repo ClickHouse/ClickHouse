@@ -112,7 +112,7 @@ SELECT 'pk_nullable', (SELECT groupArray(v) FROM pk_nullable WHERE v = CAST('7',
 SELECT 'pk_fixed_string_narrow', (SELECT groupArray(toString(v)) FROM pk_fixed1 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0) = ['7'];
 
-SELECT 'pk_fixed_string_wide', (SELECT groupArray(trim(toString(v))) FROM pk_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
+SELECT 'pk_fixed_string_wide', (SELECT groupArray(toStringCutToZero(v)) FROM pk_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
     SETTINGS use_skip_indexes = 0, optimize_use_implicit_projections = 0) = ['7'];
 
 SELECT 'partition_key', (SELECT groupArray(v) FROM pk_partition WHERE v = CAST('7', 'Enum8(\'7\' = 3)')
@@ -123,7 +123,7 @@ SELECT 'bloom_filter_equals', (SELECT groupArray(v) FROM bf_str WHERE v = CAST('
     = (SELECT groupArray(v) FROM bf_str WHERE v = CAST('7', 'Enum8(\'7\' = 3)') SETTINGS use_skip_indexes = 0);
 
 -- Only matches if the name is padded to the column width before it is hashed.
-SELECT 'bloom_filter_fixed_string', (SELECT groupArray(trim(toString(v))) FROM bf_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')) = ['7'];
+SELECT 'bloom_filter_fixed_string', (SELECT groupArray(toStringCutToZero(v)) FROM bf_fixed4 WHERE v = CAST('7', 'Enum8(\'7\' = 3)')) = ['7'];
 
 SELECT 'bloom_filter_in', (SELECT groupArray(v) FROM bf_str WHERE v IN (CAST('7', 'Enum8(\'7\' = 3)')))
     = (SELECT groupArray(v) FROM bf_str WHERE v IN ('7'));

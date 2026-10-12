@@ -2,6 +2,7 @@
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnNullable.h>
 #include <Columns/ColumnString.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeString.h>
@@ -10,6 +11,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Common/SipHash.h>
 #include <Common/StringUtils.h>
 #include <Common/assert_cast.h>
 
@@ -20,6 +22,11 @@
   */
 namespace DB
 {
+
+namespace Setting
+{
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
+}
 
 namespace ErrorCodes
 {
@@ -109,7 +116,7 @@ private:
             null_map);
     }
 
-    static ColumnPtr serializeNestedColumn(const ColumnArray & col_arr, const DataTypePtr & nested_type)
+    ColumnPtr serializeNestedColumn(const ColumnArray & col_arr, const DataTypePtr & nested_type) const
     {
         DataTypePtr type = nested_type;
         ColumnPtr column = col_arr.getDataPtr();
@@ -120,17 +127,32 @@ private:
             column = assert_cast<const ColumnNullable &>(*column).getNestedColumnPtr();
         }
 
-        return castColumn({column, type, "tmp"}, std::make_shared<DataTypeString>());
+        return castColumn({column, type, "tmp"}, std::make_shared<DataTypeString>(), nullptr, cast_fixed_string_to_string_strip_trailing_zeros);
     }
+
+    /// The cast of the elements runs without a query context, so the setting is passed to it explicitly.
+    const bool cast_fixed_string_to_string_strip_trailing_zeros;
 
 public:
     static constexpr auto name = "arrayStringConcat";
-    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionArrayStringConcat>(); }
+    static FunctionPtr create(ContextPtr context)
+    {
+        return std::make_shared<FunctionArrayStringConcat>(
+            context && context->getSettingsRef()[Setting::cast_fixed_string_to_string_strip_trailing_zeros]);
+    }
+
+    explicit FunctionArrayStringConcat(bool cast_fixed_string_to_string_strip_trailing_zeros_)
+        : cast_fixed_string_to_string_strip_trailing_zeros(cast_fixed_string_to_string_strip_trailing_zeros_)
+    {
+    }
 
     String getName() const override
     {
         return name;
     }
+
+    /// The captured setting decides the value of a `FixedString` element converted to `String`.
+    void updateHash(SipHash & hash) const override { hash.update(cast_fixed_string_to_string_strip_trailing_zeros); }
 
     bool isVariadic() const override { return true; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }

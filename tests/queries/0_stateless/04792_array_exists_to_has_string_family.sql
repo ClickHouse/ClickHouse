@@ -70,8 +70,8 @@ SELECT arrayExists(x -> x = tuple(tuple('V0\0')), v) FROM t_tuple2 SETTINGS opti
 SELECT arrayExists(x -> x = tuple('V0\0'), [tuple(toFixedString('V0', 3))]) SETTINGS optimize_rewrite_array_exists_to_has = 0;
 SELECT arrayExists(x -> x = tuple('V0\0'), [tuple(toFixedString('V0', 3))]) SETTINGS optimize_rewrite_array_exists_to_has = 1;
 
--- Array and Map elements: over a column both spellings answer 0, but over a constant array
--- `has` compares raw Fields and answers 1 where `equals` answers 0, so they diverge as well.
+-- Array and Map elements: `equals` casts both containers to their common type, which keeps the
+-- `FixedString` padding, so the padded spelling matches. The rewrite is still declined for these pairs.
 DROP TABLE IF EXISTS t_nested_arr;
 CREATE TABLE t_nested_arr (v Array(Array(FixedString(3)))) ENGINE = Memory;
 INSERT INTO t_nested_arr SELECT [[toFixedString('V0', 3)]];

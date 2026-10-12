@@ -31,7 +31,7 @@ CREATE TABLE p_lcnstr (id UInt64, v Array(LowCardinality(Nullable(String))), IND
 INSERT INTO p_lcnstr SELECT number, [if(number = 7, 'V0', concat('z', toString(number)))] FROM numbers(64);
 
 SELECT 'prune str has Str', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_str WHERE has(v,'V0')) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
-SELECT 'prune str hasAny FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_str WHERE hasAny(v,[toFixedString('V0',3)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+SELECT 'prune str hasAny FS2', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_str WHERE hasAny(v,[toFixedString('V0',2)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
 
 -- `has` over a bare `String` element keeps hashing the padded form, so a `FixedString(3)` constant
 -- selects the granule holding 'V0\0' and not the one holding 'V0'. Asserting the exact granule the
@@ -41,24 +41,29 @@ CREATE TABLE q_str (id UInt64, v Array(String), INDEX idx v TYPE bloom_filter GR
 INSERT INTO q_str SELECT number, [multiIf(number = 7, 'V0', number = 11, 'V0\0', concat('z', toString(number)))] FROM numbers(64);
 SELECT 'padded str has FS3', (SELECT count() FROM q_str WHERE has(v,toFixedString('V0',3))) = (SELECT count() FROM q_str WHERE has(v,toFixedString('V0',3)) SETTINGS use_skip_indexes=0);
 SELECT 'padded str has FS3 id', (SELECT groupArray(id) FROM (SELECT id FROM q_str WHERE has(v,toFixedString('V0',3)) ORDER BY id)) = (SELECT groupArray(id) FROM (SELECT id FROM q_str WHERE has(v,toFixedString('V0',3)) ORDER BY id SETTINGS use_skip_indexes=0));
--- On byte-identical data `has` matches the padded row and `hasAny` matches the unpadded one. Pinning
--- the absolute ids is what proves each predicate keeps its own representation: a keyed-vs-unkeyed
--- comparison alone stays green if a change moves both sides together.
+-- On byte-identical data both `has` and `hasAny` match the padded row: the cast of `hasAny` to the
+-- supertype keeps the padding. Pinning the absolute ids is what proves each predicate keeps this
+-- representation: a keyed-vs-unkeyed comparison alone stays green if a change moves both sides together.
 SELECT 'padded str has FS3 is 11', (SELECT groupArray(id) FROM (SELECT id FROM q_str WHERE has(v,toFixedString('V0',3)) ORDER BY id)) = [11];
-SELECT 'unpadded str hasAny FS3 is 7', (SELECT groupArray(id) FROM (SELECT id FROM q_str WHERE hasAny(v,[toFixedString('V0',3)]) ORDER BY id)) = [7];
+SELECT 'padded str hasAny FS3 is 11', (SELECT groupArray(id) FROM (SELECT id FROM q_str WHERE hasAny(v,[toFixedString('V0',3)]) ORDER BY id)) = [11];
 SELECT 'prune str has FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM q_str WHERE has(v,toFixedString('V0',3))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
 SELECT 'padded str hasAny FS3 id', (SELECT groupArray(id) FROM (SELECT id FROM q_str WHERE hasAny(v,[toFixedString('V0',3)]) ORDER BY id)) = (SELECT groupArray(id) FROM (SELECT id FROM q_str WHERE hasAny(v,[toFixedString('V0',3)]) ORDER BY id SETTINGS use_skip_indexes=0));
-SELECT 'prune fs3 has FS5', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE has(v,toFixedString('V0',5))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
-SELECT 'prune fs3 indexOf FS5', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE indexOf(v,toFixedString('V0',5)) = 1) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
-SELECT 'prune fs3 hasAny FS5', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE hasAny(v,[toFixedString('V0',5)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
-SELECT 'prune fs3 hasAll FS5', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE hasAll(v,[toFixedString('V0',5)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+-- A constant wider than the `FixedString(3)` element keeps its padding in the cast to the supertype and
+-- matches nothing, so the index declines it; a constant of the element width prunes.
+SELECT 'decline fs3 has FS5', countIf(explain LIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE has(v,toFixedString('V0',5)));
+SELECT 'decline fs3 indexOf FS5', countIf(explain LIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE indexOf(v,toFixedString('V0',5)) = 1);
+SELECT 'prune fs3 indexOf FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE indexOf(v,toFixedString('V0',3)) = 1) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+SELECT 'decline fs3 hasAny FS5', countIf(explain LIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE hasAny(v,[toFixedString('V0',5)]));
+SELECT 'prune fs3 hasAny FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE hasAny(v,[toFixedString('V0',3)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+SELECT 'decline fs3 hasAll FS5', countIf(explain LIKE '%Name: idx%') = 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE hasAll(v,[toFixedString('V0',5)]));
+SELECT 'prune fs3 hasAll FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE hasAll(v,[toFixedString('V0',3)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
 SELECT 'prune fs3 has FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3 WHERE has(v,toFixedString('V0',3))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
-SELECT 'prune lcstr has FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcstr WHERE has(v,toFixedString('V0',3))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
-SELECT 'prune lcstr hasAny FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcstr WHERE hasAny(v,[toFixedString('V0',3)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+SELECT 'prune lcstr has FS2', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcstr WHERE has(v,toFixedString('V0',2))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+SELECT 'prune lcstr hasAny FS2', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcstr WHERE hasAny(v,[toFixedString('V0',2)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
 SELECT 'prune lcstr has Str', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcstr WHERE has(v,'V0')) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
-SELECT 'prune lcnstr has FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcnstr WHERE has(v,toFixedString('V0',3))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
-SELECT 'prune lcnstr hasAny FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcnstr WHERE hasAny(v,[toFixedString('V0',3)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
-SELECT 'prune lcnstr has FS3 is 7', (SELECT groupArray(id) FROM (SELECT id FROM p_lcnstr WHERE has(v,toFixedString('V0',3)) ORDER BY id)) = [7];
+SELECT 'prune lcnstr has FS2', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcnstr WHERE has(v,toFixedString('V0',2))) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+SELECT 'prune lcnstr hasAny FS2', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_lcnstr WHERE hasAny(v,[toFixedString('V0',2)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+SELECT 'prune lcnstr has FS2 is 7', (SELECT groupArray(id) FROM (SELECT id FROM p_lcnstr WHERE has(v,toFixedString('V0',2)) ORDER BY id)) = [7];
 
 -- Two properties in one cell. The query must still PLAN, so analysis has to swallow the failed cast
 -- rather than propagate it: a rethrow errors the whole statement. And the `idx` block must be ABSENT,
@@ -118,8 +123,8 @@ SELECT 'fs3m hasAny later unrepresentable', (SELECT count() FROM o_fs3m WHERE ha
 -- preserve by coercing rather than declining.
 CREATE TABLE p_fs3m (id UInt64, v Array(FixedString(3)), INDEX idx v TYPE bloom_filter GRANULARITY 1) ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
 INSERT INTO p_fs3m SELECT number, multiIf(number = 5, [toFixedString('V0',3)], number = 7, [toFixedString('V0',3), toFixedString('V0A',3)], number = 11, [toFixedString('V0A',3)], [toFixedString(concat('z', leftPad(toString(number),2,'0')),3)]) FROM numbers(64);
-SELECT 'prune fs3m hasAny nonfirst FS5', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3m WHERE hasAny(v,[toFixedString('V0',5),toFixedString('V0A',5)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
-SELECT 'prune fs3m hasAll both FS5', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3m WHERE hasAll(v,[toFixedString('V0',5),toFixedString('V0A',5)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+SELECT 'prune fs3m hasAny nonfirst FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3m WHERE hasAny(v,[toFixedString('V0',3),toFixedString('V0A',3)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
+SELECT 'prune fs3m hasAll both FS3', count() > 0 FROM (EXPLAIN indexes = 1 SELECT count() FROM p_fs3m WHERE hasAll(v,[toFixedString('V0',3),toFixedString('V0A',3)])) WHERE explain LIKE '%Granules: %/%' AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) > 0 AND toUInt64OrZero(extract(explain,'Granules: (\d+)/')) < toUInt64OrZero(extract(explain,'Granules: \d+/(\d+)'));
 -- Two needles across three granules: one row has only the first, one only the second, one both. So
 -- dropping EITHER hash changes the selected ROW SET, which a result cell can see; with both needles
 -- on a single row it does not, and only the granule count moves. `hasAny` is the cell that sees it:
@@ -127,8 +132,8 @@ SELECT 'prune fs3m hasAll both FS5', count() > 0 FROM (EXPLAIN indexes = 1 SELEC
 -- `hasAll` ANDs them, so a missing hash only ADDS granules and the runtime `hasAll` removes the
 -- extra rows again, which is why the cell below it is a must-not-change control rather than a
 -- dropped-hash detector.
-SELECT 'prune fs3m hasAny ids are 5 7 11', (SELECT groupArray(id) FROM (SELECT id FROM p_fs3m WHERE hasAny(v,[toFixedString('V0',5),toFixedString('V0A',5)]) ORDER BY id)) = [5,7,11];
-SELECT 'prune fs3m hasAll ids are 7', (SELECT groupArray(id) FROM (SELECT id FROM p_fs3m WHERE hasAll(v,[toFixedString('V0',5),toFixedString('V0A',5)]) ORDER BY id)) = [7];
+SELECT 'prune fs3m hasAny ids are 5 7 11', (SELECT groupArray(id) FROM (SELECT id FROM p_fs3m WHERE hasAny(v,[toFixedString('V0',3),toFixedString('V0A',3)]) ORDER BY id)) = [5,7,11];
+SELECT 'prune fs3m hasAll ids are 7', (SELECT groupArray(id) FROM (SELECT id FROM p_fs3m WHERE hasAll(v,[toFixedString('V0',3),toFixedString('V0A',3)]) ORDER BY id)) = [7];
 -- One unrepresentable element declines the WHOLE predicate, so the index must not be applied even
 -- though the other element is representable and present in the data. The result cell above cannot see
 -- this: hashing only the valid `V0` and dropping `WXYZ` selects exactly the rows `hasAny` returns, so

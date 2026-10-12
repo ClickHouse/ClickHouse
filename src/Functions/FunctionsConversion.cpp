@@ -3387,9 +3387,11 @@ FunctionCast::WrapperType FunctionCast::prepareImpl(const DataTypePtr & from_typ
 
 FunctionConvertSettingsPtr createFunctionConvertSettings(
     const ContextPtr & context,
-    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior)
+    FormatSettings::DateTimeOverflowBehavior date_time_overflow_behavior,
+    std::optional<bool> fixed_string_to_string_strip_trailing_zeros_override)
 {
-    return std::make_shared<const FunctionConvertSettings>(context, date_time_overflow_behavior);
+    return std::make_shared<const FunctionConvertSettings>(
+        context, date_time_overflow_behavior, fixed_string_to_string_strip_trailing_zeros_override);
 }
 
 FunctionBasePtr createFunctionBaseCast(

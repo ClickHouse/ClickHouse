@@ -81,6 +81,7 @@ namespace Setting
     extern const SettingsBool legacy_column_name_of_tuple_literal;
     extern const SettingsBool normalize_function_names;
     extern const SettingsBool optimize_if_chain_to_multiif;
+    extern const SettingsBool cast_fixed_string_to_string_strip_trailing_zeros;
     extern const SettingsBool optimize_group_by_function_keys;
     extern const SettingsUInt64 optimize_min_equality_disjunction_chain_length;
     extern const SettingsBool optimize_move_to_prewhere;
@@ -1540,8 +1541,12 @@ TreeRewriterResultPtr TreeRewriter::analyzeSelect(
         getContext()->getClientInfo().query_kind != ClientInfo::QueryKind::SECONDARY_QUERY
         && !select_options.ignore_ast_optimizations;
 
-    bool optimize_multiif_to_if_v = ast_optimizations_allowed && settings[Setting::optimize_multiif_to_if];
-    TreeOptimizer::optimizeIf(query, result.aliases, settings[Setting::optimize_if_chain_to_multiif], optimize_multiif_to_if_v);
+    /// With `cast_fixed_string_to_string_strip_trailing_zeros` `multiIf` removes the zero padding of a `FixedString` branch
+    /// converted to `String`, but `if` keeps it, so rewriting one into the other would change the result.
+    const bool strip_fixed_string_zeros = settings[Setting::cast_fixed_string_to_string_strip_trailing_zeros];
+    bool optimize_multiif_to_if_v = ast_optimizations_allowed && settings[Setting::optimize_multiif_to_if] && !strip_fixed_string_zeros;
+    TreeOptimizer::optimizeIf(
+        query, result.aliases, settings[Setting::optimize_if_chain_to_multiif] && !strip_fixed_string_zeros, optimize_multiif_to_if_v);
 
     if (ast_optimizations_allowed)
         TreeOptimizer::apply(query, result, tables_with_columns, getContext());
@@ -1657,7 +1662,12 @@ TreeRewriterResultPtr TreeRewriter::analyze(
     if (settings[Setting::legacy_column_name_of_tuple_literal])
         markTupleLiteralsAsLegacy(query);
 
-    TreeOptimizer::optimizeIf(query, result.aliases, settings[Setting::optimize_if_chain_to_multiif], false);
+    /// See the comment in `analyzeSelect` about `cast_fixed_string_to_string_strip_trailing_zeros`.
+    TreeOptimizer::optimizeIf(
+        query,
+        result.aliases,
+        settings[Setting::optimize_if_chain_to_multiif] && !settings[Setting::cast_fixed_string_to_string_strip_trailing_zeros],
+        false);
 
     if (allow_aggregations)
     {

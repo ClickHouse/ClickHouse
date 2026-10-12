@@ -35,8 +35,10 @@ BuildRuntimeFilterTransform::BuildRuntimeFilterTransform(
     , query_context(std::move(query_context_))
 {
     const auto & filter_column = header_->getByPosition(filter_column_position);
+    /// Convert the key as the join does, see `predicateOperandsToCommonType`.
     if (!filter_column_target_type->equals(*filter_column_original_type))
-        cast_to_target_type = createInternalCast(filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr);
+        cast_to_target_type = createInternalCast(
+            filter_column, filter_column_target_type, CastType::nonAccurate, {}, nullptr, /* fixed_string_to_string_strip_trailing_zeros_override= */ true);
 
     if (build_options_.polarity == RuntimeFilterPolarity::Contains)
     {
