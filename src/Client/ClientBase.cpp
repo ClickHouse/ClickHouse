@@ -197,6 +197,7 @@ namespace ErrorCodes
     extern const int CANNOT_SET_SIGNAL_HANDLER;
     extern const int LOGICAL_ERROR;
     extern const int CANNOT_OPEN_FILE;
+    extern const int FILE_DOESNT_EXIST;
     extern const int FILE_ALREADY_EXISTS;
     extern const int USER_SESSION_LIMIT_EXCEEDED;
     extern const int NOT_IMPLEMENTED;
@@ -1513,11 +1514,13 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
         // So it's easier to just pass a descriptor, without the terminal name.
         tty_fd = stdout_fd;
     }
+#if !defined(OS_WINDOWS)
     else if (stdin_is_a_tty)
     {
         /// If stdin is a tty, it's writable, tty can't be readonly.
         tty_fd = stdin_fd;
     }
+#endif
 
     if (tty_fd != -1)
     {
@@ -1525,6 +1528,24 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
         return;
     }
 
+#if defined(OS_WINDOWS)
+    /// A console `stdin` is the console input buffer `CONIN$`, which is not writable, and there is no `/dev/tty`.
+    /// Open the active console screen buffer `CONOUT$`: it is there even when `stdout` and `stderr` are redirected.
+    try
+    {
+        tty_buf = std::make_unique<AutoCanceledWriteBuffer<WriteBufferFromFile>>("CONOUT$", buf_size, O_RDWR);
+        return;
+    }
+    catch (const Exception & e)
+    {
+        tty_buf.reset();
+
+        if (e.code() != ErrorCodes::CANNOT_OPEN_FILE && e.code() != ErrorCodes::FILE_DOESNT_EXIST)
+            throw;
+
+        /// The process has no console.
+    }
+#else
     /// If none of stdin/stdout/stderr are tty but progress rendering was requested, open /dev/tty.
 
     static constexpr auto tty_file_name = "/dev/tty";
@@ -1557,6 +1578,8 @@ void ClientBase::initTTYBuffer(ProgressOption progress_option, ProgressOption pr
             /// Fallback to other options.
         }
     }
+
+#endif
 
     /// Failed to open /dev/tty.
     need_render_progress = false;
