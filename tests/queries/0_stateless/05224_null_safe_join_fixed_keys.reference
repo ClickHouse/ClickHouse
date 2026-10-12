@@ -46,4 +46,12 @@ Join conditions: tuple(a) <=> tuple(a) AND tuple(a + 1) <=> tuple(a + 1) AND tup
 Join conditions: tuple(CAST(a AS Nullable(UInt256))) <=> tuple(CAST(a AS Nullable(UInt256)))
 Join conditions: tuple(a) <=> tuple(a) AND id = id AND b = b
 1041	549	206647
+Join conditions: tuple(a) <=> tuple(a) AND toLowCardinality(id) = toLowCardinality(id)
+LowCardinality, UUID and IPv6 keys
+Join conditions: CAST(a AS LowCardinality(Nullable(UInt64))) IS NULL = CAST(a AS LowCardinality(Nullable(UInt64))) IS NULL AND if(CAST(a AS LowCardinality(Nullable(UInt64))) IS NULL, 0, assumeNotNull(CAST(a AS LowCardinality(Nullable(UInt64))))) = if(CAST(a AS LowCardinality(Nullable(UInt64))) IS NULL, 0, assumeNotNull(CAST(a AS LowCardinality(Nullable(UInt64)))))
+6201	3350	1229497
+6201	3350	1229497
+Join conditions: CAST(if(a IS NULL, NULL, reinterpretAsUUID(toUInt128(a))) AS Nullable(UUID)) IS NULL = CAST(if(a IS NULL, NULL, reinterpretAsUUID(toUInt128(a))) AS Nullable(UUID)) IS NULL AND if(CAST(if(a IS NULL, NULL, reinterpretAsUUID(toUInt128(a))) AS Nullable(UUID)) IS NULL, \'00000000-0000-0000-0000-000000000000\', assumeNotNull(CAST(if(a IS NULL, NULL, reinterpretAsUUID(toUInt128(a))) AS Nullable(UUID)))) = if(CAST(if(a IS NULL, NULL, reinterpretAsUUID(toUInt128(a))) AS Nullable(UUID)) IS NULL, \'00000000-0000-0000-0000-000000000000\', assumeNotNull(CAST(if(a IS NULL, NULL, reinterpretAsUUID(toUInt128(a))) AS Nullable(UUID)))) AND d IS NULL = d IS NULL AND if(d IS NULL, \'1970-01-01\', assumeNotNull(d)) = if(d IS NULL, \'1970-01-01\', assumeNotNull(d))
+1041	549	206647
+1041	549	206647
 1041	549	206647

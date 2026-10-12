@@ -900,16 +900,6 @@ static void preferNullableRightKey(
     }
 }
 
-/// The split pays off only for keys that pack into a fixed-width hash key: a `String` value next to the `isNull` key
-/// still goes down the serialized-key path, and `if` copies it. A compound nested type, which only a function like `if`
-/// produces under `Nullable`, keeps the tuple: the hash join compares nested values with the bytes under their NULLs,
-/// which `if` over a tuple does not reset, so equal NULLs would hash differently. `Nothing` has no value either.
-static bool canSplitNullSafeKey(const DataTypePtr & type)
-{
-    const auto value_type = removeLowCardinalityAndNullable(type);
-    return value_type->isValueRepresentedByNumber() || isFixedString(value_type);
-}
-
 /// A null-safe key `a` as two plain keys, `isNull(a)` and `if(isNull(a), d, assumeNotNull(a))`, with `d` the default value
 /// of the nested type. NULL matches NULL through the first key, and the second one is not nullable, so the join skips
 /// no row for it, and a fixed-width key stays fixed-width instead of being serialized in a tuple.
@@ -932,50 +922,58 @@ static std::pair<JoinActionRef, JoinActionRef> splitNullSafeKey(const JoinAction
     return {std::move(is_null), std::move(value)};
 }
 
-/// The bytes a key takes in the packed fixed-width hash key of `HashJoin`, which joins on the nested values of `Nullable`
-/// keys and on the full column of `LowCardinality` keys; std::nullopt for a key without a fixed width.
-static std::optional<size_t> getFixedKeyWidth(const DataTypePtr & type)
+/// An equality key of a join clause before it is added to `TableJoin`.
+struct JoinKey
 {
+    JoinActionRef lhs;
+    JoinActionRef rhs;
+    bool null_safe_comparison;
+    /// A null-safe comparison of nullable keys, which is either split or wrapped in a tuple.
+    bool null_safe_nullable;
+};
+
+/// The bytes a key takes in the packed fixed-width hash key of `HashJoin`, which joins on the nested values of `Nullable`
+/// keys; std::nullopt for a key without a fixed width. A `LowCardinality` column is not fixed-width, but the split key
+/// is: its value is the full column `if` returns.
+static std::optional<size_t> getFixedKeyWidth(const JoinKey & key)
+{
+    const auto & type = key.lhs.getType();
+    if (!key.null_safe_nullable && type->lowCardinality())
+        return std::nullopt;
+
     const auto value_type = removeLowCardinalityAndNullable(type);
     if (!value_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
-        return {};
+        return std::nullopt;
     return value_type->getSizeOfValueInMemory();
 }
 
-/// `HashJoin` packs the keys of a clause into one fixed-width key only if all of them are fixed-width and take at most
-/// 32 bytes together, otherwise it hashes their serialized values. A split null-safe key adds the byte of `isNull`, so
-/// it pays off only if every key of the clause still fits: a split that does not escape the serialized path only adds
-/// work. A tuple is never fixed-width, so either every null-safe key of the clause is split or none is.
-static bool shouldSplitNullSafeKeys(
-    const std::vector<std::tuple<JoinActionRef, JoinActionRef, bool>> & keys, const JoinPlanningContext & planning_context)
+/// `HashJoin` packs the keys of a clause into one fixed-width key only if all of them are fixed-width and fit into
+/// `HashJoin::max_packed_keys_bytes` together, otherwise it hashes their serialized values. A split null-safe key adds the
+/// byte of `isNull`, so it pays off only if every key of the clause still fits: a split that does not escape the
+/// serialized path only adds work, and `if` copies a `String` value. A tuple is never fixed-width, so either every
+/// null-safe key of the clause is split or none is.
+///
+/// A null-safe key of a compound nested type, which only a function like `if` produces under `Nullable`, is not
+/// fixed-width and keeps the tuple: the hash join compares nested values with the bytes under their NULLs, which `if`
+/// over a tuple does not reset, so equal NULLs would hash differently. `Nothing` has no value either.
+static bool shouldSplitNullSafeKeys(const std::vector<JoinKey> & keys)
 {
-    /// Keep the tuple for `StorageJoin` and key-value storages: `TableJoin` rejects their null-safe keys,
-    /// and a split key would probe the prebuilt table with a derived key.
-    if (planning_context.is_storage_join)
-        return false;
-
-    static constexpr size_t max_packed_keys_bytes = 32;
-    bool has_split_key = false;
+    bool has_null_safe_nullable_key = false;
     size_t keys_bytes = 0;
-    for (const auto & [lhs, rhs, null_safe_comparison] : keys)
+    for (const auto & key : keys)
     {
-        const bool is_null_safe_nullable_key
-            = null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType());
-        if (is_null_safe_nullable_key && !canSplitNullSafeKey(lhs.getType()))
-            return false;
-
-        const auto width = getFixedKeyWidth(lhs.getType());
+        const auto width = getFixedKeyWidth(key);
         if (!width)
             return false;
 
         keys_bytes += *width;
-        if (is_null_safe_nullable_key)
+        if (key.null_safe_nullable)
         {
-            has_split_key = true;
+            has_null_safe_nullable_key = true;
             keys_bytes += 1;
         }
     }
-    return has_split_key && keys_bytes <= max_packed_keys_bytes;
+    return has_null_safe_nullable_key && keys_bytes <= HashJoin::max_packed_keys_bytes;
 }
 
 static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates, TableJoin::JoinOnClause & table_join_clause,
@@ -983,7 +981,7 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
     std::vector<SharedRuntimeFilterDescriptor> & shared_runtime_filter_descriptors)
 {
     std::vector<JoinActionRef> new_predicates;
-    std::vector<std::tuple<JoinActionRef, JoinActionRef, bool>> keys;
+    std::vector<JoinKey> keys;
 
     for (auto & pred : predicates)
     {
@@ -1010,42 +1008,43 @@ static bool addJoinPredicatesToTableJoin(std::vector<JoinActionRef> & predicates
             preferNullableRightKey(rhs, planning_context, shared_runtime_filter_descriptors);
 
         /// We applied predicate, do not add it to residual conditions; the keys are added below, once the clause is known.
-        keys.emplace_back(std::move(lhs), std::move(rhs), null_safe_comparison);
+        bool null_safe_nullable = null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType())
+            && isNullableOrLowCardinalityNullable(rhs.getType());
+        keys.push_back({std::move(lhs), std::move(rhs), null_safe_comparison, null_safe_nullable});
     }
 
-    const bool split_null_safe_keys = shouldSplitNullSafeKeys(keys, planning_context);
-    for (auto & [lhs, rhs, null_safe_comparison] : keys)
+    /// Keep the tuple for `StorageJoin` and key-value storages: `TableJoin` rejects their null-safe keys,
+    /// and a split key would probe the prebuilt table with a derived key.
+    const bool split_null_safe_keys = !planning_context.is_storage_join && shouldSplitNullSafeKeys(keys);
+    for (auto & [lhs, rhs, null_safe_comparison, null_safe_nullable] : keys)
     {
-        if (null_safe_comparison && isNullableOrLowCardinalityNullable(lhs.getType()) && isNullableOrLowCardinalityNullable(rhs.getType()))
+        if (null_safe_nullable && split_null_safe_keys)
         {
-            if (split_null_safe_keys)
-            {
-                auto [lhs_null, lhs_value] = splitNullSafeKey(lhs);
-                auto [rhs_null, rhs_value] = splitNullSafeKey(rhs);
-                table_join_clause.addKey(lhs_null.getColumnName(), rhs_null.getColumnName(), /*null_safe_comparison=*/ false);
-                used_expressions.insert(used_expressions.end(), {lhs_null, rhs_null});
-                lhs = std::move(lhs_value);
-                rhs = std::move(rhs_value);
-                null_safe_comparison = false;
-            }
-            else
-            {
-                /**
-                    * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
-                    * we need to wrap keys with a non-nullable type.
-                    * The type `tuple` can be used for this purpose,
-                    * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
-                    * Thus, join algorithm will match keys with values tuple(NULL).
-                    * Example:
-                    *   SELECT * FROM t1 JOIN t2 ON t1.a <=> t2.b
-                    * This will be semantically transformed to:
-                    *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
-                    */
+            auto [lhs_null, lhs_value] = splitNullSafeKey(lhs);
+            auto [rhs_null, rhs_value] = splitNullSafeKey(rhs);
+            table_join_clause.addKey(lhs_null.getColumnName(), rhs_null.getColumnName(), /*null_safe_comparison=*/ false);
+            used_expressions.insert(used_expressions.end(), {lhs_null, rhs_null});
+            lhs = std::move(lhs_value);
+            rhs = std::move(rhs_value);
+            null_safe_comparison = false;
+        }
+        else if (null_safe_nullable)
+        {
+            /**
+                * In case of null-safe comparison (a IS NOT DISTINCT FROM b),
+                * we need to wrap keys with a non-nullable type.
+                * The type `tuple` can be used for this purpose,
+                * because value tuple(NULL) is not NULL itself (moreover it has type Tuple(Nullable(T) which is not Nullable).
+                * Thus, join algorithm will match keys with values tuple(NULL).
+                * Example:
+                *   SELECT * FROM t1 JOIN t2 ON t1.a <=> t2.b
+                * This will be semantically transformed to:
+                *   SELECT * FROM t1 JOIN t2 ON tuple(t1.a) == tuple(t2.b)
+                */
 
-                JoinActionRef::AddFunction wrap_nullsafe_function(std::make_shared<FunctionTuple>());
-                lhs = JoinActionRef::transform({lhs}, wrap_nullsafe_function);
-                rhs = JoinActionRef::transform({rhs}, wrap_nullsafe_function);
-            }
+            JoinActionRef::AddFunction wrap_nullsafe_function(std::make_shared<FunctionTuple>());
+            lhs = JoinActionRef::transform({lhs}, wrap_nullsafe_function);
+            rhs = JoinActionRef::transform({rhs}, wrap_nullsafe_function);
         }
 
         table_join_clause.addKey(lhs.getColumnName(), rhs.getColumnName(), null_safe_comparison);

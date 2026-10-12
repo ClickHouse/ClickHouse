@@ -5,6 +5,7 @@
 SET enable_analyzer = 1;
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET query_plan_join_swap_table = 0;
+SET allow_suspicious_low_cardinality_types = 1;
 
 DROP TABLE IF EXISTS t_ns_left;
 DROP TABLE IF EXISTS t_ns_right;
@@ -63,6 +64,15 @@ SELECT extract(explain, 'Join conditions: .*') FROM (EXPLAIN actions = 1 SELECT 
 SELECT extract(explain, 'Join conditions: .*') FROM (EXPLAIN actions = 1 SELECT l.id FROM t_ns_left l JOIN t_ns_right r ON l.a::Nullable(UInt256) <=> r.a::Nullable(UInt256)) WHERE explain LIKE '%Join conditions%';
 SELECT extract(explain, 'Join conditions: .*') FROM (EXPLAIN actions = 1 SELECT l.id FROM t_ns_left l JOIN t_ns_right r ON l.a <=> r.a AND l.id = r.id AND l.b = r.b) WHERE explain LIKE '%Join conditions%';
 SELECT count(), countIf(l.a IS NULL), sum(l.id + r.id) FROM t_ns_left l INNER JOIN t_ns_right r ON l.a::Nullable(UInt256) <=> r.a::Nullable(UInt256) AND l.d <=> r.d;
+SELECT extract(explain, 'Join conditions: .*') FROM (EXPLAIN actions = 1 SELECT l.id FROM t_ns_left l JOIN t_ns_right r ON l.a <=> r.a AND toLowCardinality(l.id) = toLowCardinality(r.id)) WHERE explain LIKE '%Join conditions%';
+
+SELECT 'LowCardinality, UUID and IPv6 keys';
+SELECT extract(explain, 'Join conditions: .*') FROM (EXPLAIN actions = 1 SELECT l.id FROM t_ns_left l JOIN t_ns_right r ON l.a::LowCardinality(Nullable(UInt64)) <=> r.a::LowCardinality(Nullable(UInt64))) WHERE explain LIKE '%Join conditions%';
+SELECT count(), countIf(l.a IS NULL), sum(l.id + r.id) FROM t_ns_left l INNER JOIN t_ns_right r ON l.a::LowCardinality(Nullable(UInt64)) <=> r.a::LowCardinality(Nullable(UInt64));
+SELECT count(), countIf(l.a IS NULL), sum(l.id + r.id) FROM t_ns_left l INNER JOIN t_ns_right r ON tuple(l.a) = tuple(r.a);
+SELECT extract(explain, 'Join conditions: .*') FROM (EXPLAIN actions = 1 SELECT l.id FROM t_ns_left l JOIN t_ns_right r ON if(l.a IS NULL, NULL, reinterpretAsUUID(toUInt128(l.a)))::Nullable(UUID) <=> if(r.a IS NULL, NULL, reinterpretAsUUID(toUInt128(r.a)))::Nullable(UUID) AND l.d <=> r.d) WHERE explain LIKE '%Join conditions%';
+SELECT count(), countIf(l.a IS NULL), sum(l.id + r.id) FROM t_ns_left l INNER JOIN t_ns_right r ON if(l.a IS NULL, NULL, reinterpretAsUUID(toUInt128(l.a)))::Nullable(UUID) <=> if(r.a IS NULL, NULL, reinterpretAsUUID(toUInt128(r.a)))::Nullable(UUID) AND l.d <=> r.d;
+SELECT count(), countIf(l.a IS NULL), sum(l.id + r.id) FROM t_ns_left l INNER JOIN t_ns_right r ON l.a <=> r.a AND if(l.d IS NULL, NULL, toIPv6(toIPv4(toUInt32(l.d))))::Nullable(IPv6) <=> if(r.d IS NULL, NULL, toIPv6(toIPv4(toUInt32(r.d))))::Nullable(IPv6);
 SELECT count(), countIf(l.a IS NULL), sum(l.id + r.id) FROM t_ns_left l INNER JOIN t_ns_right r ON tuple(l.a) = tuple(r.a) AND tuple(l.d) = tuple(r.d);
 
 DROP TABLE t_ns_left;
