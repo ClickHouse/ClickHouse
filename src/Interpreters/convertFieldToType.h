@@ -3,6 +3,8 @@
 #include <Core/Field.h>
 #include <Formats/FormatSettings.h>
 
+#include <string_view>
+
 
 namespace DB
 {
@@ -103,5 +105,17 @@ Field convertFieldToTypeOrThrow(const Field & from_value, const IDataType & to_t
 /// scale. A string constant is parsed at the target's resolution and native numbers convert exactly, so
 /// those skip the round trip. Returns Null when the value is not representable.
 Field tryConvertFieldToTypeExact(const Field & from_value, const IDataType & to_type, const IDataType * from_type);
+
+/// Where a decimal integer literal falls relative to the range of an integer type. `NotApplicable` also covers
+/// a non-integer type, a non-decimal literal, and a negative literal against an unsigned type.
+enum class IntegerLiteralRange : uint8_t
+{
+    NotApplicable,
+    BelowMin,
+    InRange,
+    AboveMax,
+};
+
+IntegerLiteralRange classifyIntegerLiteralRange(std::string_view literal, const IDataType & to_type);
 
 }
