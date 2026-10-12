@@ -15,6 +15,9 @@ class QueryPipelineBuilder;
 struct MemorySourceFilter;
 using MemorySourceFilterPtr = std::shared_ptr<const MemorySourceFilter>;
 
+struct MemorySourceDefaults;
+using MemorySourceDefaultsPtr = std::shared_ptr<const MemorySourceDefaults>;
+
 class ReadFromMemoryStorageStep final : public SourceStepWithFilter
 {
 public:
@@ -70,6 +73,10 @@ private:
     /// In-source filtering (TopN threshold, row-level security filter, PREWHERE),
     /// or nullptr when there is nothing to apply.
     MemorySourceFilterPtr makeSourceFilter(const NamesAndTypesList & physical_columns) const;
+
+    /// What the sources need to evaluate the default expressions of the requested columns that old blocks lack,
+    /// or nullptr when no requested column has a default expression.
+    MemorySourceDefaultsPtr makeSourceDefaults(const NamesAndTypesList & physical_columns) const;
 
     Pipe makePipe();
 };

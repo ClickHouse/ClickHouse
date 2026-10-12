@@ -13,6 +13,7 @@
 #include <Columns/FilterDescription.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/NestedUtils.h>
+#include <Databases/enableAllExperimentalSettings.h>
 #include <Formats/FormatFilterInfo.h>
 #include <Functions/FunctionTopKFilter.h>
 #include <Interpreters/Context.h>
@@ -21,6 +22,7 @@
 #include <Interpreters/inplaceBlockConversions.h>
 #include <Interpreters/InterpreterSelectQuery.h>
 #include <Interpreters/MaterializedCTE.h>
+#include <Parsers/IAST.h>
 #include <Storages/MergeTree/MergeTreeSplitPrewhereIntoReadSteps.h>
 #include <Storages/StorageSnapshot.h>
 #include <Storages/StorageMemory.h>
@@ -35,7 +37,9 @@
 
 #include <atomic>
 #include <functional>
+#include <map>
 #include <memory>
+#include <mutex>
 #include <unordered_map>
 
 #include <fmt/ranges.h>
@@ -89,6 +93,80 @@ struct MemorySourceFilter
 
 using MemorySourceFilterPtr = std::shared_ptr<const MemorySourceFilter>;
 
+enum class MemorySourceColumnList : uint8_t
+{
+    Physical,
+    /// The columns a filter step reads before it is executed.
+    FilterStepInputs,
+    /// The columns of the output header read after all filter steps.
+    FilterOutputs,
+};
+
+/// Identifies a list of columns a source reads: the kind of the list and, for `FilterStepInputs`, the index of the step.
+using MemorySourceColumnListId = std::pair<MemorySourceColumnList, size_t>;
+
+/// What a source needs to evaluate the default expressions of requested columns that a block written before `ADD COLUMN` lacks.
+struct MemorySourceDefaults
+{
+    StorageSnapshotPtr storage_snapshot;
+    ContextPtr global_context;
+
+    struct Evaluation
+    {
+        ExpressionActionsPtr actions; /// null: nothing to execute
+        NamesAndTypesList stored_inputs_to_read;
+    };
+
+    mutable std::mutex mutex;
+    /// Built on the first block that lacks a requested column with a default.
+    mutable ContextPtr context TSA_GUARDED_BY(mutex);
+    mutable std::optional<NamesAndTypesList> stored_inputs TSA_GUARDED_BY(mutex);
+    /// Parallel to `stored_inputs`: whether the column has a default expression.
+    mutable std::vector<bool> stored_input_has_default TSA_GUARDED_BY(mutex);
+    /// Shared by all sources of the step, so that a stateless default (e.g. `now()`) is analyzed once and has one value per header shape.
+    mutable std::map<std::tuple<MemorySourceColumnListId, std::vector<bool>, std::vector<bool>>, Evaluation> evaluations
+        TSA_GUARDED_BY(mutex);
+
+    void initialize() const TSA_REQUIRES(mutex);
+};
+
+void MemorySourceDefaults::initialize() const
+{
+    if (stored_inputs)
+        return;
+
+    NamesAndTypesList inputs;
+    std::vector<bool> has_default;
+    const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+    NameSet stored_input_names;
+    for (const auto & column : storage_snapshot->metadata->getColumns())
+    {
+        if (!column.default_desc.expression)
+            continue;
+
+        IdentifierNameSet identifiers;
+        column.default_desc.expression->collectIdentifierNames(identifiers);
+        for (const auto & identifier : identifiers)
+        {
+            auto stored_column = storage_snapshot->tryGetColumn(options, identifier);
+            if (stored_column && stored_input_names.emplace(stored_column->getNameInStorage()).second)
+            {
+                inputs.emplace_back(stored_column->getNameInStorage(), stored_column->getTypeInStorage());
+                has_default.push_back(storage_snapshot->metadata->getColumns().getDefault(stored_column->getNameInStorage()).has_value());
+            }
+        }
+    }
+
+    auto default_context = Context::createCopy(global_context);
+    enableAllExperimentalSettings(default_context);
+
+    context = std::move(default_context);
+    stored_input_has_default = std::move(has_default);
+    stored_inputs = std::move(inputs);
+}
+
+using MemorySourceDefaultsPtr = std::shared_ptr<const MemorySourceDefaults>;
+
 class MemorySource : public ISource
 {
     using InitializerFunc = std::function<void(std::shared_ptr<const Blocks> &)>;
@@ -113,7 +191,8 @@ public:
         MaterializedCTEPtr materialized_cte_ = {},
         MemorySourceFilterPtr filter_ = {},
         SharedHeader filtered_header_ = {},
-        Names nested_arrays_ = {})
+        Names nested_arrays_ = {},
+        MemorySourceDefaultsPtr defaults_ = {})
         : ISource(filter_ ? filtered_header_ : std::make_shared<const Block>(getHeader(physical_columns_, virtual_columns_)))
         , physical_columns(std::move(physical_columns_))
         , virtual_columns(std::move(virtual_columns_))
@@ -123,6 +202,7 @@ public:
         , materialized_cte(std::move(materialized_cte_))
         , filter(std::move(filter_))
         , nested_arrays(std::move(nested_arrays_))
+        , defaults(std::move(defaults_))
     {
         if (filter && !virtual_columns.empty())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown virtual columns: '{}'", virtual_columns.getNames());
@@ -179,13 +259,15 @@ protected:
             }
 
             Columns columns;
-            columns.reserve(physical_columns.size() + virtual_columns.size());
-            fillPhysicalColumns(src, columns);
+            size_t read_bytes = 0;
+            fillPhysicalColumns(src, columns, read_bytes);
 
             UInt64 num_rows = columns.empty() ? 0 : columns.front()->size();
             if (!columns.empty())
                 fillVirtualColumns(columns, num_rows);
 
+            /// Reported explicitly, so that the inputs read to evaluate a default are counted too.
+            progress(num_rows, read_bytes);
             return Chunk(std::move(columns), num_rows);
         }
     }
@@ -208,6 +290,26 @@ private:
         return tryGetColumnFromBlock(src, name_and_type);
     }
 
+    /// Reads `columns` from the stored block, cut by `mask`, with a null column for each one the block lacks.
+    static Columns readStoredColumns(
+        const Block & src, const NamesAndTypesList & columns, const IColumn::Filter * mask, size_t num_rows, size_t & read_bytes)
+    {
+        Columns result;
+        result.reserve(columns.size());
+        for (const auto & name_and_type : columns)
+        {
+            auto column = readColumn(src, name_and_type);
+            if (column)
+            {
+                read_bytes += column->byteSize();
+                if (mask)
+                    column = column->filter(*mask, num_rows);
+            }
+            result.emplace_back(std::move(column));
+        }
+        return result;
+    }
+
     /// Only dotted names are members of a `Nested`, and the members of one `Nested` are checked to have equal sizes on insert.
     const ColumnWithTypeAndName * findSizesSource(const Block & src, const NameAndTypePair & column) const
     {
@@ -217,6 +319,10 @@ private:
         const String name_in_storage = column.getNameInStorage();
         const auto [nested_name, member_name] = Nested::splitName(name_in_storage);
         if (member_name.empty() || src.has(name_in_storage))
+            return nullptr;
+
+        /// A member with a default expression is left for `evaluateDefaults`.
+        if (defaults && defaults->storage_snapshot->getDefault(name_in_storage))
             return nullptr;
 
         for (const auto & array_name : nested_arrays)
@@ -232,8 +338,10 @@ private:
         return nullptr;
     }
 
-    /// Each missing entry is filled from `src` alone, independently of the other columns of the read.
-    void fillColumnsMissingFromBlock(const Block & src, const NamesAndTypesList & columns_to_read, Columns & columns) const
+    /// Each missing entry is filled from `src` alone, independently of the other columns of the read, for the `num_rows`
+    /// rows selected by `mask`. With `defaults`, an entry that has a default expression is left null for `evaluateDefaults`.
+    void fillColumnsMissingFromBlock(
+        const Block & src, const NamesAndTypesList & columns_to_read, const IColumn::Filter * mask, size_t num_rows, Columns & columns) const
     {
         NamesAndTypesList columns_without_sizes;
         std::vector<size_t> positions_without_sizes;
@@ -267,25 +375,207 @@ private:
             auto elements = assert_cast<const DataTypeArray &>(*type_in_storage).getNestedType()
                 ->createColumnConstWithDefaultValue(offsets.empty() ? 0 : offsets.back())->convertToFullColumnIfConst();
             ColumnPtr column = ColumnArray::create(elements, source_array->getOffsetsPtr());
+            if (mask)
+                column = column->filter(*mask, num_rows);
             columns[i] = column_it->isSubcolumn() ? type_in_storage->getSubcolumn(column_it->getSubcolumnName(), column) : column;
         }
 
         if (!positions_without_sizes.empty())
         {
             Columns filled(positions_without_sizes.size());
-            fillMissingColumns(filled, src.rows(), columns_without_sizes, columns_without_sizes, {}, nullptr);
+            fillMissingColumns(
+                filled, num_rows, columns_without_sizes, columns_without_sizes, {}, defaults ? defaults->storage_snapshot : nullptr);
             for (size_t j = 0; j < positions_without_sizes.size(); ++j)
                 columns[positions_without_sizes[j]] = std::move(filled[j]);
         }
     }
 
-    void fillPhysicalColumns(const Block & src, Columns & result_columns) const
+    void fillPhysicalColumns(const Block & src, Columns & result_columns, size_t & read_bytes)
     {
-        for (const auto & name_and_type : physical_columns)
-            result_columns.emplace_back(readColumn(src, name_and_type));
+        result_columns = readColumns(src, physical_columns, {MemorySourceColumnList::Physical, 0}, nullptr, src.rows(), read_bytes);
+    }
 
-        fillColumnsMissingFromBlock(src, physical_columns, result_columns);
-        chassert(std::all_of(result_columns.begin(), result_columns.end(), [](const auto & column) { return column != nullptr; }));
+    /// Reads `columns` from the stored block, the `num_rows` rows selected by `mask` (all rows if it is null). A column the
+    /// block lacks gets its `DEFAULT` or `MATERIALIZED` expression evaluated over those rows, or the default value of its type.
+    Columns readColumns(
+        const Block & src,
+        const NamesAndTypesList & columns,
+        MemorySourceColumnListId columns_id,
+        const IColumn::Filter * mask,
+        size_t num_rows,
+        size_t & read_bytes)
+    {
+        Columns result = readStoredColumns(src, columns, mask, num_rows, read_bytes);
+
+        std::vector<bool> was_read(result.size());
+        for (size_t i = 0; i < result.size(); ++i)
+            was_read[i] = result[i] != nullptr;
+
+        fillColumnsMissingFromBlock(src, columns, mask, num_rows, result);
+
+        bool has_missing = false;
+        for (size_t i = 0; i < result.size(); ++i)
+        {
+            if (!result[i])
+                has_missing = true;
+            else if (!was_read[i])
+                read_bytes += result[i]->byteSize(); /// filled with the default value of its type
+        }
+
+        if (has_missing)
+            evaluateDefaults(src, columns, columns_id, mask, num_rows, result, read_bytes);
+
+        chassert(std::all_of(result.begin(), result.end(), [](const auto & column) { return column != nullptr; }));
+        return result;
+    }
+
+    /// Fills the null entries of `result` with the default expressions of their columns, evaluated over the rows selected by `mask`.
+    void evaluateDefaults(
+        const Block & src,
+        const NamesAndTypesList & columns,
+        MemorySourceColumnListId columns_id,
+        const IColumn::Filter * mask,
+        size_t num_rows,
+        Columns & result,
+        size_t & read_bytes)
+    {
+        chassert(defaults);
+
+        Block block;
+        NamesAndTypesList required;
+        NameSet required_names;
+        std::vector<bool> is_missing(result.size());
+        auto it = columns.begin();
+        for (size_t i = 0; i < result.size(); ++i, ++it)
+        {
+            if (result[i])
+            {
+                if (required_names.emplace(it->name).second)
+                    required.emplace_back(it->name, it->type);
+                block.insert({result[i], it->type, it->name});
+            }
+            else
+            {
+                /// A subcolumn is extracted from its evaluated column in storage.
+                is_missing[i] = true;
+                if (required_names.emplace(it->getNameInStorage()).second)
+                    required.emplace_back(it->getNameInStorage(), it->getTypeInStorage());
+            }
+        }
+
+        const auto & cache = *defaults;
+        const MemorySourceDefaults::Evaluation * evaluation = nullptr;
+        MemorySourceDefaults::Evaluation uncached_evaluation;
+        {
+            std::lock_guard lock(cache.mutex);
+            cache.initialize();
+
+            std::vector<bool> is_input_provided;
+            is_input_provided.reserve(cache.stored_inputs->size());
+            /// A stored input without a default that the block lacks is its type default, as for `INSERT`.
+            for (size_t i = 0; const auto & input : *cache.stored_inputs)
+            {
+                is_input_provided.push_back(!block.has(input.name) && (src.has(input.name) || !cache.stored_input_has_default[i]));
+                ++i;
+            }
+
+            /// The key determines the header: the column list, which of its columns are read, and which stored inputs are provided.
+            auto key = std::make_tuple(columns_id, is_missing, is_input_provided);
+
+            if (auto cached = cache.evaluations.find(key); cached != cache.evaluations.end())
+            {
+                evaluation = &cached->second;
+            }
+            else
+            {
+                Block header = block.cloneEmpty();
+                auto input_it = cache.stored_inputs->begin();
+                for (size_t i = 0; i < cache.stored_inputs->size(); ++i, ++input_it)
+                    if (is_input_provided[i])
+                        header.insert({input_it->type->createColumn(), input_it->type, input_it->name});
+
+                /// The expressions are resolved against a table of the header's columns, which cannot be empty. A stored
+                /// column that no default names is never an input of the actions.
+                if (!header.columns())
+                {
+                    for (const auto & stored_column : src)
+                    {
+                        if (!required_names.contains(stored_column.name))
+                        {
+                            header.insert({stored_column.type->createColumn(), stored_column.type, stored_column.name});
+                            break;
+                        }
+                    }
+                }
+
+                MemorySourceDefaults::Evaluation new_evaluation;
+                bool is_stateful = false;
+                auto dag = DB::evaluateMissingDefaults(header, required, cache.storage_snapshot->metadata->getColumns(), cache.context);
+                if (dag)
+                {
+                    /// An input is a stored column or a subcolumn of one: the actions read `t.a` for a default naming it.
+                    const auto options = GetColumnsOptions(GetColumnsOptions::AllPhysical).withSubcolumns();
+                    for (const auto & input : dag->getRequiredColumns())
+                    {
+                        if (block.has(input.name))
+                            continue;
+
+                        auto input_in_storage = cache.storage_snapshot->tryGetColumn(options, input.name);
+                        if (!input_in_storage)
+                            throw Exception(ErrorCodes::LOGICAL_ERROR, "Input '{}' of the default expressions is not a column of the table", input.name);
+                        new_evaluation.stored_inputs_to_read.push_back(std::move(*input_in_storage));
+                    }
+
+                    is_stateful = dag->hasStatefulFunctions();
+                    dag->addMaterializingOutputActions(/*materialize_sparse=*/ false);
+                    new_evaluation.actions = std::make_shared<ExpressionActions>(std::move(*dag), ExpressionActionsSettings(cache.context));
+                }
+
+                /// A stateful function keeps its state in the actions, so they are built for every block.
+                if (is_stateful)
+                {
+                    uncached_evaluation = std::move(new_evaluation);
+                    evaluation = &uncached_evaluation;
+                }
+                else
+                {
+                    evaluation = &cache.evaluations.emplace(std::move(key), std::move(new_evaluation)).first->second;
+                }
+            }
+        }
+
+        const auto & inputs_to_read = evaluation->stored_inputs_to_read;
+        Columns inputs = readStoredColumns(src, inputs_to_read, mask, num_rows, read_bytes);
+        /// An input the block lacks has no default of its own: it gets the default value of its type.
+        fillMissingColumns(inputs, num_rows, inputs_to_read, inputs_to_read, {}, nullptr);
+        auto input_it = inputs_to_read.begin();
+        for (const auto & input : inputs)
+        {
+            block.insert({input, input_it->type, input_it->name});
+            ++input_it;
+        }
+
+        if (evaluation->actions)
+        {
+            size_t rows = num_rows;
+            evaluation->actions->execute(block, rows);
+        }
+
+        it = columns.begin();
+        for (size_t i = 0; i < result.size(); ++i, ++it)
+        {
+            if (!is_missing[i])
+                continue;
+
+            if (block.has(it->name))
+                result[i] = block.getByName(it->name).column;
+            else if (it->isSubcolumn())
+                result[i] = tryGetSubcolumnFromBlock(block, it->getTypeInStorage(), *it);
+            else
+                result[i] = block.getByName(it->getNameInStorage()).column;
+
+            read_bytes += result[i]->byteSize();
+        }
     }
 
     /// Applies the filter steps (row-level security filter, PREWHERE) to one stored block.
@@ -314,8 +604,10 @@ private:
         IColumn::Filter combined_mask;
 
         /// Reads those of the columns that the block does not have yet, only for the rows that
-        /// passed the steps so far.
-        auto read_missing_columns = [&](const NamesAndTypesList & columns_to_read)
+        /// passed the steps so far. A column that the stored block lacks gets its default expression
+        /// evaluated over those rows. The set of columns the block already has before each read is the
+        /// same for every stored block, so `columns_id` determines the list of the columns to read.
+        auto read_missing_columns = [&](const NamesAndTypesList & columns_to_read, MemorySourceColumnListId columns_id)
         {
             NamesAndTypesList missing;
             for (const auto & name_and_type : columns_to_read)
@@ -325,28 +617,21 @@ private:
             if (missing.empty())
                 return;
 
-            Columns columns;
-            columns.reserve(missing.size());
-            for (const auto & name_and_type : missing)
-                columns.emplace_back(readColumn(src, name_and_type));
-
-            fillColumnsMissingFromBlock(src, missing, columns);
+            Columns columns = readColumns(
+                src, missing, columns_id, combined_mask.empty() ? nullptr : &combined_mask, num_rows, num_read_bytes);
 
             auto column_it = columns.begin();
             for (const auto & name_and_type : missing)
             {
-                ColumnPtr column = std::move(*column_it);
+                block.insert({*column_it, name_and_type.type, name_and_type.name});
                 ++column_it;
-                num_read_bytes += column->byteSize();
-                if (!combined_mask.empty())
-                    column = column->filter(combined_mask, num_rows);
-                block.insert({column, name_and_type.type, name_and_type.name});
             }
         };
 
-        for (const auto & step : filter->steps)
+        for (size_t step_index = 0; step_index < filter->steps.size(); ++step_index)
         {
-            read_missing_columns(step.input_columns);
+            const auto & step = filter->steps[step_index];
+            read_missing_columns(step.input_columns, {MemorySourceColumnList::FilterStepInputs, step_index});
             step.actions->execute(block, num_rows);
 
             const size_t filter_column_position = block.getPositionByName(step.filter_column_name);
@@ -396,7 +681,7 @@ private:
                 block.erase(filter_column_position);
         }
 
-        read_missing_columns(filter->output_columns);
+        read_missing_columns(filter->output_columns, {MemorySourceColumnList::FilterOutputs, 0});
 
         progress(num_src_rows, num_read_bytes);
 
@@ -425,6 +710,7 @@ private:
     MemorySourceFilterPtr filter;
     /// The arrays of the table that are members of the `Nested` of a requested member; see `findSizesSource`.
     const Names nested_arrays;
+    MemorySourceDefaultsPtr defaults;
 };
 
 ReadFromMemoryStorageStep::ReadFromMemoryStorageStep(
@@ -518,12 +804,10 @@ bool ReadFromMemoryStorageStep::supportsTopKDynamicFilter(const ColumnWithTypeAn
     if (!column)
         return false;
 
-    /// The source fills a column that a block does not have (e.g. one added by `ALTER TABLE ADD COLUMN`
-    /// after the block was inserted) with the defaults of the type. For a column without a default
-    /// expression these are exactly the values the query sees. For a column with a `DEFAULT` expression
-    /// the values agree only as long as nothing evaluates the expression above the source; do not rely
-    /// on that and exclude such columns and their subcolumns, the same way
-    /// `StorageMemory::supportedPrewhereColumns` does for `PREWHERE`.
+    /// The source evaluates the `DEFAULT` expression of a column that a block does not have (e.g. one added
+    /// by `ALTER TABLE ADD COLUMN` after the block was inserted). The threshold step runs before the row-level
+    /// security filter, so for such a column it would evaluate the expression also over the rows the policy
+    /// hides. Exclude these columns and their subcolumns.
     return !storage_snapshot->metadata->getColumns().hasDefault(column->getNameInStorage());
 }
 
@@ -684,6 +968,28 @@ static Names getArraysOfRequestedNested(const NamesAndTypesList & physical_colum
     return result;
 }
 
+MemorySourceDefaultsPtr ReadFromMemoryStorageStep::makeSourceDefaults(const NamesAndTypesList & physical_columns) const
+{
+    bool has_default = false;
+    for (const auto & column : physical_columns)
+    {
+        if (storage_snapshot->getDefault(column.name) || storage_snapshot->getDefault(column.getNameInStorage()))
+        {
+            has_default = true;
+            break;
+        }
+    }
+
+    if (!has_default)
+        return nullptr;
+
+    auto result = std::make_shared<MemorySourceDefaults>();
+    result->storage_snapshot = storage_snapshot;
+    result->global_context = context->getGlobalContext();
+
+    return result;
+}
+
 Pipe ReadFromMemoryStorageStep::makePipe()
 {
     storage_snapshot->check(columns_to_read);
@@ -693,6 +999,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     auto virtual_columns = storage_snapshot->getColumnsByNames(GetColumnsOptions(GetColumnsOptions::All).withVirtuals(VirtualsKind::All, VirtualsMaterializationPlace::Reader), virtual_column_names);
 
     auto source_filter = makeSourceFilter(physical_columns);
+    auto source_defaults = makeSourceDefaults(physical_columns);
     auto nested_arrays = getArraysOfRequestedNested(physical_columns, storage_snapshot);
 
     const auto & snapshot_data = assert_cast<const StorageMemory::SnapshotData &>(*storage_snapshot->data);
@@ -721,7 +1028,8 @@ Pipe ReadFromMemoryStorageStep::makePipe()
             typeid_cast<StorageMemory *>(storage.get())->getMaterializedCTE(),
             source_filter,
             output_header,
-            nested_arrays));
+            nested_arrays,
+            source_defaults));
     }
 
     size_t size = current_data->size();
@@ -734,7 +1042,7 @@ Pipe ReadFromMemoryStorageStep::makePipe()
     {
         auto source = std::make_shared<MemorySource>(
             physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header,
-            nested_arrays);
+            nested_arrays, source_defaults);
         if (stream == 0)
             source->addTotalRowsApprox(snapshot_data.rows);
         pipes.emplace_back(std::move(source));
