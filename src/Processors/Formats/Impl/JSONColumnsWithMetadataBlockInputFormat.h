@@ -25,6 +25,17 @@ public:
 
     NamesAndTypesList readSchema() override;
 
+    /// The types are read from the `meta` section, which the parser validates against the destination
+    /// exactly iff `input_format_json_validate_types_from_metadata` is enabled; otherwise the parser
+    /// ignores them and reads the data by value, so the inferred schema no longer describes the parse.
+    bool hasExactTypesFromData() const override { return format_settings.json.validate_types_from_metadata; }
+    bool schemaDescribesParsedData() const override { return format_settings.json.validate_types_from_metadata; }
+
+    /// The data carries named columns that the parser maps onto the destination by name
+    /// (`JSONColumnsBlockInputFormatBase::read`), resolving them through `CaseAwareBlockNameMap`.
+    bool mapsColumnsByName() const override { return true; }
+    bool honorsColumnNameMatchingMode() const override { return true; }
+
 private:
     const FormatSettings format_settings;
 };

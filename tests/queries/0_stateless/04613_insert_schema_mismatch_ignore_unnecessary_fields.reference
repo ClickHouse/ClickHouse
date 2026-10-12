@@ -1,0 +1,4 @@
+-- ignore_unnecessary_fields=1, skip_unknown_fields=0: the extra field is rejected by the parser, so the differing structure is explained
+explanation present
+-- ignore_unnecessary_fields=1, skip_unknown_fields=1 (default): the extra field is legally skipped, only the value fails (no false positive)
+explanation missing

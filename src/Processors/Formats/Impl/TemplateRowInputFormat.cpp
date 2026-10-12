@@ -487,6 +487,20 @@ void TemplateFormatReader::skipRowBetweenDelimiter()
     skipSpaces();
 }
 
+/// The escaping rule shared by every placeholder of the row format, if there is one; the
+/// value-form capabilities of the schema reader can be derived from it only in that case.
+static std::optional<FormatSettings::EscapingRule> getHomogeneousEscapingRule(const ParsedTemplateFormatString & row_format)
+{
+    if (row_format.escaping_rules.empty())
+        return std::nullopt;
+    for (const auto & rule : row_format.escaping_rules)
+    {
+        if (rule != row_format.escaping_rules.front())
+            return std::nullopt;
+    }
+    return row_format.escaping_rules.front();
+}
+
 TemplateSchemaReader::TemplateSchemaReader(
     ReadBuffer & in_,
     bool ignore_spaces_,
@@ -498,6 +512,7 @@ TemplateSchemaReader::TemplateSchemaReader(
     , buf(in_)
     , format(format_)
     , row_format(row_format_)
+    , homogeneous_escaping_rule(getHomogeneousEscapingRule(row_format_))
     , format_reader(buf, ignore_spaces_, format, row_format, row_between_delimiter, format_settings)
     , default_csv_delimiter(format_settings_.csv.delimiter)
 {

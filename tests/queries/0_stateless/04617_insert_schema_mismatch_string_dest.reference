@@ -1,0 +1,9 @@
+-- TSV, a numeric-looking value into a String column plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- JSONEachRow, a number and a boolean into String columns plus an unrelated bad numeric column (no false positive)
+insert failed as expected
+explanation missing
+-- TSV, genuinely non-numeric text into a numeric column is still explained (flagship signal preserved)
+insert failed as expected
+explanation present
