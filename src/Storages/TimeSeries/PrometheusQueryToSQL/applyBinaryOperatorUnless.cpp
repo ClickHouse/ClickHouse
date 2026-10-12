@@ -124,6 +124,9 @@ SQLQueryPiece applyBinaryOperatorUnless(
     SQLQueryPiece res{operator_node, ResultType::INSTANT_VECTOR, StoreMethod::VECTOR_GRID};
     res.select_query = std::move(step2);
     res.metric_name_dropped = left_argument.metric_name_dropped;
+    /// The result keeps the series ids of the left side, so an order fixed by a sort*() call on the left side stays valid
+    /// (Prometheus keeps the order of the left side as well).
+    res.sort_rank_subquery = left_argument.sort_rank_subquery;
 
     res.start_time = left_argument.start_time;
     res.end_time = left_argument.end_time;

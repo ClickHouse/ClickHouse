@@ -8,6 +8,7 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/SelectQueryBuilder.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/applySortFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/makeNoDuplicateSeriesPerStepCheck.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/toVectorGrid.h>
@@ -95,6 +96,10 @@ namespace
         bool group_left = operator_node->group_left;
         bool group_right = operator_node->group_right;
         const auto & extra_labels = operator_node->extra_labels;
+
+        /// Prometheus keeps the order of the left side, or of the right side for group_right.
+        String sort_rank_subquery = group_right ? right_argument.sort_rank_subquery : left_argument.sort_rank_subquery;
+        size_t sort_side_index = group_right ? 1 : 0;
 
         /// Tags copied from the side "one" to the result group by `group_left(tags)` or `group_right(tags)`.
         std::vector<std::string_view> tags_to_copy = {extra_labels.begin(), extra_labels.end()};
@@ -208,6 +213,16 @@ namespace
             }
             builder.select_list.push_back(std::move(values));
 
+            /// The source series of each row, to keep an order fixed by an inner sort*() call.
+            if (!sort_rank_subquery.empty() && (side_index == sort_side_index))
+            {
+                ASTPtr sort_source = make_intrusive<ASTIdentifier>(Strings{side, ColumnNames::Group});
+                if (merge_by_join_group || merge_by_join_group_and_extra_labels)
+                    sort_source = makeSortSourceOfMergedRow(std::move(sort_source), make_intrusive<ASTIdentifier>(Strings{side, ColumnNames::Values}));
+                sort_source->setAlias(ColumnNames::SortSource);
+                builder.select_list.push_back(std::move(sort_source));
+            }
+
             builder.from_table = side;
 
             if (merge_by_join_group)
@@ -289,6 +304,8 @@ namespace
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::OriginalGroup));
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup));
                 builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Values));
+                if (!sort_rank_subquery.empty() && (side_index == sort_side_index))
+                    builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::SortSource));
                 builder.from_table = side;
                 builder.where = makeASTFunction(
                     "in", make_intrusive<ASTIdentifier>(ColumnNames::JoinGroup), make_intrusive<ASTSubquery>(check_builder.getSelectQuery()));
@@ -473,6 +490,14 @@ namespace
                 make_intrusive<ASTIdentifier>(Strings{left, ColumnNames::Values}),
                 make_intrusive<ASTIdentifier>(Strings{right, ColumnNames::Values}));
 
+            ASTPtr sort_source;
+            if (!sort_rank_subquery.empty())
+            {
+                sort_source = make_intrusive<ASTIdentifier>(Strings{group_right ? right : left, ColumnNames::SortSource});
+                if (check_no_duplicate_groups)
+                    sort_source = makeSortSourceOfMergedRow(std::move(sort_source), values->clone());
+            }
+
             ASTPtr values_for_check;
             if (check_no_duplicate_groups)
             {
@@ -482,6 +507,12 @@ namespace
 
             builder.select_list.push_back(std::move(values));
             builder.select_list.back()->setAlias(ColumnNames::Values);
+
+            if (sort_source)
+            {
+                builder.select_list.push_back(std::move(sort_source));
+                builder.select_list.back()->setAlias(ColumnNames::SortSource);
+            }
 
             builder.from_table = left;
 
@@ -505,7 +536,10 @@ namespace
 
         SQLQueryPiece res{operator_node, operator_node->result_type, StoreMethod::VECTOR_GRID};
 
-        res.select_query = std::move(result_ast);
+        if (sort_rank_subquery.empty())
+            res.select_query = std::move(result_ast);
+        else
+            setVectorGridRankedBySource(res, std::move(result_ast), sort_rank_subquery, context);
         res.start_time = left_argument.start_time;
         res.end_time = left_argument.end_time;
         res.step = left_argument.step;

@@ -1,0 +1,49 @@
+-- sort_by_label(up, 'instance'): natural ascending order (host1, host2, host10, host20)
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host10')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host20')]	2023-11-14 22:13:20.000	20
+-- sort_by_label_desc(up, 'instance'): natural descending order (host20, host10, host2, host1)
+[('__name__','up'),('instance','host20')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host10')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host2')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host1')]	2023-11-14 22:13:20.000	1
+-- sort_by_label(mem, 'dc', 'host'): sort by 'dc' then 'host'; missing 'dc' sorts first (empty string)
+[('__name__','mem'),('host','only')]	2023-11-14 22:13:20.000	14
+[('__name__','mem'),('dc','eu'),('host','z')]	2023-11-14 22:13:20.000	13
+[('__name__','mem'),('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
+[('__name__','mem'),('dc','us'),('host','b')]	2023-11-14 22:13:20.000	11
+-- sort_by_label_desc(mem, 'dc', 'host'): reverse of the above
+[('__name__','mem'),('dc','us'),('host','b')]	2023-11-14 22:13:20.000	11
+[('__name__','mem'),('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
+[('__name__','mem'),('dc','eu'),('host','z')]	2023-11-14 22:13:20.000	13
+[('__name__','mem'),('host','only')]	2023-11-14 22:13:20.000	14
+-- abs(sort_by_label(mem, 'host')): abs() keeps the order fixed by sort_by_label()
+[('dc','us'),('host','a')]	2023-11-14 22:13:20.000	12
+[('dc','us'),('host','b')]	2023-11-14 22:13:20.000	11
+[('host','only')]	2023-11-14 22:13:20.000	14
+[('dc','eu'),('host','z')]	2023-11-14 22:13:20.000	13
+-- label_replace(sort_by_label_desc(up, 'instance'), ...): label changes keep the order
+[('__name__','up'),('instance','host20'),('zone','z')]	2023-11-14 22:13:20.000	20
+[('__name__','up'),('instance','host10'),('zone','z')]	2023-11-14 22:13:20.000	10
+[('__name__','up'),('instance','host2'),('zone','z')]	2023-11-14 22:13:20.000	2
+[('__name__','up'),('instance','host1'),('zone','z')]	2023-11-14 22:13:20.000	1
+-- sum by (instance) (sort(up)): aggregation after sort() must not reuse sort()'s stale rank map
+[('instance','host1')]	2023-11-14 22:13:20.000	1
+[('instance','host10')]	2023-11-14 22:13:20.000	10
+[('instance','host2')]	2023-11-14 22:13:20.000	2
+[('instance','host20')]	2023-11-14 22:13:20.000	20
+-- quantile(0.5, sort(up)): same for the quantile aggregation operator; median of 1,2,10,20 is 6
+[]	2023-11-14 22:13:20.000	6
+-- vector(scalar(sort(up))): same through scalar(); more than one series makes scalar() nan
+[]	2023-11-14 22:13:20.000	nan
+-- error: sort_by_label requires at least 2 arguments
+expects at least 2 arguments
+-- error: label arguments must be strings
+of type STRING
+-- error: sort_by_label's first argument must be an instant vector
+expects the first argument of type
+-- error: sort takes exactly 1 argument
+expects 1 argument
+-- error: sort's argument must be an instant vector
+expects an argument of type

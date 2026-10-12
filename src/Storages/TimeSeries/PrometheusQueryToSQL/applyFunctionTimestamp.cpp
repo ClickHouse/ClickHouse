@@ -109,6 +109,8 @@ namespace
                 res.start_time = argument.start_time;
                 res.end_time = argument.end_time;
                 res.step = argument.step;
+                /// The function keeps the series ids, so an order fixed by an inner sort*() call stays valid.
+                res.sort_rank_subquery = argument.sort_rank_subquery;
 
                 SelectQueryBuilder builder;
                 builder.from_table = subquery_name;
