@@ -1,4 +1,3 @@
-import re
 import shlex
 import time
 
@@ -7,10 +6,6 @@ from praktika.utils import Shell
 
 class Git:
     """Minimal git helper using Shell; reads tags for version tweak computation."""
-
-    _TAG_PATTERN = re.compile(
-        r"\Av\d{2}([.][1-9]\d*){3}-(new|testing|prestable|stable|lts)\Z"
-    )
 
     @staticmethod
     def is_shallow(cwd=None, strict: bool = False) -> bool:
@@ -21,11 +16,6 @@ class Git:
             )
             or ""
         ).strip() == "true"
-
-    @staticmethod
-    def check_tag(value: str) -> None:
-        if value and not Git._TAG_PATTERN.match(value):
-            raise ValueError(f"last tag {value} doesn't match the pattern")
 
     @staticmethod
     def get_tags(cwd=None) -> list[str]:
