@@ -9,7 +9,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 $CLICKHOUSE_CLIENT -n -q "
     DROP TABLE IF EXISTS t_combined;
     CREATE TABLE t_combined (a UInt64, b UInt64, c UInt64, d UInt64) ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 100, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
+    -- add_minmax_index_for_numeric_columns = 0: this test compares hypothetical index estimates against a
+    -- baseline with no real skip indices; the implicit per-column min-max indices would prune the baseline
+    -- (and shadow the hypothetical minmax on b), changing every mark count and skip ratio.
     -- b is clustered (minmax prunes it); c is a scattered bijection (bloom_filter prunes it);
     -- d cycles through every granule (no index prunes it).
     INSERT INTO t_combined SELECT number, intDiv(number, 100), (number * 7919) % 10000, number % 7 FROM numbers(10000);

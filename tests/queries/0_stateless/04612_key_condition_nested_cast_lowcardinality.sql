@@ -56,12 +56,14 @@ DROP TABLE t_04612_prune;
 
 -- Same regression through a typed LowCardinality ALIAS over a numeric key (plus a skip index),
 -- distinct from the String CAST variants above.
+-- add_minmax_index_for_numeric_columns = 0: the pruning check below extracts every `Granules:` line
+-- from EXPLAIN, and an implicit minmax index on `a` would contribute an extra one.
 DROP TABLE IF EXISTS t_04612_alias;
 CREATE TABLE t_04612_alias
     (a UInt64, x LowCardinality(UInt64) ALIAS a + 1, y UInt64 ALIAS x * 2,
      INDEX idx y TYPE bloom_filter GRANULARITY 1)
     ENGINE = MergeTree ORDER BY a
-    SETTINGS index_granularity = 8, allow_suspicious_low_cardinality_types = 1;
+    SETTINGS index_granularity = 8, allow_suspicious_low_cardinality_types = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_04612_alias SELECT number FROM numbers(1000);
 
 -- Previously aborted in KeyCondition; PK-pruned count checked against a brute-force scan.

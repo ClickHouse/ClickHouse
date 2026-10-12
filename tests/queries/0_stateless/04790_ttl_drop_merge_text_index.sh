@@ -49,6 +49,9 @@ ${CLICKHOUSE_CLIENT} -q "
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
         min_bytes_for_wide_part = 1,
+        -- the index assertions below list every index of the table by name, so pin the
+        -- implicit min-max indices off: `id` is numeric and would add one more row
+        add_minmax_index_for_numeric_columns = 0,
         -- keep the 0-row part so the index assertions below have something to read
         remove_empty_parts = 0;
 
@@ -101,6 +104,9 @@ ${CLICKHOUSE_CLIENT} -q "
         merge_with_ttl_timeout = 0,
         min_bytes_for_wide_part = 1,
         materialize_skip_indexes_on_merge = 0,
+        -- the index assertions below list every index of the table by name, so pin the
+        -- implicit min-max indices off: `id` is numeric and would add one more row
+        add_minmax_index_for_numeric_columns = 0,
         remove_empty_parts = 0;
 
     SYSTEM STOP MERGES t_ttl_drop_no_materialize;
@@ -154,6 +160,9 @@ ${CLICKHOUSE_CLIENT} -q "
         ttl_only_drop_parts = 1,
         merge_with_ttl_timeout = 0,
         min_bytes_for_wide_part = 1,
+        -- the index assertions below list every index of the table by name, so pin the
+        -- implicit min-max indices off: `id` is numeric and would add one more row
+        add_minmax_index_for_numeric_columns = 0,
         remove_empty_parts = 0;
 "
 

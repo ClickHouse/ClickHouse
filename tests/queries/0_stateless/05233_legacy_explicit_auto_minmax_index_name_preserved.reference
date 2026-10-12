@@ -1,0 +1,4 @@
+inherited policy, index stays explicit
+auto_minmax_index_x	Explicit	3
+stored policy, index becomes implicit
+auto_minmax_index_x	Implicit	3

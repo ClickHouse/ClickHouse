@@ -4,7 +4,8 @@
 -- condition restricts the rows read to a safe slice of the key.
 
 DROP TABLE IF EXISTS t_decimal_overflow_key;
-CREATE TABLE t_decimal_overflow_key (a Int64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1;
+-- The implicit minmax index on `a` would add its own `Granules` line to the plan below.
+CREATE TABLE t_decimal_overflow_key (a Int64) ENGINE = MergeTree ORDER BY a SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_decimal_overflow_key VALUES (0), (1), (2), (3000000000);
 
 SELECT a FROM t_decimal_overflow_key WHERE a < 2 AND a + toDecimal32(1, 0) BETWEEN 1 AND 3 ORDER BY a;

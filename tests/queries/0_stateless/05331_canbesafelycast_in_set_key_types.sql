@@ -9,39 +9,39 @@
 SET enable_json_type = 1;
 
 DROP TABLE IF EXISTS t_str;
-CREATE TABLE t_str (k String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+CREATE TABLE t_str (k String) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_str VALUES ('42'), ('61f0c404-5cb3-11e7-907b-a6006ad3dba0'), ('1.1.1.1'), ('{"a":1}'), ('z');
 
 DROP TABLE IF EXISTS t_i64;
-CREATE TABLE t_i64 (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+CREATE TABLE t_i64 (k Int64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_i64 VALUES (1), (7);
 
 DROP TABLE IF EXISTS t_f64;
-CREATE TABLE t_f64 (k Float64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+CREATE TABLE t_f64 (k Float64) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_f64 VALUES (1), (7);
 
 DROP TABLE IF EXISTS t_d32_2;
-CREATE TABLE t_d32_2 (k Decimal32(2)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+CREATE TABLE t_d32_2 (k Decimal32(2)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_d32_2 VALUES (1), (7);
 
 DROP TABLE IF EXISTS t_d64_4;
-CREATE TABLE t_d64_4 (k Decimal64(4)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+CREATE TABLE t_d64_4 (k Decimal64(4)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_d64_4 VALUES (1), (7);
 
 DROP TABLE IF EXISTS t_map_i64;
-CREATE TABLE t_map_i64 (k Map(Int64, String)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+CREATE TABLE t_map_i64 (k Map(Int64, String)) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_map_i64 VALUES (map(1, 'a')), (map(9, 'z'));
 
 DROP TABLE IF EXISTS t_arr_i64_str;
-CREATE TABLE t_arr_i64_str (k Array(Tuple(Int64, String))) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+CREATE TABLE t_arr_i64_str (k Array(Tuple(Int64, String))) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_arr_i64_str VALUES ([(1, 'a')]), ([(9, 'z')]);
 
 DROP TABLE IF EXISTS t_arr_str_i64;
-CREATE TABLE t_arr_str_i64 (k Array(Tuple(String, Int64))) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+CREATE TABLE t_arr_str_i64 (k Array(Tuple(String, Int64))) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_arr_str_i64 VALUES ([('a', 1)]), ([('z', 9)]);
 
 DROP TABLE IF EXISTS t_arr_str_str;
-CREATE TABLE t_arr_str_str (k Array(Tuple(String, String))) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1;
+CREATE TABLE t_arr_str_str (k Array(Tuple(String, String))) ENGINE = MergeTree ORDER BY k SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_arr_str_str VALUES ([('a', '1')]), ([('z', '9')]);
 
 -- A narrower integer or float widens into the key type, and anything renders into String.

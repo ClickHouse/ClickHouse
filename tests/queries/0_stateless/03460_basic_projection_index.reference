@@ -15,14 +15,15 @@ CREATE TABLE t_proj
     id UInt64,
     region String,
     user_id UInt32,
-    PROJECTION region_proj INDEX region TYPE basic,
-    PROJECTION user_id_proj INDEX user_id TYPE basic
+    PROJECTION region_proj INDEX region TYPE basic WITH SETTINGS (add_minmax_index_for_numeric_columns = 0),
+    PROJECTION user_id_proj INDEX user_id TYPE basic WITH SETTINGS (add_minmax_index_for_numeric_columns = 0)
 )
 ENGINE = MergeTree
 ORDER BY id
 SETTINGS
     index_granularity = 1, min_bytes_for_wide_part = 0,
-    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0;
+    min_bytes_for_full_part_storage = 0, enable_vertical_merge_algorithm = 0,
+    add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_proj VALUES
     (1, 'eu', 101),
     (2, 'us', 102),

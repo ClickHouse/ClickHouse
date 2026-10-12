@@ -87,11 +87,13 @@ expr_exact=$($CLICKHOUSE_CLIENT --use_statistics=1 --optimize_move_to_prewhere=1
 
 # A set nobody has built cannot be analysed, because filling it would mean running the subquery
 # during planning. `k1` is not the sort key here, so no index analysis builds the set first.
+# The implicit min-max index would be one, though: skip-index analysis over `k1` builds the set
+# before the estimator runs, and `SelectivityEstimatorInSetNotBuilt` would never be incremented.
 echo '--- an unbuilt set is skipped rather than filled ---'
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS probe_unindexed;
 CREATE TABLE probe_unindexed (k1 UInt64, k2 UInt64, payload String) ENGINE = MergeTree ORDER BY tuple()
-SETTINGS auto_statistics_types = 'basic, uniq_v2';
+SETTINGS auto_statistics_types = 'basic, uniq_v2', add_minmax_index_for_numeric_columns = 0;
 INSERT INTO probe_unindexed SELECT number, number, repeat('x', 20) FROM numbers(20000);
 INSERT INTO probe_unindexed SELECT number + 20000, number, repeat('x', 20) FROM numbers(20000);
 OPTIMIZE TABLE probe_unindexed FINAL;

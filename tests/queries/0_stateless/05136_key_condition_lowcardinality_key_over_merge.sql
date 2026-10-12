@@ -26,10 +26,13 @@ DROP TABLE IF EXISTS t_05136_merge;
 -- carry), so pin both here instead of opting the whole test out of randomization.
 -- `min_bytes_for_wide_part = 0` keeps the CREATE quiet: with `index_granularity_bytes = 0` the
 -- wide-part thresholds are unreachable, so a nonzero one only earns a warning on stderr.
+-- The `Granules:` oracles below count primary-key pruning nodes; the implicit min-max index that
+-- `add_minmax_index_for_numeric_columns` adds on `k` would contribute a skip-index node of its own,
+-- so opt out of it - this test is about `KeyCondition` over the primary key.
 CREATE TABLE t_05136_lc (k LowCardinality(UInt32), v String) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 CREATE TABLE t_05136_plain (k UInt32, v String) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_05136_lc SELECT number, toString(number) FROM numbers(100000);
 INSERT INTO t_05136_plain SELECT number, toString(number) FROM numbers(100000);
 
@@ -81,7 +84,7 @@ DROP TABLE IF EXISTS t_05136_merge2;
 -- in-memory index; `PARTITION BY b` gives `b` a partition-minmax bound (constant coordinate).
 CREATE TABLE t_05136_lc2 (a UInt64, b LowCardinality(Bool))
     ENGINE = MergeTree ORDER BY (a, b) PARTITION BY b
-    SETTINGS index_granularity = 1, allow_nullable_key = 1,
+    SETTINGS index_granularity = 1, allow_nullable_key = 1, add_minmax_index_for_numeric_columns = 0,
              primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.5;
 INSERT INTO t_05136_lc2 SELECT number, number % 2 = 0 FROM numbers(1000);
 
@@ -134,7 +137,7 @@ DROP TABLE IF EXISTS t_05136_lc3;
 DROP TABLE IF EXISTS t_05136_merge3;
 CREATE TABLE t_05136_lc3 (a UInt64, b LowCardinality(Bool))
     ENGINE = MergeTree ORDER BY (a, b) PARTITION BY b
-    SETTINGS index_granularity = 1, allow_nullable_key = 1,
+    SETTINGS index_granularity = 1, allow_nullable_key = 1, add_minmax_index_for_numeric_columns = 0,
              primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns = 0.5;
 INSERT INTO t_05136_lc3 SELECT number, number % 2 = 0 FROM numbers(1000);
 CREATE TABLE t_05136_merge3 (a UInt64, b Bool)
@@ -174,7 +177,7 @@ DROP TABLE t_05136_merge3;
 DROP TABLE IF EXISTS t_05136_lc4;
 DROP TABLE IF EXISTS t_05136_merge4;
 CREATE TABLE t_05136_lc4 (k LowCardinality(UInt16), v String) ENGINE = MergeTree ORDER BY k
-    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+    SETTINGS index_granularity = 8192, index_granularity_bytes = 0, min_bytes_for_wide_part = 0, add_minmax_index_for_numeric_columns = 0;
 INSERT INTO t_05136_lc4 SELECT number % 60000, toString(number) FROM numbers(100000);
 CREATE TABLE t_05136_merge4 (k UInt16, v String) ENGINE = Merge(currentDatabase(), 't_05136_lc4');
 SELECT count() FROM t_05136_merge4 WHERE CAST(CAST(k, 'LowCardinality(UInt16)'), 'UInt64') > 100;

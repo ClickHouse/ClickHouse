@@ -12,10 +12,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 user="user_05293_${CLICKHOUSE_DATABASE}"
 table="${CLICKHOUSE_DATABASE}.t_index_hint_access"
 
+# The implicit minmax index on `id` would let `indexHint(id < 5)` prune granules.
 ${CLICKHOUSE_CLIENT} --query "
     DROP TABLE IF EXISTS $table;
     CREATE TABLE $table (id UInt64, secret UInt64, secret_alias ALIAS secret)
-    ENGINE = MergeTree ORDER BY secret SETTINGS index_granularity = 1;
+    ENGINE = MergeTree ORDER BY secret SETTINGS index_granularity = 1, add_minmax_index_for_numeric_columns = 0;
     INSERT INTO $table SELECT number, number * 1000 FROM numbers(10);
     DROP USER IF EXISTS $user;
     CREATE USER $user;

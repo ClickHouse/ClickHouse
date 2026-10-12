@@ -34,7 +34,7 @@ def _create_tables(table_name, table_size, index_granularity):
             CREATE TABLE IF NOT EXISTS {table_name} (key Int64, value String)
             Engine=ReplicatedMergeTree('/test_parallel_replicas/shard1/{table_name}', '{num}')
             ORDER BY (key)
-            SETTINGS index_granularity = {index_granularity}
+            SETTINGS index_granularity = {index_granularity}, add_minmax_index_for_numeric_columns = 0
             """
         )
 

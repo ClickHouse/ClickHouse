@@ -11,20 +11,25 @@ CREATE TABLE t_relax_normal
     key UInt64,
     value UInt64,
     other UInt64,
-    PROJECTION p_other (SELECT key, value, other ORDER BY other),
+    PROJECTION p_other (SELECT key, value, other ORDER BY other)
+        WITH SETTINGS (add_minmax_index_for_numeric_columns = 0),
     PROJECTION p_value (SELECT key, value ORDER BY value)
+        WITH SETTINGS (add_minmax_index_for_numeric_columns = 0)
 )
 ENGINE = MergeTree ORDER BY key
-SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         add_minmax_index_for_numeric_columns = 0;
 
 CREATE TABLE t_relax_agg
 (
     key UInt64,
     other UInt64,
     PROJECTION p_count (SELECT key, count() GROUP BY key)
+        WITH SETTINGS (add_minmax_index_for_numeric_columns = 0)
 )
 ENGINE = MergeTree ORDER BY key
-SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0;
+SETTINGS index_granularity = 8192, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0,
+         add_minmax_index_for_numeric_columns = 0;
 
 INSERT INTO t_relax_normal SELECT number, number * 2, number % 100 FROM numbers(100000);
 INSERT INTO t_relax_agg SELECT number, number % 100 FROM numbers(100000);

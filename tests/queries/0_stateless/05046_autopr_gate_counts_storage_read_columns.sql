@@ -42,7 +42,10 @@ INSERT INTO t_ordered SELECT number % 1000, number * 7, number % 251 FROM number
 
 -- Sizing this read by the projected `small` and the ordered-by `k1` alone would give 38 KB per
 -- replica and reject it; with the sorting key included it is 8 MB per replica.
-SELECT small FROM t_ordered ORDER BY k1 LIMIT 10 FORMAT Null SETTINGS log_comment='05046_gate_ordered', optimize_read_in_order=1;
+-- The implicit min-max index on `k1` (`add_minmax_index_for_numeric_columns`) would let the top-K
+-- granule filter cut this ordered read down to a handful of granules, which is a correct and much
+-- smaller read, so the gate would rightly reject it - keep the filter off to keep the read at 8 MB.
+SELECT small FROM t_ordered ORDER BY k1 LIMIT 10 FORMAT Null SETTINGS log_comment='05046_gate_ordered', optimize_read_in_order=1, use_skip_indexes_for_top_k=0;
 
 SET enable_parallel_replicas=0, automatic_parallel_replicas_mode=0;
 
