@@ -49,6 +49,7 @@
 #include <Server/DistributedQuery/StreamingExchangeLookup.h>
 #include <Interpreters/Cluster.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/InternalTextLogsQueue.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/ProcessorsProfileLog.h>
 #include <Interpreters/executeQuery.h>
@@ -58,12 +59,14 @@
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadPool.h>
+#include <Common/OpenTelemetryTraceContext.h>
 #include <Common/logger_useful.h>
 #include <Common/setThreadName.h>
 #include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <base/defines.h>
 #include <base/getFQDNOrHostName.h>
+#include <Poco/Message.h>
 
 
 namespace CurrentMetrics
@@ -277,12 +280,6 @@ public:
         return reader_detached;
     }
 
-    /// Identifies one stream of an exchange, not the whole exchange: it is
-    /// `ExchangeStreamId::toString()`, so the buckets of one exchange have distinct names.
-    const String & getStreamName() const { return name; }
-
-    LoggerPtr getLog() const { return log; }
-
     /// Waits up to `timeout` for a chunk. Returns std::nullopt if nothing arrived in time.
     /// An empty chunk is the producer's end-of-data marker. Chunks queued before a cancel are
     /// still handed out; once a cancelled queue is empty, throws the cancellation reason.
@@ -437,7 +434,6 @@ private:
             /// data that nobody reads.
             if (exchange->isReaderDetached())
             {
-                LOG_TRACE(exchange->getLog(), "Closing input of exchange stream {}, reader detached", exchange->getStreamName());
                 input.close();
                 return Status::Finished;
             }
@@ -450,6 +446,8 @@ private:
             /// forwarding them would only grow the queue and wake the consumer for nothing.
             if (!chunk.hasRows() && chunk.getChunkInfos().empty())
                 return;
+            /// The consumer's header is deserialized without constants, so a constant column must not cross this exchange.
+            convertToFullIfConst(chunk);
             exchange->appendChunk(std::move(chunk));
         }
 
@@ -478,13 +476,15 @@ private:
             /// The output port is closed, for example by a satisfied LIMIT downstream. Tell the
             /// exchange, so the producer's sink stops instead of queueing chunks that nobody
             /// reads. `onCancel` covers the cancellation path in the same way.
-            if (!detach_notified && getPort().isFinished())
+            /// Decide on the same read that finishes the source, the port can be closed concurrently.
+            /// A source that ended by itself (`finished`, e.g. at the end of the data) needs no detach.
+            const auto status = ISource::prepare();
+            if (status == Status::Finished && !finished && !detach_notified)
             {
                 detach_notified = true;
-                LOG_TRACE(exchange->getLog(), "NoMoreDataNeeded from exchange stream {}, detaching reader", exchange->getStreamName());
                 exchange->detachReader();
             }
-            return ISource::prepare();
+            return status;
         }
 
         std::optional<Chunk> tryGenerate() override
@@ -793,6 +793,30 @@ static QueryPlan deserializeQueryPlan(const String & serialized_query_plan, Cont
     return QueryPlan::makeSets(std::move(plan_and_sets), context);
 }
 
+/// The identity of the task on its `DistributedPlanTask::execute` span. No-op when tracing is off.
+static void addTaskSpanAttributes(
+    OpenTelemetry::Span & span,
+    const DistributedQueryTaskDescription & task_description,
+    const ContextPtr & context,
+    UInt64 query_plan_hash,
+    bool execute_locally,
+    const Strings & input_exchange_streams,
+    const Strings & output_exchange_streams)
+{
+    if (!span.isTraceEnabled())
+        return;
+
+    span.addAttribute("clickhouse.distributed.task_id", task_description.task.task_id);
+    /// From the task's context rather than the description: a worker copies the description's
+    /// initial query id into its `ClientInfo`, while an in-process task inherits the initiator's.
+    span.addAttribute("clickhouse.initial_query_id", context->getClientInfo().initial_query_id);
+    span.addAttribute("clickhouse.distributed.plan_hash", query_plan_hash);
+    span.addAttribute("clickhouse.distributed.serialization_version", task_description.serialization_version);
+    span.addAttribute("clickhouse.distributed.execute_locally", static_cast<UInt64>(execute_locally));
+    span.addAttribute("clickhouse.exchange.inputs", fmt::format("[{}]", fmt::join(input_exchange_streams, ", ")));
+    span.addAttribute("clickhouse.exchange.outputs", fmt::format("[{}]", fmt::join(output_exchange_streams, ", ")));
+}
+
 void doExecuteTask(const DistributedQueryTaskDescription & task_description, ObjectStoragePtr object_storage,
     const String & object_storage_path, const String & distributed_query_id, ContextMutablePtr context,
     bool execute_locally, std::function<bool()> is_cancelled, ProgressCallback progress_callback)
@@ -800,7 +824,9 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     Stopwatch execute_task_watch;
     const auto & task = task_description.task;
 
-    std::shared_ptr<OpenTelemetry::SpanHolder> query_span = std::make_shared<OpenTelemetry::SpanHolder>(task.task_id);
+    /// The task's span is analogous to the `query` span of a regular query. Its parent is the initiator's trace.
+    std::shared_ptr<OpenTelemetry::SpanHolder> query_span
+        = std::make_shared<OpenTelemetry::SpanHolder>("DistributedPlanTask::execute", OpenTelemetry::SpanKind::SERVER);
 
     auto logger = Poco::Logger::getShared("executeDistributedQuery");
 
@@ -815,6 +841,11 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     Strings output_exchange_streams;
     for (const auto & stream_id : task.output_exchange_streams)
         output_exchange_streams.push_back(stream_id.toString());
+
+    /// Identifies the plan fragment in the span and in the query log alike.
+    const UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
+
+    addTaskSpanAttributes(*query_span, task_description, context, query_plan_hash, execute_locally, input_exchange_streams, output_exchange_streams);
 
     LOG_TRACE(logger, "Task '{}' input exchange streams: [{}], output exchange streams: [{}]",
         task.task_id, fmt::join(input_exchange_streams, ", "), fmt::join(output_exchange_streams, ", "));
@@ -879,7 +910,6 @@ void doExecuteTask(const DistributedQueryTaskDescription & task_description, Obj
     /// No AST: this fragment is built from a serialized query plan, not parsed. The query-log
     /// helpers below treat a null AST as QueryKind::Select, which is correct here.
     const ASTPtr no_ast;
-    UInt64 query_plan_hash = sipHash64(task_description.serialized_query_plan);
 
     auto query_log_elem = logQueryStart(
         std::chrono::system_clock::now(),
@@ -947,7 +977,7 @@ std::pair<ObjectStoragePtr, String> getObjectStorageForTemporaryFiles(const Stri
     String object_storage_path = getTemporaryFilesPath(unique_temp_file_path, context);
     if (config.has(config_prefix))
     {
-        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, /*run_access_check=*/true, /*run_local_paths_check=*/false);
+        ObjectStoragePtr object_storage = ObjectStorageFactory::instance().create("distributed_query_temp_files", config, config_prefix, context, /*run_access_check=*/true, /*run_local_paths_check=*/false, /*run_remote_host_filter_check=*/false);
         return {object_storage, object_storage_path};
     }
     return {nullptr, object_storage_path};
@@ -1035,9 +1065,15 @@ protected:
         std::promise<void> task_promise;
         std::future<void> future = task_promise.get_future();
 
-        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, cancellation = this->cancellation, stage_wakeup = this->stage_wakeup]() mutable
+        /// A raw thread inherits no tracing context (unlike a `ThreadPool` job), so hand the initiator's context over explicitly.
+        threads.emplace_back([promise = std::move(task_promise), query_id = unique_query_id, task_description, ctx = context, cancellation = this->cancellation, stage_wakeup = this->stage_wakeup,
+            parent_trace_context = OpenTelemetry::CurrentContext()]() mutable
         {
             ThreadStatus thread_status;
+            /// A guard, not a `TracingContextHolder`: the holder would log a span of its own for this
+            /// thread, while the task's `DistributedPlanTask::execute` span is meant to attach to the
+            /// initiator's context directly, the same as a task dispatched to a worker does.
+            OpenTelemetry::TracingContextGuard thread_trace_context(parent_trace_context);
             /// The task attaches its own query context and thread group inside executeTask (matching
             /// the worker path), so this thread is intentionally not attached to the initiator group.
 
@@ -1404,6 +1440,9 @@ protected:
             }
         }
 
+        /// Whether forwarded worker logs have somewhere to go: the initiator's `send_logs_level` queue.
+        bool receivesWorkerLogs() const { return initiator_logs_queue != nullptr; }
+
         /// Add started task to be tracked
         void addTask(const String & stage_name, RunningTaskInfo task_info)
         {
@@ -1470,6 +1509,7 @@ protected:
             VectorWithMemoryTracking<RunningTaskInfo> tasks_to_cancel;
             {
                 std::lock_guard g(lock);
+                cancel_started = true;
                 for (auto & [stage_name, started_tasks] : stage_tasks)
                 {
                     for (auto & [task_name, task_info] : started_tasks)
@@ -1572,6 +1612,61 @@ protected:
             cancellation->throwIfCancelled();
         }
 
+        /// Status-check threads are not attached to the query, so a plain `LOG_WARNING` would not reach the client.
+        void pushInitiatorLogLine(const String & query_id, const String & text)
+        {
+            static const String source = "DistributedQueryPlanExecutor";
+            if (initiator_logs_queue && initiator_logs_queue->isNeeded(Poco::Message::PRIO_WARNING, source))
+                initiator_logs_queue->pushMessage(Poco::Message::PRIO_WARNING, source, query_id, text);
+        }
+
+        /// Forwards the batch and warns about lines lost to a retried poll (a gap before `begin_offset`) and
+        /// about lines dropped on the worker. After `cancel`, polls of one task can overlap, so only rows are forwarded.
+        void handleWorkerLogs(const RunningTaskInfo & task, DistributedQueryTaskStatus & task_status)
+        {
+            if (!initiator_logs_queue || !task_status.logs)
+                return;
+
+            auto & logs = *task_status.logs;
+            const UInt64 num_rows = logs.rows.rows();
+
+            if (num_rows != 0)
+                initiator_logs_queue->pushBlock(std::move(logs.rows));
+
+            UInt64 lost_in_transit = 0;
+            UInt64 newly_dropped = 0;
+            {
+                std::lock_guard g(lock);
+
+                if (cancel_started)
+                    return;
+
+                auto & cursor = worker_log_cursors[task.task_id];
+
+                if (logs.begin_offset >= cursor.expected_offset)
+                {
+                    lost_in_transit = logs.begin_offset - cursor.expected_offset;
+                    cursor.expected_offset = logs.begin_offset + num_rows;
+                }
+
+                if (logs.dropped_total > cursor.dropped_reported)
+                {
+                    newly_dropped = logs.dropped_total - cursor.dropped_reported;
+                    cursor.dropped_reported = logs.dropped_total;
+                }
+            }
+
+            if (lost_in_transit != 0)
+                pushInitiatorLogLine(task.task_id, fmt::format(
+                    "{} worker log line(s) from {} were lost in transit (status poll retry)",
+                    lost_in_transit, task.endpoint_uri));
+
+            if (newly_dropped != 0)
+                pushInitiatorLogLine(task.task_id, fmt::format(
+                    "{} worker log line(s) were dropped on {} because the forwarding buffer was full",
+                    newly_dropped, task.endpoint_uri));
+        }
+
         /// Thead function to check one task. If the task is not finished, adds the task back to the queue for checking.
         void checkStatusFunc(const String & stage_name, const RunningTaskInfo & task)
         {
@@ -1580,6 +1675,8 @@ protected:
             UInt32 wait_milliseconds = 300;
 
             auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, wait_milliseconds, context);
+
+            handleWorkerLogs(task, task_status);
 
             auto progress_callback = context->getProgressCallback();
             if (progress_callback)
@@ -1630,6 +1727,11 @@ protected:
                 try
                 {
                     auto task_status = getTaskStatus(task.endpoint_uri, task.task_id, poll_wait_ms, context, /*for_cleanup*/ true);
+
+                    /// A task cancelled early (e.g. LIMIT satisfied) still delivers its logs
+                    /// through the cleanup polls.
+                    handleWorkerLogs(task, task_status);
+
                     if (task_status.status != "Running")
                         return task_status;
                 }
@@ -1777,6 +1879,16 @@ protected:
         std::mutex lock;
         UnorderedMapWithMemoryTracking<String, StageInfoPtr> all_stages TSA_GUARDED_BY(lock);
         UnorderedMapWithMemoryTracking<String, MapWithMemoryTracking<String, RunningTaskInfo>> stage_tasks TSA_GUARDED_BY(lock);
+        /// Per task: where the next batch should start and how many worker drops were already reported.
+        /// Kept after the task ends, so a late poll reads as "nothing new".
+        struct WorkerLogCursor
+        {
+            UInt64 expected_offset = 0;
+            UInt64 dropped_reported = 0;
+        };
+        UnorderedMapWithMemoryTracking<String, WorkerLogCursor> worker_log_cursors TSA_GUARDED_BY(lock);
+        /// Set by `cancel`: status polls of one task may overlap from then on, see `handleWorkerLogs`.
+        bool cancel_started TSA_GUARDED_BY(lock) = false;
         std::atomic<Int64> in_flight_request_count = 0;
         /// Queue of stages that have unfinished tasks to be checked
         DequeWithMemoryTracking<StageInfoPtr> stages_to_check TSA_GUARDED_BY(lock);
@@ -1785,6 +1897,9 @@ protected:
         StageWakeupPtr stage_wakeup;
         ThreadPool thread_pool;
         LoggerPtr logger;
+
+        /// Initiator logs queue captured at construction so it is tied to the main query's thread
+        InternalTextLogsQueuePtr initiator_logs_queue = CurrentThread::getInternalTextLogsQueue();
     };
 
     RunningTaskInfo buildTaskInfo(const DistributedQueryTaskDescription & task_description) const
@@ -1814,6 +1929,11 @@ protected:
         task_description.serialized_query_plan = serializeQueryPlan(stage.query_plan_fragment, context);
         task_description.exchanges = distributed_query_plan.exchange_descriptions; /// TODO: add only exchanges for this stage
         task_description.settings_changes = context->getSettingsRef().changes();
+
+        /// Ask for worker logs only when the initiator has a queue to receive them (e.g. not over
+        /// HTTP without a framing format); the worker attaches its log collector accordingly.
+        TaskCollectors collectors;
+        collectors.logs = running_tasks.receivesWorkerLogs();
 
         const String unique_temp_file_path = toString(unique_query_id);
 
@@ -1854,7 +1974,7 @@ protected:
             LOG_DEBUG(logger, "Sending task {} to {}", task_info.task_id, task_info.endpoint_uri);
             try
             {
-                sendTask(task_info.endpoint_uri, task_info.task_id, task_description, unique_temp_file_path, context);
+                sendTask(task_info.endpoint_uri, task_info.task_id, task_description, unique_temp_file_path, collectors, context);
             }
             catch (...)
             {
