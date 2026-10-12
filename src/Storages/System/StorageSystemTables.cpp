@@ -22,6 +22,7 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Databases/RenderedCreateQuery.h>
 #include <Disks/IStoragePolicy.h>
+#include <Interpreters/ActionLocksManager.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
@@ -299,6 +300,17 @@ StorageSystemTables::StorageSystemTables(const StorageID & table_id_)
             "(the `TO` target, or the implicit `.inner.*` table). Empty for other engines."
         },
         {"definer", std::make_shared<DataTypeString>(), "SQL security definer's name used for the table."},
+        {"stopped_actions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeString>()),
+            "Sorted, distinct names of local table-level controls tracked by `ActionLocksManager` after explicit `SYSTEM STOP` or `SYSTEM PAUSE` commands, "
+            "including controls applied to this table by global commands. Only non-expired locks supported by the table engine are reported. "
+            "Possible values are `merges`, `ttl_merges`, `moves`, `fetches`, `replicated_sends`, `replication_queue`, `distributed_sends`, "
+            "`pull_replication_log`, `cleanup`, `view_refresh`, `view_refresh_pause`, `streaming_consumption`, `virtual_parts_update`, and `reduce_blocking_parts`. "
+            "This is not a list of all reasons background work may be stopped: volume policies, internal temporary blockers, "
+            "and the persistent Keeper state set by `SYSTEM STOP REPLICATED VIEW` are excluded. "
+            "An empty array does not guarantee background work is running or can run: internal reasons for disabling it are not reported. "
+            "The state is local to the server and storage instance: it follows renames, but is not persisted across detach/attach or server restart. "
+            "Reading these controls does not query Keeper or remote servers."
+        },
     };
 
     description.setAliases({
@@ -387,6 +399,19 @@ protected:
                 skipping_indices_types.push_back(type);
         }
         columns[res_index++]->insert(skipping_indices_types);
+    }
+
+    void fillStoppedActions(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
+    {
+        Array stopped_actions;
+        if (table)
+        {
+            const auto actions = context->getActionLocksManager()->getStoppedActions(table);
+            stopped_actions.reserve(actions.size());
+            for (const auto & action : actions)
+                stopped_actions.emplace_back(action);
+        }
+        columns[res_index++]->insert(stopped_actions);
     }
 
     void fillParametralizedViewData(MutableColumns & columns, const StoragePtr & table, size_t & res_index)
@@ -591,6 +616,9 @@ protected:
                                 }
                                 ++res_index;
                             }
+                            // stopped_actions
+                            else if (src_index == 43 && columns_mask[src_index])
+                                fillStoppedActions(res_columns, table.second, res_index);
                             /// Fill the rest columns with defaults
                             else if (columns_mask[src_index])
                                 res_columns[res_index++]->insertDefault();
@@ -1039,6 +1067,9 @@ protected:
                     else
                         res_columns[res_index++]->insertDefault();
                 }
+
+                if (columns_mask[src_index++])
+                    fillStoppedActions(res_columns, table, res_index);
             }
         }
         UInt64 num_rows = res_columns.at(0)->size();
