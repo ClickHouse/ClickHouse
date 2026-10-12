@@ -1,4 +1,6 @@
 -- Tags: distributed
+-- Disable force_primary_key_reverse_order: output row order depends on MergeTree sorting key direction
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS mergetree_00609;
 DROP TABLE IF EXISTS distributed_00609;

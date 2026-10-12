@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: Tests data skipping index behavior sensitive to sort order
+SET force_primary_key_reverse_order = 0;
+
 drop table if exists array_union;
 
 create table array_union (date Date, arr Array(UInt8)) engine=MergeTree partition by date order by date;

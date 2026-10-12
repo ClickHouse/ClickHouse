@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests join on inequality expressions, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS t1;
 DROP TABLE IF EXISTS t2;
 
@@ -12,6 +15,7 @@ SET allow_experimental_join_condition=1;
 SET join_use_nulls=0;
 -- { echoOn }
 {% for algorithm in ['hash', 'grace_hash'] -%}
+
 SET join_algorithm='{{ algorithm }}';
 {% for join_type in ['LEFT', 'RIGHT'] -%}
 {% for join_strictness in ['ANY', 'SEMI', 'ANTI'] -%}

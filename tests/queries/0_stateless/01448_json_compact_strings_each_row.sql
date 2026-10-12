@@ -1,4 +1,6 @@
 -- Tags: no-fasttest
+-- Queries rely on implicit row order from MergeTree primary key scan without ORDER BY
+SET force_primary_key_reverse_order = 0;
 
 DROP TABLE IF EXISTS test_table;
 DROP TABLE IF EXISTS test_table_2;

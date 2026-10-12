@@ -1,3 +1,5 @@
+-- Result row order depends on primary key direction which affects SELECT without explicit ORDER BY
+SET force_primary_key_reverse_order = 0;
 SET enable_analyzer = 1;
 SET optimize_extract_common_expressions = 1;
 SET query_plan_read_in_order_through_join = 0;

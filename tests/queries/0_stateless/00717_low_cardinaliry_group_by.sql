@@ -1,3 +1,5 @@
+-- Disable force_primary_key_reverse_order: reversed key changes physical row order affecting groupArray output
+SET force_primary_key_reverse_order = 0;
 drop table if exists tab_00717;
 create table tab_00717 (a String, b LowCardinality(String)) engine = MergeTree order by a;
 insert into tab_00717 values ('a_1', 'b_1'), ('a_2', 'b_2');

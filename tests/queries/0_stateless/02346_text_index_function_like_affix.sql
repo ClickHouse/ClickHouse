@@ -2,6 +2,9 @@
 -- Tests that affix LIKE/ILIKE patterns, i.e. prefix ('value%') and suffix ('%value'), use the text index as a hint.
 -- By default the analyzer rewrites such patterns into startsWith/endsWith (optimize_rewrite_like_perfect_affix),
 -- so both spellings are covered here.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
+
 SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;

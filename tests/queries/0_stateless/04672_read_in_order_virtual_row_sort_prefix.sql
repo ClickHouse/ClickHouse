@@ -1,4 +1,6 @@
 -- Tags: no-parallel-replicas
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 -- The `ORDER BY` prefix that can be served from the sorting key is cut short at the first
 -- non-strictly-monotonic function, and the virtual row optimization is only built for a prefix.

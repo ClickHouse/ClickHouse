@@ -3,6 +3,8 @@
 -- the exchange steps it inserts are silently built as no-op pipeline steps, so
 -- e.g. a partial aggregation created for `WITH TOTALS` reaches `TotalsHaving`
 -- unmerged and produces duplicate groups.
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 SET enable_analyzer = 1;
 SET enable_parallel_replicas = 0;

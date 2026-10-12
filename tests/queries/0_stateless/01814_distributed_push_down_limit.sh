@@ -7,6 +7,10 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
+
+# Disable force_primary_key_reverse_order: Tests aggregation-in-order optimization sensitive to sort direction
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 # -- NOTE: this test cannot use 'current_database = $CLICKHOUSE_DATABASE',
 # -- because it does not propagated via remote queries,
 # -- hence it uses query_id/initial_query_id.

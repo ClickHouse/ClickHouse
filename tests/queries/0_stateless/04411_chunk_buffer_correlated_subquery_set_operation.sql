@@ -9,6 +9,8 @@
 --   * session-level SET ... = 0: no buffer (the reference is materialized);
 --   * per-branch SETTINGS ... = 0 (the #108521 shape): a buffer is still created;
 --   * session 0 with a subquery SETTINGS ... = 1: the local context buffers it (the last case here).
+-- Disable force_primary_key_reverse_order: Test output depends on the physical sort order or on index analysis of an ascending key
+SET force_primary_key_reverse_order = 0;
 
 -- Correlated subqueries are only supported by the analyzer.
 SET enable_analyzer = 1;

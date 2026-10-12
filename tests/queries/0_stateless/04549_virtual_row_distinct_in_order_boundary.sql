@@ -2,6 +2,9 @@
 -- ^ Every fixture reads multiple parts at `index_granularity = 8`, so the file is dominated by
 -- mark reads and still costs tens of seconds in the heaviest sanitizer lanes.
 
+-- Disable force_primary_key_reverse_order: EXPLAIN output shows the read type `InOrder`/`InReverseOrder`, which flips with a descending key
+SET force_primary_key_reverse_order = 0;
+
 -- Regression test for the "Virtual row boundary violated in MergingSortedAlgorithm" logical error
 -- (STID 2651-3359). ORDER BY builds a read-in-order virtual row for the sort-key prefix it needs
 -- (here CounterID). distinct-in-order then widens the read to a longer prefix (CounterID, EventDate)

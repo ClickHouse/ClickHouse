@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: `ALTER TABLE ... MODIFY ORDER BY` cannot express `DESC`, so it would change the direction of a forced descending key
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS test;
 
 -- A plain key column

@@ -1,6 +1,8 @@
 -- Tags: no-replicated-database, no-parallel-replicas
 -- no-replicated-database: EXPLAIN output differs for replicated database.
 -- no-parallel-replicas: EXPLAIN output differs for parallel replicas.
+-- Disable force_primary_key_reverse_order: the order of the skip indexes in `EXPLAIN` depends on the key direction
+SET force_primary_key_reverse_order = 0;
 -- `coalesce(a_1, ..., a_N) <op> const` with N > 2.
 -- See `src/Storages/MergeTree/KeyCondition.cpp::tryRewriteCoalesceComparison`.
 

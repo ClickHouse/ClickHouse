@@ -2,6 +2,9 @@
 -- `sparseGrams` compaction drops grams covered by a longer gram of the needle. That is valid only
 -- under AND semantics (hasAllTokens). hasAnyTokens must match a row that contains only a covered gram.
 
+-- Disable force_primary_key_reverse_order: the reference pins the plan and the granule counts, which depend on the sorting key direction
+SET force_primary_key_reverse_order = 0;
+
 SET explain_query_plan_default = 'legacy';
 SET parallel_replicas_local_plan = 1;
 

@@ -6,6 +6,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 start_time=$($CLICKHOUSE_CLIENT -q "SELECT now()")
 
+
+# Disable force_primary_key_reverse_order: tests system.error_log, creates MergeTree tables internally
+CLICKHOUSE_CLIENT="${CLICKHOUSE_CLIENT} --force_primary_key_reverse_order=0"
+
 # system.error_log is created lazily, flush logs query makes it sure that the table is created.
 $CLICKHOUSE_CLIENT -q "SYSTEM FLUSH LOGS error_log;"
 

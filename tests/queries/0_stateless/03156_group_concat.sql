@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests groupConcat, output order depends on MergeTree row order from key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS test_groupConcat;
 CREATE TABLE test_groupConcat
 (

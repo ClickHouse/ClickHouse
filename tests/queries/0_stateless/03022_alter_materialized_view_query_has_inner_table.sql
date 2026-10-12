@@ -1,3 +1,6 @@
+-- Disable force_primary_key_reverse_order: tests materialized views, output depends on key direction
+SET force_primary_key_reverse_order = 0;
+
 DROP TABLE IF EXISTS src_table;
 DROP TABLE IF EXISTS mv;
 
