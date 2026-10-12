@@ -2293,6 +2293,7 @@ void RestCatalog::dropTable(const String & namespace_name, const String & table_
     try
     {
         sendRequest(*state_snapshot, endpoint, request_body, Poco::Net::HTTPRequest::HTTP_DELETE, true);
+        LOG_INFO(log, "Dropped table {}.{} from the catalog (purgeRequested={})", namespace_name, table_name, delete_data);
     }
     catch (const DB::HTTPException & ex)
     {

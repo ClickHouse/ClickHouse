@@ -1728,32 +1728,36 @@ def test_drop_table_in_multi_level_namespace(started_cluster):
 
 
 def test_drop_table_purge(started_cluster):
-    # With `iceberg_delete_data_on_drop`, DROP asks the catalog to purge the table's files.
-    node = started_cluster.instances["node2"]  # its default profile sets iceberg_delete_data_on_drop
-
-    test_ref = f"test_drop_table_purge_{uuid.uuid4()}"
-    table_name = f"{test_ref}_table"
-    root_namespace = f"{test_ref}_namespace"
-
+    # DROP asks the catalog to purge the table's files only with `iceberg_delete_data_on_drop`,
+    # which node2's default profile enables.
     catalog = load_catalog_impl(started_cluster)
-    create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
-    create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
-    node.query(
-        f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (1)",
-        settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
-    )
 
-    def data_files():
-        return [
+    def data_files(table_name):
+        return sorted(
             name
             for name in list_s3_objects(started_cluster.minio_client, "warehouse-rest", f"{table_name}/")
             if name.endswith(".parquet")
-        ]
+        )
 
-    assert data_files()
-    drop_clickhouse_iceberg_table(node, root_namespace, table_name)
-    assert not catalog.table_exists(f"{root_namespace}.{table_name}")
-    assert data_files() == []
+    for node_name, purge in (("node2", True), ("node1", False)):
+        node = started_cluster.instances[node_name]
+        test_ref = f"test_drop_table_purge_{uuid.uuid4()}"
+        table_name = f"{test_ref}_table"
+        root_namespace = f"{test_ref}_namespace"
+
+        create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
+        create_clickhouse_iceberg_table(started_cluster, node, root_namespace, table_name, "(x Int)")
+        node.query(
+            f"INSERT INTO {CATALOG_NAME}.`{root_namespace}.{table_name}` VALUES (1)",
+            settings={"allow_insert_into_iceberg": 1, "write_full_path_in_iceberg_metadata": 1},
+        )
+
+        files = data_files(table_name)
+        assert files
+        drop_clickhouse_iceberg_table(node, root_namespace, table_name)
+        assert not catalog.table_exists(f"{root_namespace}.{table_name}")
+        assert data_files(table_name) == ([] if purge else files)
+        node.wait_for_log_line(rf"tables/{table_name}\?purgeRequested={str(purge).lower()}")
 
 
 def test_create_table_order_by(started_cluster):
