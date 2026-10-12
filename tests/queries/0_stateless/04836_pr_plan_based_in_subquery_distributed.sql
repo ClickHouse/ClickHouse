@@ -1,3 +1,4 @@
+-- Tags: no-parallel, no-fasttest
 -- Plan-based parallel replicas distribute a simple `IN (subquery)` by shipping the subquery plan: the
 -- shipped fragment keeps the set's query plan (FutureSetFromSubquery::source is preserved through the
 -- in-place index build and serialized while alive), and each replica rebuilds the set over its own

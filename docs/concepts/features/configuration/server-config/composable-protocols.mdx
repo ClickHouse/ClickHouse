@@ -287,3 +287,7 @@ to be specified as follows:
 
 </protocols>
 ```
+
+A TLS layer can also set `cipherList` and `cipherSuites`, but they only take effect when the layer
+has its own `privateKeyFile` (and `certificateFile`, if the certificate is in a separate file). A
+non-empty `cipherSuites` in a layer without them is a startup error.
