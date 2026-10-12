@@ -1,6 +1,7 @@
 -- Test for use_indexes_refiner_in_read_pools: mark ranges fully filtered out by a projection
 -- index are dropped inside MergeTree read pools before read tasks are created for them.
 
+SET read_in_order_use_sliced_pool = 0; -- this test pins the reading thread per part; the setting is randomized by the test runner
 SET optimize_use_projections = 1, optimize_use_projection_filtering = 1;
 SET min_table_rows_to_use_projection_index = 0;
 SET use_indexes_refiner_in_read_pools = 1;

@@ -1283,14 +1283,16 @@ InputOrderInfoPtr buildInputOrderInfo(
 
         if (order_info.input_order)
         {
-            apply_virtual_row = apply_virtual_row && order_info.virtual_row_conversion != std::nullopt;
-
             bool uses_virtual_row = false;
             if (order_info.virtual_row_conversion)
             {
                 uses_virtual_row = reading->setVirtualRowConversions(std::move(*order_info.virtual_row_conversion));
                 virtual_row_reader = reading;
             }
+
+            /// The reading step may refuse the virtual rows (e.g. the setting is disabled or
+            /// the query uses FINAL); the sorting step must not expect them then.
+            apply_virtual_row = apply_virtual_row && uses_virtual_row;
 
             if (!uses_virtual_row)
             {
@@ -1872,6 +1874,17 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
                 reader->resetVirtualRowConversions();
         }
 
+        /// The sliced pool buffers and reads ahead on the reading side; buffering or a read-ahead window
+        /// here would only make it read further ahead than the merge needs.
+        for (const auto * reader : virtual_row_readers)
+        {
+            if (reader->usesSlicedPool())
+            {
+                use_buffering = false;
+                sorting->disableDefaultReadAheadWindow();
+            }
+        }
+
         /// FinishSorting's `MergingSortedTransform` requires every input stream of the union
         /// to be sorted by `max_sort_descr`; the union must not concatenate (narrow) them.
         union_step->disableNarrowing();
@@ -1881,6 +1894,13 @@ void optimizeReadInOrder(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const
     {
         /// Use buffering only if have filter or don't have limit.
         bool use_buffering = order_info->limit == 0;
+        /// The sliced pool buffers and reads ahead on the reading side; buffering or a read-ahead window
+        /// here would only make it read further ahead than the merge needs.
+        if (virtual_row_reader && virtual_row_reader->usesSlicedPool())
+        {
+            use_buffering = false;
+            sorting->disableDefaultReadAheadWindow();
+        }
         sorting->convertToFinishSorting(order_info->sort_description_for_merging, use_buffering, apply_virtual_row);
     }
 }
