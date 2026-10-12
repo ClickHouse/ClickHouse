@@ -1343,6 +1343,67 @@ def test_expire_snapshots_and_remove_orphan_files(node, catalog_manager):
         catalog_manager.cleanup_table(table_name)
 
 
+# The same maintenance on GCS, through a path-based table that ClickHouse creates and writes
+# itself, authenticated with the OAuth credentials of the BigLake manager.
+@only_biglake
+def test_gcs_expire_snapshots_and_remove_orphan_files(node, catalog_manager):
+    cfg = catalog_manager.config
+    suffix = uuid.uuid4().hex[:8]
+    # Under the session namespace's storage, which `cleanup_all` also deletes.
+    table_path = catalog_manager.gcs_table_path(f"gcs_{suffix}")
+    url = f"https://storage.googleapis.com/{table_path}"
+    nc = f"nc_gcs_{suffix}"
+    tbl = f"gcs_{suffix}"
+    node.query(
+        f"CREATE NAMED COLLECTION {nc} AS url = '{url}/', http_client = 'gcp_oauth', "
+        f"google_adc_client_id = '{cfg.adc_client_id}', "
+        f"google_adc_client_secret = '{cfg.adc_client_secret}', "
+        f"google_adc_refresh_token = '{cfg.adc_refresh_token}'"
+    )
+    try:
+        node.query(f"CREATE TABLE {tbl} (id Int64, value String) ENGINE = IcebergS3({nc})")
+        for row in ("(1, 'a')", "(2, 'b')", "(3, 'c')"):
+            node.query(f"INSERT INTO {tbl} VALUES {row}")
+        select_all = f"SELECT id, value FROM {tbl} ORDER BY id FORMAT TSV"
+        rows_before = node.query(select_all)
+        assert rows_before == "1\ta\n2\tb\n3\tc\n"
+        settings = {"allow_experimental_expire_snapshots": 1, "allow_iceberg_remove_orphan_files": 1}
+
+        expired = _nonzero_metrics(
+            node.query(
+                f"ALTER TABLE {tbl} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)",
+                settings=settings,
+            )
+        )
+        assert expired["deleted_manifest_lists_count"] == 2
+        assert node.query(select_all) == rows_before
+
+        node.query(
+            f"INSERT INTO FUNCTION s3({nc}, url = '{url}/data/orphan-{suffix}.parquet', "
+            "format = 'RawBLOB', structure = 'data String') SELECT 'orphan'"
+        )
+        # Object timestamps have one-second precision and come from the storage's clock;
+        # the margin covers normal clock drift between it and the server.
+        cutoff = node.query("SELECT now() + 2").strip()
+        assert_eq_with_retry(node, f"SELECT now() > toDateTime('{cutoff}')", "1")
+
+        removed = _nonzero_metrics(
+            node.query(
+                f"ALTER TABLE {tbl} EXECUTE remove_orphan_files(older_than = '{cutoff}')",
+                settings=settings,
+            )
+        )
+        # A metadata file of ClickHouse's own commit is missing from `metadata-log`:
+        # https://github.com/ClickHouse/ClickHouse/issues/118812
+        removed.pop("deleted_metadata_files_count", None)
+        assert removed == {"deleted_data_files_count": 1}
+        assert node.query(select_all) == rows_before
+    finally:
+        node.query(f"DROP TABLE IF EXISTS {tbl}")
+        node.query(f"DROP NAMED COLLECTION IF EXISTS {nc}")
+        catalog_manager.delete_gcs_path(table_path)
+
+
 @only_onelake
 def test_onelake_invalid_oauth_uri(node, catalog_manager):
     """Invalid oauth_server_uri -> CREATE DATABASE fails eagerly.

@@ -673,6 +673,61 @@ def test_vended_credentials_rotated_between_queries(started_cluster, use_v2):
 
 
 @pytest.mark.parametrize("use_v2", [0, 1])
+def test_vended_credentials_rotated_in_the_middle_of_a_query(started_cluster, use_v2):
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    failpoint = "object_storage_source_pause_before_virtual_columns"
+    # One source and large files: the pause lands in the first file, so the second file's requests
+    # start after the old key is disabled. The query keeps the old key until a refresh, and MinIO
+    # checks credentials when a request starts, so the first of them fails.
+    write_settings = {**DELTA_WRITE_SETTINGS, "output_format_parquet_row_group_size": 10000}
+    read_settings = {
+        "max_threads": 1,
+        "max_block_size": 8192,
+        "max_read_buffer_size": 65536,
+        "remote_filesystem_read_prefetch": 0,
+    }
+    with (
+        minio_user(started_cluster, ["s3:*"]) as (old_key, old_secret),
+        minio_user(started_cluster, ["s3:*"]) as (new_key, new_secret),
+        vended_s3_delta_table(started_cluster, use_v2) as table,
+    ):
+        query_id = uuid.uuid4().hex
+        try:
+            vend_credentials(node, old_key, old_secret)
+            for start in (0, 200000):
+                node.query(
+                    f"INSERT INTO {table} SELECT number, toString(number) FROM numbers({start}, 200000)",
+                    settings=write_settings,
+                )
+
+            node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+            request = node.get_query_request(
+                f"SELECT count(), sum(id) FROM {table}", query_id=query_id, settings=read_settings
+            )
+            node.query(f"SYSTEM WAIT FAILPOINT {failpoint} PAUSE", timeout=60)
+
+            vend_credentials(node, new_key, new_secret)
+            minio_admin(started_cluster).user_disable(old_key)
+            proxy_control(node, "reset_credential_operations")
+            # The failpoint pauses every chunk, so disable it before waiting for the answer.
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+            assert request.get_answer() == f"400000\t{sum(range(400000))}\n"
+        finally:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+            vend_credentials(node)
+
+        node.query("SYSTEM FLUSH LOGS query_log")
+        read_errors = node.query(
+            "SELECT ProfileEvents['ReadBufferFromS3RequestsErrors'] FROM system.query_log "
+            f"WHERE query_id = '{query_id}' AND type = 'QueryFinish'"
+        )
+        assert int(read_errors) >= 1
+        assert "READ" in json.loads(proxy_control(node, "credential_operations"))
+
+
+@pytest.mark.parametrize("use_v2", [0, 1])
 def test_insert_with_read_only_vended_credentials_commits_nothing(started_cluster, use_v2):
     node = started_cluster.instances["node1"]
     skip_if_no_delta_kernel(node)
