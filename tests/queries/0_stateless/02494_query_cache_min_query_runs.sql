@@ -1,3 +1,5 @@
+-- Tags: no-parallel
+-- Tag no-parallel: counts entries under a fixed `query_cache_tag`; concurrent copies of this test (flaky and targeted checks) clear and fill the same tag, so the count is off.
 
 SET query_cache_tag = '02494_query_cache_min_query_runs';
 
