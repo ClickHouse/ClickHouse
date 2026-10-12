@@ -1179,12 +1179,25 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
 }
 
 /// Whether a conjunct might fix a column to a single value, and so let a read go in order:
-/// `tenant = 42` can, `tenant > 42`, a bare boolean or a join runtime filter cannot. Structural rather than
-/// `appendFixedColumnsFromFilterExpression`, the analysis read-in-order uses, so that it stays a superset
-/// of whatever that analysis finds: it looks for an `equals` or an `isNotDistinctFrom` anywhere inside.
+/// `tenant = 42` can, `tenant > 42` or a join runtime filter cannot. A superset of what
+/// `appendFixedColumnsFromFilterExpression`, the analysis read-in-order uses, can find: an `equals` or an
+/// `isNotDistinctFrom` anywhere inside, or an input reached the way it looks for one - through aliases and
+/// `and`. Such an input is a column of the fragment, which may compute it as an equality.
 static bool mayFixColumn(const ActionsDAG::Node * conjunct)
 {
     std::vector<const ActionsDAG::Node *> stack{conjunct};
+    while (!stack.empty())
+    {
+        const auto * node = stack.back();
+        stack.pop_back();
+        if (node->type == ActionsDAG::ActionType::INPUT)
+            return true;
+        if (node->type == ActionsDAG::ActionType::ALIAS
+            || (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "and"))
+            stack.insert(stack.end(), node->children.begin(), node->children.end());
+    }
+
+    stack.push_back(conjunct);
     std::unordered_set<const ActionsDAG::Node *> visited;
     while (!stack.empty())
     {
