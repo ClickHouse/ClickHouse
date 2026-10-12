@@ -30,6 +30,12 @@ CLICKHOUSE_CONFIG="${CLICKHOUSE_CONFIG:-/etc/clickhouse-server/config.xml}"
 DATA_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=path || true)"
 TMP_DIR="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=tmp_path || true)"
 USER_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=user_files_path || true)"
+# A configured `user_files_policy` takes precedence over `user_files_path`: the server then serves
+# user files from the disks of that policy (prepared below with the other `storage_configuration`
+# disks) and neither reads nor creates the legacy directory, so an unusable `user_files_path` must
+# not stop the container either.
+USER_FILES_POLICY="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=user_files_policy --try || true)"
+if [ -n "$USER_FILES_POLICY" ]; then USER_PATH=""; fi
 LOG_PATH="$(clickhouse extract-from-config --config-file "$CLICKHOUSE_CONFIG" --key=logger.log --try || true)"
 LOG_DIR=""
 if [ -n "$LOG_PATH" ]; then LOG_DIR="$(dirname "$LOG_PATH")"; fi

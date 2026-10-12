@@ -1,4 +1,5 @@
 #include <Disks/DiskType.h>
+#include <Disks/IDisk.h>
 #include <Disks/DiskObjectStorage/DiskObjectStorage.h>
 
 #include <Common/Exception.h>
@@ -89,6 +90,15 @@ String DataSourceDescription::toString() const
 {
     return fmt::format("{} (description = '{}', is_encrypted = {}, is_cached = {}, zookeeper_name = '{}')",
                        name(), description, is_encrypted, is_cached, zookeeper_name);
+}
+
+bool isPlainLocalDisk(const IDisk & disk)
+{
+    /// Only `DiskLocal` reports `DataSourceType::Local`; wrapper disks (`DiskEncrypted`, cached)
+    /// propagate the delegate's description with `is_encrypted` / `is_cached` set, and any
+    /// object storage (including remote) reports `DataSourceType::ObjectStorage`.
+    const auto description = disk.getDataSourceDescription();
+    return description.type == DataSourceType::Local && !description.is_encrypted && !description.is_cached;
 }
 
 bool isDiskObjectStorage(std::shared_ptr<const IDisk> disk)

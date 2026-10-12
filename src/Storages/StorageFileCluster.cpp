@@ -54,22 +54,27 @@ StorageFileCluster::StorageFileCluster(
     StorageInMemoryMetadata storage_metadata;
 
     /// The archive syntax (e.g. "archive*.zip::file.parquet") is not supported by function fileCluster() yet.
-    paths = StorageFile::FileSource::parse(filename_, context, /* allow_archive_path_syntax = */ false).paths;
+    auto file_source = StorageFile::FileSource::parse(filename_, context, /* allow_archive_path_syntax = */ false);
+    paths = std::move(file_source.paths);
+    user_files_volume = std::move(file_source.user_files_volume);
 
     if (columns_.empty())
     {
         ColumnsDescription columns;
         if (format_name == "auto")
-            std::tie(columns, format_name) = StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context);
+            std::tie(columns, format_name) = StorageFile::getTableStructureAndFormatFromFile(
+                paths, compression_method, std::nullopt, context, std::nullopt, user_files_volume);
         else
-            columns = StorageFile::getTableStructureFromFile(format_name, paths, compression_method, std::nullopt, context);
+            columns = StorageFile::getTableStructureFromFile(
+                format_name, paths, compression_method, std::nullopt, context, std::nullopt, user_files_volume);
 
         storage_metadata.setColumns(columns);
     }
     else
     {
         if (format_name == "auto")
-            format_name = StorageFile::getTableStructureAndFormatFromFile(paths, compression_method, std::nullopt, context).second;
+            format_name = StorageFile::getTableStructureAndFormatFromFile(
+                paths, compression_method, std::nullopt, context, std::nullopt, user_files_volume).second;
         storage_metadata.setColumns(columns_);
     }
 
@@ -78,7 +83,7 @@ StorageFileCluster::StorageFileCluster(
     /// Not grabbing the file_columns because it is not necessary to do it here.
     std::tie(hive_partition_columns_to_read_from_file_path, std::ignore) = HivePartitioningUtils::setupHivePartitioningForFileURLLikeStorage(
         storage_columns,
-        paths.empty() ? "" : paths.front(),
+        paths.empty() ? "" : StorageFile::getUserFilesVirtualPath(paths.front(), user_files_volume),
         columns_.empty(),
         std::nullopt,
         context);
@@ -145,7 +150,8 @@ RemoteQueryExecutor::Extension StorageFileCluster::getTaskIteratorExtension(
     /// through `IStorageCluster::read`, so this is the one place every path shares.
     checkWriteAccessIfFilesAreRenamed(context);
 
-    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context);
+    auto iterator = std::make_shared<StorageFileSource::FilesIterator>(paths, std::nullopt, predicate, metadata->virtuals.getSampleBlock(VirtualsKind::All, VirtualsMaterializationPlace::Reader).getNamesAndTypesList(), hive_partition_columns_to_read_from_file_path, context,
+        /*distributed_processing_=*/ false, /*archive_member_path_=*/ String{}, user_files_volume);
     auto next_callback = [iter = std::move(iterator)](size_t) mutable -> ClusterFunctionReadTaskResponsePtr
     {
         auto file = iter->next();

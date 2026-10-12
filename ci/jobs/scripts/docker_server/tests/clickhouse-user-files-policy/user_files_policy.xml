@@ -1,0 +1,25 @@
+<clickhouse>
+    <storage_configuration>
+        <disks>
+            <docker_test_user_files_disk>
+                <path>/var/lib/clickhouse/docker_test_user_files/</path>
+            </docker_test_user_files_disk>
+        </disks>
+        <policies>
+            <docker_test_user_files>
+                <volumes>
+                    <main>
+                        <disk>docker_test_user_files_disk</disk>
+                    </main>
+                </volumes>
+            </docker_test_user_files>
+        </policies>
+    </storage_configuration>
+
+    <user_files_policy>docker_test_user_files</user_files_policy>
+
+    <!-- Deliberately unusable legacy path: `/dev/null` is a character device, not a directory, so
+         creating it fails. With `user_files_policy` configured the entrypoint and the server must
+         both leave it alone. -->
+    <user_files_path>/dev/null/user_files/</user_files_path>
+</clickhouse>
