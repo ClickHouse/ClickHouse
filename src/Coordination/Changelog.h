@@ -9,7 +9,9 @@
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <functional>
 #include <map>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <shared_mutex>
@@ -332,6 +334,22 @@ struct LogEntryStorage
 
     void addLogLocations(std::vector<IndexWithLogLocation> && indices_with_log_locations);
 
+    /// The S3 changelog compaction concatenated the objects of `sources` into `merged`, each source starting
+    /// at the paired byte offset. The locations pointing into the sources are switched to `merged` by the
+    /// next `refreshCache`, which runs under the exclusive changelog_lock; `applied` is set after that and
+    /// only then may the source objects be removed.
+    struct ChangelogRelink
+    {
+        std::vector<std::pair<ChangelogFileDescriptionPtr, size_t>> sources;
+        ChangelogFileDescriptionPtr merged;
+        std::atomic<bool> applied = false;
+        /// Called right after `applied` is set, so the sources can be removed without waiting for another trigger.
+        std::function<void()> on_applied;
+    };
+    using ChangelogRelinkPtr = std::shared_ptr<ChangelogRelink>;
+
+    void scheduleRelink(const ChangelogRelinkPtr & relink);
+
     void refreshCache();
 
     /// Build a read plan for [start, end). Must be called under changelog_lock (shared). No disk I/O.
@@ -407,6 +425,9 @@ struct LogEntryStorage
 private:
     void updateTermInfoWithNewEntry(uint64_t index, uint64_t term);
 
+    /// Caller holds changelog_lock (exclusive).
+    void applyRelink(ChangelogRelink & relink);
+
     struct InMemoryCache
     {
         explicit InMemoryCache(size_t size_threshold_, size_t count_threshold_);
@@ -452,6 +473,7 @@ private:
 
     mutable std::mutex logs_location_mutex;
     std::vector<IndexWithLogLocation> unapplied_indices_with_log_locations;
+    std::vector<ChangelogRelinkPtr> unapplied_relinks;
     std::unordered_map<uint64_t, LogLocation> logs_location;
     size_t max_index_with_location = 0;
     size_t min_index_with_location = 0;
@@ -558,6 +580,9 @@ private:
     void retireCommitReaderLocked() TSA_REQUIRES(readers_mutex);
 };
 
+class IChangelogWriter;
+
+using ChangelogWriterPtr = std::unique_ptr<IChangelogWriter>;
 /// Simplest changelog with files rotation.
 /// No compression, no metadata, just entries with headers one by one.
 /// Able to read broken files/entries and discard them. Not thread safe.
@@ -682,6 +707,7 @@ private:
 
     DiskPtr getDisk() const;
     DiskPtr getLatestLogDisk() const;
+    DiskPtr getS3LogDisk() const;
 
     /// Currently existing changelogs
     std::map<uint64_t, ChangelogFileDescriptionPtr> existing_changelogs;
@@ -746,7 +772,7 @@ private:
 
     mutable std::mutex writer_mutex;
     /// Current writer for changelog file
-    std::unique_ptr<ChangelogWriter> current_writer;
+    ChangelogWriterPtr current_writer;
 
     LogEntryStorage entry_storage;
 
