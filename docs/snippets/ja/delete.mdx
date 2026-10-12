@@ -36,7 +36,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 [`lightweight_delete_mode`](/ja/reference/settings/session-settings/lightweight#lightweight_delete_mode) 設定では、ミューテーションベースの削除 (デフォルト) か、削除対象の行について `_row_exists = 0` を含むパッチパートを書き込む論理更新を選択します。クエリでは、物理的なクリーンアップが行われる前に、これらのパッチが適用されます。
 
-利用可能なモードは設定のリファレンスを、前提条件は[論理更新の要件](/ja/reference/statements/update#lightweight-update-requirements)を参照してください。パッチパートを使用する場合、`lightweight_deletes_sync` は他のレプリカへの反映を待ちません。`ReplicatedMergeTree` では、他のレプリカがパッチを受信するまで、削除済みの行が返されることがあります。
+利用可能なモードは設定のリファレンスを、前提条件は[論理更新の要件](/ja/reference/statements/update)を参照してください。パッチパートを使用する場合、`lightweight_deletes_sync` は他のレプリカへの反映を待ちません。`ReplicatedMergeTree` では、他のレプリカがパッチを受信するまで、削除済みの行が返されることがあります。
 
 ## 大量のデータの削除 {#deleting-large-amounts-of-data}
 

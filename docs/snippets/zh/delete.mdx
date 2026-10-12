@@ -36,7 +36,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 [`lightweight_delete_mode`](/zh/reference/settings/session-settings/lightweight#lightweight_delete_mode) 设置可选择基于变更的删除 (默认模式) ，或通过轻量级更新写入补丁分区片段，并以 `_row_exists = 0` 标记已删除的行。查询会先应用这些补丁，再进行物理清理。
 
-有关可用模式，请参阅该设置的参考文档；有关前置条件，请参阅[轻量级更新要求](/zh/reference/statements/update#lightweight-update-requirements)。使用补丁分区片段时，`lightweight_deletes_sync` 不会等待其他副本；对于 `ReplicatedMergeTree`，其他副本在收到补丁之前仍可能返回已删除的行。
+有关可用模式，请参阅该设置的参考文档；有关前置条件，请参阅[轻量级更新要求](/zh/reference/statements/update)。使用补丁分区片段时，`lightweight_deletes_sync` 不会等待其他副本；对于 `ReplicatedMergeTree`，其他副本在收到补丁之前仍可能返回已删除的行。
 
 ## 删除大量数据 {#deleting-large-amounts-of-data}
 

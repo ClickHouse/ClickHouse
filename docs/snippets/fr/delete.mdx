@@ -36,7 +36,7 @@ Si vous devez garantir que vos données sont supprimées du stockage dans un dé
 
 Le paramètre [`lightweight_delete_mode`](/fr/reference/settings/session-settings/lightweight#lightweight_delete_mode) permet de choisir entre les suppressions par mutation (mode par défaut) et les mises à jour légères qui créent des patch parts contenant `_row_exists = 0` pour les lignes supprimées. Les requêtes appliquent ces correctifs avant la suppression physique des données.
 
-Consultez la référence du paramètre pour connaître les modes disponibles et les [conditions requises pour les mises à jour légères](/fr/reference/statements/update#lightweight-update-requirements) pour vérifier les prérequis. Lorsque des patch parts sont utilisées, `lightweight_deletes_sync` n’attend pas les autres répliques : avec `ReplicatedMergeTree`, celles-ci peuvent encore renvoyer des lignes supprimées tant qu’elles n’ont pas reçu le correctif.
+Consultez la référence du paramètre pour connaître les modes disponibles et les [conditions requises pour les mises à jour légères](/fr/reference/statements/update) pour vérifier les prérequis. Lorsque des patch parts sont utilisées, `lightweight_deletes_sync` n’attend pas les autres répliques : avec `ReplicatedMergeTree`, celles-ci peuvent encore renvoyer des lignes supprimées tant qu’elles n’ont pas reçu le correctif.
 
 ## Suppression de grandes quantités de données {#deleting-large-amounts-of-data}
 

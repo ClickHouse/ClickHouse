@@ -36,7 +36,7 @@ Si necesita garantizar que sus datos se eliminen del almacenamiento en un tiempo
 
 La configuración [`lightweight_delete_mode`](/es/reference/settings/session-settings/lightweight#lightweight_delete_mode) permite elegir entre eliminaciones mediante mutaciones (la opción predeterminada) y actualizaciones ligeras que escriben partes de parche con `_row_exists = 0` para las filas eliminadas. Las consultas aplican estos parches antes de la eliminación física de las filas.
 
-Consulte la referencia de esta configuración para conocer los modos disponibles y los [requisitos de las actualizaciones ligeras](/es/reference/statements/update#lightweight-update-requirements) para conocer las condiciones previas. Cuando se usan partes de parche, `lightweight_deletes_sync` no espera a las demás réplicas; en `ReplicatedMergeTree`, estas pueden seguir devolviendo filas eliminadas hasta que reciban el parche.
+Consulte la referencia de esta configuración para conocer los modos disponibles y los [requisitos de las actualizaciones ligeras](/es/reference/statements/update) para conocer las condiciones previas. Cuando se usan partes de parche, `lightweight_deletes_sync` no espera a las demás réplicas; en `ReplicatedMergeTree`, estas pueden seguir devolviendo filas eliminadas hasta que reciban el parche.
 
 ## Eliminación de grandes volúmenes de datos {#deleting-large-amounts-of-data}
 

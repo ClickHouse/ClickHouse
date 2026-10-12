@@ -36,7 +36,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 يحدد الإعداد [`lightweight_delete_mode`](/ar/reference/settings/session-settings/lightweight#lightweight_delete_mode) ما إذا كان الحذف سيُنفَّذ عبر التعديلات (الوضع الافتراضي) أم عبر تحديثات خفيفة الوزن تكتب أجزاء تصحيح تحتوي على `_row_exists = 0` للصفوف المحذوفة. وتُطبَّق هذه التصحيحات عند تنفيذ الاستعلامات، قبل إزالة البيانات فعليًا.
 
-راجع مرجع الإعداد للاطلاع على الأوضاع المتاحة، و[متطلبات التحديث الخفيف الوزن](/ar/reference/statements/update#lightweight-update-requirements) للاطلاع على المتطلبات المسبقة. عند استخدام أجزاء التصحيح، لا ينتظر `lightweight_deletes_sync` النسخ المتماثلة الأخرى؛ وفي `ReplicatedMergeTree`، قد تستمر النسخ المتماثلة الأخرى في إرجاع الصفوف المحذوفة إلى أن تتلقى التصحيح.
+راجع مرجع الإعداد للاطلاع على الأوضاع المتاحة، و[متطلبات التحديث الخفيف الوزن](/ar/reference/statements/update) للاطلاع على المتطلبات المسبقة. عند استخدام أجزاء التصحيح، لا ينتظر `lightweight_deletes_sync` النسخ المتماثلة الأخرى؛ وفي `ReplicatedMergeTree`، قد تستمر النسخ المتماثلة الأخرى في إرجاع الصفوف المحذوفة إلى أن تتلقى التصحيح.
 
 ## حذف كميات كبيرة من البيانات {#deleting-large-amounts-of-data}
 

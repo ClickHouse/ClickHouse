@@ -36,7 +36,7 @@ DELETE FROM hits WHERE Title LIKE '%hello%';
 
 [`lightweight_delete_mode`](/ko/reference/settings/session-settings/lightweight#lightweight_delete_mode) 설정에서는 뮤테이션 기반 삭제(기본값)와 삭제된 행의 `_row_exists = 0` 값을 담은 패치 파트를 기록하는 경량 업데이트 중 하나를 선택할 수 있습니다. 쿼리에서는 실제로 데이터가 정리되기 전에 이러한 패치를 적용합니다.
 
-사용 가능한 모드는 설정 참고 문서를, 사전 요구 사항은 [경량 업데이트 요구 사항](/ko/reference/statements/update#lightweight-update-requirements)을 참조하십시오. 패치 파트를 사용하면 `lightweight_deletes_sync`는 다른 레플리카의 처리를 기다리지 않습니다. `ReplicatedMergeTree`에서는 다른 레플리카가 패치를 수신하기 전까지 삭제된 행을 반환할 수 있습니다.
+사용 가능한 모드는 설정 참고 문서를, 사전 요구 사항은 [경량 업데이트 요구 사항](/ko/reference/statements/update)을 참조하십시오. 패치 파트를 사용하면 `lightweight_deletes_sync`는 다른 레플리카의 처리를 기다리지 않습니다. `ReplicatedMergeTree`에서는 다른 레플리카가 패치를 수신하기 전까지 삭제된 행을 반환할 수 있습니다.
 
 ## 대량의 데이터 삭제 {#deleting-large-amounts-of-data}
 

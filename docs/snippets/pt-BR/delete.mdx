@@ -36,7 +36,7 @@ Se você precisar garantir que seus dados sejam excluídos do armazenamento em u
 
 A configuração [`lightweight_delete_mode`](/pt-BR/reference/settings/session-settings/lightweight#lightweight_delete_mode) permite escolher entre exclusões baseadas em mutações (o padrão) e atualizações leves que gravam partes de patch com `_row_exists = 0` para as linhas excluídas. As consultas aplicam esses patches antes da remoção física dos dados.
 
-Consulte a referência da configuração para ver os modos disponíveis e os [requisitos das atualizações leves](/pt-BR/reference/statements/update#lightweight-update-requirements) para verificar os pré-requisitos. Quando são usadas partes de patch, `lightweight_deletes_sync` não aguarda as demais réplicas; em `ReplicatedMergeTree`, elas ainda podem retornar linhas excluídas até receberem o patch.
+Consulte a referência da configuração para ver os modos disponíveis e os [requisitos das atualizações leves](/pt-BR/reference/statements/update) para verificar os pré-requisitos. Quando são usadas partes de patch, `lightweight_deletes_sync` não aguarda as demais réplicas; em `ReplicatedMergeTree`, elas ainda podem retornar linhas excluídas até receberem o patch.
 
 ## Exclusão de grandes volumes de dados {#deleting-large-amounts-of-data}
 
