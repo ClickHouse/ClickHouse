@@ -248,6 +248,12 @@ AsyncLoader::~AsyncLoader()
     shutdown();
 }
 
+void AsyncLoader::setWaiterCallbacks(WaiterCallback on_increment, WaiterCallback on_decrement)
+{
+    on_waiters_increment = std::move(on_increment);
+    on_waiters_decrement = std::move(on_decrement);
+}
+
 void AsyncLoader::wait()
 {
     // Because job can create new jobs in other pools we have to recheck in cycle.
@@ -472,7 +478,7 @@ void AsyncLoader::prioritize(const LoadJobPtr & job, size_t new_pool)
 void AsyncLoader::wait(const LoadJobPtr & job, bool no_throw)
 {
     std::unique_lock job_lock{job->mutex};
-    wait(job_lock, job);
+    wait(job_lock, job, /* run_waiter_callbacks = */ true);
     if (!no_throw && job->load_exception)
         throw Exception(ErrorCodes::ASYNC_LOAD_WAIT_FAILED, "Waited job failed: {}", getExceptionMessage(job->load_exception, /* with_stacktrace = */ false));
 }
@@ -507,7 +513,11 @@ void AsyncLoader::remove(const LoadJobSet & jobs)
             ALLOW_ALLOCATIONS_IN_SCOPE;
             chassert(info->second.isExecuting());
             lock.unlock();
-            wait(job, /* no_throw = */ true); // Wait for job to finish
+            {
+                // Wait for job to finish
+                std::unique_lock job_lock{job->mutex};
+                wait(job_lock, job, /* run_waiter_callbacks = */ false);
+            }
             lock.lock();
         }
     }
@@ -779,7 +789,7 @@ bool static detectWaitDependentDeadlock(const LoadJobPtr & waited)
     return false;
 }
 
-void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job)
+void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job, bool run_waiter_callbacks)
 {
     // Ensure job we are going to wait was scheduled to avoid "wait not scheduled" deadlocks
     if (job->job_id == 0)
@@ -847,8 +857,24 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
     if (log_events)
         LOG_DEBUG(log, "Wait load job '{}' in {}", job->name, getPoolName(job->pool_id));
 
-    if (job->on_waiters_increment)
-        job->on_waiters_increment(job);
+    if (run_waiter_callbacks)
+    {
+        if (on_waiters_increment)
+            on_waiters_increment(job);
+        if (job->on_waiters_increment)
+        {
+            try
+            {
+                job->on_waiters_increment(job);
+            }
+            catch (...)
+            {
+                if (on_waiters_decrement)
+                    on_waiters_decrement(job);
+                throw;
+            }
+        }
+    }
 
     // WARNING: it is important not to throw below this point to avoid `on_waiters_increment` call w/o matching `on_waiters_decrement` call
 
@@ -858,8 +884,13 @@ void AsyncLoader::wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr
     job->waiters--;
     ProfileEvents::increment(ProfileEvents::AsyncLoaderWaitMicroseconds, watch.elapsedMicroseconds());
 
-    if (job->on_waiters_decrement)
-        job->on_waiters_decrement(job);
+    if (run_waiter_callbacks)
+    {
+        if (job->on_waiters_decrement)
+            job->on_waiters_decrement(job);
+        if (on_waiters_decrement)
+            on_waiters_decrement(job);
+    }
 
     if (job->waiters == 0)
     {

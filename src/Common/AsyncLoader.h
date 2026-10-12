@@ -132,6 +132,7 @@ private:
     // If `on_waiters_increment` throws, then wait is canceled, and corresponding `on_waiters_decrement` will never be called.
     // It can be used for counting and limits on number of waiters.
     // Note that implementations are called under `LoadJob::mutex` and should be fast.
+    // Note that the cleanup wait in `AsyncLoader::remove` does not call them, because it runs in the noexcept `~LoadTask`.
     std::function<void(const LoadJobPtr & self)> on_waiters_increment;
     std::function<void(const LoadJobPtr & self)> on_waiters_decrement;
 
@@ -400,6 +401,12 @@ public:
     // WARNING: all tasks instances should be destructed before associated AsyncLoader.
     ~AsyncLoader();
 
+    using WaiterCallback = std::function<void(const LoadJobPtr & job)>;
+
+    // Called for every wait on any job of this loader, with the same contract as the job's own `on_waiters_increment` /
+    // `on_waiters_decrement`: the increment runs before the job's own, the decrement after it. Must be set before any job is scheduled.
+    void setWaiterCallbacks(WaiterCallback on_increment, WaiterCallback on_decrement);
+
     // Wait for all load jobs to finish, including all new jobs. So at first take care to stop adding new jobs.
     void wait();
 
@@ -434,6 +441,7 @@ public:
 
     // Sync wait for a pending job to be finished: OK, FAILED or CANCELED status.
     // Throws if job is FAILED or CANCELED unless `no_throw` is set. Returns or throws immediately if called on non-pending job.
+    // Also throws if a waiter increment callback throws to cancel the wait, which `no_throw` does not suppress.
     // Waiting for a not scheduled job is considered to be LOGICAL_ERROR, use waitLoad() helper instead to make sure the job is scheduled.
     // There are more rules if `wait()` is called from another job:
     //  1) waiting on a dependent job is considered to be LOGICAL_ERROR;
@@ -476,7 +484,7 @@ private:
     void gatherNotScheduled(const LoadJobPtr & job, LoadJobSet & jobs, std::unique_lock<std::mutex> & lock);
     void prioritize(const LoadJobPtr & job, size_t new_pool_id, std::unique_lock<std::mutex> & lock);
     void enqueue(Info & info, const LoadJobPtr & job, std::unique_lock<std::mutex> & lock);
-    void wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job);
+    void wait(std::unique_lock<std::mutex> & job_lock, const LoadJobPtr & job, bool run_waiter_callbacks);
     bool canSpawnWorker(Pool & pool, std::unique_lock<std::mutex> & lock);
     bool canWorkerLive(Pool & pool, std::unique_lock<std::mutex> & lock);
     void setCurrentPriority(std::unique_lock<std::mutex> & lock, std::optional<Priority> priority);
@@ -492,6 +500,9 @@ private:
     const bool log_progress; // Periodically log total progress
     const bool log_events; // Log all important events: job start/end, waits, prioritizations
     LoggerPtr log;
+
+    WaiterCallback on_waiters_increment;
+    WaiterCallback on_waiters_decrement;
 
     mutable std::mutex mutex; // Guards all the fields below.
     bool is_running = true;
