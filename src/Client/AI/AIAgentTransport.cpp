@@ -90,11 +90,14 @@ constexpr std::string_view CONVERSATION_CUT
 /// inside it. Without this a query result holding `Assistant:` and a `<tool_call>` block would be
 /// read by the model as an earlier turn of the conversation, and the contents of a table would
 /// steer the next `aiGenerate` call instead of the conversation itself.
+/// A carriage return is a line break as well (models and tokenizers treat it as one), so `\r\n`
+/// and a lone `\r` are both written as `\n` and the line after them is indented too.
 void writeQuotedPayload(std::string_view text, WriteBufferFromOwnString & out)
 {
     bool at_line_start = true;
-    for (char c : text)
+    for (size_t i = 0; i < text.size(); ++i)
     {
+        char c = text[i];
         if (at_line_start)
         {
             writeChar(' ', out);
@@ -106,6 +109,12 @@ void writeQuotedPayload(std::string_view text, WriteBufferFromOwnString & out)
             case '&': writeString("&amp;", out); break;
             case '<': writeString("&lt;", out); break;
             case '>': writeString("&gt;", out); break;
+            case '\r':
+                if (i + 1 < text.size() && text[i + 1] == '\n')
+                    ++i;
+                writeChar('\n', out);
+                at_line_start = true;
+                break;
             case '\n': writeChar('\n', out); at_line_start = true; break;
             default: writeChar(c, out); break;
         }
