@@ -1,9 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
 
 #include <algorithm>
-#include <ranges>
-
-#include <fmt/ranges.h>
 
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
@@ -38,18 +35,6 @@ namespace QueryPlanOptimizations
 
 namespace
 {
-
-String dumpStatsForLogs(const RelationStats & stats)
-{
-    return fmt::format(
-        "{}: {} rows, columns: [{}]",
-        stats.table_name.empty() ? "<unknown>" : stats.table_name,
-        stats.estimated_rows ? toString(stats.estimated_rows.value()) : "unknown",
-        fmt::join(
-            stats.column_stats
-                | std::views::transform([](const auto & p) { return fmt::format("{}: {}", p.first, p.second.num_distinct_values); }),
-            ", "));
-}
 
 RelationStats estimateAggregatingStepStats(const AggregatingStep & aggregating_step, const RelationStats & input_stats)
 {
@@ -169,7 +154,7 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
                     .column_stats = relation_profile.column_stats,
                     .table_name = table_display_name,
                     .source = RowEstimateSource::Statistics};
-                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpStatsForLogs(stats));
+                LOG_TRACE(getLogger("optimizeJoin"), "estimate statistics {}", dumpRelationStatsForLogs(stats));
                 return stats;
             }
         }
@@ -247,11 +232,21 @@ RelationStats estimateReadRowsCount(QueryPlan::Node & node, const ActionsDAG::No
             return unknown;
 
         const bool exact = *estimate->rows == 0 || (!has_filter && !estimate->has_delete_files);
-        return RelationStats{
+        RelationStats stats{
             .estimated_rows = estimate->rows,
             .table_name = table_display_name,
             .imprecise_estimate = !exact,
             .source = RowEstimateSource::DataLakeMetadata};
+        if (estimate->column_statistics)
+        {
+            auto profile = estimate->column_statistics->estimateRelationProfile();
+            /// Without a `uniq` sketch the estimator guesses a fixed share of the rows; the manifests give better.
+            for (auto & [name, column] : profile.column_stats)
+                if (auto it = estimate->num_distinct_values.find(name); it != estimate->num_distinct_values.end())
+                    column.num_distinct_values = it->second;
+            stats.column_stats = std::move(profile.column_stats);
+        }
+        return stats;
     }
 
     if (const auto * reading = typeid_cast<const ReadFromMemoryStorageStep *>(step))

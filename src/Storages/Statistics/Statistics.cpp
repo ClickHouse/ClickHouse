@@ -544,6 +544,23 @@ void ColumnStatistics::serialize(WriteBuffer & buf) const
     }
 }
 
+std::shared_ptr<ColumnStatistics> ColumnStatistics::createBasicFromSummary(
+    const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count)
+{
+    SingleStatisticsDescription basic_desc(StatisticsType::Basic, nullptr, /*is_implicit_=*/ true);
+    ColumnStatisticsDescription stats_desc;
+    stats_desc.data_type = data_type;
+    stats_desc.types_to_desc.emplace(StatisticsType::Basic, basic_desc);
+
+    auto basic = std::make_shared<StatisticsBasic>(basic_desc, data_type);
+    basic->setSummary(rows, min_value, max_value, null_count);
+
+    auto column_stats = std::make_shared<ColumnStatistics>(stats_desc);
+    column_stats->stats.emplace(StatisticsType::Basic, std::move(basic));
+    column_stats->rows = rows;
+    return column_stats;
+}
+
 std::shared_ptr<ColumnStatistics> ColumnStatistics::deserialize(ReadBuffer & buf, const DataTypePtr & data_type)
 {
     UInt16 version_raw{};

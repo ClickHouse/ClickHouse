@@ -50,6 +50,9 @@ using PartitionCommands = std::vector<PartitionCommand>;
 struct FormatParserSharedResources;
 using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
 
+class ConditionSelectivityEstimator;
+using ConditionSelectivityEstimatorPtr = std::shared_ptr<ConditionSelectivityEstimator>;
+
 /// Rows of a read, estimated from the data lake metadata without reading data (see `IDataLakeMetadata::estimateRead`).
 struct DataLakeReadEstimate
 {
@@ -59,6 +62,11 @@ struct DataLakeReadEstimate
     bool pruned_data_files = false;
     /// The snapshot has live delete files.
     bool has_delete_files = false;
+    /// Statistics of the requested columns over the remaining data files, merged as those of MergeTree parts;
+    /// nullptr unless `rows` is known and positive.
+    ConditionSelectivityEstimatorPtr column_statistics;
+    /// By storage column name: the number of distinct values that replaces the estimator's guess.
+    std::unordered_map<String, UInt64> num_distinct_values;
 };
 
 class IDataLakeMetadata : boost::noncopyable
@@ -143,8 +151,10 @@ public:
     virtual bool supportsLazyMaterialization(StorageMetadataPtr, ContextPtr) const { return false; }
 
     /// Estimates from the metadata only the rows a read of the pinned data snapshot returns, with the data files
-    /// pruned by `filter` as the read prunes them. std::nullopt if this data lake gives no estimate.
-    virtual std::optional<DataLakeReadEstimate> estimateRead(StorageMetadataPtr, const ActionsDAG * /*filter*/, ContextPtr) const
+    /// pruned by `filter` as the read prunes them, and the statistics of `column_names`. std::nullopt if this data lake
+    /// gives no estimate.
+    virtual std::optional<DataLakeReadEstimate>
+    estimateRead(StorageMetadataPtr, const ActionsDAG * /*filter*/, const Names & /*column_names*/, ContextPtr) const
     {
         return std::nullopt;
     }
