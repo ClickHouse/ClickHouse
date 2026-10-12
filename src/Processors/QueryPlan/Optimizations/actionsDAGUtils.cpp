@@ -2,6 +2,7 @@
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
 
 #include <Core/Field.h>
+#include <Functions/FunctionsMiscellaneous.h>
 #include <Functions/IFunction.h>
 #include <Columns/ColumnConst.h>
 #include <Columns/ColumnSet.h>
@@ -587,7 +588,9 @@ static bool isConstantExpression(const ActionsDAG::Node * root, NodeMap & consta
         const auto * node = frame.node;
 
         if (node->column)
-            finish(true);
+            /// A constant lambda can still execute non-deterministic functions.
+            finish(
+                allColumnFunctions(*node->column, [](const IFunctionBase & function) { return function.isDeterministicInScopeOfQuery(); }));
         else if (!canInheritConstnessFromChildren(*node))
             finish(false);
         else if (frame.next_child == node->children.size())

@@ -89,3 +89,71 @@ SELECT extract(explain, 'Join:.*') FROM
     ON probe.n = aggregated.key
 )
 WHERE explain LIKE '% Join:%';
+
+-- A deterministic folded lambda preserves the input NDV.
+SELECT 'arrayMap(x -> x * 2, [n])[1]';
+SELECT extract(explain, 'Join:.*') FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT *
+    FROM probe
+    JOIN
+    (
+        SELECT arrayMap(x -> x * 2, [n])[1] AS key, count()
+        FROM source
+        GROUP BY key
+    ) AS aggregated
+    ON probe.n = aggregated.key
+)
+WHERE explain LIKE '% Join:%';
+
+-- A folded lambda with `rand(x)` must not bound distinct results by `NDV(n)`.
+SELECT 'arrayMap(x -> x + rand(x) % 1000, [n])[1]';
+SELECT extract(explain, 'Join:.*') FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT *
+    FROM probe
+    JOIN
+    (
+        SELECT arrayMap(x -> x + rand(x) % 1000, [n])[1] AS key, count()
+        FROM source
+        GROUP BY key
+    ) AS aggregated
+    ON probe.n = aggregated.key
+)
+WHERE explain LIKE '% Join:%';
+
+-- A non-deterministic lambda also makes an otherwise constant subtree non-constant.
+SELECT 'n + arraySum(arrayMap(x -> x + rand(x) % 1000, materialize([1, 2, 3])))';
+SELECT extract(explain, 'Join:.*') FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT *
+    FROM probe
+    JOIN
+    (
+        SELECT n + arraySum(arrayMap(x -> x + rand(x) % 1000, materialize([1, 2, 3]))) AS key, count()
+        FROM source
+        GROUP BY key
+    ) AS aggregated
+    ON probe.n = aggregated.key
+)
+WHERE explain LIKE '% Join:%';
+
+-- The outer lambda captures the folded inner lambda; check its body too.
+SELECT 'arrayMap(x -> arraySum(arrayMap(y -> y + rand(y) % 1000, [x])), [n])[1]';
+SELECT extract(explain, 'Join:.*') FROM
+(
+    EXPLAIN keep_logical_steps = 1, actions = 1
+    SELECT *
+    FROM probe
+    JOIN
+    (
+        SELECT arrayMap(x -> arraySum(arrayMap(y -> y + rand(y) % 1000, [x])), [n])[1] AS key, count()
+        FROM source
+        GROUP BY key
+    ) AS aggregated
+    ON probe.n = aggregated.key
+)
+WHERE explain LIKE '% Join:%';
