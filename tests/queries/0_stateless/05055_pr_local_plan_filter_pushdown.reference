@@ -27,6 +27,14 @@ Read type: InOrder
 with no splice at all an equality stays above, though the fragment fixes an expression of its column
 Read type: Default
 100
+the splice answers to the settings the fragment carries, not to the outer query
+Read type: Default
+100
+Read type: InOrder
+100
+nor is anything spliced into a fragment shipped as a plan
+Read type: Default
+100
 with the push-down off the condition stays above, and the answer is the same
 Read type: Default
 100

@@ -20,15 +20,6 @@ using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
-/// The conjuncts of `condition` (`ActionsDAG::extractConjunctionAtoms`) the splice would leave out of the
-/// remote query - all of them where it does not run. Answered by the conversion the splice itself makes.
-ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
-    const ActionsDAG::Node & condition,
-    const ASTPtr & query_ast,
-    const QueryTreeNodePtr & query_tree,
-    const PlannerContextPtr & planner_context,
-    const ContextPtr & rewrite_context);
-
 /// Reading step from remote servers.
 /// Unite query results from several shards.
 class ReadFromRemote final : public SourceStepWithFilterBase
@@ -184,5 +175,14 @@ ASTPtr tryBuildAdditionalFilterAST(
     ContextMutablePtr & context,
     /// The conjuncts the conversion leaves out of a positive `AND`, when asked.
     std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr);
+
+/// The conjuncts of `condition` (`ActionsDAG::extractConjunctionAtoms`) the splice would leave out of the
+/// remote query - all of them where it does not run.
+ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
+    const ActionsDAG::Node & condition,
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const ContextPtr & rewrite_context);
 
 }

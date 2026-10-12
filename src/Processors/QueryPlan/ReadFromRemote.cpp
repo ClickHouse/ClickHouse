@@ -69,9 +69,9 @@ namespace Setting
     extern const SettingsBool allow_push_predicate_when_subquery_contains_with;
     extern const SettingsBool enable_optimize_predicate_expression_to_final_subquery;
     extern const SettingsBool allow_push_predicate_ast_for_distributed_subqueries;
-    extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsUInt64 max_replica_delay_for_distributed_queries;
     extern const SettingsMaxThreads max_threads;
+    extern const SettingsBool parallel_replicas_filter_pushdown;
 }
 
 namespace ErrorCodes
@@ -238,16 +238,6 @@ static ASTSelectQuery & getSelectQuery(ASTPtr ast)
         ast = explain->getExplainedQuery();
 
     return ast->as<ASTSelectQuery &>();
-}
-
-/// The same, for a caller that has to answer for a query it may not be able to rewrite - a `UNION ALL`
-/// fragment arrives here as `ASTSelectWithUnionQuery`.
-static ASTSelectQuery * tryGetSelectQuery(ASTPtr ast)
-{
-    if (const auto * explain = ast->as<ASTExplainQuery>())
-        ast = explain->getExplainedQuery();
-
-    return ast->as<ASTSelectQuery>();
 }
 
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
@@ -528,29 +518,56 @@ ASTPtr tryBuildAdditionalFilterAST(
     return node_to_ast[dag.getOutputs().front()];
 }
 
-/// The table the rewrite would put the predicate against, or nothing when the query is not one it can
-/// rewrite. Supported cases:
-///   - TableNode (a real table)
-///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
-///   - QueryNode wrapping any of the above (one level of subquery)
-struct RewriteTarget
+/// Splices `pushed_down_filters` into `query_ast` and says whether it did. `context` is the one the rewrite
+/// mutates (external tables for GLOBAL IN); `rewrite_context` is the one whose settings decide whether the
+/// rewrite happens at all.
+static bool addFilters(
+    Tables * external_tables,
+    ContextMutablePtr & context,
+    const ContextPtr & rewrite_context,
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const ActionsDAG & pushed_down_filters,
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr)
 {
-    StorageSnapshotPtr snapshot;
-    ASTPtr identifier;
-    String alias;
+    if (!query_tree || !planner_context)
+        return false;
 
-    TableWithColumnNamesAndTypes tableWithColumns() const
-    {
-        TableWithColumnNamesAndTypes table_with_columns(
-            identifier ? DatabaseAndTableWithAlias(identifier) : DatabaseAndTableWithAlias{},
-            snapshot->getColumns(GetColumnsOptions::Kind::Ordinary));
-        table_with_columns.table.alias = alias;
-        return table_with_columns;
-    }
-};
+    const auto & settings = rewrite_context->getSettingsRef();
+    if (!settings[Setting::allow_push_predicate_ast_for_distributed_subqueries])
+        return false;
 
-static std::optional<RewriteTarget> findRewriteTarget(const QueryNode & query_node)
-{
+    const auto * query_node = query_tree->as<QueryNode>();
+    if (!query_node)
+        return false;
+
+    /// We are building a set with projection names and a map with execution names here.
+    /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
+
+    std::unordered_set<std::string> projection_names;
+    for (const auto & col : query_node->getProjectionColumns())
+        projection_names.insert(col.name);
+
+    std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
+    for (const auto & node : query_node->getProjection())
+        execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
+
+    ASTPtr predicate = tryBuildAdditionalFilterAST(
+        pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context, dropped_conjuncts);
+    if (!predicate)
+        return false;
+
+    auto table_expressions = extractTableExpressions(query_node->getJoinTreeNodeTyped());
+    /// Case with JOIN is not supported so far.
+    if (table_expressions.size() != 1)
+        return false;
+
+    /// Extract the storage snapshot, identifier (when available) and alias from the table expression.
+    /// Supported cases:
+    ///   - TableNode (a real table)
+    ///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
+    ///   - QueryNode wrapping any of the above (one level of subquery)
     StorageSnapshotPtr table_snapshot;
     ASTPtr table_identifier_ast;
     String table_alias;
@@ -576,76 +593,34 @@ static std::optional<RewriteTarget> findRewriteTarget(const QueryNode & query_no
         return false;
     };
 
-    auto table_expressions = extractTableExpressions(query_node.getJoinTreeNodeTyped());
-    /// Case with JOIN is not supported so far.
-    if (table_expressions.size() != 1)
-        return {};
-
     if (!extract_from_expression(table_expressions.front()))
     {
         const auto * inner_query_node = table_expressions.front()->as<QueryNode>();
         if (!inner_query_node)
-            return {};
+            return false;
 
         table_expressions = extractTableExpressions(inner_query_node->getJoinTreeNodeTyped());
         /// Case with JOIN is not supported so far.
         if (table_expressions.size() != 1)
-            return {};
+            return false;
 
         if (!extract_from_expression(table_expressions.front()))
-            return {};
+            return false;
     }
 
-    return RewriteTarget{std::move(table_snapshot), std::move(table_identifier_ast), std::move(table_alias)};
+    TableWithColumnNamesAndTypes table_with_columns(
+        table_identifier_ast ? DatabaseAndTableWithAlias(table_identifier_ast) : DatabaseAndTableWithAlias{},
+        table_snapshot->getColumns(GetColumnsOptions::Kind::Ordinary));
+    table_with_columns.table.alias = table_alias;
+
+    bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
+    bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
+
+    ASTs predicates{predicate};
+    PredicateRewriteVisitor::Data data(rewrite_context, predicates, table_with_columns, optimize_final, optimize_with);
+
+    return data.rewriteSubquery(getSelectQuery(query_ast), table_with_columns.columns.getNames());
 }
-
-/// Whether a condition pushed down on the initiator would be spliced into the query the remote side runs
-/// at all: the settings allow it, and the query is one `findRewriteTarget` and
-/// `subqueryAcceptsPushedPredicate` take.
-static bool canSpliceFiltersIntoRemoteQuery(
-    const ASTPtr & query_ast, const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context, const ContextPtr & context)
-{
-    if (!query_ast || !query_tree || !planner_context)
-        return false;
-
-    const auto & settings = context->getSettingsRef();
-    if (!settings[Setting::allow_push_predicate_ast_for_distributed_subqueries])
-        return false;
-
-    const auto * query_node = query_tree->as<QueryNode>();
-    if (!query_node)
-        return false;
-
-    const auto * select_query = tryGetSelectQuery(query_ast);
-    if (!select_query)
-        return false;
-
-    if (!findRewriteTarget(*query_node))
-        return false;
-
-    return subqueryAcceptsPushedPredicate(
-        *select_query,
-        settings[Setting::enable_optimize_predicate_expression_to_final_subquery],
-        settings[Setting::allow_push_predicate_when_subquery_contains_with],
-        context);
-}
-
-/// We are building a set with projection names and a map with execution names here.
-/// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
-struct ProjectionNames
-{
-    std::unordered_set<std::string> names;
-    std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_query_tree;
-
-    ProjectionNames(const QueryNode & query_node, const PlannerContext & planner_context)
-    {
-        for (const auto & col : query_node.getProjectionColumns())
-            names.insert(col.name);
-
-        for (const auto & node : query_node.getProjection())
-            execution_name_to_query_tree[calculateActionNodeName(node, planner_context)] = node;
-    }
-};
 
 ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
     const ActionsDAG::Node & condition,
@@ -654,20 +629,16 @@ ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
     const PlannerContextPtr & planner_context,
     const ContextPtr & rewrite_context)
 {
+    /// The splice itself, run on copies: of the query, and of the condition as a DAG of its own, built the
+    /// way the remote step builds one from what is pushed into it - the conversion's answer depends on the
+    /// DAG around the condition. The copy is made node for node, so its atoms come in the same order as
+    /// these. No external tables: only a `GLOBAL IN` needs them, and it cannot fix a column.
     auto atoms = ActionsDAG::extractConjunctionAtoms(&condition);
-    if (!canSpliceFiltersIntoRemoteQuery(query_ast, query_tree, planner_context, rewrite_context))
-        return atoms;
-
-    /// Converted out of a DAG of its own, built the way the remote step builds one from what is pushed
-    /// into it, because the conversion's answer depends on the DAG around the condition. The copy is
-    /// made node for node, so its atoms come in the same order as these. No external tables: only a
-    /// `GLOBAL IN` needs them, and creating them is not something to do for a question.
     auto dag = ActionsDAG::buildFilterActionsDAG({&condition});
-    ProjectionNames projection(*query_tree->as<QueryNode>(), *planner_context);
     ContextMutablePtr no_context;
     std::vector<const ActionsDAG::Node *> dropped;
-    if (!dag
-        || !tryBuildAdditionalFilterAST(*dag, projection.names, projection.execution_name_to_query_tree, nullptr, no_context, &dropped))
+    if (!query_ast || !dag
+        || !addFilters(nullptr, no_context, rewrite_context, query_ast->clone(), query_tree, planner_context, *dag, &dropped))
         return atoms;
 
     auto copied_atoms = ActionsDAG::extractConjunctionAtoms(dag->getOutputs().front());
@@ -681,41 +652,6 @@ ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
             if (auto it = std::ranges::find(copied_atoms, copied_atom); it != copied_atoms.end())
                 left_out.push_back(atoms[it - copied_atoms.begin()]);
     return left_out;
-}
-
-/// `context` is the one the rewrite mutates (external tables for GLOBAL IN); `rewrite_context` is the
-/// one whose settings decide whether the rewrite happens at all, and it is whichever context the plan
-/// was optimized with, so that the decision here matches the one the push-down made.
-static void addFilters(
-    Tables * external_tables,
-    ContextMutablePtr & context,
-    const ContextPtr & rewrite_context,
-    const ASTPtr & query_ast,
-    const QueryTreeNodePtr & query_tree,
-    const PlannerContextPtr & planner_context,
-    const ActionsDAG & pushed_down_filters)
-{
-    if (!canSpliceFiltersIntoRemoteQuery(query_ast, query_tree, planner_context, rewrite_context))
-        return;
-
-    const auto * query_node = query_tree->as<QueryNode>();
-    ProjectionNames projection(*query_node, *planner_context);
-
-    ASTPtr predicate = tryBuildAdditionalFilterAST(
-        pushed_down_filters, projection.names, projection.execution_name_to_query_tree, external_tables, context);
-    if (!predicate)
-        return;
-
-    auto table_with_columns = findRewriteTarget(*query_node)->tableWithColumns();
-
-    const auto & settings = rewrite_context->getSettingsRef();
-    bool optimize_final = settings[Setting::enable_optimize_predicate_expression_to_final_subquery];
-    bool optimize_with = settings[Setting::allow_push_predicate_when_subquery_contains_with];
-
-    ASTs predicates{predicate};
-    PredicateRewriteVisitor::Data data(context, predicates, table_with_columns, optimize_final, optimize_with);
-
-    data.rewriteSubquery(*tryGetSelectQuery(query_ast), table_with_columns.columns.getNames());
 }
 
 void ReadFromRemote::addLazyPipe(
@@ -1270,22 +1206,11 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    /// Whatever was pushed into the fragment the replicas execute is spliced into the query they run, as
-    /// the distributed path above does it. The initiator's copy of the fragment holds what this splice
-    /// carries and nothing else that could order a read (see `tryPushDownFilter`), so it splices only
-    /// where that copy was told it would: not with the push-down off, and not when the replicas are sent
-    /// a plan - this text is then only the fallback `RemoteQueryExecutor::sendQuery` sends to a replica
-    /// too old to receive the plan, and a condition read out of it could order that replica's read.
-    if (filter_actions_dag && !query_plan
-        && filter_rewrite_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
-        addFilters(
-            &external_tables,
-            context,
-            filter_rewrite_context,
-            query_ast,
-            query_tree,
-            planner_context,
-            *filter_actions_dag);
+    /// The initiator's copy of the fragment took what this splice carries (see `tryPushDownFilter`), on the
+    /// same context. Not when the replicas are sent a plan: this text is then only the fallback for a
+    /// replica too old to receive it, and a condition read out of it could order that replica's read.
+    if (filter_actions_dag && !query_plan && filter_rewrite_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
+        addFilters(&external_tables, context, filter_rewrite_context, query_ast, query_tree, planner_context, *filter_actions_dag);
 
     Pipes pipes = addPipes(query_ast, output_header);
 

@@ -1481,6 +1481,12 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         return 3;
     }
 
+    /// A filter left above the local fragment (see below) would keep this one from reaching it, while the
+    /// remote step gathers every filter in the chain above it. So join the two, and split them together.
+    if (typeid_cast<FilterStep *>(child.get()) && child_node->children.size() == 1
+        && typeid_cast<ReadFromLocalParallelReplicaStep *>(child_node->children.front()->step.get()))
+        return tryMergeFilters(parent_node, nodes, settings);
+
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
     {
         /// The way out if this push-down misbehaves in production: the condition stays above the read

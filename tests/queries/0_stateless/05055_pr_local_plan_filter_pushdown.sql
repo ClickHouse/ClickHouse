@@ -102,6 +102,40 @@ WHERE explain LIKE '%Read type%';
 SELECT count() FROM v_odd_pr_local_pd WHERE tenant = 5;
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 
+SELECT 'the splice answers to the settings the fragment carries, not to the outer query';
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts FROM (
+        SELECT tenant, ts FROM t_pr_local_pd ORDER BY ts SETTINGS allow_push_predicate_ast_for_distributed_subqueries = 0
+    ) WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+SELECT count() FROM (
+    SELECT tenant, ts FROM t_pr_local_pd ORDER BY ts SETTINGS allow_push_predicate_ast_for_distributed_subqueries = 0
+) WHERE tenant = 5;
+SET allow_push_predicate_ast_for_distributed_subqueries = 0;
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (
+    EXPLAIN description = 0, actions = 1
+    SELECT tenant, ts FROM (
+        SELECT tenant, ts FROM t_pr_local_pd ORDER BY ts SETTINGS allow_push_predicate_ast_for_distributed_subqueries = 1
+    ) WHERE tenant = 5 LIMIT 5
+)
+WHERE explain LIKE '%Read type%';
+SELECT count() FROM (
+    SELECT tenant, ts FROM t_pr_local_pd ORDER BY ts SETTINGS allow_push_predicate_ast_for_distributed_subqueries = 1
+) WHERE tenant = 5;
+SET allow_push_predicate_ast_for_distributed_subqueries = 1;
+
+SELECT 'nor is anything spliced into a fragment shipped as a plan';
+SET serialize_query_plan = 1;
+SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
+FROM (EXPLAIN description = 0, actions = 1 SELECT tenant, ts FROM v_pr_local_pd WHERE tenant = 5 LIMIT 5)
+WHERE explain LIKE '%Read type%';
+SELECT count() FROM v_pr_local_pd WHERE tenant = 5;
+SET serialize_query_plan = 0;
+
 SELECT 'with the push-down off the condition stays above, and the answer is the same';
 SET parallel_replicas_filter_pushdown = 0;
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step

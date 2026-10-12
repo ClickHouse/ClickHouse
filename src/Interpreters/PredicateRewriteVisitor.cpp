@@ -164,21 +164,15 @@ static void getConjunctionHashesFrom(const ASTPtr & ast, std::set<IASTHash> & ha
     }
 }
 
-bool subqueryAcceptsPushedPredicate(
-    const ASTSelectQuery & subquery, bool optimize_final, bool optimize_with, ContextPtr context)
+bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns)
 {
-    return !((!optimize_final && subquery.final())
-        || (subquery.with() && (!optimize_with || hasNonRewritableFunction(subquery.with(), context)))
+    if ((!optimize_final && subquery.final())
+        || (subquery.with() && (!optimize_with || hasNonRewritableFunction(subquery.with(), getContext())))
         || subquery.withFill()
         || subquery.limitBy() || subquery.limitLength() || subquery.limitByLength() || subquery.limitByOffset()
         || subquery.limitAfter() || subquery.limitUntil()
-        || hasNonRewritableFunction(subquery.select(), context)
-        || (subquery.orderBy() && subquery.limitOffset()));
-}
-
-bool PredicateRewriteVisitorData::rewriteSubquery(ASTSelectQuery & subquery, const Names & inner_columns)
-{
-    if (!subqueryAcceptsPushedPredicate(subquery, optimize_final, optimize_with, getContext()))
+        || hasNonRewritableFunction(subquery.select(), getContext())
+        || (subquery.orderBy() && subquery.limitOffset()))
         return false;
 
     Names outer_columns = table_columns.columns.getNames();
