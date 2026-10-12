@@ -394,7 +394,7 @@ void DistinctTransform::transform(Chunk & chunk)
     else
     {
         for (auto & column : columns)
-            column = column->filter(filter, -1);
+            column = column->filter(filter, num_selected);
 
         chunk.setColumns(std::move(columns), num_selected);
     }

@@ -28,6 +28,7 @@ StorageFromMergeTreeProjection::StorageFromMergeTreeProjection(
     StorageID storage_id_, StoragePtr parent_storage_, StorageMetadataPtr parent_metadata_, ProjectionDescriptionRawPtr projection_)
     : IStorage(storage_id_)
     , parent_storage(std::move(parent_storage_))
+    /// NOLINT(storage-cast): the table function resolves the source table before building this.
     , merge_tree(dynamic_cast<const MergeTreeData &>(*parent_storage))
     , parent_metadata(std::move(parent_metadata_))
     , projection(projection_)

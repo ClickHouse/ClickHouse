@@ -171,6 +171,11 @@ inline void skipStringBinary(ReadBuffer & buf)
     buf.ignore(size);
 }
 
+/// The same as `readStringBinary`, but the string grows as the bytes arrive instead of being resized
+/// to the declared size first, so that a size declared by the peer cannot become an allocation on
+/// its own when the payload never follows.
+void readStringBinaryGrowing(String & s, ReadBuffer & buf, size_t max_string_size = DEFAULT_MAX_STRING_SIZE);
+
 /// For historical reasons we store IPv6 as a String
 inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
 {
@@ -187,8 +192,12 @@ inline void readIPv6Binary(IPv6 & ip, ReadBuffer & buf)
     buf.readStrict(reinterpret_cast<char*>(&ip.toUnderType()), size);
 }
 
+/// The element count is read from `buf` and the vector is resized to it before the elements are
+/// read, so where the count comes from an untrusted peer, pass a `max_size` that the data can
+/// plausibly have instead of relying on the default. A `String` element is resized to its declared
+/// size before its value arrives in the same way, so `max_element_size` bounds it as well.
 template <StdVector V>
-void readVectorBinary(V & v, ReadBuffer & buf, size_t max_size = DEFAULT_MAX_STRING_SIZE)
+void readVectorBinary(V & v, ReadBuffer & buf, size_t max_size = DEFAULT_MAX_STRING_SIZE, size_t max_element_size = DEFAULT_MAX_STRING_SIZE)
 {
     using T = typename V::value_type;
 
@@ -204,6 +213,9 @@ void readVectorBinary(V & v, ReadBuffer & buf, size_t max_size = DEFAULT_MAX_STR
     /// std::vector<bool> is bit-packed and has no contiguous element storage, so it cannot use the bulk path.
     if constexpr (is_trivially_serializable<T> && !std::is_same_v<T, bool>)
         readNBytes(reinterpret_cast<char *>(v.data()), size * sizeof(T), buf);
+    else if constexpr (std::is_same_v<T, String>)
+        for (size_t i = 0; i < size; ++i)
+            readStringBinary(v[i], buf, max_element_size);
     else
         for (size_t i = 0; i < size; ++i)
             readBinary(v[i], buf);
