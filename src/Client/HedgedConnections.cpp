@@ -114,7 +114,7 @@ void HedgedConnections::sendScalarsData(Scalars & data)
     for (auto & offset_state : offset_states)
         for (auto & replica : offset_state.replicas)
             if (replica.connection)
-                send_scalars_data(replica);
+                sendToReplica(replica, send_scalars_data);
 
     pipeline_for_new_replicas.add(send_scalars_data);
 }
@@ -131,7 +131,7 @@ void HedgedConnections::sendQueryPlan(const QueryPlan & query_plan)
     for (auto & offset_state : offset_states)
         for (auto & replica : offset_state.replicas)
             if (replica.connection)
-                send_query_plan(replica);
+                sendToReplica(replica, send_query_plan);
 
     pipeline_for_new_replicas.add(send_query_plan);
 }
@@ -176,7 +176,7 @@ void HedgedConnections::sendExternalTablesData(std::vector<ExternalTablesData> &
     for (auto & offset_state : offset_states)
         for (auto & replica : offset_state.replicas)
             if (replica.connection)
-                send_external_tables_data(replica);
+                sendToReplica(replica, send_external_tables_data);
 
     pipeline_for_new_replicas.add(send_external_tables_data);
 }
@@ -265,7 +265,7 @@ void HedgedConnections::sendQuery(
 
     for (auto & offset_status : offset_states)
         for (auto & replica : offset_status.replicas)
-            send_query(replica);
+            sendToReplica(replica, send_query);
 
     pipeline_for_new_replicas.add(send_query);
     sent_query = true;
@@ -328,25 +328,10 @@ std::vector<IConnections::ReplicaAddress> HedgedConnections::getFailedReplicaAdd
 {
     std::lock_guard lock(cancel_mutex);
 
-    /// The replicas that failed while receiving a packet are already removed from `offset_states`
-    /// (see `resumePacketReceiver`), and the survivors, if any, are healthy hedges that must not be
-    /// penalized instead of them.
-    if (!failed_replica_addresses.empty())
-        return failed_replica_addresses;
-
-    /// Otherwise the error came from a send on one of the established connections, and it cannot be
-    /// attributed to a particular replica.
-    std::vector<ReplicaAddress> addresses;
-    for (const OffsetState & offset_state : offset_states)
-    {
-        for (const ReplicaState & replica : offset_state.replicas)
-        {
-            if (replica.connection)
-                addresses.push_back({replica.connection->getHost(), replica.connection->getPort()});
-        }
-    }
-
-    return addresses;
+    /// Only the replicas that actually failed: while receiving a packet (see `resumePacketReceiver`) or
+    /// while sending to them (see `sendToReplica`). The other hedges, if any, are healthy and must not
+    /// be penalized together with them.
+    return failed_replica_addresses;
 }
 
 void HedgedConnections::sendCancel()
@@ -683,7 +668,7 @@ void HedgedConnections::processNewReplicaState(HedgedConnectionsFactory::State s
             epoll.add(replica.change_replica_timeout.getDescriptor());
             timeout_fd_to_replica_location[replica.change_replica_timeout.getDescriptor()] = ReplicaLocation{offset, offset_states[offset].replicas.size() - 1};
 
-            pipeline_for_new_replicas.run(replica);
+            sendToReplica(replica, [this](ReplicaState & replica_) { pipeline_for_new_replicas.run(replica_); });
             break;
         }
         case HedgedConnectionsFactory::State::CANNOT_CHOOSE:
@@ -706,6 +691,20 @@ void HedgedConnections::processNewReplicaState(HedgedConnectionsFactory::State s
 void HedgedConnections::rememberFailedReplica(const ReplicaState & replica)
 {
     failed_replica_addresses.push_back({replica.connection->getHost(), replica.connection->getPort()});
+}
+
+void HedgedConnections::sendToReplica(ReplicaState & replica, const std::function<void(ReplicaState &)> & send_function)
+{
+    try
+    {
+        send_function(replica);
+    }
+    catch (...)
+    {
+        /// Remember which hedge broke, so that a retry after a network error penalizes only it.
+        rememberFailedReplica(replica);
+        throw;
+    }
 }
 
 void HedgedConnections::finishProcessReplica(ReplicaState & replica, bool disconnect)

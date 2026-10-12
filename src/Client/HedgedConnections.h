@@ -178,6 +178,9 @@ private:
     /// Remember the address of a replica whose connection failed, see `failed_replica_addresses`.
     void rememberFailedReplica(const ReplicaState & replica);
 
+    /// Run a send function against a replica, remembering the replica as failed if the send throws.
+    void sendToReplica(ReplicaState & replica, const std::function<void(ReplicaState &)> & send_function);
+
     int getReadyFileDescriptor(AsyncCallback async_callback = {});
 
     HedgedConnectionsFactory hedged_connections_factory;
@@ -201,9 +204,9 @@ private:
     /// The current number of valid connections to the replicas of this shard.
     size_t active_connection_count = 0;
 
-    /// Addresses of the replicas whose connection failed with a network error (a receive timeout
-    /// or an exception while receiving a packet). Such a replica is dropped from `offset_states`
-    /// before the error is rethrown, so it is remembered here for `getFailedReplicaAddresses`.
+    /// Addresses of the replicas whose connection failed (a receive timeout, or an exception while
+    /// receiving a packet from or sending to the replica), remembered for `getFailedReplicaAddresses`.
+    /// A replica that failed while receiving is dropped from `offset_states` before the error is rethrown.
     std::vector<ReplicaAddress> failed_replica_addresses;
 
     /// We count offsets in which we can't change replica anymore,
