@@ -19,9 +19,11 @@
 
 
 #include <ostream>
-#include "Poco/Channel.h"
-#include "Poco/Foundation.h"
-#include "Poco/Mutex.h"
+
+#include <Poco/Channel.h>
+#include <Poco/Foundation.h>
+#include <Poco/Mutex.h>
+#include <Poco/Message.h>
 
 
 namespace Poco
@@ -176,7 +178,7 @@ protected:
 private:
     std::ostream & _str;
     bool _enableColors;
-    Color _colors[9];
+    Color _colors[Poco::Message::PRIO_END];
     static FastMutex _mutex;
     static const std::string CSI;
 };

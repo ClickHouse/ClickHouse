@@ -16,7 +16,7 @@ namespace ErrorCodes
     extern const int TOO_FEW_ARGUMENTS_FOR_FUNCTION;
 }
 
-class FunctionChar : public IFunction
+class FunctionChar final : public IFunction
 {
 public:
     static constexpr auto name = "char";

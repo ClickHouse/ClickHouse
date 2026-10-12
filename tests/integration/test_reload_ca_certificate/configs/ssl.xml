@@ -1,0 +1,31 @@
+<clickhouse>
+    <https_port>8443</https_port>
+
+    <!-- ca.crt, node.crt and node.key are overwritten by the test to rotate certificates. -->
+    <openSSL replace="replace">
+        <server>
+            <certificateFile>/etc/clickhouse-server/config.d/node.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/node.key</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/config.d/ca.crt</caConfig>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <!-- A client certificate is not required, but if the client presents one it must be issued by a trusted CA. -->
+            <verificationMode>relaxed</verificationMode>
+            <cacheSessions>false</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+        </server>
+        <client>
+            <certificateFile>/etc/clickhouse-server/config.d/node.crt</certificateFile>
+            <privateKeyFile>/etc/clickhouse-server/config.d/node.key</privateKeyFile>
+            <caConfig>/etc/clickhouse-server/config.d/ca.crt</caConfig>
+            <loadDefaultCAFile>false</loadDefaultCAFile>
+            <verificationMode>relaxed</verificationMode>
+            <cacheSessions>false</cacheSessions>
+            <disableProtocols>sslv2,sslv3</disableProtocols>
+            <preferServerCiphers>true</preferServerCiphers>
+            <invalidCertificateHandler>
+                <name>RejectCertificateHandler</name>
+            </invalidCertificateHandler>
+        </client>
+    </openSSL>
+</clickhouse>

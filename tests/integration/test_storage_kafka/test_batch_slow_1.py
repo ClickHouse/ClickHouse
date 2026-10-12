@@ -1,6 +1,12 @@
 """Long running tests, longer than 30 seconds"""
 
-from helpers.kafka.common_direct import *
+import json
+import logging
+import time
+
+import pytest
+
+from helpers.cluster import ClickHouseCluster
 import helpers.kafka.common as k
 
 cluster = ClickHouseCluster(__file__)
@@ -37,29 +43,7 @@ def kafka_cluster():
 
 @pytest.fixture(autouse=True)
 def kafka_setup_teardown():
-    instance.query("DROP DATABASE IF EXISTS test SYNC; CREATE DATABASE test;")
-    admin_client = k.get_admin_client(cluster)
-
-    def get_topics_to_delete():
-        return [t for t in admin_client.list_topics() if not t.startswith("_")]
-
-    topics = get_topics_to_delete()
-    logging.debug(f"Deleting topics: {topics}")
-    result = admin_client.delete_topics(topics)
-    for topic, error in result.topic_error_codes:
-        if error != 0:
-            logging.warning(f"Received error {error} while deleting topic {topic}")
-        else:
-            logging.info(f"Deleted topic {topic}")
-
-    retries = 0
-    topics = get_topics_to_delete()
-    while len(topics) != 0:
-        logging.info(f"Existing topics: {topics}")
-        if retries >= 5:
-            raise Exception(f"Failed to delete topics {topics}")
-        retries += 1
-        time.sleep(0.5)
+    k.clean_test_database_and_topics(instance, cluster)
     yield  # run test
 
 
@@ -114,13 +98,13 @@ def test_bad_reschedule(kafka_cluster, create_query_generator):
 
 
 @pytest.mark.parametrize(
-    "create_query_generator, do_direct_read",
+    "create_query_generator",
     [
-        (k.generate_old_create_table_query, True),
-        (k.generate_new_create_table_query, False),
+        k.generate_old_create_table_query,
+        k.generate_new_create_table_query,
     ],
 )
-def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read):
+def test_kafka_unavailable(kafka_cluster, create_query_generator):
     suffix = k.random_string(6)
     kafka_table = f"kafka_unavailable_{suffix}"
 
@@ -139,13 +123,15 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
                 "key UInt64, value UInt64",
                 topic_list=topic_name,
                 consumer_group=topic_name,
-                settings={"kafka_max_block_size": 1000},
+                settings={
+                    "kafka_max_block_size": 1000,
+                    "kafka_flush_interval_ms": 1000,
+                },
             )
             instance.query(create_query)
 
-            # First read from the table in case we should, to make sure it doesn't crash when the broker is unavailable
-            if do_direct_read:
-                instance.query(f"SELECT * FROM test.{kafka_table}")
+            # First read from the table to make sure it doesn't crash when the broker is unavailable
+            instance.query(f"SELECT * FROM test.{kafka_table}")
 
             instance.query(f"""
                 CREATE MATERIALIZED VIEW test.{kafka_table}_destination ENGINE=MergeTree ORDER BY tuple() AS
@@ -162,8 +148,9 @@ def test_kafka_unavailable(kafka_cluster, create_query_generator, do_direct_read
             """)
             instance.query(f"SELECT count() FROM test.{kafka_table}_destination")
 
-            # enough to trigger issue
-            time.sleep(30)
+            # enough to trigger issue: several failed poll cycles while the
+            # broker is paused (poll/session timeouts are well under this)
+            time.sleep(15)
 
         result = instance.query_with_retry(
             f"SELECT count() FROM test.{kafka_table}_destination",

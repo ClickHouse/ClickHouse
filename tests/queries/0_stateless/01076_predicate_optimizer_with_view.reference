@@ -1,12 +1,4 @@
-SELECT *
-FROM test_view
-WHERE id = 1
-SELECT *
-FROM test_view
-WHERE id = 2
-SELECT id
-FROM test_view
-WHERE id = 1
-SELECT s.id
-FROM test_view AS s
-WHERE s.id = 1
+SELECT *\nFROM test_view\nWHERE equals(id, 1)
+SELECT *\nFROM test_view\nWHERE equals(id, 2)
+SELECT id\nFROM test_view\nWHERE equals(id, 1)
+SELECT s.id\nFROM test_view AS s\nWHERE equals(s.id, 1)

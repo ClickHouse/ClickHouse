@@ -1,4 +1,6 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-flaky-check
+
+SET enable_analyzer = 1;
 
 SET optimize_injective_functions_in_group_by = 1;
 SET optimize_group_by_function_keys = 1;

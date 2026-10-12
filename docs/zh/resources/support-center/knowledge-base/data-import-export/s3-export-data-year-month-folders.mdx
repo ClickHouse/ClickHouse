@@ -1,0 +1,88 @@
+---
+date: 2023-03-24
+title: "如何在 S3 上按年和月分区写入数据？"
+description: "了解如何在 ClickHouse 中使用自定义路径结构，将按年和月分区的数据写入 S3 存储桶。"
+tags: ['数据导出', '原生客户端和接口']
+keywords: ['S3', '分区写入']
+---
+
+<div id="learn-how-to-do-partitioned-writes-by-year-and-month-on-s3">
+  ## 了解如何在 S3 上按年和月进行分区写入
+</div>
+
+我想导出数据，并让 S3 存储桶 中的路径采用如下结构：
+
+* 2022
+  * 1
+  * 2
+  * ...
+  * 12
+* 2021
+  * 1
+  * 2
+  * ...
+  * 12
+
+依此类推 ...
+
+<div id="answer">
+  ## 答案
+</div>
+
+给定以下 ClickHouse 表：
+
+```sql
+CREATE TABLE sample_data (
+    `name` String,
+    `age` Int,
+    `time` DateTime
+) ENGINE = MergeTree
+ORDER BY
+    name
+```
+
+添加 10000 条记录：
+
+```sql
+INSERT INTO
+    sample_data
+SELECT
+    *
+FROM
+    generateRandom(
+        'name String, age Int, time DateTime',
+        10,
+        10,
+        10
+    )
+LIMIT
+    10000;
+```
+
+运行此命令，在 S3 存储桶 `my_bucket` 中创建所需的结构 (注意：此示例会以 Parquet 格式写入文件) ：
+
+```sql
+INSERT INTO
+    FUNCTION s3(
+        'https://s3-host:4321/my_bucket/{_partition_id}/file.parquet.gz',
+        's3-access-key',
+        's3-secret-access-key',
+        Parquet,
+        'name String, age Int, time DateTime'
+    ) PARTITION BY concat(
+        formatDateTime(time, '%Y'),
+        '/',
+        formatDateTime(time, '%m')
+    )
+SELECT
+    name,
+    age,
+    time
+FROM
+    sample_data
+Query id: 55adcf22-f6af-491e-b697-d09694bbcc56
+
+Ok.
+
+0 rows in set. Elapsed: 15.579 sec. Processed 10.00 thousand rows, 219.93 KB (641.87 rows/s., 14.12 KB/s.)
+```

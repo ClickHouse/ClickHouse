@@ -1,0 +1,68 @@
+---
+sidebarTitle: '데이터베이스 감사 로그'
+slug: /cloud/security/audit-logging/database-audit-log
+title: '데이터베이스 감사 로그'
+description: '이 페이지에서는 데이터베이스 감사 로그를 검토하는 방법을 설명합니다'
+doc_type: 'guide'
+keywords: ['감사 로깅', '데이터베이스 로그', '컴플라이언스', '보안', '모니터링']
+---
+
+ClickHouse는 기본적으로 데이터베이스 감사 로그를 제공합니다. 이 페이지에서는 보안 관련 로그를 중점적으로 다룹니다. 시스템에 기록되는 데이터에 대한 자세한 내용은 [시스템 테이블](/ko/reference/system-tables/overview) 문서를 참조하십시오.
+
+<Tip>
+  **로그 보존**
+
+  정보는 시스템 테이블에 직접 기록되며, 기본적으로 최대 30일 동안 보존됩니다. 이 기간은 더 길어지거나 짧아질 수 있으며 시스템의 머지 빈도에 따라 달라집니다. 로그를 더 오래 저장하거나 장기 보관을 위해 로그를 보안 정보 및 이벤트 관리(SIEM) 시스템으로 내보내는 등의 추가 조치를 취할 수 있습니다. 자세한 내용은 아래를 참조하십시오.
+</Tip>
+
+<div id="security-relevant-logs">
+  ## 보안 관련 로그
+</div>
+
+ClickHouse는 보안 관련 데이터베이스 이벤트를 주로 세션 로그와 쿼리 로그에 기록합니다.
+
+[system.session&#95;log](/ko/reference/system-tables/session_log)는 로그인 성공 및 실패 시도와 함께 인증 시도가 발생한 위치도 기록합니다. 이 정보는 ClickHouse 인스턴스를 대상으로 한 credential stuffing 또는 무차별 대입 공격을 식별하는 데 활용할 수 있습니다.
+
+로그인 실패를 보여주는 예제 쿼리
+
+```sql
+select event_time
+    ,type
+    ,user
+    ,auth_type
+    ,client_address 
+FROM clusterAllReplicas('default',system.session_log) 
+WHERE type='LoginFailure' 
+LIMIT 100
+```
+
+[system.query&#95;log](/ko/reference/system-tables/query_log)는 ClickHouse 인스턴스에서 실행된 쿼리 활동을 기록합니다. 이 정보는 침해 행위자가 어떤 쿼리를 실행했는지 파악하는 데 유용합니다.
+
+&quot;compromised&#95;account&quot; 사용자의 활동을 검색하기 위한 예시 쿼리
+
+```sql
+SELECT event_time
+    ,address
+    ,initial_user
+    ,initial_address
+    ,forwarded_for
+    ,query 
+FROM clusterAllReplicas('default', system.query_log) 
+WHERE user=’compromised_account’
+```
+
+<div id="reatining-log-data-within-services">
+  ## 서비스 내 로그 데이터 보존
+</div>
+
+더 긴 보존 기간이나 로그 내구성이 필요한 고객은 materialized view를 사용해 이러한 목표를 달성할 수 있습니다. materialized view가 무엇인지, 어떤 이점이 있는지, 어떻게 구현하는지에 대한 자세한 내용은 [materialized view](/ko/concepts/features/materialized-views/index) 동영상과 문서를 참조하십시오.
+
+<div id="exporting-logs">
+  ## 로그 내보내기
+</div>
+
+시스템 로그는 SIEM 시스템과 호환되는 다양한 포맷을 사용해 저장 위치에 기록하거나 내보낼 수 있습니다. 자세한 내용은 [테이블 함수](/ko/reference/functions/table-functions/index) 문서를 참조하십시오. 가장 일반적인 방법은 다음과 같습니다.
+
+* [S3에 쓰기](/ko/reference/functions/table-functions/s3)
+* [GCS에 쓰기](/ko/reference/functions/table-functions/gcs)
+* [Azure Blob Storage에 쓰기](/ko/reference/functions/table-functions/azureBlobStorage)

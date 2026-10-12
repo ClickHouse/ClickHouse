@@ -1,0 +1,13 @@
+<clickhouse>
+    <http_handlers>
+        <rule>
+            <methods>GET</methods>
+            <url>/test_predefined_handler_absent_header</url>
+            <headers_regexp><XXX><![CDATA[(?P<value_from_header>.*)]]></XXX></headers_regexp>
+            <handler>
+                <type>predefined_query_handler</type>
+                <query>SELECT {value_from_header:String}</query>
+            </handler>
+        </rule>
+    </http_handlers>
+</clickhouse>

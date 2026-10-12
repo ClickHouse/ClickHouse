@@ -50,15 +50,24 @@ class PortForward:
                 with self._clients_lock:
                     client = self._clients.pop(connection, None)
                 if client is not None:
-                    client[idx].join()
+                    # Close both sockets before joining the sibling thread: it may be blocked in
+                    # recv/send on an open socket and would otherwise never exit, deadlocking the
+                    # join (closing makes its next socket call fail immediately).
                     connection.close()
                     client[0].close()
+                    client[idx].join()
 
+            # `connection` must be bound as a default argument: a plain closure would capture the
+            # loop variable, and after the next accept() rebinds it, a dying earlier connection
+            # would pop and join the newer connection's entry - whose threads are still running -
+            # deadlocking both the terminating thread and a later stop().
             client_to_server_thread = threading.Thread(
-                target=forward, args=(connection, client, lambda: termination(connection, 2))
+                target=forward,
+                args=(connection, client, lambda connection=connection: termination(connection, 2)),
             )
             server_to_client_thread = threading.Thread(
-                target=forward, args=(client, connection, lambda: termination(connection, 1))
+                target=forward,
+                args=(client, connection, lambda connection=connection: termination(connection, 1)),
             )
 
             with self._clients_lock:
@@ -70,6 +79,10 @@ class PortForward:
     def start(self, address, listen_port=0):
         self._address = address
         self._sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        # Allow rebinding to the same fixed port immediately after stop(): the
+        # previously accepted connection lingers in TIME_WAIT on this port, so
+        # without SO_REUSEADDR bind() fails with "Address already in use".
+        self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self._sock.bind(("", listen_port))
         self._sock.listen()
         self._sock.settimeout(1)

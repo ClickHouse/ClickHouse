@@ -12,10 +12,10 @@ using ExpressionActionsPtr = std::shared_ptr<ExpressionActions>;
 /** A pre-aggregate stream of blocks in which each block is already aggregated.
   * Aggregate functions in blocks should not be finalized so that their states can be merged.
   */
-class MergingAggregatedTransform : public IAccumulatingTransform
+class MergingAggregatedTransform final : public IAccumulatingTransform
 {
 public:
-    MergingAggregatedTransform(SharedHeader header_, Aggregator::Params params_, bool final_, GroupingSetsParamsList grouping_sets_params);
+    MergingAggregatedTransform(SharedHeader header_, Aggregator::Params params_, bool final_, GroupingSetsParamsList grouping_sets_params, size_t output_streams_ = 1);
 
     ~MergingAggregatedTransform() override;
 
@@ -49,6 +49,9 @@ private:
 
     bool consume_started = false;
     bool generate_started = false;
+
+    /// How many streams `MergingAggregatedStep` spreads the output over; 1 when it doesn't.
+    size_t output_streams = 1;
 
     void addChunk(Columns columns, size_t num_rows, Int32 bucket_num, bool is_overflows);
 };

@@ -21,7 +21,7 @@ namespace
 {
 
 // geohashDecode(string) => (lon float64, lat float64)
-class FunctionGeohashDecode : public IFunction
+class FunctionGeohashDecode final : public IFunction
 {
 public:
     static constexpr auto name = "geohashDecode";
@@ -110,8 +110,9 @@ Decodes any [geohash](https://en.wikipedia.org/wiki/Geohash)-encoded string into
             "SELECT geohashDecode('ezs42') AS res",
             R"(
 ┌─res─────────────────────────────┐
-│ (-5.60302734375,42.60498046875) │
-└─────────────────────────────────┘
+├──────longitude─┬───────latitude─┤
+│ -5.60302734375 │ 42.60498046875 │
+└────────────────┴────────────────┘
             )"
         }
     };

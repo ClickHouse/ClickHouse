@@ -1,0 +1,89 @@
+---
+slug: /managing-data/drop_partition
+sidebarTitle: 'إسقاط قسم'
+title: 'إسقاط الأقسام'
+hide_title: false
+description: 'صفحة تصف إسقاط الأقسام'
+keywords: ['DROP PARTITION', 'إسقاط قسم', 'حذف قسم', 'إزالة قسم', 'إدارة الأقسام']
+doc_type: 'reference'
+---
+
+<div id="background">
+  ## الخلفية
+</div>
+
+يُحدَّد التقسيم للجدول عند تعريفه أول مرة عبر العبارة `PARTITION BY`. ويمكن أن تتضمن هذه العبارة تعبير SQL على أي أعمدة، وتُحدِّد نتائج هذا التعبير القسم الذي سيُرسَل إليه الصف.
+
+ترتبط أجزاء البيانات منطقيًا بكل قسم على القرص، ويمكن الاستعلام عنها كلٌّ على حدة. في المثال أدناه، نقسّم جدول `posts` حسب السنة باستخدام التعبير `toYear(CreationDate)`. وعند إدراج الصفوف في ClickHouse، سيُقيَّم هذا التعبير على كل صف ويُوجَّه إلى القسم الناتج إذا كان موجودًا (وإذا كان هذا الصف هو الأول لسنة معيّنة، فسيُنشأ القسم).
+
+```sql
+ CREATE TABLE posts
+(
+        `Id` Int32 CODEC(Delta(4), ZSTD(1)),
+        `PostTypeId` Enum8('Question' = 1, 'Answer' = 2, 'Wiki' = 3, 'TagWikiExcerpt' = 4, 'TagWiki' = 5, 'ModeratorNomination' = 6, 'WikiPlaceholder' = 7, 'PrivilegeWiki' = 8),
+        `AcceptedAnswerId` UInt32,
+        `CreationDate` DateTime64(3, 'UTC'),
+...
+        `ClosedDate` DateTime64(3, 'UTC')
+)
+ENGINE = MergeTree
+ORDER BY (PostTypeId, toDate(CreationDate), CreationDate)
+PARTITION BY toYear(CreationDate)
+```
+
+اطّلع على تعيين تعبير التقسيم في قسم [كيفية تعيين تعبير التقسيم](/ar/reference/statements/alter/partition#how-to-set-partition-expression).
+
+في ClickHouse، ينبغي للمستخدمين اعتبار التقسيم في المقام الأول ميزةً لإدارة البيانات، لا أسلوبًا لتحسين الاستعلامات. فمن خلال فصل البيانات منطقيًا استنادًا إلى مفتاح، يمكن التعامل مع كل قسم على نحو مستقل، مثل حذفه. ويتيح ذلك للمستخدمين نقل الأقسام، وبالتالي المجموعات الفرعية، بين [مستويات التخزين](/ar/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse#storage-tiers) بكفاءة وفقًا للوقت، أو [إتلاف البيانات/حذفها بكفاءة من العنقود](/ar/reference/statements/alter/partition).
+
+<div id="drop-partitions">
+  ## حذف الأقسام
+</div>
+
+يوفّر `ALTER TABLE ... DROP PARTITION` طريقة موفّرة من حيث التكلفة لحذف قسم كامل.
+
+```sql
+ALTER TABLE table_name [ON CLUSTER cluster] DROP PARTITION|PART partition_expr
+```
+
+يُعلِّم هذا الاستعلام القسم على أنه غير نشط، ويحذف البيانات نهائيًا خلال نحو 10 دقائق. ويجري تكرار هذا الاستعلام، لذا يحذف البيانات من جميع النسخ المتماثلة.
+
+في المثال أدناه، نحذف منشورات عام 2008 من الجدول السابق بحذف القسم المرتبط.
+
+```sql
+SELECT DISTINCT partition
+FROM system.parts
+WHERE `table` = 'posts'
+```
+
+```response
+┌─partition─┐
+│ 2008      │
+│ 2009      │
+│ 2010      │
+│ 2011      │
+│ 2012      │
+│ 2013      │
+│ 2014      │
+│ 2015      │
+│ 2016      │
+│ 2017      │
+│ 2018      │
+│ 2019      │
+│ 2020      │
+│ 2021      │
+│ 2022      │
+│ 2023      │
+│ 2024      │
+└───────────┘
+
+17 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+ALTER TABLE posts
+(DROP PARTITION '2008')
+```
+
+```response
+0 rows in set. Elapsed: 0.103 sec.
+```

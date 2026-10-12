@@ -13,6 +13,7 @@
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelPointerWrapper.h>
 #include <Storages/ObjectStorage/DataLakes/DeltaLake/KernelHelper.h>
 #include <boost/noncopyable.hpp>
+#include <Poco/JSON/Array.h>
 #include "delta_kernel_ffi.hpp"
 
 namespace DeltaLake
@@ -48,6 +49,9 @@ public:
 
     /// Get schema from DeltaLake table metadata.
     const DB::NamesAndTypesList & getTableSchema() const;
+    /// Raw Delta `StructType.fields` JSON of this snapshot, preserving exact Delta types (`binary`,
+    /// `timestamp_ntz`, ...) that `getTableSchema` collapses. Used for catalog registration.
+    Poco::JSON::Array::Ptr getRawDeltaSchemaFields() const;
     /// Get read schema derived from data files.
     /// (In most cases it would be the same as table schema).
     const DB::NamesAndTypesList & getReadSchema() const;
@@ -88,6 +92,7 @@ private:
         size_t snapshot_version;
     };
     mutable std::shared_ptr<KernelSnapshotState> kernel_snapshot_state;
+    mutable DB::UInt128 kernel_state_credentials_fingerprint{};
 
     struct SchemaInfo
     {
@@ -123,6 +128,16 @@ private:
 
     SnapshotStats getSnapshotStats() const TSA_REQUIRES(mutex);
     SnapshotStats getSnapshotStatsImpl() const TSA_REQUIRES(mutex);
+
+    /// One-shot recovery from `DELTA_KERNEL_ERROR` with `ExpiredToken`/`InvalidToken`:
+    /// invokes the catalog refresh callback and compares pre/post credentials fingerprint
+    /// to also catch SDK-side rotation of assume-role/web-identity/IMDS providers.
+    /// Returns true when fresh credentials were produced; the caller should then rebuild
+    /// the engine and retry. Logs context_for_log on success.
+    bool tryRefreshAfterStaleTokenError(
+        const DB::Exception & e,
+        DB::UInt128 pre_fingerprint,
+        const char * context_for_log) const TSA_REQUIRES(mutex);
 
     std::shared_ptr<KernelSnapshotState> getKernelSnapshotState() const TSA_REQUIRES(mutex);
 };

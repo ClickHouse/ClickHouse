@@ -2,7 +2,7 @@
 
 #include <Processors/QueryPlan/ISourceStep.h>
 #include <Processors/QueryPlan/QueryPlan.h>
-#include <Storages/IStorage.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
 
 
 namespace DB
@@ -16,14 +16,16 @@ class Context;
   * Used when the table is not specified in the query.
   * Analog of the DUAL table in Oracle and MySQL.
   */
-class StorageSystemOne final : public IStorage
+class StorageSystemOne final : public StorageWithCommonVirtualColumns
 {
 public:
     explicit StorageSystemOne(const StorageID & table_id_);
 
     std::string getName() const override { return "SystemOne"; }
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & /*column_names*/,
         const StorageSnapshotPtr & /*storage_snapshot*/,

@@ -1,0 +1,22 @@
+<test>
+    <create_query>
+        CREATE TABLE clamp_num (v UInt32, lo UInt32, hi UInt32, vf Float64, lof Float64, hif Float64) ENGINE = Memory
+    </create_query>
+    <fill_query>
+        INSERT INTO clamp_num
+        SELECT
+            number % 65535,
+            10000,
+            50000,
+            (number % 65535) * 1.5,
+            15000.0,
+            75000.0
+        FROM numbers(20000000)
+    </fill_query>
+
+    <query>SELECT sum(clamp(v, lo, hi)) FROM clamp_num</query>
+    <query>SELECT sum(clamp(v, 10000, 50000)) FROM clamp_num</query>
+    <query>SELECT sum(clamp(vf, lof, hif)) FROM clamp_num</query>
+
+    <drop_query>DROP TABLE IF EXISTS clamp_num</drop_query>
+</test>

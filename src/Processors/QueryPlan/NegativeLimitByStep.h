@@ -1,0 +1,46 @@
+#pragma once
+#include <Core/SortDescription.h>
+#include <Processors/QueryPlan/ITransformingStep.h>
+
+namespace DB
+{
+
+/// Executes negative LIMIT BY for specified columns. See NegativeLimitByTransform.
+class NegativeLimitByStep : public ITransformingStep
+{
+public:
+    explicit NegativeLimitByStep(
+            const SharedHeader & input_header_,
+            size_t group_length_, size_t group_offset_, Names columns_);
+
+    String getName() const override { return "NegativeLimitBy"; }
+
+    void transformPipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &) override;
+
+    void describeActions(JSONBuilder::JSONMap & map) const override;
+    void describeActions(FormatSettings & settings) const override;
+
+    void serialize(Serialization & ctx) const override;
+    bool isSerializable() const override { return true; }
+
+    static QueryPlanStepPtr deserialize(Deserialization & ctx);
+
+    const Names & getColumns() const { return columns; }
+
+    void applyOrder(const SortDescription & sort_description);
+
+private:
+    void updateOutputHeader() override
+    {
+        output_header = input_headers.front();
+    }
+
+    size_t group_length;
+    size_t group_offset;
+
+    Names columns;
+
+    SortDescription sorted_columns_descr;
+};
+
+}

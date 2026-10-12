@@ -1,12 +1,15 @@
 #pragma once
 #include <Storages/PartitionedSink.h>
-#include <Processors/Formats/IOutputFormat.h>
 #include <Storages/ObjectStorage/StorageObjectStorage.h>
 #include <Interpreters/Context_fwd.h>
 
 namespace DB
 {
-class StorageObjectStorageSink : public SinkToStorage
+
+class IOutputFormat;
+using OutputFormatPtr = std::shared_ptr<IOutputFormat>;
+
+class StorageObjectStorageSink final : public SinkToStorage
 {
 public:
     StorageObjectStorageSink(
@@ -42,7 +45,7 @@ private:
     void cancelBuffers();
 };
 
-class PartitionedStorageObjectStorageSink : public PartitionedSink
+class PartitionedStorageObjectStorageSink final : public PartitionedSink
 {
 public:
     PartitionedStorageObjectStorageSink(

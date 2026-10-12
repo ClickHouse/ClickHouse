@@ -3,6 +3,7 @@
 -- produced by FunctionToSubcolumnsPass (m.key_<serialized_key> form).
 -- When optimize_functions_to_subcolumns is enabled and Map uses with_buckets serialization,
 -- m['key'] is rewritten to m.key_key. The index analysis must handle both forms.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET optimize_functions_to_subcolumns = 1;
@@ -61,7 +62,8 @@ SELECT trim(explain) FROM (
 SELECT id FROM t_map_bf_keys WHERE m['K1'] IN ('V1', 'V9') SETTINGS force_data_skipping_indices = 'idx_mk';
 
 SELECT '-- bloom_filter mapKeys: NOT IN with existing key';
-SELECT id FROM t_map_bf_keys WHERE m['K0'] NOT IN ('V0') SETTINGS force_data_skipping_indices = 'idx_mk';
+SELECT id FROM t_map_bf_keys WHERE m['K0'] NOT IN ('V0') SETTINGS force_data_skipping_indices = 'idx_mk'; -- { serverError INDEX_NOT_USED }
+SELECT id FROM t_map_bf_keys WHERE m['K0'] NOT IN ('V0');
 
 SELECT '-- bloom_filter mapKeys: notEquals with existing key';
 SELECT trim(explain) FROM (

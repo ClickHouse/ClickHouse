@@ -1,8 +1,11 @@
 #include <Storages/ObjectStorage/DataLakes/Iceberg/MultipleFileWriter.h>
 
 #include <Formats/FormatFactory.h>
+#include <Formats/FormatFilterInfo.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Interpreters/Context.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/SchemaProcessor.h>
+#include <IO/WriteBufferFromFileBase.h>
 
 
 namespace DB
@@ -10,10 +13,25 @@ namespace DB
 
 #if USE_AVRO
 
+static std::vector<Int64> fieldIdsOfWrittenColumns(const ColumnMapper & mapper, const Block & written_block)
+{
+    const auto & field_id_by_name = mapper.getStorageColumnEncoding();
+    std::vector<Int64> field_ids;
+    field_ids.reserve(written_block.columns());
+    for (const auto & column : written_block)
+    {
+        auto it = field_id_by_name.find(column.name);
+        if (it == field_id_by_name.end())
+            return {};
+        field_ids.push_back(it->second);
+    }
+    return field_ids;
+}
+
 MultipleFileWriter::MultipleFileWriter(
     UInt64 max_data_file_num_rows_,
     UInt64 max_data_file_num_bytes_,
-    Poco::JSON::Array::Ptr schema,
+    Poco::JSON::Array::Ptr schema_,
     FileNamesGenerator & filename_generator_,
     const Iceberg::IcebergPathResolver & path_resolver_,
     ObjectStoragePtr object_storage_,
@@ -23,7 +41,9 @@ MultipleFileWriter::MultipleFileWriter(
     SharedHeader sample_block_)
     : max_data_file_num_rows(max_data_file_num_rows_)
     , max_data_file_num_bytes(max_data_file_num_bytes_)
-    , stats(schema)
+    , schema(schema_)
+    , column_mapper(Iceberg::createColumnMapperFromFields(schema_))
+    , stats(schema_, fieldIdsOfWrittenColumns(*column_mapper, *sample_block_))
     , filename_generator(filename_generator_)
     , path_resolver(path_resolver_)
     , object_storage(object_storage_)
@@ -39,6 +59,7 @@ void MultipleFileWriter::startNewFile()
     if (buffer)
         finalize();
 
+    current_file_stats = std::make_shared<DataFileStatistics>(schema, fieldIdsOfWrittenColumns(*column_mapper, *sample_block));
     current_file_num_rows = 0;
     current_file_num_bytes = 0;
     auto metadata_path = filename_generator.generateDataFileName();
@@ -54,8 +75,11 @@ void MultipleFileWriter::startNewFile()
         format_settings->parquet.bloom_filter_push_down = true;
         format_settings->parquet.filter_push_down = true;
     }
+    /// The ORC String/FixedString logical-type handling lives in ORCBlockOutputFormat, keyed on
+    /// the column mapper, so it covers the compaction/mutation rewrite paths too.
+    FormatFilterInfoPtr format_filter_info = std::make_shared<FormatFilterInfo>(nullptr, context, column_mapper, nullptr, nullptr);
     output_format = FormatFactory::instance().getOutputFormatParallelIfPossible(
-        write_format, *buffer, *sample_block, context, format_settings);
+        write_format, *buffer, *sample_block, context, format_settings, format_filter_info);
 }
 
 void MultipleFileWriter::consume(const Chunk & chunk)
@@ -69,25 +93,27 @@ void MultipleFileWriter::consume(const Chunk & chunk)
     *current_file_num_rows += chunk.getNumRows();
     *current_file_num_bytes += chunk.bytes();
     stats.update(chunk);
+    current_file_stats->update(chunk);
 }
 
 void MultipleFileWriter::finalize()
 {
     output_format->flush();
     output_format->finalize();
+
+    auto column_sizes_on_disk = output_format->getColumnSizesOnDisk();
+    if (current_file_stats)
+        current_file_stats->addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
+    stats.addColumnSizesOnDisk(column_sizes_on_disk, *sample_block);
+
     buffer->finalize();
-    auto buffer_bytes = buffer->count();
-    if (buffer_bytes > 0)
-    {
-        total_bytes += buffer_bytes;
-    }
-    else if (!data_file_names.empty())
-    {
-        /// Some storage backends (e.g. Azure) don't track bytes in the write buffer.
-        /// Fall back to querying the actual object size.
-        auto metadata = object_storage->getObjectMetadata(path_resolver.resolve(data_file_names.back()), /*with_tags=*/false);
-        total_bytes += metadata.size_bytes;
-    }
+    UInt64 file_bytes = buffer->count();
+    total_bytes += file_bytes;
+
+    if (current_file_stats)
+        completed_file_stats.push_back(std::move(current_file_stats));
+    data_file_byte_counts.push_back(file_bytes);
+    data_file_row_counts.push_back(current_file_num_rows.value_or(0));
 }
 
 void MultipleFileWriter::release()

@@ -1,0 +1,94 @@
+---
+title: توسيع الإعدادات
+---
+
+<div id="extending-collector-config">
+  ### توسيع تهيئة الـ مُجمِّع
+</div>
+
+يدعم توزيع ClickStack من OTel مُجمِّع توسيع التهيئة الأساسية من خلال تركيب ملف تهيئة مخصص وتعيين متغير بيئة.
+
+لإضافة receivers أو processors أو pipelines مخصصة:
+
+1. أنشئ ملف تهيئة مخصصًا يتضمن التهيئة الإضافية
+2. ركّب الملف في `/etc/otelcol-contrib/custom.config.yaml`
+3. عيّن متغير البيئة `CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml`
+
+**مثال على تهيئة مخصصة:**
+
+```yaml
+receivers:
+  # Collect logs from local files
+  filelog:
+    include:
+      - /var/log/**/*.log
+      - /var/log/syslog
+      - /var/log/messages
+    start_at: beginning
+
+  # Collect host system metrics
+  hostmetrics:
+    collection_interval: 30s
+    scrapers:
+      cpu:
+        metrics:
+          system.cpu.utilization:
+            enabled: true
+      memory:
+        metrics:
+          system.memory.utilization:
+            enabled: true
+      disk:
+      network:
+      filesystem:
+        metrics:
+          system.filesystem.utilization:
+            enabled: true
+
+service:
+  pipelines:
+    # Logs pipeline
+    logs/host:
+      receivers: [filelog]
+      processors:
+        - memory_limiter
+        - transform
+        - batch
+      exporters:
+        - clickhouse
+    
+    # Metrics pipeline
+    metrics/hostmetrics:
+      receivers: [hostmetrics]
+      processors:
+        - memory_limiter
+        - batch
+      exporters:
+        - clickhouse
+```
+
+**النشر باستخدام المُجمِّع المستقل:**
+
+```bash
+docker run -d \
+  -e CUSTOM_OTELCOL_CONFIG_FILE=/etc/otelcol-contrib/custom.config.yaml \
+  # -e OPAMP_SERVER_URL=${OPAMP_SERVER_URL} \
+  -e CLICKHOUSE_ENDPOINT=${CLICKHOUSE_ENDPOINT} \
+  -e CLICKHOUSE_USER=default \
+  -e CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD} \
+  -v "$(pwd)/custom-config.yaml:/etc/otelcol-contrib/custom.config.yaml:ro" \
+  -p 4317:4317 -p 4318:4318 \
+  clickhouse/clickstack-otel-collector:latest
+```
+
+<Note>
+  لا تُعرِّف في التهيئة المخصّصة سوى `receivers` و`processors` و`pipelines` الجديدة. أمّا `processors` الأساسية (`memory_limiter` و`batch`) و`exporters` (`clickhouse`) فهي معرّفة مسبقًا، لذا اكتفِ بالإشارة إليها بالاسم. تُدمَج التهيئة المخصّصة مع التهيئة الأساسية، ولا يمكنها تجاوز المكوّنات الموجودة.
+</Note>
+
+بالنسبة إلى التهيئات الأكثر تعقيدًا، راجع [التهيئة الافتراضية لمجمّع ClickStack](https://github.com/hyperdxio/hyperdx/blob/main/docker/otel-collector/config.yaml) و[وثائق مُصدِّر ClickHouse](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/exporter/clickhouseexporter/README.md#configuration-options).
+
+<div id="configuration-structure">
+  #### هيكل التهيئة
+</div>
+
+للاطلاع على تفاصيل حول إعداد مكوّنات OTel مُجمِّع، بما في ذلك [`receivers`](https://opentelemetry.io/docs/collector/transforming-telemetry/)، و[`operators`](https://github.com/open-telemetry/opentelemetry-collector-contrib/blob/main/pkg/stanza/docs/operators/README.md)، و[`processors`](https://opentelemetry.io/docs/collector/configuration/#processors)، نوصي بالرجوع إلى [الوثائق الرسمية لـ OpenTelemetry مُجمِّع](https://opentelemetry.io/docs/collector/configuration).

@@ -111,6 +111,7 @@ set(S2_SRCS
     "${S2_SOURCE_DIR}/s2/util/bits/bit-interleave.cc"
     "${S2_SOURCE_DIR}/s2/util/coding/coder.cc"
     "${S2_SOURCE_DIR}/s2/util/coding/varint.cc"
+    "${S2_SOURCE_DIR}/s2/util/math/exactfloat/bignum.cc"
     "${S2_SOURCE_DIR}/s2/util/math/exactfloat/exactfloat.cc"
     "${S2_SOURCE_DIR}/s2/util/math/mathutil.cc"
     "${S2_SOURCE_DIR}/s2/util/units/length-units.cc"

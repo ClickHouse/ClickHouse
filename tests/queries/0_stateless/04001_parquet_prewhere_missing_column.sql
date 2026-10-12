@@ -9,7 +9,6 @@
 -- uses PREWHERE output" or "PREWHERE appears to use its own output as input"
 -- exceptions (LOGICAL_ERROR).
 
-SET input_format_parquet_use_native_reader_v3 = 1;
 SET input_format_parquet_allow_missing_columns = 1;
 SET engine_file_truncate_on_insert = 1;
 

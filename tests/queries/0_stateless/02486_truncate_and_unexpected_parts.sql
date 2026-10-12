@@ -34,7 +34,10 @@ system stop merges rmt1;
 insert into rmt select * from numbers(10) settings max_block_size=1, max_insert_threads=1;
 system sync replica rmt1 lightweight;
 
-alter table rmt replace partition id '0' from rmt2;
+-- `rmt2` is empty at this point; the test intentionally clears `rmt`'s partition `0` via
+-- a replace from an empty source. Issue #23727 made this a per-query opt-in to prevent
+-- accidental data loss; this test continues to exercise the intentional-clear case.
+alter table rmt replace partition id '0' from rmt2 settings allow_replace_partition_from_empty_source = 1;
 alter table rmt1 move partition id '1' to table rmt2;
 
 detach table rmt sync;

@@ -1,0 +1,38 @@
+---
+title: 'Добавление конкретных таблиц в ClickPipe'
+description: 'Описывает шаги, необходимые для добавления конкретных таблиц в ClickPipe.'
+sidebarTitle: 'Добавить таблицу'
+slug: /integrations/clickpipes/mysql/add_table
+show_title: false
+doc_type: 'guide'
+keywords: ['clickpipes', 'mysql', 'cdc', 'ингестия данных', 'синхронизация в реальном времени']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/ru/components/Image.jsx";
+
+В некоторых случаях полезно добавить в пайп определенные таблицы. По мере роста транзакционной или аналитической рабочей нагрузки это становится обычной необходимостью.
+
+<div id="add-tables-steps">
+  ## Шаги по добавлению определённых таблиц в ClickPipe
+</div>
+
+Это можно сделать, выполнив следующие действия:
+
+1. [Приостановите](/ru/integrations/clickpipes/mysql/pause-and-resume) пайп.
+2. Нажмите Edit Table settings.
+3. Найдите нужную таблицу — для этого воспользуйтесь строкой поиска.
+4. Выберите таблицу, установив флажок.
+
+<br />
+
+<Image img="/images/integrations/data-ingestion/clickpipes/postgres/add_table.webp" border size="md" />
+
+5. Нажмите update.
+6. После успешного обновления пайп последовательно перейдёт в статусы `Setup`, `Snapshot` и `Running`. За начальной загрузкой таблицы можно следить на вкладке **Tables**.
+
+<Info>
+  CDC для существующих таблиц автоматически возобновляется после завершения снимка новой таблицы.
+</Info>

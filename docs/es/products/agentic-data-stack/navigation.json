@@ -1,0 +1,21 @@
+{
+  "groups": [
+    {
+      "group": "Primeros pasos",
+      "pages": [
+        "es/products/agentic-data-stack/overview",
+        "es/products/agentic-data-stack/docker-setup"
+      ]
+    },
+    {
+      "group": "Componentes",
+      "pages": [
+        "es/products/agentic-data-stack/components/librechat",
+        "es/products/agentic-data-stack/components/mcp-server",
+        "es/products/agentic-data-stack/components/langfuse"
+      ]
+    }
+  ],
+  "icon": "/images/icons/icon-agentic-data-stack.svg",
+  "item": "Agentic Data Stack"
+}

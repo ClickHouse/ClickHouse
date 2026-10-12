@@ -1,0 +1,133 @@
+---
+slug: /integrations/clickpipes/kinesis/auth
+sidebarTitle: "Contrôle d’accès basé sur les rôles pour Kinesis"
+title: "Contrôle d’accès basé sur les rôles pour Kinesis"
+description: "Cet article explique comment les clients de ClickPipes peuvent utiliser le contrôle d’accès basé sur les rôles pour s’authentifier auprès d’Amazon Kinesis et accéder à leurs flux de données en toute sécurité."
+doc_type: 'guide'
+keywords: ['Amazon Kinesis']
+integration:
+  - support_level: 'core'
+  - category: 'clickpipes'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Cet article montre comment les clients de ClickPipes peuvent tirer parti du contrôle d’accès basé sur les rôles pour s’authentifier auprès d’Amazon Kinesis et accéder à leurs flux de données en toute sécurité.
+
+<div id="prerequisite">
+  ## Prérequis
+</div>
+
+Pour suivre ce guide, vous aurez besoin des éléments suivants :
+
+* Un service ClickHouse Cloud actif
+* Un compte AWS
+
+<div id="introduction">
+  ## Introduction
+</div>
+
+Avant d&#39;aborder la configuration de l&#39;accès sécurisé à Kinesis, il est important de comprendre le mécanisme. Voici un aperçu de la façon dont ClickPipes peut accéder aux flux de données Amazon Kinesis en assumant un rôle au sein des comptes AWS des clients.
+
+<Image img="/images/integrations/data-ingestion/clickpipes/securekinesis.jpg" alt="Kinesis sécurisé" size="lg" border />
+
+Grâce à cette approche, les clients peuvent gérer en un seul endroit l&#39;ensemble des accès à leurs flux de données Kinesis (via la stratégie IAM du rôle assumé), sans avoir à modifier individuellement la stratégie d&#39;accès de chaque flux.
+
+<div id="setup">
+  ## Configuration
+</div>
+
+<div id="obtaining-the-clickhouse-service-iam-role-arn">
+  ### Obtention de l’ARN du rôle IAM du service ClickHouse
+</div>
+
+* 1. Connectez-vous à votre compte ClickHouse Cloud.
+* 2. Sélectionnez le service ClickHouse pour lequel vous souhaitez créer l’intégration
+* 3. Sélectionnez l’onglet **Settings**
+* 4. Faites défiler la page jusqu’à la section **Network security information**, en bas de la page
+* 5. Copiez la valeur **Service role ID (IAM)** associée au service, comme indiqué ci-dessous.
+
+<Image img="/images/cloud/security/secures3_arn.webp" alt="ARN S3 sécurisé" size="lg" border />
+
+<div id="setting-up-iam-assume-role">
+  ### Configuration pour assumer le rôle IAM
+</div>
+
+<div id="manually-create-iam-role">
+  #### Créer manuellement un rôle IAM.
+</div>
+
+* 1. Connectez-vous à votre compte AWS dans votre navigateur avec un utilisateur IAM autorisé à créer et gérer des rôles IAM.
+
+* 2. Accédez à la Console du service IAM
+
+* 3. Créez un nouveau rôle IAM avec `AWS account` comme type d’entité de confiance. Notez que le nom du rôle IAM **doit commencer par** `ClickHouseAccessRole-` pour que cela fonctionne.
+
+  **i. Configurer la stratégie d’approbation**
+
+  La stratégie d’approbation permet au rôle IAM ClickHouse d’assumer ce rôle. Remplacez `{ClickHouse_IAM_ARN}` par l’ARN du rôle IAM de votre service ClickHouse (obtenu à l’étape précédente).
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Principal": {
+          "AWS": "{ClickHouse_IAM_ARN}"
+        },
+        "Action": "sts:AssumeRole"
+      }
+    ]
+  }
+  ```
+
+  **ii. Configurer la stratégie d’autorisation**
+
+  La stratégie d’autorisation accorde l’accès à votre flux Kinesis. Remplacez les paramètres fictifs suivants :
+
+  * `{REGION}`: votre région AWS (par exemple, `us-east-1`)
+  * `{ACCOUNT_ID}`: l’ID de votre compte AWS
+  * `{STREAM_NAME}`: le nom de votre flux Kinesis
+
+  ```json
+  {
+    "Version": "2012-10-17",
+    "Statement": [
+      {
+        "Effect": "Allow",
+        "Action": [
+          "kinesis:DescribeStream",
+          "kinesis:GetShardIterator",
+          "kinesis:GetRecords",
+          "kinesis:ListShards",
+          "kinesis:RegisterStreamConsumer",
+          "kinesis:DeregisterStreamConsumer",
+          "kinesis:ListStreamConsumers"
+        ],
+        "Resource": [
+          "arn:aws:kinesis:{REGION}:{ACCOUNT_ID}:stream/{STREAM_NAME}"
+        ]
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "kinesis:SubscribeToShard",
+          "kinesis:DescribeStreamConsumer"
+        ],
+        "Resource": [
+          "arn:aws:kinesis:{REGION}:{ACCOUNT_ID}:stream/{STREAM_NAME}/*"
+        ]
+      },
+      {
+        "Effect": "Allow",
+        "Action": [
+          "kinesis:ListStreams"
+        ],
+        "Resource": "*"
+      }
+    ]
+  }
+  ```
+
+* 4. Copiez le nouvel **ARN du rôle IAM** une fois sa création terminée. C’est celui dont vous aurez besoin pour accéder à votre flux Kinesis.

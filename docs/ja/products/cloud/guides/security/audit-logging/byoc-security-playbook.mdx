@@ -1,0 +1,71 @@
+---
+sidebarTitle: 'BYOC セキュリティプレイブック'
+slug: /cloud/security/audit-logging/byoc-security-playbook
+title: 'BYOC セキュリティプレイブック'
+description: 'このページでは、お客様が潜在的なセキュリティイベントを特定するために利用できる方法を紹介します'
+doc_type: 'guide'
+keywords: ['byoc', 'セキュリティ', 'プレイブック', 'ベストプラクティス', 'コンプライアンス']
+---
+
+ClickHouse は、セキュリティにおける責任共有モデルのもとで Bring Your Own Cloud (BYOC) を提供しており、その内容は Trust Center (https://trust.clickhouse.com) からダウンロードできます。以下の情報は、BYOC のお客様が潜在的なセキュリティイベントを特定する方法の例として提供するものです。お客様は、この情報を自社のセキュリティプログラムに照らして検討し、追加の検知やアラートが有用かどうかを判断してください。
+
+<div id="compromised-clickhouse-credentials">
+  ## 侵害された可能性のある ClickHouse の認証情報
+</div>
+
+認証情報ベースの攻撃を検出するためのクエリや、悪意のあるアクティビティを調査するためのクエリについては、[database audit log](/ja/products/cloud/guides/security/audit-logging/database-audit-log) のドキュメントを参照してください。
+
+<div id="application-layer-dos-attack">
+  ## アプリケーション層のサービス拒否攻撃
+</div>
+
+サービス拒否 (DoS) 攻撃を仕掛ける方法はいくつかあります。攻撃が特定のペイロードによって ClickHouse インスタンスをクラッシュさせることを狙ったものである場合は、システムを稼働状態に復旧するか、システムを再起動してアクセスを制限し、制御を回復してください。攻撃に関する詳細情報を確認するには、次のクエリを使用して [system.crash&#95;log](/ja/reference/system-tables/crash_log) を参照してください。
+
+```sql
+SELECT * 
+FROM clusterAllReplicas('default',system.crash_log)
+```
+
+<div id="compromised-clickhouse-created-aws-roles">
+  ## 侵害された ClickHouse 用 AWS ロール
+</div>
+
+ClickHouse は、システム機能を有効にするために、事前に作成されたロールを利用します。このセクションは、お客様が CloudTrail を有効にした AWS を使用しており、CloudTrail のログにアクセスできることを前提としています。
+
+インシデントが侵害されたロールに起因している可能性がある場合は、ClickHouse の IAM ロールとアクションに関連する CloudTrail および CloudWatch のアクティビティを確認してください。IAM ロールの一覧については、セットアップの一部として提供される [CloudFormation](/ja/products/bring-your-own-cloud/reference/privilege#aws-iam-roles) スタックまたは Terraform モジュールを参照してください。
+
+<div id="unauthorized-access-eks-cluster">
+  ## EKS クラスターへの不正アクセス
+</div>
+
+ClickHouse BYOC は EKS 内で実行されます。このセクションでは、お客様が AWS で CloudTrail と CloudWatch を使用しており、ログにアクセスできることを前提としています。
+
+インシデントが EKS クラスターの侵害に起因する可能性がある場合は、以下のクエリを EKS の CloudWatch ログ内で使用して、具体的な脅威を特定します。
+
+username ごとの Kubernetes API 呼び出し数を一覧表示
+
+```sql
+fields user.username
+| stats count(*) as count by user.username
+```
+
+ユーザーがClickHouseのエンジニアかどうかを確認する
+
+```sql
+fields @timestamp,user.extra.sessionName.0, requestURI, verb,userAgent, @message, @logStream, @log
+| sort @timestamp desc
+| filter user.username like /clickhouse.com/
+| limit 10000
+```
+
+サービスロールを除外し、Kubernetes Secret にアクセスしているユーザーを確認する
+
+```sql
+fields @timestamp,user.extra.sessionName.0, requestURI, verb,userAgent, @message, @logStream, @log
+| sort @timestamp desc
+| filter requestURI like /secret/
+| filter verb="get"
+| filter ispresent(user.extra.sessionName.0)
+| filter user.username not like /ClickHouseManagementRole/
+| filter user.username not like /data-plane-mgmt/
+```

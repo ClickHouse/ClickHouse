@@ -1,7 +1,7 @@
 #pragma once
 
-#include <Storages/System/IStorageSystemOneBlock.h>
-#include <Interpreters/Cache/FileCache_fwd_internal.h>
+#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Interpreters/FileCache/FileCache_fwd_internal.h>
 
 namespace DB
 {
@@ -29,7 +29,7 @@ namespace DB
  * FORMAT Vertical
  */
 
-class StorageSystemFilesystemCache final : public IStorage
+class StorageSystemFilesystemCache final : public StorageWithCommonVirtualColumns
 {
 public:
     explicit StorageSystemFilesystemCache(const StorageID & table_id_);
@@ -38,7 +38,9 @@ public:
 
     bool isSystemStorage() const override { return true; }
 
-    void read(
+    static VirtualColumnsDescription createVirtuals();
+
+    void readImpl(
         QueryPlan & query_plan,
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,

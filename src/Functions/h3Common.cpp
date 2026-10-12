@@ -33,6 +33,18 @@ bool H3Validator::validateCell(UInt64 h) const
     return true;
 }
 
+bool H3Validator::validateEdge(UInt64 h) const
+{
+    if (!isValidDirectedEdge(h))
+    {
+        if (throw_on_error)
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid H3 directed edge index: {}", h);
+        else
+            return false;
+    }
+    return true;
+}
+
 }
 
 #endif

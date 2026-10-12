@@ -6,6 +6,7 @@
 #include <boost/program_options.hpp>
 
 
+int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv);
 int mainEntryClickHouseZooKeeperRemoveByList(int argc, char ** argv)
 try
 {
@@ -48,7 +49,7 @@ try
     {
         try
         {
-            future.get();
+            (void)future.get();
         }
         catch (...)
         {

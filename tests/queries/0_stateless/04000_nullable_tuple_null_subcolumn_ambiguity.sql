@@ -1,18 +1,19 @@
--- Tags: no-random-merge-tree-settings
+-- Tuple element name "null" is forbidden because it conflicts with the subcolumn
+-- name used for Nullable null maps, causing ambiguity in subcolumn resolution.
 
--- Test for ambiguity between Nullable's "null" subcolumn and a Tuple element named "null".
--- The column `t` is Nullable(Tuple(null UInt32)), so `t.null` could mean either
--- the null-map of the Nullable or the "null" element of the Tuple.
--- This should not cause an exception.
+SELECT CAST((1), 'Tuple(null UInt32)'); -- { serverError BAD_ARGUMENTS }
+SELECT CAST((1), 'Tuple(null UInt32, b UInt64)'); -- { serverError BAD_ARGUMENTS }
 
-SET allow_experimental_nullable_tuple_type = 1;
+-- Non-Nullable wrapping should also be rejected (the name itself is ambiguous).
+CREATE TABLE test_null_tuple (t Tuple(null UInt32)) ENGINE = Memory; -- { serverError BAD_ARGUMENTS }
 
-DROP TABLE IF EXISTS t_nullable_tuple_null;
+-- Normal Tuple element names work fine.
+SELECT CAST((1, 2), 'Tuple(a UInt32, b UInt64)');
 
-CREATE TABLE t_nullable_tuple_null (t Nullable(Tuple(`null` UInt32))) ENGINE = MergeTree ORDER BY tuple();
-
-INSERT INTO t_nullable_tuple_null VALUES ((10)), ((20));
-
-SELECT t IS NULL, t.`null` FROM t_nullable_tuple_null ORDER BY t.`null`;
-
-DROP TABLE t_nullable_tuple_null;
+-- Regression: reading the `.null` subcolumn of `Array(Nullable(T))` must not
+-- attempt to construct an `Array(Tuple(null T))` in `Nested::getSubcolumnsOfNested`.
+DROP TABLE IF EXISTS test_array_nullable_null_subcolumn;
+CREATE TABLE test_array_nullable_null_subcolumn (a3 Array(Nullable(UInt32))) ENGINE = MergeTree ORDER BY tuple();
+INSERT INTO test_array_nullable_null_subcolumn VALUES ([1, NULL, 2]);
+SELECT a3.null FROM test_array_nullable_null_subcolumn;
+DROP TABLE test_array_nullable_null_subcolumn;

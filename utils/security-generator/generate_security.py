@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 from pathlib import Path
-from typing import List
 
 VERSIONS_FILE = (
     Path(__file__).absolute().parent.parent / "list-versions" / "version_date.tsv"

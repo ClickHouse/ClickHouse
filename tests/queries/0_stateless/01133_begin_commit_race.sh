@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-ordinary-database, no-encrypted-storage
+# Tags: long, no-ordinary-database
 
 CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh

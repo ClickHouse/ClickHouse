@@ -1,0 +1,24 @@
+---
+title: materialized view への挿入は同期的に行われますか？
+description: この記事では、materialized view への挿入が同期的に行われるかどうかを説明します
+date: 2023-03-01
+tags: ['データモデリング']
+keywords: ['materialized view']
+---
+
+<div id="are-materialized-views-inserted-synchronously">
+  ## materialized view への挿入は同期的に行われますか？
+</div>
+
+**質問:** ソーステーブルに新しい行が挿入されると、その行はソーステーブルのすべての materialized view にも送られます。materialized view への挿入は同期的に行われますか？ つまり、サーバーからクライアントに挿入成功の応答が返された時点で、すべての materialized view が完全に更新され、クエリ可能な状態になっていることを意味しますか？
+
+**回答:**
+
+1. `INSERT` が成功すると、データはテーブルとすべての materialized view の両方に挿入されます。
+2. この挿入は、materialized view に関してはアトミックではありません。`INSERT` の実行中は、同時実行中のクライアントから中間状態が見える可能性があります。つまり、データがメインテーブルには挿入されていても materialized view にはまだ挿入されていない、またはその逆の状態です。
+3. [非同期 INSERT](/ja/concepts/features/operations/insert/asyncinserts) を使用している場合、データは一旦収集され、内部的には通常の挿入が実行されます。そして、通常の挿入と同じ種類の応答がクライアントに返されます。クライアントが `wait_for_async_insert` オプション付きの非同期 INSERT で成功応答を受け取った場合 (デフォルトではこの設定です) 、データはテーブルとそのすべての materialized view の両方に挿入されます。
+
+**質問:** 連鎖 / カスケードされた materialized view の場合はどうですか？
+
+**回答:**
+同じルールが適用されます。つまり、`INSERT` が成功応答を返した場合、データはチェーン内のすべての materialized view に挿入されています。この挿入は非アトミックです。

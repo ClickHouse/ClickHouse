@@ -1,0 +1,91 @@
+---
+slug: /cloud/get-started/cloud/use-cases/data_lake_and_warehouse
+title: '데이터 웨어하우징'
+description: '데이터 레이크의 유연성과 ClickHouse Cloud의 성능을 결합해 최신 데이터 웨어하우스 아키텍처를 구축합니다'
+keywords: ['데이터 웨어하우스', '데이터 레이크', '레이크하우스', 'Iceberg', 'Delta Lake', 'Hudi', 'Parquet', '오픈 테이블 포맷', '하이브리드 아키텍처', '사용 사례']
+sidebarTitle: '데이터 웨어하우징'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ko/components/Image.jsx";
+
+export const ExclusiveGroup = ({ name, children }) => {
+  useEffect(() => {
+    document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
+      d.setAttribute('name', name)
+    );
+  });
+  return <div data-eg={name}>{children}</div>;
+};
+
+현대적인 데이터 웨어하우스는 더 이상 스토리지와 컴퓨트를 긴밀하게 결합하지 않습니다. 대신 스토리지, 거버넌스, 쿼리 처리용으로 분리되어 있으면서도 서로 연결된 계층을 통해 워크플로에 적합한 도구를 유연하게 선택할 수 있습니다.
+
+클라우드 객체 스토리지에 오픈 테이블 포맷과 ClickHouse 같은 고성능 쿼리 엔진을 추가하면 데이터 레이크의 개방성을 유지하면서도 ACID 트랜잭션, 스키마 강제 적용, 빠른 분석 쿼리와 같은 데이터베이스 수준의 기능을 확보할 수 있습니다. 이러한 조합은 상호 운용 가능하고 비용 효율적인 스토리지와 고성능을 함께 제공하여 기존 분석 워크로드와 최신 AI/ML 워크로드를 모두 지원합니다.
+
+<div id="benefits">
+  ## 이 아키텍처가 제공하는 이점
+</div>
+
+개방형 객체 스토리지와 오픈 테이블 포맷을 ClickHouse 쿼리 엔진과 결합하면 다음과 같은 이점을 얻을 수 있습니다.
+
+| 이점                | 설명                                                                                                                                                            |
+| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **일관된 테이블 업데이트**  | 테이블 상태에 대한 원자적 커밋으로 인해 동시 쓰기가 손상되거나 일부만 기록된 데이터를 만들지 않습니다. 이는 원시 데이터 레이크의 가장 큰 문제 중 하나를 해결합니다.                                                                |
+| **스키마 관리**        | 강제 검증과 추적되는 스키마 진화로 인해 스키마 불일치 때문에 데이터를 사용할 수 없게 되는 &quot;데이터 늪&quot; 문제를 방지합니다.                                                                              |
+| **쿼리 성능**         | 인덱싱, 통계, 데이터 스키핑 및 클러스터링과 같은 데이터 레이아웃 최적화를 통해 SQL 쿼리를 전용 데이터 웨어하우스에 버금가는 속도로 실행할 수 있습니다. 여기에 ClickHouse의 열 지향 엔진이 결합되면 객체 스토리지에 저장된 데이터에서도 이러한 성능이 유지됩니다.     |
+| **거버넌스**          | 카탈로그와 테이블 포맷은 행 및 컬럼 수준에서 세분화된 접근 제어와 감사를 제공하여, 기본적인 데이터 레이크에서 제한적인 보안 제어 문제를 보완합니다.                                                                          |
+| **스토리지와 컴퓨트의 분리** | 스토리지와 컴퓨트는 범용 객체 스토리지에서 서로 독립적으로 확장되며, 이는 독점적 웨어하우스 스토리지보다 훨씬 저렴합니다. 이러한 분리는 최신 Cloud 웨어하우스에서 표준이지만, 개방형 포맷을 사용하면 데이터와 함께 확장할 컴퓨트 엔진을 *어떤 것*으로 할지 선택할 수 있습니다. |
+
+<div id="architecture">
+  ## ClickHouse가 데이터 웨어하우징을 지원하는 방식
+</div>
+
+데이터는 스트리밍 플랫폼과 기존 웨어하우스에서 객체 스토리지를 거쳐 ClickHouse로 유입되며, 여기에서 변환 및 최적화를 거친 뒤 BI/AI 도구에 제공됩니다.
+
+<Columns cols={2}>
+  <div>
+    <Image img="/images/cloud/onboard/discover/use_cases/data-warehousing.webp" alt="ClickHouse 데이터 웨어하우징 아키텍처" />
+  </div>
+
+  <ExclusiveGroup name="dw-arch">
+    <AccordionGroup>
+      <Accordion title="데이터 수집" defaultOpen>
+        대량 데이터 로드에는 일반적으로 S3 또는 GCS와 같은 객체 스토리지를 중간 저장소로 사용합니다. ClickHouse는 [Parquet](/ko/guides/clickhouse/data-formats/parquet) 읽기 성능이 뛰어나 [S3 table engine](/ko/reference/engines/table-engines/integrations/s3)을 사용해 초당 수억 행을 로드할 수 있습니다. 실시간 스트리밍의 경우 [ClickPipes](/ko/integrations/clickpipes/home)가 Kafka 및 Confluent와 같은 플랫폼에 직접 연결됩니다.
+
+        또한 Snowflake, BigQuery, Databricks와 같은 기존 데이터 웨어하우스에서 객체 스토리지로 내보낸 뒤 [테이블 엔진](/ko/reference/engines/table-engines)을 통해 ClickHouse로 로드하는 방식으로 마이그레이션할 수도 있습니다.
+      </Accordion>
+
+      <Accordion title="쿼리">
+        S3 및 GCS와 같은 객체 스토리지에서 직접 데이터를 쿼리하거나, [Iceberg](/ko/reference/engines/table-engines/integrations/iceberg), [Delta Lake](/ko/reference/engines/table-engines/integrations/deltalake), [Hudi](/ko/reference/engines/table-engines/integrations/hudi)와 같은 오픈 테이블 포맷을 사용하는 데이터 레이크의 데이터를 쿼리할 수 있습니다. 직접 쿼리할 수도 있고, [AWS Glue Catalog](/ko/guides/use-cases/data-warehousing/glue-catalog), [Unity Catalog](/ko/guides/use-cases/data-warehousing/unity-catalog), [Iceberg REST](/ko/guides/use-cases/data-warehousing/rest-catalog)와 같은 데이터 카탈로그를 통해 쿼리할 수도 있습니다.
+
+        ClickHouse Cloud는 기본적으로 [쿼리 캐시](/ko/concepts/features/performance/caches/query-cache), [스파스 인덱스](/ko/concepts/features/performance/skip-indexes/skipping-indexes), [프로젝션](/ko/concepts/features/projections/projections)을 제공하며, 여기에 더해 70개 이상의 파일 포맷과 날짜, 배열, JSON, 지리 정보, 대규모 근사 집계를 위한 SQL 함수도 지원합니다.
+      </Accordion>
+
+      <Accordion title="데이터 변환">
+        ClickHouse의 [구체화된 뷰(Materialized Views)](/ko/concepts/features/materialized-views)는 변환을 자동화합니다. 원본 테이블에 새 데이터가 삽입되면 이를 트리거로 실행되므로, 별도의 맞춤형 파이프라인을 구축하지 않아도 데이터가 들어오는 즉시 추출, 집계, 수정할 수 있습니다.
+
+        더 복잡한 모델링이 필요한 경우 ClickHouse의 [dbt 통합](/ko/integrations/connectors/data-ingestion/etl-tools/dbt)을 사용해 버전 관리되는 SQL 모델로 변환을 정의할 수 있습니다.
+      </Accordion>
+
+      <Accordion title="통합">
+        ClickHouse는 [Tableau](/ko/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse) 및 [Looker](/ko/integrations/connectors/data-visualization/looker-and-clickhouse)와 같은 BI 도구용 네이티브 커넥터를 제공합니다. 네이티브 커넥터가 없는 도구는 [MySQL wire protocol](/ko/concepts/features/interfaces/mysql)을 통해 연결할 수 있습니다. [MCP server](/ko/guides/use-cases/ai-ml/MCP)는 ClickHouse를 LLM과 연결해 대화형 분석을 지원하며, 유연한 [RBAC](/ko/concepts/features/security/access-rights) 제어를 통해 읽기 전용 테이블을 안전하게 노출할 수 있습니다.
+      </Accordion>
+    </AccordionGroup>
+  </ExclusiveGroup>
+</Columns>
+
+<div id="hybrid-architecture-the-best-of-both-worlds">
+  ## 하이브리드 아키텍처: 두 세계의 장점을 모두 갖춘 방식
+</div>
+
+데이터 레이크를 쿼리하는 것에 더해, 실시간 대시보드, 운영 분석, 대화형 애플리케이션처럼 매우 낮은 지연 시간이 중요한 사용 사례를 위해 성능에 민감한 데이터를 ClickHouse의 네이티브 [MergeTree](/ko/reference/engines/table-engines/mergetree-family/mergetree) 스토리지로 수집할 수 있습니다.
+
+이를 통해 계층형 데이터 전략을 구현할 수 있습니다. 자주 액세스되는 핫 데이터는 ClickHouse의 최적화된 스토리지에 저장되어 1초 미만의 쿼리 응답을 제공하고, 전체 데이터 이력은 레이크에 남아 계속 쿼리할 수 있습니다. 또한 ClickHouse 구체화된 뷰(Materialized View)를 사용해 레이크 데이터를 최적화된 테이블로 지속적으로 변환하고 집계함으로써, 두 계층을 자동으로 연결할 수 있습니다.
+
+기술적 제약이 아니라 성능 요구 사항에 따라 데이터의 저장 위치를 선택할 수 있습니다.
+
+<Tip>
+  **ClickHouse Academy**
+
+  자세히 알아보려면 무료 [Data Warehousing with ClickHouse](https://clickhouse.com/learn/data-warehousing) 과정을 수강하세요.
+</Tip>

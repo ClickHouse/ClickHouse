@@ -4,8 +4,8 @@
 #include <Columns/ColumnVector.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionHelpers.h>
-#include <IO/WriteHelpers.h>
 #include <Interpreters/Context_fwd.h>
+#include <base/TypeLists.h>
 #include <base/range.h>
 
 
@@ -22,7 +22,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name>
-struct FunctionBitTestMany : public IFunction
+struct FunctionBitTestMany final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;
@@ -67,14 +67,12 @@ public:
         const auto * value_col = arguments.front().column.get();
 
         ColumnPtr res;
-        if (!((res = execute<UInt8>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<UInt16>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<UInt32>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<UInt64>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<Int8>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<Int16>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<Int32>(arguments, result_type, value_col, input_rows_count))
-            || (res = execute<Int64>(arguments, result_type, value_col, input_rows_count))))
+        TypeListUtils::forEach(TypeListNativeInt{}, [&]<typename T>(TypeList<T>)
+        {
+            if (!res)
+                res = execute<T>(arguments, result_type, value_col, input_rows_count);
+        });
+        if (!res)
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of argument of function {}", value_col->getName(), getName());
 
         return res;
@@ -89,7 +87,7 @@ private:
     {
         if (const auto value_col = checkAndGetColumn<ColumnVector<T>>(value_col_untyped))
         {
-            bool is_const;
+            bool is_const = false;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto & val = value_col->getData();
 
@@ -113,7 +111,7 @@ private:
         }
         if (const auto value_col_const = checkAndGetColumnConst<ColumnVector<T>>(value_col_untyped))
         {
-            bool is_const;
+            bool is_const = false;
             const auto const_mask = createConstMaskIfConst<T>(arguments, is_const);
             const auto val = value_col_const->template getValue<T>();
 

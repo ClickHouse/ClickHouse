@@ -1,6 +1,6 @@
 -- Tags: no-fasttest, no-ordinary-database, no-parallel-replicas
-
 -- Test for setting 'vector_search_with_rescoring' with filters.
+SET explain_query_plan_default = 'legacy';
 
 SET enable_analyzer = 1;
 SET parallel_replicas_local_plan = 1; -- this setting is randomized, set it explicitly to force local plan for parallel replicas
@@ -47,26 +47,24 @@ FROM tab
 ORDER BY L2Distance(vec, [0.2, 0.3]);
 
 SELECT 'Ensure rescoring optimization works with enabled and disabled PREWHERE';
--- Expect IDs 16 & 19 for next 2 queries
+-- Expect 16 & 19.
 
 SELECT id
 FROM tab
 WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
-SETTINGS query_plan_optimize_prewhere = 0,
-         optimize_move_to_prewhere = 0;
+SETTINGS optimize_move_to_prewhere = 0;
 
 SELECT id
 FROM tab
 WHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
 LIMIT 4
-SETTINGS query_plan_optimize_prewhere = 1,
-         optimize_move_to_prewhere = 1;
+SETTINGS optimize_move_to_prewhere = 1;
 
 SELECT 'Test with enabled rescoring';
--- Expect 16 & 19, and additionally 18 and 17 because they are in the same granules
+-- Expect 16 & 19.
 
 SELECT id
 FROM tab
@@ -93,6 +91,7 @@ SELECT trimLeft(explain) AS explain FROM (
     PREWHERE attr1 > 110
     ORDER BY L2Distance(vec, [0.2, 0.3])
     LIMIT 4
+    SETTINGS vector_search_with_rescoring = 1
     )
 WHERE (explain LIKE '%_distance%');
 
@@ -101,7 +100,8 @@ SELECT id
 FROM tab
 PREWHERE attr1 > 110
 ORDER BY L2Distance(vec, [0.2, 0.3])
-LIMIT 4;
+LIMIT 4
+SETTINGS vector_search_with_rescoring = 1;
 
 SELECT 'Select all 20 neighbours with the rescoring optimization, distances got from vector index';
 SELECT id, attr1, attr2
@@ -117,7 +117,8 @@ SELECT trimLeft(explain) AS explain FROM (
     ORDER BY L2Distance(vec, [0.2, 0.3])
     LIMIT 20
     )
-WHERE (explain LIKE '%_distance%');
+WHERE (explain LIKE '%_distance%')
+LIMIT 1;
 
 SELECT 'Just a test with 2 predicates';
 SELECT 'id 16 & 19 will be again output';

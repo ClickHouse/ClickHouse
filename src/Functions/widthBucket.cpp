@@ -12,6 +12,7 @@
 #include <Functions/IFunction.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/castColumn.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <Common/Concepts.h>
 #include <Common/Exception.h>
 #include <Common/NaNUtils.h>
@@ -32,7 +33,7 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
-class FunctionWidthBucket : public IFunction
+class FunctionWidthBucket final : public IFunction
 {
     template <typename TDataType>
     void throwIfInvalid(
@@ -129,7 +130,7 @@ class FunctionWidthBucket : public IFunction
         using ResultType = typename NumberTraits::Construct<false, false, NumberTraits::nextSize(sizeof(TCountType))>::Type;
         auto common_type = std::make_shared<DataTypeNumber<Float64>>();
 
-        std::vector<ColumnPtr> cast_columns;
+        VectorWithMemoryTracking<ColumnPtr> cast_columns;
         cast_columns.reserve(3);
         for (const auto argument_index : collections::range(0, 3))
         {
@@ -256,7 +257,7 @@ FunctionDocumentation::Arguments arguments = {
 };
 FunctionDocumentation::ReturnedValue returned_value = {"Returns the bucket number as an integer. Returns 0 if operand < low, returns count+1 if operand >= high.", {"UInt8/16/32/64"}};
 FunctionDocumentation::Examples examples = {
-    {"Usage example", "widthBucket(10.15, -8.6, 23, 18)", "11"}
+    {"Usage example", "SELECT widthBucket(10.15, -8.6, 23, 18)", "11"}
 };
 FunctionDocumentation::IntroducedIn introduced_in = {23, 3};
 FunctionDocumentation::Category category = FunctionDocumentation::Category::Mathematical;

@@ -5,8 +5,10 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/ConverterContext.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applySimpleFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/dropMetricName.h>
+#include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 #include <Storages/TimeSeries/timeSeriesTypesToAST.h>
 
+#include <limits>
 
 namespace DB::ErrorCodes
 {
@@ -20,16 +22,20 @@ namespace DB::PrometheusQueryToSQL
 namespace
 {
     /// Checks if the types of the specified arguments are valid for a date/time function.
-    void checkArgumentTypes(const PQT::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
+    void checkArgumentTypes(
+        const PrometheusQueryTree::Function * function_node, const std::vector<SQLQueryPiece> & arguments, const ConverterContext & context)
     {
         const auto & function_name = function_node->function_name;
 
-        if (arguments.size() != 1)
+        if (arguments.size() > 1)
         {
             throw Exception(ErrorCodes::CANNOT_EXECUTE_PROMQL_QUERY,
-                            "Function '{}' expects {} arguments, but was called with {} arguments",
-                            function_name, 1, arguments.size());
+                            "Function '{}' expects 0 or 1 arguments, but was called with {} arguments",
+                            function_name, arguments.size());
         }
+
+        if (arguments.empty())
+            return;
 
         const auto & argument = arguments[0];
 
@@ -117,7 +123,7 @@ bool isDateTimeFunction(std::string_view function_name)
 
 
 SQLQueryPiece applyDateTimeFunction(
-    const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     const auto & function_name = function_node->function_name;
     const auto * impl_info = getImplInfo(function_name);
@@ -125,15 +131,34 @@ SQLQueryPiece applyDateTimeFunction(
 
     checkArgumentTypes(function_node, arguments, context);
 
+    if (arguments.empty())
+    {
+        /// A date/time function called without arguments acts as if it was called with `vector(time())`.
+        auto time_argument = fromEvaluationTime(function_node, context);
+        time_argument.type = ResultType::INSTANT_VECTOR;
+        arguments.push_back(std::move(time_argument));
+    }
+
     auto apply_function_to_ast = [&](ASTs args) -> ASTPtr
     {
-        /// f(toDateTime64(x, 0, 'UTC'))::scalar_data_type
+        /// multiIf(isNull(x), x, isFinite(x), f(toDateTime64(ifNotFinite(x, 0), 0, 'UTC'))::Float64, nan)
+        /// NULLs (i.e. time steps without a value) are kept as is, and like in Prometheus a NaN or infinite value gives NaN.
+        /// `toDateTime64` throws on a non-finite argument, so `ifNotFinite` keeps it safe even without short-circuit evaluation.
         chassert(args.size() == 1);
         ASTPtr x = std::move(args[0]);
-        return timeSeriesScalarASTCast(
+        ASTPtr date_part = timeSeriesScalarASTCast(
             (impl_info->transform_ast)(
-                makeASTFunction("toDateTime64", std::move(x), make_intrusive<ASTLiteral>(0u), make_intrusive<ASTLiteral>("UTC"))),
-            context.scalar_data_type);
+                makeASTFunction("toDateTime64",
+                    makeASTFunction("ifNotFinite", x->clone(), timeSeriesScalarToAST(0)),
+                    make_intrusive<ASTLiteral>(0u),
+                    make_intrusive<ASTLiteral>("UTC"))));
+        return makeASTFunction(
+            "multiIf",
+            makeASTFunction("isNull", x->clone()),
+            x->clone(),
+            makeASTFunction("isFinite", x->clone()),
+            std::move(date_part),
+            timeSeriesScalarToAST(std::numeric_limits<Float64>::quiet_NaN()));
     };
 
     auto res = applySimpleFunction(function_node, context, apply_function_to_ast, std::move(arguments));

@@ -1,4 +1,5 @@
--- Tags: stateful, no-debug, use-vectorscan
+-- Tags: stateful, no-debug, use-vectorscan, no-sanitizers
+-- no-sanitizers: generates a lot of trace_log entries (~250K) which causes timeout on flushing trace_log in other tests
 
 -- Check that server does not get segfault due to bad stack unwinding from Hyperscan
 

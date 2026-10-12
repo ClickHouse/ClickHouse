@@ -1,12 +1,7 @@
-import asyncio
-import os.path
-import random
-import re
 
 import pytest
 
 from helpers.cluster import ClickHouseCluster
-from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 instance = cluster.add_instance(

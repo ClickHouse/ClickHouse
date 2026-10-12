@@ -36,27 +36,19 @@ Also keep in mind that string literals require extra escaping.
     FunctionDocumentation::Examples examples = {
     {
         "Converting ISO dates to American format",
+        R"(SELECT replaceRegexpOne(d, '(\\d{4})-(\\d{2})-(\\d{2})', '\\2/\\3/\\1') AS res
+FROM values('d String', '2014-03-17', '2014-03-18', '2014-03-19'))",
         R"(
-SELECT DISTINCT
-    EventDate,
-    replaceRegexpOne(toString(EventDate), '(\\d{4})-(\\d{2})-(\\d{2})', '\\2/\\3/\\1') AS res
-FROM test.hits
-LIMIT 7
-FORMAT TabSeparated
-        )",
-        R"(
-2014-03-17      03/17/2014
-2014-03-18      03/18/2014
-2014-03-19      03/19/2014
-2014-03-20      03/20/2014
-2014-03-21      03/21/2014
-2014-03-22      03/22/2014
-2014-03-23      03/23/2014
+┌─res────────┐
+│ 03/17/2014 │
+│ 03/18/2014 │
+│ 03/19/2014 │
+└────────────┘
         )"
     },
     {
         "Copying a string ten times",
-        R"(SELECT replaceRegexpOne('Hello, World!', '.*', '\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0\\\\0') AS res)",
+        R"(SELECT replaceRegexpOne('Hello, World!', '.*', '\\0\\0\\0\\0\\0\\0\\0\\0\\0\\0') AS res)",
         R"(
 ┌─res────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
 │ Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World!Hello, World! │

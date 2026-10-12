@@ -1,0 +1,113 @@
+---
+description: 'clickhouse-keeper 客户端工具文档'
+sidebarTitle: 'clickhouse-keeper-client'
+slug: /operations/utilities/clickhouse-keeper-client
+title: 'clickhouse-keeper-client 工具'
+doc_type: '参考'
+---
+
+用于通过原生协议与 clickhouse-keeper 交互的客户端应用程序。
+
+<div id="clickhouse-keeper-client">
+  ## 选项
+</div>
+
+* `-q QUERY`, `--query=QUERY` — 要执行的查询。如果未传入此参数，`clickhouse-keeper-client` 将以交互模式启动。
+* `-h HOST`, `--host=HOST` — 服务器主机。默认值：`localhost`。
+* `-p N`, `--port=N` — 服务器端口。默认值：9181
+* `-c FILE_PATH`, `--config-file=FILE_PATH` — 设置配置文件路径以获取连接字符串。默认值：`config.xml`。
+* `--password=PASSWORD` — 用于身份验证的密码。也可以通过 `CLICKHOUSE_KEEPER_PASSWORD` 环境变量设置，或在 XML 配置文件的 `<zookeeper><password>` 下设置。
+* `--identity=IDENTITY` — 用于 `digest` 身份验证方案的身份标识。也可以通过 `CLICKHOUSE_KEEPER_IDENTITY` 环境变量设置，或在 XML 配置文件的 `<zookeeper><identity>` 下设置。
+* `--connection-timeout=TIMEOUT` — 设置连接超时时间 (秒) 。默认值：10s。
+* `--session-timeout=TIMEOUT` — 设置会话超时时间 (秒) 。默认值：10s。
+* `--operation-timeout=TIMEOUT` — 设置操作超时时间 (秒) 。默认值：10s。
+* `--history-file=FILE_PATH` — 设置历史记录文件路径。默认值：`~/.keeper-client-history`。
+* `--log-level=LEVEL` — 设置日志级别。默认值：`information`。
+* `--no-confirmation` — 如果设置此项，执行某些命令时将不再要求确认。对于交互模式，默认值为 `false`；对于查询，默认值为 `true`
+* `--help` — 显示帮助信息。
+
+<div id="clickhouse-keeper-client-env">
+  ## 环境变量
+</div>
+
+* `CLICKHOUSE_KEEPER_PASSWORD` — 如果命令行中未提供 `--password`，则将其用作默认密码。
+* `CLICKHOUSE_KEEPER_IDENTITY` — 如果命令行中未提供 `--identity`，则将其用作默认身份标识。
+
+<div id="clickhouse-keeper-client-auth">
+  ## 身份验证
+</div>
+
+连接到需要身份验证的 Keeper server 时，密码会按以下优先级顺序确定 (先匹配者生效) ：
+
+1. `--password` 命令行参数
+2. `CLICKHOUSE_KEEPER_PASSWORD` 环境变量
+3. 由 `--config-file` 指定的 XML 配置文件中的 `<zookeeper><password>`
+
+同样的优先级也适用于 `--identity` / `CLICKHOUSE_KEEPER_IDENTITY` / `<zookeeper><identity>`。
+
+包含身份验证设置的 XML 配置文件示例：
+
+```xml
+<clickhouse>
+    <zookeeper>
+        <password>secret</password>
+        <node index="1">
+            <host>localhost</host>
+            <port>9181</port>
+        </node>
+    </zookeeper>
+</clickhouse>
+```
+
+<div id="clickhouse-keeper-client-example">
+  ## 示例
+</div>
+
+```bash
+./clickhouse-keeper-client -h localhost -p 9181 --connection-timeout 30 --session-timeout 30 --operation-timeout 30
+Connected to ZooKeeper at [::1]:9181 with session_id 137
+/ :) ls
+keeper foo bar
+/ :) cd 'keeper'
+/keeper :) ls
+api_version
+/keeper :) cd 'api_version'
+/keeper/api_version :) ls
+
+/keeper/api_version :) cd 'xyz'
+Path /keeper/api_version/xyz does not exist
+/keeper/api_version :) cd ../../
+/ :) ls
+keeper foo bar
+/ :) get 'keeper/api_version'
+2
+```
+
+<div id="clickhouse-keeper-client-commands">
+  ## 命令
+</div>
+
+* `ls '[path]' [watch_id]` -- 列出给定路径下的节点 (默认：cwd) 。可选设置一个由 `watch_id` 标识的子节点 watch
+* `cd '[path]'` -- 更改工作路径 (默认 `.`) 
+* `cp '<src>' '<dest>'`  -- 将 &#39;src&#39; 节点复制到 &#39;dest&#39; 路径
+* `cpr '<src>' '<dest>'`  -- 将 &#39;src&#39; 节点子树复制到 &#39;dest&#39; 路径
+* `mv '<src>' '<dest>'`  -- 将 &#39;src&#39; 节点移动到 &#39;dest&#39; 路径
+* `mvr '<src>' '<dest>'`  -- 将 &#39;src&#39; 节点子树移动到 &#39;dest&#39; 路径
+* `exists '<path>' [watch_id]` -- 如果节点存在则返回 `1`，否则返回 `0`。可选设置一个由 `watch_id` 标识的 watch
+* `set '<path>' <value> [version]` -- 更新节点的值。仅当 version 匹配时才会更新 (默认：-1) 
+* `create '<path>' <value> [mode]` -- 创建新节点并设置指定值
+* `touch '<path>'` -- 创建新节点，并将值设为空字符串。如果节点已存在，不会抛出异常
+* `get '<path>' [watch_id]` -- 返回节点的值。可选设置一个由 `watch_id` 标识的数据 watch
+* `watch <watch_id> [timeout_seconds]` -- 等待由 `watch_id` 标识的 watch 事件，并打印事件类型和路径。如果指定了 `timeout_seconds`，则在超时后返回 error
+* `rm '<path>' [version]` -- 仅当 version 匹配时才删除节点 (默认：-1) 
+* `rmr '<path>' [limit]` -- 如果子树大小小于限制值，则递归删除该路径。需要确认 (默认 limit = 100) 
+* `flwc <command>` -- 执行四字命令
+* `help` -- 打印此消息
+* `get_direct_children_number '[path]'` -- 获取指定路径下直接子节点的数量
+* `get_all_children_number '[path]'` -- 获取指定路径下所有子节点的数量
+* `get_stat '[path]'` -- 返回节点的 stat (默认 `.`) 
+* `find_super_nodes <threshold> '[path]'` -- 查找给定路径下子节点数量大于某个 threshold 的节点 (默认 `.`) 
+* `delete_stale_backups` -- 删除现已失效的、用于 backups 的 ClickHouse 节点
+* `find_big_family [path] [n]` -- 返回子树中 family 最大的前 n 个节点 (默认 path = `.`，n = 10) 
+* `sync '<path>'` -- 在进程与 leader 之间同步节点
+* `reconfig <add|remove|set> "<arg>" [version]` -- 重新配置 Keeper cluster。参见 /docs/en/guides/sre/keeper/clickhouse-keeper#reconfiguration

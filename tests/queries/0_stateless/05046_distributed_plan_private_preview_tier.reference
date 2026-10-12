@@ -1,0 +1,5 @@
+distributed_plan_prefer_replicas_over_workers	PrivatePreview
+distributed_plan_workers_num	PrivatePreview
+distributed_plan_workers_provisioning_timeout_ms	PrivatePreview
+make_distributed_plan	PrivatePreview
+0

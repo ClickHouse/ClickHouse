@@ -1,0 +1,160 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-07-02
+title: 'Demo days - 2026-07-02'
+sidebarTitle: '2026-07-02'
+description: 'ClickStack demo days for 2026-07-02'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+## Notebook citations {#notebook-citations}
+
+*Demo by [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/ns5aVkpgTQg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Notebook tiles (cells) can now be linked directly, including across branches. In custom markdown, you can use either an absolute link or a relative hash link, making it much easier to point someone to the exact evidence behind a claim.
+
+The bigger change is on the agent side. Summaries generated in notebooks now cite the tiles they're based on, so readers can jump straight to the underlying data rather than taking the summary on faith.
+
+We've also changed how existing notebooks open. The summary tile is expanded by default instead of collapsed, which is usually what you want when coming back to one.
+
+## OTel metrics table primary key optimization {#otel-metrics-table-primary-key-optimization}
+
+*Demo by [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/GIwNxRJGQKg" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A deep dive into validating and shrinking the primary keys on the OTel metrics tables. The useful measure here is primary key bytes per granule: total primary key size divided by the number of granules. This accounts for larger tables naturally having more granules and gives us a fair comparison.
+
+The original schema came in at around 148 bytes per granule. The new schema is closer to 17 bytes, about a 9x reduction in primary key size, with a similar reduction in production memory usage.
+
+The schema changes are fairly small. `MetricName` now uses `LowCardinality`, which is fine unless you’re dealing with an enormous number of distinct metric names. Even then, it should only become a concern at the extremes. Timestamps move from `DateTime64` with nanosecond precision to plain `DateTime` with second precision, which is plenty for metrics. You can still keep nanosecond precision by changing the schema yourself.
+
+We also added explicit min/max indexes for time and replaced the full attributes map in the primary key with a hash. The same changes have been applied across all of the metric table schemas, and we're upstreaming them to the OTel Collector as well.
+
+**Related PRs:** [#2545](https://github.com/hyperdxio/hyperdx/pull/2545) fix: change metrics PK for better memory usage
+
+## Trend/spark lines behind numbers {#trend-and-spark-lines-behind-numbers}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/4XwOkyNqDEY" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Number tiles can now show a trend line or area chart behind the value. It’s been a popular Grafana feature for a long time, and it’s now made its way into ClickStack.
+
+You can turn it on from the tile’s display settings. It defaults to no background chart, with line and area available as the other options. It takes very little configuration but makes dashboards look noticeably more finished.
+
+For now, background charts only work with declarative number tiles, so you can't provide custom SQL yet. We're considering that as a follow-up after hearing from users who want more control over what the chart plots.
+
+**Related PRs:** [#2489](https://github.com/hyperdxio/hyperdx/pull/2489) feat(dashboards): background trend sparkline on number tiles, [#2501](https://github.com/hyperdxio/hyperdx/pull/2501) fix(dashboards): match the number-tile background sparkline to the displayed value, [#2520](https://github.com/hyperdxio/hyperdx/pull/2520) refactor(dashboards): extract shared Sparkline primitive from number tile
+
+## Table visual improvements {#table-visual-improvements}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/yl7j7E9OGk4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Table tiles picked up a few readability improvements, each coming from specific user feedback. You can now enable alternating row backgrounds from display settings, which makes wide or dense tables much easier to scan. There’s also a cleaner, more visible divider between the header row and the data below it.
+
+Columns can now have their own colors using the same styling options as number tiles. Set a single default color, or add thresholds that are evaluated cell by cell, so errors can show in red while normal values stay green.
+
+They're small changes, but every one came from real "I wish this table could do that" comments from our users.
+
+**Related PRs:** [#2519](https://github.com/hyperdxio/hyperdx/pull/2519) feat(dashboard): table tile header separator and optional alternate row background, [#2517](https://github.com/hyperdxio/hyperdx/pull/2517) feat(dashboards): per-column color on table tiles
+
+## Grafana plugin improvements {#grafana-plugin-improvements}
+
+*Demo by [@alex-fedotyev](https://github.com/alex-fedotyev)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/doFNUMZotJU" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A round-up of what's coming soon to the ClickStack Grafana plugin.
+
+The data source configuration now supports a single-table mode alongside the existing multi-database setup. Point it at one table, such as production logs, and the query editor switches to a compact builder designed for exploration. You get quick filters for fields like service name, include and exclude filtering, and SQL is still there when you need it.
+
+We're also shipping ready-made dashboards for OTel logs and traces, using the same drill-down pattern people are used to. The logs dashboard includes a per-service overview, volume charts, and log details. Trace Explore covers service views, latency heatmaps, and operation breakdowns. There's also a combined service dashboard that puts logs and traces together, grouped by span name, so you can investigate one service without bouncing between tools.
+
+All of these dashboards work with the default schema out of the box. New users can get running straight away, then use them as a starting point for their own dashboards.
+
+There are two new wizard-style builders too. The variable builder lets you select column values instead of writing custom SQL. For example, you can create a variable from pod names and preview the values it returns.
+
+The annotation builder generates annotations from a change-detection query on a chosen field. Point it at a service's version attribute and it can add a deployment marker every time that value changes, without you having to write the SQL yourself.
+
+## Sidebar and span view improvements {#sidebar-and-span-view-improvements}
+
+*Demo by [@karl-power](https://github.com/karl-power)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/vbeufXNyBkw" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+A big batch of polish for navigation and trace viewing.
+
+The sidebar can now be pinned open while you work from the search page, so you can scroll through and select other rows without closing it. Navigation also keeps track of the current tab context. The back button uses a breadcrumb trail to return you to exactly where you came from instead of simply closing the panel.
+
+There's also a keyboard shortcuts popup, so the available bindings are easy to find. Logs with an associated trace now show a chip that takes you straight to it.
+
+The span view gets the most visible upgrade. Spans are colored by service name, cycling through different colors as services change, and a new minimap makes large traces much easier to read than a wall of grey bars. You can drag across a time range to zoom in and reset the view with a click. A new history stack also lets you move between traces and get back to where you were.
+
+Selected spans have better expand and collapse controls, saving you from closing every child individually. We also merged a community-contributed fix that gives very short spans a minimum render width. A span lasting a few microseconds, for example, stays visible on the timeline without requiring you to zoom all the way in.
+
+**Related PRs:** [#2552](https://github.com/hyperdxio/hyperdx/pull/2552) feat: add trace timeline minimap
+
+## Metrics queries, dashboard evals, and better alert error reporting in MCP {#metrics-queries-dashboard-evals-and-better-alert-error-reporting-in-mcp}
+
+*Demo by [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/yjceqgveZr8" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Three MCP server improvements landed together this cycle.
+
+The MCP can now run metrics queries directly, including from notebooks, without routing through a dashboard just to reach the underlying data.
+
+We've also added an end-to-end eval for dashboard building. It currently passes around 75% of cases, and we're steadily adding distractors to make it harder to game. When the MCP creates a broken dashboard in the wild, that failure can go back into the eval set. Over time, this should catch problems such as raw SQL sources producing the wrong query before they become recurring failures.
+
+Tool errors are now classified by category instead of landing in one generic bucket. A bad SQL query from a user is handled separately from an internal failure such as a database timeout. That gives us the distinction we need to build more useful alerts around MCP health.
+
+**Related PRs:** [#2437](https://github.com/hyperdxio/hyperdx/pull/2437) feat(mcp): first-class metric source support, [#2571](https://github.com/hyperdxio/hyperdx/pull/2571) feat(hdx-eval): add dashboard-build eval scenario, [#2570](https://github.com/hyperdxio/hyperdx/pull/2570) feat(mcp): classify MCP tool errors by category for alerting
+
+## OTel collector batch processor updates {#otel-collector-batch-processor-updates}
+
+*Demo by [@SpencerTorres](https://github.com/SpencerTorres)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/rlSm_9ivsQ4" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+OpenTelemetry is moving batching out of the standalone batch processor and into the exporter configuration. The ClickStack collector already supported both approaches, so there was no code to change. This ended up being a documentation update.
+
+Under the old model, a dedicated batch processor sat in the pipeline and buffered rows before passing them to the exporter. It had its own batch size, maximum batch size, and timeout settings.
+
+The model OpenTelemetry is standardizing on keeps the batcher alongside the exporter instead of placing it in the processors chain. Most of the same concepts carry over, including minimum and maximum batch sizes and queue size. The exporter-based configuration also supports blocking behaviour, byte-based limits, and persistence, none of which were available in the old batch processor.
+
+The docs now recommend the exporter-based configuration and explain how to migrate existing batch processor settings. They also suggest a minimum of 5,000 rows with a short timeout as a sensible default for most deployments. Poor batching configuration is still one of the most common causes of a bad first experience with ClickHouse.
+
+## Surrounding context for arbitrary attributes {#surrounding-context-for-arbitrary-attributes}
+
+*Demo by [@MikeShi42](https://github.com/MikeShi42)*
+
+<Frame>
+<iframe src="https://www.youtube.com/embed/BZTG8TTTyoA" title="YouTube video player" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen></iframe>
+</Frame>
+
+Surrounding context lets you open a log line and see what else was happening around it. By default, that context is grouped by service, pod, or node. This works well for most OTel-schema deployments, but anyone using a custom schema had no clean way to build the view around their own attributes.
+
+You can now use any attribute on a log line to drive the context view, whether it comes from an OTel schema or a custom one. The familiar service, pod, and node options are still there, but you could just as easily group by telemetry SDK version or any other field on the log line. You can also clear the selection at any time and start over.
+
+**Related PRs:** [#2558](https://github.com/hyperdxio/hyperdx/pull/2558) fix: support service name expression and quick attribute filters in surrounding context

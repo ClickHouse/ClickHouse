@@ -1,0 +1,97 @@
+---
+title: Настройка MySQL для локального ClickHouse
+---
+
+См. [официальную документацию](/ru/concepts/features/interfaces/mysql),
+где описано, как настроить сервер ClickHouse с включенным интерфейсом MySQL.
+
+Помимо добавления записи в `config.xml` сервера
+
+```xml
+<clickhouse>
+    <mysql_port>9004</mysql_port>
+</clickhouse>
+```
+
+также *обязательно* использовать
+[шифрование пароля двойным хэшом SHA1](/ru/concepts/features/configuration/settings/settings-users#user-namepassword)
+для пользователя, который будет работать через интерфейс MySQL.
+
+Генерация случайного пароля, зашифрованного двойным хэшом SHA1, в оболочке:
+
+```shell
+PASSWORD=$(base64 < /dev/urandom | head -c16); echo "$PASSWORD"; echo -n "$PASSWORD" | sha1sum | tr -d '-' | xxd -r -p | sha1sum | tr -d '-'
+```
+
+Результат должен выглядеть следующим образом:
+
+```
+LZOQYnqQN4L/T6L0
+fbc958cc745a82188a51f30de69eebfc67c40ee4
+```
+
+Первая строка — это сгенерированный пароль, а вторая — хеш, который можно использовать для настройки ClickHouse.
+
+Вот пример конфигурации для `mysql_user`, в которой используется сгенерированный хеш:
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<users>
+    <mysql_user>
+        <password_double_sha1_hex>fbc958cc745a82188a51f30de69eebfc67c40ee4</password_double_sha1_hex>
+        <networks>
+            <ip>::/0</ip>
+        </networks>
+        <profile>default</profile>
+        <quota>default</quota>
+    </mysql_user>
+</users>
+```
+
+Замените значение `password_double_sha1_hex` на собственный сгенерированный двойной хэш SHA1.
+
+Кроме того, рекомендуется использовать `use_mysql_types_in_show_columns`,
+чтобы в результатах запроса `SHOW [FULL] COLUMNS` отображались нативные типы MySQL вместо типов ClickHouse,
+что позволяет BI-инструментам корректно определять схему базы данных при использовании коннекторов MySQL.
+
+Например:
+
+`/etc/clickhouse-server/users.d/mysql_user.xml`
+
+```xml
+<profiles>
+    <default>
+        <use_mysql_types_in_show_columns>1</use_mysql_types_in_show_columns>
+    </default>
+</profiles>
+```
+
+или назначьте ему другой профиль вместо профиля по умолчанию.
+
+Если у вас есть утилита `mysql`, вы можете проверить подключение из командной строки.
+Используя приведённые выше имя пользователя (`mysql_user`) и пароль (`LZOQYnqQN4L/T6L0`), команда будет такой:
+
+```bash
+mysql --protocol tcp -h localhost -u mysql_user -P 9004 --password=LZOQYnqQN4L/T6L0
+```
+
+```
+mysql> show databases;
++--------------------+
+| name               |
++--------------------+
+| INFORMATION_SCHEMA |
+| default            |
+| information_schema |
+| system             |
++--------------------+
+4 rows in set (0.00 sec)
+Read 4 rows, 603.00 B in 0.00156 sec., 2564 rows/sec., 377.48 KiB/sec.
+```
+
+Наконец, настройте сервер ClickHouse так, чтобы он принимал подключения на нужных IP-адресах. Например, в `config.xml` раскомментируйте следующее, чтобы он принимал подключения на всех адресах:
+
+```bash
+<listen_host>::</listen_host> 
+```

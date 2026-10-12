@@ -36,7 +36,7 @@ public:
         };
 
         auto * function_node = node->as<FunctionNode>();
-        if (!function_node || Poco::toLower(function_node->getFunctionName()) != "sum")
+        if (!function_node || !function_node->isAggregateFunction() || Poco::toLower(function_node->getFunctionName()) != "sum")
             return;
 
         const auto & function_nodes = function_node->getArguments().getNodes();
@@ -51,7 +51,7 @@ public:
         if (func_plus_minus_nodes.size() != 2)
             return;
 
-        size_t column_id;
+        size_t column_id = 0;
         if (func_plus_minus_nodes[0]->as<ColumnNode>() && func_plus_minus_nodes[1]->as<ConstantNode>())
             column_id = 0;
         else if (func_plus_minus_nodes[0]->as<ConstantNode>() && func_plus_minus_nodes[1]->as<ColumnNode>())
@@ -74,6 +74,12 @@ public:
 
         const auto column_type = column_node->getColumnType();
         if (!column_type || !isNumber(column_type))
+            return;
+
+        /// `Decimal` addition computes in the native width of the decimal with an overflow check on every row:
+        /// `sum(a + 4294967296)` over a `Decimal32` column adds `0` per row, and `sum(a + 1200000000)` throws
+        /// `DECIMAL_OVERFLOW` for a row `999999999`. `sum(a) + 1200000000 * count(a)` does neither.
+        if (isDecimal(column_type) || isDecimal(literal_type))
             return;
 
         const auto lhs = std::make_shared<FunctionNode>("sum");

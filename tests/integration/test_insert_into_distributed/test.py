@@ -5,7 +5,7 @@ import pytest
 from helpers.client import QueryRuntimeException
 from helpers.cluster import ClickHouseCluster
 from helpers.network import PartitionManager
-from helpers.test_tools import TSV
+from helpers.test_tools import TSV, assert_eq_with_retry
 
 cluster = ClickHouseCluster(__file__)
 
@@ -49,6 +49,7 @@ def started_cluster():
         instance_test_reconnect.query(
             """
 CREATE TABLE distributed (x UInt32) ENGINE = Distributed('test_cluster', 'default', 'local1')
+SETTINGS background_insert_sleep_time_ms = 100, background_insert_max_sleep_time_ms = 1000
 """
         )
 
@@ -157,27 +158,35 @@ CREATE TABLE single_replicated(date Date, id UInt32) ENGINE = ReplicatedMergeTre
 def test_reconnect(started_cluster):
     instance = instance_test_reconnect
 
+    errors = "SELECT sum(error_count) FROM system.distribution_queue WHERE table = 'distributed'"
+
     with PartitionManager() as pm:
         # Open a connection for insertion.
         instance.query("INSERT INTO distributed VALUES (1)")
-        time.sleep(1)
-        assert remote.query("SELECT count(*) FROM local1").strip() == "1"
+        assert_eq_with_retry(remote, "SELECT count(*) FROM local1", "1")
+
+        errors_before = instance.query(errors).strip()
 
         # Now break the connection.
         pm.partition_instances(
             instance, remote, action="REJECT --reject-with tcp-reset"
         )
         instance.query("INSERT INTO distributed VALUES (2)")
-        time.sleep(1)
+
+        # Wait until the background sender has actually observed the broken connection, so
+        # that healing the partition below exercises the reconnection. Waiting for a fixed
+        # time instead would be a race: every failed attempt doubles the sender's retry
+        # interval, so how many attempts fit into a given interval is not predictable.
+        assert_eq_with_retry(instance, f"SELECT ({errors}) > {errors_before}", "1")
 
         # Heal the partition and insert more data.
         # The connection must be reestablished and after some time all data must be inserted.
         pm.heal_all()
-        time.sleep(1)
         instance.query("INSERT INTO distributed VALUES (3)")
-        time.sleep(5)
 
-        assert remote.query("SELECT count(*) FROM local1").strip() == "3"
+        # A file inserted while the sender is already waiting out a retry interval does not
+        # shorten that interval, hence the generous number of retries here.
+        assert_eq_with_retry(remote, "SELECT count(*) FROM local1", "3", retry_count=60)
 
 
 def test_inserts_batching(started_cluster):

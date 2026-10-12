@@ -3,6 +3,7 @@
 #include <Common/MemoryTracker.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadStatus.h>
 #include <Common/thread_local_rng.h>
 #include <Storages/MergeTree/MarkRange.h>
 

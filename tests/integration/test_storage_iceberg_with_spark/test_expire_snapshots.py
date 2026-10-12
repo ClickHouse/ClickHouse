@@ -293,8 +293,8 @@ def test_expire_snapshots_files_cleaned(started_cluster_iceberg_with_spark, stor
 
     spark_alter_table(
         started_cluster_iceberg_with_spark, spark, storage_type, TABLE_NAME,
-        f"SET TBLPROPERTIES('history.expire.max-snapshot-age-ms' = '1', "
-        f"'history.expire.min-snapshots-to-keep' = '1')",
+        "SET TBLPROPERTIES('history.expire.max-snapshot-age-ms' = '1', "
+        "'history.expire.min-snapshots-to-keep' = '1')",
     )
 
     meta_before = read_iceberg_metadata(instance, TABLE_NAME)
@@ -734,7 +734,7 @@ def test_expire_snapshots_branch_min_keep_override(started_cluster_iceberg_with_
     # feature: min-keep=2 → snap3, snap2
     expected = {current_id, branch_head_id, snap_ids[1]}
     assert get_retained_ids(instance, TABLE_NAME) == expected, \
-        f"Expected main(1) + feature(2)"
+        "Expected main(1) + feature(2)"
     assert_data_intact(instance, TABLE_NAME, 5)
 
 
@@ -980,7 +980,7 @@ def test_expire_snapshots_snapshot_ids_with_fuse(started_cluster_iceberg_with_sp
     # Attempt to expire both S1 and S2 explicitly, with fuse protecting S2
     # S1 timestamp_s < fuse_s  → should be expired
     # S2 timestamp_s >= fuse_s → is_protected_by_fuse = true → should be retained
-    result = expire_snapshots(
+    expire_snapshots(
         instance,
         TABLE_NAME,
         args=[f"snapshot_ids = [{s1_id}, {s2_id}]", f"expire_before = '{fuse_str}'"],

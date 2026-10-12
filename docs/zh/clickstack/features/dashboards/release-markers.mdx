@@ -1,0 +1,98 @@
+---
+slug: /use-cases/observability/clickstack/dashboards/release-markers
+title: '仪表盘图表中的发布标记'
+sidebarTitle: '发布标记'
+description: '在仪表盘时间图表中叠加显示服务各版本首次出现的时间，该时间根据卡片数据源中配置的服务版本表达式推导得出'
+doc_type: 'guide'
+keywords: ['clickstack', '仪表盘', '发布标记', '部署跟踪', 'service.version', 'annotations', '可观测性']
+---
+
+import { Image } from "/snippets/zh/components/Image.jsx";
+
+面对延迟或错误激增时，首先通常会问：是否刚发布了什么内容？仪表盘中的时间图表可直接给出答案：启用发布标记后，每张卡片都会在某个服务版本首次出现在其遥测数据中的时刻绘制一条竖向虚线。
+
+版本信息来自您已发送的遥测数据，通过卡片数据源中的表达式读取。无需配置 CI 集成，也无需在部署时推送任何内容。
+
+<div id="turn-on">
+  ## 开启标记
+</div>
+
+发布标记默认关闭。打开仪表盘的更多菜单，然后选择**显示发布标记**。
+
+<Image img="/images/clickstack/dashboards/release-markers-menu.webp" alt="仪表盘的更多菜单；“视图”部分中，“显示告警注释”下方有“显示发布标记”选项" size="sm" />
+
+该开关会将 `releaseMarkers=true` 添加到仪表盘 URL 中，因此您共享的链接打开时会自动启用标记。这属于视图状态，而非仪表盘配置：不会随仪表盘一起保存，关闭后该参数也会被移除。
+
+标记会显示在数据源为日志或链路追踪数据源的时间序列卡片上。[告警注释](/zh/clickstack/features/alerts)也可通过同一菜单显示，并且可与发布标记同时显示——两组标记会一同呈现，且各自保留自己的标签。
+
+<div id="version-expression">
+  ## 配置版本来源
+</div>
+
+默认情况下，ClickStack 会读取 OpenTelemetry resource attribute `ResourceAttributes['service.version']`。如果您的服务遵循[服务 resource semantic conventions](https://opentelemetry.io/docs/specs/semconv/registry/attributes/service/)，则无需配置即可使用标记。
+
+若要从其他位置读取版本，请在日志或链路追踪数据源中设置**服务版本表达式**。在 **团队设置 → 数据源**中编辑数据源。对于日志数据源，该字段位于**配置可选字段**中；对于链路追踪数据源，该字段直接显示在表单中，位于**服务名称表达式**下方。
+
+<Image img="/images/clickstack/dashboards/service-version-expression.webp" alt="日志数据源的可选字段中的服务版本表达式字段，显示默认占位符 ResourceAttributes['service.version']" size="lg" />
+
+该值是 SQL 表达式，而不是属性名称，可涵盖两种常见情况：
+
+* **发布标识符位于其他属性中。** 在 GitOps 环境中，用于标识发布版本的通常是容器 image 标签，以 `container.image.tag` 的形式传入。将数据源指向 `ResourceAttributes['container.image.tag']`，比在整个服务集群中修改 instrumentation 的成本低得多。
+* **同一表中的服务使用的属性不一致。** 使用 `coalesce` 在这些属性之间回退：
+
+```sql
+coalesce(
+  nullIf(ResourceAttributes['service.version'], ''),
+  nullIf(ResourceAttributes['container.image.tag'], '')
+)
+```
+
+该字段也会在日志和链路追踪数据源的 [sources API](/zh/clickstack/api-reference) 中以 `serviceVersionExpression` 的形式提供，因此您可以在通过编程方式预配数据源时对其进行设置。有关日志和链路追踪数据源设置的完整列表，请参阅[日志](/zh/clickstack/managing/config#logs)和[链路追踪](/zh/clickstack/managing/config#traces)。
+
+<div id="what-a-marker-means">
+  ## 标记的含义
+</div>
+
+标记表示某个版本值首次出现在卡片可见时间窗口内的数据中。这与部署相近，但有意并非同一概念，因此这些是发布标记，而不是部署标记：
+
+* 未更改版本字符串的部署不会产生任何标记。
+* 如果某个服务空闲时间超过回溯范围，恢复扩容时会绘制一个标记。
+
+在窗口打开时已运行的版本会被识别并排除，而不会被绘制为一次从未发生过的发布。为此，查询会回溯到窗口开始之前——回溯 30 分钟；如果窗口时长的 10% 更长，则按该时长回溯——以查找原有版本。
+
+<div id="scoping">
+  ## 卡片显示哪些发行版
+</div>
+
+发行版查询使用卡片自身的数据源和谓词运行，包括其 `WHERE` 子句、各个数据系列的过滤器，以及任何[仪表盘过滤器](/zh/clickstack/features/dashboards/overview#custom-filters)。卡片显示的内容取决于其绘制的图表：
+
+| 卡片        | 标记                          |
+| :-------- | :-------------------------- |
+| 过滤为单个服务   | 该服务的发行版                     |
+| 按服务分组     | 图表中每个服务的发行版；每个标记均着色以匹配对应的线条 |
+| 跨多个服务的聚合线 | 无，除非窗口中的所有发行版均来自同一个服务       |
+
+在第三种情况下，标记所属的服务在图表中没有可匹配的线条，因此不会显示这些标记。如果窗口中的所有发行版均来自单个服务，则会显示这些标记，并采用默认标记颜色。
+
+<div id="reading-markers">
+  ## 查看繁忙图表上的标记
+</div>
+
+将鼠标悬停在标记标签上，即可列出该时间点的所有发行版，以及发布它们的服务、版本和时间。
+
+<Image img="/images/clickstack/dashboards/release-marker-tooltip.webp" alt="在展示两个服务的图表中，将鼠标悬停在发行版标记上时显示的工具提示，其中包含服务 frontend、版本 2.0.2 以及该版本首次出现的时间" size="sm" />
+
+颜色用于将标记与其数据系列关联，但图表图例最多只显示四个条目，其余条目会折叠到“+N more”之后；此时屏幕上没有可供比对颜色的参照。工具提示会直接显示服务名称，因此无论卡片图表展示多少个数据系列都能适用。
+
+彼此距离过近、无法单独添加标签的标记会折叠为一个标有 `N releases` 的锚点；将鼠标悬停其上即可显示所有发行版。跨越多个服务的集群会以中性色显示，而非使用其中任一服务的颜色，因此计数准确，也不会暗示其归属。
+
+显示标记时，仍可在绘图区上水平拖动以缩放。
+
+<div id="limitations">
+  ## 限制
+</div>
+
+* **仅支持时间序列卡片。** 表、数值和热力图不会绘制标记。
+* **仅支持日志和链路追踪数据源。** 指标数据源会根据指标类型确定对应的表，因此不存在可重新聚合的单一表，也无法让卡片的过滤器对其生效。若要为指标数据添加注释，请在同一仪表盘上将日志或 trace 卡片放置在其旁边。
+* **空版本值会被跳过。** 未输出版本的服务不会生成任何标记。如果卡片完全找不到版本变更，ClickStack 会显示 `No releases found`，避免你怀疑该功能是否失效。
+* **每个窗口最多读取 500 个不同的版本**。

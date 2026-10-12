@@ -1,0 +1,22 @@
+=== the condition of an -If combinator is named as such
+--- SELECT sumIf(a) FROM l
+Code: 43. Illegal type UInt32 of the last argument of an aggregate function with the If suffix: the last argument is the condition and must be UInt8. If the condition is missing, it goes after the arguments of the aggregate function. (ILLEGAL_TYPE_OF_ARGUMENT)
+--- SELECT sumIf(a, t) FROM l
+Code: 43. Illegal type UInt32 of the last argument of an aggregate function with the If suffix: the last argument is the condition and must be UInt8. If the condition is missing, it goes after the arguments of the aggregate function. (ILLEGAL_TYPE_OF_ARGUMENT)
+--- SELECT avgIf(a) FROM l
+Code: 43. Illegal type UInt32 of the last argument of an aggregate function with the If suffix: the last argument is the condition and must be UInt8. If the condition is missing, it goes after the arguments of the aggregate function. (ILLEGAL_TYPE_OF_ARGUMENT)
+--- SELECT countIf(a) FROM l
+Code: 43. Illegal type UInt32 of the last argument of an aggregate function with the If suffix: the last argument is the condition and must be UInt8. If the condition is missing, it goes after the arguments of the aggregate function. (ILLEGAL_TYPE_OF_ARGUMENT)
+
+=== an ASOF join says that the inequality is needed in addition to the equalities
+--- SELECT * FROM l ASOF JOIN r ON l.a = r.a SETTINGS enable_analyzer = 1
+Code: 403. ASOF join requires one inequality predicate (<, <=, > or >=) in the JOIN ON expression, in addition to the equality predicates. (INVALID_JOIN_ON_EXPRESSION)
+
+=== equality predicates are optional, so they are not mentioned when there are none
+--- SELECT * FROM l ASOF JOIN r ON l.t != r.t SETTINGS enable_analyzer = 1
+Code: 403. ASOF join requires one inequality predicate (<, <=, > or >=) in the JOIN ON expression, but only found: notEquals(__table1.t, __table2.t). (INVALID_JOIN_ON_EXPRESSION)
+
+=== the same, spelled correctly
+2
+2
+2

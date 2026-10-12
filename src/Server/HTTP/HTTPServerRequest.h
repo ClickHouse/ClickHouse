@@ -93,6 +93,7 @@ private:
     const size_t max_fields_number;
     const size_t max_field_name_size;
     const size_t max_field_value_size;
+    const size_t max_request_header_size;
 
     mutable std::mutex get_stream_mutex;
     ReadBufferPtr stream TSA_GUARDED_BY(get_stream_mutex);

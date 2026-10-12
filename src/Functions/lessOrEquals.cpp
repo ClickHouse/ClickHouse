@@ -8,8 +8,10 @@ namespace DB
 
 using FunctionLessOrEquals = FunctionComparison<LessOrEqualsOp, NameLessOrEquals>;
 using FunctionLess = FunctionComparison<LessOp, NameLess>;
-extern template class FunctionComparison<LessOp, NameLess>;
 using FunctionEquals = FunctionComparison<EqualsOp, NameEquals>;
+
+/// Instantiated in less.cpp and equals.cpp.
+extern template class FunctionComparison<LessOp, NameLess>;
 extern template class FunctionComparison<EqualsOp, NameEquals>;
 
 REGISTER_FUNCTION(LessOrEquals)
@@ -64,6 +66,25 @@ ColumnPtr FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeTupleImpl
         func_builder_or,
         func_builder_equals,
         x, y, tuple_size, input_rows_count);
+}
+
+template <>
+ColumnPtr FunctionComparison<LessOrEqualsOp, NameLessOrEquals>::executeArrayLexicographic(
+    const ColumnWithTypeAndName & column_type_name0,
+    const ColumnWithTypeAndName & column_type_name1,
+    size_t input_rows_count) const
+{
+    FunctionOverloadResolverPtr equals_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionEquals>(params));
+    FunctionOverloadResolverPtr order_resolver
+        = std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionLess>(params));
+
+    return executeArrayLexicographicLessGreaterImpl(
+        equals_resolver,
+        order_resolver,
+        column_type_name0,
+        column_type_name1,
+        input_rows_count);
 }
 
 }

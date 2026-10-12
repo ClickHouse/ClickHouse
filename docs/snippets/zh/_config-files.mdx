@@ -1,0 +1,14 @@
+---
+title: 配置文件
+---
+
+<Warning>
+  **最佳实践**
+
+  通过添加或编辑配置文件来配置 ClickHouse Server 时，应：
+
+  * 将文件添加到 `/etc/clickhouse-server/config.d/` 目录中
+  * 将文件添加到 `/etc/clickhouse-server/users.d/` 目录中
+  * 保持 `/etc/clickhouse-server/config.xml` 文件不变
+  * 保持 `/etc/clickhouse-server/users.xml` 文件不变
+</Warning>

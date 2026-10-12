@@ -136,7 +136,10 @@ private:
         HashMapWithSavedHash<std::string_view, size_t, DefaultHash<std::string_view>>>;
 
     template <typename Value>
-    using AttributeContainerType = std::conditional_t<std::is_same_v<Value, Array>, VectorWithMemoryTracking<Value>, PaddedPODArray<Value>>;
+    using AttributeContainerType = std::conditional_t<
+        std::is_same_v<Value, Array> || std::is_same_v<Value, Map> || std::is_same_v<Value, Object>,
+        VectorWithMemoryTracking<Value>,
+        PaddedPODArray<Value>>;
 
     template <typename Value>
     using AttributeContainerShardsType = VectorWithMemoryTracking<AttributeContainerType<Value>>;
@@ -167,14 +170,16 @@ private:
             AttributeContainerShardsType<IPv4>,
             AttributeContainerShardsType<IPv6>,
             AttributeContainerShardsType<std::string_view>,
-            AttributeContainerShardsType<Array>>
+            AttributeContainerShardsType<Array>,
+            AttributeContainerShardsType<Map>,
+            AttributeContainerShardsType<Object>>
             containers;
 
         /// One container per shard
         using RowsMask = VectorWithMemoryTracking<bool>;
         std::optional<VectorWithMemoryTracking<RowsMask>> is_index_null;
 
-        AttributeUnderlyingType type;
+        AttributeUnderlyingType type{};
     };
 
     struct KeyAttribute final

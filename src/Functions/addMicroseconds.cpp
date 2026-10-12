@@ -38,9 +38,9 @@ SELECT
 SELECT dateAdd('1998-06-16'::DateTime, INTERVAL 10 microsecond)
         )",
         R"(
-┌─plus(CAST('19⋯osecond(10))─┐
-│ 1998-06-16 00:00:00.000010 │
-└────────────────────────────┘
+┌─plus(CAST('1998-06-16', 'DateTime'), toIntervalMicrosecond(10))─┐
+│                                      1998-06-16 00:00:00.000010 │
+└─────────────────────────────────────────────────────────────────┘
         )"}
     };
     FunctionDocumentation::IntroducedIn introduced_in = {22, 6};

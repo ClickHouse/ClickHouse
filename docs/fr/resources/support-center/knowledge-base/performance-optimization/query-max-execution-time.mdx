@@ -1,0 +1,32 @@
+---
+title: Définir une limite de temps d'exécution des requêtes
+description: "Comment imposer un temps d'exécution maximal aux requêtes"
+date: 2022-07-10
+tags: ['Gestion du Cloud', 'Paramètres']
+---
+
+<div id="question">
+  ## Question
+</div>
+
+Comment définir une limite de temps pour mes requêtes ?
+
+<div id="answer">
+  ## Réponse
+</div>
+
+Vous pouvez utiliser le paramètre `max_execution_time` :
+
+```sql
+clickhouse-cloud :) SELECT 1 SETTINGS max_execution_time=0.0001
+
+SELECT 1
+SETTINGS max_execution_time = 0.0001
+
+Query id: 3db752a7-b94f-4456-b3b9-ccbf290d1394
+
+0 rows in set. Elapsed: 0.113 sec.
+
+Received exception from server (version 23.5.1):
+Code: 159. DB::Exception: Received from service.aws.clickhouse.cloud:9440. DB::Exception: Timeout exceeded: elapsed 0.000557862 seconds, maximum: 0.0001. (TIMEOUT_EXCEEDED)
+```

@@ -1,0 +1,62 @@
+---
+sidebarTitle: '데이터 전송'
+slug: /cloud/manage/network-data-transfer
+title: '데이터 전송'
+description: 'ClickHouse Cloud에서 인그레스 및 이그레스 데이터 전송량이 어떻게 산정되는지 알아봅니다'
+doc_type: 'guide'
+keywords: ['청구', '네트워크 전송', '데이터 이그레스', '비용', '요금']
+---
+
+import NetworkPricing from '/snippets/ko/_network_transfer_rates.mdx';
+
+ClickHouse Cloud는 전송되는 데이터의 인바운드와 아웃바운드를 계량합니다.
+여기에는 ClickHouse Cloud로 들어오고 나가는 모든 데이터와 동일 리전 내
+및 리전 간 데이터 전송이 포함됩니다. 이 사용량은 서비스 수준에서 추적됩니다. 이
+사용량을 기준으로 고객에게 데이터 전송 요금이 부과되며, 해당 금액은 월별 청구서에
+추가됩니다.
+
+ClickHouse Cloud는 다음 항목에 대해 요금을 부과합니다.
+
+* ClickHouse Cloud에서 퍼블릭 인터넷으로 나가는 데이터 egress. 여기에는 다른
+  클라우드 제공업체의 다른 리전으로 전송되는 경우도 포함됩니다.
+* 동일한 클라우드 제공업체 내 다른 리전으로 나가는 데이터 egress.
+
+동일 리전 내 데이터 전송이나 Private Link/Private
+Service Connect 사용 및 데이터 전송에는 요금이 부과되지 않습니다. 다만, 사용자에게
+적절하게 요금을 부과하는 데 영향을 미치는 사용 패턴이 확인될 경우, 추가적인
+데이터 전송 요금 기준을 도입할 권리를 보유합니다.
+
+참고: Private Link/Private Service Connect 사용에는 Cloud Service Provider(CSP) 요금이 적용됩니다. 최신 정보는 CSP의 가격 페이지를 참조하십시오.
+
+데이터 전송 요금은 Cloud Service Provider(CSP)와 리전에 따라 달라집니다.
+퍼블릭 인터넷 egress 요금은 출발 리전만을 기준으로 산정됩니다.
+리전 간(또는 교차 리전) 요금은 출발 리전과 대상
+리전 모두에 따라 달라집니다.
+
+**데이터 전송 비용을 최소화하기 위한 모범 사례**
+
+데이터를 인바운드 또는 아웃바운드로 전송할 때
+데이터 전송 비용을 최소화하기 위해 염두에 두어야 할 몇 가지 패턴이 있습니다.
+
+1. ClickHouse Cloud로 데이터를 보내거나 외부로 내보낼 때는 가능한 경우
+   Compression을 사용하여 전송되는 데이터 양과 그에 따른 비용을 최소화하십시오.
+
+2. 네이티브 프로토콜을 통해 비인라인 값으로 INSERT를 수행할 때
+   (예: `INSERT INTO [TABLE] FROM INFILE [FILE] FORMAT NATIVE`), ClickHouse
+   클라이언트는 데이터를 패킹하기 위해 서버에서 메타데이터를 가져옵니다. 메타데이터가
+   `INSERT` payload보다 크면, 직관과 달리 서버 관점에서는
+   인바운드보다 아웃바운드가 더 크게 보일 수 있습니다. 이를 허용할 수 없다면,
+   `VALUES` 구문으로 데이터를 인라인하거나 HTTP protocol을 사용하는 방안을
+   고려하십시오.
+
+아래 표는 클라우드 제공업체와 리전에 따라, 퍼블릭
+인터넷 또는 교차 리전으로의 egress에 대한 데이터 전송 요금이 어떻게 달라지는지 보여줍니다.
+
+<Note>
+  ClickHouse Cloud는 출발 리전과
+  대상 리전에 따라 Tier 1부터 Tier 4까지의 tiers 기준으로 리전 간 사용량을 계량합니다.
+  아래 표는 리전 간 데이터 전송의 각 조합에 대한 tier를 보여줍니다. ClickHouse Cloud의 Billing usage
+  화면에서는 데이터 전송 사용량이 tier별로 구분되어 표시됩니다.
+</Note>
+
+<NetworkPricing />

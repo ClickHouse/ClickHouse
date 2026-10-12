@@ -1,0 +1,11 @@
+long_count	8
+long_v_eq_100	1
+1
+long_count_after_attach	8
+long_v_eq_500_after_attach	1
+1
+bad_utf8_count	10001
+bad_utf8_range	0	255
+1
+bad_utf8_count_after_attach	10001
+1

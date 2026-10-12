@@ -1,0 +1,303 @@
+---
+title: 在 ClickHouse 中导入和查询 JSON 数组对象
+description: 了解如何将 JSON 数组对象导入 ClickHouse，并使用 JSON 函数和数组操作进行高级查询。
+date: 2023-03-24
+tags: ['数据格式']
+keywords: ['JSON 数组对象']
+---
+
+<div id="question">
+  ## 问题
+</div>
+
+如何导入 JSON 数组，以及如何查询其中的对象？
+
+<div id="answer">
+  ## 答案
+</div>
+
+将这个单行 JSON 数组保存到 `sample.json`
+
+```
+{"_id":"1","channel":"help","events":[{"eventType":"open","time":"2021-06-18T09:42:39.527Z"},{"eventType":"close","time":"2021-06-18T09:48:05.646Z"}]},{"_id":"2","channel":"help","events":[{"eventType":"open","time":"2021-06-18T09:42:39.535Z"},{"eventType":"edit","time":"2021-06-18T09:42:41.317Z"}]},{"_id":"3","channel":"questions","events":[{"eventType":"close","time":"2021-06-18T09:42:39.543Z"},{"eventType":"create","time":"2021-06-18T09:52:51.299Z"}]},{"_id":"4","channel":"general","events":[{"eventType":"create","time":"2021-06-18T09:42:39.552Z"},{"eventType":"edit","time":"2021-06-18T09:47:29.109Z"}]},{"_id":"5","channel":"general","events":[{"eventType":"edit","time":"2021-06-18T09:42:39.560Z"},{"eventType":"open","time":"2021-06-18T09:42:39.680Z"},{"eventType":"close","time":"2021-06-18T09:42:41.207Z"},{"eventType":"edit","time":"2021-06-18T09:42:43.372Z"},{"eventType":"edit","time":"2021-06-18T09:42:45.642Z"}]}
+```
+
+查看数据：
+
+```sql
+clickhousebook.local :) SELECT * FROM file('/path/to/sample.json','JSONEachRow');
+
+SELECT *
+FROM file('/path/to/sample.json', 'JSONEachRow')
+
+Query id: 0bbfa09f-ac7f-4a1e-9227-2961b5ffc2d4
+
+┌─_id─┬─channel───┬─events─────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│   1 │ help      │ [{'eventType':'open','time':'2021-06-18T09:42:39.527Z'},{'eventType':'close','time':'2021-06-18T09:48:05.646Z'}]                                                                                                                                           │
+│   2 │ help      │ [{'eventType':'open','time':'2021-06-18T09:42:39.535Z'},{'eventType':'edit','time':'2021-06-18T09:42:41.317Z'}]                                                                                                                                            │
+│   3 │ questions │ [{'eventType':'close','time':'2021-06-18T09:42:39.543Z'},{'eventType':'create','time':'2021-06-18T09:52:51.299Z'}]                                                                                                                                         │
+│   4 │ general   │ [{'eventType':'create','time':'2021-06-18T09:42:39.552Z'},{'eventType':'edit','time':'2021-06-18T09:47:29.109Z'}]                                                                                                                                          │
+│   5 │ general   │ [{'eventType':'edit','time':'2021-06-18T09:42:39.560Z'},{'eventType':'open','time':'2021-06-18T09:42:39.680Z'},{'eventType':'close','time':'2021-06-18T09:42:41.207Z'},{'eventType':'edit','time':'2021-06-18T09:42:43.372Z'},{'eventType':'edit','time':'2021-06-18T09:42:45.642Z'}] │
+└─────┴───────────┴────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.001 sec. 
+```
+
+创建一个用于接收 JSON 行的表：
+
+```sql
+clickhousebook.local :) CREATE TABLE IF NOT EXISTS sample_json_objects_array (
+                            `rawJSON` String EPHEMERAL,
+                            `_id` String DEFAULT JSONExtractString(rawJSON, '_id'),
+                            `channel` String DEFAULT JSONExtractString(rawJSON, 'channel'),
+                            `events` Array(JSON) DEFAULT JSONExtractArrayRaw(rawJSON, 'events')
+                        ) ENGINE = MergeTree
+                        ORDER BY
+                            channel
+
+CREATE TABLE IF NOT EXISTS sample_json_objects_array
+(
+    `rawJSON` String EPHEMERAL,
+    `_id` String DEFAULT JSONExtractString(rawJSON, '_id'),
+    `channel` String DEFAULT JSONExtractString(rawJSON, 'channel'),
+    `events` Array(JSON) DEFAULT JSONExtractArrayRaw(rawJSON, 'events')
+)
+ENGINE = MergeTree
+ORDER BY channel
+
+Query id: d02696dd-3f9f-4863-be2a-b2c9a1ae922d
+
+0 rows in set. Elapsed: 0.173 sec. 
+```
+
+插入数据：
+
+```
+clickhousebook.local :) INSERT INTO
+                            sample_json_objects_array
+                        SELECT
+                            *
+                        FROM
+                            file(
+                                '/opt/cases/000000/sample_json_objects_arrays.json',
+                                'JSONEachRow'
+                            );
+
+INSERT INTO sample_json_objects_array SELECT *
+FROM file('/opt/cases/000000/sample.json', 'JSONEachRow')
+
+Query id: 60c4beab-3c2c-40c1-9c6f-bbbd7118dde3
+
+Ok.
+
+0 rows in set. Elapsed: 0.002 sec.
+```
+
+查看数据推断如何处理 JSON 对象类型：
+
+```sql
+clickhousebook.local :) DESCRIBE TABLE sample_json_objects_array SETTINGS describe_extend_object_types = 1;
+
+DESCRIBE TABLE sample_json_objects_array
+SETTINGS describe_extend_object_types = 1
+
+Query id: 302c0c84-1b63-4f60-ad95-d91c0267b0d4
+
+┌─name────┬─type────────────────────────────────────────┬─default_type─┬─default_expression─────────────────────┬─comment─┬─codec_expression─┬─ttl_expression─┐
+│ rawJSON │ String                                      │ EPHEMERAL    │ defaultValueOfTypeName('String')       │         │                  │                │
+│ _id     │ String                                      │ DEFAULT      │ JSONExtractString(rawJSON, '_id')      │         │                  │                │
+│ channel │ String                                      │ DEFAULT      │ JSONExtractString(rawJSON, 'channel')  │         │                  │                │
+│ events  │ Array(Tuple(eventType String, time String)) │ DEFAULT      │ JSONExtractArrayRaw(rawJSON, 'events') │         │                  │                │
+└─────────┴─────────────────────────────────────────────┴──────────────┴────────────────────────────────────────┴─────────┴──────────────────┴────────────────┘
+```
+
+`Events` 是一个由 `Tuple` 组成的 *Array*，其中每个 `Tuple` 都包含 *eventType* `String` 字段和 *time* `String` 字段。后一种类型并不理想 (我们更希望它是 `DateTime`) 。
+
+来看一下数据：
+
+```sql
+clickhousebook.local :) SELECT
+                            _id,
+                            channel,
+                            events.eventType,
+                            events.time
+                        FROM sample_json_objects_array
+                        WHERE has(events.eventType, 'close')
+
+SELECT
+    _id,
+    channel,
+    events.eventType,
+    events.time
+FROM sample_json_objects_array
+WHERE has(events.eventType, 'close')
+
+Query id: 3ddd6843-5206-4f52-971f-1699f0ba1728
+
+┌─_id─┬─channel───┬─events.eventType──────────────────────┬─events.time──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+│ 5   │ general   │ ['edit','open','close','edit','edit'] │ ['2021-06-18T09:42:39.560Z','2021-06-18T09:42:39.680Z','2021-06-18T09:42:41.207Z','2021-06-18T09:42:43.372Z','2021-06-18T09:42:45.642Z'] │
+│ 1   │ help      │ ['open','close']                      │ ['2021-06-18T09:42:39.527Z','2021-06-18T09:48:05.646Z']                                                                                  │
+│ 3   │ questions │ ['close','create']                    │ ['2021-06-18T09:42:39.543Z','2021-06-18T09:52:51.299Z']                                                                                  │
+└─────┴───────────┴───────────────────────────────────────┴──────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+3 行，耗时 0.001 秒。 
+```
+
+让我们执行几个查询：
+
+`eventType` 值为 `close` 的事件的 `_id` 和 `channel`
+
+```sql
+clickhousebook.local :) SELECT
+                            _id,
+                            channel,
+                            events.eventType
+                        FROM
+                            sample_json_objects_array
+                        WHERE
+                            has(events.eventType,'close')
+
+SELECT
+    _id,
+    channel,
+    events.eventType
+FROM sample_json_objects_array
+WHERE has(events.eventType, 'close')
+
+Query id: 033a0c56-7bfa-4261-a334-7323bdc40f87
+
+┌─_id─┬─channel───┬─events.eventType──────────────────────┐
+│ 5   │ general   │ ['edit','open','close','edit','edit'] │
+│ 1   │ help      │ ['open','close']                      │
+│ 3   │ questions │ ['close','create']                    │
+└─────┴───────────┴───────────────────────────────────────┘
+┌─_id─┬─channel───┬─events.eventType──────────────────────┐
+│ 5   │ general   │ ['edit','open','close','edit','edit'] │
+│ 1   │ help      │ ['open','close']                      │
+│ 3   │ questions │ ['close','create']                    │
+└─────┴───────────┴───────────────────────────────────────┘
+
+6 行，耗时 0.001 秒。 
+```
+
+我们想查询 `time`，例如某个给定时间范围内的所有事件，但我们注意到它被导入成了 `String`：
+
+```sql
+clickhousebook.local :) SELECT toTypeName(events.time) FROM sample_json_objects_array;
+
+SELECT toTypeName(events.time)
+FROM sample_json_objects_array
+
+Query id: 27f07f02-66cd-420d-8623-eeed7d501014
+
+┌─toTypeName(events.time)─┐
+│ Array(String)           │
+│ Array(String)           │
+│ Array(String)           │
+│ Array(String)           │
+│ Array(String)           │
+└─────────────────────────┘
+
+5 rows in set. Elapsed: 0.001 sec. 
+```
+
+因此，要将这些值按日期处理，首先需要将其转换为 `DateTime`。
+要转换数组，我们使用 map 函数：
+
+```sql
+clickhousebook.local :) 
+                        SELECT
+                            _id,
+                            channel,
+                            arrayMap(x->parseDateTimeBestEffort(x), events.time)
+                        FROM
+                            sample_json_objects_array
+
+SELECT
+    _id,
+    channel,
+    arrayMap(x -> parseDateTimeBestEffort(x), events.time)
+FROM sample_json_objects_array
+
+Query id: f3c7881e-b41c-4872-9c67-5c25966599a1
+
+┌─_id─┬─channel───┬─arrayMap(lambda(tuple(x), parseDateTimeBestEffort(x)), events.time)─────────────────────────────────────────────┐
+│ 4   │ general   │ ['2021-06-18 11:42:39','2021-06-18 11:47:29']                                                                   │
+│ 5   │ general   │ ['2021-06-18 11:42:39','2021-06-18 11:42:39','2021-06-18 11:42:41','2021-06-18 11:42:43','2021-06-18 11:42:45'] │
+│ 1   │ help      │ ['2021-06-18 11:42:39','2021-06-18 11:48:05']                                                                   │
+│ 2   │ help      │ ['2021-06-18 11:42:39','2021-06-18 11:42:41']                                                                   │
+│ 3   │ questions │ ['2021-06-18 11:42:39','2021-06-18 11:52:51']                                                                   │
+└─────┴───────────┴─────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+
+5 rows in set. Elapsed: 0.001 sec.
+```
+
+通过对这两个数组都使用 `toTypeName`，我们可以看出它们的差异：
+
+```sql
+clickhousebook.local :) SELECT
+                            _id,
+                            channel,
+                            toTypeName(events.time) as events_as_strings,
+                            toTypeName(arrayMap(x->parseDateTimeBestEffort(x), events.time)) as events_as_datetime
+                        FROM
+                            sample_json_objects_array
+
+SELECT
+    _id,
+    channel,
+    toTypeName(events.time) AS events_as_strings,
+    toTypeName(arrayMap(x -> parseDateTimeBestEffort(x), events.time)) AS events_as_datetime
+FROM sample_json_objects_array
+
+Query id: 1af54994-b756-472f-88d7-8b5cdca0e54e
+
+┌─_id─┬─channel───┬─events_as_strings─┬─events_as_datetime─┐
+│ 4   │ general   │ Array(String)     │ Array(DateTime)    │
+│ 5   │ general   │ Array(String)     │ Array(DateTime)    │
+│ 1   │ help      │ Array(String)     │ Array(DateTime)    │
+│ 2   │ help      │ Array(String)     │ Array(DateTime)    │
+│ 3   │ questions │ Array(String)     │ Array(DateTime)    │
+└─────┴───────────┴───────────────────┴────────────────────┘
+
+5 rows in set. Elapsed: 0.001 sec. 
+```
+
+现在我们来获取 `time` 位于给定时间间隔内的那些行的 `id`。
+
+我们使用 `arrayCount` 来判断 map 函数返回的数组中，是否有数量大于 0 的项满足条件 `x BETWEEN toDateTime('2021-06-18 11:46:00', 'Europe/Rome') AND toDateTime('2021-06-18 11:50:00', 'Europe/Rome')`
+
+```sql
+clickhousebook.local :) SELECT
+                            _id,
+                            arrayMap(x -> parseDateTimeBestEffort(x), events.time)
+                        FROM
+                            sample_json_objects_array
+                        WHERE
+                            arrayCount(
+                                x -> x BETWEEN toDateTime('2021-06-18 11:46:00', 'Europe/Rome')
+                                AND toDateTime('2021-06-18 11:50:00', 'Europe/Rome'),
+                                arrayMap(x -> parseDateTimeBestEffort(x), events.time)
+                            ) > 0;
+
+SELECT
+    _id,
+    arrayMap(x -> parseDateTimeBestEffort(x), events.time)
+FROM sample_json_objects_array
+WHERE arrayCount(x -> ((x >= toDateTime('2021-06-18 11:46:00', 'Europe/Rome')) AND (x <= toDateTime('2021-06-18 11:50:00', 'Europe/Rome'))), arrayMap(x -> parseDateTimeBestEffort(x), events.time)) > 0
+
+Query id: d4882fc3-9f99-4e87-9f89-47683f10656d
+
+┌─_id─┬─arrayMap(lambda(tuple(x), parseDateTimeBestEffort(x)), events.time)─┐
+│ 4   │ ['2021-06-18 11:42:39','2021-06-18 11:47:29']                       │
+│ 1   │ ['2021-06-18 11:42:39','2021-06-18 11:48:05']                       │
+└─────┴─────────────────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.002 sec. 
+```
+
+⚠️
+
+请注意，在撰写本文时，当前的 JSON 实现仍处于 Experimental 阶段，不适合用于生产环境。
+
+本示例重点展示了如何快速导入 JSON 并开始对其进行查询，同时也体现了一种权衡：为了使用方便，我们将 JSON 对象导入为 `JSON` 类型，无需预先指定 schema。这对于快速测试很方便；但如果要长期使用这些数据，则应像本例一样使用最合适的类型来存储数据。因此，对于 `time` 字段，应使用 `DateTime` 而不是 `String`，以避免如上所示的任何摄取后阶段转换。有关处理 JSON 的更多信息，请参阅[文档](/zh/guides/clickhouse/data-formats/json/intro)。

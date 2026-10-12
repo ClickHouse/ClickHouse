@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: long, no-parallel
+# Tags: long
 
 set -e
 
@@ -62,7 +62,7 @@ function flush1()
     local TIMELIMIT=$((SECONDS+$1))
     while [ $SECONDS -lt "$TIMELIMIT" ]; do
         sleep 0.2
-        ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+        ${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE async_inserts"
     done
 }
 
@@ -90,6 +90,6 @@ flush1 $TIMEOUT &
 
 wait
 
-${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE"
+${CLICKHOUSE_CLIENT} -q "SYSTEM FLUSH ASYNC INSERT QUEUE async_inserts"
 ${CLICKHOUSE_CLIENT} -q "SELECT count() FROM system.asynchronous_inserts WHERE database = currentDatabase() AND table = 'async_inserts'"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE IF EXISTS async_inserts";

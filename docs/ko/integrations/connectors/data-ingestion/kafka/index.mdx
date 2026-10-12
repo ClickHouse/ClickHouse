@@ -1,0 +1,131 @@
+---
+sidebarTitle: 'ClickHouse와 Kafka 통합'
+slug: /integrations/kafka
+description: 'ClickHouse와 함께 사용하는 Kafka 소개'
+title: 'ClickHouse와 Kafka 통합'
+keywords: ['Apache Kafka', '이벤트 스트리밍', '데이터 파이프라인', '메시지 브로커', '실시간 데이터']
+doc_type: 'guide'
+integration:
+  - support_level: 'core'
+  - category: 'data_ingestion'
+---
+
+[Apache Kafka](https://kafka.apache.org/)는 수많은 기업에서 고성능 데이터 파이프라인, 스트리밍 분석, 데이터 통합, 미션 크리티컬 애플리케이션에 사용하는 오픈소스 분산 이벤트 스트리밍 플랫폼입니다. ClickHouse는 Kafka와 기타 Kafka API 호환 브로커(예: Redpanda, Amazon MSK)에서 데이터를 **읽고** **쓸 수 있는** 여러 옵션을 제공합니다.
+
+<div id="available-options">
+  ## 사용 가능한 옵션
+</div>
+
+사용 사례에 적합한 옵션은 ClickHouse 배포 유형, 데이터 흐름 방향, 운영 요구 사항 등 여러 요소에 따라 달라집니다.
+
+| 옵션                                                                                                | 배포 유형                          | 완전 관리형 | Kafka에서 ClickHouse로 | ClickHouse에서 Kafka로 |
+| ------------------------------------------------------------------------------------------------- | ------------------------------ | :----: | :-----------------: | :-----------------: |
+| [ClickPipes for Kafka](/ko/integrations/clickpipes/kafka/index)                                      | [Cloud], [BYOC] (곧 지원 예정)      |    ✅   |          ✅          |                     |
+| [Kafka Connect Sink](/ko/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink) | [Cloud], [BYOC], [Self-hosted] |        |          ✅          |                     |
+| [Kafka 테이블 엔진](/ko/integrations/connectors/data-ingestion/kafka/kafka-table-engine)                  | [Cloud], [BYOC], [Self-hosted] |        |          ✅          |          ✅          |
+
+이 옵션 간의 자세한 비교는 [옵션 선택](#choosing-an-option)을 참조하십시오.
+
+<div id="clickpipes-for-kafka">
+  ### ClickPipes for Kafka
+</div>
+
+[ClickPipes](/ko/integrations/clickpipes/home)는 몇 번만 클릭하면 다양한 소스에서 데이터를 손쉽게 수집할 수 있는 관리형 통합 플랫폼입니다. ClickPipes는 완전관리형 서비스이며 프로덕션 workload에 맞춰 설계되었기 때문에, 인프라 및 운영 비용을 크게 줄이고 외부 데이터 스트리밍 및 ETL 도구가 필요하지 않게 합니다.
+
+<Tip>
+  ClickHouse Cloud 사용자에게는 이 옵션을 권장합니다. ClickPipes는 **완전관리형**이며 Cloud 환경에서 **최상의 성능**을 제공하도록 설계되었습니다.
+</Tip>
+
+<div id="clickpipes-for-kafka-main-features">
+  #### 주요 기능
+</div>
+
+* ClickHouse Cloud에 최적화되어 매우 뛰어난 성능 제공
+* 높은 처리량 워크로드를 위한 수평 및 수직 확장 지원
+* 구성 가능한 레플리카와 자동 재시도를 통한 기본 제공 장애 허용
+* ClickHouse Cloud UI, [Open API](/ko/integrations/clickpipes/programmatic-access/openapi) 또는 [Terraform](/ko/integrations/clickpipes/programmatic-access/terraform)를 통한 배포 및 관리
+* 클라우드 네이티브 권한 부여(IAM) 및 프라이빗 연결(PrivateLink)을 지원하는 엔터프라이즈급 보안
+* Confluent Cloud, Amazon MSK, Redpanda Cloud, Azure Event Hubs를 포함한 다양한 [데이터 소스](/ko/integrations/clickpipes/kafka/reference) 지원
+* 널리 사용되는 대부분의 직렬화 포맷(JSON, Avro, Protobuf) 지원
+
+<div id="clickpipes-for-kafka-getting-started">
+  #### 시작하기
+</div>
+
+ClickPipes for Kafka를 시작하려면 [참고 문서](/ko/integrations/clickpipes/kafka/reference)를 참조하거나 ClickHouse Cloud UI의 `Data Sources` 탭으로 이동하세요.
+
+<div id="kafka-connect-sink">
+  ### Kafka Connect Sink
+</div>
+
+Kafka Connect는 Kafka와 다른 데이터 시스템 간의 간단한 데이터 통합을 위한 중앙 집중식 데이터 허브 역할을 하는 오픈소스 프레임워크입니다. [ClickHouse Kafka Connect Sink](https://github.com/ClickHouse/clickhouse-kafka-connect) 커넥터는 Apache Kafka 및 기타 Kafka API 호환 브로커에서 데이터를 읽어올 수 있는 확장 가능하고 유연하게 구성할 수 있는 옵션을 제공합니다.
+
+<Tip>
+  **높은 구성 유연성**이 필요하거나 이미 Kafka Connect를 사용 중이라면 이 옵션을 권장합니다.
+</Tip>
+
+<div id="clickpipes-for-kafka-main-features">
+  #### 주요 기능
+</div>
+
+* 정확히 한 번 처리 의미 체계를 지원하도록 설정할 수 있습니다
+* 가장 널리 사용되는 직렬화 포맷(JSON, Avro, Protobuf)을 지원합니다
+* ClickHouse Cloud 환경에서 지속적으로 테스트됩니다
+
+<div id="clickpipes-for-kafka-getting-started">
+  #### 시작하기
+</div>
+
+ClickHouse Kafka Connect Sink를 시작하려면 [참고 문서](/ko/integrations/connectors/data-ingestion/kafka/kafka-clickhouse-connect-sink)를 참조하세요.
+
+<div id="kafka-table-engine">
+  ### Kafka 테이블 엔진
+</div>
+
+[Kafka 테이블 엔진](/ko/integrations/connectors/data-ingestion/kafka/kafka-table-engine)은 Apache Kafka 및 기타 Kafka API 호환 브로커에서 데이터를 읽거나 쓸 때 사용할 수 있습니다. 이 옵션은 오픈소스 ClickHouse에 기본 포함되어 있으며, 모든 배포 방식에서 사용할 수 있습니다.
+
+<Tip>
+  ClickHouse를 자체 호스팅하면서 **도입 장벽이 낮은** 옵션이 필요하거나, Kafka에 데이터를 **써야 하는** 경우 권장되는 옵션입니다.
+</Tip>
+
+<div id="clickpipes-for-kafka-main-features">
+  #### 주요 기능
+</div>
+
+* 데이터 [읽기](/ko/integrations/connectors/data-ingestion/kafka/kafka-table-engine#kafka-to-clickhouse) 및 [쓰기](/ko/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka)에 사용할 수 있습니다
+* 오픈 소스 ClickHouse에 기본 포함되어 있습니다
+* 널리 사용되는 직렬화 포맷(JSON, Avro, Protobuf) 대부분을 지원합니다
+
+<div id="clickpipes-for-kafka-getting-started">
+  #### 시작하기
+</div>
+
+Kafka 테이블 엔진을 시작하려면 [참고 문서](/ko/integrations/connectors/data-ingestion/kafka/kafka-table-engine)를 참조하십시오.
+
+<div id="choosing-an-option">
+  ### 옵션 선택
+</div>
+
+| 제품                       | 장점                                                                                                                                                                               | 단점                                                                                                                              |
+| ------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| **ClickPipes for Kafka** | • 고처리량 및 낮은 지연 시간을 위한 확장 가능한 아키텍처<br />• 기본 제공 모니터링 및 스키마 관리<br />• 프라이빗 네트워크 연결 지원(PrivateLink 사용)<br />• SSL/TLS 인증 및 IAM 권한 부여 지원<br />• 프로그래밍 방식 구성 지원(Terraform, API 엔드포인트) | • Kafka로 데이터를 푸시하는 기능은 지원하지 않음<br />• 최소 한 번 처리 의미 체계                                                                           |
+| **Kafka Connect Sink**   | • 정확히 한 번 처리 의미 체계<br />• 데이터 변환, 배칭, 오류 처리를 세밀하게 제어할 수 있음<br />• 프라이빗 네트워크에 배포 가능<br />• Debezium을 통해 ClickPipes에서 아직 지원하지 않는 데이터베이스의 실시간 복제를 지원                                | • Kafka로 데이터를 푸시하는 기능은 지원하지 않음<br />• 설정 및 유지 관리의 운영 복잡성이 높음<br />• Kafka 및 Kafka Connect 전문 지식이 필요함                            |
+| **Kafka table engine**   | • [Kafka로 데이터 푸시](/ko/integrations/connectors/data-ingestion/kafka/kafka-table-engine#clickhouse-to-kafka) 지원<br />• 설정이 비교적 간단함                                                    | • 최소 한 번 처리 의미 체계<br />• 컨슈머의 수평 스케일링이 제한됨. ClickHouse 서버와 독립적으로 스케일링할 수 없음<br />• 오류 처리 및 디버깅 옵션이 제한적임<br />• Kafka 전문 지식이 필요함 |
+
+<div id="other-options">
+  ### 기타 옵션
+</div>
+
+* [**Confluent Cloud**](/ko/integrations/connectors/data-ingestion/kafka/confluent/index) - Confluent Platform은 [Confluent Cloud에서 ClickHouse Connector Sink를 업로드하여 실행하는](/ko/integrations/connectors/data-ingestion/kafka/confluent/custom-connector) 옵션을 제공하며, HTTP 또는 HTTPS를 통해 Apache Kafka를 API와 통합하는 [Confluent Platform용 HTTP Sink Connector](/ko/integrations/connectors/data-ingestion/kafka/confluent/kafka-connect-http)도 사용할 수 있습니다.
+
+* [**Vector**](/ko/integrations/connectors/data-ingestion/kafka/kafka-vector) - Vector는 벤더 중립적인 데이터 파이프라인입니다. Kafka에서 데이터를 읽고 이벤트를 ClickHouse로 전송할 수 있어, 강력한 통합 옵션입니다.
+
+* [**JDBC Connect Sink**](/ko/integrations/connectors/data-ingestion/kafka/kafka-connect-jdbc) - Kafka Connect JDBC Sink 커넥터를 사용하면 Kafka 토픽의 데이터를 JDBC 드라이버를 지원하는 모든 관계형 데이터베이스로 내보낼 수 있습니다.
+
+* **사용자 지정 코드** - 이벤트에 대한 사용자 지정 처리가 필요한 경우, Kafka와 ClickHouse [클라이언트 라이브러리](/ko/integrations/language-clients/index)를 사용하는 사용자 지정 코드가 적합할 수 있습니다.
+
+[BYOC]: /products/cloud/guides/infrastructure/deployment-options/byoc/overview
+
+[Cloud]: /products/cloud/getting-started/cloud-get-started
+
+[Self-hosted]: /get-started/about/intro

@@ -1,0 +1,10 @@
+clean-form is-auto	1
+clean-form no-quotes	1
+clean-form resolved	1
+legacy-form is-auto	1
+legacy-form no-quotes	1
+legacy-form resolved	1
+max_final_threads legacy is-auto	1
+max_parsing_threads clean is-auto	1
+explicit is-auto	0
+explicit value	16

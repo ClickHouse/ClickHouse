@@ -9,7 +9,7 @@ create table test (id UInt64, a Tuple(b Tuple(c UInt32, d String, e Array(UInt32
 7	((5,'str_5',[0,1,2,3,4,5,6]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC
+Sorting: __table1.`a.b.c` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC
@@ -23,7 +23,7 @@ Sorting: a.b.c ASC
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC
+Sorting: __table1.`a.b.c` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC
@@ -37,7 +37,7 @@ Sorting: a.b.c DESC
 5	((5,'str_6',[0,1,2,3,4]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC, __table1.a.b.d ASC
+Sorting: __table1.`a.b.c` ASC, __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC, a.b.d ASC
@@ -51,7 +51,7 @@ Sorting: a.b.c ASC, a.b.d ASC
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC, __table1.a.b.d ASC
+Sorting: __table1.`a.b.c` DESC, __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC, a.b.d DESC
@@ -65,7 +65,7 @@ Sorting: a.b.c DESC, a.b.d DESC
 7	((5,'str_5',[0,1,2,3,4,5,6]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC, __table1.a.b.d DESC
+Sorting: __table1.`a.b.c` ASC, __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC, a.b.d ASC
@@ -79,7 +79,7 @@ Sorting: a.b.c ASC, a.b.d ASC
 0	((0,'str_0',[]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC, __table1.a.b.d DESC
+Sorting: __table1.`a.b.c` DESC, __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC, a.b.d DESC
@@ -154,7 +154,7 @@ Ranges: 1
 7	((5,'str_5',[0,1,2,3,4,5,6]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC
+Sorting: __table1.`a.b.c` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC
@@ -168,7 +168,7 @@ Sorting: a.b.c ASC
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC
+Sorting: __table1.`a.b.c` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC
@@ -182,7 +182,7 @@ Sorting: a.b.c DESC
 5	((5,'str_6',[0,1,2,3,4]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.d ASC
+Sorting: __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 5	((5,'str_6',[0,1,2,3,4]))	Hello, World!
@@ -195,7 +195,7 @@ ReadFromMergeTree (default.test)
 3	((1,'str_0',[0,1,2]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.d DESC
+Sorting: __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 0	((0,'str_0',[]))	Hello, World!
@@ -208,7 +208,7 @@ ReadFromMergeTree (default.test)
 5	((5,'str_6',[0,1,2,3,4]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC, __table1.a.b.d ASC
+Sorting: __table1.`a.b.c` ASC, __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC, a.b.d ASC
@@ -222,7 +222,7 @@ Sorting: a.b.c ASC, a.b.d ASC
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC, __table1.a.b.d ASC
+Sorting: __table1.`a.b.c` DESC, __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC, a.b.d DESC
@@ -236,7 +236,7 @@ Sorting: a.b.c DESC, a.b.d DESC
 7	((5,'str_5',[0,1,2,3,4,5,6]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC, __table1.a.b.d DESC
+Sorting: __table1.`a.b.c` ASC, __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC, a.b.d ASC
@@ -250,7 +250,7 @@ Sorting: a.b.c ASC, a.b.d ASC
 0	((0,'str_0',[]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC, __table1.a.b.d DESC
+Sorting: __table1.`a.b.c` DESC, __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC, a.b.d DESC
@@ -325,7 +325,7 @@ create table test (id UInt64, a Tuple(b Tuple(c UInt32, d String, e Array(UInt32
 7	((5,'str_5',[0,1,2,3,4,5,6]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC
+Sorting: __table1.`a.b.c` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC
@@ -339,7 +339,7 @@ Sorting: a.b.c ASC
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC
+Sorting: __table1.`a.b.c` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC
@@ -353,7 +353,7 @@ Sorting: a.b.c DESC
 5	((5,'str_6',[0,1,2,3,4]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC, __table1.a.b.d ASC
+Sorting: __table1.`a.b.c` ASC, __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC, a.b.d ASC
@@ -367,7 +367,7 @@ Sorting: a.b.c ASC, a.b.d ASC
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC, __table1.a.b.d ASC
+Sorting: __table1.`a.b.c` DESC, __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC, a.b.d DESC
@@ -381,7 +381,7 @@ Sorting: a.b.c DESC, a.b.d DESC
 7	((5,'str_5',[0,1,2,3,4,5,6]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC, __table1.a.b.d DESC
+Sorting: __table1.`a.b.c` ASC, __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC, a.b.d ASC
@@ -395,7 +395,7 @@ Sorting: a.b.c ASC, a.b.d ASC
 0	((0,'str_0',[]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC, __table1.a.b.d DESC
+Sorting: __table1.`a.b.c` DESC, __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC, a.b.d DESC
@@ -470,7 +470,7 @@ Ranges: 1
 7	((5,'str_5',[0,1,2,3,4,5,6]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC
+Sorting: __table1.`a.b.c` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC
@@ -484,7 +484,7 @@ Sorting: a.b.c ASC
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC
+Sorting: __table1.`a.b.c` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC
@@ -498,7 +498,7 @@ Sorting: a.b.c DESC
 5	((5,'str_6',[0,1,2,3,4]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.d ASC
+Sorting: __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 5	((5,'str_6',[0,1,2,3,4]))	Hello, World!
@@ -511,7 +511,7 @@ ReadFromMergeTree (default.test)
 3	((1,'str_0',[0,1,2]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.d DESC
+Sorting: __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 0	((0,'str_0',[]))	Hello, World!
@@ -524,7 +524,7 @@ ReadFromMergeTree (default.test)
 5	((5,'str_6',[0,1,2,3,4]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC, __table1.a.b.d ASC
+Sorting: __table1.`a.b.c` ASC, __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC, a.b.d ASC
@@ -538,7 +538,7 @@ Sorting: a.b.c ASC, a.b.d ASC
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC, __table1.a.b.d ASC
+Sorting: __table1.`a.b.c` DESC, __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC, a.b.d DESC
@@ -552,7 +552,7 @@ Sorting: a.b.c DESC, a.b.d DESC
 7	((5,'str_5',[0,1,2,3,4,5,6]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC, __table1.a.b.d DESC
+Sorting: __table1.`a.b.c` ASC, __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC, a.b.d ASC
@@ -566,7 +566,7 @@ Sorting: a.b.c ASC, a.b.d ASC
 0	((0,'str_0',[]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC, __table1.a.b.d DESC
+Sorting: __table1.`a.b.c` DESC, __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC, a.b.d DESC
@@ -641,7 +641,7 @@ create table test (id UInt64, a Tuple(b Tuple(c UInt32, d String, e Array(UInt32
 7	((5,'str_5',[0,1,2,3,4,5,6]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC
+Sorting: __table1.`a.b.c` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC
@@ -655,7 +655,7 @@ Sorting: a.b.c ASC
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC
+Sorting: __table1.`a.b.c` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC
@@ -669,7 +669,7 @@ Sorting: a.b.c DESC
 5	((5,'str_6',[0,1,2,3,4]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC, __table1.a.b.d ASC
+Sorting: __table1.`a.b.c` ASC, __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC, a.b.d ASC
@@ -683,7 +683,7 @@ Sorting: a.b.c ASC, a.b.d ASC
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC, __table1.a.b.d ASC
+Sorting: __table1.`a.b.c` DESC, __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC, a.b.d DESC
@@ -697,7 +697,7 @@ Sorting: a.b.c DESC, a.b.d DESC
 7	((5,'str_5',[0,1,2,3,4,5,6]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC, __table1.a.b.d DESC
+Sorting: __table1.`a.b.c` ASC, __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC, a.b.d ASC
@@ -711,7 +711,7 @@ Sorting: a.b.c ASC, a.b.d ASC
 0	((0,'str_0',[]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC, __table1.a.b.d DESC
+Sorting: __table1.`a.b.c` DESC, __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC, a.b.d DESC
@@ -786,7 +786,7 @@ Ranges: 1
 7	((5,'str_5',[0,1,2,3,4,5,6]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC
+Sorting: __table1.`a.b.c` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC
@@ -800,7 +800,7 @@ Sorting: a.b.c ASC
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC
+Sorting: __table1.`a.b.c` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC
@@ -814,7 +814,7 @@ Sorting: a.b.c DESC
 5	((5,'str_6',[0,1,2,3,4]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.d ASC
+Sorting: __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 5	((5,'str_6',[0,1,2,3,4]))	Hello, World!
@@ -827,7 +827,7 @@ ReadFromMergeTree (default.test)
 3	((1,'str_0',[0,1,2]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.d DESC
+Sorting: __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 0	((0,'str_0',[]))	Hello, World!
@@ -840,7 +840,7 @@ ReadFromMergeTree (default.test)
 5	((5,'str_6',[0,1,2,3,4]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC, __table1.a.b.d ASC
+Sorting: __table1.`a.b.c` ASC, __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC, a.b.d ASC
@@ -854,7 +854,7 @@ Sorting: a.b.c ASC, a.b.d ASC
 2	((0,'str_2',[0,1]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC, __table1.a.b.d ASC
+Sorting: __table1.`a.b.c` DESC, __table1.`a.b.d` ASC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC, a.b.d DESC
@@ -868,7 +868,7 @@ Sorting: a.b.c DESC, a.b.d DESC
 7	((5,'str_5',[0,1,2,3,4,5,6]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c ASC, __table1.a.b.d DESC
+Sorting: __table1.`a.b.c` ASC, __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c ASC, a.b.d ASC
@@ -882,7 +882,7 @@ Sorting: a.b.c ASC, a.b.d ASC
 0	((0,'str_0',[]))	Hello, World!
 Expression (Project names)
 Sorting (Sorting for ORDER BY)
-Sorting: __table1.a.b.c DESC, __table1.a.b.d DESC
+Sorting: __table1.`a.b.c` DESC, __table1.`a.b.d` DESC
 Expression ((Before ORDER BY + (Projection + Change column names to column identifiers)))
 ReadFromMergeTree (default.test)
 Sorting: a.b.c DESC, a.b.d DESC

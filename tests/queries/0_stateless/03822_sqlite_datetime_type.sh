@@ -55,7 +55,7 @@ sqlite3 "${DB_PATH}" 'CREATE TABLE tx_fixedstring (c0 TEXT);'
 sqlite3 "${DB_PATH}" "INSERT INTO tx_fixedstring VALUES ('abc');"
 
 ${CLICKHOUSE_LOCAL} --query="
-CREATE DATABASE tmpdb ENGINE = SQLite('${DB_PATH}');
+CREATE DATABASE ${CLICKHOUSE_DATABASE_1} ENGINE = SQLite('${DB_PATH}');
 
 -- Test DateTime: this triggers the bug - Bad cast from ColumnVector<unsigned int> to ColumnString
 CREATE TABLE t_datetime (c0 DateTime) ENGINE = SQLite('${DB_PATH}', 'tx_datetime');

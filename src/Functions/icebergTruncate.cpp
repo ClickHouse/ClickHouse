@@ -1,4 +1,5 @@
 #include <Functions/FunctionFactory.h>
+#include <Columns/ColumnConst.h>
 #include <Columns/ColumnString.h>
 #include <Columns/IColumn.h>
 #include <DataTypes/DataTypesNumber.h>
@@ -22,7 +23,7 @@ namespace
 {
 
 /// This function specification https://iceberg.apache.org/spec/#truncate-transform-details
-class FunctionIcebergTruncate : public IFunction
+class FunctionIcebergTruncate final : public IFunction
 {
 
 public:
@@ -95,7 +96,7 @@ public:
             }
             else
             {
-                auto decimal_scaled = arguments[1]->createColumnConst(1, arguments[1]->getDefault());
+                ColumnPtr decimal_scaled = arguments[1]->createColumnConst(1, arguments[1]->getDefault());
                 ColumnWithTypeAndName decimal_scaled_with_type(decimal_scaled, arguments[1], "");
                 modulo_arguments = {get_column_const(arguments[1]), decimal_scaled_with_type};
             }

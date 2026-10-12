@@ -1,4 +1,8 @@
 <test>
+    <settings>
+        <max_bytes_ratio_before_external_join>0</max_bytes_ratio_before_external_join>
+    </settings>
+
     <create_query>CREATE TABLE test_join_used_flags (i64 Int64, i32 Int32) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE probe_used_flags (key Int64) ENGINE = Memory</create_query>
     <create_query>CREATE TABLE build_used_flags (key Int64) ENGINE = Memory</create_query>

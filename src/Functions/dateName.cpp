@@ -15,6 +15,8 @@
 #include <Functions/FunctionHelpers.h>
 #include <Functions/extractTimeZoneFromFunctionArguments.h>
 
+#include <base/TypeList.h>
+
 namespace DB
 {
 namespace ErrorCodes
@@ -53,7 +55,7 @@ template <> struct DataTypeToTimeTypeMap<DataTypeDateTime64>
 template <typename DataType>
 using DateTypeToTimeType = typename DataTypeToTimeTypeMap<DataType>::TimeType;
 
-class FunctionDateNameImpl : public IFunction
+class FunctionDateNameImpl final : public IFunction
 {
 public:
     static constexpr auto name = "dateName";
@@ -117,11 +119,13 @@ public:
         size_t input_rows_count) const override
     {
         ColumnPtr res;
+        TypeListUtils::forEach(TypeList<DataTypeDate, DataTypeDate32, DataTypeDateTime, DataTypeDateTime64>{}, [&]<typename DataType>(TypeList<DataType>)
+        {
+            if (!res)
+                res = executeType<DataType>(arguments, result_type, input_rows_count);
+        });
 
-        if (!((res = executeType<DataTypeDate>(arguments, result_type, input_rows_count))
-            || (res = executeType<DataTypeDate32>(arguments, result_type, input_rows_count))
-            || (res = executeType<DataTypeDateTime>(arguments, result_type, input_rows_count))
-            || (res = executeType<DataTypeDateTime64>(arguments, result_type, input_rows_count))))
+        if (!res)
             throw Exception(
                 ErrorCodes::ILLEGAL_COLUMN,
                 "Illegal column {} of function {}, must be Date or DateTime.",
@@ -148,7 +152,7 @@ public:
 
         String date_part = date_part_column->getValue<String>();
 
-        const DateLUTImpl * time_zone_tmp;
+        const DateLUTImpl * time_zone_tmp = nullptr;
         if constexpr (std::is_same_v<DataType, DataTypeDateTime64> || std::is_same_v<DataType, DataTypeDateTime>)
             time_zone_tmp = &extractTimeZoneFromFunctionArguments(arguments, 2, 1);
         else

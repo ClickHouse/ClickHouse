@@ -4,6 +4,8 @@ SET enable_parallel_replicas = 0;
 SET query_plan_join_swap_table = false;
 SET enable_analyzer = 1;
 SET query_plan_filter_push_down = 1;
+SET query_plan_merge_filter_into_join_condition = 0; -- absorbing WHERE into ON clause changes join semantics, breaking build-side filter pushdown
+SET query_plan_convert_outer_join_to_inner_join = 1; -- needed to enable right-side filter pushdown for LEFT JOIN with WHERE conditions on right columns
 
 SELECT *
 FROM (SELECT number AS key, number AS value FROM numbers(100)) t1

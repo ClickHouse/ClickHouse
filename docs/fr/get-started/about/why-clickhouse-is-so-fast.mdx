@@ -1,0 +1,174 @@
+---
+sidebarTitle: 'Pourquoi ClickHouse est-il si rapide ?'
+description: 'Il a été conçu pour être rapide. Les performances d’exécution des requêtes ont toujours été une priorité absolue pendant le processus de développement, mais d’autres caractéristiques importantes comme la facilité d’utilisation, l’évolutivité et la sécurité ont également été prises en compte afin que ClickHouse puisse devenir un véritable système de production.'
+title: 'Pourquoi ClickHouse est-il si rapide ?'
+slug: /concepts/why-clickhouse-is-so-fast
+keywords: ['Architecture', 'VLDB', 'Performances']
+show_related_blogs: true
+doc_type: 'guide'
+---
+
+De nombreux autres facteurs contribuent aux performances d’une base de données, au-delà de [son mode d’organisation des données](/fr/get-started/about/intro#row-oriented-vs-column-oriented-storage).
+Nous allons maintenant expliquer plus en détail ce qui rend ClickHouse si rapide, en particulier par rapport aux autres bases de données orientées colonnes.
+
+D’un point de vue architectural, les bases de données se composent (au minimum) d’une couche de stockage et d’une couche de traitement des requêtes. Tandis que la couche de stockage est chargée d’enregistrer, de charger et de maintenir les données des tables, la couche de traitement des requêtes exécute les requêtes des utilisateurs. Par rapport aux autres bases de données, ClickHouse innove dans ces deux couches, ce qui permet des insertions extrêmement rapides et des requêtes SELECT.
+
+<div id="storage-layer-concurrent-inserts-are-isolated-from-each-other">
+  ## Couche de stockage : les insertions concurrentes sont isolées les unes des autres
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/vsykFYns0Ws?si=hE2qnOf6cDKn-otP" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Dans ClickHouse, chaque table se compose de plusieurs « parties de table ». Une [partie](/fr/concepts/core-concepts/parts) est créée chaque fois qu&#39;un utilisateur insère des données dans la table (instruction INSERT). Une requête s&#39;exécute toujours sur toutes les parties de table existantes au moment où elle démarre.
+
+Pour éviter qu&#39;un trop grand nombre de parties ne s&#39;accumule, ClickHouse exécute en arrière-plan une opération de [fusion](/fr/concepts/core-concepts/merges) qui combine en continu plusieurs petites parties en une seule plus grande.
+
+Cette approche présente plusieurs avantages : tout le traitement des données peut être [reporté sur les fusions de parties en arrière-plan](/fr/get-started/about/why-clickhouse-is-so-fast#storage-layer-merge-time-computation), ce qui rend les écritures de données légères et très efficaces. Les insertions individuelles sont « locales », au sens où elles n&#39;ont pas besoin de mettre à jour des structures de données globales, autrement dit propres à chaque table. Par conséquent, plusieurs insertions simultanées ne nécessitent ni synchronisation entre elles ni synchronisation avec les données déjà présentes dans la table ; elles peuvent donc être effectuées presque à la vitesse des E/S disque.
+
+🤿 Pour approfondir le sujet, consultez la section [On-Disk Format](/fr/concepts/core-concepts/academic-overview#3-1-on-disk-format) de la version web de notre article VLDB 2024.
+
+<div id="storage-layer-concurrent-inserts-and-selects-are-isolated">
+  ## Couche de stockage : les insertions et les requêtes SELECT concurrentes sont isolées
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dvGlPh2bJFo?si=F3MSALPpe0gAoq5k" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Les insertions sont totalement isolées des requêtes SELECT, et la fusion des parties de données insérées s’effectue en arrière-plan sans affecter les requêtes concurrentes.
+
+🤿 Pour en savoir plus, consultez la section [Couche de stockage](/fr/concepts/core-concepts/academic-overview#3-storage-layer) de la version web de notre article VLDB 2024.
+
+<div id="storage-layer-merge-time-computation">
+  ## Couche de stockage : calcul lors de la fusion
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/_w3zQg695c0?si=g0Wa_Petn-LcmC-6" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Contrairement aux autres bases de données, ClickHouse maintient des écritures légères et efficaces en effectuant toutes les transformations de données supplémentaires pendant le processus d’arrière-plan de [fusion](/fr/concepts/core-concepts/merges). En voici quelques exemples :
+
+* **Fusions de remplacement** qui ne conservent que la version la plus récente d’une ligne dans les parties d’entrée et écartent toutes les autres versions de cette ligne. Les fusions de remplacement peuvent être considérées comme une opération de nettoyage lors de la fusion.
+
+* **Fusions d’agrégation** qui combinent les états d’agrégation intermédiaires de la partie d’entrée en un nouvel état d’agrégation. Même si cela semble difficile à comprendre, cela ne fait en réalité qu’implémenter une agrégation incrémentale.
+
+* **Fusions TTL (time-to-live)** qui compressent, déplacent ou suppriment des lignes selon certaines règles temporelles.
+
+L’objectif de ces transformations est de déplacer le travail (le calcul) du moment de l’exécution des requêtes utilisateur vers celui de la fusion. Cela est important pour deux raisons :
+
+D’une part, les requêtes utilisateur peuvent devenir nettement plus rapides, parfois 1000x ou davantage, si elles peuvent exploiter des données « transformées », par exemple des données pré-agrégées.
+
+D’autre part, la majeure partie du temps d’exécution des fusions est consacrée au chargement des parties d’entrée et à l’écriture de la partie de sortie. L’effort supplémentaire nécessaire pour transformer les données pendant la fusion n’a généralement pas beaucoup d’impact sur le temps d’exécution des fusions. Toute cette magie est totalement transparente et n’affecte pas le résultat des requêtes (si ce n’est leurs performances).
+
+🤿 Pour aller plus loin, consultez la section [Merge-time Data Transformation](/fr/concepts/core-concepts/academic-overview#3-3-merge-time-data-transformation) de la version web de notre article VLDB 2024.
+
+<div id="storage-layer-data-pruning">
+  ## Couche de stockage : pruning des données
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/UJpVAx7o1aY?si=w-AfhBcRIO-e3Ysj" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+En pratique, de nombreuses requêtes sont répétitives, c’est-à-dire qu’elles sont exécutées telles quelles ou avec de légères modifications seulement (par ex. des valeurs de paramètres différentes) à intervalles réguliers. Réexécuter encore et encore les mêmes requêtes, ou des requêtes similaires, permet d’ajouter des index ou de réorganiser les données afin que les requêtes fréquentes y accèdent plus rapidement. Cette approche est également appelée « pruning des données », et ClickHouse propose trois techniques pour cela :
+
+1. Les [index de clé primaire](/fr/guides/clickhouse/data-modelling/sparse-primary-indexes#clickhouse-index-design), qui définissent l’ordre de tri des données de la table. Une clé primaire bien choisie permet d’évaluer les filtres (comme les clauses WHERE dans la requête ci-dessus) au moyen de recherches binaires rapides plutôt que de balayages complets de colonnes. En termes plus techniques, le temps d’exécution des balayages devient logarithmique au lieu d’être linéaire par rapport à la taille des données.
+
+2. Les [projections de table](/fr/reference/statements/alter/projection), c’est-à-dire des versions internes alternatives d’une table, qui stockent les mêmes données mais triées selon une clé primaire différente. Les projections peuvent être utiles lorsqu’il existe plusieurs conditions de filtre fréquentes.
+
+3. Les [index de saut de données](/fr/concepts/features/performance/skip-indexes/skipping-indexes), qui intègrent dans les colonnes des statistiques de données supplémentaires, par ex. les valeurs minimale et maximale d’une colonne, l’ensemble des valeurs uniques, etc. Les index de saut de données sont orthogonaux aux clés primaires et aux projections de table et, selon la distribution des données dans la colonne, ils peuvent considérablement accélérer l’évaluation des filtres.
+
+Ces trois techniques visent à ignorer autant de lignes que possible lors des lectures complètes de colonnes, car la façon la plus rapide de lire des données consiste à ne pas les lire du tout.
+
+🤿 Approfondissez ce sujet dans la section [Pruning des données](/fr/concepts/core-concepts/academic-overview#3-2-data-pruning) de la version web de notre article VLDB 2024.
+
+<div id="storage-layer-data-compression">
+  ## Couche de stockage : compression des données
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/MH10E3rVvnM?si=duWmS_OatCLx-akH" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Par ailleurs, la couche de stockage de ClickHouse compresse aussi, de manière optionnelle, les données brutes des tables à l’aide de différents codecs.
+
+Les bases de données orientées colonnes se prêtent particulièrement bien à ce type de compression, car les valeurs de même type et présentant une répartition similaire sont stockées ensemble.
+
+Les utilisateurs peuvent [indiquer](https://clickhouse.com/blog/optimize-clickhouse-codecs-compression-schema) que les colonnes doivent être compressées à l’aide de divers algorithmes de compression génériques (comme ZSTD) ou de codecs spécialisés, par exemple Gorilla et FPC pour les valeurs à virgule flottante, Delta et GCD pour les valeurs entières, ou même AES comme codec de chiffrement.
+
+La compression des données réduit non seulement l’espace de stockage occupé par les tables de la base de données, mais, dans bien des cas, elle améliore aussi les performances des requêtes, car les disques locaux et les E/S réseau sont souvent limités par un faible débit.
+
+🤿 Pour approfondir ce sujet, consultez la section [On-Disk Format](/fr/concepts/core-concepts/academic-overview#3-1-on-disk-format) de la version web de notre article VLDB 2024.
+
+<div id="state-of-the-art-query-processing-layer">
+  ## Couche de traitement des requêtes de pointe
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/O5qecdQ7Y18?si=XVtOIuVd8NLbqyox" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Enfin, ClickHouse utilise une couche de traitement des requêtes vectorisée qui parallélise l’exécution des requêtes autant que possible afin d’exploiter toutes les ressources pour offrir un maximum de rapidité et d’efficacité.
+
+La « vectorisation » signifie que les opérateurs du plan de requête transmettent les lignes de résultats intermédiaires par lots plutôt qu’une par une. Cela permet de mieux utiliser les caches CPU et permet aux opérateurs d’appliquer des instructions SIMD pour traiter plusieurs valeurs à la fois. En pratique, de nombreux opérateurs existent en plusieurs versions - une par génération de jeu d’instructions SIMD. ClickHouse sélectionne automatiquement la version la plus récente et la plus rapide en fonction des capacités du matériel sur lequel il s’exécute.
+
+Les systèmes modernes disposent de dizaines de cœurs CPU. Pour exploiter tous les cœurs, ClickHouse décompose le plan de requête en plusieurs voies d’exécution, généralement une par cœur. Chaque voie traite une plage distincte des données de la table. Ainsi, les performances de la base de données évoluent « verticalement » avec le nombre de cœurs disponibles.
+
+Si un seul nœud devient trop petit pour contenir les données de la table, il est possible d’ajouter d’autres nœuds pour former un cluster. Les tables peuvent être divisées (« segmentées ») et réparties entre les nœuds. ClickHouse exécute alors les requêtes sur tous les nœuds qui stockent les données de la table, ce qui lui permet d’évoluer « horizontalement » avec le nombre de nœuds disponibles.
+
+🤿 Découvrez ce sujet plus en profondeur dans la section [Couche de traitement des requêtes](/fr/concepts/core-concepts/academic-overview#4-query-processing-layer) de la version web de notre article VLDB 2024.
+
+<div id="meticulous-attention-to-detail">
+  ## Une attention méticuleuse au moindre détail
+</div>
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/dccGLSuYWy0?si=rQ-Jp-z5Ik_-Rb8S" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+> **&quot;ClickHouse est un système hors norme : vous avez 20 versions d&#39;une table de hachage. Vous avez toutes ces choses incroyables, là où la plupart des systèmes n&#39;ont qu&#39;une seule table de hachage** **...** **ClickHouse atteint ces performances exceptionnelles parce qu&#39;il dispose de tous ces composants spécialisés&quot;** [Andy Pavlo, professeur de bases de données à la CMU](https://www.youtube.com/watch?v=Vy2t_wZx4Is\&t=3579s)
+
+Ce qui distingue ClickHouse [des autres](https://www.youtube.com/watch?v=CAS2otEoerM), c&#39;est le soin méticuleux apporté à l&#39;optimisation de bas niveau. Concevoir une base de données qui fonctionne, c&#39;est une chose ; l&#39;architecturer pour qu&#39;elle soit rapide sur une grande variété de types de requêtes, de structures de données, de distributions et de configurations d&#39;index, c&#39;est là que s&#39;exprime tout l&#39;art du &quot;[système hors norme](https://youtu.be/Vy2t_wZx4Is?si=K7MyzsBBxgmGcuGU\&t=3579)&quot;.
+
+**Tables de hachage.** Prenons une table de hachage comme exemple. Les tables de hachage sont des structures de données fondamentales utilisées pour les jointures et les agrégations. En tant que programmeur, il faut prendre en compte les choix de conception suivants :
+
+* La fonction de hachage à utiliser,
+* La résolution des collisions : [adressage ouvert](https://en.wikipedia.org/wiki/Open_addressing) ou [chaînage](https://en.wikipedia.org/wiki/Hash_table#Separate_chaining),
+* L&#39;organisation en mémoire : un seul tableau pour les clés et les valeurs, ou des tableaux séparés ?
+* Le facteur de remplissage : quand et comment redimensionner ? Comment déplacer les valeurs lors du redimensionnement ?
+* Les suppressions : la table de hachage doit-elle permettre l&#39;éviction d&#39;entrées ?
+
+Une table de hachage standard fournie par une bibliothèque tierce fonctionnerait, mais elle ne serait pas rapide. D&#39;excellentes performances exigent un benchmarking minutieux et beaucoup d&#39;expérimentation.
+
+L&#39;[implémentation des tables de hachage dans ClickHouse](https://clickhouse.com/blog/hash-tables-in-clickhouse-and-zero-cost-abstractions) choisit l&#39;une de **plus de 30 variantes précompilées de tables de hachage** en fonction des spécificités de la requête et des données.
+
+**Algorithmes.** Il en va de même pour les algorithmes. Par exemple, pour le tri, vous pourriez vous demander :
+
+* Qu&#39;est-ce qui va être trié : des nombres, des tuples, des chaînes de caractères ou des structures ?
+* Les données sont-elles en RAM ?
+* Le tri doit-il être stable ?
+* Faut-il trier toutes les données ou un tri partiel suffit-il ?
+
+Les algorithmes qui s&#39;appuient sur les caractéristiques des données sont souvent plus performants que leurs équivalents génériques. Si ces caractéristiques ne sont pas connues à l&#39;avance, le système peut essayer différentes implémentations et choisir à l&#39;exécution celle qui fonctionne le mieux. Pour en voir un exemple, consultez l&#39;[article expliquant comment la décompression LZ4 est implémentée dans ClickHouse](https://habr.com/en/company/yandex/blog/457612/).
+
+🤿 Approfondissez ce sujet dans la section [Holistic Performance Optimization](/fr/concepts/core-concepts/academic-overview#4-4-holistic-performance-optimization) de la version web de notre article VLDB 2024.
+
+<div id="vldb-2024-paper">
+  ## Article VLDB 2024
+</div>
+
+En août 2024, notre premier article de recherche a été accepté et publié à la conférence VLDB.
+VLDB est une conférence internationale sur les très grandes bases de données, largement considérée comme l&#39;une des principales conférences dans le domaine de la gestion des données.
+Parmi les centaines de soumissions, le taux d&#39;acceptation à VLDB est généralement d&#39;environ 20 %.
+
+Vous pouvez lire le [PDF de l&#39;article](https://www.vldb.org/pvldb/vol17/p3731-schulze.pdf) ou sa [version web](/fr/concepts/core-concepts/academic-overview), qui propose une description concise des choix d&#39;architecture et de conception système les plus intéressants de ClickHouse, à l&#39;origine de ses hautes performances.
+
+Alexey Milovidov, notre CTO et le créateur de ClickHouse, a présenté l&#39;article (diapositives [ici](https://raw.githubusercontent.com/ClickHouse/clickhouse-presentations/master/2024-vldb/VLDB_2024_presentation.pdf)), avant une séance de questions-réponses (qui a malheureusement été écourtée faute de temps !).
+Vous pouvez voir l&#39;enregistrement de la présentation ici :
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/7QXKBKDOkJE?si=5uFerjqPSXQWqDkF" title="Lecteur vidéo YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>

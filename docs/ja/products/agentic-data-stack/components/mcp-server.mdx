@@ -1,0 +1,24 @@
+---
+sidebarTitle: 'ClickHouse MCP server'
+title: 'ClickHouse MCP server'
+description: 'ClickHouse MCP server が agentic data stack のオープン標準アクセス層をどのように提供するか'
+doc_type: 'guide'
+keywords: ['agentic data stack', 'MCP', 'Model Context Protocol', 'ClickHouse MCP server']
+---
+
+ClickHouse MCP server は、[Agentic Data Stack](/ja/products/agentic-data-stack/overview) の **オープン標準アクセス層** です。Model Context Protocol を介して ClickHouse をチャットフロントエンドに公開し、エージェントがデータを探索して、それに対して読み取り専用クエリを実行できるようにします。
+
+このスタックでは、open-source のサーバーが ClickHouse と並行して動作し、LibreChat にあらかじめ設定されています。エージェントには次の 3 つのツールが公開されます。
+
+* **データベースを一覧表示** — 接続された ClickHouse インスタンス内のデータベースを列挙します。
+* **テーブルを一覧表示** — データベース内のテーブルとそのスキーマを確認します。
+* **SELECT クエリを実行** — 読み取り専用クエリを実行し、結果を返します。
+
+スタックの一部として実行するには、[Docker setup guide](/ja/products/agentic-data-stack/docker-setup) を参照してください。ClickHouse MCP server を他のクライアントやエージェントフレームワークで使用する場合や、ソースコードと設定を確認する場合は、以下を参照してください。
+
+* [MCP integration catalog](/ja/guides/use-cases/ai-ml/MCP): クライアントおよびエージェントライブラリ向けガイド。
+* [MCP repository](https://github.com/ClickHouse/mcp-clickhouse): ソースコードと設定。
+
+<Info>
+  **マネージド型の MCPサーバーをご希望ですか？** ClickHouse Cloud では、完全マネージド型の [Remote MCP server](/ja/products/cloud/features/ai-ml/remote-mcp) を提供しています。インストール不要で、OAuth 認証に対応し、上記の読み取り専用ツールに加えて管理用の操作 (サービス、請求、ClickPipes、バックアップ) も利用できる、より充実したツールセットを備えています。詳しくは、[open-source サーバーとの比較](/ja/products/cloud/features/ai-ml/remote-mcp#remote-vs-oss) をご覧ください。
+</Info>

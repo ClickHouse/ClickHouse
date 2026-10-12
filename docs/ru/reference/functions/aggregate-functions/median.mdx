@@ -1,0 +1,45 @@
+---
+description: 'Функции `median*` — это псевдонимы соответствующих функций `quantile*`.
+  Они вычисляют медиану числовой выборки.'
+slug: /sql-reference/aggregate-functions/reference/median
+title: 'median'
+doc_type: 'reference'
+---
+
+Функции `median*` — это псевдонимы соответствующих функций `quantile*`. Они вычисляют медиану числовой выборки.
+
+Функции:
+
+* `median` — Псевдоним для [quantile](/ru/reference/functions/aggregate-functions/quantile).
+* `medianDeterministic` — Псевдоним для [quantileDeterministic](/ru/reference/functions/aggregate-functions/quantileDeterministic).
+* `medianExact` — Псевдоним для [quantileExact](/ru/reference/functions/aggregate-functions/quantileExact).
+* `medianExactWeighted` — Псевдоним для [quantileExactWeighted](/ru/reference/functions/aggregate-functions/quantileExactWeighted).
+* `medianTiming` — Псевдоним для [quantileTiming](/ru/reference/functions/aggregate-functions/quantileTiming).
+* `medianTimingWeighted` — Псевдоним для [quantileTimingWeighted](/ru/reference/functions/aggregate-functions/quantileTimingWeighted).
+* `medianTDigest` — Псевдоним для [quantileTDigest](/ru/reference/functions/aggregate-functions/quantileTDigest).
+* `medianTDigestWeighted` — Псевдоним для [quantileTDigestWeighted](/ru/reference/functions/aggregate-functions/quantileTDigestWeighted).
+* `medianBFloat16` — Псевдоним для [quantileBFloat16](/ru/reference/functions/aggregate-functions/quantileBFloat16).
+* `medianDD` — Псевдоним для [quantileDD](/ru/reference/functions/aggregate-functions/quantileddsketch).
+
+**Пример**
+
+Входная таблица:
+
+```text
+┌─val─┐
+│   1 │
+│   1 │
+│   2 │
+│   3 │
+└─────┘
+```
+
+```sql title="Query"
+SELECT medianDeterministic(val, 1) FROM t;
+```
+
+```text title="Response"
+┌─medianDeterministic(val, 1)─┐
+│                         1.5 │
+└─────────────────────────────┘
+```

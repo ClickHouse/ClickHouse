@@ -1,0 +1,17 @@
+--- INNER JOIN: same result without and with runtime filter ---
+1	10	15
+3	30	35
+1	10	15
+3	30	35
+--- runtime filter IS applied to equality key when filters enabled ---
+BuildRuntimeFilter (Build runtime join filter on __table2.id)
+--- LEFT SEMI JOIN: same result without and with runtime filter ---
+1	10
+3	30
+1	10
+3	30
+--- LEFT ANTI JOIN with mixed predicates: runtime filter disabled (correct) ---
+2	20
+4	40
+2	20
+4	40

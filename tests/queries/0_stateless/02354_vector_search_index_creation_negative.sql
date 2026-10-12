@@ -16,7 +16,7 @@ SELECT '1st argument (method) must be String and hnsw';
 CREATE TABLE tab(vec Array(Float32), INDEX idx vec TYPE vector_similarity(3, 'L2Distance', 1)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab(vec Array(Float32), INDEX idx vec TYPE vector_similarity('not_hnsw', 'L2Distance', 1)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
 
-SELECT '2nd argument (distance function) must be String and L2Distance or cosineDistance';
+SELECT '2nd argument (distance function) must be String and L2Distance, cosineDistance, or dotProduct';
 CREATE TABLE tab(vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 3, 1)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_QUERY }
 CREATE TABLE tab(vec Array(Float32), INDEX idx vec TYPE vector_similarity('hnsw', 'invalid_distance', 1)) ENGINE = MergeTree ORDER BY tuple(); -- { serverError INCORRECT_DATA }
 

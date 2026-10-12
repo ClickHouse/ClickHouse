@@ -130,7 +130,7 @@ def check_replica_added():
     assert (
         q(
             ch2,
-            f"SELECT count() FROM rmt",
+            "SELECT count() FROM rmt",
         ).strip()
         == "1100000"
     )

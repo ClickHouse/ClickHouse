@@ -34,6 +34,42 @@ public:
         return "TableProxy";
     }
 
+    /// Same forwarding as `getInMemoryMetadataPtr` below, for the same reason: the proxy's own
+    /// metadata is seeded from the `CREATE TABLE` query and never carries a unique key.
+    bool hasUniqueKey() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->hasUniqueKey();
+        return IStorage::hasUniqueKey();
+    }
+
+    /// Forward the metadata query to the nested storage once it has been materialized.
+    /// `IStorage::metadata` on the proxy itself is only seeded with the columns from the
+    /// `CREATE TABLE` query and is updated lazily in `StorageProxy::alter` *after*
+    /// `nested->alter` returns. With long-running alters (e.g. `RENAME COLUMN`
+    /// while merges are stopped), the nested storage's in-memory metadata can be
+    /// updated by `setProperties` while the proxy's cached copy still reflects the
+    /// pre-alter schema. A concurrent `INSERT` would then resolve column names against
+    /// the proxy's stale metadata but build the sink from the nested's current metadata,
+    /// causing a `Block structure mismatch` `LOGICAL_ERROR` in `Chain::addSink`.
+    /// Forwarding here keeps metadata observers in sync with the nested storage.
+    StorageMetadataHandle getInMemoryMetadataPtr(ContextPtr context_, bool bypass_metadata_cache) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            return nested->getInMemoryMetadataPtr(context_, bypass_metadata_cache);
+        return IStorage::getInMemoryMetadataPtr(context_, bypass_metadata_cache);
+    }
+
+    StoragePtr tryGetNested() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
+    bool isLazyStandIn() const override { return true; }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};
@@ -114,7 +150,8 @@ public:
         size_t num_streams) override
     {
         auto storage = getNested();
-        auto nested_snapshot = storage->getStorageSnapshot(storage->getInMemoryMetadataPtr(), context);
+        const auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
+        auto nested_snapshot = storage->getStorageSnapshot(nested_metadata, context);
         storage->read(query_plan, column_names, nested_snapshot, query_info, context,
                       processed_stage, max_block_size, num_streams);
     }
@@ -126,7 +163,7 @@ public:
         bool async_insert) override
     {
         auto storage = getNested();
-        auto nested_metadata = storage->getInMemoryMetadataPtr();
+        auto nested_metadata = storage->getInMemoryMetadataPtr(context, false);
         return storage->write(query, nested_metadata, context, async_insert);
     }
 
@@ -138,9 +175,22 @@ public:
             nested->renameInMemory(new_table_id);
     }
 
+    /// A table that is still a stand-in has nothing to answer with, and is deliberately not loaded to ask.
+    void checkTableCanBeRenamedByDatabaseRename(const String & new_database_name) const override
+    {
+        std::lock_guard lock{nested_mutex};
+        if (nested)
+            nested->checkTableCanBeRenamedByDatabaseRename(new_database_name);
+    }
+
     void checkTableCanBeDropped(ContextPtr query_context) const override
     {
         getNested()->checkTableCanBeDropped(query_context);
+    }
+
+    void checkTableSizeBelowDropLimit(ContextPtr query_context) const override
+    {
+        getNested()->checkTableSizeBelowDropLimit(query_context);
     }
 
     std::optional<UInt64> totalRows(ContextPtr query_context) const override

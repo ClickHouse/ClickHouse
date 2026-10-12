@@ -1,0 +1,24 @@
+---
+description: 'Guide pour compiler ClickHouse à partir du code source pour l’architecture LoongArch64'
+sidebarTitle: 'Compiler sous Linux pour LoongArch64'
+slug: /development/build-cross-loongarch
+title: 'Compiler sous Linux pour LoongArch64'
+doc_type: 'guide'
+---
+
+ClickHouse offre une prise en charge expérimentale de LoongArch64
+
+<div id="build-clickhouse">
+  ## Compiler ClickHouse
+</div>
+
+La version de LLVM requise pour la compilation doit être supérieure ou égale à 21.1.0.
+
+```bash
+cd ClickHouse
+mkdir build-loongarch64
+cmake . -Bbuild-loongarch64 -DCMAKE_TOOLCHAIN_FILE=cmake/linux/toolchain-loongarch64.cmake
+ninja -C build-loongarch64
+```
+
+Le binaire obtenu ne fonctionnera que sous Linux sur l’architecture CPU LoongArch64.

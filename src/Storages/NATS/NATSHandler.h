@@ -50,7 +50,7 @@ private:
     std::mutex tasks_mutex;
     std::queue<Task> tasks;
 
-    uv_async_t execute_tasks_scheduler;
+    uv_async_t execute_tasks_scheduler{};
 };
 
 }

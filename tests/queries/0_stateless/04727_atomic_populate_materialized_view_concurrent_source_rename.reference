@@ -1,0 +1,7 @@
+renamed source subscribed to the view:	1
+rows backfilled from the source:	10	10
+impostor under the old name subscribed to the view:	0
+rows in the view after inserting into the impostor:	10	10
+exchanged source subscribed to the view:	1
+rows backfilled from the original source:	10	10
+rows in the view:	15	15

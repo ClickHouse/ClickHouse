@@ -1,0 +1,84 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-04-10
+title: '演示日 - 2026-04-10'
+sidebarTitle: '2026-04-10'
+description: 'ClickStack 于 2026-04-10 的演示日'
+doc_type: 'guide'
+keywords: ['ClickStack', '演示日']
+---
+
+<div id="pinnable-datasource-filters">
+  ## 可固定的数据源过滤器
+</div>
+
+*演示者：[ @brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/j-b1ztSl8IQ" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+团队现在可以固定数据源过滤器，并在整个团队内共享。点击任意过滤器上的图钉图标后，你可以选择仅固定给自己，或共享给所有人。共享过滤器会显示在过滤器列表顶部的专属区域，方便每位团队成员查找和应用，无需知道过滤器的准确名称。
+
+这是社区呼声最高的功能之一。这意味着团队不再需要通过其他渠道沟通过滤器配置。共享过滤器一经固定，所有用户都能立即看到；而且不仅能共享过滤器键，也能共享具体的过滤器值，因此过滤器的完整上下文也会随之保留下来。
+
+**相关 PR：** [#2047](https://github.com/hyperdxio/hyperdx/pull/2047) [HDX-2300] 引入共享过滤器，提升团队范围内过滤器的可见性和可发现性
+
+<div id="waking-service-from-clickstack-cloud">
+  ## 从 ClickStack Cloud 唤醒服务
+</div>
+
+*由 [@brandon-pereira](https://github.com/brandon-pereira) 演示*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Od7X0NOCqY0" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack Cloud 用户现在可以直接在应用内唤醒休眠中的服务。此前，如果你的服务已休眠，你会看到“重试”提示，但应用实际上并不会帮你唤醒服务。你需要先切换到 ClickStack Cloud 手动唤醒它，再返回应用自己点击重试。
+
+现在，应用会端到端接管整个流程。当服务处于休眠状态时，提示会显示“唤醒服务”，并自动完成整个过程，无需离开当前页面。这虽然只是一个小的易用性改进，却去掉了工作流中这个令人烦躁的多步骤打断，尤其是在一段时间未操作后进入 ClickStack、只想立刻查看数据时。
+
+<div id="consistent-enabling-of-ai-features">
+  ## 统一启用 AI 功能
+</div>
+
+*演示：[ @brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/zS5OekPCzC0" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+ClickStack 中的 AI 功能现在只能通过 ClickHouse Cloud 控制平面开关，由它作为唯一的事实来源。此前有两个相互独立的复选框：一个在 ClickStack 控制平面中，另一个在应用内部。启用其中一个，并不能保证另一个也会同步，这常常让人搞不清 AI 是否真的已经启用。
+
+现在，ClickStack 内部的复选框会链接到 ClickHouse Cloud，除此之外则处于禁用状态。如果你在 ClickHouse Cloud 中打开该开关，相应功能就会自动在 ClickStack 中启用。这样一来，AI 功能的启用方式就更一致、更可预期，也不用再猜到底是哪项设置在真正生效。
+
+<div id="raw-sql-alerting">
+  ## 原始 SQL 告警
+</div>
+
+*演示者：[ @pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/bYYcYHkyy2E" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+原始 SQL 折线图现已支持告警，在现有原始 SQL 图表能力的基础上新增了基于阈值的通知功能。如果你有一个由自定义 SQL 查询驱动的折线图，现在可以为其添加告警，并像其他图表告警一样进行配置。目前该功能支持折线图和柱状图，因为阈值比较需要同时用到时间间隔和日期范围参数。
+
+这带来了一些非常强大的用例。演示中展示了这样一个查询：统计当前时间间隔内的错误数量，并将其与之前 30 个时间间隔进行比较；当该值高出历史常态两个标准差以上时，就将其标记出来。现在，这类统计异常检测只需写好相应的 SQL 并设置阈值即可。告警配置位于图表编辑器中的一个可折叠区域内，只有在实际需要时才会展开，从而让 UI 保持简洁。
+
+**相关 PR：** [#2073](https://github.com/hyperdxio/hyperdx/pull/2073) feat: 为基于原始 SQL 的仪表板卡片实现告警，[#2085](https://github.com/hyperdxio/hyperdx/pull/2085) refactor: 创建 TileAlertEditor 组件
+
+<div id="hyperdx-tui-improvements">
+  ## HyperDX TUI 改进
+</div>
+
+*演示：[@wrn14897](https://github.com/wrn14897)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/cIigBpcrYlw" title="YouTube 视频播放器" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+HyperDX 终端 UI 现在越来越容易上手。你现在可以通过 `npm install -g @hyperdx/cli` 全局安装它，然后运行 `hdx` 启动。使用 `--tui` 标志可直接打开交互式终端界面。`npm` 也提供名为 `hdx` 的 binary，因此软件包安装完成后，无需再单独安装。
+
+除了安装体验的改进外，本周还上线了两个值得关注的功能。错误消息现在会在终端中以适当的高亮和结构化形式显示，与 Web 前端的格式保持一致，因此无论你是在浏览器中还是在 TUI 中，都能看到同等细致的信息。此外，还新增了 SQL 预览功能，让你可以查看正在执行的底层查询。除此之外，在事件查看器中按下 `Shift+A` 即可进入新的告警页面，无需离开终端，就能总览所有已配置的告警及其最近的触发 history。
+
+**相关 PR：** [#2095](https://github.com/hyperdxio/hyperdx/pull/2095) [HDX-3966] 改进 TUI 错误消息渲染并添加 SQL 预览，[#2093](https://github.com/hyperdxio/hyperdx/pull/2093) [HDX-3969] 添加告警页面 (Shift+A) ，包含概览和最近 history，[#2043](https://github.com/hyperdxio/hyperdx/pull/2043) [HDX-3919] 添加 @hyperdx/cli 软件包，[#2101](https://github.com/hyperdxio/hyperdx/pull/2101) [HDX-3976] CLI：将 apiUrl 迁移到 appUrl，并提供交互式登录流程

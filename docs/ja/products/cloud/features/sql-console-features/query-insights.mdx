@@ -1,0 +1,54 @@
+---
+sidebar_title: 'クエリインサイト'
+slug: /cloud/get-started/query-insights
+description: 'system.query_log データを可視化し、クエリのデバッグとパフォーマンス最適化を容易にします'
+keywords: ['クエリインサイト', 'クエリログ', 'クエリログUI', 'system.query_log インサイト']
+title: 'クエリインサイト'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+**クエリインサイト**機能では、可視化やテーブルを通じて、ClickHouse に組み込まれているクエリログをより使いやすく利用できます。ClickHouse の `system.query_log` テーブルは、クエリ最適化、デバッグ、クラスター全体の健全性やパフォーマンスの監視に役立つ重要な情報源です。
+
+<div id="query-overview">
+  ## クエリの概要
+</div>
+
+サービスを選択すると、左側のサイドバーにある **監視** ナビゲーション項目が展開され、新たに **クエリインサイト** サブ項目が表示されます。この項目をクリックすると、クエリインサイトのページが開きます。
+
+<Image img="/images/cloud/sqlconsole/insights_overview.webp" size="md" alt="クエリインサイトUIの概要" border />
+
+<div id="top-level-metrics">
+  ## 上部の主要メトリクス
+</div>
+
+上部の統計ボックスには、選択した期間における基本的な主要クエリメトリクスが表示されます。その下には、選択した時間範囲におけるクエリ量、レイテンシ、エラー率を、クエリの種類 (select、insert、other) ごとに分類して示す 3 つの時系列チャートが表示されます。レイテンシチャートはさらに調整でき、p50、p90、p99 のレイテンシを表示できます。
+
+<Image img="/images/cloud/sqlconsole/insights_latency.webp" size="md" alt="クエリインサイト UI のレイテンシチャート" border />
+
+<div id="recent-queries">
+  ## 最近のクエリ
+</div>
+
+上部の主要メトリクスの下には、選択した時間枠内のクエリログのエントリを表示するテーブルがあります (正規化クエリハッシュとユーザーごとにグループ化) 。
+
+<Image img="/images/cloud/sqlconsole/insights_recent.webp" size="md" alt="クエリインサイト UI の最近のクエリテーブル" border />
+
+最近のクエリは、利用可能な任意のフィールドでフィルタリングやソートを行えます。また、テーブル、p90、p99 レイテンシなどの追加フィールドの表示/非表示も設定できます。
+
+<div id="query-drill-down">
+  ## クエリのドリルダウン
+</div>
+
+最近のクエリ テーブルでクエリを選択すると、選択したクエリに固有のメトリクスと情報を含むフライアウトが開きます。
+
+<Image img="/images/cloud/sqlconsole/insights_drilldown.webp" size="md" alt="Query Insights UI クエリのドリルダウン" border />
+
+フライアウトを見ると、このクエリは直近 24 時間で 3,000 回以上実行されていることがわかります。**Query info** タブのメトリクスはすべて集計メトリクスですが、**Query history** タブを選択すると、個々の実行ごとのメトリクスも確認できます。
+
+<Image img="/images/cloud/sqlconsole/insights_query_info.webp" size="sm" alt="Query Insights UI クエリ情報" border />
+
+<br />
+
+このペインでは、各クエリ実行の `Settings` および `Profile Events` の項目を展開して、追加情報を表示できます。

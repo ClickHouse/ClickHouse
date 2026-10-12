@@ -1,6 +1,8 @@
 DROP TABLE IF EXISTS map_containsValueLike_test;
 
-CREATE TABLE map_containsValueLike_test (id UInt32, map Map(String, String)) Engine=MergeTree() ORDER BY id settings index_granularity=2;
+-- Pinning map serialization to 'basic' prevents randomized 'with_buckets' serialization
+-- from reordering Map keys by hash bucket (the test checks output format, not bucketing).
+CREATE TABLE map_containsValueLike_test (id UInt32, map Map(String, String)) Engine=MergeTree() ORDER BY id settings index_granularity=2, map_serialization_version='basic', map_serialization_version_for_zero_level_parts='basic';
 
 INSERT INTO map_containsValueLike_test VALUES (1, {'1-K1':'1-V1','1-K2':'1-V2'}),(2,{'2-K1':'2-V1','2-K2':'2-V2'});
 INSERT INTO map_containsValueLike_test VALUES (3, {'3-K1':'3-V1','3-K2':'3-V2'}),(4, {'4-K1':'4-V1','4-K2':'4-V2'});

@@ -1,0 +1,70 @@
+---
+title: Keeper 設定
+---
+
+レプリケーションを機能させるには、ClickHouse Keeper クラスターをセットアップして
+設定する必要があります。ClickHouse Keeper はデータレプリケーションのための
+調整システムを提供し、ZooKeeper の代替として動作します。ZooKeeper を使用することも可能ですが、
+より優れた保証と信頼性を備え、
+ZooKeeper よりも少ないリソースで動作するため、ClickHouse Keeper の使用が推奨されます。高可用性を確保し、
+クォーラムを維持するため、少なくとも 3 台の ClickHouse Keeper ノードを実行することを推奨します。
+
+<Note>
+  ClickHouse Keeper は、ClickHouse と併せてクラスター内の任意のノードで実行できますが、
+  スケーリングや ClickHouse Keeper クラスターの管理をデータベースクラスターから独立して行えるため、
+  専用ノードで実行することを推奨します。
+</Note>
+
+各 ClickHouse Keeper ノード用の `keeper_config.xml` ファイルを、
+example フォルダーのルートで次のコマンドを使用して作成します。
+
+```bash
+for i in {01..03}; do
+  touch fs/volumes/clickhouse-keeper-${i}/etc/clickhouse-keeper/keeper_config.xml
+done
+```
+
+各
+ノードディレクトリ `fs/volumes/clickhouse-keeper-{}/etc/clickhouse-keeper` に作成された空の設定ファイルを編集します。以下で
+強調表示されている行は、各ノードごとに対応する内容へ変更する必要があります。
+
+```xml title="/clickhouse-keeper/keeper_config.xml" highlight={12}
+<clickhouse replace="true">
+    <logger>
+        <level>information</level>
+        <log>/var/log/clickhouse-keeper/clickhouse-keeper.log</log>
+        <errorlog>/var/log/clickhouse-keeper/clickhouse-keeper.err.log</errorlog>
+        <size>1000M</size>
+        <count>3</count>
+    </logger>
+    <listen_host>0.0.0.0</listen_host>
+    <keeper_server>
+        <tcp_port>9181</tcp_port>
+        <server_id>1</server_id>
+        <log_storage_path>/var/lib/clickhouse/coordination/log</log_storage_path>
+        <snapshot_storage_path>/var/lib/clickhouse/coordination/snapshots</snapshot_storage_path>
+        <coordination_settings>
+            <operation_timeout_ms>10000</operation_timeout_ms>
+            <session_timeout_ms>30000</session_timeout_ms>
+            <raft_logs_level>information</raft_logs_level>
+        </coordination_settings>
+        <raft_configuration>
+            <server>
+                <id>1</id>
+                <hostname>clickhouse-keeper-01</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>2</id>
+                <hostname>clickhouse-keeper-02</hostname>
+                <port>9234</port>
+            </server>
+            <server>
+                <id>3</id>
+                <hostname>clickhouse-keeper-03</hostname>
+                <port>9234</port>
+            </server>
+        </raft_configuration>
+    </keeper_server>
+</clickhouse>
+```

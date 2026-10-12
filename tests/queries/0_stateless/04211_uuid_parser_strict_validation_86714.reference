@@ -1,0 +1,32 @@
+--- Reproducer from issue #86714: 32-char string with non-hex prefix ---
+\N
+00000000-0000-0000-0000-000000000000
+11111111-1111-1111-1111-111111111111
+--- 36-char string, dashes at the right positions but non-hex elsewhere ---
+\N
+00000000-0000-0000-0000-000000000000
+--- 32-char string of fully non-hex characters ---
+\N
+00000000-0000-0000-0000-000000000000
+--- 36-char string with valid hex but misplaced dashes ---
+\N
+00000000-0000-0000-0000-000000000000
+--- 36-char string with one invalid hex digit at the start ---
+\N
+--- 36-char string with one invalid hex digit at the end ---
+\N
+--- Valid UUIDs must still parse (regression check for the fix itself) ---
+feefefef-6657-8501-4160-310158e823a3
+feefefef-6657-8501-4160-310158e823a3
+00000000-0000-0000-0000-000000000000
+ffffffff-ffff-ffff-ffff-ffffffffffff
+abcdef01-2345-6789-abcd-ef0123456789
+feefefef-6657-8501-4160-310158e823a3
+feefefef-6657-8501-4160-310158e823a3
+feefefef-6657-8501-4160-310158e823a3
+--- Round-trip: parse then format must be identity for valid 36-char input ---
+feefefef-6657-8501-4160-310158e823a3
+feefefef-6657-8501-4160-310158e823a3
+--- CAST(String, UUID) rejects garbage; CAST(String, Nullable(UUID)) returns NULL ---
+\N
+\N

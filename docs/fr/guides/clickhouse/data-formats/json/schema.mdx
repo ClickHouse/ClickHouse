@@ -1,0 +1,1019 @@
+---
+title: 'Concevoir votre schéma'
+slug: /integrations/data-formats/json/schema
+description: 'Comment concevoir au mieux des schémas JSON'
+keywords: ['json', 'ClickHouse', 'insertion', 'chargement', 'formats', 'schéma', 'structuré', 'semi-structuré']
+score: 20
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/fr/components/Image.jsx";
+
+Bien que l’[inférence de schéma](/fr/guides/clickhouse/data-formats/json/inference) puisse être utilisée pour définir un schéma initial pour des données JSON et interroger directement des fichiers de données JSON, par exemple dans S3, vous devriez viser à définir pour vos données un schéma versionné optimisé. Nous présentons ci-dessous l’approche recommandée pour modéliser les structures JSON.
+
+<div id="static-vs-dynamic-json">
+  ## JSON statique ou dynamique
+</div>
+
+Lors de la définition d’un schéma pour du JSON, la tâche principale consiste à déterminer le type approprié pour la valeur de chaque clé. Nous recommandons d’appliquer récursivement les règles suivantes à chaque clé de la hiérarchie JSON afin de déterminer le type approprié pour chacune d’elles.
+
+1. **Types primitifs** - Si la valeur de la clé est d’un type primitif, qu’elle fasse partie d’un sous-objet ou qu’elle se trouve à la racine, veillez à choisir son type conformément aux [bonnes pratiques générales de conception de schéma](/fr/guides/clickhouse/data-modelling/schema-design) et aux [règles d’optimisation des types](/fr/guides/clickhouse/data-modelling/schema-design#optimizing-types). Les tableaux de primitives, comme `phone_numbers` ci-dessous, peuvent être modélisés sous la forme `Array(<type>)`, par exemple `Array(String)`.
+2. **Statique ou dynamique** - Si la valeur de la clé est un objet complexe, c.-à-d. soit un objet, soit un tableau d’objets, déterminez si elle est susceptible d’évoluer. Les objets qui reçoivent rarement de nouvelles clés, pour lesquels l’ajout d’une nouvelle clé peut être anticipé et géré par une modification du schéma via [`ALTER TABLE ADD COLUMN`](/fr/reference/statements/alter/column#add-column), peuvent être considérés comme **statiques**. Cela inclut les objets pour lesquels seul un sous-ensemble des clés peut être fourni dans certains documents JSON. Les objets auxquels de nouvelles clés sont ajoutées fréquemment et/ou de manière imprévisible doivent être considérés comme **dynamiques**. **L’exception concerne ici les structures comportant des centaines ou des milliers de sous-clés, qui peuvent être considérées comme dynamiques par souci de simplicité**.
+
+Pour déterminer si une valeur est **statique** ou **dynamique**, consultez les sections correspondantes [**Gestion des objets statiques**](/fr/guides/clickhouse/data-formats/json/schema#handling-static-structures) et [**Gestion des objets dynamiques**](/fr/guides/clickhouse/data-formats/json/schema#handling-semi-structured-dynamic-structures) ci-dessous.
+
+<p />
+
+**Important :** Les règles ci-dessus doivent être appliquées récursivement. Si la valeur d’une clé est jugée dynamique, aucune évaluation supplémentaire n’est nécessaire et vous pouvez suivre les recommandations de [**Gestion des objets dynamiques**](/fr/guides/clickhouse/data-formats/json/schema#handling-semi-structured-dynamic-structures). Si l’objet est statique, continuez à évaluer les sous-clés jusqu’à rencontrer soit des valeurs primitives, soit des clés dynamiques.
+
+Pour illustrer ces règles, nous utilisons l’exemple JSON suivant représentant une personne :
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics",
+    "labels": {
+      "type": "database systems",
+      "founded": "2021"
+    }
+  },
+  "dob": "2007-03-31",
+  "tags": {
+    "hobby": "Databases",
+    "holidays": [
+      {
+        "year": 2024,
+        "location": "Azores, Portugal"
+      }
+    ],
+    "car": {
+      "model": "Tesla",
+      "year": 2023
+    }
+  }
+}
+```
+
+En appliquant ces règles :
+
+* Les clés racines `name`, `username`, `email`, `website` peuvent être représentées par le type `String`. La colonne `phone_numbers` est une primitive `Array` de type `Array(String)`, tandis que `dob` et `id` sont de type `Date` et `UInt32`, respectivement.
+* Aucune nouvelle clé ne sera ajoutée à l’objet `address` (seuls de nouveaux objets d’adresse pourront l’être) ; il peut donc être considéré comme **statique**. Si l’on descend récursivement, toutes les sous-colonnes peuvent être considérées comme des primitives (et de type `String`), à l’exception de `geo`. Il s’agit également d’une structure statique avec deux colonnes `Float32`, `lat` et `lon`.
+* La colonne `tags` est **dynamique**. Nous supposons que de nouveaux tags arbitraires, de tout type et de toute structure, peuvent être ajoutés à cet objet.
+* L’objet `company` est **statique** et contiendra toujours au plus les 3 clés indiquées. Les sous-clés `name` et `catchPhrase` sont de type `String`. La clé `labels` est **dynamique**. Nous supposons que de nouveaux tags arbitraires peuvent être ajoutés à cet objet. Les valeurs seront toujours des paires clé-valeur de type chaîne.
+
+<Note>
+  Les structures comportant des centaines ou des milliers de clés statiques peuvent être considérées comme dynamiques, car il est rarement envisageable d’en déclarer statiquement les colonnes. Cependant, lorsque c’est possible, [ignorez les chemins](#using-type-hints-and-skipping-paths) inutiles afin de réduire à la fois le stockage et le surcoût lié à l’inférence.
+</Note>
+
+<div id="handling-static-structures">
+  ## Gestion des structures statiques
+</div>
+
+Nous recommandons de gérer les structures statiques à l’aide de tuples nommés, c’est-à-dire `Tuple`. Les tableaux d’objets peuvent être stockés sous forme de tableaux de tuples, c’est-à-dire `Array(Tuple)`. Au sein même des tuples, les colonnes et leurs types respectifs doivent être définis selon les mêmes règles. Cela peut conduire à des Tuples imbriqués pour représenter des objets imbriqués, comme illustré ci-dessous.
+
+Pour l’illustrer, nous reprenons l’exemple JSON de personne présenté précédemment, en omettant les objets dynamiques :
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+Le schéma de cette table est présenté ci-dessous :
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String),
+    `dob` Date
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+Notez que la colonne `company` est définie comme un `Tuple(catchPhrase String, name String)`. La clé `address` utilise un `Array(Tuple)`, avec un `Tuple` imbriqué pour représenter la colonne `geo`.
+
+Le JSON peut être inséré dans cette table avec sa structure actuelle :
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+```
+
+Dans notre exemple ci-dessus, nous avons peu de données, mais comme indiqué ci-dessous, nous pouvons interroger les colonnes du tuple à l’aide de leurs noms séparés par des points.
+
+```sql
+SELECT
+ address.street,
+ company.name
+FROM people
+```
+
+```response
+┌─address.street────┬─company.name─┐
+│ ['Victor Plains'] │ ClickHouse   │
+└───────────────────┴──────────────┘
+```
+
+Notez que la colonne `address.street` est renvoyée en tant qu&#39;`Array`. Pour interroger un objet précis dans un tableau en fonction de sa position, il faut indiquer l&#39;indice du tableau après le nom de la colonne. Par exemple, pour accéder à la rue de la première adresse :
+
+```sql
+SELECT address.street[1] AS street
+FROM people
+```
+
+```response
+┌─street────────┐
+│ Victor Plains │
+└───────────────┘
+
+1 row in set. Elapsed: 0.001 sec.
+```
+
+Les sous-colonnes peuvent aussi être utilisées dans les clés de tri à partir de la version [`24.12`](https://clickhouse.com/blog/clickhouse-release-24-12#json-subcolumns-as-table-primary-key) :
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String),
+    `dob` Date
+)
+ENGINE = MergeTree
+ORDER BY company.name
+```
+
+<div id="handling-default-values">
+  ### Gestion des valeurs par défaut
+</div>
+
+Même si les objets JSON sont structurés, ils sont souvent peu renseignés et seul un sous-ensemble des clés connues est fourni. Heureusement, le type `Tuple` n’exige pas que toutes les colonnes soient présentes dans la charge utile JSON. Si elles ne sont pas fournies, des valeurs par défaut seront utilisées.
+
+Prenons notre table `people` précédente et le JSON partiel suivant, dans lequel les clés `suite`, `geo`, `phone_numbers` et `catchPhrase` sont absentes.
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771"
+    }
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+On peut voir ci-dessous que cette ligne peut être insérée avec succès :
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","city":"Wisokyburgh","zipcode":"90566-7771"}],"website":"clickhouse.com","company":{"name":"ClickHouse"},"dob":"2007-03-31"}
+```
+
+```response
+Ok.
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+En interrogeant cette ligne unique, nous pouvons constater que des valeurs par défaut sont utilisées pour les colonnes (y compris les sous-objets) qui ont été omises :
+
+```sql
+SELECT *
+FROM people
+FORMAT PrettyJSONEachRow
+
+{
+  "id": "1",
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "city": "Wisokyburgh",
+      "geo": {
+        "lat": 0,
+        "lng": 0
+      },
+      "street": "Victor Plains",
+      "suite": "",
+      "zipcode": "90566-7771"
+    }
+  ],
+  "phone_numbers": [],
+  "website": "clickhouse.com",
+  "company": {
+    "catchPhrase": "",
+    "name": "ClickHouse"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+```response
+1 row in set. Elapsed: 0.001 sec.
+```
+
+<Info>
+  **Différencier les valeurs vides et nulles**
+
+  Si vous devez distinguer une valeur vide d’une valeur non fournie, vous pouvez utiliser le type [Nullable](/fr/reference/data-types/nullable). Cette approche [est à éviter](/fr/concepts/best-practices/select-data-type#avoid-nullable-columns) sauf en cas de nécessité absolue, car elle a un impact négatif sur le stockage et les performances des requêtes pour ces colonnes.
+</Info>
+
+<div id="handling-new-columns">
+  ### Gestion des nouvelles colonnes
+</div>
+
+Bien qu’une approche structurée soit la plus simple lorsque les clés JSON sont statiques, elle peut également être utilisée si les modifications du schéma peuvent être planifiées, c’est-à-dire si les nouvelles clés sont connues à l’avance et que le schéma peut être modifié en conséquence.
+
+Notez que ClickHouse ignore par défaut les clés JSON fournies dans la charge utile et absentes du schéma. Prenons l’exemple de la charge utile JSON modifiée suivante, avec l’ajout d’une clé `nickname` :
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "nickname": "Clicky",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics"
+  },
+  "dob": "2007-03-31"
+}
+```
+
+Ce JSON peut être inséré avec succès en ignorant la clé `nickname` :
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","nickname":"Clicky","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+```
+
+```response
+Ok.
+
+1 row in set. Elapsed: 0.002 sec.
+```
+
+Des colonnes peuvent être ajoutées à un schéma à l’aide de la commande [`ALTER TABLE ADD COLUMN`](/fr/reference/statements/alter/column#add-column). Une valeur par défaut peut être spécifiée via la clause `DEFAULT` ; elle sera utilisée si elle n’est pas indiquée lors des insertions suivantes. Les lignes pour lesquelles cette valeur n’est pas présente (car elles ont été insérées avant sa création) renverront également cette valeur par défaut. Si aucune valeur `DEFAULT` n’est spécifiée, la valeur par défaut du type sera utilisée.
+
+Par exemple :
+
+```sql
+-- insert initial row (nickname will be ignored)
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","nickname":"Clicky","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+
+-- add column
+ALTER TABLE people
+ (ADD COLUMN `nickname` String DEFAULT 'no_nickname')
+
+-- insert new row (same data different id)
+INSERT INTO people FORMAT JSONEachRow
+{"id":2,"name":"Clicky McCliickHouse","nickname":"Clicky","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics"},"dob":"2007-03-31"}
+
+-- select 2 rows
+SELECT id, nickname FROM people
+```
+
+```response
+┌─id─┬─nickname────┐
+│  2 │ Clicky      │
+│  1 │ no_nickname │
+└────┴─────────────┘
+
+2 rows in set. Elapsed: 0.001 sec.
+```
+
+<div id="handling-semi-structured-dynamic-structures">
+  ## Gestion des structures semi-structurées/dynamiques
+</div>
+
+Si les données JSON sont semi-structurées, avec des clés qui peuvent être ajoutées dynamiquement et/ou avoir plusieurs types, le type [`JSON`](/fr/reference/data-types/newjson) est recommandé.
+
+Plus précisément, utilisez le type JSON lorsque vos données :
+
+* ont des **clés imprévisibles** susceptibles d’évoluer au fil du temps ;
+* contiennent des **valeurs de types variables** (par exemple, un chemin peut parfois contenir une chaîne, parfois un nombre) ;
+* nécessitent une flexibilité de schéma lorsqu’un typage strict n’est pas envisageable ;
+* comportent **des centaines, voire des milliers** de chemins statiques qu’il n’est tout simplement pas réaliste de déclarer explicitement. Ce cas reste toutefois rare.
+
+Reprenons notre [exemple précédent de JSON person](/fr/guides/clickhouse/data-formats/json/schema#static-vs-dynamic-json), dans lequel l’objet `company.labels` a été identifié comme dynamique.
+
+Supposons que `company.labels` contienne des clés arbitraires. De plus, le type de n’importe quelle clé de cette structure peut ne pas être cohérent d’une ligne à l’autre. Par exemple :
+
+```json
+{
+  "id": 1,
+  "name": "Clicky McCliickHouse",
+  "username": "Clicky",
+  "email": "clicky@clickhouse.com",
+  "address": [
+    {
+      "street": "Victor Plains",
+      "suite": "Suite 879",
+      "city": "Wisokyburgh",
+      "zipcode": "90566-7771",
+      "geo": {
+        "lat": -43.9509,
+        "lng": -34.4618
+      }
+    }
+  ],
+  "phone_numbers": [
+    "010-692-6593",
+    "020-192-3333"
+  ],
+  "website": "clickhouse.com",
+  "company": {
+    "name": "ClickHouse",
+    "catchPhrase": "The real-time data warehouse for analytics",
+    "labels": {
+      "type": "database systems",
+      "founded": "2021",
+      "employees": 250
+    }
+  },
+  "dob": "2007-03-31",
+  "tags": {
+    "hobby": "Databases",
+    "holidays": [
+      {
+        "year": 2024,
+        "location": "Azores, Portugal"
+      }
+    ],
+    "car": {
+      "model": "Tesla",
+      "year": 2023
+    }
+  }
+}
+```
+
+```json
+{
+  "id": 2,
+  "name": "Analytica Rowe",
+  "username": "Analytica",
+  "address": [
+    {
+      "street": "Maple Avenue",
+      "suite": "Apt. 402",
+      "city": "Dataford",
+      "zipcode": "11223-4567",
+      "geo": {
+        "lat": 40.7128,
+        "lng": -74.006
+      }
+    }
+  ],
+  "phone_numbers": [
+    "123-456-7890",
+    "555-867-5309"
+  ],
+  "website": "fastdata.io",
+  "company": {
+    "name": "FastData Inc.",
+    "catchPhrase": "Streamlined analytics at scale",
+    "labels": {
+      "type": [
+        "real-time processing"
+      ],
+      "founded": 2019,
+      "dissolved": 2023,
+      "employees": 10
+    }
+  },
+  "dob": "1992-07-15",
+  "tags": {
+    "hobby": "Running simulations",
+    "holidays": [
+      {
+        "year": 2023,
+        "location": "Kyoto, Japan"
+      }
+    ],
+    "car": {
+      "model": "Audi e-tron",
+      "year": 2022
+    }
+  }
+}
+```
+
+Compte tenu de la nature dynamique de la colonne `company.labels` d’un objet à l’autre, tant du point de vue des clés que des types, nous avons plusieurs options pour modéliser ces données :
+
+* **Colonne JSON unique** - représente l’ensemble du schéma dans une seule colonne `JSON`, ce qui permet à toutes les structures qu’elle contient d’être dynamiques.
+* **Colonne JSON ciblée** - utilise uniquement le type `JSON` pour la colonne `company.labels`, tout en conservant le schéma structuré présenté ci-dessus pour toutes les autres colonnes.
+
+Bien que la première approche [ne s’aligne pas sur la méthodologie précédente](#static-vs-dynamic-json), l’approche de la colonne JSON unique est utile pour le prototypage et les tâches d’ingénierie des données.
+
+Pour les déploiements de ClickHouse en production à grande échelle, nous recommandons de définir une structure précise et d’utiliser le type JSON pour les sous-structures dynamiques ciblées lorsque c’est possible.
+
+Un schéma strict présente plusieurs avantages :
+
+* **Validation des données** – l’application d’un schéma strict évite le risque d’explosion du nombre de colonnes, sauf pour certaines structures spécifiques.
+* **Évite le risque d’explosion du nombre de colonnes** - Bien que le type JSON puisse monter jusqu’à des milliers de colonnes, les sous-colonnes étant stockées comme des colonnes dédiées, cela peut entraîner une explosion du nombre de fichiers de colonnes, avec la création d’un nombre excessif de fichiers qui nuit aux performances. Pour atténuer ce problème, le [type Dynamic](/fr/reference/data-types/dynamic) sous-jacent utilisé par JSON propose un paramètre [`max_dynamic_paths`](/fr/reference/data-types/newjson#reading-json-paths-as-sub-columns), qui limite le nombre de chemins uniques stockés dans des fichiers de colonnes distincts. Une fois le seuil atteint, les chemins supplémentaires sont stockés dans un fichier de colonnes partagé à l’aide d’un format compact encodé, ce qui préserve les performances et l’efficacité du stockage tout en prenant en charge une ingestion de données flexible. L’accès à ce fichier de colonnes partagé est toutefois moins performant. Notez toutefois que la colonne JSON peut être utilisée avec des [indications de type](#using-type-hints-and-skipping-paths). Les colonnes « indiquées » offriront les mêmes performances que les colonnes dédiées.
+* **Introspection plus simple des chemins et des types** - Bien que le type JSON prenne en charge des [fonctions d’introspection](/fr/reference/data-types/newjson#introspection-functions) pour déterminer les types et les chemins qui ont été inférés, les structures statiques peuvent être plus simples à explorer, par exemple avec `DESCRIBE`.
+
+<div id="single-json-column">
+  ### Colonne JSON unique
+</div>
+
+Cette approche est utile pour le prototypage et les tâches d’ingénierie des données. En production, n’utilisez `JSON` que pour les sous-structures dynamiques, lorsque c’est nécessaire.
+
+<Info>
+  **Considérations relatives aux performances**
+
+  Une colonne JSON unique peut être optimisée en ignorant (c’est-à-dire sans stocker) les chemins JSON qui ne sont pas nécessaires et en utilisant des [indications de type](#using-type-hints-and-skipping-paths). Les indications de type permettent à l’utilisateur de définir explicitement le type d’une sous-colonne, évitant ainsi l’inférence et le traitement de l’indirection au moment de la requête. On peut ainsi obtenir les mêmes performances qu’avec un schéma explicite. Voir [« Using type hints and skipping paths »](#using-type-hints-and-skipping-paths) pour plus de détails.
+</Info>
+
+Le schéma d’une colonne JSON unique est simple :
+
+```sql
+SET enable_json_type = 1;
+
+CREATE TABLE people
+(
+    `json` JSON(username String)
+)
+ENGINE = MergeTree
+ORDER BY json.username;
+```
+
+<Note>
+  Nous fournissons une [indication de type](#using-type-hints-and-skipping-paths) pour la colonne `username` dans la définition JSON, car nous l’utilisons dans la clé de tri / clé primaire. Cela permet à ClickHouse de savoir que cette colonne ne sera pas NULL et de déterminer quelle sous-colonne `username` utiliser (il peut y en avoir plusieurs pour chaque type, ce qui serait sinon ambigu).
+</Note>
+
+L’insertion de lignes dans la table ci-dessus peut se faire à l’aide du format `JSONAsObject` :
+
+```sql
+INSERT INTO people FORMAT JSONAsObject 
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.028 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONAsObject
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.004 sec.
+```
+
+```sql
+SELECT *
+FROM people
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+json: {"address":[{"city":"Dataford","geo":{"lat":40.7128,"lng":-74.006},"street":"Maple Avenue","suite":"Apt. 402","zipcode":"11223-4567"}],"company":{"catchPhrase":"Streamlined analytics at scale","labels":{"dissolved":"2023","employees":"10","founded":"2019","type":["real-time processing"]},"name":"FastData Inc."},"dob":"1992-07-15","id":"2","name":"Analytica Rowe","phone_numbers":["123-456-7890","555-867-5309"],"tags":{"car":{"model":"Audi e-tron","year":"2022"},"hobby":"Running simulations","holidays":[{"location":"Kyoto, Japan","year":"2023"}]},"username":"Analytica","website":"fastdata.io"}
+
+Row 2:
+──────
+json: {"address":[{"city":"Wisokyburgh","geo":{"lat":-43.9509,"lng":-34.4618},"street":"Victor Plains","suite":"Suite 879","zipcode":"90566-7771"}],"company":{"catchPhrase":"The real-time data warehouse for analytics","labels":{"employees":"250","founded":"2021","type":"database systems"},"name":"ClickHouse"},"dob":"2007-03-31","email":"clicky@clickhouse.com","id":"1","name":"Clicky McCliickHouse","phone_numbers":["010-692-6593","020-192-3333"],"tags":{"car":{"model":"Tesla","year":"2023"},"hobby":"Databases","holidays":[{"location":"Azores, Portugal","year":"2024"}]},"username":"Clicky","website":"clickhouse.com"}
+
+2 rows in set. Elapsed: 0.005 sec.
+```
+
+Nous pouvons déterminer les sous-colonnes inférées et leurs types à l’aide des [fonctions d’introspection](/fr/reference/data-types/newjson#introspection-functions). Par exemple :
+
+```sql
+SELECT JSONDynamicPathsWithTypes(json) AS paths
+FROM people
+FORMAT PrettyJsonEachRow
+
+{
+    "paths": {
+        "address": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "company.catchPhrase": "String",
+        "company.labels.employees": "Int64",
+        "company.labels.founded": "String",
+        "company.labels.type": "String",
+        "company.name": "String",
+        "dob": "Date",
+        "email": "String",
+        "id": "Int64",
+        "name": "String",
+        "phone_numbers": "Array(Nullable(String))",
+        "tags.car.model": "String",
+        "tags.car.year": "Int64",
+        "tags.hobby": "String",
+        "tags.holidays": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "website": "String"
+ }
+}
+{
+    "paths": {
+        "address": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "company.catchPhrase": "String",
+        "company.labels.dissolved": "Int64",
+        "company.labels.employees": "Int64",
+        "company.labels.founded": "Int64",
+        "company.labels.type": "Array(Nullable(String))",
+        "company.name": "String",
+        "dob": "Date",
+        "id": "Int64",
+        "name": "String",
+        "phone_numbers": "Array(Nullable(String))",
+        "tags.car.model": "String",
+        "tags.car.year": "Int64",
+        "tags.hobby": "String",
+        "tags.holidays": "Array(JSON(max_dynamic_types=16, max_dynamic_paths=256))",
+        "website": "String"
+ }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.009 sec.
+```
+
+Pour une liste complète des fonctions d’introspection, voir les [&quot;Fonctions d’introspection&quot;](/fr/reference/data-types/newjson#introspection-functions)
+
+[Les sous-chemins sont accessibles](/fr/reference/data-types/newjson#reading-json-paths-as-sub-columns) avec la notation `.` p. ex.
+
+```sql
+SELECT json.name, json.email FROM people
+```
+
+```response
+┌─json.name────────────┬─json.email────────────┐
+│ Analytica Rowe       │ ᴺᵁᴸᴸ                  │
+│ Clicky McCliickHouse │ clicky@clickhouse.com │
+└──────────────────────┴───────────────────────┘
+
+2 rows in set. Elapsed: 0.006 sec.
+```
+
+Notez que les colonnes absentes de certaines lignes sont renvoyées sous la forme de `NULL`.
+
+De plus, une sous-colonne distincte est créée pour les chemins de même type. Par exemple, il existe une sous-colonne pour `company.labels.type` en `String` et une autre en `Array(Nullable(String))`. Bien que les deux soient renvoyées lorsque c’est possible, nous pouvons cibler des sous-colonnes spécifiques à l’aide de la syntaxe `.:` :
+
+```sql
+SELECT json.company.labels.type
+FROM people
+```
+
+```response
+┌─json.company.labels.type─┐
+│ database systems         │
+│ ['real-time processing'] │
+└──────────────────────────┘
+
+2 rows in set. Elapsed: 0.007 sec.
+```
+
+```sql
+SELECT json.company.labels.type.:String
+FROM people
+```
+
+```response
+┌─json.company⋯e.:`String`─┐
+│ ᴺᵁᴸᴸ                     │
+│ database systems         │
+└──────────────────────────┘
+
+2 rows in set. Elapsed: 0.009 sec.
+```
+
+Pour renvoyer des sous-objets imbriqués, le caractère `^` est nécessaire. Il s’agit d’un choix de conception destiné à éviter de lire un grand nombre de colonnes, sauf demande explicite. Les objets auxquels on accède sans `^` renverront `NULL`, comme indiqué ci-dessous :
+
+```sql
+-- sub objects will not be returned by default
+SELECT json.company.labels
+FROM people
+```
+
+```response
+┌─json.company.labels─┐
+│ ᴺᵁᴸᴸ                │
+│ ᴺᵁᴸᴸ                │
+└─────────────────────┘
+
+2 rows in set. Elapsed: 0.002 sec.
+```
+
+```sql
+-- return sub objects using ^ notation
+SELECT json.^company.labels
+FROM people
+```
+
+```response
+┌─json.^`company`.labels─────────────────────────────────────────────────────────────────┐
+│ {"employees":"250","founded":"2021","type":"database systems"}                         │
+│ {"dissolved":"2023","employees":"10","founded":"2019","type":["real-time processing"]} │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="targeted-json-column">
+  ### Colonne JSON ciblée
+</div>
+
+Bien qu&#39;utile pour le prototypage et les tâches d&#39;ingénierie des données, nous recommandons d&#39;utiliser un schéma explicite en production dans la mesure du possible.
+
+Notre exemple précédent peut être modélisé avec une seule colonne `JSON` pour la colonne `company.labels`.
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(city String, geo Tuple(lat Float32, lng Float32), street String, suite String, zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(catchPhrase String, name String, labels JSON),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+Nous pouvons insérer des données dans cette table en utilisant le format `JSONEachRow` :
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.450 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.440 sec.
+```
+
+```sql
+SELECT *
+FROM people
+FORMAT Vertical
+```
+
+```response
+Row 1:
+──────
+id:            2
+name:          Analytica Rowe
+username:      Analytica
+email:
+address:       [('Dataford',(40.7128,-74.006),'Maple Avenue','Apt. 402','11223-4567')]
+phone_numbers: ['123-456-7890','555-867-5309']
+website:       fastdata.io
+company:       ('Streamlined analytics at scale','FastData Inc.','{"dissolved":"2023","employees":"10","founded":"2019","type":["real-time processing"]}')
+dob:           1992-07-15
+tags:          {"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}
+
+Row 2:
+──────
+id:            1
+name:          Clicky McCliickHouse
+username:      Clicky
+email:         clicky@clickhouse.com
+address:       [('Wisokyburgh',(-43.9509,-34.4618),'Victor Plains','Suite 879','90566-7771')]
+phone_numbers: ['010-692-6593','020-192-3333']
+website:       clickhouse.com
+company:       ('The real-time data warehouse for analytics','ClickHouse','{"employees":"250","founded":"2021","type":"database systems"}')
+dob:           2007-03-31
+tags:          {"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}
+
+2 rows in set. Elapsed: 0.005 sec.
+```
+
+Les [fonctions d&#39;introspection](/fr/reference/data-types/newjson#introspection-functions) permettent de déterminer les chemins et types inférés pour la colonne `company.labels`.
+
+```sql
+SELECT JSONDynamicPathsWithTypes(company.labels) AS paths
+FROM people
+FORMAT PrettyJsonEachRow
+
+{
+    "paths": {
+        "dissolved": "Int64",
+        "employees": "Int64",
+        "founded": "Int64",
+        "type": "Array(Nullable(String))"
+ }
+}
+{
+    "paths": {
+        "employees": "Int64",
+        "founded": "String",
+        "type": "String"
+ }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+<div id="using-type-hints-and-skipping-paths">
+  ### Utilisation des indications de type et des chemins à ignorer
+</div>
+
+Les indications de type permettent de spécifier le type d’un chemin et de sa sous-colonne, ce qui évite une inférence de type inutile. Prenons l’exemple suivant, dans lequel nous définissons les types des clés JSON `dissolved`, `employees` et `founded` dans la colonne JSON `company.labels`
+
+```sql
+CREATE TABLE people
+(
+    `id` Int64,
+    `name` String,
+    `username` String,
+    `email` String,
+    `address` Array(Tuple(
+        city String,
+        geo Tuple(
+            lat Float32,
+            lng Float32),
+        street String,
+        suite String,
+        zipcode String)),
+    `phone_numbers` Array(String),
+    `website` String,
+    `company` Tuple(
+        catchPhrase String,
+        name String,
+        labels JSON(dissolved UInt16, employees UInt16, founded UInt16)),
+    `dob` Date,
+    `tags` String
+)
+ENGINE = MergeTree
+ORDER BY username
+```
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.450 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONEachRow
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.440 sec.
+```
+
+Remarquez que ces colonnes ont désormais les types explicites que nous avons définis :
+
+```sql
+SELECT JSONAllPathsWithTypes(company.labels) AS paths
+FROM people
+FORMAT PrettyJsonEachRow
+
+{
+    "paths": {
+        "dissolved": "UInt16",
+        "employees": "UInt16",
+        "founded": "UInt16",
+        "type": "String"
+ }
+}
+{
+    "paths": {
+        "dissolved": "UInt16",
+        "employees": "UInt16",
+        "founded": "UInt16",
+        "type": "Array(Nullable(String))"
+ }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.003 sec.
+```
+
+De plus, nous pouvons ignorer des chemins dans le JSON que nous ne voulons pas stocker à l’aide des paramètres [`SKIP` et `SKIP REGEXP`](/fr/reference/data-types/newjson), afin de réduire le stockage et d’éviter une inférence inutile sur des chemins dont nous n’avons pas besoin. Par exemple, supposons que nous utilisions une seule colonne JSON pour les données ci-dessus. Nous pouvons ignorer les chemins `address` et `company` :
+
+```sql
+CREATE TABLE people
+(
+    `json` JSON(username String, SKIP address, SKIP company)
+)
+ENGINE = MergeTree
+ORDER BY json.username
+
+INSERT INTO people FORMAT JSONAsObject
+{"id":1,"name":"Clicky McCliickHouse","username":"Clicky","email":"clicky@clickhouse.com","address":[{"street":"Victor Plains","suite":"Suite 879","city":"Wisokyburgh","zipcode":"90566-7771","geo":{"lat":-43.9509,"lng":-34.4618}}],"phone_numbers":["010-692-6593","020-192-3333"],"website":"clickhouse.com","company":{"name":"ClickHouse","catchPhrase":"The real-time data warehouse for analytics","labels":{"type":"database systems","founded":"2021","employees":250}},"dob":"2007-03-31","tags":{"hobby":"Databases","holidays":[{"year":2024,"location":"Azores, Portugal"}],"car":{"model":"Tesla","year":2023}}}
+
+1 row in set. Elapsed: 0.450 sec.
+```
+
+```sql
+INSERT INTO people FORMAT JSONAsObject
+{"id":2,"name":"Analytica Rowe","username":"Analytica","address":[{"street":"Maple Avenue","suite":"Apt. 402","city":"Dataford","zipcode":"11223-4567","geo":{"lat":40.7128,"lng":-74.006}}],"phone_numbers":["123-456-7890","555-867-5309"],"website":"fastdata.io","company":{"name":"FastData Inc.","catchPhrase":"Streamlined analytics at scale","labels":{"type":["real-time processing"],"founded":2019,"dissolved":2023,"employees":10}},"dob":"1992-07-15","tags":{"hobby":"Running simulations","holidays":[{"year":2023,"location":"Kyoto, Japan"}],"car":{"model":"Audi e-tron","year":2022}}}
+
+1 row in set. Elapsed: 0.440 sec.
+```
+
+Notez que nos colonnes ont été exclues des données :
+
+```sql
+SELECT *
+FROM people
+FORMAT PrettyJSONEachRow
+
+{
+    "json": {
+        "dob" : "1992-07-15",
+        "id" : "2",
+        "name" : "Analytica Rowe",
+        "phone_numbers" : [
+            "123-456-7890",
+            "555-867-5309"
+        ],
+        "tags" : {
+            "car" : {
+                "model" : "Audi e-tron",
+                "year" : "2022"
+            },
+            "hobby" : "Running simulations",
+            "holidays" : [
+                {
+                    "location" : "Kyoto, Japan",
+                    "year" : "2023"
+                }
+            ]
+        },
+        "username" : "Analytica",
+        "website" : "fastdata.io"
+    }
+}
+{
+    "json": {
+        "dob" : "2007-03-31",
+        "email" : "clicky@clickhouse.com",
+        "id" : "1",
+        "name" : "Clicky McCliickHouse",
+        "phone_numbers" : [
+            "010-692-6593",
+            "020-192-3333"
+        ],
+        "tags" : {
+            "car" : {
+                "model" : "Tesla",
+                "year" : "2023"
+            },
+            "hobby" : "Databases",
+            "holidays" : [
+                {
+                    "location" : "Azores, Portugal",
+                    "year" : "2024"
+                }
+            ]
+        },
+        "username" : "Clicky",
+        "website" : "clickhouse.com"
+    }
+}
+```
+
+```response
+2 rows in set. Elapsed: 0.004 sec.
+```
+
+<div id="optimizing-performance-with-type-hints">
+  #### Optimiser les performances avec des indications de type
+</div>
+
+Les indications de type ne servent pas seulement à éviter une inférence de type inutile : elles suppriment entièrement l’indirection liée au stockage et au traitement, tout en permettant de spécifier des [types primitifs optimaux](/fr/guides/clickhouse/data-modelling/schema-design#optimizing-types). Les chemins JSON dotés d’indications de type sont toujours stockés comme des colonnes traditionnelles, ce qui évite d’avoir recours à des [**colonnes discriminantes**](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data) ou à une résolution dynamique au moment de l’exécution des requêtes.
+
+Cela signifie qu’avec des indications de type bien définies, les clés JSON imbriquées offrent les mêmes performances et la même efficacité que si elles avaient été modélisées dès le départ comme des colonnes de premier niveau.
+
+Ainsi, pour les jeux de données globalement cohérents qui bénéficient malgré tout de la flexibilité de JSON, les indications de type constituent un moyen pratique de préserver les performances sans avoir à restructurer votre schéma ni votre pipeline d’ingestion.
+
+<div id="configuring-dynamic-paths">
+  ### Configuration des chemins dynamiques
+</div>
+
+ClickHouse stocke chaque chemin JSON sous forme de sous-colonne dans une véritable structure columnar, ce qui permet de bénéficier des mêmes gains de performance qu’avec des colonnes traditionnelles — notamment la compression, le traitement accéléré par SIMD et des E/S disque minimales. Chaque combinaison unique de chemin et de type dans vos données JSON peut devenir son propre fichier de colonne sur disque.
+
+<Image img="/images/integrations/data-ingestion/data-formats/json_column_per_type.webp" size="md" alt="Une colonne par chemin JSON" />
+
+Par exemple, lorsque deux chemins JSON sont insérés avec des types différents, ClickHouse stocke les valeurs de chaque [type concret dans des sous-colonnes distinctes](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse#storage-extension-for-dynamically-changing-data). Ces sous-colonnes peuvent être consultées indépendamment, ce qui limite les E/S inutiles. Notez toutefois que lors de l’interrogation d’une colonne contenant plusieurs types, les valeurs sont toujours renvoyées sous la forme d’une seule réponse columnar.
+
+En outre, grâce aux offsets, ClickHouse garantit que ces sous-colonnes restent denses, sans stocker de valeurs par défaut pour les chemins JSON absents. Cette approche maximise la compression et réduit encore les E/S.
+
+<Image img="/images/integrations/data-ingestion/data-formats/json_offsets.webp" size="md" alt="Offsets JSON" />
+
+Cependant, dans les scénarios avec des structures JSON à forte cardinalité ou très variables — comme les pipelines de télémétrie, les logs ou les feature stores de machine learning — ce comportement peut entraîner une explosion du nombre de fichiers de colonnes. Chaque nouveau chemin JSON unique crée un nouveau fichier de colonne, et chaque variante de type sous ce chemin crée un fichier de colonne supplémentaire. Bien que cela soit optimal pour les performances de lecture, cela pose des difficultés opérationnelles : épuisement des descripteurs de fichiers, augmentation de l’utilisation mémoire et merges plus lents en raison d’un grand nombre de petits fichiers.
+
+Pour atténuer ce problème, ClickHouse introduit le concept de sous-colonne de débordement : une fois que le nombre de chemins JSON distincts dépasse un seuil, les chemins supplémentaires sont stockés dans un seul fichier partagé à l’aide d’un format compact encodé. Ce fichier reste interrogeable, mais ne bénéficie pas des mêmes caractéristiques de performance que les sous-colonnes dédiées.
+
+<Image img="/images/integrations/data-ingestion/data-formats/json_shared_column.webp" size="md" alt="Colonne JSON partagée" />
+
+Ce seuil est contrôlé par le paramètre [`max_dynamic_paths`](/fr/reference/data-types/newjson#reaching-the-limit-of-dynamic-paths-inside-json) dans la déclaration du type JSON.
+
+```sql
+CREATE TABLE logs
+(
+    payload JSON(max_dynamic_paths = 500)
+)
+ENGINE = MergeTree
+ORDER BY tuple();
+```
+
+**Évitez de définir ce paramètre sur une valeur trop élevée** - des valeurs élevées augmentent la consommation de ressources et réduisent l’efficacité. En règle générale, gardez-le en dessous de 10 000. Pour les charges de travail aux structures très dynamiques, utilisez des indications de type et des paramètres `SKIP` pour limiter ce qui est stocké.
+
+Pour les utilisateurs qui souhaitent en savoir plus sur l’implémentation de ce nouveau type de colonne, nous recommandons la lecture de notre article de blog détaillé [&quot;A New Powerful JSON Data Type for ClickHouse&quot;](https://clickhouse.com/blog/a-new-powerful-json-data-type-for-clickhouse).

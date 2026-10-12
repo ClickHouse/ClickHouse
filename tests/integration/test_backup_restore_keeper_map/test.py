@@ -1,4 +1,7 @@
-from time import sleep
+
+import os.path
+import uuid
+import zipfile
 
 import pytest
 
@@ -64,6 +67,46 @@ def new_backup_name(base_name):
     global backup_id_counter
     backup_id_counter += 1
     return f"Disk('backups', '{base_name}{backup_id_counter}')"
+
+
+def test_archive_copies_keeper_map_reference():
+    database_name = f"keeper_map_archive_{uuid.uuid4().hex}"
+    archive_name = f"{database_name}.zip"
+    backup_name = f"Disk('backups', '{archive_name}')"
+    expected = "".join(f"{i}\ttest{i}\n" for i in range(5))
+
+    try:
+        node1.query(f"CREATE DATABASE {database_name}")
+        for table in ("keeper1", "keeper2"):
+            node1.query(
+                f"CREATE TABLE {database_name}.{table} (key UInt64, value String) "
+                f"ENGINE=KeeperMap('/{database_name}/shared') PRIMARY KEY key"
+            )
+        node1.query(
+            f"INSERT INTO {database_name}.keeper1 "
+            "SELECT number, 'test' || toString(number) FROM numbers(5)"
+        )
+        node1.query(
+            f"BACKUP DATABASE {database_name} TO {backup_name} SETTINGS deduplicate_files=0"
+        )
+
+        archive_path = os.path.join(node1.cluster.instances_dir, "backups", archive_name)
+        with zipfile.ZipFile(archive_path) as archive:
+            contents = [
+                archive.read(f"data/{database_name}/{table}/data.bin")
+                for table in ("keeper1", "keeper2")
+            ]
+        assert contents[0]
+        assert contents[0] == contents[1]
+
+        node1.query(f"DROP DATABASE {database_name} SYNC")
+        node1.query(f"RESTORE DATABASE {database_name} FROM {backup_name}")
+        for table in ("keeper1", "keeper2"):
+            assert node1.query(
+                f"SELECT key, value FROM {database_name}.{table} ORDER BY key"
+            ) == expected
+    finally:
+        node1.query(f"DROP DATABASE IF EXISTS {database_name} SYNC")
 
 
 @pytest.mark.parametrize("deduplicate_files", [0, 1])

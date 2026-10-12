@@ -1,0 +1,33 @@
+---
+sidebarTitle: 'Langfuse'
+title: 'Langfuse'
+description: 'Comment Langfuse fournit l’observabilité et le traçage pour l’Agentic Data Stack'
+doc_type: 'guide'
+keywords: ['Agentic Data Stack', 'Langfuse', 'observabilité', 'traçage', 'LLM']
+---
+
+Langfuse est la **couche d’observabilité** de l’[Agentic Data Stack](/fr/products/agentic-data-stack/overview). Il enregistre ce que l’agent a fait dans LibreChat, ce qui vous permet de le déboguer, d’en mesurer la qualité et d’en suivre le coût. Basé sur OpenTelemetry, Langfuse fonctionne sur ClickHouse.
+
+<div id="trace">
+  ## Suivez et inspectez chaque exécution
+</div>
+
+Chaque conversation est capturée sous forme de [trace Langfuse](https://langfuse.com/docs/observability/overview) : les prompts, chaque appel d’outil (y compris le SQL exécuté par l’agent) et la réponse. Chaque trace enregistre aussi l’utilisation des tokens, le coût et la latence. Ouvrez une exécution pour voir ce qu’a fait l’agent et à quel endroit il a échoué. Triez par utilisateur et par session pour voir qui génère le plus de dépenses.
+
+<div id="evals">
+  ## Évaluer la qualité des résultats
+</div>
+
+Les résultats produits par les modèles sont non déterministes ; Langfuse vous permet donc d&#39;en mesurer la qualité au lieu de vous fier à des suppositions. Attribuez un score aux exécutions à l&#39;aide d&#39;une [annotation humaine](https://langfuse.com/docs/evaluation/evaluation-methods/annotation) ou d&#39;un évaluateur automatisé de type [LLM-as-a-judge](https://langfuse.com/docs/evaluation/evaluation-methods/llm-as-a-judge), par exemple pour signaler qu&#39;une réponse est incorrecte ou qu&#39;une analyse n&#39;est pas utile.
+
+<div id="in-the-stack">
+  ## Dans la stack
+</div>
+
+La stack relie LibreChat à Langfuse, de sorte que chaque exécution soit automatiquement tracée, sans aucune instrumentation supplémentaire. Les traces sont stockées dans la propre instance ClickHouse de la stack, ce qui permet de conserver vos données d’observabilité aux côtés de celles que vous interrogez. Pour l’exécuter dans le cadre de la stack, consultez le [guide de configuration Docker](/fr/products/agentic-data-stack/docker-setup).
+
+Pour envoyer des traces depuis une instance LibreChat autonome, ou pour utiliser un point de terminaison Langfuse régional ou HIPAA, consultez le [guide complémentaire Langfuse](https://langfuse.com/integrations/agentic-data-stack). Pour en savoir plus sur Langfuse avec ClickHouse, consultez la [présentation de Langfuse](/fr/products/cloud/features/ai-ml/langfuse).
+
+<Info>
+  **Vous préférez une expérience gérée ?** [Langfuse Cloud](https://cloud.langfuse.com) est un déploiement entièrement géré, propulsé par un cluster ClickHouse géré — sans infrastructure à exploiter.
+</Info>

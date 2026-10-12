@@ -267,7 +267,6 @@ class DictionaryStructure(object):
             or_default = ""
             field_name = ""
             date_expr = ""
-            def_for_get = ""
         else:
             what = "Get"
 
@@ -400,8 +399,6 @@ class Dictionary(object):
                 </dictionary>
                 </clickhouse>
                 """.format(
-                        min_lifetime=self.min_lifetime,
-                        max_lifetime=self.max_lifetime,
                         name=self.name,
                         structure=self.structure.get_structure_str(),
                         source=self.source.get_source_str(self.table_name),

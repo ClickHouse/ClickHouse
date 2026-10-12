@@ -31,7 +31,7 @@ namespace YTsaurusSetting
 
 YTsaurusTableSourceStaticTable::YTsaurusTableSourceStaticTable(
     YTsaurusClientPtr client_, const String & cypress_path_, std::pair<size_t, size_t> rows_range_, const YTsaurusTableSourceOptions & source_options_, const SharedHeader & sample_block_, const UInt64 & max_block_size_)
-    : ISource(sample_block_)
+    : ISource(std::make_shared<const Block>(sample_block_->cloneEmpty()))
     , client(std::move(client_))
     , cypress_path(cypress_path_)
     , rows_range(std::move(rows_range_))
@@ -48,6 +48,9 @@ Chunk YTsaurusTableSourceStaticTable::generate()
     {
         FormatSettings format_settings{.skip_unknown_fields = source_options.settings[YTsaurusSetting::skip_unknown_columns]};
         format_settings.json.read_map_as_array_of_tuples = true;
+        /// YTsaurus stores `timestamp`/`timestamp64` as raw ticks (microseconds for the mapped `DateTime64(6)`), not as
+        /// Unix seconds, so an unquoted number must be read as the raw underlying value.
+        format_settings.read_datetime_number_as_raw_value = true;
         read_buffer = client->readTable(cypress_path, rows_range);
 
         json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
@@ -59,7 +62,7 @@ Chunk YTsaurusTableSourceStaticTable::generate()
 
 YTsaurusTableSourceDynamicTable::YTsaurusTableSourceDynamicTable(
     YTsaurusClientPtr client_, const String & cypress_path, const YTsaurusTableSourceOptions & source_options_, const SharedHeader & sample_block_, const UInt64 & max_block_size_)
-    : ISource(sample_block_)
+    : ISource(std::make_shared<const Block>(sample_block_->cloneEmpty()))
     , client(std::move(client_))
     , sample_block(sample_block_)
     , max_block_size(max_block_size_)
@@ -80,6 +83,9 @@ YTsaurusTableSourceDynamicTable::YTsaurusTableSourceDynamicTable(
     }
 
     format_settings.json.read_map_as_array_of_tuples = true;
+    /// YTsaurus stores `timestamp`/`timestamp64` as raw ticks (microseconds for the mapped `DateTime64(6)`), not as
+    /// Unix seconds, so an unquoted number must be read as the raw underlying value.
+    format_settings.read_datetime_number_as_raw_value = true;
     json_row_format = std::make_unique<JSONEachRowRowInputFormat>(
         *read_buffer.get(), sample_block, IRowInputFormat::Params({.max_block_size_rows = max_block_size}), format_settings, false);
 }
@@ -117,7 +123,7 @@ Pipe YTsaurusSourceFactory::createPipe(
     if (yt_node_type == YTsaurusNodeType::STATIC_TABLE)
     {
         auto rows_count = client->getTableNumberOfRows(cypress_path);
-        size_t max_streams_allowed;
+        size_t max_streams_allowed = 0;
 
         if (!max_streams)
             max_streams_allowed = settings[YTsaurusSetting::max_streams];
@@ -140,7 +146,7 @@ Pipe YTsaurusSourceFactory::createPipe(
         {
             size_t row_from = i * rows_batch_count;
             size_t row_to = (i + 1 == pipes_num) ? rows_count :  (i + 1) * rows_batch_count;
-            YTsaurusClientPtr client_for_source(new YTsaurusClient(*client));
+            auto client_for_source = std::make_shared<YTsaurusClient>(*client);
             pipes.emplace_back(std::make_shared<YTsaurusTableSourceStaticTable>(
                   client_for_source
                 , cypress_path

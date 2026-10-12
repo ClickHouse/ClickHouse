@@ -114,8 +114,11 @@ def test_jbod_load_balancing_least_used_next_disk(start_cluster):
 
             SYSTEM STOP MERGES data_least_used_next_disk;
 
-            -- 100MiB each part, 3 parts in total
-            INSERT INTO data_least_used_next_disk SELECT repeat('a', 100) FROM numbers(3e6) SETTINGS max_block_size='1Mi';
+            -- 100MiB each part, 3 parts in total.
+            -- max_insert_threads = 1 keeps the parts written one after another: with
+            -- concurrent writers a reserve can observe another part mid-write, and
+            -- which disk is least used at that moment is interleaving dependent.
+            INSERT INTO data_least_used_next_disk SELECT repeat('a', 100) FROM numbers(3e6) SETTINGS max_block_size='1Mi', max_insert_threads = 1;
         """
         )
 

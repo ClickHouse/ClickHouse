@@ -236,14 +236,14 @@ Positions: 4 1 0 2
         Positions: 2 0 2
         Filter column: and(equals(__table1.id, 5_UInt8), equals(__table1.id, 6_UInt8)) (removed)
         Actions: INPUT : 2 -> value String : 0
-                 INPUT : 1 -> id UInt64 : 1
-                 COLUMN Const(UInt8) -> 6_UInt8 UInt8 : 2
+                 COLUMN Const(UInt8) -> 6_UInt8 UInt8 : 1
+                 INPUT : 1 -> id UInt64 : 2
                  INPUT : 0 -> equals(__table1.id, 5_UInt8) UInt8 : 3
                  ALIAS value :: 0 -> __table1.value String : 4
-                 ALIAS id : 1 -> __table1.id UInt64 : 0
-                 FUNCTION equals(id :: 1, 6_UInt8 :: 2) -> equals(__table1.id, 6_UInt8) UInt8 : 5
-                 FUNCTION and(equals(__table1.id, 5_UInt8) :: 3, equals(__table1.id, 6_UInt8) :: 5) -> and(equals(__table1.id, 5_UInt8), equals(__table1.id, 6_UInt8)) UInt8 : 2
-        Positions: 2 0 4
+                 FUNCTION equals(id : 2, 6_UInt8 :: 1) -> equals(__table1.id, 6_UInt8) UInt8 : 0
+                 ALIAS id :: 2 -> __table1.id UInt64 : 1
+                 FUNCTION and(equals(__table1.id, 5_UInt8) :: 3, equals(__table1.id, 6_UInt8) :: 0) -> and(equals(__table1.id, 5_UInt8), equals(__table1.id, 6_UInt8)) UInt8 : 2
+        Positions: 2 1 4
           ReadFromMergeTree (default.test_table_1)
           Header: id UInt64
                   value String
@@ -266,14 +266,14 @@ Positions: 4 1 0 2
         Positions: 2 0 2
         Filter column: and(equals(__table2.id, 6_UInt8), equals(__table2.id, 5_UInt8)) (removed)
         Actions: INPUT : 2 -> value String : 0
-                 INPUT : 1 -> id UInt64 : 1
-                 COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 2
+                 COLUMN Const(UInt8) -> 5_UInt8 UInt8 : 1
+                 INPUT : 1 -> id UInt64 : 2
                  INPUT : 0 -> equals(__table2.id, 6_UInt8) UInt8 : 3
                  ALIAS value :: 0 -> __table2.value String : 4
-                 ALIAS id : 1 -> __table2.id UInt64 : 0
-                 FUNCTION equals(id :: 1, 5_UInt8 :: 2) -> equals(__table2.id, 5_UInt8) UInt8 : 5
-                 FUNCTION and(equals(__table2.id, 6_UInt8) :: 3, equals(__table2.id, 5_UInt8) :: 5) -> and(equals(__table2.id, 6_UInt8), equals(__table2.id, 5_UInt8)) UInt8 : 2
-        Positions: 2 0 4
+                 FUNCTION equals(id : 2, 5_UInt8 :: 1) -> equals(__table2.id, 5_UInt8) UInt8 : 0
+                 ALIAS id :: 2 -> __table2.id UInt64 : 1
+                 FUNCTION and(equals(__table2.id, 6_UInt8) :: 3, equals(__table2.id, 5_UInt8) :: 0) -> and(equals(__table2.id, 6_UInt8), equals(__table2.id, 5_UInt8)) UInt8 : 2
+        Positions: 2 1 4
           ReadFromMergeTree (default.test_table_2)
           Header: id UInt64
                   value String

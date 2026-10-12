@@ -31,7 +31,7 @@ struct IntExp10Impl
             if constexpr (std::is_floating_point_v<A>)
             {
                 if (std::isnan(a))
-                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "intExp2 must not be called with nan");
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "intExp10 must not be called with nan");
                 if (a < 0)
                     return 0;
                 if (a >= 20)

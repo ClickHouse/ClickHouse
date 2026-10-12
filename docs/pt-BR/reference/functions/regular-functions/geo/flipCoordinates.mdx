@@ -1,0 +1,97 @@
+---
+description: 'Documentação da função flipCoordinates'
+sidebarTitle: 'Inversão de coordenadas'
+slug: /sql-reference/functions/geo/flipCoordinates
+title: 'Inversão de coordenadas'
+doc_type: 'reference'
+---
+
+<div id="flipcoordinates">
+  ## flipCoordinates
+</div>
+
+A função `flipCoordinates` inverte as coordenadas de um ponto, anel, polígono ou multipolígono. Isso é útil, por exemplo, ao converter entre sistemas de coordenadas em que a ordem de latitude e longitude é diferente.
+
+```sql
+flipCoordinates(coordinates)
+```
+
+<div id="input-parameters">
+  ### Parâmetros de entrada
+</div>
+
+* `coordinates` — Uma tupla que representa um ponto `(x, y)` ou um Array dessas tuplas que representa um anel, polígono ou multipolígono. Os tipos de entrada compatíveis incluem:
+  * [**Point**](/pt-BR/reference/data-types/geo#point): Uma tupla `(x, y)` em que `x` e `y` são valores [Float64](/pt-BR/reference/data-types/float).
+  * [**Anel**](/pt-BR/reference/data-types/geo#ring): Um Array de pontos `[(x1, y1), (x2, y2), ...]`.
+  * [**Polígono**](/pt-BR/reference/data-types/geo#polygon): Um Array de anéis `[ring1, ring2, ...]`, em que cada anel é um Array de pontos.
+  * [**Multipolígono**](/pt-BR/reference/data-types/geo#multipolygon): Um Array de polígonos `[polygon1, polygon2, ...]`.
+
+<div id="returned-value">
+  ### Valor retornado
+</div>
+
+A função retorna a entrada com as coordenadas invertidas. Por exemplo:
+
+* Um ponto `(x, y)` passa a ser `(y, x)`.
+* Um anel `[(x1, y1), (x2, y2)]` passa a ser `[(y1, x1), (y2, x2)]`.
+* Estruturas aninhadas, como polígonos e multipolígonos, são processadas recursivamente.
+
+<div id="examples">
+  ### Exemplos
+</div>
+
+<div id="example-1">
+  #### Exemplo 1: Invertendo um único ponto
+</div>
+
+```sql
+SELECT flipCoordinates((10, 20)) AS flipped_point
+```
+
+```text
+┌─flipped_point─┐
+│ (20,10)       │
+└───────────────┘
+```
+
+<div id="example-2">
+  #### Exemplo 2: Invertendo um Array de pontos (Ring)
+</div>
+
+```sql
+SELECT flipCoordinates([(10, 20), (30, 40)]) AS flipped_ring
+```
+
+```text
+┌─flipped_ring──────────────┐
+│ [(20,10),(40,30)]         │
+└───────────────────────────┘
+```
+
+<div id="example-3">
+  #### Exemplo 3: Invertendo um Polígono
+</div>
+
+```sql
+SELECT flipCoordinates([[(10, 20), (30, 40)], [(50, 60), (70, 80)]]) AS flipped_polygon
+```
+
+```text
+┌─flipped_polygon──────────────────────────────┐
+│ [[(20,10),(40,30)],[(60,50),(80,70)]]        │
+└──────────────────────────────────────────────┘
+```
+
+<div id="example-4">
+  #### Exemplo 4: Invertendo um multipolígono
+</div>
+
+```sql
+SELECT flipCoordinates([[[10, 20], [30, 40]], [[50, 60], [70, 80]]]) AS flipped_multipolygon
+```
+
+```text
+┌─flipped_multipolygon──────────────────────────────┐
+│ [[[20,10],[40,30]],[[60,50],[80,70]]]             │
+└───────────────────────────────────────────────────┘
+```

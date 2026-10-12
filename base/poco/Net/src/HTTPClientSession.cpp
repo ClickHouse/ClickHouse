@@ -283,7 +283,8 @@ std::ostream& HTTPClientSession::sendRequest(HTTPRequest& request, uint64_t * co
 			reconnect(connect_time);
         if (!request.has(HTTPMessage::CONNECTION))
             request.setKeepAlive(keepAlive);
-        if (keepAlive && !request.has(HTTPMessage::CONNECTION_KEEP_ALIVE) && _keepAliveTimeout.totalSeconds() > 0)
+        if (keepAlive && !request.getSuppressKeepAliveHeader() && !request.has(HTTPMessage::CONNECTION_KEEP_ALIVE)
+            && _keepAliveTimeout.totalSeconds() > 0)
             request.setKeepAliveTimeout(_keepAliveTimeout.totalSeconds(), _keepAliveMaxRequests);
 		if (!request.has(HTTPRequest::HOST) && !_host.empty())
 			request.setHost(_host, _port);
@@ -423,6 +424,36 @@ bool HTTPClientSession::peekResponse(HTTPResponse& response)
 	}
 	_responseReceived = response.getStatus() != HTTPResponse::HTTP_CONTINUE;
 	return !_responseReceived;
+}
+
+
+bool HTTPClientSession::receiveEarlyResponse(HTTPResponse& response)
+{
+	poco_assert (!_responseReceived);
+
+	/// Drops the unsent rest of the request, which rethrows the send error.
+	try
+	{
+		flushRequest();
+	}
+	catch (...)
+	{
+	}
+	clearException();
+
+	response.clear();
+	HTTPHeaderInputStream his(*this);
+	try
+	{
+		response.read(his);
+	}
+	catch (Exception&)
+	{
+		close();
+		return false;
+	}
+	_responseReceived = response.getStatus() != HTTPResponse::HTTP_CONTINUE;
+	return _responseReceived;
 }
 
 

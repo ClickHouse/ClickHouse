@@ -1,0 +1,7 @@
+ordinary aggregate over Nullable(Tuple) goes through the -Null wrapper
+(1,2)
+respect-nulls over a plain Tuple
+(0,0)
+respect-nulls over Nullable elements
+(NULL,NULL)	Tuple(Nullable(UInt64), Nullable(UInt64))
+errors

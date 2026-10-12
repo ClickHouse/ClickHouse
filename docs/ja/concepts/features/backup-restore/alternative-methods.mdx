@@ -1,0 +1,58 @@
+---
+description: 'バックアップまたは復元の代替方法の詳細'
+sidebarTitle: '代替方法'
+slug: /operations/backup/alternative_methods
+title: 'バックアップまたは復元の代替方法'
+doc_type: 'reference'
+---
+
+ClickHouse はデータをディスクに保存しているため、ディスクをバックアップする方法は数多くあります。
+ここでは、過去に利用されてきた代替手段の一部を紹介します。
+ユースケースによっては、こうした方法が適している場合があります。
+
+<div id="duplicating-source-data-somewhere-else">
+  ### ソースデータを別の場所に複製する
+</div>
+
+多くの場合、ClickHouse に取り込まれるデータは、[Apache Kafka](https://kafka.apache.org) のような永続的な
+キューを介して配信されます。この場合、ClickHouse への書き込みと並行して同じ
+データストリームを読み取り、別の場所のコールドストレージに保存する追加のサブスクライバー群を
+構成できます。ほとんどの企業では、推奨される標準的なコールドストレージがすでに決まっており、
+それはオブジェクトストアや、[HDFS](https://hadoop.apache.org/docs/stable/hadoop-project-dist/hadoop-hdfs/HdfsDesign.html) のような分散ファイルシステムであることが一般的です。
+
+<div id="filesystem-snapshots">
+  ### ファイルシステムのスナップショット
+</div>
+
+一部のローカルファイルシステムはスナップショット機能を備えています (たとえば [ZFS](https://en.wikipedia.org/wiki/ZFS)) 。
+ただし、ライブクエリを処理する用途には必ずしも最適ではありません。考えられる解決策の 1 つは、
+この種のファイルシステムを使う追加のレプリカを作成し、
+`SELECT` クエリに使用される [Distributed](/ja/reference/engines/table-engines/special/distributed) テーブルから
+それらを除外することです。
+このようなレプリカ上のスナップショットには、データを変更するクエリからアクセスできません。
+さらに、こうしたレプリカでは、server ごとに接続するディスク数を増やした
+特別なハードウェア構成を採用できる可能性があり、コスト効率も高くなります。
+
+データ量が少ない場合は、リモートテーブルに対する単純な `INSERT INTO ... SELECT ...`
+でも十分機能することがあります。
+
+<div id="manipulations-with-parts">
+  ### パーツの操作
+</div>
+
+ClickHouse では、`ALTER TABLE ... FREEZE PARTITION ...` クエリを使用して、
+テーブルのパーティションのローカルコピーを作成できます。これは `/var/lib/clickhouse/shadow/`
+フォルダへのハードリンクを使って実装されているため、通常、既存データのために追加のディスク容量を消費することはありません。作成された
+ファイルのコピーは ClickHouse サーバーによって管理されないため、そのまま残しておくこともできます。
+そうすれば、追加の外部システムを必要としないシンプルなバックアップになりますが、
+ハードウェア障害には依然として弱いままです。このため、
+それらを別の場所へリモートコピーしてから、ローカルコピーを削除するのが望ましいです。
+この用途には、分散ファイルシステムやオブジェクトストレージも引き続き有力な選択肢ですが、
+十分な容量を備えた通常のファイルサーバーでも問題なく使える場合があります
+(この場合、転送はネットワークファイルシステム、または場合によっては [rsync](https://en.wikipedia.org/wiki/Rsync) 経由で行われます) 。
+データは、`ALTER TABLE ... ATTACH PARTITION ...` を使用してバックアップから復元できます。
+
+パーティション操作に関連するクエリの詳細については、
+[`ALTER` ドキュメント](/ja/reference/statements/alter/partition)を参照してください。
+
+この方法を自動化するためのサードパーティーツールとして、[clickhouse-backup](https://github.com/AlexAkulov/clickhouse-backup) が利用できます。

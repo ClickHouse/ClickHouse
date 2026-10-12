@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 
 template <typename Impl, typename Name, bool is_injective = false>
-class FunctionStringToString : public IFunction
+class FunctionStringToString final : public IFunction
 {
 public:
     static constexpr auto name = Name::name;

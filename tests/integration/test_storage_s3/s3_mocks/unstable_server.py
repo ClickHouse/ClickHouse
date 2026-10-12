@@ -101,7 +101,10 @@ class RequestHandler(http.server.BaseHTTPRequestHandler):
                     break
 
         if self.path == "/root/slow_send_test.csv":
-            self.send_block_size = 81920
+            # Stream the whole dataset with a 1s stall after each block so the
+            # slow-GET path is still exercised. A 1 MiB block keeps the number
+            # of stalls (~17 for the full file) low enough to bound test time.
+            self.send_block_size = 1024 * 1024
 
             for c, i in enumerate(
                 range(self.from_bytes, self.end_bytes, self.send_block_size)

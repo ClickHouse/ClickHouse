@@ -5,12 +5,12 @@
 
 import os
 import zipfile
-from prometheus_test_utils import *
+from prometheus_test_utils import PRESETS_DIR, execute_query_via_http_api
 
 
 def download_preset(preset_name, host, port, path, query):
     print(f"Downloading preset {preset_name}")
-    data = execute_instant_query_with_http_api(host, port, path, query)
+    data = execute_query_via_http_api(host, port, path, query)
     data_bytes = data.encode()
     preset_fullname = os.path.join(PRESETS_DIR, preset_name)
     if preset_fullname.endswith(".zip"):

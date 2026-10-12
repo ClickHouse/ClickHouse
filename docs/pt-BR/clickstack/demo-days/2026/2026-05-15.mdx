@@ -1,0 +1,76 @@
+---
+slug: /use-cases/observability/clickstack/demo-days/2026/2026-05-15
+title: 'Demo days - 2026-05-15'
+sidebarTitle: '2026-05-15'
+description: 'Demo days do ClickStack de 2026-05-15'
+doc_type: 'guide'
+keywords: ['ClickStack', 'Demo days']
+---
+
+<div id="alerts-from-notebooks">
+  ## Alertas do Notebooks
+</div>
+
+*Demo de [@brandon-pereira](https://github.com/brandon-pereira)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/HIxCMDmdZ8o" title="reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Agora o Notebooks pode criar alertas. O mesmo fluxo do notebook que já cria dashboards automaticamente agora também configura um alerta para você, para que seja possível ir de &quot;aqui está uma consulta interessante&quot; para &quot;me chame quando isso disparar&quot; sem sair do notebook.
+
+Há uma ressalva importante. Temos vários webhooks predefinidos na equipe, mas, no momento, o notebook não faz perguntas complementares, então ele simplesmente escolhe o webhook que parece mais relevante em vez de deixar você escolher. Já existe um PR em andamento para dar ao Notebooks a capacidade de fazer perguntas complementares quando faltar contexto, então essa lacuna deve ser resolvida em breve.
+
+<div id="autocomplete-from-materialized-views">
+  ## Autocomplete a partir de visões materializadas
+</div>
+
+*Demonstração de [@knudtty](https://github.com/knudtty)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/iQf5EwktBW4" title="Player de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Há algum tempo, adicionamos visões materializadas para dar suporte ao autocomplete de atributos na barra de busca, o que fez os valores aparecerem instantaneamente, em vez de serem calculados na hora. Agora estamos usando essas mesmas MVs para alimentar os filtros laterais, o que significa que eles carregam muito mais rápido em instâncias com alta atividade.
+
+Há uma mudança de comportamento que vale destacar. Os filtros baseados em MV retornam todos os valores de filtro possíveis dentro do intervalo de tempo atual, em vez de ficarem limitados à sua consulta atual. Há um botão de alternância para voltar aos filtros limitados à busca, que executam a agregação mais lenta sobre seus resultados em tempo real. O valor padrão de `filterValueExpandedKeyLimit` também foi aumentado: 20 chaves sem MVs, 100 chaves com elas, configurável até o valor que você quiser (testamos com 1000).
+
+A MV é relativamente barata de manter; ela está rodando na nossa instância de staging sobre um grande volume de dados e tem se comportado bem. A mesma MV alimenta o autocomplete de atributos e a expansão da coluna map, então você ganha esse aumento de velocidade em vários pontos depois que ela é configurada. Surgiu uma discussão na demonstração sobre se o botão de alternância entre filtros limitados à busca e todos os filtros deveria virar um seletor em formato de pílula no topo do painel de filtros, em vez de ficar nas configurações; isso é algo que estamos avaliando para uma próxima atualização.
+
+**PRs relacionados:** [#2272](https://github.com/hyperdxio/hyperdx/pull/2272) feat: os filtros não consideram a busca por padrão; acelerado por MV
+
+<div id="table-column-ordering-and-per-series-formatting">
+  ## Ordenação das colunas da tabela e formatação por série
+</div>
+
+*Demo por [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/iEn8kzvERE8" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+Algumas melhorias relacionadas a tabelas foram lançadas juntas. Agora, as colunas de agrupamento podem ser fixadas no lado esquerdo da tabela, em vez de sempre serem exibidas à direita — o que geralmente é o desejado em dashboards no estilo RED, nos quais o nome do serviço é o principal item que você observa. Há uma configuração de exibição por tabela para controlar esse comportamento.
+
+Agora também há suporte a formatos numéricos por série. O comportamento anterior aplicava um único formato numérico à tabela inteira, o que significava que uma coluna Requests seria exibida como `123ms` se a tabela tivesse qualquer série formatada em milissegundos. Agora você pode definir um formato por coluna ou por série, para que as contagens de requisições permaneçam como números simples, enquanto as colunas de latência sejam formatadas como durações.
+
+Além disso, a inferência de formato agora é feita por série. Se você agregar pelo campo Trace Duration, essa série específica será inferida como milissegundos; o restante da tabela não será arrastado para a formatação em milissegundos só porque uma coluna é uma duração.
+
+**PRs relacionados:** [#2149](https://github.com/hyperdxio/hyperdx/pull/2149) feat: Permitir exibir colunas de agrupamento no lado esquerdo da tabela, [#2174](https://github.com/hyperdxio/hyperdx/pull/2174) feat: Adicionar formatos numéricos por série
+
+<div id="customizable-dashboard-linking">
+  ## Links personalizáveis entre dashboards
+</div>
+
+*Demonstração de [@pulpdrew](https://github.com/pulpdrew)*
+
+<Frame>
+  <iframe src="https://www.youtube.com/embed/Stlz02xES40" title="Reprodutor de vídeo do YouTube" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" referrerpolicy="strict-origin-when-cross-origin" allowfullscreen />
+</Frame>
+
+As tabelas do dashboard agora podem criar links para outros dashboards (ou para a busca) ao clicar em uma linha, com templates configuráveis tanto para o destino quanto para os filtros que são repassados. Na configuração do tile de tabela, há uma nova opção de &quot;ação ao clicar na linha&quot;. Escolha &quot;dashboard&quot;, selecione o dashboard para o qual deseja criar o link e, em seguida, mapeie filtros da linha atual para filtros no dashboard de destino. Os valores de filtro usam templates no estilo Handlebars, então você pode extrair qualquer valor de coluna da linha clicada para o filtro de destino ou para a cláusula WHERE (em SQL ou Lucene). O exemplo mostrado na demonstração conecta uma lista de serviços para que, ao clicar em uma linha, você seja levado ao dashboard de detalhes do serviço com `service.name` já filtrado.
+
+Em vez de escolher um dashboard de destino específico, você pode aplicar template ao próprio nome do dashboard. Assim, se você tiver dashboards por serviço com nomes como `${service.name} dashboard`, o link pode ser resolvido para aquele que corresponder à linha clicada. Há tratamento de erro caso o dashboard gerado pelo template não exista: uma notificação é exibida em vez de navegar para uma página quebrada.
+
+Há suporte para várias variáveis: você pode passar qualquer combinação de colunas da linha clicada para o conjunto de filtros ou para o nome do dashboard gerado por template. O Handlebars tem helpers dinâmicos e blocos condicionais, mas a maioria deles está desabilitada por enquanto para manter tudo mais enxuto e previsível. O fluxo de importação também foi atualizado: dashboards que criam links para outros dashboards por ID agora podem ter essas referências remapeadas durante a importação para o dashboard existente na conta de destino.
+
+**PRs relacionadas:** [#2146](https://github.com/hyperdxio/hyperdx/pull/2146) feat: Adicionar template de filtro a dashboard personalizado ao clicar, [#2148](https://github.com/hyperdxio/hyperdx/pull/2148) feat: Adicionar suporte a importação/exportação para onClicks de dashboard, [#2156](https://github.com/hyperdxio/hyperdx/pull/2156) feat: Adicionar campo personalizado de onClick à API de dashboards externos, [#2273](https://github.com/hyperdxio/hyperdx/pull/2273) feat: Adicionar onClick de tabela de dashboard aos schemas e prompts do MCP

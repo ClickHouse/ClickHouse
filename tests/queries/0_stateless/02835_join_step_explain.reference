@@ -103,7 +103,7 @@ Positions: 4 0 1 2
             __table2.value_1 String
     Type: INNER
     Strictness: ASOF
-    Algorithm: HashJoin
+    Algorithm: ConcurrentHashJoin
     ASOF inequality: LESS
     Clauses: [(__table1.id, __table1.value_2) = (__table2.id, __table2.value_2)]
       Expression (Left Pre Join Actions)

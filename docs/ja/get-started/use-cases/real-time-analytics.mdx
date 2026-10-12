@@ -1,0 +1,71 @@
+---
+slug: /cloud/get-started/cloud/use-cases/real-time-analytics
+title: 'リアルタイム分析'
+description: 'ClickHouse Cloud を使用してリアルタイム分析アプリケーションを構築し、迅速なインサイトの獲得とデータに基づく意思決定を実現する方法を学びます'
+keywords: ['ユースケース', 'リアルタイム分析']
+sidebarTitle: 'リアルタイム分析'
+doc_type: 'guide'
+---
+
+import { Image } from "/snippets/ja/components/Image.jsx";
+
+export const ExclusiveGroup = ({ name, children }) => {
+  useEffect(() => {
+    document.querySelectorAll(`[data-eg="${name}"] details`).forEach(d =>
+      d.setAttribute('name', name)
+    );
+  });
+  return <div data-eg={name}>{children}</div>;
+};
+
+分析の文脈では、&quot;リアルタイム&quot; とは通常、ユーザー体験そのものがライブに感じられることを意味します。
+ユーザーはダッシュボードを更新したり、リーダーボードを開いたり、問題を調査したりする際に、データへ今起きたことが反映されていると期待します。
+技術的には、これは単に低レイテンシの分析クエリを提供するだけでなく、大量のデータが継続的に挿入されている状況でも、それを実現することを意味します。
+
+<div id="system-properties">
+  ## リアルタイム分析システムの特性
+</div>
+
+顧客がリアルタイム分析プラットフォームを評価する際、クエリレイテンシだけに注目しがちです。「50ms以内に答えを返せるか？」というのはもっともな問いであり、静的なデータセットに十分なコンピュートを投入すれば、たいていの分析エンジンはこれに十分説得力をもって答えられます。
+
+実際のユーザー体験を左右する問いは、もっと難しいものです。つまり、**1秒前に到着したデータに対して**、インジェストがまだ進行中で、ほかのユーザーも同時にクエリしている状況でも、システムが50msで答えを返せるかどうかです。
+
+データの可用性を考えるには、インサイトを得るまでのエンドツーエンドの時間を捉える必要があり、これには3つの要素があります。
+
+* **取り込みにかかる時間**: 新たに生成されたデータがプラットフォームに到達し、永続的に保存されるまでにどれくらい時間がかかるか。
+* **変換と準備にかかる時間**: クエリが実際に参照する構造 (materialized view、ロールアップ、索引) を、クレンジング、エンリッチ、結合、事前集計、更新できる状態にするまでにどれくらい時間がかかるか。
+* **クエリにかかる時間**: データが利用可能になってから、読み取りの計画と実行にどれくらい時間がかかるか。
+
+<Image img="/images/use-cases/rta-considerations.webp" alt="リアルタイム分析: 取り込み、変換、クエリにかかる時間" />
+
+<div id="clickhouse-rta">
+  ## ClickHouseがリアルタイム分析を支える仕組み
+</div>
+
+<Columns cols={2}>
+  <div>
+    <Image img="/images/use-cases/real-time-analytics-architecture.webp" alt="ClickHouseがリアルタイム分析を支える仕組み" />
+  </div>
+
+  <ExclusiveGroup name="rta-arch">
+    <AccordionGroup>
+      <Accordion title="データインジェスト" defaultOpen>
+        ClickHouse Cloud でのみ利用できる [ClickPipes](/ja/integrations/clickpipes/home) を使えば、大量のデータも容易に取り込める、すぐに使えるインテグレーションエンジンを利用できます。入力元のデータソースとフォーマットを選び、スキーマを調整すれば、あとはパイプラインに任せるだけです。
+
+        ClickHouse の豊富な [テーブルエンジン](/ja/reference/engines/table-engines) ライブラリは、Kafka トピック、S3 バケット、OLTP データベースなどからのデータ取り込みをサポートします。高スループットを得るために挿入をバッチ化する必要がある他の OLAP データベースとは異なり、ClickHouse は小さなペイロードも効率よく処理できます。[非同期挿入](/ja/concepts/features/operations/insert/asyncinserts) がそれらを自動的にバッチ化し、最適な書き込み性能を実現します。
+      </Accordion>
+
+      <Accordion title="データ変換とクエリ">
+        [materialized view](/ja/concepts/features/materialized-views) を使うと、データ変換をシームレスに行えます。新しいデータが挿入されると自動的にトリガーされ、専用のパイプラインを作り込むことなく、到着したデータを抽出・集約・加工します。これらを連結することで、モジュール型の柔軟性も高まります。
+
+        materialized view に対するクエリは、結果が専用のテーブルに保存されるため、非常に高速です。ClickHouse Cloud には、[クエリキャッシュ](/ja/concepts/features/performance/caches/query-cache)、[スパースインデックス](/ja/concepts/features/performance/skip-indexes/skipping-indexes)、および [projections](/ja/concepts/features/projections/projections) が追加料金なしで含まれています。
+      </Accordion>
+
+      <Accordion title="アプリケーションとダッシュボード">
+        ClickHouse は、金融サービス、ゲーム、e コマースなど、さまざまな分野のエンドユーザー向け分析を支えています。REST インターフェイスをサポートしているため、Web 開発者は複雑なバイナリプロトコルを使わずに軽量なアプリケーションを構築できます。
+
+        [Grafana](/ja/integrations/connectors/data-visualization/grafana)、[Tableau](/ja/integrations/connectors/data-visualization/tableau/tableau-and-clickhouse)、[Looker](/ja/integrations/connectors/data-visualization/looker-and-clickhouse) などの BI ツール向けネイティブコネクタに加え、ネイティブコネクタのないツール向けに、各種言語クライアント、SQL クライアント、さらに [MySQL wire protocol](/ja/concepts/features/interfaces/mysql) も利用できます。
+      </Accordion>
+    </AccordionGroup>
+  </ExclusiveGroup>
+</Columns>

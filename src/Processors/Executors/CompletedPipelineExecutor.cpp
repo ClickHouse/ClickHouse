@@ -1,5 +1,5 @@
 #include <Processors/Executors/CompletedPipelineExecutor.h>
-#include <Processors/Executors/PipelineExecutor.h>
+#include <Processors/Executors/Runtime/createExecutor.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <Poco/Event.h>
@@ -7,6 +7,7 @@
 #include <Common/ThreadPool.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
+#include <Common/ThreadGroupSwitcher.h>
 
 namespace DB
 {
@@ -18,7 +19,7 @@ namespace ErrorCodes
 
 struct CompletedPipelineExecutor::Data
 {
-    PipelineExecutorPtr executor;
+    ExecutorPtr executor;
     std::exception_ptr exception;
     std::atomic_bool is_finished = false;
     std::atomic_bool has_exception = false;
@@ -63,14 +64,23 @@ void CompletedPipelineExecutor::setCancelCallback(std::function<bool()> is_cance
     interactive_timeout_ms = interactive_timeout_ms_;
 }
 
+void CompletedPipelineExecutor::initialize()
+{
+    if (data)
+        return;
+
+    data = std::make_unique<Data>();
+    data->executor = createExecutor(pipeline.processors, pipeline.process_list_element);
+    data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
+    data->executor->setStepProfiler(pipeline.getStepProfiler());
+}
+
 void CompletedPipelineExecutor::execute()
 {
+    initialize();
+
     if (interactive_timeout_ms)
     {
-        data = std::make_unique<Data>();
-        data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
-        data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
-
         /// Avoid passing this to lambda, copy ptr to data instead.
         /// Destructor of unique_ptr copy raw ptr into local variable first, only then calls object destructor.
         auto func = [
@@ -90,9 +100,7 @@ void CompletedPipelineExecutor::execute()
                 break;
 
             if (is_cancelled_callback())
-            {
-                data->executor->cancel();
-            }
+                data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
         }
 
         if (data->has_exception)
@@ -100,20 +108,23 @@ void CompletedPipelineExecutor::execute()
     }
     else
     {
-        PipelineExecutor executor(pipeline.processors, pipeline.process_list_element);
-        executor.setReadProgressCallback(pipeline.getReadProgressCallback());
-        executor.execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+        data->executor->execute(pipeline.getNumThreads(), pipeline.getConcurrencyControl());
+        data->is_finished = true;
     }
+}
+
+void CompletedPipelineExecutor::cancel()
+{
+    /// Cancel execution if it wasn't finished.
+    if (data && !data->is_finished && data->executor)
+        data->executor->cancel(IProcessor::CancelReason::CancelledByUser);
 }
 
 CompletedPipelineExecutor::~CompletedPipelineExecutor()
 {
     try
     {
-        if (data && data->executor)
-        {
-            data->executor->cancel();
-        }
+        cancel();
     }
     catch (...)
     {

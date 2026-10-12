@@ -1,0 +1,469 @@
+---
+slug: /use-cases/observability/clickstack/deployment/helm-configuration
+title: 'Helm 구성'
+description: 'ClickStack Helm 배포를 위한 API Key, 시크릿, 인그레스 구성'
+doc_type: 'guide'
+keywords: ['ClickStack 구성', 'Helm 시크릿', 'API Key 설정', '인그레스 구성', 'TLS 설정']
+---
+
+<Warning>
+  **차트 버전 2.x**
+
+  이 페이지에서는 **v2.x** 서브차트 기반 Helm 차트를 설명합니다. 아직 v1.x 인라인 템플릿 차트를 사용 중이라면 [Helm 구성 (v1.x)](/ko/clickstack/deployment/helm-configuration-v1)을 참조하십시오. 마이그레이션 절차는 [업그레이드 가이드](/ko/clickstack/deployment/helm-upgrade)를 참조하십시오.
+</Warning>
+
+이 가이드에서는 ClickStack Helm 배포의 구성 옵션을 다룹니다. 기본 설치 방법은 [기본 Helm 배포 가이드](/ko/clickstack/deployment/helm)를 참조하십시오.
+
+<div id="values-organization">
+  ## values 구성
+</div>
+
+v2.x 차트는 `hyperdx:` 블록 아래에서 Kubernetes 리소스 유형별로 values를 구성합니다:
+
+```yaml
+hyperdx:
+  ports:          # 공유 포트 번호 (배포, Service, ConfigMap, 인그레스)
+    api: 8000
+    app: 3000
+    opamp: 4320
+
+  frontendUrl: "http://localhost:3000"
+
+  config:         # → clickstack-config ConfigMap (비민감 환경 변수)
+    APP_PORT: "3000"
+    HYPERDX_LOG_LEVEL: "info"
+
+  secrets:        # → clickstack-secret Secret (민감 환경 변수)
+    HYPERDX_API_KEY: "..."
+    CLICKHOUSE_PASSWORD: "otelcollectorpass"
+    CLICKHOUSE_APP_PASSWORD: "hyperdx"
+    MONGODB_PASSWORD: "hyperdx"
+
+  deployment:     # K8s 배포 스펙 (이미지, 레플리카, 프로브 등)
+  service:        # K8s Service 스펙 (유형, 어노테이션)
+  ingress:        # K8s 인그레스 스펙 (호스트, tls, 어노테이션)
+  podDisruptionBudget:  # K8s PDB 스펙
+  tasks:          # K8s CronJob 스펙
+```
+
+모든 환경 변수는 `envFrom`을 통해 HyperDX 배포 **및** OTel collector가 공유하는, 이름이 고정된 두 개의 리소스를 통해 전달됩니다:
+
+* **`clickstack-config`** ConfigMap — `hyperdx.config`로 채워집니다
+* **`clickstack-secret`** 시크릿 — `hyperdx.secrets`로 채워집니다
+
+더 이상 OTel 전용 ConfigMap이 별도로 존재하지 않습니다. 두 워크로드는 동일한 소스에서 값을 읽습니다.
+
+<div id="api-key-setup">
+  ## API Key 설정
+</div>
+
+ClickStack 배포가 완료되면 텔레메트리 데이터 수집을 활성화할 수 있도록 API Key를 구성하십시오:
+
+1. 구성된 인그레스 또는 서비스 엔드포인트를 통해 **HyperDX 인스턴스에 접속합니다**
+2. **HyperDX 대시보드에 로그인**한 다음 Team Settings로 이동하여 API Key를 생성하거나 확인합니다
+3. 다음 방법 중 하나를 사용하여 API Key로 **배포를 업데이트합니다**:
+
+<div id="api-key-values-file">
+  ### 방법 1: values file을 사용해 Helm upgrade로 업데이트
+</div>
+
+`values.yaml`에 API Key를 추가하세요:
+
+```yaml
+hyperdx:
+  secrets:
+    HYPERDX_API_KEY: "your-api-key-here"
+```
+
+그런 다음 배포를 업그레이드하세요:
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="api-key-set-flag">
+  ### 방법 2: --set 플래그를 사용해 Helm upgrade로 업데이트
+</div>
+
+```shell
+helm upgrade my-clickstack clickstack/clickstack \
+  --set hyperdx.secrets.HYPERDX_API_KEY="your-api-key-here"
+```
+
+<div id="restart-pods">
+  ### 변경 사항을 적용하려면 파드를 다시 시작하세요
+</div>
+
+API Key를 업데이트한 후 새 구성이 반영되도록 파드를 다시 시작하세요:
+
+```shell
+kubectl rollout restart deployment my-clickstack-clickstack-app
+```
+
+<Note>
+  이 차트는 구성 값으로 Kubernetes 시크릿(`clickstack-secret`)을 자동으로 생성합니다. 외부 시크릿을 사용하려는 경우가 아니라면 추가 시크릿 구성은 필요하지 않습니다.
+</Note>
+
+<div id="secret-management">
+  ## 시크릿 관리
+</div>
+
+API Key나 데이터베이스 자격 증명과 같은 민감한 데이터를 처리할 때 v2.x 차트는 `hyperdx.secrets`를 기반으로 채워지는 통합 `clickstack-secret` 리소스를 제공합니다.
+
+<div id="default-secret-values">
+  ### 시크릿 기본값
+</div>
+
+이 차트는 모든 시크릿에 대한 기본값을 함께 제공합니다. `values.yaml`에서 이를 재정의하세요:
+
+```yaml
+hyperdx:
+  secrets:
+    HYPERDX_API_KEY: "your-api-key"
+    CLICKHOUSE_PASSWORD: "your-clickhouse-otel-password"
+    CLICKHOUSE_APP_PASSWORD: "your-clickhouse-app-password"
+    MONGODB_PASSWORD: "your-mongodb-password"
+```
+
+<div id="using-external-secret">
+  ### 외부 시크릿 사용
+</div>
+
+프로덕션 배포에서 자격 증명을 Helm values와 분리해 관리하려면 외부 Kubernetes 시크릿을 사용하세요:
+
+```bash
+# 시크릿 생성
+kubectl create secret generic my-clickstack-secrets \
+  --from-literal=HYPERDX_API_KEY=my-secret-api-key \
+  --from-literal=CLICKHOUSE_PASSWORD=my-ch-password \
+  --from-literal=CLICKHOUSE_APP_PASSWORD=my-ch-app-password \
+  --from-literal=MONGODB_PASSWORD=my-mongo-password
+```
+
+그런 다음 values에서 이를 참조하세요:
+
+```yaml
+hyperdx:
+  useExistingConfigSecret: true
+  existingConfigSecret: "my-clickstack-secrets"
+```
+
+<div id="ingress-setup">
+  ## 인그레스 설정
+</div>
+
+도메인 이름으로 HyperDX UI와 API를 노출하려면 `values.yaml`에서 인그레스를 활성화하세요.
+
+<div id="general-ingress-configuration">
+  ### 일반적인 인그레스 구성
+</div>
+
+```yaml
+hyperdx:
+  frontendUrl: "https://hyperdx.yourdomain.com"  # 인그레스 호스트와 일치해야 합니다
+
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+```
+
+<Info>
+  **중요한 구성 참고 사항**
+
+  `hyperdx.frontendUrl`은 인그레스 호스트와 일치해야 하며 프로토콜(예: `https://hyperdx.yourdomain.com`)도 포함해야 합니다. 이렇게 해야 생성되는 모든 링크, 쿠키, 리디렉션이 올바르게 동작합니다.
+</Info>
+
+<div id="enabling-tls">
+  ### TLS(HTTPS) 활성화
+</div>
+
+배포를 HTTPS로 안전하게 보호하려면 다음과 같이 하십시오:
+
+**1. 인증서와 개인 키로 TLS 시크릿을 생성하세요:**
+
+```shell
+kubectl create secret tls hyperdx-tls \
+  --cert=path/to/tls.crt \
+  --key=path/to/tls.key
+```
+
+**2. 인그레스 구성에서 TLS를 활성화하십시오:**
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    host: "hyperdx.yourdomain.com"
+    tls:
+      enabled: true
+      tlsSecretName: "hyperdx-tls"
+```
+
+<div id="example-ingress-configuration">
+  ### 예시 인그레스 구성
+</div>
+
+참고로, 생성된 인그레스 리소스는 다음과 같습니다:
+
+```yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: hyperdx-app-ingress
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$1
+    nginx.ingress.kubernetes.io/use-regex: "true"
+spec:
+  ingressClassName: nginx
+  rules:
+    - host: hyperdx.yourdomain.com
+      http:
+        paths:
+          - path: /(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: my-clickstack-clickstack-app
+                port:
+                  number: 3000
+  tls:
+    - hosts:
+        - hyperdx.yourdomain.com
+      secretName: hyperdx-tls
+```
+
+<div id="common-ingress-pitfalls">
+  ### 일반적인 인그레스 관련 문제
+</div>
+
+**경로 및 재작성 구성:**
+
+* Next.js 및 기타 SPA에서는 위에 나온 것처럼 항상 정규식 경로와 재작성 어노테이션을 사용하세요
+* 재작성 없이 `path: /`만 사용하면 정적 에셋 제공이 중단되므로 사용하지 마세요
+
+**`frontendUrl`과 `ingress.host` 불일치:**
+
+* 이 값이 서로 일치하지 않으면 쿠키, 리디렉션, 에셋 로딩에 문제가 발생할 수 있습니다
+
+**TLS 구성 오류:**
+
+* TLS 시크릿이 유효한지, 그리고 인그레스에서 올바르게 참조되는지 확인하세요
+* TLS가 활성화된 상태에서 HTTP로 앱에 액세스하면 브라우저가 안전하지 않은 콘텐츠를 차단할 수 있습니다
+
+**인그레스 컨트롤러 버전:**
+
+* 일부 기능(정규식 경로 및 재작성 등)을 사용하려면 최신 버전의 nginx ingress controller가 필요합니다
+* 다음 명령으로 버전을 확인하세요:
+
+```shell
+kubectl -n ingress-nginx get pods -l app.kubernetes.io/name=ingress-nginx -o jsonpath="{.items[0].spec.containers[0].image}"
+```
+
+<div id="otel-collector-ingress">
+  ## OTEL collector 인그레스
+</div>
+
+인그레스를 통해 OTEL collector 엔드포인트(트레이스, 메트릭, 로그)를 외부에 노출해야 한다면 `additionalIngresses` 구성을 사용하십시오. 이 방법은 클러스터 외부에서 텔레메트리 데이터를 전송하거나 collector에 사용자 지정 도메인을 적용할 때 유용합니다.
+
+```yaml
+hyperdx:
+  ingress:
+    enabled: true
+    additionalIngresses:
+      - name: otel-collector
+        annotations:
+          nginx.ingress.kubernetes.io/ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/force-ssl-redirect: "false"
+          nginx.ingress.kubernetes.io/use-regex: "true"
+        ingressClassName: nginx
+        hosts:
+          - host: collector.yourdomain.com
+            paths:
+              - path: /v1/(traces|metrics|logs)
+                pathType: Prefix
+                port: 4318
+                name: otel-collector
+        tls:
+          - hosts:
+              - collector.yourdomain.com
+            secretName: collector-tls
+```
+
+* 이렇게 하면 OTel collector 엔드포인트를 위한 별도의 인그레스 리소스가 생성됩니다
+* 별도의 도메인을 사용하고, 특정 TLS 설정을 구성하며, 사용자 지정 어노테이션을 적용할 수 있습니다
+* 정규식 경로 규칙을 사용하면 단일 규칙으로 모든 OTLP 신호(트레이스, 메트릭, 로그)를 라우팅할 수 있습니다
+
+<Note>
+  OTel collector를 외부에 노출할 필요가 없다면 이 구성을 생략해도 됩니다. 대부분의 사용자에게는 일반적인 인그레스 구성으로 충분합니다.
+</Note>
+
+또는 [`additionalManifests`](/ko/clickstack/deployment/helm-additional-manifests)를 사용하여 AWS ALB Ingress와 같이 완전히 사용자 지정된 인그레스 리소스를 정의할 수 있습니다.
+
+<div id="otel-collector-configuration">
+  ## OTEL collector 구성
+</div>
+
+OTEL Collector는 공식 OpenTelemetry Collector Helm 차트의 `otel-collector:` 서브차트로 배포됩니다. values에서 `otel-collector:` 아래에 직접 구성하세요:
+
+```yaml
+otel-collector:
+  enabled: true
+  mode: deployment
+  replicaCount: 3
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+  nodeSelector:
+    node-role: monitoring
+  tolerations:
+    - key: monitoring
+      operator: Equal
+      value: otel
+      effect: NoSchedule
+```
+
+환경 변수(ClickHouse 엔드포인트, OpAMP URL 등)는 통합된 `clickstack-config` ConfigMap과 `clickstack-secret` Secret을 통해 공유됩니다. 서브차트의 `extraEnvsFrom`은 기본적으로 두 곳 모두에서 읽어 오도록 미리 설정되어 있습니다.
+
+사용 가능한 모든 서브차트 values는 [OpenTelemetry Collector Helm 차트](https://github.com/open-telemetry/opentelemetry-helm-charts/tree/main/charts/opentelemetry-collector)에서 확인하십시오.
+
+<div id="mongodb-configuration">
+  ## MongoDB 구성
+</div>
+
+MongoDB는 `MongoDBCommunity` 사용자 지정 리소스를 통해 MCK operator가 관리합니다. CR spec은 `mongodb.spec`의 내용을 그대로 렌더링합니다:
+
+```yaml
+mongodb:
+  enabled: true
+  spec:
+    members: 1
+    type: ReplicaSet
+    version: "5.0.32"
+    security:
+      authentication:
+        modes: ["SCRAM"]
+    statefulSet:
+      spec:
+        volumeClaimTemplates:
+          - metadata:
+              name: data-volume
+            spec:
+              accessModes: ["ReadWriteOnce"]
+              storageClassName: "your-storage-class"
+              resources:
+                requests:
+                  storage: 10Gi
+```
+
+MongoDB password는 `hyperdx.secrets.MONGODB_PASSWORD`에 설정됩니다. 사용 가능한 모든 CRD 필드는 [MCK documentation](https://github.com/mongodb/mongodb-kubernetes/tree/master/docs/mongodbcommunity)을 참조하십시오.
+
+<div id="clickhouse-configuration">
+  ## ClickHouse 구성
+</div>
+
+ClickHouse는 `ClickHouseCluster` 및 `KeeperCluster` 사용자 지정 리소스를 통해 ClickHouse Operator가 관리됩니다. 두 CR spec은 모두 values에 정의된 내용이 그대로 반영됩니다:
+
+```yaml
+clickhouse:
+  enabled: true
+  port: 8123
+  nativePort: 9000
+  prometheus:
+    enabled: true
+    port: 9363
+  keeper:
+    spec:
+      replicas: 1
+      dataVolumeClaimSpec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 5Gi
+  cluster:
+    spec:
+      replicas: 1
+      shards: 1
+      dataVolumeClaimSpec:
+        accessModes: ["ReadWriteOnce"]
+        resources:
+          requests:
+            storage: 10Gi
+```
+
+ClickHouse 사용자 자격 증명은 `hyperdx.secrets`에서 가져옵니다(v1.x의 `clickhouse.config.users`가 아님). 사용할 수 있는 모든 CRD 필드는 [ClickHouse Operator 구성 가이드](/ko/products/kubernetes-operator/guides/configuration)를 참조하십시오.
+
+<div id="troubleshooting-ingress">
+  ## 인그레스 문제 해결
+</div>
+
+**인그레스 리소스 확인:**
+
+```shell
+kubectl get ingress -A
+kubectl describe ingress <ingress-name>
+```
+
+**인그레스 컨트롤러 로그 확인:**
+
+```shell
+kubectl logs -l app.kubernetes.io/name=ingress-nginx -n ingress-nginx
+```
+
+**테스트용 에셋 URL:**
+
+정적 에셋이 HTML이 아니라 JS로 제공되는지 확인하려면 `curl`을 사용하세요:
+
+```shell
+curl -I https://hyperdx.yourdomain.com/_next/static/chunks/main-xxxx.js
+# Content-Type: application/javascript 가 반환되어야 합니다
+```
+
+**브라우저 DevTools:**
+
+* 404 오류가 발생하거나 JS 대신 HTML을 반환하는 정적 파일이 있는지 Network 탭에서 확인하세요
+* 콘솔에서 `Unexpected token <` 같은 오류를 찾으세요 (JS 대신 HTML이 반환되었음을 의미합니다)
+
+**경로 재작성 확인:**
+
+* 인그레스가 정적 파일 경로를 제거하거나 잘못 재작성하지 않는지 확인하세요
+
+**브라우저 및 CDN 캐시 지우기:**
+
+* 변경 후에는 오래된 정적 파일이 남지 않도록 브라우저 캐시와 CDN/프록시 캐시를 모두 지우세요
+
+<div id="customizing-values">
+  ## values 사용자 지정
+</div>
+
+`--set` 플래그를 사용해 설정을 사용자 지정할 수 있습니다:
+
+```shell
+helm install my-clickstack clickstack/clickstack --set key=value
+```
+
+또는 사용자 지정 `values.yaml`을 만드십시오. 기본 values를 가져오려면:
+
+```shell
+helm show values clickstack/clickstack > values.yaml
+```
+
+사용자 지정한 `values`를 적용하세요:
+
+```shell
+helm install my-clickstack clickstack/clickstack -f values.yaml
+```
+
+<div id="next-steps">
+  ## 다음 단계
+</div>
+
+* [배포 옵션](/ko/clickstack/deployment/helm-deployment-options) - 외부 시스템 및 최소 배포
+* [Cloud 배포](/ko/clickstack/deployment/helm-cloud) - GKE, EKS 및 AKS 구성
+* [업그레이드 가이드](/ko/clickstack/deployment/helm-upgrade) - v1.x에서 v2.x로 마이그레이션
+* [추가 매니페스트](/ko/clickstack/deployment/helm-additional-manifests) - 사용자 지정 Kubernetes 객체
+* [Helm 기본 가이드](/ko/clickstack/deployment/helm) - 기본 설치
+* [구성 (v1.x)](/ko/clickstack/deployment/helm-configuration-v1) - v1.x 구성 가이드

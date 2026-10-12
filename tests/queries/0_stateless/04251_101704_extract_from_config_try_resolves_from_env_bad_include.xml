@@ -1,0 +1,4 @@
+<clickhouse>
+    <include_from>/this/path/should/never/exist/issue-101704.xml</include_from>
+    <http_port from_env="TEST_HTTP_PORT_101704"></http_port>
+</clickhouse>

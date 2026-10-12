@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long
+# Tags: no-fasttest, long, no-distributed-cache, no-parallel, no-random-settings
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -9,19 +9,30 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # There is no .reference file, because the purpose of this test
 # is to be run in parallel to other tests, not to produce .reference.
 # `s3_cache` is used for many tests and for all tests in case of s3-storage run.
-disk_name="s3_cache"
+disk_name="disk_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 table_name="table_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 $CLICKHOUSE_CLIENT -m --query "
 DROP TABLE IF EXISTS ${table_name};
-CREATE TABLE ${table_name} (a String) engine=MergeTree() ORDER BY tuple() SETTINGS disk = '$disk_name';
-INSERT INTO ${table_name} SELECT randomString(10000000);
+CREATE TABLE ${table_name} (a String) engine=MergeTree() ORDER BY tuple()
+SETTINGS disk = disk(name = '$disk_name', type = cache, max_size = '15Mi', max_file_segment_size = '1Mi', boundary_alignment = '1Mi', path = '${disk_name}', disk = s3_disk);
+INSERT INTO ${table_name} SELECT randomString(10000000) FROM numbers(5);
 "
 
-$CLICKHOUSE_CLIENT --enable_filesystem_cache 1 --query "SELECT * FROM ${table_name} FORMAT Null"
+# `s3_cache` is shared, so a concurrent test dropping the filesystem cache (or eviction) can
+# transiently empty it between the warm-up read and the check. Re-warm and re-check in a short
+# bounded loop so a transient empty instant does not fail the test.
+cache_populated=0
+for _ in {1..10}
+do
+    $CLICKHOUSE_CLIENT --enable_filesystem_cache 1 --query "SELECT * FROM ${table_name} FORMAT Null"
+    cache_populated=$($CLICKHOUSE_CLIENT --query "SELECT current_size > 0 FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
+    [ "$cache_populated" = "1" ] && break
+    sleep 0.5
+done
+echo "$cache_populated"
 
 prev_max_size=$($CLICKHOUSE_CLIENT --query "SELECT max_size FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name'")
-$CLICKHOUSE_CLIENT --query "SELECT current_size > 0 FROM system.filesystem_cache_settings WHERE cache_name = '$disk_name' FORMAT TabSeparated"
 
 config_path=${CLICKHOUSE_CONFIG_DIR}/config.d/storage_conf.xml
 

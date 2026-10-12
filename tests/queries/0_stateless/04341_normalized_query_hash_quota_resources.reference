@@ -1,0 +1,26 @@
+=== read_rows is bucketed per normalized query hash ===
+--- pattern A, first query (7 read rows) is within the per-pattern limit ---
+allowed
+--- pattern A, second query (14 > 10) exceeds the limit of its own bucket ---
+QUOTA_EXCEEDED
+--- pattern B (a different query pattern) has its own bucket and is still allowed ---
+allowed
+=== result_rows is bucketed per normalized query hash ===
+--- pattern A, first query (7 result rows) is within the per-pattern limit ---
+allowed
+--- pattern A, second query (14 > 10) exceeds the limit of its own bucket ---
+QUOTA_EXCEEDED
+--- pattern B (a different query pattern) has its own bucket and is still allowed ---
+allowed
+=== written_bytes is bucketed per normalized query hash ===
+--- pattern A, first insert (7 rows = 56 bytes) is within the per-pattern limit ---
+allowed
+--- pattern A, second insert (cumulative 160 > 80) exceeds the limit of its own bucket ---
+QUOTA_EXCEEDED
+--- pattern B (a different query pattern) has its own bucket and is still allowed ---
+allowed
+=== errors are bucketed per normalized query hash ===
+--- pattern A: the error bucket is exceeded, so the next query of the same pattern is rejected up-front ---
+QUOTA_EXCEEDED
+--- pattern B (a different query pattern) has its own error bucket and is still allowed ---
+allowed

@@ -40,12 +40,14 @@ set(GENERATED_LICENSES_SRC "${CMAKE_CURRENT_BINARY_DIR}/StorageSystemLicenses.ge
 # CMake order-only dependency chain.
 execute_process(
     COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/StorageSystemLicenses.sh "${CMAKE_SOURCE_DIR}"
-    OUTPUT_FILE ${GENERATED_LICENSES_SRC}
+    OUTPUT_FILE ${GENERATED_LICENSES_SRC}.tmp
     WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
     RESULT_VARIABLE LICENSES_RESULT)
 if (NOT LICENSES_RESULT EQUAL 0)
-    message(WARNING "Failed to generate StorageSystemLicenses.generated.cpp")
+    file(REMOVE ${GENERATED_LICENSES_SRC}.tmp)
+    message(FATAL_ERROR "Failed to generate StorageSystemLicenses.generated.cpp")
 endif()
+file(RENAME ${GENERATED_LICENSES_SRC}.tmp ${GENERATED_LICENSES_SRC})
 
 list (APPEND storages_system_sources ${GENERATED_LICENSES_SRC})
 

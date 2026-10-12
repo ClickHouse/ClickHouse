@@ -1,5 +1,4 @@
 #pragma once
-#include "config.h"
 
 #include <Storages/StorageSnapshot.h>
 
@@ -12,8 +11,8 @@ namespace Iceberg
 struct TableStateSnapshot
 {
     String metadata_file_path;
-    Int32 metadata_version;
-    Int32 schema_id;
+    Int32 metadata_version{};
+    Int32 schema_id{};
     std::optional<Int64> snapshot_id;
 
     void serialize(WriteBuffer & out) const;

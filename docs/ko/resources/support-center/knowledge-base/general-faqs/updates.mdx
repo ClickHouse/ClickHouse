@@ -1,0 +1,19 @@
+---
+title: 'ClickHouse는 실시간 업데이트를 지원합니까?'
+toc_hidden: true
+toc_priority: 10
+slug: /faq/general/updates
+description: 'ClickHouse는 경량 실시간 업데이트를 지원합니다'
+doc_type: 'reference'
+keywords: ['업데이트', '실시간']
+---
+
+ClickHouse는 UPDATE 문을 지원하며, INSERT를 수행하는 것만큼 빠른 속도로 실시간 업데이트를 처리할 수 있습니다.
+
+이는 [patch parts 데이터 구조](https://clickhouse.com/blog/updates-in-clickhouse-2-sql-style-updates#stage-3-patch-parts--updates-the-clickhouse-way) 덕분에 가능하며, 이를 통해 SELECT 성능에 큰 영향을 주지 않으면서 변경 사항을 빠르게 적용할 수 있습니다.
+
+또한 MVCC(다중 버전 동시성 제어)와 snapshot isolation 덕분에 업데이트는 ACID 속성을 보장합니다.
+
+<Info>
+  경량 업데이트는 ClickHouse 버전 25.7에서 처음 도입되었습니다.
+</Info>

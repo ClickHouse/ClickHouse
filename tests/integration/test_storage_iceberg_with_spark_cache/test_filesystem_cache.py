@@ -63,6 +63,7 @@ def test_filesystem_cache(started_cluster_iceberg_with_spark, storage_type):
     instance.query(
         f"SELECT * FROM {TABLE_NAME} SETTINGS filesystem_cache_name = 'cache1'",
         query_id=query_id,
+        settings={"use_parquet_metadata_cache": "0"}
     )
 
     instance.query("SYSTEM FLUSH LOGS")

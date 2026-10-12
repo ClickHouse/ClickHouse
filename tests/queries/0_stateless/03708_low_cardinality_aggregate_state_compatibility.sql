@@ -1,5 +1,5 @@
-select hex(maxDistinctState(tuple('str'::Variant(LowCardinality(String)))));
-select hex(maxDistinctState(tuple(''::Variant(LowCardinality(String)))));
-select maxDistinctMerge(state) from (select maxDistinctState(tuple('str'::Variant(LowCardinality(String)))) as state);
-select maxDistinctMerge(state) from (select maxDistinctState(tuple(''::Variant(LowCardinality(String)))) as state);
+select hex(groupUniqArrayState(tuple('str'::Variant(LowCardinality(String)))));
+select hex(groupUniqArrayState(tuple(''::Variant(LowCardinality(String)))));
+select groupUniqArrayMerge(state) from (select groupUniqArrayState(tuple('str'::Variant(LowCardinality(String)))) as state);
+select groupUniqArrayMerge(state) from (select groupUniqArrayState(tuple(''::Variant(LowCardinality(String)))) as state);
 

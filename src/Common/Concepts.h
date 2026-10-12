@@ -2,6 +2,7 @@
 
 #include <concepts>
 #include <variant>
+#include <vector>
 #include <type_traits>
 
 namespace DB
@@ -27,5 +28,10 @@ struct IsInVariant<T, std::variant<Ts...>> : std::disjunction<std::is_same<T, Ts
 
 template <typename T, typename Variant>
 concept InVariant = IsInVariant<T, Variant>::value;
+
+template <typename> struct IsStdVector : std::false_type {};
+template <typename T, typename A> struct IsStdVector<std::vector<T, A>> : std::true_type {};
+
+template <typename V> concept StdVector = IsStdVector<V>::value;
 
 }

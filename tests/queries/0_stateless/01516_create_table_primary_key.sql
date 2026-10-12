@@ -2,11 +2,11 @@
 
 SET send_logs_level = 'fatal';
 
-DROP DATABASE IF EXISTS test_01516;
+DROP DATABASE IF EXISTS {CLICKHOUSE_DATABASE_1:Identifier};
 set allow_deprecated_database_ordinary=1;
 -- Creation of a database with Ordinary engine emits a warning.
-CREATE DATABASE test_01516 ENGINE=Ordinary;     -- Full ATTACH requires UUID with Atomic
-USE test_01516;
+CREATE DATABASE {CLICKHOUSE_DATABASE_1:Identifier} ENGINE=Ordinary;     -- Full ATTACH requires UUID with Atomic
+USE {CLICKHOUSE_DATABASE_1:Identifier};
 
 DROP TABLE IF EXISTS primary_key_test;
 
@@ -48,4 +48,4 @@ SELECT v1, v2 FROM primary_key_test FINAL ORDER BY v1, v2;
 
 DROP TABLE primary_key_test;
 
-DROP DATABASE test_01516;
+DROP DATABASE {CLICKHOUSE_DATABASE_1:Identifier};

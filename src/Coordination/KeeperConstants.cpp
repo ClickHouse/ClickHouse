@@ -70,6 +70,20 @@
     M(RWLockReadersWaitMilliseconds) \
     M(RWLockWritersWaitMilliseconds) \
     M(DNSError) \
+    M(DNSRequests) \
+    M(DNSRequestMicroseconds) \
+    M(DNSRequestError) \
+    M(DNSReverseRequests) \
+    M(DNSReverseRequestMicroseconds) \
+    M(DNSReverseError) \
+\
+    M(TLSHandshakes) \
+    M(TLSHandshakeMicroseconds) \
+    M(TLSHandshakeErrors) \
+    M(TLSServerHandshakes) \
+    M(TLSServerHandshakeMicroseconds) \
+    M(TLSServerHandshakeErrors) \
+\
     M(RealTimeMicroseconds) \
     M(UserTimeMicroseconds) \
     M(SystemTimeMicroseconds) \
@@ -230,7 +244,6 @@
     M(AsynchronousRemoteReadWaitMicroseconds) \
     M(SynchronousRemoteReadWaitMicroseconds) \
 \
-    M(ExternalDataSourceLocalCacheReadBytes) \
 \
     M(MainConfigLoads) \
 \
@@ -243,22 +256,21 @@
     M(KeeperProcessElapsedMicroseconds) \
     M(KeeperPreprocessElapsedMicroseconds) \
     M(KeeperStorageLockWaitMicroseconds) \
-    M(KeeperStorageLockHoldMicroseconds) \
     M(KeeperStorageSharedLockWaitMicroseconds) \
-    M(KeeperStorageSharedLockHoldMicroseconds) \
     M(KeeperChangelogLockWaitMicroseconds) \
-    M(KeeperChangelogLockHoldMicroseconds) \
     M(KeeperServerWriteLockWaitMicroseconds) \
-    M(KeeperServerWriteLockHoldMicroseconds) \
     M(KeeperSessionCallbackLockWaitMicroseconds) \
-    M(KeeperSessionCallbackLockHoldMicroseconds) \
     M(KeeperReadRequestQueueLockWaitMicroseconds) \
-    M(KeeperReadRequestQueueLockHoldMicroseconds) \
     M(KeeperProcessAndResponsesLockWaitMicroseconds) \
-    M(KeeperProcessAndResponsesLockHoldMicroseconds) \
     M(KeeperCommitWaitElapsedMicroseconds) \
     M(KeeperBatchMaxCount) \
     M(KeeperBatchMaxTotalSize) \
+    M(KeeperBatchMaxReadCount) \
+    M(KeeperBatchMaxReadTotalSize) \
+    M(KeeperReadBatchCount) \
+    M(KeeperReadBatchTotalRequests) \
+    M(KeeperWriteBatchCount) \
+    M(KeeperWriteBatchTotalRequests) \
     M(KeeperCommits) \
     M(KeeperCommitsFailed) \
     M(KeeperSnapshotCreations) \
@@ -268,6 +280,7 @@
     M(KeeperReadSnapshot) \
     M(KeeperReadSnapshotObject) \
     M(KeeperReadSnapshotFailed) \
+    M(KeeperReadSnapshotDeferred) \
     M(KeeperSaveSnapshotObject) \
     M(KeeperSaveSnapshotFailed) \
     M(KeeperSaveSnapshot) \
@@ -285,11 +298,61 @@
     M(KeeperCheckWatchRequest) \
     M(KeeperAddWatchRequest) \
     M(KeeperRemoveWatchRequest) \
+    M(KeeperWatchesTriggered) \
+    M(KeeperWatchTriggeredNodeCreated) \
+    M(KeeperWatchTriggeredNodeDeleted) \
+    M(KeeperWatchTriggeredNodeDataChanged) \
+    M(KeeperWatchTriggeredNodeChildrenChanged) \
     M(KeeperChangelogWrittenBytes) \
     M(KeeperChangelogFileSyncMicroseconds) \
+    M(KeeperChangelogStartupReadMicroseconds) \
+    M(KeeperChangelogStartupStitchMicroseconds) \
+    M(KeeperChangelogStartupReadEntries) \
+    M(KeeperChangelogStartupReadBytes) \
     M(KeeperSnapshotWrittenBytes) \
     M(KeeperSnapshotFileSyncMicroseconds) \
     M(KeeperSnapshotRemoteLoaderErrors) \
+\
+    M(KeeperLSMTFlushes) \
+    M(KeeperLSMTMerges) \
+    M(KeeperLSMTFlushExceptions) \
+    M(KeeperLSMTMergeExceptions) \
+    M(KeeperLSMTFileDeletionExceptions) \
+    M(KeeperLSMTFlushWrittenCompressedBytes) \
+    M(KeeperLSMTFlushWrittenUncompressedBytes) \
+    M(KeeperLSMTMergeWrittenFiles) \
+    M(KeeperLSMTMergeWrittenCompressedBytes) \
+    M(KeeperLSMTMergeWrittenUncompressedBytes) \
+    M(KeeperLSMTMergeConsumedFiles) \
+    M(KeeperLSMTMergeConsumedUncompressedBytes) \
+    M(KeeperLSMTUncommittedCreates) \
+    M(KeeperLSMTUncommittedCreateBytes) \
+    M(KeeperLSMTUncommittedUpdates) \
+    M(KeeperLSMTUncommittedUpdateBytes) \
+    M(KeeperLSMTUncommittedRemoves) \
+    M(KeeperLSMTUncommittedRemoveBytes) \
+    M(KeeperLSMTCommittedEntryBytes) \
+    M(KeeperLSMTThrottledWrites) \
+    M(KeeperLSMTCommittedMemtablesCreated) \
+    M(KeeperLSMTUncommittedMemtablesCreated) \
+    M(KeeperLSMTGetUncommittedNodeHits) \
+    M(KeeperLSMTGetUncommittedNodeMisses) \
+    M(KeeperLSMTGetCommittedNodeFromMemory) \
+    M(KeeperLSMTGetCommittedNodeNonexistent) \
+    M(KeeperLSMTGetCommittedNodeLoadedBlock) \
+    M(KeeperLSMTNodeCacheEntriesUpdated) \
+    M(KeeperLSMTListNamesFromMemtables) \
+    M(KeeperLSMTListNamesFromFiles) \
+    M(KeeperLSMTListScannedBlocks) \
+    M(KeeperLSMTListScannedEntries) \
+    M(KeeperLSMTListFilterSkipped) \
+    M(KeeperLSMTListFilterFalsePositives) \
+    M(KeeperLSMTListFilterTruePositives) \
+    M(KeeperLSMTGetBlockFromWeakPtr) \
+    M(KeeperLSMTGetBlockFromCache) \
+    M(KeeperLSMTGetBlockLoadedGroup) \
+    M(KeeperLSMTLoadedBlocks) \
+    M(KeeperLSMTLoadedUncompressedBytes) \
 \
     M(IOUringSQEsSubmitted) \
     M(IOUringSQEsResubmitsAsync) \
@@ -320,9 +383,15 @@
     M(InterfacePostgreSQLReceiveBytes) \
 \
     M(KeeperLogsEntryReadFromLatestCache) \
-    M(KeeperLogsEntryReadFromCommitCache) \
     M(KeeperLogsEntryReadFromFile) \
-    M(KeeperLogsPrefetchedEntries) \
+    M(KeeperLogsReadAheadFillReopens) \
+    M(KeeperLogsReadAheadFillDecodedEntries) \
+    M(KeeperLogsReadAheadCursorsInstalled) \
+    M(KeeperLogsReadAheadPlanEpochMismatches) \
+    M(KeeperLogsReadAheadScheduleRejected) \
+    M(KeeperLogsReadAheadReadersCreated) \
+    M(KeeperLogsReadAheadTimeoutFallbacks) \
+    M(KeeperLogsEntryReadFromCommitReadAhead) \
 \
     M(JemallocFailedAllocationSampleTracking) \
     M(JemallocFailedDeallocationSampleTracking) \
@@ -330,7 +399,6 @@
     M(KeeperRequestRejectedDueToSoftMemoryLimitCount) \
     M(KeeperStaleRequestsSkipped) \
     M(KeeperLiveSessionsLockWaitMicroseconds) \
-    M(KeeperLiveSessionsLockHoldMicroseconds) \
 
 namespace ProfileEvents
 {
@@ -403,6 +471,16 @@ extern const std::vector<Event> keeper_profile_events
     M(S3Requests) \
     M(KeeperAliveConnections) \
     M(KeeperOutstandingRequests) \
+    M(KeeperTTLNodes) \
+    M(KeeperChangelogReadAheadThreads) \
+    M(KeeperChangelogReadAheadThreadsActive) \
+    M(KeeperChangelogReadAheadThreadsScheduled) \
+    M(KeeperChangelogStartupReadThreads) \
+    M(KeeperChangelogStartupReadThreadsActive) \
+    M(KeeperChangelogStartupReadThreadsScheduled) \
+    M(KeeperBlockCacheBytes) \
+    M(KeeperBlockCacheBlocks) \
+    M(KeeperContainerNodes) \
     M(ThreadsInOvercommitTracker) \
     M(IOUringPendingEvents) \
     M(IOUringInFlightEvents) \
@@ -422,6 +500,7 @@ extern const std::vector<Metric> keeper_metrics
 }
 
 #define APPLY_FOR_KEEPER_HISTOGRAMS(M) \
+    M(KeeperResponseTime) \
     M(KeeperReceiveRequestTimeMetricFamily) \
     M(KeeperDispatcherRequestsQueueTimeMetricFamily) \
     M(KeeperWritePreCommitTimeMetricFamily) \
@@ -430,6 +509,7 @@ extern const std::vector<Metric> keeper_metrics
     M(KeeperSendResponseTimeMetricFamily) \
     M(KeeperReadWaitForWriteTimeMetricFamily) \
     M(KeeperReadProcessTimeMetricFamily) \
+    M(KeeperBatchSizeElementsMetricFamily) \
     M(KeeperBatchSizeBytesMetricFamily) \
 
 

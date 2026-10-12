@@ -1,0 +1,175 @@
+---
+slug: '/examples/aggregate-function-combinators/minSimpleState'
+title: 'minSimpleState'
+description: "Exemple d’utilisation du combinateur minSimpleState"
+keywords: ['min', 'état', 'simple', 'combinateur', 'exemples', 'minSimpleState']
+sidebarTitle: 'minSimpleState'
+doc_type: 'référence'
+---
+
+<div id="description">
+  ## Description
+</div>
+
+Le combinateur [`SimpleState`](/fr/reference/functions/aggregate-functions/combinators#-simplestate) peut être appliqué à la fonction [`min`](/fr/reference/functions/aggregate-functions/min)
+pour renvoyer la valeur minimale parmi toutes les valeurs d’entrée. Il renvoie le
+résultat sous le type [`SimpleAggregateFunction`](/fr/reference/data-types/simpleaggregatefunction).
+
+<div id="example-usage">
+  ## Exemple d’utilisation
+</div>
+
+Voyons un exemple concret avec une table qui suit des relevés quotidiens de
+température. Pour chaque lieu, nous voulons conserver la température la plus basse enregistrée.
+L’utilisation du type `SimpleAggregateFunction` avec `min` met automatiquement à jour la
+valeur stockée lorsqu’une température plus basse est relevée.
+
+Créez la table source pour les relevés bruts de température :
+
+```sql
+CREATE TABLE raw_temperature_readings
+(
+    location_id UInt32,
+    location_name String,
+    temperature Int32,
+    recorded_at DateTime DEFAULT now()
+)
+    ENGINE = MergeTree()
+ORDER BY (location_id, recorded_at);
+```
+
+Créez la table d’agrégation qui stockera les températures minimales :
+
+```sql
+CREATE TABLE temperature_extremes
+(
+    location_id UInt32,
+    location_name String,
+    min_temp SimpleAggregateFunction(min, Int32),  -- Stores minimum temperature
+    max_temp SimpleAggregateFunction(max, Int32)   -- Stores maximum temperature
+)
+ENGINE = AggregatingMergeTree()
+ORDER BY location_id;
+```
+
+Créez une vue matérialisée incrémentielle qui fera office de déclencheur d’insertion
+pour les données insérées et conservera les températures minimales et maximales par lieu.
+
+```sql
+CREATE MATERIALIZED VIEW temperature_extremes_mv
+TO temperature_extremes
+AS SELECT
+    location_id,
+    location_name,
+    minSimpleState(temperature) AS min_temp,     -- Using SimpleState combinator
+    maxSimpleState(temperature) AS max_temp      -- Using SimpleState combinator
+FROM raw_temperature_readings
+GROUP BY location_id, location_name;
+```
+
+Insérez quelques relevés initiaux de température :
+
+```sql
+INSERT INTO raw_temperature_readings (location_id, location_name, temperature) VALUES
+(1, 'North', 5),
+(2, 'South', 15),
+(3, 'West', 10),
+(4, 'East', 8);
+```
+
+Ces relevés sont automatiquement traités par la vue matérialisée. Vérifions
+l’état actuel :
+
+```sql
+SELECT
+    location_id,
+    location_name,
+    min_temp,     -- Directly accessing the SimpleAggregateFunction values
+    max_temp      -- No need for finalization function with SimpleAggregateFunction
+FROM temperature_extremes
+ORDER BY location_id;
+```
+
+```response
+┌─location_id─┬─location_name─┬─min_temp─┬─max_temp─┐
+│           1 │ North         │        5 │        5 │
+│           2 │ South         │       15 │       15 │
+│           3 │ West          │       10 │       10 │
+│           4 │ East          │        8 │        8 │
+└─────────────┴───────────────┴──────────┴──────────┘
+```
+
+Insérez quelques données supplémentaires :
+
+```sql
+INSERT INTO raw_temperature_readings (location_id, location_name, temperature) VALUES
+    (1, 'North', 3),
+    (2, 'South', 18),
+    (3, 'West', 10),
+    (1, 'North', 8),
+    (4, 'East', 2);
+```
+
+Consultez les valeurs extrêmes mises à jour après l’ajout de nouvelles données :
+
+```sql
+SELECT
+    location_id,
+    location_name,
+    min_temp,  
+    max_temp
+FROM temperature_extremes
+ORDER BY location_id;
+```
+
+```response
+┌─location_id─┬─location_name─┬─min_temp─┬─max_temp─┐
+│           1 │ North         │        3 │        8 │
+│           1 │ North         │        5 │        5 │
+│           2 │ South         │       18 │       18 │
+│           2 │ South         │       15 │       15 │
+│           3 │ West          │       10 │       10 │
+│           3 │ West          │       10 │       10 │
+│           4 │ East          │        2 │        2 │
+│           4 │ East          │        8 │        8 │
+└─────────────┴───────────────┴──────────┴──────────┘
+```
+
+Notez ci-dessus que nous avons deux valeurs insérées pour chaque lieu. Cela s’explique par le fait que
+les parts n’ont pas encore été fusionnées (ni agrégées par `AggregatingMergeTree`). Pour obtenir
+le résultat final à partir des états partiels, nous devons ajouter un `GROUP BY` :
+
+```sql
+SELECT
+    location_id,
+    location_name,
+    min(min_temp) AS min_temp,  -- Aggregate across all parts 
+    max(max_temp) AS max_temp   -- Aggregate across all parts
+FROM temperature_extremes
+GROUP BY location_id, location_name
+ORDER BY location_id;
+```
+
+On obtient maintenant le résultat attendu :
+
+```response
+┌─location_id─┬─location_name─┬─min_temp─┬─max_temp─┐
+│           1 │ North         │        3 │        8 │
+│           2 │ South         │       15 │       18 │
+│           3 │ West          │       10 │       10 │
+│           4 │ East          │        2 │        8 │
+└─────────────┴───────────────┴──────────┴──────────┘
+```
+
+<Note>
+  Avec `SimpleState`, vous n’avez pas besoin d’utiliser le combinateur `Merge` pour fusionner
+  les états d’agrégation partiels.
+</Note>
+
+<div id="see-also">
+  ## Voir aussi
+</div>
+
+* [`min`](/fr/reference/functions/aggregate-functions/min)
+* [`SimpleState combinateur`](/fr/reference/functions/aggregate-functions/combinators#-simplestate)
+* [`SimpleAggregateFunction type`](/fr/reference/data-types/simpleaggregatefunction)

@@ -1,0 +1,19 @@
+# Source files for LLVMX86Desc
+set(LLVMX86DESC_SOURCES
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86AsmBackend.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86ATTInstPrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86ELFObjectWriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86EncodingOptimization.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86InstComments.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86InstPrinterCommon.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86IntelInstPrinter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MachObjectWriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MCAsmInfo.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MCCodeEmitter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MCTargetDesc.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86MnemonicTables.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86ShuffleDecode.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86WinCOFFObjectWriter.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86WinCOFFStreamer.cpp
+    ${LLVM_SOURCE_DIR}/lib/Target/X86/MCTargetDesc/X86WinCOFFTargetStreamer.cpp
+)

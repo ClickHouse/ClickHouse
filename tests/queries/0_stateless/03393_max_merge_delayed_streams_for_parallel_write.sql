@@ -1,13 +1,20 @@
--- Tags: no-fasttest, long, no-parallel, no-flaky-check, no-msan
+-- Tags: no-fasttest, long, no-parallel, no-flaky-check, no-msan, no-tsan
 -- - no-fasttest -- S3 is required
 -- - no-flaky-check -- not compatible with ThreadFuzzer
+-- - no-tsan -- merging 1200+ columns on `s3_no_cache` exceeds the 300 s client `receive_timeout` on `OPTIMIZE FINAL` under TSan
 
 -- The real example with metric_log with 1200+ columns!
 SET optimize_trivial_insert_select = 0;
+SET max_query_size = 0;
 
 system flush logs system.metric_log;
 
-create table metric_log as system.metric_log
+-- `system.metric_log` uses the `bucketed` schema by default, where the per-metric columns are
+-- `ALIAS` columns over a single `Map` column. `asterisk_include_alias_columns` materializes them,
+-- so the table below has one column per metric regardless of the configured `schema_type`.
+SET asterisk_include_alias_columns = 1;
+
+create table metric_log
 engine = MergeTree
 partition by ()
 order by ()
@@ -24,10 +31,16 @@ settings
     max_merge_delayed_streams_for_parallel_write = 100,
     -- avoid superfluous merges
     merge_selector_base = 1000,
-    min_columns_to_activate_adaptive_write_buffer = 0,
-    auto_statistics_types = '';
+    -- Adaptive write buffer ON during INSERT keeps each column stream's compressor at ~16 KiB. Flipped to 0 right before OPTIMIZE so merges still exercise the per-stream ~1 MiB allocation that `max_merge_delayed_streams_for_parallel_write` bounds.
+    min_columns_to_activate_adaptive_write_buffer = 100,
+    auto_statistics_types = ''
+empty as select * from system.metric_log;
+
+SET asterisk_include_alias_columns = 0;
 
 insert into metric_log select * from generateRandom() limit 10;
+
+alter table metric_log modify setting min_columns_to_activate_adaptive_write_buffer = 0;
 
 optimize table metric_log final;
 system flush logs part_log;
