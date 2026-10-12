@@ -65,6 +65,8 @@
 #include <Common/ProfileEventsScope.h>
 #include <Common/escapeForFileName.h>
 
+#include <span>
+
 
 namespace ProfileEvents
 {
@@ -586,6 +588,7 @@ static void splitAndModifyMutationCommands(
     const MutationCommands & commands,
     MutationCommands & for_interpreter,
     MutationCommands & for_file_renames,
+    size_t & num_for_file_renames_from_commands,
     LoggerPtr log)
 {
     auto part_columns = part->getColumnsDescription();
@@ -760,6 +763,8 @@ static void splitAndModifyMutationCommands(
                 }
             }
         }
+
+        num_for_file_renames_from_commands = for_file_renames.size();
 
         /// We don't add renames from commands, instead we take them from rename_map.
         /// It's important because required renames depend not only on part's data version (i.e. mutation version)
@@ -1020,6 +1025,8 @@ static void splitAndModifyMutationCommands(
                 }
             }
         }
+
+        num_for_file_renames_from_commands = for_file_renames.size();
 
         /// We don't add renames from commands, instead we take them from rename_map.
         /// It's important because required renames depend not only on part's data version (i.e. mutation version)
@@ -1667,6 +1674,73 @@ static NameSet collectFilesToSkip(
     return files_to_skip;
 }
 
+/// Claim the root-directory stream bases of one index whose files the mutation carries over
+/// (hardlink, copy or rename) instead of rewriting them. Called before any bytes move, so it is
+/// agnostic to how they move.
+static void registerCarriedSkipIndexBases(
+    const StreamBaseManifestPtr & manifest,
+    const MergeTreeIndexPtr & index,
+    const MergeTreeData::DataPartPtr & source_part)
+{
+    if (!manifest)
+        return;
+
+    const auto * disk_storage = dynamic_cast<const DataPartStorageOnDiskBase *>(&source_part->getDataPartStorage());
+    const String index_file_name = index->getFileName();
+
+    for (const auto & substream : index->getAllSubstreamsInPart(
+             source_part->checksums, index_file_name, &source_part->getDataPartStorage()))
+    {
+        const String stream_name = index_file_name + substream.suffix;
+
+        /// A substream with no checksums entry is either a packed member, claimed under the archive
+        /// key a read resolves, or a standalone orphan this mutation deliberately drops. Claiming an
+        /// orphan would reject its own cleanup mutation.
+        if (auto resolved
+            = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, source_part->checksums))
+            manifest->registerStreamBase(*resolved, {StreamBaseManifest::Kind::SkipIndex, index->index.name});
+        else if (disk_storage && disk_storage->isFileInPackedSkipIndicesArchive(stream_name + substream.extension))
+            manifest->registerStreamBase(stream_name, {StreamBaseManifest::Kind::SkipIndex, index->index.name});
+    }
+}
+
+/// Claim the stream bases of the columns a some-columns mutation carries over (hardlink or copy)
+/// instead of rewriting. The writer only sees the updated columns, so a recalculated index landing
+/// on a carried column's base would otherwise share its marks file with nothing detecting it.
+static void registerCarriedColumnBases(
+    const StreamBaseManifestPtr & manifest,
+    const MergeTreeData::DataPartPtr & source_part,
+    const MergeTreeData::DataPartPtr & new_part,
+    const Block & updated_header,
+    const NameSet & files_to_skip,
+    const NameToNameVector & files_to_rename)
+{
+    if (!manifest || !isWidePart(source_part))
+        return;
+
+    for (const auto & column : new_part->getColumns())
+    {
+        if (updated_header.has(column.name))
+            continue;
+
+        for (const auto & [stream_name, _] : getStreamCounts(new_part, source_part->checksums, Names{column.name}))
+        {
+            const String data_file = stream_name + ".bin";
+            const bool renamed = std::any_of(
+                files_to_rename.begin(),
+                files_to_rename.end(),
+                [&data_file](const auto & pair) { return pair.first == data_file; });
+
+            /// A skipped or renamed file is not carried, so its base is free in the new part; the
+            /// rename site claims the destination with the typed knowledge this loop lacks.
+            if (files_to_skip.contains(data_file) || renamed)
+                continue;
+
+            manifest->registerStreamBase(stream_name, {StreamBaseManifest::Kind::Column, column.name});
+        }
+    }
+}
+
 /// Apply commands to source_part i.e. remove and rename some columns in
 /// source_part and return set of files, that have to be removed or renamed
 /// from filesystem and in-memory checksums. Ordered result is important,
@@ -1677,7 +1751,8 @@ static NameToNameVector collectFilesForRenames(
     MergeTreeData::DataPartPtr new_part,
     const MutationCommands & commands_for_renames,
     const NameSet & updated_columns_in_patches,
-    const String & mrk_extension)
+    const String & mrk_extension,
+    const StreamBaseManifestPtr & stream_base_manifest)
 {
     /// Collect counts for shared streams of different columns. As an example, Nested columns have shared stream with array sizes.
     auto stream_counts = getStreamCounts(source_part, source_part->checksums, source_part->getColumns().getNames());
@@ -1705,6 +1780,25 @@ static NameToNameVector collectFilesForRenames(
         if (collected_names.emplace(file_rename_from).second)
             rename_vector.emplace_back(file_rename_from, file_rename_to);
     };
+
+    auto remove_column_streams = [&](const String & column_name)
+    {
+        ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
+        {
+            auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
+
+            /// Delete files if they are no longer shared with another column.
+            if (stream_name && --stream_counts[*stream_name] == 0)
+            {
+                add_rename(*stream_name + ".bin", "");
+                add_rename(*stream_name + mrk_extension, "");
+            }
+        };
+
+        if (auto serialization = try_get_serialization_of_stored_column(column_name))
+            serialization->enumerateStreams(callback);
+    };
+    NameSet columns_renamed_to_not_stored;
 
     /// Files owned by the indices that survive this mutation. `metadata_snapshot` is already the
     /// post-drop metadata, so a dropped index is absent here.
@@ -1746,6 +1840,8 @@ static NameToNameVector collectFilesForRenames(
             }
         }
     }
+
+    const auto new_part_column_names = new_part->getColumns().getNameSet();
 
     /// Remove old data
     for (const auto & command : commands_for_renames)
@@ -1790,23 +1886,17 @@ static NameToNameVector collectFilesForRenames(
         {
             if (command.type == MutationCommand::Type::DROP_COLUMN)
             {
-                ISerialization::StreamCallback callback = [&](const ISerialization::SubstreamPath & substream_path)
-                {
-                    auto stream_name = IMergeTreeDataPart::getStreamNameForColumn(command.column_name, substream_path, ".bin", source_part->checksums, source_part->storage.getSettings());
-
-                    /// Delete files if they are no longer shared with another column.
-                    if (stream_name && --stream_counts[*stream_name] == 0)
-                    {
-                        add_rename(*stream_name + ".bin", "");
-                        add_rename(*stream_name + mrk_extension, "");
-                    }
-                };
-
-                if (auto serialization = try_get_serialization_of_stored_column(command.column_name))
-                    serialization->enumerateStreams(callback);
+                remove_column_streams(command.column_name);
             }
             else if (command.type == MutationCommand::Type::RENAME_COLUMN)
             {
+                if (!new_part_column_names.contains(command.rename_to))
+                {
+                    if (columns_renamed_to_not_stored.insert(command.column_name).second)
+                        remove_column_streams(command.column_name);
+                    continue;
+                }
+
                 /// Columns updated in patches should be rewritten by mutation.
                 if (updated_columns_in_patches.contains(command.rename_to))
                     continue;
@@ -1829,6 +1919,12 @@ static NameToNameVector collectFilesForRenames(
                             command.column_name, command.rename_to, substream);
                         String stream_to = replaceFileNameToHashIfNeeded(
                             renamed, *storage_settings, &new_part->getDataPartStorage());
+
+                        /// Claimed here, where the destination name is known with full typed knowledge:
+                        /// `files_to_rename` is an untyped from -> to map that also carries drops.
+                        if (stream_base_manifest)
+                            stream_base_manifest->registerStreamBase(
+                                stream_to, {StreamBaseManifest::Kind::Column, command.rename_to});
 
                         if (*stream_from != stream_to)
                         {
@@ -1857,6 +1953,12 @@ static NameToNameVector collectFilesForRenames(
                             return;
 
                         String stream_to = replaceFileNameToHashIfNeeded(full_stream_to, *storage_settings, &new_part->getDataPartStorage());
+
+                        /// Claimed here, where the destination name is known with full typed knowledge:
+                        /// `files_to_rename` is an untyped from -> to map that also carries drops.
+                        if (stream_base_manifest)
+                            stream_base_manifest->registerStreamBase(
+                                stream_to, {StreamBaseManifest::Kind::Column, command.rename_to});
 
                         if (*stream_from != stream_to)
                         {
@@ -1889,18 +1991,73 @@ static NameToNameVector collectFilesForRenames(
         }
     }
 
+    /// A wide part reader finds a column's streams by name in the checksums, so the streams of a column
+    /// the new part does not store must not be carried over unless a stored column shares them.
+    if (isWidePart(source_part))
+    {
+        NameSet renamed_or_dropped;
+        for (const auto & command : commands_for_renames)
+        {
+            if (command.type == MutationCommand::Type::DROP_COLUMN || command.type == MutationCommand::Type::RENAME_COLUMN)
+                renamed_or_dropped.insert(command.column_name);
+        }
+
+        const auto & new_part_columns = new_part->getColumns();
+        Names columns_not_stored;
+        for (const auto & column : source_part_columns)
+        {
+            if (!new_part_column_names.contains(column.name) && !renamed_or_dropped.contains(column.name))
+                columns_not_stored.push_back(column.name);
+        }
+
+        if (!columns_not_stored.empty())
+        {
+            auto streams_of_new_part = getStreamCounts(new_part, source_part->checksums, new_part_columns.getNames());
+            for (const auto & [stream_name, _] : getStreamCounts(source_part, source_part->checksums, columns_not_stored))
+            {
+                if (!streams_of_new_part.contains(stream_name))
+                {
+                    add_rename(stream_name + ".bin", "");
+                    add_rename(stream_name + mrk_extension, "");
+                }
+            }
+        }
+    }
+
     if (source_part->getSerializationInfos().needsPersistence() && !new_part->getSerializationInfos().needsPersistence())
         add_rename(IMergeTreeDataPart::SERIALIZATION_FILE_NAME, "");
 
     return rename_vector;
 }
 
+/** Applies the part's pending mutation commands to `all_statistics`, replaces the entries being
+  * recalculated with empty collectors and marks the source part's statistics files as not to be
+  * hardlinked.
+  *
+  * `all_statistics` holds either the source part's statistics, keyed by the names the columns had in
+  * that part (`MutateSomePartColumnsTask` carries the untouched columns' statistics over from it), or
+  * empty collectors built from the current metadata, already keyed by the current names and typed for
+  * the current types (`MutateAllPartColumnsTask` rewrites every column and computes all of them anew).
+  * `statistics_are_from_source_part` tells which. The `RENAME COLUMN` / `DROP COLUMN` / type-change
+  * commands translate source-part names into current ones and apply to the former only: running them
+  * over current-schema collectors moved those onto the wrong columns - a swap of two differently-typed
+  * columns dropped both, each collector being then typed for the other column - while the metadata
+  * they were built from had already accounted for every rename and drop. A `CLEAR STATISTICS`
+  * (`DROP_STATISTICS`) applies to both kinds: the metadata still declares the statistics it clears,
+  * so a collector built from it has to be removed here. The column it names is followed through the
+  * mutation's later renames to its current name, which is cleared once the renames have been resolved.
+  * `mutation_commands` are the mutation's commands as they ran, used for that on the path that
+  * rewrites every column, where `commands_for_renames` does not carry the mutation's renames.
+  */
 static void processStatisticsChanges(
     NameSet & files_to_skip,
     NameToNameVector & files_to_rename,
     ColumnsStatistics & all_statistics,
+    bool statistics_are_from_source_part,
     const ColumnsStatistics & stats_to_recalc,
     const MutationCommands & commands_for_renames,
+    size_t num_commands_from_mutation,
+    const MutationCommands & mutation_commands,
     const IMergeTreeDataPart & source_part,
     const NamesAndTypesList & new_part_columns,
     StorageMetadataPtr metadata_snapshot)
@@ -1908,26 +2065,133 @@ static void processStatisticsChanges(
     auto storage_settings = source_part.storage.getSettings();
     String statistics_file_name(ColumnsStatistics::FILENAME);
 
+    /** A rename's target can be another rename's source: `a` and `b` exchange names when a mutation
+      * carries the composed pair `{a -> b, b -> a}`, and a chain (`a` -> `a1` -> `b`) resolves through
+      * an intermediate name. Applying the commands to `all_statistics` in place cannot express the
+      * first case - the target is still held by the other column when the first rename runs, so the
+      * insert did nothing and the following erase dropped the entry - so a renamed entry waits here
+      * until every command has been read, and a command looks for its source in both maps.
+      */
+    std::map<String, ColumnStatisticsPtr> renamed_statistics;
+    NameSet statistics_to_clear;
+
     auto process_rename = [&](const String & from_name, const String & to_name)
     {
-        auto it = all_statistics.find(from_name);
-        if (it == all_statistics.end())
+        ColumnStatisticsPtr statistics;
+
+        if (auto it = all_statistics.find(from_name); it != all_statistics.end())
+        {
+            statistics = it->second;
+            all_statistics.erase(it);
+        }
+        else if (auto renamed_it = renamed_statistics.find(from_name); renamed_it != renamed_statistics.end())
+        {
+            statistics = renamed_it->second;
+            renamed_statistics.erase(renamed_it);
+        }
+        else
+        {
             return;
+        }
 
         if (!to_name.empty())
-            all_statistics.emplace(to_name, it->second);
-
-        all_statistics.erase(it);
+            renamed_statistics.emplace(to_name, std::move(statistics));
     };
 
-    for (const auto & command : commands_for_renames)
+    /** The name a `CLEAR STATISTICS` gives a column is the one the column had when that command ran,
+      * which the mutation's own later `RENAME COLUMN` / `DROP COLUMN` commands can still change or
+      * free for another column (`DROP COLUMN a, RENAME COLUMN b TO a`). Follows `name` through them
+      * and returns the name the column has after them, or nothing if one of them drops it.
+      * `commands` are the mutation's own commands in the order they ran, starting with the one after the
+      * `CLEAR STATISTICS`.
+      */
+    auto resolve_name_after_mutation = [](std::span<const MutationCommand> commands, String name) -> std::optional<String>
     {
+        for (const auto & command : commands)
+        {
+            if (command.type == MutationCommand::Type::DROP_COLUMN && !command.clear && command.column_name == name)
+                return {};
+            if (command.type == MutationCommand::Type::RENAME_COLUMN && command.column_name == name)
+                name = command.rename_to;
+        }
+        return name;
+    };
+
+    /// `CLEAR STATISTICS ALL` is expanded to the names the columns have now.
+    auto clears_current_names = [](const MutationCommand & command)
+    {
+        return command.clear && command.statistics_columns.empty();
+    };
+
+    if (!statistics_are_from_source_part)
+    {
+        /** The collectors already carry the names the columns have now, so each `CLEAR STATISTICS` is
+          * followed through the mutation's later commands to the name its column has now. These are
+          * taken from `mutation_commands` and not from `commands_for_renames`: when every column is
+          * rewritten, the latter leaves out the mutation's `RENAME COLUMN` / `DROP COLUMN` commands.
+          * A column that a later command drops has no collector, and its name may now belong to
+          * another column, whose statistics are kept.
+          */
+        for (size_t command_index = 0; command_index < mutation_commands.size(); ++command_index)
+        {
+            const auto & command = mutation_commands[command_index];
+            if (command.type != MutationCommand::Type::DROP_STATISTICS)
+                continue;
+
+            std::span<const MutationCommand> later_commands(mutation_commands.begin() + command_index + 1, mutation_commands.end());
+
+            for (const auto & stats_name : MutationHelpers::getRemovedStatistics(metadata_snapshot, command))
+            {
+                std::optional<String> current_name = clears_current_names(command)
+                    ? std::optional<String>(stats_name)
+                    : resolve_name_after_mutation(later_commands, stats_name);
+
+                if (current_name)
+                    statistics_to_clear.insert(*current_name);
+            }
+        }
+    }
+
+    for (size_t command_index = 0; command_index < commands_for_renames.size(); ++command_index)
+    {
+        const auto & command = commands_for_renames[command_index];
+
+        if (!statistics_are_from_source_part)
+        {
+            /// The collectors already carry the names and types the columns have now, and the
+            /// `CLEAR STATISTICS` commands were resolved above.
+            continue;
+        }
+
         if (command.type == MutationCommand::Type::DROP_STATISTICS)
         {
             auto removed_stats = MutationHelpers::getRemovedStatistics(metadata_snapshot, command);
 
+            /// The first `num_commands_from_mutation` entries of `commands_for_renames` are the
+            /// mutation's own commands, in the order they ran; the rest are the renames from
+            /// `alter_conversions`' rename map, which translate the names the columns had in the part
+            /// and say nothing about when a name was given.
+            std::span<const MutationCommand> later_commands;
+            if (command_index < num_commands_from_mutation)
+                later_commands = std::span<const MutationCommand>(
+                    commands_for_renames.begin() + command_index + 1, commands_for_renames.begin() + num_commands_from_mutation);
+
             for (const auto & stats_name : removed_stats)
-                process_rename(stats_name, "");
+            {
+                /// On the source-part path the entry being cleared may still be keyed by the name the
+                /// column had in the part: the renames that bring the part up to date come after the
+                /// mutation's own commands. So a column that still exists is cleared by its current name
+                /// once every rename has been resolved. One that a later command drops is cleared in
+                /// place, before another column can take its name.
+                std::optional<String> current_name = clears_current_names(command)
+                    ? std::optional<String>(stats_name)
+                    : resolve_name_after_mutation(later_commands, stats_name);
+
+                if (current_name && metadata_snapshot->getColumns().has(*current_name))
+                    statistics_to_clear.insert(*current_name);
+                else
+                    process_rename(stats_name, "");
+            }
         }
         else if (command.type == MutationCommand::Type::DROP_COLUMN)
         {
@@ -1946,6 +2210,25 @@ static void processStatisticsChanges(
                 process_rename(command.column_name, "");
         }
     }
+
+    for (auto & [name, statistics] : renamed_statistics)
+    {
+        /// `emplace` and not an overwrite: a target name that another rename did not free still holds
+        /// the statistics of the column that lives there now, and those are the ones that describe it.
+        /// The entry being renamed is dropped in that case, as it was before.
+        ///
+        /// The statistics carry the type they were built for, so a rename onto a column of another type
+        /// - the two halves of a swap of differently-typed columns - drops them instead: writing them
+        /// would fail the type check while building the mutated part.
+        const auto * column_description = metadata_snapshot->getColumns().tryGet(name);
+        if (!column_description || !column_description->type->equals(*statistics->getDataType()))
+            continue;
+
+        all_statistics.emplace(name, std::move(statistics));
+    }
+
+    for (const auto & name : statistics_to_clear)
+        all_statistics.erase(name);
 
     if (!stats_to_recalc.empty())
     {
@@ -2234,6 +2517,9 @@ struct MutationContext
     MutationCommands commands_for_part;
     MutationCommands for_interpreter;
     MutationCommands for_file_renames;
+    /// The leading entries of `for_file_renames` that come from the mutation's own commands, in their
+    /// order; the renames from `alter_conversions`' rename map follow them.
+    size_t num_for_file_renames_from_commands = 0;
 
     NamesAndTypesList storage_columns;
     NameSet materialized_indices;
@@ -2254,6 +2540,9 @@ struct MutationContext
     std::set<MergeTreeIndexPtr> indices_to_recalc;
     std::set<MergeTreeIndexPtr> text_indices_to_recalc;
     std::set<MergeTreeIndexPtr> indices_to_drop;
+    /// One per mutation, i.e. per root part directory: shared by the writer(s), the carried-index
+    /// registration and MergeTextIndexesTask. Projections get their own instances.
+    StreamBaseManifestPtr stream_base_manifest{std::make_shared<StreamBaseManifest>()};
     /// The expressions of `indices_to_recalc` and `text_indices_to_recalc`, materialized into the
     /// block so that the writer reuses them instead of evaluating them itself. Held here rather
     /// than appended where they are collected, because they have to be evaluated on the block the
@@ -2302,8 +2591,7 @@ struct MutationContext
 
     bool checkOperationIsNotCanceled() const
     {
-        if (new_data_part ? merges_blocker->isCancelledForPartition(new_data_part->info.getPartitionId()) : merges_blocker->isCancelled()
-            || (*mutate_entry)->is_cancelled)
+        if (merges_blocker->isCancelledForPartition(future_part->part_info.getPartitionId()) || (*mutate_entry)->is_cancelled)
         {
             throw Exception(ErrorCodes::ABORTED, "Cancelled mutating parts");
         }
@@ -2847,9 +3135,10 @@ static bool isIndexResolvableFromOwnFiles(
     return false;
 }
 
-/// Does the part hold a file of `index` on disk, under any substream it declares? Wider than
-/// `hasSecondaryIndex`, which probes only the base `.idx` / `.idx2`: repair must also see a part
-/// left with just its side streams. Read-time callers keep the narrower predicate.
+/// Does the part hold a file of `index` on disk, under any substream any version of it could have
+/// written (`getPotentialSubstreams`)? Wider than `hasSecondaryIndex`, which probes only the base
+/// `.idx` / `.idx2`: repair must also see a part left with just its side streams, including one the
+/// current definition does not write. Read-time callers keep the narrower predicate.
 static bool hasAnyIndexFileOnDisk(
     const IMergeTreeIndex & index,
     const MergeTreeDataPartPtr & source_part,
@@ -2862,7 +3151,7 @@ static bool hasAnyIndexFileOnDisk(
 
     const auto & storage = source_part->getDataPartStorage();
     const String file_name = index.getFileName();
-    for (const auto & substream : index.getSubstreams())
+    for (const auto & substream : index.getPotentialSubstreams())
     {
         const String stream_name = file_name + substream.suffix;
         if (IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, storage))
@@ -3029,6 +3318,10 @@ private:
             }
             else
             {
+                /// This index survives the rewrite, so its existing bases stay occupied.
+                MutationHelpers::registerCarriedSkipIndexBases(
+                    ctx->stream_base_manifest, index_ptr, ctx->source_part);
+
                 /// Hardlink the source index files and copy their checksum entries explicitly (the
                 /// writer does not rewrite them, else `CHECK TABLE` fails). Walk what the source
                 /// actually holds so an upgraded legacy part keeps its data file, and
@@ -3205,20 +3498,24 @@ private:
         const bool has_block_columns = new_part_columns.contains(BlockNumberColumn::name) && new_part_columns.contains(BlockOffsetColumn::name);
         ctx->minmax_idx = std::make_shared<IMergeTreeDataPart::MinMaxIndex>();
         ctx->minmax_idx_columns = MergeTreeData::getMinMaxColumns(ctx->metadata_snapshot->getPartitionKey(), ctx->data->getSettings(), has_block_columns ? MergeTreePartMinMaxIndexColumns::WITH_BLOCK_NUMBER_OFFSET : MergeTreePartMinMaxIndexColumns::PARTITION_KEY_ONLY);
+        /// This task rewrites every column, so the statistics are created empty from the current
+        /// metadata and all of them have to be computed. They already carry the current names, so only
+        /// a `CLEAR STATISTICS` pending in the mutation still applies to them; see `processStatisticsChanges`.
         ctx->all_gathered_data.statistics = ColumnsStatistics(ctx->metadata_snapshot->getColumns());
 
         MutationHelpers::processStatisticsChanges(
             ctx->files_to_skip,
             ctx->files_to_rename,
             ctx->all_gathered_data.statistics,
+            /*statistics_are_from_source_part=*/ false,
             ctx->stats_to_recalc,
             ctx->for_file_renames,
+            ctx->num_for_file_renames_from_commands,
+            ctx->commands_for_part,
             *ctx->source_part,
             new_part_columns,
             ctx->metadata_snapshot);
 
-        /// This task rewrites every column, so all statistics objects were created empty from the
-        /// current metadata above and all of them have to be computed.
         ctx->statistics_to_build = ctx->all_gathered_data.statistics;
 
         ctx->out = std::make_shared<MergedBlockOutputStream>(
@@ -3235,7 +3532,8 @@ private:
             /*blocks_are_granules_size=*/ false,
             ctx->context->getWriteSettings(),
             static_cast<WrittenOffsetSubstreams *>(nullptr),
-            /*try_adaptive_codec=*/ !ctx->is_explicit_recompression);
+            /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
+            ctx->stream_base_manifest);
 
         ctx->mutating_pipeline = QueryPipelineBuilder::getPipeline(std::move(*builder));
         ctx->mutating_pipeline.setProgressCallback(ctx->progress_callback);
@@ -3337,8 +3635,11 @@ private:
             ctx->files_to_skip,
             ctx->files_to_rename,
             ctx->all_gathered_data.statistics,
+            /*statistics_are_from_source_part=*/ true,
             ctx->stats_to_recalc,
             ctx->for_file_renames,
+            ctx->num_for_file_renames_from_commands,
+            ctx->commands_for_part,
             *ctx->source_part,
             ctx->new_data_part->getColumns(),
             ctx->metadata_snapshot);
@@ -3627,7 +3928,9 @@ private:
                 ctx->source_part->index_granularity,
                 ctx->source_part->getBytesUncompressedOnDisk(),
                 static_cast<WrittenOffsetSubstreams *>(nullptr),
-                /*try_adaptive_codec=*/ !ctx->is_explicit_recompression);
+                /*try_adaptive_codec=*/ !ctx->is_explicit_recompression,
+                /*external_packed_skip_indices_writer=*/ nullptr,
+                ctx->stream_base_manifest);
 
             /// Carry surviving in-archive entries that aren't being recomputed into the writer's
             /// PackedFilesWriter before any block lands. Without this, the new archive would
@@ -4141,12 +4444,13 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
             if (resolvable_from_checksums)
                 continue;
 
-            /// Walk every declared substream, taking only the extension it declares plus minmax's
-            /// legacy `.idx` for a `.idx2` substream. A file registered in `checksums.txt` is not an
-            /// orphan: index names can share an on-disk name, and the registered owner may be an
+            /// Walk every substream any version of the index could have written (`getPotentialSubstreams`
+            /// covers minmax's legacy `.idx` and a text index's `.pos` the current definition does not
+            /// write), taking only the extension it declares. A file registered in `checksums.txt` is not
+            /// an orphan: index names can share an on-disk name, and the registered owner may be an
             /// index this same mutation drops, so it is absent from the post-drop metadata.
             const String file_name = index_ptr->getFileName();
-            for (const auto & index_substream : index_ptr->getSubstreams())
+            for (const auto & index_substream : index_ptr->getPotentialSubstreams())
             {
                 const String stream_name = file_name + index_substream.suffix;
                 auto collect = [&](const String & extension)
@@ -4159,8 +4463,6 @@ void updateIndicesToRecalculateAndDrop(std::shared_ptr<MutationContext> & ctx)
                 };
 
                 collect(index_substream.extension);
-                if (index_substream.extension == ".idx2")
-                    collect(".idx");
                 collect(ctx->mrk_extension);
             }
         }
@@ -4327,6 +4629,12 @@ bool MutateTask::prepare()
             "This is a bug.", ctx->future_part->parts.size());
 
     ctx->num_mutations = std::make_unique<CurrentMetrics::Increment>(CurrentMetrics::PartMutation);
+
+    /// A mutation never adds rows, so an empty source part yields an empty one with no marks to
+    /// share. A null manifest disables every claim site of this mutation at once, including the
+    /// ones that run before the writer.
+    if (ctx->source_part->isEmpty())
+        ctx->stream_base_manifest = nullptr;
 
     auto max_partition_blocks = std::make_shared<PartitionIdToMaxBlock>();
     max_partition_blocks->emplace(ctx->future_part->part_info.getPartitionId(), ctx->future_part->part_info.getMutationVersion());
@@ -4537,12 +4845,14 @@ bool MutateTask::prepare()
         ctx->commands_for_part,
         ctx->for_interpreter,
         ctx->for_file_renames,
+        ctx->num_for_file_renames_from_commands,
         ctx->log);
 
     if (commands_for_execution != &ctx->commands_for_part)
     {
         ctx->for_interpreter.clear();
         MutationCommands unused_file_renames;
+        size_t unused_num_file_renames_from_commands = 0;
         MutationHelpers::splitAndModifyMutationCommands(
             ctx->source_part,
             ctx->metadata_snapshot,
@@ -4550,6 +4860,7 @@ bool MutateTask::prepare()
             *commands_for_execution,
             ctx->for_interpreter,
             unused_file_renames,
+            unused_num_file_renames_from_commands,
             ctx->log);
     }
 
@@ -4624,8 +4935,14 @@ bool MutateTask::prepare()
     ctx->new_data_part->is_temp = true;
     ctx->new_data_part->ttl_infos = ctx->source_part->ttl_infos;
 
-    /// It shouldn't be changed by mutation.
-    ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
+    /// Keep the source granularity properties while the part type survives the mutation (e.g. a
+    /// legacy part with non-adaptive granularity must stay non-adaptive). When the mutation
+    /// changes the part type, the new part must keep the granularity info of its own type, set by
+    /// the part constructor: the mark type encodes the part type in the marks file extension, and
+    /// a `Wide` part written with the source's `Compact` extension (e.g. per-column `.cmrk4`
+    /// files) is detected as `Compact` on the next load from disk and breaks.
+    if (ctx->new_data_part->getType() == ctx->source_part->getType())
+        ctx->new_data_part->index_granularity_info = ctx->source_part->index_granularity_info;
 
     /// Decided once here and reused for the task selection below, so that the column list of the new
     /// part cannot disagree with the task that fills it.
@@ -4729,6 +5046,27 @@ bool MutateTask::prepare()
         auto all_indices_to_recalc = ctx->indices_to_recalc;
         all_indices_to_recalc.insert(ctx->text_indices_to_recalc.begin(), ctx->text_indices_to_recalc.end());
 
+        /// The carried indices are the COMPLEMENT of what collectFilesToSkip excludes: everything
+        /// neither recalculated nor dropped keeps its existing files, so its bases stay occupied.
+        {
+            NameSet rewritten_index_names = ctx->indices_to_drop_names;
+            for (const auto & index : all_indices_to_recalc)
+                rewritten_index_names.insert(index->index.name);
+            for (const auto & index : ctx->indices_to_drop)
+                rewritten_index_names.insert(index->index.name);
+
+            const auto & index_factory = MergeTreeIndexFactory::instance();
+            for (const auto & index : ctx->metadata_snapshot->getSecondaryIndices())
+            {
+                if (rewritten_index_names.contains(index.name))
+                    continue;
+                auto index_ptr = index_factory.get(ctx->metadata_snapshot, index, *ctx->data->getSettings());
+                if (index_ptr->isInert())
+                    continue;
+                MutationHelpers::registerCarriedSkipIndexBases(ctx->stream_base_manifest, index_ptr, ctx->source_part);
+            }
+        }
+
         ctx->files_to_skip = MutationHelpers::collectFilesToSkip(
             ctx->source_part,
             ctx->new_data_part,
@@ -4759,7 +5097,16 @@ bool MutateTask::prepare()
             ctx->new_data_part,
             ctx->for_file_renames,
             updated_columns_in_patches,
-            ctx->mrk_extension);
+            ctx->mrk_extension,
+            ctx->stream_base_manifest);
+
+        MutationHelpers::registerCarriedColumnBases(
+            ctx->stream_base_manifest,
+            ctx->source_part,
+            ctx->new_data_part,
+            ctx->updated_header,
+            ctx->files_to_skip,
+            ctx->files_to_rename);
 
         /// In case of replicated merge tree with zero copy replication
         /// Here ClickHouse has to follow the common procedure when deleting new part in temporary state

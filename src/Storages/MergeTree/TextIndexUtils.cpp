@@ -1,12 +1,10 @@
 #include <Processors/Port.h>
 #include <DataTypes/DataTypeString.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
-#include <Parsers/ExpressionElementParsers.h>
 #include <Compression/CompressionFactory.h>
 #include <Common/CurrentThread.h>
 #include <Common/ProfileEvents.h>
 #include <Common/ThreadStatus.h>
-#include <Parsers/parseQuery.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIOSettings.h>
@@ -64,9 +62,7 @@ Int64 getCurrentThreadMemoryUsage()
 
 CompressionCodecPtr makeMarksCompressionCodec(const String & marks_compression_codec)
 {
-    ParserCodec codec_parser;
-    auto ast = parseQuery(codec_parser, "(" + Poco::toUpper(marks_compression_codec) + ")", 0, DBMS_DEFAULT_MAX_PARSER_DEPTH, DBMS_DEFAULT_MAX_PARSER_BACKTRACKS);
-    return CompressionCodecFactory::instance().get(ast, nullptr);
+    return CompressionCodecFactory::instance().get(marks_compression_codec);
 }
 
 std::pair<MergeTreeIndexOutputStreams, std::vector<std::unique_ptr<MergeTreeIndexWriterStream>>>
@@ -342,7 +338,7 @@ private:
     template <typename Sink>
     void flushRun(Window window, Sink && sink);
 
-    /// Flushes the row ids to the sink directly if they are a aligned with append_granularity, otherwise buffers them.
+    /// Flushes the row ids to the sink directly if they are aligned with append_granularity, otherwise buffers them.
     template <typename Sink>
     void flushDirect(std::span<const UInt32> row_ids, Sink && sink);
 
@@ -526,6 +522,17 @@ MergeTextIndexesTask::MergeTextIndexesTask(
     sparse_index_tokens = ColumnString::create();
     sparse_index_offsets = ColumnUInt64::create();
 
+    /// Registered here rather than inside `makeOutputStreams`: the other caller writes temporary
+    /// segments into a different directory and must claim nothing in this part.
+    if (writer_settings.stream_base_manifest)
+    {
+        const String index_file_name = index_ptr->getFileName();
+        for (const auto & substream : index_ptr->getSubstreams())
+            writer_settings.stream_base_manifest->registerStreamBase(
+                index_file_name + substream.suffix,
+                {StreamBaseManifest::Kind::SkipIndex, index_ptr->index.name});
+    }
+
     std::tie(output_streams, output_streams_holders) = makeOutputStreams(
         index_ptr->getSubstreams(),
         index_ptr->getFileName(),
@@ -597,7 +604,7 @@ void MergeTextIndexesTask::readDictionaryBlock(size_t source_num)
     if (data_buffer->eof())
         return;
 
-    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer);
+    inputs[source_num] = TextIndexSerialization::deserializeDictionaryBlock(*data_buffer, /*with_postings=*/ true);
     const auto & tokens = inputs[source_num].tokens;
     tokens_cursors[source_num].reset({tokens}, getHeader(), tokens->size());
     tokens_queue.push(tokens_cursors[source_num]);
@@ -957,7 +964,7 @@ void MergeTextIndexesTask::mergePostings(Sink && sink)
             postings_queue->push(source);
     }
 
-    const bool has_positions = params.positions && std::ranges::any_of(current_token_sources,
+    const bool has_positions = params.enable_positions && std::ranges::any_of(current_token_sources,
         [](const auto & source) { return source.info.header & PostingsSerialization::Flags::HasPositions; });
 
     if (has_positions)
@@ -1189,7 +1196,7 @@ void MergeTextIndexesTask::finalize()
     {
         .version = params.serialization_version,
         .codec_type = postings_serialization.getPostingListCodec()->getType(),
-        .has_positions = params.positions != 0,
+        .has_positions = params.enable_positions,
         .positions_codec = params.positions_codec,
         .sparse_index = DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets)),
     };

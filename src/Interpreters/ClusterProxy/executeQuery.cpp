@@ -442,34 +442,24 @@ static ContextMutablePtr updateSettingsAndClientInfoForCluster(const Cluster & c
         new_settings[Setting::additional_table_filters].value.push_back(std::move(tuple));
     }
 
-    /// disable parallel replicas if cluster contains only shards with 1 replica
-    if (context->canUseTaskBasedParallelReplicas())
+    if (context->canUseTaskBasedParallelReplicas() && is_remote_function)
     {
-        bool disable_parallel_replicas = false;
-        if (is_remote_function)
-        {
-            if (cluster.getName().empty()) // disable parallel replicas with remote() table functions w/o configured cluster
-                disable_parallel_replicas = true;
-            else
-                new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
-        }
-
-        if (!disable_parallel_replicas)
-        {
-            disable_parallel_replicas = true;
-            for (const auto & shard : cluster.getShardsInfo())
-            {
-                if (shard.getAllNodeCount() > 1)
-                {
-                    disable_parallel_replicas = false;
-                    break;
-                }
-            }
-        }
-
-        if (disable_parallel_replicas)
+        /// `remote()` without a configured cluster has no cluster to scope parallel replicas to.
+        if (cluster.getName().empty())
             new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+        else
+            new_settings[Setting::cluster_for_parallel_replicas] = cluster.getName();
     }
+
+    /// `clusterAllReplicas` already reads every replica as a shard of its own, so there is nothing left
+    /// for parallel replicas to split
+    if (context->canUseTaskBasedParallelReplicas() && cluster.replicasAsShards())
+        new_settings[Setting::allow_experimental_parallel_reading_from_replicas] = 0;
+
+    /// Parallel replicas are not disabled here for a cluster whose every shard has one replica:
+    /// `new_settings` is what the shard receives, and its own table may be a `Distributed` table over a
+    /// cluster that can use them. Whether this hop uses them is decided per shard below, and a shard
+    /// that cannot declines on its own, see `canUseParallelReplicasOnInitiator`.
 
     if (settings[Setting::max_execution_time_leaf].totalMicroseconds() > 0)
     {
@@ -591,6 +581,7 @@ void executeQuery(
     /// Tracker is shared between local-missing-table skip path in SelectStreamFactory and
     /// remote unavailable-shard skip path in ReadFromRemote so max_skip_unavailable_shards_num
     /// and max_skip_unavailable_shards_ratio are enforced uniformly across both paths.
+    /// Needed even with no limit set: it is also what notices that every shard was skipped.
     UnavailableShardTrackerPtr unavailable_shard_tracker;
     {
         const auto & new_settings_ref = new_context->getSettingsRef();
@@ -598,8 +589,7 @@ void executeQuery(
         {
             size_t max_num = new_settings_ref[Setting::max_skip_unavailable_shards_num];
             Float64 max_ratio = static_cast<double>(new_settings_ref[Setting::max_skip_unavailable_shards_ratio]);
-            if (max_num > 0 || max_ratio > 0)
-                unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
+            unavailable_shard_tracker = std::make_shared<UnavailableShardTracker>(shards, max_num, max_ratio);
         }
     }
 

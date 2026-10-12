@@ -39,9 +39,14 @@ INSERT INTO t_distinct_join_r SELECT number FROM numbers(800);
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN actions = 1 SELECT count() FROM (SELECT DISTINCT a FROM t_distinct_join_l) AS l INNER JOIN t_distinct_join_r AS r ON l.a = r.a) WHERE explain LIKE '%Sharding%' OR explain LIKE '%Read each partition through separate port%';
 SELECT count() FROM (SELECT DISTINCT a FROM t_distinct_join_l) AS l INNER JOIN t_distinct_join_r AS r ON l.a = r.a;
 
--- With independent DISTINCT disabled the same query is sharded by primary-key ranges.
+-- With independent DISTINCT disabled the final DISTINCT merges its input into a single stream, which
+-- cannot be paired with the shards of the other side, so the JOIN is not sharded either.
 SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN actions = 1 SELECT count() FROM (SELECT DISTINCT a FROM t_distinct_join_l) AS l INNER JOIN t_distinct_join_r AS r ON l.a = r.a SETTINGS allow_distinct_partitions_independently = 0, force_distinct_partitions_independently = 0) WHERE explain LIKE '%Sharding%' OR explain LIKE '%Read each partition through separate port%';
 SELECT count() FROM (SELECT DISTINCT a FROM t_distinct_join_l) AS l INNER JOIN t_distinct_join_r AS r ON l.a = r.a SETTINGS allow_distinct_partitions_independently = 0, force_distinct_partitions_independently = 0;
+
+-- Without DISTINCT the same tables are sharded by primary-key ranges.
+SELECT replaceRegexpOne(explain, '^[ ]*(.*)', '\1') FROM (EXPLAIN actions = 1 SELECT count() FROM t_distinct_join_l AS l INNER JOIN t_distinct_join_r AS r ON l.a = r.a) WHERE explain LIKE '%Sharding%' OR explain LIKE '%Read each partition through separate port%';
+SELECT count() FROM t_distinct_join_l AS l INNER JOIN t_distinct_join_r AS r ON l.a = r.a;
 
 DROP TABLE t_distinct_join_l;
 DROP TABLE t_distinct_join_r;
