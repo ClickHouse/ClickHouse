@@ -138,10 +138,7 @@ ExecutingProcessor * Worker::tryPick()
     if (const size_t count = pool.global_tasks.popManyFifo(std::span(tmp_buffer).first(max_take_from_global), pool.coordinator.registeredWorkers()))
     {
         metrics.global_picks += 1;
-        auto * picked = pickFromBatch(std::span(tmp_buffer).first(count));
-        const Int64 left_in_queue = pool.global_tasks.size() > 0 ? 1 : 0;
-        wakeFor(count - 1 + left_in_queue);
-        return picked;
+        return pickFromBatch(std::span(tmp_buffer).first(count));
     }
 
     if (pool.poller.pending() > 0 && !pool.coordinator.hasPoller() && pool.coordinator.startPolling())
@@ -155,18 +152,35 @@ ExecutingProcessor * Worker::tryPick()
 
     if (pool.coordinator.startStealing())
     {
-        auto * picked = trySteal(steal_rounds);
+        const size_t count = trySteal(steal_rounds);
         pool.coordinator.stopStealing();
-        metrics.steal_picks += picked != nullptr;
-        metrics.steal_misses += picked == nullptr;
-        wakeFor(picked != nullptr);
-        return picked;
+        metrics.steal_picks += count > 0;
+        metrics.steal_misses += count == 0;
+        return count > 0 ? pickFromBatch(std::span(tmp_buffer).first(count)) : nullptr;
     }
 
     return nullptr;
 }
 
-ExecutingProcessor * Worker::trySteal(size_t rounds)
+ExecutingProcessor * Worker::pickFromBatch(std::span<ExecutingProcessor *> batch)
+{
+    injectShuffle(batch);
+    pushManyLifo(batch.first(batch.size() - 1));
+    wakeWorker();
+    return batch.back();
+}
+
+ExecutingProcessor * Worker::pickFromFired(std::span<ExecutingProcessor *> fired)
+{
+    if (fired.empty())
+        return nullptr;
+
+    metrics.poll_picks += 1;
+    metrics.polled_records += fired.size();
+    return pickFromBatch(fired);
+}
+
+size_t Worker::trySteal(size_t rounds)
 {
     const size_t workers = pool.workers.size();
     for (size_t round = 0; round < rounds; ++round)
@@ -183,32 +197,11 @@ ExecutingProcessor * Worker::trySteal(size_t rounds)
                 continue;
 
             metrics.stolen_records += count;
-            return pickFromBatch(std::span(tmp_buffer).first(count));
+            return count;
         }
     }
 
-    return nullptr;
-}
-
-ExecutingProcessor * Worker::pickFromBatch(std::span<ExecutingProcessor *> batch)
-{
-    injectShuffle(batch);
-    pushManyLifo(batch.first(batch.size() - 1));
-    return batch.back();
-}
-
-ExecutingProcessor * Worker::pickFromFired(std::span<ExecutingProcessor *> fired)
-{
-    if (fired.empty())
-        return nullptr;
-
-    metrics.poll_picks += 1;
-    metrics.polled_records += fired.size();
-    auto * picked = pickFromBatch(fired);
-
-    const Int64 next_poller = pool.poller.pending() > 0 ? 1 : 0;
-    wakeFor(fired.size() - 1 + next_poller);
-    return picked;
+    return 0;
 }
 
 bool Worker::anyWorkHasAppeared() const
@@ -243,11 +236,8 @@ bool Worker::worthWaking(std::span<ExecutingProcessor * const> found) const
     return false;
 }
 
-void Worker::wakeFor(Int64 extra_work)
+void Worker::wakeWorker()
 {
-    if (extra_work <= 0)
-        return;
-
     if (pool.coordinator.hasStealer())
     {
         metrics.wake_skips += 1;
@@ -279,9 +269,9 @@ void Worker::execute(ExecutingProcessor & executing)
     const auto & finished_processors = runner.getFinishedProcessors();
     pool.pipeline.recordAsFinished(finished_processors);
 
-    const Int64 work_found = Int64(runnable.size()) + Int64(poll_requests.size());
-    if (!poll_requests.empty() || worthWaking(runnable))
-        wakeFor(work_found - 1);
+    const size_t published = runnable.size() + poll_requests.size();
+    if (published > 1 && (!poll_requests.empty() || worthWaking(runnable)))
+        wakeWorker();
 }
 
 void Worker::run(WorkerSlot & slot, std::atomic_bool * yield_flag)
@@ -316,7 +306,8 @@ void Worker::handOver()
             moved += count;
         }
     }
-    wakeFor(moved);
+    if (moved > 0)
+        wakeWorker();
 }
 
 void Worker::wake()
