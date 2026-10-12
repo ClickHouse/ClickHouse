@@ -95,12 +95,14 @@ public:
 };
 
 /// Whether the node is `CAST`, `_CAST`, `toNullable` or `toLowCardinality` whose conversion never changes
-/// the value and never throws: `LowCardinality` added or dropped and `Nullable` added, at any depth of `Array`.
-bool isLosslessConversionFunction(const ActionsDAG::Node & node);
+/// a non-NULL value: `LowCardinality` or `Nullable` added or dropped, at any depth of `Array`.
+/// Dropping `Nullable` throws on NULL, but an index may skip such granules and the query will not throw.
+/// Pass `allow_drop_nullable = false` when the predicate is replaced and must still throw, e.g. by direct read from a text index.
+bool isLosslessConversionFunction(const ActionsDAG::Node & node, bool allow_drop_nullable = true);
 
 /// Strips lossless conversions (see above) from the node. Indexes are analyzed on the expression under them.
-RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node);
-const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node);
+RPNBuilderTreeNode unwrapLosslessConversion(const RPNBuilderTreeNode & node, bool allow_drop_nullable = true);
+const ActionsDAG::Node * unwrapLosslessConversion(const ActionsDAG::Node * node, bool allow_drop_nullable = true);
 
 /** RPN Builder build stack of reverse polish notation elements (RPNElements) required for index analysis.
   *

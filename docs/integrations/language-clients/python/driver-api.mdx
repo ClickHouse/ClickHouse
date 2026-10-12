@@ -35,7 +35,7 @@ Use `clickhouse_connect.get_client` to create a synchronous `Client`, or install
 | `headers` | dict or None | `None` | HTTP headers applied to every request, including client initialization. User headers are applied after driver defaults and can override them. |
 | `compress` | bool or str | `True` | Enable compression or select `"lz4"`, `"zstd"`, `"br"`, or `"gzip"`. See [Compression](/integrations/language-clients/python/additional-options#compression). |
 | `query_limit` | int | `0` | Default row limit appended to eligible queries. Zero means unlimited. Stream large results instead of materializing them all in memory. |
-| `query_retries` | int | `2` | Retry budget for retryable read failures. Commands and inserts are not generally retried because replay can duplicate side effects. |
+| `query_retries` | int | `2` | Retry budget for eligible reads through query methods. See [HTTP retries](#http-retries) for connection-close retries, commands, and inserts. |
 | `connect_timeout` | int for sync, float for async | `10` | Timeout in seconds for establishing a new connection. Waiting for a free connection pool slot is excluded. The async client accepts fractional seconds. |
 | `send_receive_timeout` | int for sync, float for async | `300` | Socket read timeout in seconds. The async client accepts fractional seconds. |
 | `client_name` | str or None | `None` | Prefix added to the HTTP User-Agent for identification in `system.query_log`. |
@@ -148,6 +148,16 @@ with clickhouse_connect.get_client(interface="chdb") as client:
 ```
 
 The default is an in-memory database. Pass `path="/data/my_chdb"` or use `dsn="chdb:///data/my_chdb"` for persistent storage. The backend allows one engine path per process and does not support `get_async_client` or external data.
+
+### HTTP retries {#http-retries}
+
+Both synchronous and asynchronous HTTP clients retry eligible reads after certain remote connection closes and HTTP 429, 503, or 504 responses. For `query`, its specialized query methods, `raw_query`, and `raw_stream`, `query_retries` sets the number of additional attempts. Eligible reads allow at least one retry after a remote close, even when `query_retries=0`. A read sent through `command` can retry once after a remote close, but does not use the `query_retries` budget or retry those HTTP statuses.
+
+The client recognizes read statements such as `SELECT`, `SHOW`, `DESCRIBE`, and `EXISTS`, including supported `WITH` and `EXPLAIN` forms. SQL that it cannot recognize as a read is not retried after these failures. Statements with `PARALLEL WITH`, `INTO OUTFILE`, or multiple statements are also excluded.
+
+SQL writes, DDL, and mutations sent through `command`, `query`, `raw_query`, or `raw_stream` are not replayed after these failures. This also applies when DB-API or SQLAlchemy executes SQL through those methods. A connection error does not tell you whether a write committed. Check the outcome before retrying it in your application.
+
+Insert APIs retain connection-close retries when the request body can be replayed. These retries can duplicate rows. See [Insert retries and deduplication](/integrations/language-clients/python/advanced-inserting#insert-retries-and-deduplication).
 
 ## Client lifecycle and best practices {#client-lifecycle-and-best-practices}
 
@@ -812,32 +822,29 @@ The module exports the PEP 249 exception hierarchy: `Warning`, `Error`, `Interfa
 ```python
 from clickhouse_connect import dbapi
 
-connection = dbapi.connect(
+with dbapi.connect(
     host="localhost",
     username="default",
     password="password",
     database="default",
-)
-cursor = connection.cursor()
-
-try:
-    cursor.execute(
-        "SELECT name FROM system.tables "
-        "WHERE database = %(database)s ORDER BY name LIMIT 5",
-        {"database": "system"},
-    )
-    print(cursor.description)
-    print(cursor.fetchall())
-finally:
-    cursor.close()
-    connection.close()
+) as connection:
+    with connection.cursor() as cursor:
+        cursor.execute(
+            "SELECT name FROM system.tables "
+            "WHERE database = %(database)s ORDER BY name LIMIT 5",
+            {"database": "system"},
+        )
+        print(cursor.description)
+        print(cursor.fetchall())
 ```
+
+As a driver extension, `Connection` and `Cursor` context managers return the existing object and call `close()` on normal and exceptional exit. They don't suppress exceptions from the block.
 
 `Cursor.execute` and `Cursor.executemany` accept additional `settings` and `query_formats` keyword arguments. `settings` passes ClickHouse settings. `query_formats` applies read formats by ClickHouse type when a statement returns rows, using the same mapping as `Client.query`. Both methods also accept the keyword-only `pyformat_encoded` argument. Its default `True` follows the DB-API `pyformat` contract. The SQLAlchemy dialect sets it to `False` when the statement compiler emitted raw percent signs, so applications normally should not set it. Parameterized `Cursor.executemany` operations execute once for each parameter set, preserving SQL binding and expression semantics. With HTTP, this sends one request per parameter set. If a later parameter set fails, earlier writes remain committed. For these `executemany` inserts, `Cursor.rowcount` is the sum of the `written_rows` values reported by ClickHouse, or `-1` when that value is unavailable. INSERT statements sent through `Cursor.execute` report `0`. The placeholder-less `INSERT INTO table (columns) VALUES` compatibility form uses Native insertion. A placeholder-less INSERT ending in `VALUES` raises `ProgrammingError` if it cannot be recognized as that compatibility form. Applications that need explicit Native bulk insertion should use `Client.insert`. `fetchone`, `fetchmany`, and `fetchall` consume the current materialized result.
 
 `Cursor.description` derives `null_ok` from each result column type. Non-nullable types report `False`, and nullable types report `True`, including `Nullable` wrappers, `Variant`, and `Dynamic`. `None` means the nullability is unknown. When a query that starts with `SELECT` or `WITH`, ignoring leading comments, returns no rows and no column metadata, the cursor runs a `LIMIT 0` metadata query to populate `description`. If that metadata query fails, `description` is left empty.
 
-ClickHouse does not provide traditional transactions through this HTTP interface. `Connection.commit()` and `Connection.rollback()` are no-ops. The [session ID concurrency rules](/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids) still apply when a connection is shared.
+ClickHouse does not provide traditional transactions through this HTTP interface. `Connection.commit()` and `Connection.rollback()` are no-ops, so leaving a connection context calls `Connection.close()` instead of committing or rolling back. The [session ID concurrency rules](/integrations/language-clients/python/advanced-usage#managing-clickhouse-session-ids) still apply when a connection is shared.
 
 ## Utility classes and functions {#utility-classes-and-functions}
 
