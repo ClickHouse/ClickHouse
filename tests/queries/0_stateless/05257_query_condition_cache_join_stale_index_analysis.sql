@@ -116,14 +116,19 @@ SETTINGS use_top_k_dynamic_filtering = 1, use_query_condition_cache_for_top_k = 
 SELECT count() FROM (SELECT k FROM tab WHERE v = 7 ORDER BY v LIMIT 3) AS t INNER JOIN dim ON t.k = dim.k
 SETTINGS use_top_k_dynamic_filtering = 1, use_query_condition_cache_for_top_k = 1, query_plan_max_limit_for_top_k_optimization = 0, log_comment = 'qcc_topk_join_r2';
 SYSTEM FLUSH LOGS query_log;
+-- The analysis kept for join reordering looks up the WHERE and the `__topKFilter` still waiting for its PREWHERE,
+-- and the PREWHERE the condition moves to is looked up once more, so run 1 misses three times.
 SELECT ProfileEvents['QueryConditionCacheHits'],
+       ProfileEvents['QueryConditionCacheMisses'],
        ProfileEvents['SelectedMarks'] = ProfileEvents['SelectedMarksTotal']
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND log_comment = 'qcc_topk_join_r1'
 ORDER BY event_time_microseconds DESC LIMIT 1;
 SELECT ProfileEvents['QueryConditionCacheHits'],
-       ProfileEvents['SelectedMarks'] <= 3
+       ProfileEvents['QueryConditionCacheMisses'],
+       ProfileEvents['SelectedMarks'] <= 3,
+       ProfileEvents['IndexAnalysisRounds']
 FROM system.query_log
 WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish'
   AND current_database = currentDatabase() AND log_comment = 'qcc_topk_join_r2'

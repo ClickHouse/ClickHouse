@@ -4,10 +4,11 @@
 0	2	1
 1	1	1	1	1
 -- the same for a TopK read
+1
 7
 7
-0	1
-1	1	1
+0	2	1
+1	1	1	1	1
 -- control: parallel replicas without a row estimate
 7
 7

@@ -4165,6 +4165,9 @@ bool ReadFromMergeTree::readsInOrder() const
 
 void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value)
 {
+    /// Until a PREWHERE is probed here, `analyzed_result_ptr` carries the verdict of the one the read was analyzed with.
+    if (analyzed_result_ptr && !query_condition_cache_probed_prewhere)
+        query_condition_cache_probed_prewhere = query_info.prewhere_info;
     query_info.prewhere_info = prewhere_info_value;
 
     /// when PREWHERE is deferred after FINAL, a later rewrite must apply to the filter that actually runs

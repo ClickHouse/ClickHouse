@@ -861,7 +861,7 @@ private:
     bool enable_vertical_final = false;
     bool allow_query_condition_cache = true;
     bool allow_top_k_prewhere_query_condition_cache = true;
-    /// The last PREWHERE that `updatePrewhereInfo` probed the query condition cache with, so that restoring
+    /// The last PREWHERE whose query condition cache verdict `analyzed_result_ptr` carries, so that restoring
     /// the same PREWHERE (e.g. after a temporary clear) does not probe and count the cache again.
     PrewhereInfoPtr query_condition_cache_probed_prewhere;
 
