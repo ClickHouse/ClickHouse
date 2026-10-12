@@ -846,7 +846,6 @@ ExpireSnapshotsResult expireSnapshots(
         }
         persistent_table_components.invalidateMetadataCache();
 
-        /// The snapshots are already removed from the table: a stop from here on leaves the rest of their files unreferenced.
         size_t deleted_files = 0;
         try
         {
