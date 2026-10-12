@@ -487,6 +487,9 @@ object storage, and does not use that snapshot until it is rewritten.
 | `metadata_snapshot_enabled`         | Write the snapshot after modifications (if the object storage is writable), or load the state from it instead of listing the object storage (if the object storage is read-only).                                            | `true`  |
 | `metadata_snapshot_write_delay_ms`  | The snapshot is rewritten in the background, not more often than the given number of milliseconds, as long as there were modifications. `0` rewrites it right after every modification, in the committing thread, which makes every commit as expensive as serializing the metadata of the whole disk. The snapshot is also written on server shutdown, and removed right away when the disk becomes empty. | `1000`  |
 
+Both settings are read only when the disk is created: a change takes effect
+after a restart of the server, `SYSTEM RELOAD CONFIG` does not apply it.
+
 ```xml
 <s3_plain_rewritable>
     <type>s3_plain_rewritable</type>
