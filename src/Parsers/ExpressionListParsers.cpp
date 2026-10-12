@@ -7,6 +7,7 @@
 #include <unordered_map>
 #include <unordered_set>
 
+#include <Parsers/Lexer.h>
 #include <base/scope_guard.h>
 
 #include <Parsers/ExpressionListParsers.h>
@@ -3611,6 +3612,19 @@ bool parenthesesHoldExpressionOverColumnNamedFrom(IParser::Pos pos)
     return contents_parser.parse(contents_pos, contents, expected) && contents_pos->type == TokenType::ClosingRoundBracket;
 }
 
+/// true if the current token is the word array and the token after it  is '['
+/// takes 'pos' by value, so the caller's position does not move
+static bool isArrayConstructorStart(IParser::Pos pos)
+{
+    if (!pos.isValid() || pos->type != TokenType::BareWord)
+        return false;
+
+    if (!equalsCaseInsensitive(std::string_view(pos->begin, pos->size()), "array"))
+        return false;
+    ++pos;
+    return pos.isValid() && pos->type == TokenType::OpeningSquareBracket;
+}
+
 Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos, Expected & expected)
 {
     ASTPtr tmp;
@@ -3873,6 +3887,13 @@ Action ParserExpressionImpl::tryParseOperand(Layers & layers, IParser::Pos & pos
         qualified_columns_matcher_parser.parse(pos, tmp, expected))
     {
         layers.back()->pushOperand(std::move(tmp));
+    }
+    else if (isArrayConstructorStart(pos))
+    {
+        ++pos;
+        ++pos;
+        layers.push_back(std::make_unique<ArrayLayer>());
+        return Action::OPERAND;
     }
     else
     {
