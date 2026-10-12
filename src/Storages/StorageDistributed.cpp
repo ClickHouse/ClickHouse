@@ -83,6 +83,8 @@
 #include <Interpreters/AddDefaultDatabaseVisitor.h>
 #include <Interpreters/TreeRewriter.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
+#include <Core/QualifiedTableName.h>
 #include <Interpreters/createBlockSelector.h>
 #include <Interpreters/evaluateConstantExpression.h>
 #include <Interpreters/getClusterName.h>
@@ -99,6 +101,7 @@
 #include <Processors/Executors/PushingPipelineExecutor.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/QueryPlan/QueryPlan.h>
+#include <Processors/QueryPlan/DistributedCreateLocalPlan.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/Optimizations/actionsDAGUtils.h>
@@ -193,6 +196,7 @@ namespace DistributedSetting
     extern const DistributedSettingsUInt64 background_insert_split_batch_on_failure;
     extern const DistributedSettingsUInt64 bytes_to_delay_insert;
     extern const DistributedSettingsUInt64 bytes_to_throw_insert;
+    extern const DistributedSettingsString cold_table;
     extern const DistributedSettingsBool flush_on_detach;
     extern const DistributedSettingsUInt64 max_delay_to_insert;
 }
@@ -216,6 +220,7 @@ namespace ErrorCodes
     extern const int TOO_LARGE_DISTRIBUTED_DEPTH;
     extern const int ALL_CONNECTION_TRIES_FAILED;
     extern const int ACCESS_DENIED;
+    extern const int UNKNOWN_TABLE;
 }
 
 namespace ActionLocks
@@ -460,6 +465,13 @@ StorageDistributed::StorageDistributed(
     if (!(*distributed_settings)[DistributedSetting::flush_on_detach] && (*distributed_settings)[DistributedSetting::background_insert_batch])
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Settings flush_on_detach=0 and background_insert_batch=1 are incompatible");
 
+    if (const String & cold_table_name = (*distributed_settings)[DistributedSetting::cold_table].value; !cold_table_name.empty())
+    {
+        auto qualified_name = QualifiedTableName::parseFromString(cold_table_name);
+        cold_database = qualified_name.database.empty() ? id_.database_name : qualified_name.database;
+        cold_table = qualified_name.table;
+    }
+
     StorageInMemoryMetadata storage_metadata;
     /// Columns are always resolved by the caller (the engine creators and `TableFunctionRemote`)
     /// under the user's context, so the remote structure is never inferred here under the global
@@ -504,6 +516,16 @@ StorageDistributed::StorageDistributed(
         size_t num_local_shards = getCluster()->getLocalShardCount();
         if (num_local_shards && (remote_database.empty() || remote_database == id_.database_name) && remote_table == id_.table_name)
             throw Exception(ErrorCodes::INFINITE_LOOP, "Distributed table {} looks at itself", id_.table_name);
+
+        if (hasColdTable())
+        {
+            if (cold_database == id_.database_name && cold_table == id_.table_name)
+                throw Exception(ErrorCodes::INFINITE_LOOP, "Distributed table {} uses itself as the cold table", id_.table_name);
+
+            /// Only here, on CREATE: the cold table is looked up again on every query, so later it may be
+            /// dropped and recreated, and ATTACH and the server startup succeed without it.
+            DatabaseCatalog::instance().getTable(context_->resolveStorageID(getColdTableStorageID()), context_);
+        }
     }
 
     initializeFromDisk();
@@ -578,7 +600,8 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
 
     /// If there is only one node, the query can be fully processed by the
     /// shard, initiator will work as a proxy only.
-    if (nodes == 1)
+    /// (Not with a cold table: its rows still have to be merged with the shard's.)
+    if (nodes == 1 && !hasColdTable())
     {
         /// In case the query was processed to
         /// WithMergeableStateAfterAggregation/WithMergeableStateAfterAggregationAndLimit
@@ -587,13 +610,22 @@ QueryProcessingStage::Enum StorageDistributed::getQueryProcessingStage(
         /// relevant for Distributed over Distributed
         return std::max(to_stage, QueryProcessingStage::Complete);
     }
-    if (nodes == 0)
+    if (nodes == 0 && !hasColdTable())
     {
         /// In case of 0 shards, the query should be processed fully on the initiator,
         /// since we need to apply aggregations.
         /// That's why we need to return FetchColumns.
         return QueryProcessingStage::FetchColumns;
     }
+
+    /// The optimized stages rely on the sharding key partitioning the rows between the shards. The cold
+    /// table is not partitioned, so its rows must be merged with every shard's on the initiator. The same
+    /// generic stage is used when the cold table is the only source (no shard left to query): at
+    /// `FetchColumns` the initiator would ask the cold table for the columns it picked from the
+    /// `Distributed` table's structure (e.g. the smallest column for `count()`), which the cold table
+    /// need not have.
+    if (hasColdTable())
+        return QueryProcessingStage::WithMergeableState;
 
     std::optional<QueryProcessingStage::Enum> optimized_stage;
     if (settings[Setting::allow_experimental_analyzer])
@@ -1015,6 +1047,21 @@ void StorageDistributed::read(
 
     const auto & settings = local_context->getSettingsRef();
 
+    /// The `cold_table` setting: the same query the shards get, re-pointed at the cold table, is executed
+    /// on the initiator like one more local shard. Its rows get `_shard_num` = 0.
+    ASTPtr cold_table_query;
+    const auto build_cold_table_plan = [&](ContextPtr cold_context)
+    {
+        return createLocalPlan(
+            cold_table_query, *header, cold_context, processed_stage, /*shard_num=*/ 0, modified_query_info.getCluster()->getShardCount());
+    };
+    /// When no shard is to be queried, the cold table alone is read.
+    const auto read_cold_table_only = [&]
+    {
+        auto cold_context = ClusterProxy::updateSettingsForCluster(*modified_query_info.getCluster(), local_context, settings, remote_storage);
+        query_plan = std::move(*build_cold_table_plan(cold_context));
+    };
+
     if (settings[Setting::allow_experimental_analyzer])
     {
         StorageID remote_storage_id = StorageID{remote_database, remote_table};
@@ -1042,13 +1089,32 @@ void StorageDistributed::read(
 
         modified_query_info.query_tree = std::move(query_tree_distributed);
 
+        if (hasColdTable())
+        {
+            SelectQueryInfo cold_query_info = query_info;
+            auto cold_query_tree = buildQueryTreeDistributed(cold_query_info,
+                query_info.initial_storage_snapshot ? query_info.initial_storage_snapshot : storage_snapshot,
+                getColdTableStorageID(),
+                /*remote_table_function=*/ nullptr);
+            removeGroupingFunctionSpecializations(cold_query_tree);
+            cold_table_query = queryNodeToDistributedSelectQuery(cold_query_tree);
+        }
+
         /// Return directly (with correct header) if no shard to query.
         if (modified_query_info.getCluster()->getShardsInfo().empty())
+        {
+            if (hasColdTable())
+                read_cold_table_only();
             return;
+        }
     }
     else
     {
         header = InterpreterSelectQuery(modified_query_info.query, local_context, SelectQueryOptions(processed_stage).analyze()).getSampleBlock();
+
+        if (hasColdTable())
+            cold_table_query = ClusterProxy::rewriteSelectQuery(
+                local_context, query_info.query, cold_database, cold_table, /*table_function_ptr=*/ nullptr);
 
         modified_query_info.query = ClusterProxy::rewriteSelectQuery(
             local_context, modified_query_info.query,
@@ -1056,6 +1122,12 @@ void StorageDistributed::read(
 
         if (modified_query_info.getCluster()->getShardsInfo().empty())
         {
+            if (hasColdTable())
+            {
+                read_cold_table_only();
+                return;
+            }
+
             Pipe pipe(std::make_shared<NullSource>(header));
             auto read_from_pipe = std::make_unique<ReadFromPreparedSource>(std::move(pipe));
             read_from_pipe->setStepDescription("Read from NullSource (Distributed)");
@@ -1089,7 +1161,8 @@ void StorageDistributed::read(
         sharding_key_column_name,
         *distributed_settings,
         shard_filter_generator,
-        is_remote_function);
+        is_remote_function,
+        hasColdTable() ? ClusterProxy::ColdTablePlanBuilder(build_cold_table_plan) : ClusterProxy::ColdTablePlanBuilder{});
 
     /// This is possible when skip_unavailable_shards is enabled and all shards were skipped
     /// (e.g., every shard had a missing table with no remote replicas).
@@ -2429,6 +2502,7 @@ The target may also be a table function, for example `Remote('127.0.0.1', number
 | `background_insert_sleep_time_ms`          | The same as [`distributed_background_insert_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_sleep_time_ms)                                                                                     | `0`           |
 | `background_insert_max_sleep_time_ms`      | The same as [`distributed_background_insert_max_sleep_time_ms`](/reference/settings/session-settings/distributed-background#distributed_background_insert_max_sleep_time_ms)                                                                             | `0`           |
 | `flush_on_detach`                          | Flush data to remote nodes on `DETACH`/`DROP`/server shutdown.                                                                                                                                                                        | `true`        |
+| `cold_table`                               | A table on the initiator, `[database.]table`, that every `SELECT` reads in addition to the shards; see [Cold table](#distributed-cold-table).                                                                                        | `''`          |
 
 <Note>
 **Durability settings** (`fsync_...`):
@@ -2457,6 +2531,18 @@ SETTINGS
 Data will be read from all servers in the `logs` cluster, from the `default.hits` table located on every server in the cluster. Data is not only read but is partially processed on the remote servers (to the extent that this is possible). For example, for a query with `GROUP BY`, data will be aggregated on remote servers, and the intermediate states of aggregate functions will be sent to the requestor server. Then data will be further aggregated.
 
 Instead of the database name, you can use a constant expression that returns a string. For example: `currentDatabase()`.
+
+### Cold table {#distributed-cold-table}
+
+The `cold_table` setting names a table on the initiator, `[database.]table` (the database of the `Distributed` table by default), that every `SELECT` reads in addition to the shards of the cluster. The query is sent to the shards as usual and is also executed locally against the cold table, and the results are merged as if the cold table were one more shard: `GROUP BY`, `ORDER BY` and `LIMIT` are completed on the initiator over the rows of all of them. The virtual column `_shard_num` is `0` for the rows of the cold table. `INSERT` writes to the shards only, never to the cold table.
+
+The cold table is looked up at query time: `ATTACH` and the server startup succeed when it does not exist, and a query then fails with `UNKNOWN_TABLE`. `CREATE TABLE` checks that it exists and is not the `Distributed` table itself. The columns of the cold table are not validated against the `Distributed` table: each side resolves the names in the query against its own structure, so a column missing on the cold side fails only when a query uses it.
+
+```sql
+CREATE TABLE hits_all AS hits
+ENGINE = Distributed(logs, default, hits)
+SETTINGS cold_table = 'default.hits_archive';
+```
 
 ## Clusters {#distributed-clusters}
 

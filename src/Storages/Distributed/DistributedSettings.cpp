@@ -34,6 +34,8 @@ namespace ErrorCodes
     DECLARE_WITH_ALIAS(Milliseconds, background_insert_sleep_time_ms, 0, "Default - distributed_background_insert_sleep_time_ms", 0, monitor_sleep_time_ms) \
     DECLARE_WITH_ALIAS(Milliseconds, background_insert_max_sleep_time_ms, 0, "Default - distributed_background_insert_max_sleep_time_ms", 0, monitor_max_sleep_time_ms) \
     DECLARE(Bool, flush_on_detach, true, "Flush data to remote nodes on DETACH/DROP/server shutdown", 0) \
+    /** Read-time settings */ \
+    DECLARE(String, cold_table, "", "An optional table on the initiator, `[database.]table`, that every SELECT reads in addition to the shards of the cluster; its rows are merged into the result as if it were one more shard (with `_shard_num` = 0). INSERT never writes to it. The table is looked up at query time.", 0) \
 
 DECLARE_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DISTRIBUTED_SETTINGS_SUPPORTED_TYPES)
 IMPLEMENT_SETTINGS_TRAITS(DistributedSettingsTraits, LIST_OF_DISTRIBUTED_SETTINGS, DistributedSettings, DistributedSetting)

@@ -298,6 +298,14 @@ private:
     /// spool: the proxy has none, so it would be a silent no-op reported as success.
     bool is_remote_database_proxy;
 
+    /// The `cold_table` setting: a table on the initiator that `read` merges into the result as one
+    /// more shard. It is looked up at query time only, so the storage attaches even when the table
+    /// does not exist (yet); `write` never touches it.
+    String cold_database;
+    String cold_table;
+    bool hasColdTable() const { return !cold_table.empty(); }
+    StorageID getColdTableStorageID() const { return StorageID{cold_database, cold_table}; }
+
     void checkLocalShardAccess(const AccessFlags & access, const ContextPtr & local_context) const;
 };
 

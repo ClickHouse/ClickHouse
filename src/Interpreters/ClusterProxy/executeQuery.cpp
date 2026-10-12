@@ -545,7 +545,8 @@ void executeQuery(
     const std::string & sharding_key_column_name,
     const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator,
-    bool is_remote_function)
+    bool is_remote_function,
+    const ColdTablePlanBuilder & build_cold_table_plan)
 {
     const Settings & settings = context->getSettingsRef();
 
@@ -669,6 +670,11 @@ void executeQuery(
                 unavailable_shard_tracker);
         }
     }
+
+    /// The cold table of a `Distributed` table is read on the initiator like one more local shard,
+    /// under the same context as the local shards (initiator-only settings stripped, depth increased).
+    if (build_cold_table_plan)
+        plans.emplace_back(build_cold_table_plan(new_context));
 
     if (!remote_shards.empty())
     {

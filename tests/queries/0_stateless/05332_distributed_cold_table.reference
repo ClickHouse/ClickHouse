@@ -1,0 +1,54 @@
+CREATE checks the cold table
+rows and _shard_num
+0	1	cold1
+0	3	cold3
+1	1	hot1
+1	2	hot2
+2	1	hot1
+2	2	hot2
+aggregation is merged across the shards and the cold table
+1	3	2
+2	2	1
+3	1	1
+6	10
+sort and limit are completed on the initiator
+3	cold3
+2	hot2
+1	hot1
+1	3
+single shard still merges with the cold table
+1	2
+2	1
+3	1
+4
+0	1
+0	3
+1	1
+1	2
+group by the sharding key is still merged
+1	3
+2	2
+3	1
+1
+2
+3
+skipping unused shards keeps the cold table
+0	1
+2	1
+0	3
+0
+filters and expressions
+1	COLD1
+3	COLD3
+4
+a column missing on the cold side fails only when used
+2
+inserts go to the shards only
+3
+2
+the cold table is resolved at query time
+0	5	cold5
+1	1	hot1
+1	2	hot2
+2	1	hot1
+2	2	hot2

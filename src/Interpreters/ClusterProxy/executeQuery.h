@@ -107,6 +107,10 @@ void stripInitiatorOnlySettingsFromQuery(const ASTPtr & query);
 ContextMutablePtr updateSettingsForCluster(const Cluster & cluster, ContextPtr context, const Settings & settings, const StorageID & main_table);
 
 using AdditionalShardFilterGenerator = std::function<ASTPtr(uint64_t)>;
+
+/// Builds the plan that reads the `cold_table` of a `Distributed` table on the initiator (see
+/// `StorageDistributed`). It gets the same context as the plans of the local shards.
+using ColdTablePlanBuilder = std::function<std::unique_ptr<QueryPlan>(ContextPtr)>;
 AdditionalShardFilterGenerator
 getShardFilterGeneratorForCustomKey(const Cluster & cluster, ContextPtr context, const ColumnsDescription & columns);
 
@@ -158,7 +162,8 @@ void executeQuery(
     const std::string & sharding_key_column_name,
     const DistributedSettings & distributed_settings,
     AdditionalShardFilterGenerator shard_filter_generator,
-    bool is_remote_function);
+    bool is_remote_function,
+    const ColdTablePlanBuilder & build_cold_table_plan = {});
 
 std::optional<QueryPipeline> executeInsertSelectWithParallelReplicas(
     const ASTInsertQuery & query_ast,
