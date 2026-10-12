@@ -128,10 +128,13 @@ AsyncBlockIDsCache<TStorage>::detectConflicts(const std::vector<DeduplicationHas
     CachePtr cur_cache;
     {
         std::unique_lock lk(mu);
-        cv.wait_for(lk, update_wait, [&]{ return version > wait_newer_than; });
+        if (wait_newer_than)
+        {
+            cv.wait_for(lk, update_wait, [&]{ return version > wait_newer_than; });
 
-        if (version <= wait_newer_than)
-            LOG_INFO(log, "Read cache with a old version {}", version);
+            if (version <= wait_newer_than)
+                LOG_INFO(log, "Read cache with a old version {}", version);
+        }
 
         cur_cache = cache_ptr;
         conflicts.version = version;

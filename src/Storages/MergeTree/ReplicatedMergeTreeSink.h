@@ -95,8 +95,8 @@ protected:
     struct CommitPartResult
     {
         std::vector<DeduplicationHash> conflicts;
-        /// Version of the cache snapshot that missed a conflict found in Keeper, otherwise 0.
-        UInt64 stale_cache_version = 0;
+        /// Newest cache snapshot version known to miss a conflict of this part, 0 if none.
+        UInt64 deduplication_cache_wait_newer_than = 0;
     };
 
     /// Rename temporary part and commit to ZooKeeper.

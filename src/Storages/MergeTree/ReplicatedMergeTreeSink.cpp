@@ -478,8 +478,10 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 auto deduplication_hashes = partition.deduplication_info->getDeduplicationHashes(partition.block_with_partition.partition_id, deduplicate);
                 auto deduplication_blocks_ids = getDeduplicationBlockIds(deduplication_hashes);
 
-                auto [conflicts, stale_cache_version] = commitPart(
+                auto commit_result = commitPart(
                     zookeeper, partition.temp_part->part, deduplication_hashes, deduplication_blocks_ids, deduplication_cache_wait_newer_than);
+                auto & conflicts = commit_result.conflicts;
+                deduplication_cache_wait_newer_than = commit_result.deduplication_cache_wait_newer_than;
 
                 if (isQuorumEnabled())
                 {
@@ -504,7 +506,6 @@ void ReplicatedMergeTreeSink::finishDelayed(const ZooKeeperWithFaultInjectionPtr
                 ++retry_times;
                 // TODO: sync debuplication could use cache too
 
-                deduplication_cache_wait_newer_than = stale_cache_version;
                 storage.deduplication_hashes_cache.triggerCacheUpdate();
 
                 {
@@ -738,7 +739,6 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
 #endif
 
     CommitRetryContext retry_context;
-    UInt64 stale_cache_version = 0;
 
     const auto & settings = context->getSettingsRef();
     ZooKeeperRetriesInfo retries_info = keeper_retries_info.value_or(ZooKeeperRetriesInfo{
@@ -906,13 +906,13 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
         {
             /// prefilter by cache
             auto cache_conflicts = storage.deduplication_hashes_cache.detectConflicts(deduplication_hashes, deduplication_cache_wait_newer_than);
+            checked_cache_version = cache_conflicts.version;
             std::move(cache_conflicts.hashes.begin(), cache_conflicts.hashes.end(), std::back_inserter(retry_context.conflict_deduplication_hashes));
 
             if (!retry_context.conflict_deduplication_hashes.empty())
             {
                 return CommitRetryContext::RESOLVE_CONFLICTS;
             }
-            checked_cache_version = cache_conflicts.version;
         }
 
         /// Save the current temporary path and name in case we need to revert the change to retry (ZK connection loss) or in case part is deduplicated.
@@ -944,7 +944,7 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
                     });
                 chassert(conflicted_hash_it != deduplication_hashes.end());
                 retry_context.conflict_deduplication_hashes.push_back(*conflicted_hash_it);
-                stale_cache_version = checked_cache_version;
+                deduplication_cache_wait_newer_than = checked_cache_version;
 
                 return CommitRetryContext::RESOLVE_CONFLICTS;
             }
@@ -1153,7 +1153,7 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
                 });
             chassert(conflicted_hash_it != deduplication_hashes.end());
             retry_context.conflict_deduplication_hashes.push_back(*conflicted_hash_it);
-            stale_cache_version = checked_cache_version;
+            deduplication_cache_wait_newer_than = checked_cache_version;
 
             LOG_TRACE(log, "conflict when committing, the conflict block ids are {}",
                 fmt::join(getDeduplicationBlockIds(retry_context.conflict_deduplication_hashes), ", "));
@@ -1265,7 +1265,7 @@ ReplicatedMergeTreeSink::CommitPartResult ReplicatedMergeTreeSink::commitPart(
         storage.merge_selecting_task->schedule();
     }
 
-    return {std::move(retry_context.conflict_deduplication_hashes), stale_cache_version};
+    return {std::move(retry_context.conflict_deduplication_hashes), deduplication_cache_wait_newer_than};
 }
 
 void ReplicatedMergeTreeSink::onStart()
