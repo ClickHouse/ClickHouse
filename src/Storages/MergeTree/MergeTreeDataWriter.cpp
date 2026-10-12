@@ -461,10 +461,20 @@ void MergeTreeTemporaryPart::finalize()
     part->getDataPartStorage().setPreferredFileOrder(file_order_hint);
 
     part->getDataPartStorage().precommitTransaction();
+
+    /// Syncing the part directory does not persist the entries inside `<projection>.proj`, so each
+    /// projection directory needs an fsync of its own. It must stay below the projection's
+    /// precommitTransaction: that is where `Packed` storage creates `data.packed`.
+    const bool fsync_projection_directory
+        = (*part->storage.getSettings())[MergeTreeSetting::fsync_part_directory];
+
     for (const auto & [_, projection] : part->getProjectionParts())
     {
         projection->getDataPartStorage().setPreferredFileOrder(file_order_hint);
         projection->getDataPartStorage().precommitTransaction();
+
+        if (fsync_projection_directory)
+            { SyncGuardPtr projection_sync_guard = projection->getDataPartStorage().getDirectorySyncGuard(); }
     }
 
     /// If any minmax column is a virtual, the writer aggregated placeholder values for it. Drop the
@@ -1189,7 +1199,8 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempPartImpl(
             if (projection_block.rows())
             {
                 auto proj_temp_part
-                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), compression_codec, /*merge_is_needed=*/false, context);
+                    = writeProjectionPart(data, projection_block, projection, new_data_part.get(), compression_codec, /*merge_is_needed=*/false,
+                        /*sync=*/ (*data_settings)[MergeTreeSetting::fsync_after_insert], context);
                 new_data_part->addProjectionPart(projection.name, std::move(proj_temp_part->part));
 
                 if (global_settings[Setting::finalize_projection_parts_synchronously])
@@ -1238,6 +1249,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     CompressionCodecPtr compression_codec,
     MergeTreeIndices indices,
     bool merge_is_needed,
+    bool sync,
     bool try_adaptive_codec,
     bool use_selected_codec)
 {
@@ -1392,7 +1404,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPartImpl(
     Block permuted_columns_cache;
     out->writeWithPermutation(block, perm_ptr, &permuted_columns_cache);
     out->finalizeIndexGranularity();
-    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, false);
+    auto finalizer = out->finalizePartAsync(new_data_part, IMergedBlockOutputStream::GatheredData{}, sync);
     temp_part->part = new_data_part;
     temp_part->streams.emplace_back(MergeTreeTemporaryPart::Stream{.stream = std::move(out), .finalizer = std::move(finalizer)});
 
@@ -1410,6 +1422,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
     IMergeTreeDataPart * parent_part,
     CompressionCodecPtr compression_codec,
     bool merge_is_needed,
+    bool sync,
     ContextPtr context)
 {
     const auto & query_settings = context->getSettingsRef();
@@ -1430,6 +1443,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeProjectionPart(
         std::move(compression_codec),
         std::move(indices),
         merge_is_needed,
+        sync,
         /*try_adaptive_codec=*/ false);
 }
 
@@ -1442,6 +1456,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
     IMergeTreeDataPart * parent_part,
     CompressionCodecPtr compression_codec,
     size_t block_num,
+    bool sync,
     bool use_selected_codec,
     bool is_explicit_recompression,
     ContextPtr context)
@@ -1465,6 +1480,7 @@ MergeTreeTemporaryPartPtr MergeTreeDataWriter::writeTempProjectionPart(
         std::move(compression_codec),
         std::move(indices),
         /*merge_is_needed=*/ true,
+        sync,
         /*try_adaptive_codec=*/ !is_explicit_recompression,
         use_selected_codec);
 
