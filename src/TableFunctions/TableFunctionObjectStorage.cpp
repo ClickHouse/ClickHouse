@@ -1,4 +1,5 @@
 #include <string_view>
+#include <Databases/DataLake/DataLakeConstants.h>
 #include "config.h"
 
 #include <Core/Settings.h>
@@ -10,6 +11,8 @@
 #include <Parsers/ASTSetQuery.h>
 
 #include <TableFunctions/TableFunctionFactory.h>
+#include <Storages/ObjectStorage/Azure/AzureSecretArguments.h>
+#include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <TableFunctions/TableFunctionObjectStorage.h>
 #include <TableFunctions/TableFunctionObjectStorageCluster.h>
 #include <TableFunctions/registerTableFunctions.h>
@@ -757,6 +760,7 @@ SETTINGS schema_inference_mode='union';
 - [S3 engine](/reference/engines/table-engines/integrations/s3)
 - [Integrating S3 with ClickHouse](/integrations/connectors/data-ingestion/AWS/integrating-s3-with-clickhouse)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        s3TableFunctionSecretArguments(false),
         {.allow_readonly = false}
     );
 
@@ -975,6 +979,7 @@ As a result, the data is written into three files in different buckets: `my_buck
 - [S3 table function](/reference/functions/table-functions/s3)
 - [S3 engine](/reference/engines/table-engines/integrations/s3)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        s3TableFunctionSecretArguments(false),
         {.allow_readonly = false}
     );
 
@@ -984,6 +989,7 @@ As a result, the data is written into three files in different buckets: `my_buck
             .syntax = "cosn(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        s3TableFunctionSecretArguments(false),
         {.allow_readonly = false}
     );
 
@@ -993,6 +999,7 @@ As a result, the data is written into three files in different buckets: `my_buck
             .syntax = "oss(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction
         },
+        s3TableFunctionSecretArguments(false),
         {.allow_readonly = false}
     );
 #endif
@@ -1269,6 +1276,7 @@ FROM azureBlobStorage('https://clickhousedocstest.blob.core.windows.net/?sp=r&st
 ## Related {#related}
 - [AzureBlobStorage Table Engine](/reference/engines/table-engines/integrations/azureBlobStorage)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        azureTableFunctionSecretArguments(false),
         {.allow_readonly = false}
     );
 #endif
@@ -1398,6 +1406,7 @@ SELECT * FROM HDFS('hdfs://hdfs1:9000/data/path/date=*/country=*/code=*/*.parque
 
 - [Virtual columns](/reference/engines/table-engines/index#table_engines-virtual_columns)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        SecretArgumentsSpec{},
         {.allow_readonly = false}
     );
 #endif
@@ -1867,7 +1876,7 @@ y: 993
 
 ### `DROP PARTITION` {#iceberg-writes-drop-partition}
 
-`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is currently supported for local and object-storage Iceberg tables, but not for catalog-backed tables.
+`ALTER TABLE ... DROP PARTITION <value>` removes every data file belonging to a single partition and creates a new snapshot that no longer references them. It is supported for local and object-storage Iceberg tables, and for tables in a `DataLakeCatalog` database with the `rest`, `onelake`, `biglake`, `delta_sharing`, `horizon`, `s3tables`, or `unity` (with `use_unity_catalog_v2 = 1`) catalog type.
 
 Enable `allow_insert_into_iceberg` to use this operation.
 
@@ -2209,11 +2218,13 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 * [Iceberg engine](/reference/engines/table-engines/integrations/iceberg)
 * [Iceberg cluster table function](/reference/functions/table-functions/icebergCluster)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
         {.allow_readonly = false});
     factory.registerFunction<TableFunctionIcebergS3>(
          {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored on S3 object storage.)",
             .syntax = "icebergS3(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction},
+        DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
         {.allow_readonly = false});
 
 #endif
@@ -2222,6 +2233,7 @@ The command returns a table with `metric_name` and `metric_value` columns showin
          {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored on Azure object storage.)",
             .syntax = "icebergAzure(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(azureTableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 #endif
 #if USE_HDFS
@@ -2229,12 +2241,14 @@ The command returns a table with `metric_name` and `metric_value` columns showin
          {.description = R"(The table function can be used to read the Iceberg table stored on HDFS virtual filesystem.)",
             .syntax = "icebergHDFS(url)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(SecretArgumentsSpec{}),
          {.allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionIcebergLocal>(
          {.description = R"(The table function can be used to read from and insert into an existing Iceberg table stored locally.)",
             .syntax = "icebergLocal(filename)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(SecretArgumentsSpec{}),
          {.allow_readonly = false});
 }
 #endif
@@ -2362,11 +2376,13 @@ Data types supported in Paimon partition keys:
 
 * [Paimon cluster table function](/reference/functions/table-functions/paimonCluster)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
          {.allow_readonly = false});
     factory.registerFunction<TableFunctionPaimonS3>(
          {.description = R"(The table function can be used to read the Paimon table stored on S3 object store.)",
             .syntax = "paimonS3(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 
 #endif
@@ -2375,6 +2391,7 @@ Data types supported in Paimon partition keys:
          {.description = R"(The table function can be used to read the Paimon table stored on Azure object store.)",
             .syntax = "paimonAzure(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(azureTableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 #endif
 #if USE_HDFS
@@ -2382,12 +2399,14 @@ Data types supported in Paimon partition keys:
          {.description = R"(The table function can be used to read the Paimon table stored on HDFS virtual filesystem.)",
             .syntax = "paimonHDFS(url)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(SecretArgumentsSpec{}),
          {.allow_readonly = false});
 #endif
     factory.registerFunction<TableFunctionPaimonLocal>(
          {.description = R"(The table function can be used to read the Paimon table stored locally.)",
             .syntax = "paimonLocal(filename)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(SecretArgumentsSpec{}),
          {.allow_readonly = false});
 }
 #endif
@@ -2501,12 +2520,14 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
 - [DeltaLake engine](/reference/engines/table-engines/integrations/deltalake)
 - [DeltaLake cluster table function](/reference/functions/table-functions/deltalakeCluster)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 
     factory.registerFunction<TableFunctionDeltaLakeS3>(
          {.description = R"(The table function can be used to read and write the DeltaLake table stored on S3.)",
             .syntax = "deltaLakeS3(url, access_key_id, secret_access_key)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 #endif
 
@@ -2515,6 +2536,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
          {.description = R"(The table function can be used to read and write the DeltaLake table stored on Azure object store (writes from version 26.9).)",
             .syntax = "deltaLakeAzure(connection_string|storage_account_url, container_name, blobpath, [account_name, account_key, format, compression, structure])",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(azureTableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 #endif
     // Register the new local Delta Lake table function
@@ -2522,6 +2544,7 @@ Query id: 65032944-bed6-4d45-86b3-a71205a2b659
          {.description = R"(The table function can be used to read the DeltaLake table stored locally.)",
             .syntax = "deltaLakeLocal(path)",
             .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(SecretArgumentsSpec{}),
          {.allow_readonly = false});
 }
 #endif
@@ -2568,6 +2591,7 @@ A table with the specified structure for reading data in the specified Hudi tabl
 - [Hudi engine](/reference/engines/table-engines/integrations/hudi)
 - [Hudi cluster table function](/reference/functions/table-functions/hudiCluster)
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction},
+         DataLake::withSecretSettings(s3TableFunctionSecretArguments(false)),
          {.allow_readonly = false});
 }
 #endif

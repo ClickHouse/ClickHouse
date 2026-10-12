@@ -6,6 +6,7 @@
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
 #include <Interpreters/ActionsDAG.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/ISource.h>
 #include <Storages/Cache/SchemaCache.h>
@@ -408,7 +409,8 @@ public:
         Body body_ = {},
         const String & method_ = "",
         ASTPtr partition_by_ = nullptr,
-        bool distributed_processing_ = false);
+        bool distributed_processing_ = false,
+        bool is_replayed_definition_ = false);
 
     String getName() const override
     {
@@ -443,10 +445,12 @@ public:
         Body body;
     };
 
-    static Configuration getConfiguration(ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr);
+    static Configuration getConfiguration(
+        ASTs & args, const ContextPtr & context, const StorageID * table_id = nullptr, bool is_replayed_definition = false);
 
     /// Does evaluateConstantExpressionOrIdentifierAsLiteral() on all arguments.
-    /// `headers(...)` and `body(...)` arguments are extracted and moved to the end of the array.
+    /// `headers(...)` and `body(...)` arguments are extracted and moved (in the order `body`, `headers`) before the
+    /// key-value arguments (to the array end if there are none).
     /// Returns number of arguments excluding `headers(...)` and `body(...)`.
     static size_t evalArgsAndCollectHeadersAndBody(
         ASTs & url_function_args,
@@ -474,7 +478,12 @@ public:
     /// override (named-collection) matches the URL resolved via `url_base`.
     /// `skip_userinfo` skips the rewrite when the resolved URL embeds credentials,
     /// to avoid leaking them through the persisted CREATE TABLE AST.
-    static void overrideURLInEngineArgs(ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo);
+    static void overrideURLInEngineArgs(
+        ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo, bool is_replayed_definition = false);
+
+private:
+    /// See `StorageObjectStorageConfiguration::is_replayed_definition`.
+    const bool is_replayed_definition;
 };
 
 
@@ -505,4 +514,9 @@ public:
 private:
     std::vector<String> uri_options;
 };
+
+/// The `SecretArgumentsSpec` of `url`, `urlCluster` and the `URL` table and database engines: the url is at
+/// `url_offset`, a `url` override of a named collection and `headers(...)` can carry credentials.
+SecretArgumentsSpec urlSecretArguments(size_t url_offset);
+
 }
