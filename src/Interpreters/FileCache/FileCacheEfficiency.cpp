@@ -29,10 +29,10 @@ Split split(Int64 window_active, Int64 window_passive, Int64 used)
 }
 
 FileCacheEfficiency::FileCacheEfficiency(
-    UInt64 window_sec_, std::function<size_t()> get_used_size_, std::function<size_t()> get_large_used_size_)
+    UInt64 window_sec_, std::function<size_t()> get_bytes_, std::function<size_t()> get_large_bytes_)
     : window_sec(window_sec_)
-    , get_used_size(std::move(get_used_size_))
-    , get_large_used_size(std::move(get_large_used_size_))
+    , get_bytes(std::move(get_bytes_))
+    , get_large_bytes(std::move(get_large_bytes_))
 {
 }
 
@@ -64,8 +64,8 @@ void FileCacheEfficiency::rotateIfNeeded(Window now_window)
         large_stats = {};
     }
 
-    const auto all = split(stats.active, stats.passive, static_cast<Int64>(get_used_size()));
-    const auto large = split(large_stats.active, large_stats.passive, static_cast<Int64>(get_large_used_size()));
+    const auto all = split(stats.active, stats.passive, static_cast<Int64>(get_bytes()));
+    const auto large = split(large_stats.active, large_stats.passive, static_cast<Int64>(get_large_bytes()));
     snapshot = Snapshot{
         .active_bytes = all.active,
         .passive_bytes = all.passive,

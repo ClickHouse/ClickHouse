@@ -4440,7 +4440,7 @@ TEST_F(FileCacheTest, EfficiencyWindow)
     {
         EXPECT_EQ(snapshot.active_bytes, active);
         EXPECT_EQ(snapshot.passive_bytes, passive);
-        EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, cache.getUsedCacheSize());
+        EXPECT_EQ(snapshot.active_bytes + snapshot.passive_bytes + snapshot.idle_bytes, cache.getSegmentSizes().getBytes());
     };
 
     auto holder_a = cache.getOrSet(key, 0, S, 8 * S, {}, 0, user);
@@ -4553,6 +4553,32 @@ TEST_F(FileCacheTest, EfficiencyConcurrentFirstRead)
     const auto snapshot = cache.getEfficiency().getSnapshot();
     EXPECT_EQ(snapshot.active_bytes, S);
     EXPECT_EQ(snapshot.passive_bytes, 0);
+}
+
+TEST_F(FileCacheTest, EfficiencyIdleExcludesTemporaryData)
+{
+    DB::ThreadStatus thread_status;
+    auto query_scope_holder = DB::QueryScope::create(makeEfficiencyQueryContext("efficiency_temporary_test"));
+    auto cache = DB::FileCache("efficiency_temporary", efficiencyCacheSettings(W));
+    cache.initialize();
+
+    const auto & user = FileCache::getCommonOrigin();
+    auto holder = cache.getOrSet(FileCacheKey::fromPath("efficiency_temporary_key"), 0, S, /*file_size=*/S, {}, 0, user);
+    download(get(holder, 0));
+
+    auto temporary_key = FileCacheKey::fromPath("efficiency_temporary_data");
+    auto temporary_holder = cache.set(temporary_key, 0, G, CreateFileSegmentSettings(FileSegmentKind::Ephemeral), user);
+    auto & temporary = temporary_holder->front();
+    ASSERT_EQ(temporary.getOrSetDownloader(), FileSegment::getCallerId());
+    std::string failure_reason;
+    ASSERT_TRUE(temporary.reserve(G, 1000, failure_reason));
+    fs::create_directories(cache.getKeyPath(temporary_key, user));
+    std::string data(G, '0');
+    temporary.write(data.data(), data.size(), temporary.getCurrentWriteOffset());
+    EXPECT_EQ(cache.getUsedCacheSize(), S + G);
+
+    cache.getEfficiency().shiftTimeForTesting(std::chrono::seconds(W));
+    EXPECT_EQ(cache.getEfficiency().getSnapshot().idle_bytes, S);
 }
 
 TEST_F(FileCacheTest, EfficiencyDisabled)

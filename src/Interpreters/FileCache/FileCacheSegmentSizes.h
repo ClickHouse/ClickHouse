@@ -38,6 +38,7 @@ public:
     void add(Class size_class, Int64 segments, Int64 bytes);
 
     Buckets getBuckets() const;
+    UInt64 getBytes() const;
     UInt64 getLargeBytes() const;
 
     /// The upper bound of the bucket in bytes, or "inf" for the last one.

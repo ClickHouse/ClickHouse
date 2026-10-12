@@ -42,6 +42,14 @@ FileCacheSegmentSizes::Buckets FileCacheSegmentSizes::getBuckets() const
     return result;
 }
 
+UInt64 FileCacheSegmentSizes::getBytes() const
+{
+    UInt64 result = 0;
+    for (const auto & bucket_bytes : bytes)
+        result += load(bucket_bytes);
+    return result;
+}
+
 UInt64 FileCacheSegmentSizes::getLargeBytes() const
 {
     return load(large_bytes);

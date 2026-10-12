@@ -329,7 +329,7 @@ FileCache::FileCache(const std::string & cache_name, const FileCacheSettings & s
     , segment_sizes(boundary_alignment)
     , efficiency(
           settings[FileCacheSetting::efficiency_window_sec],
-          [this] { return getUsedCacheSize(); },
+          [this] { return segment_sizes.getBytes(); },
           [this] { return segment_sizes.getLargeBytes(); })
     , name(cache_name)
     , log(getLogger("FileCache(" + cache_name + ")"))

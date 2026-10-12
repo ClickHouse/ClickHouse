@@ -154,7 +154,7 @@ ColumnsDescription FileCacheSettings::getColumnsDescription()
             "passive_bytes", std::make_shared<DataTypeUInt64>(), "Bytes not served from the cache in the last full efficiency window, in file segments with at least one cache hit in it"));
     result.add(
         ColumnDescription(
-            "idle_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of file segments with no cache hit in the last full efficiency window"));
+            "idle_bytes", std::make_shared<DataTypeUInt64>(), "Bytes of file segments with no cache hit in the last full efficiency window; temporary data is not counted"));
     result.add(
         ColumnDescription(
             "large_segments_active_bytes", std::make_shared<DataTypeUInt64>(), "The part of `active_bytes` in file segments with a range larger than `boundary_alignment`"));

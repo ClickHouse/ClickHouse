@@ -32,7 +32,7 @@ public:
         UInt64 large_idle_bytes = 0;
     };
 
-    FileCacheEfficiency(UInt64 window_sec_, std::function<size_t()> get_used_size_, std::function<size_t()> get_large_used_size_);
+    FileCacheEfficiency(UInt64 window_sec_, std::function<size_t()> get_bytes_, std::function<size_t()> get_large_bytes_);
 
     bool isEnabled() const { return window_sec != 0; }
 
@@ -77,8 +77,8 @@ private:
     };
 
     const UInt64 window_sec;
-    const std::function<size_t()> get_used_size;
-    const std::function<size_t()> get_large_used_size;
+    const std::function<size_t()> get_bytes;
+    const std::function<size_t()> get_large_bytes;
     Stopwatch watch;
     std::atomic<Int64> time_shift_for_testing_ms = 0;
 
