@@ -19,3 +19,4 @@ nullable 01:00 - 01:29	8	8
 lc_nullable = -14400	120	120
 nullable64 = -14400	120	120
 one_day_nullable = -14400	2
+skip_nullable toHour = 23	12	12

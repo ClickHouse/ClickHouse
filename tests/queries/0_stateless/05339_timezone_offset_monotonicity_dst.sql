@@ -14,6 +14,7 @@ DROP TABLE IF EXISTS t_nullable;
 DROP TABLE IF EXISTS t_lc_nullable;
 DROP TABLE IF EXISTS t_nullable64;
 DROP TABLE IF EXISTS t_one_day_nullable;
+DROP TABLE IF EXISTS t_skip_nullable;
 
 -- One row per day at local midnight: the offset is -05:00 at both ends of the part and -04:00 in between.
 CREATE TABLE t_daily (dt DateTime('America/New_York')) ENGINE = MergeTree ORDER BY dt SETTINGS index_granularity = 8192, index_granularity_bytes = '10Mi';
@@ -83,6 +84,10 @@ CREATE TABLE t_one_day_nullable (dt Nullable(DateTime('America/New_York'))) ENGI
 INSERT INTO t_one_day_nullable SELECT toDateTime('2024-11-03 04:00:00', 'UTC') + INTERVAL number HOUR FROM numbers(25);
 SELECT 'one_day_nullable = -14400', count() FROM t_one_day_nullable WHERE timezoneOffset(dt) = -14400 SETTINGS max_rows_to_read = 2, parallel_replicas_index_analysis_only_on_coordinator = 0;
 
+CREATE TABLE t_skip_nullable (dt Nullable(DateTime('America/New_York')), INDEX i dt TYPE minmax GRANULARITY 1) ENGINE = MergeTree ORDER BY tuple() SETTINGS index_granularity = 3, index_granularity_bytes = '10Mi';
+INSERT INTO t_skip_nullable SELECT toDateTime('2024-11-02 00:00:00', 'UTC') + number * 900 FROM numbers(300);
+SELECT 'skip_nullable toHour = 23', (SELECT count() FROM t_skip_nullable WHERE toHour(dt) = 23), (SELECT countIf(toHour(dt) = 23) FROM t_skip_nullable);
+
 DROP TABLE t_daily;
 DROP TABLE t_daily64;
 DROP TABLE t_hourly;
@@ -95,3 +100,4 @@ DROP TABLE t_nullable;
 DROP TABLE t_lc_nullable;
 DROP TABLE t_nullable64;
 DROP TABLE t_one_day_nullable;
+DROP TABLE t_skip_nullable;
