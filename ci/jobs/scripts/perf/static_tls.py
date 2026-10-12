@@ -7,8 +7,8 @@ static TLS surplus of the smaller binary puts the threads of both servers at the
 same stack placement.
 
 Usage: static_tls.py <left binary> <right binary>. Prints one line per server,
-"env GLIBC_TUNABLES=..." or empty; exits non-zero if the binaries cannot be
-compared.
+"env GLIBC_TUNABLES=..." or empty; on Linux, exits non-zero if the binaries
+cannot be compared. Other hosts have no glibc: both lines are empty.
 """
 
 import os
@@ -49,6 +49,9 @@ def read_static_tls(path):
 
 def static_tls_tunables(left, right):
     """Return the GLIBC_TUNABLES values for the (left, right) servers, "" where none is needed."""
+    if os.uname().sysname != "Linux":
+        print("static TLS: not Linux, no padding", file=sys.stderr)
+        return ("", "")
     machine, left_size, align = read_static_tls(left)
     right_machine, right_size, right_align = read_static_tls(right)
     if (machine, align) != (right_machine, right_align):
@@ -63,14 +66,14 @@ def static_tls_tunables(left, right):
         raise ValueError(
             f"unsupported machine {machine}, TLS alignment {align} in {left}"
         )
-    existing = os.environ.get("GLIBC_TUNABLES", "")
-    if TUNABLE in existing:
-        raise ValueError(f"GLIBC_TUNABLES already sets {TUNABLE}: {existing}")
 
     def rounded(size):
         return (size + granule - 1) // granule * granule
 
     pad = rounded(right_size) - rounded(left_size)
+    existing = os.environ.get("GLIBC_TUNABLES", "")
+    if pad and TUNABLE in existing:
+        raise ValueError(f"GLIBC_TUNABLES already sets {TUNABLE}: {existing}")
     value = ":".join(
         filter(None, [existing, f"{TUNABLE}={DEFAULT_OPTIONAL_STATIC_TLS + abs(pad)}"])
     )
