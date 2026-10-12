@@ -17,7 +17,7 @@
 #include <Storages/MergeTree/IPostingListCodec.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/MergeTreeIndexText.h>
-#include <Storages/MergeTree/MergeTreeIndexTextPostingListCursor.h>
+#include <Storages/MergeTree/PostingListCursor.h>
 #include <Storages/MergeTree/TextIndexAnalyzer.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 
@@ -111,6 +111,23 @@ UInt64 countWithCursors(
 {
     static constexpr size_t window_size = 65536;
 
+    std::vector<PostingListCursor *> sorted_cursors;
+    sorted_cursors.reserve(cursors.size());
+
+    for (const auto & cursor : cursors)
+        sorted_cursors.push_back(cursor.get());
+
+    if (search_mode == TextSearchMode::Any)
+    {
+        sortCursorsForUnion(sorted_cursors);
+    }
+    else
+    {
+        sortCursorsForIntersection(sorted_cursors);
+        intersection_algorithm = chooseIntersectionAlgorithm(sorted_cursors, intersection_algorithm);
+    }
+
+    LazyPostingsStats stats;
     auto filter = ColumnUInt8::create();
     auto & filter_data = filter->getData();
     UInt64 count = 0;
@@ -124,8 +141,8 @@ UInt64 countWithCursors(
         filter_data.resize_fill(num_rows, 0);
 
         const bool may_be_true = search_mode == TextSearchMode::Any
-            ? lazyUnionPostingLists(*filter, cursors, 0, row_offset, num_rows)
-            : lazyIntersectPostingLists(*filter, cursors, 0, row_offset, num_rows, intersection_algorithm);
+            ? lazyUnionPostingLists(*filter, sorted_cursors, 0, row_offset, num_rows)
+            : lazyIntersectPostingLists(*filter, sorted_cursors, 0, row_offset, num_rows, intersection_algorithm, stats);
 
         if (may_be_true)
             count += countBytesInFilter(filter_data);
@@ -168,7 +185,7 @@ UInt64 computeCountForPart(
         .part_info = part_info,
         .index = *index.index,
         .readable_ranges = nullptr,
-        .skip_postings_deserialization = single_token,
+        .text_index_read_postings = !single_token,
         .reader_settings = reader_settings,
     };
 
