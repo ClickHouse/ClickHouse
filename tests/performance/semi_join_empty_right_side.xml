@@ -10,12 +10,12 @@
 
     <substitutions>
         <substitution>
-            <name>join_algorithm</name>
+            <name>join_settings</name>
             <values>
-                <value>hash</value>
-                <value>parallel_hash</value>
-                <value>grace_hash</value>
-                <value>partial_merge</value>
+                <value>join_algorithm = 'hash', parallel_hash_join_threshold = 18446744073709551615</value>
+                <value>join_algorithm = 'parallel_hash', parallel_hash_join_threshold = 0</value>
+                <value>join_algorithm = 'grace_hash'</value>
+                <value>join_algorithm = 'partial_merge'</value>
             </values>
         </substitution>
     </substitutions>
@@ -24,6 +24,6 @@
         SELECT count()
         FROM (SELECT sipHash64(number) AS number FROM numbers_mt(100000000)) AS l
         SEMI LEFT JOIN (SELECT number FROM numbers(1000) WHERE sipHash64(number) = 42) AS r ON l.number = r.number
-        SETTINGS join_algorithm = '{join_algorithm}'
+        SETTINGS {join_settings}
     </query>
 </test>
