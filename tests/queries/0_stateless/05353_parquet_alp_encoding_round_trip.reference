@@ -2,7 +2,7 @@
 1
 Row 1:
 ──────
-arrayMap(lam⋯), columns): [('id',['PLAIN','RLE_DICTIONARY']),('d_decimal',['ALP']),('f_decimal',['ALP']),('d_special',['ALP']),('f_special',['ALP']),('d_random',['PLAIN']),('f_random',['ALP']),('d_large',['PLAIN']),('d_const',['ALP']),('f_const',['ALP']),('d_nullable',['RLE','ALP']),('f_nullable',['RLE','ALP']),('d_array.list.element',['RLE','ALP']),('f_array.list.element',['RLE','ALP'])]
+arrayMap(lam⋯), columns): [('id',['PLAIN','RLE_DICTIONARY']),('d_decimal',['ALP']),('f_decimal',['ALP']),('d_special',['ALP']),('f_special',['ALP']),('d_random',['PLAIN']),('f_random',['ALP']),('d_large',['ALP']),('d_const',['ALP']),('f_const',['ALP']),('d_nullable',['RLE','ALP']),('f_nullable',['RLE','ALP']),('d_array.list.element',['RLE','ALP']),('f_array.list.element',['RLE','ALP'])]
 --- small pages and row groups
 3
 1
@@ -34,4 +34,4 @@ arrayMap(lam⋯), columns): [('id',['PLAIN','RLE_DICTIONARY']),('d_decimal',['AL
 --- ALP is smaller than PLAIN for decimal-like values (but not much for Float32, which has many exceptions)
 [('d_decimal',['PLAIN']),('f_decimal',['PLAIN'])]
 [('d_decimal',['ALP']),('f_decimal',['ALP'])]
-[20166,33532]	[80129,40085]	[1,1]
+[20166,33472]	[80129,40085]	[1,1]

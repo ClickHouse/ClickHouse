@@ -447,13 +447,22 @@ private:
     PaddedPODArray<UInt16> exception_positions;
     PaddedPODArray<T> sample;
 
-    /// Takes up to `max_samples` values evenly spaced over [values, values + n).
+    /// Takes up to `max_samples` values spread over [values, values + n): one value from each of
+    /// the consecutive blocks of `stride` values, at a pseudo-random position inside the block.
+    /// With a fixed position the sample would alias with periodic data: for example, for values
+    /// with a step of 0.25 and a stride of 16 it would contain only the integers, and the
+    /// parameters chosen on it would make 3/4 of the vector exceptions.
     void takeSample(const T * values, size_t n, size_t max_samples)
     {
         const size_t stride = std::max<size_t>(1, (n + max_samples - 1) / max_samples);
         sample.clear();
-        for (size_t i = 0; i < n; i += stride)
-            sample.push_back(values[i]);
+        for (size_t block_idx = 0, begin = 0; begin < n; ++block_idx, begin += stride)
+        {
+            const size_t block_size = std::min(stride, n - begin);
+            /// Fibonacci hashing of the block number: deterministic and well spread.
+            const size_t offset = ((block_idx * 0x9E3779B97F4A7C15ULL) >> 32) % block_size;
+            sample.push_back(values[begin + offset]);
+        }
     }
 
     /// Encodes one value as the specification describes, then decodes it back. The result is an
