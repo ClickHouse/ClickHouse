@@ -389,6 +389,10 @@ public:
         /// on the key column directly (see findHyperrectanglesForArgumentsOfSpaceFillingCurves).
         std::optional<size_t> argument_num_of_space_filling_curve;
 
+        /// Position of this element in the RPN built from the filter. An element that
+        /// `findHyperrectanglesForArgumentsOfSpaceFillingCurves` collapses takes the position of its first atom.
+        std::optional<size_t> position_in_filter_rpn;
+
         /// For FUNCTION_IN_SET, FUNCTION_NOT_IN_SET
         using MergeTreeSetIndexPtr = std::shared_ptr<const MergeTreeSetIndex>;
         MergeTreeSetIndexPtr set_index;
@@ -611,6 +615,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
+        bool nested_null_is_ordinary_value,
         bool & out_atom_is_exact);
 
     /// Checks if node is a subexpression of any of key columns expressions,
