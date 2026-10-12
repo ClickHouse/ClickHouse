@@ -10,7 +10,7 @@
 namespace DB
 {
 
-static String getStatisticsFilename(const String & column_name)
+String getStatisticsFilename(const String & column_name)
 {
     /// Note, we cannot use replaceFileNameToHashIfNeeded(), since we do not handle hashes->column names for statistics in getColumnForStatisticsFile()
     return String(STATS_FILE_PREFIX) + escapeForFileName(column_name) + String(STATS_FILE_SUFFIX);
