@@ -30,6 +30,7 @@
 
 #include <Client/IServerConnection.h>
 #include <Server/IServer.h>
+#include <Server/ConnectionRegistry.h>
 
 
 namespace CurrentMetrics
@@ -266,6 +267,9 @@ private:
     /// For tracking connection lifetime and query count
     UInt64 query_count = 0;
     Stopwatch connection_timer;
+
+    /// The registration in `ConnectionRegistry` (`system.connections`). `runImpl` makes it after a successful authentication.
+    ConnectionHandle connection_handle;
 
     /// `callback_mutex` protects using `out` (WriteBuffer), `in` (ReadBuffer) and other members concurrent inside callbacks.
     /// All the methods which are run inside callbacks are marked with TSA_REQUIRES.

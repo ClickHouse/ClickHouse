@@ -54,6 +54,7 @@
 #include <Storages/System/StorageSystemProjectionParts.h>
 #include <Storages/System/StorageSystemPartsColumns.h>
 #include <Storages/System/StorageSystemProjectionPartsColumns.h>
+#include <Storages/System/StorageSystemConnections.h>
 #include <Storages/System/StorageSystemProcesses.h>
 #include <Storages/System/StorageSystemUserProcesses.h>
 #include <Storages/System/StorageSystemReplicas.h>
@@ -149,6 +150,7 @@
 #include <Storages/System/StorageSystemWasmModules.h>
 
 #include <Interpreters/Context.h>
+#include <Server/ConnectionRegistry.h>
 
 #include <Poco/Util/LayeredConfiguration.h>
 
@@ -2656,6 +2658,59 @@ moved to the TTL destination by a background move task (observable via
 `system.moves`). See the
 [`perform_ttl_move_on_insert` setting on the MergeTree engine](/reference/engines/table-engines/mergetree-family/mergetree#table_engine-mergetree-multiple-volumes_configure).
 )DOCS_MD");
+    if (context->getConfigRef().getBool("collect_connection_metrics", false))
+    {
+        ConnectionRegistry::instance().enable();
+        attach<StorageSystemConnections>(context, system_database, "connections", R"DOCS_MD(
+.description
+Shows the open client connections of the native TCP and HTTP query interfaces.
+A connection is `active` when a query runs. A connection is `idle` when it waits for the next query.
+
+The table does not show these connections:
+- Connections of other protocols, for example MySQL, PostgreSQL, and gRPC.
+- Interserver connections.
+- HTTP connections that did not run a query, for example `/ping` and Prometheus connections.
+
+The table is available only if the server setting `collect_connection_metrics` is `true`.
+
+The server adds a TCP connection to the table after authentication. The server removes the connection when it closes.
+The server adds an HTTP connection to the table on its first query. The server removes the connection when the socket closes.
+Thus, the table shows an HTTP keep-alive connection as `idle` between the requests.
+
+A user without the `SHOW CONNECTIONS` privilege sees only the connections of this user.
+
+.examples
+```sql
+SELECT connection_id, protocol, user, status, query_id, client_name, connected_time, last_query_time
+FROM system.connections
+FORMAT Vertical;
+```
+
+```response
+Row 1:
+──────
+connection_id:   2
+protocol:        TCP
+user:            default
+status:          active
+query_id:        845dcadd-7249-4ce4-8c3d-c08032594155
+client_name:     ClickHouse client
+connected_time:  2026-03-17 09:18:18
+last_query_time: 2026-03-17 09:18:27
+
+Row 2:
+──────
+connection_id:   1
+protocol:        HTTP
+user:            default
+status:          idle
+query_id:
+client_name:     curl/8.5.0
+connected_time:  2026-03-17 09:18:14
+last_query_time: 2026-03-17 09:18:14
+```
+)DOCS_MD");
+    }
     attach<StorageSystemProcesses>(context, system_database, "processes", R"DOCS_MD(
 .description
 This system table is used for implementing the `SHOW PROCESSLIST` query.

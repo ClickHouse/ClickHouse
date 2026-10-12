@@ -1,5 +1,6 @@
 #include <Server/HTTP/deferHTTP100Continue.h>
 #include <Server/HTTP/HTTPServerConnection.h>
+#include <Server/ConnectionRegistry.h>
 #include <Server/TCPServer.h>
 
 #include <Poco/Net/NetException.h>
@@ -45,6 +46,9 @@ void HTTPServerConnection::run()
 
     ProfileEvents::increment(ProfileEvents::HTTPServerConnectionsCreated);
 
+    /// This object stays until the socket closes. Thus, `system.connections` shows a keep-alive connection as idle between the requests.
+    HTTPConnectionRegistration connection_registration{.connected_time = std::time(nullptr), .handle = {}};
+
     while (!stopped && tcp_server.isOpen() && session.connected())
     {
         const bool is_first_request = params->getMaxKeepAliveRequests() == session.getMaxKeepAliveRequests();
@@ -72,6 +76,7 @@ void HTTPServerConnection::run()
             {
                 HTTPServerResponse response(session);
                 HTTPServerRequest request(context, response, session, read_event);
+                request.setConnectionRegistration(&connection_registration);
 
                 Poco::Timestamp now;
 

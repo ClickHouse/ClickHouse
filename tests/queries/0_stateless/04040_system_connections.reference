@@ -1,0 +1,17 @@
+1
+connection_id	UInt64
+protocol	LowCardinality(String)
+client_address	IPv6
+client_port	UInt16
+server_port	UInt16
+user	String
+status	LowCardinality(String)
+query_id	String
+client_name	String
+client_version_major	UInt64
+client_version_minor	UInt64
+client_version_patch	UInt64
+connected_time	DateTime
+last_query_time	Nullable(DateTime)
+TCP	active
+0
