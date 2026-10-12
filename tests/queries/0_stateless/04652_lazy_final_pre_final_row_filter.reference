@@ -1,0 +1,91 @@
+-- parts must stay unmerged, otherwise FINAL has nothing to deduplicate
+6
+-- pre-FINAL filters: lazy FINAL must return the same rows as the ordinary FINAL read
+row_policy	[1,2]	[1,2]	same
+row_policy_optimized	1
+row_policy_runs	1
+row_policy_count	2	2	same
+row_policy_prewhere_promoted	[1,2]	[1,2]	same
+row_policy_prewhere_promoted_optimized	1
+row_policy_and_prewhere	[4]	[4]	same
+row_policy_and_prewhere_optimized	1
+row_policy_and_prewhere_payload	[(1,1)]	[(1,1)]	same
+prewhere	[1,2]	[1,2]	same
+prewhere_optimized	1
+-- is_deleted: the winner-selection argMax over is_deleted must see the filtered rows too
+is_deleted_policy	[1,2]	[1,2]	same
+is_deleted_policy_optimized	1
+is_deleted_prewhere	[1,2,3]	[1,2,3]	same
+is_deleted_prewhere_optimized	1
+-- an unsafe pre-FINAL filter must not be pushed into the winner-selection read
+nondeterministic_policy_not_optimized	0
+nondeterministic_policy_not_runs	0
+nondeterministic_policy	[1,2]	[1,2]	same
+stateful_policy_not_optimized	0
+stateful_policy	[1,2]	[1,2]	same
+nondeterministic_prewhere_not_optimized	0
+nondeterministic_prewhere	[1,2]	[1,2]	same
+-- a throwing pre-FINAL filter behaves the same with and without the optimization
+throwing_policy	[1,2]	[1,2]	same
+throwing_policy_optimized	1
+-- the part splitter's early declines must keep the ordinary FINAL read, not half-apply the split
+unsafe_pk_float	[1.5,2.5]	[1.5,2.5]	same
+unsafe_pk_float_optimized	0
+safe_pk_float	[1.5,2.5]	[1.5,2.5]	same
+safe_pk_float_optimized	1
+safe_pk_float_runs	1
+unsafe_pk_nullable	[1,2]	[1,2]	same
+unsafe_pk_nullable_optimized	0
+safe_pk_nullable	[1,2]	[1,2]	same
+safe_pk_nullable_optimized	1
+mixed_reverse_key	[1,2]	[1,2]	same
+mixed_reverse_key_optimized	0
+safe_mixed_reverse_key	[1,2]	[1,2]	same
+safe_mixed_reverse_key_optimized	1
+unsafe_pk_text_index_not_optimized	0
+unsafe_pk_text_index	[3.5,4.5]	[3.5,4.5]	same
+unsafe_pk_text_index_direct_read	1
+unsafe_pk_text_index_absent_optimized	1
+unsafe_pk_text_index_absent	[3.5,4.5]	[3.5,4.5]	same
+unsafe_pk_float_order_by_optimized	0
+unsafe_pk_float_order_by	1.5
+2.5	1.5
+2.5	same
+mixed_reverse_order_by_optimized	0
+mixed_reverse_order_by	1
+2	1
+2	same
+-- an unavailable lazy branch must not cost the all-non-intersecting fast path
+fastpath_unsafe_policy	[1,3]	[1,3]	same
+fastpath_unsafe_policy_optimized	0
+fastpath_unsafe_policy_input_selector	0
+fastpath_unsafe_policy_final_absent	0
+fastpath_safe_policy	[1,3]	[1,3]	same
+fastpath_safe_policy_input_selector	0
+fastpath_safe_policy_final_absent	0
+declined_final_present	1
+-- partial split: the pre-FINAL filter must reach the lazy half without losing the other half
+4
+partial_split_policy	[1,2,10]	[1,2,10]	same
+partial_split_policy_optimized	1
+partial_split_policy_runs	1
+partial_split_policy_union	1
+partial_split_policy_index	1
+partial_split_policy_payload	[(1,0,1),(2,0,1),(10,0,1)]	[(1,0,1),(2,0,1),(10,0,1)]	same
+partial_split_unsafe	[1,2,10]	[1,2,10]	same
+partial_split_unsafe_optimized	0
+-- a bare required column as the predicate must not be consumed away by the filter
+bare_required_prewhere	[(1,2),(2,2)]	[(1,2),(2,2)]	same
+bare_required_prewhere_optimized	1
+bare_required_policy	[(1,2),(2,2)]	[(1,2),(2,2)]	same
+bare_required_policy_optimized	1
+-- controls: these answers and their plans must not change
+deferred_row_policy	[2]	[2]	same
+deferred_row_policy_optimized	1
+deferred_prewhere	[2]	[2]	same
+deferred_prewhere_optimized	1
+ratio_default	[1,2]	[1,2]
+plain_where	[2]	[2]	same
+plain_where_optimized	1
+sorting_key_policy	[1]	[1]	same
+sorting_key_policy_optimized	1
