@@ -29,6 +29,7 @@
 #include <Interpreters/JoinedTables.h>
 #include <Interpreters/PreparedSets.h>
 #include <Interpreters/DatabaseCatalog.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/Context.h>
 #include <Columns/ColumnConst.h>
@@ -581,7 +582,7 @@ void ReadFromRemote::addLazyPipe(
 
         if (!use_delayed_remote_source)
         {
-            const auto replicated_storage = std::dynamic_pointer_cast<StorageReplicatedMergeTree>(my_storage);
+            const auto replicated_storage = castStorage<StorageReplicatedMergeTree>(my_storage, DeferredTable::Load);
             if (!replicated_storage)
             {
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected lazy remote read from a non-replicated table: {}", my_storage->getName());

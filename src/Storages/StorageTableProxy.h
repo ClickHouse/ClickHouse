@@ -34,6 +34,14 @@ public:
         return "TableProxy";
     }
 
+    StoragePtr tryGetNested() const override
+    {
+        std::lock_guard lock{nested_mutex};
+        return nested;
+    }
+
+    bool isLazyStandIn() const override { return true; }
+
     StoragePtr getNested() const override
     {
         std::lock_guard lock{nested_mutex};

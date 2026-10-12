@@ -20,6 +20,7 @@
 #include <Storages/AlterCommands.h>
 #include <Storages/IStorage.h>
 #include <Storages/MutationCommands.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 
 
@@ -87,7 +88,10 @@ BlockIO InterpreterDeleteQuery::execute()
     }
 
     auto table_lock = table->lockForShare(getContext()->getCurrentQueryId(), settings[Setting::lock_acquire_timeout]);
-    auto metadata_snapshot = table->getInMemoryMetadataPtr();
+    /// A lazily loaded table reports only its columns, so the checks below would see no projections
+    /// and validate the mutation against metadata that has no keys.
+    auto resolved_table = resolveStorageProxyLoading(table);
+    auto metadata_snapshot = resolved_table->getInMemoryMetadataPtr();
 
     if (table->supportsDelete())
     {
@@ -115,7 +119,8 @@ BlockIO InterpreterDeleteQuery::execute()
 
         if (metadata_snapshot->hasProjections())
         {
-            if (const auto * merge_tree_data = dynamic_cast<const MergeTreeData *>(table.get()))
+            /// `MutateTask` treats THROW like DROP, so missing this check drops the projections.
+            if (const auto * merge_tree_data = castStorage<MergeTreeData>(resolved_table, DeferredTable::Load).get())
                 if ((*merge_tree_data->getSettings())[MergeTreeSetting::lightweight_mutation_projection_mode] == LightweightMutationProjectionMode::THROW)
                     throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
                         "DELETE query is not allowed for table {} because as it has projections and setting "

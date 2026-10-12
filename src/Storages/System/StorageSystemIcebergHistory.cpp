@@ -20,6 +20,7 @@
 #include <Access/ContextAccess.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
+#include <Storages/StorageProxy.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Core/Settings.h>
 
@@ -108,7 +109,7 @@ void StorageSystemIcebergHistory::fillData([[maybe_unused]] MutableColumns & res
                     // Table was dropped while acquiring the lock, skipping table
                     continue;
 
-                if (auto * object_storage_table = dynamic_cast<StorageObjectStorage *>(storage.get()))
+                if (auto * object_storage_table = castStorage<StorageObjectStorage>(storage, DeferredTable::Skip).get())
                 {
                     add_history_record(iterator, object_storage_table);
                 }
