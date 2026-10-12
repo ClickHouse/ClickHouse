@@ -98,6 +98,13 @@ MergingAggregatedStep::MergingAggregatedStep(
     /// never selects the best groups. Drop it there for the same reason.
     if (memory_efficient_aggregation)
         params.bucket_top_k = 0;
+
+    /// The ordinary merging path (`MergingAggregatedTransform` -> `Aggregator::convertToChunks`) does
+    /// not count the merged groups of each bucket before pruning them, unlike
+    /// `ConvertingAggregatedToChunksWithMergingSource`. With a `throw` group limit, pruning there could
+    /// return rows instead of throwing on the true merged group count. Drop it in that case.
+    if (params.max_rows_to_group_by != 0 && params.group_by_overflow_mode == OverflowMode::THROW)
+        params.bucket_top_k = 0;
 }
 
 void MergingAggregatedStep::applyOrder(SortDescription input_sort_description)
