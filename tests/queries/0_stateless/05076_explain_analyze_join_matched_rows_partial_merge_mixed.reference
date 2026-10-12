@@ -1,0 +1,34 @@
+ground truth: rows, matched (key only), matched (key and condition)
+1000	439	421
+1000	521	421
+hash
+ALL LEFT	421	421
+ALL RIGHT	421	421
+ALL FULL	421	421
+ANY LEFT	not collected	not collected
+ANY INNER	not collected	not collected
+SEMI LEFT	421	not collected
+partial_merge
+ALL LEFT	421	421
+ALL RIGHT	421	421
+ALL FULL	421	421
+ANY LEFT	421	not collected
+ANY INNER	421	not collected
+SEMI LEFT	421	not collected
+partial_merge, small blocks
+ALL LEFT	421	421
+ALL RIGHT	421	421
+ALL FULL	421	421
+ANY LEFT	421	not collected
+ANY INNER	421	not collected
+SEMI LEFT	421	not collected
+partial_merge, external
+ALL LEFT	421	421
+ALL RIGHT	421	421
+ALL FULL	421	421
+ANY LEFT	421	not collected
+ANY INNER	421	not collected
+SEMI LEFT	421	not collected
+derived mode
+hash	421
+partial_merge	421

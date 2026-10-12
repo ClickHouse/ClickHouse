@@ -8,10 +8,10 @@ SET enable_analyzer = 1;
 -- The stress job appends two client options from one block, and a client option beats a
 -- randomized one (`TestCase.add_effective_settings` in tests/clickhouse-test):
 --   * `join_algorithm` on odd threads (ci/jobs/scripts/stress/stress.py:166-179). With
---     `partial_merge`, `full_sorting_merge` or `auto` a mixed condition is refused before a
---     `HashJoin` is built (src/Planner/PlannerJoins.cpp:1386-1392), so the rows below would
---     report NOT_IMPLEMENTED instead of exercising the check added here. The
---     algorithm-matrix rows override this per statement.
+--     `full_sorting_merge` or `auto` a mixed condition is refused before a `HashJoin` is
+--     built (src/Planner/PlannerJoins.cpp), and `partial_merge` applies its own equivalent
+--     `arrayJoin` check, so the rows below would report a different error instead of
+--     exercising the check added here. The algorithm-matrix rows override this per statement.
 --   * `join_use_nulls=1` on every third thread (ci/jobs/scripts/stress/stress.py:163-164).
 --     That makes the non-preserved side of an outer join Nullable
 --     (src/Processors/QueryPlan/JoinStepLogical.cpp:113-133), so `sum` over zero matched
@@ -156,16 +156,18 @@ SELECT '--- kept: INNER pushes the condition down instead of building a residual
 SELECT count(), sum(t2.a) FROM t1 INNER JOIN t2
 ON (t1.key = t2.key) AND (t1.a < divide(t2.a, arrayJoin(materialize(emptyArrayUInt64()))));
 
-SELECT '--- kept: merge and direct algorithms keep reporting NOT_IMPLEMENTED';
+SELECT '--- kept: merge and direct algorithms without the check report their own errors';
 
--- These never construct a `HashJoin`, so the new check cannot change their error.
+-- These never construct a `HashJoin`. `full_sorting_merge` and `direct` refuse every mixed
+-- condition upfront; `partial_merge` evaluates mixed conditions and has the same `arrayJoin`
+-- check as `HashJoin`.
 SELECT count(), sum(t2.a) FROM t1 LEFT JOIN t2
 ON (t1.key = t2.key) AND (t1.a < divide(t2.a, arrayJoin(materialize(emptyArrayUInt64()))))
 SETTINGS join_algorithm = 'full_sorting_merge'; -- { serverError NOT_IMPLEMENTED }
 
 SELECT count(), sum(t2.a) FROM t1 LEFT JOIN t2
 ON (t1.key = t2.key) AND (t1.a < divide(t2.a, arrayJoin(materialize(emptyArrayUInt64()))))
-SETTINGS join_algorithm = 'partial_merge'; -- { serverError NOT_IMPLEMENTED }
+SETTINGS join_algorithm = 'partial_merge'; -- { serverError INVALID_JOIN_ON_EXPRESSION }
 
 SELECT count(), sum(t2.a) FROM t1 LEFT JOIN t2
 ON (t1.key = t2.key) AND (t1.a < divide(t2.a, arrayJoin(materialize(emptyArrayUInt64()))))

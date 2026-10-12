@@ -1,0 +1,305 @@
+-- { echoOn }
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'hash';
+1	10	alpha	0	0	
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND t1.a < t2.a AND t1.key + t2.a > 12 ORDER BY ALL SETTINGS join_algorithm = 'hash';
+1	10	alpha	0	0	
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t1.a < t2.a OR t1.attr > t2.attr) ORDER BY ALL SETTINGS join_algorithm = 'hash';
+1	10	alpha	1	5	ALPHA
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	10	BETA
+2	15	beta	2	14	BETA2
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+-- All candidate pairs fail the condition: every left/right row is non-matched.
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND t1.a + t2.a > 1000 ORDER BY ALL SETTINGS join_algorithm = 'hash';
+1	10	alpha	0	0	
+2	2	beta2	0	0	
+2	15	beta	0	0	
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+-- Mixed condition combined with single-side filter conditions.
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND t1.a > 3 AND t2.a > 6 AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'hash';
+1	10	alpha	0	0	
+2	2	beta2	0	0	
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+1	10	alpha	0	0	
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND t1.a < t2.a AND t1.key + t2.a > 12 ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+1	10	alpha	0	0	
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND (t1.a < t2.a OR t1.attr > t2.attr) ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+1	10	alpha	1	5	ALPHA
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	10	BETA
+2	15	beta	2	14	BETA2
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+-- All candidate pairs fail the condition: every left/right row is non-matched.
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND t1.a + t2.a > 1000 ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+1	10	alpha	0	0	
+2	2	beta2	0	0	
+2	15	beta	0	0	
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+-- Mixed condition combined with single-side filter conditions.
+SELECT t1.*, t2.* FROM t1 LEFT JOIN t2 ON t1.key = t2.key AND t1.a > 3 AND t2.a > 6 AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+1	10	alpha	0	0	
+2	2	beta2	0	0	
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'hash';
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND t1.a < t2.a AND t1.key + t2.a > 12 ORDER BY ALL SETTINGS join_algorithm = 'hash';
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND (t1.a < t2.a OR t1.attr > t2.attr) ORDER BY ALL SETTINGS join_algorithm = 'hash';
+1	10	alpha	1	5	ALPHA
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	10	BETA
+2	15	beta	2	14	BETA2
+2	15	beta	2	16	BETA3
+-- All candidate pairs fail the condition: every left/right row is non-matched.
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND t1.a + t2.a > 1000 ORDER BY ALL SETTINGS join_algorithm = 'hash';
+-- Mixed condition combined with single-side filter conditions.
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND t1.a > 3 AND t2.a > 6 AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'hash';
+2	15	beta	2	16	BETA3
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND t1.a < t2.a AND t1.key + t2.a > 12 ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND (t1.a < t2.a OR t1.attr > t2.attr) ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+1	10	alpha	1	5	ALPHA
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	10	BETA
+2	15	beta	2	14	BETA2
+2	15	beta	2	16	BETA3
+-- All candidate pairs fail the condition: every left/right row is non-matched.
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND t1.a + t2.a > 1000 ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+-- Mixed condition combined with single-side filter conditions.
+SELECT t1.*, t2.* FROM t1 INNER JOIN t2 ON t1.key = t2.key AND t1.a > 3 AND t2.a > 6 AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+2	15	beta	2	16	BETA3
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'hash';
+0	0		1	5	ALPHA
+0	0		4	25	DELTA
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND t1.a < t2.a AND t1.key + t2.a > 12 ORDER BY ALL SETTINGS join_algorithm = 'hash';
+0	0		1	5	ALPHA
+0	0		2	10	BETA
+0	0		4	25	DELTA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a < t2.a OR t1.attr > t2.attr) ORDER BY ALL SETTINGS join_algorithm = 'hash';
+0	0		4	25	DELTA
+1	10	alpha	1	5	ALPHA
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	10	BETA
+2	15	beta	2	14	BETA2
+2	15	beta	2	16	BETA3
+-- All candidate pairs fail the condition: every left/right row is non-matched.
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND t1.a + t2.a > 1000 ORDER BY ALL SETTINGS join_algorithm = 'hash';
+0	0		1	5	ALPHA
+0	0		2	10	BETA
+0	0		2	14	BETA2
+0	0		2	16	BETA3
+0	0		4	25	DELTA
+-- Mixed condition combined with single-side filter conditions.
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND t1.a > 3 AND t2.a > 6 AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'hash';
+0	0		1	5	ALPHA
+0	0		2	10	BETA
+0	0		2	14	BETA2
+0	0		4	25	DELTA
+2	15	beta	2	16	BETA3
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+0	0		1	5	ALPHA
+0	0		4	25	DELTA
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND t1.a < t2.a AND t1.key + t2.a > 12 ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+0	0		1	5	ALPHA
+0	0		2	10	BETA
+0	0		4	25	DELTA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND (t1.a < t2.a OR t1.attr > t2.attr) ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+0	0		4	25	DELTA
+1	10	alpha	1	5	ALPHA
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	10	BETA
+2	15	beta	2	14	BETA2
+2	15	beta	2	16	BETA3
+-- All candidate pairs fail the condition: every left/right row is non-matched.
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND t1.a + t2.a > 1000 ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+0	0		1	5	ALPHA
+0	0		2	10	BETA
+0	0		2	14	BETA2
+0	0		2	16	BETA3
+0	0		4	25	DELTA
+-- Mixed condition combined with single-side filter conditions.
+SELECT t1.*, t2.* FROM t1 RIGHT JOIN t2 ON t1.key = t2.key AND t1.a > 3 AND t2.a > 6 AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+0	0		1	5	ALPHA
+0	0		2	10	BETA
+0	0		2	14	BETA2
+0	0		4	25	DELTA
+2	15	beta	2	16	BETA3
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'hash';
+0	0		1	5	ALPHA
+0	0		4	25	DELTA
+1	10	alpha	0	0	
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t1.a < t2.a AND t1.key + t2.a > 12 ORDER BY ALL SETTINGS join_algorithm = 'hash';
+0	0		1	5	ALPHA
+0	0		2	10	BETA
+0	0		4	25	DELTA
+1	10	alpha	0	0	
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t1.a < t2.a OR t1.attr > t2.attr) ORDER BY ALL SETTINGS join_algorithm = 'hash';
+0	0		4	25	DELTA
+1	10	alpha	1	5	ALPHA
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	10	BETA
+2	15	beta	2	14	BETA2
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+-- All candidate pairs fail the condition: every left/right row is non-matched.
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t1.a + t2.a > 1000 ORDER BY ALL SETTINGS join_algorithm = 'hash';
+0	0		1	5	ALPHA
+0	0		2	10	BETA
+0	0		2	14	BETA2
+0	0		2	16	BETA3
+0	0		4	25	DELTA
+1	10	alpha	0	0	
+2	2	beta2	0	0	
+2	15	beta	0	0	
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+-- Mixed condition combined with single-side filter conditions.
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t1.a > 3 AND t2.a > 6 AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'hash';
+0	0		1	5	ALPHA
+0	0		2	10	BETA
+0	0		2	14	BETA2
+0	0		4	25	DELTA
+1	10	alpha	0	0	
+2	2	beta2	0	0	
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+0	0		1	5	ALPHA
+0	0		4	25	DELTA
+1	10	alpha	0	0	
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t1.a < t2.a AND t1.key + t2.a > 12 ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+0	0		1	5	ALPHA
+0	0		2	10	BETA
+0	0		4	25	DELTA
+1	10	alpha	0	0	
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND (t1.a < t2.a OR t1.attr > t2.attr) ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+0	0		4	25	DELTA
+1	10	alpha	1	5	ALPHA
+2	2	beta2	2	10	BETA
+2	2	beta2	2	14	BETA2
+2	2	beta2	2	16	BETA3
+2	15	beta	2	10	BETA
+2	15	beta	2	14	BETA2
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+-- All candidate pairs fail the condition: every left/right row is non-matched.
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t1.a + t2.a > 1000 ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+0	0		1	5	ALPHA
+0	0		2	10	BETA
+0	0		2	14	BETA2
+0	0		2	16	BETA3
+0	0		4	25	DELTA
+1	10	alpha	0	0	
+2	2	beta2	0	0	
+2	15	beta	0	0	
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
+-- Mixed condition combined with single-side filter conditions.
+SELECT t1.*, t2.* FROM t1 FULL JOIN t2 ON t1.key = t2.key AND t1.a > 3 AND t2.a > 6 AND t1.a < t2.a ORDER BY ALL SETTINGS join_algorithm = 'partial_merge';
+0	0		1	5	ALPHA
+0	0		2	10	BETA
+0	0		2	14	BETA2
+0	0		4	25	DELTA
+1	10	alpha	0	0	
+2	2	beta2	0	0	
+2	15	beta	2	16	BETA3
+3	20	gamma	0	0	
+5	5	epsilon	0	0	
