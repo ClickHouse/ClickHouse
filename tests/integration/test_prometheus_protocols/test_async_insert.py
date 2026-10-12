@@ -178,6 +178,27 @@ def test_async_insert_flush_timeout_returns_503():
     )
 
 
+def test_sync_insert_timeout_returns_503():
+    # The constraint sleeps 2 seconds per row, so the insert exceeds a 1-second `max_execution_time`.
+    node.query(
+        "CREATE TABLE samples (id UUID, timestamp DateTime64(3), value Float64, "
+        "CONSTRAINT slow CHECK sleepEachRow(2) = 0) ENGINE=MergeTree ORDER BY (id, timestamp)"
+    )
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries DATA samples")
+
+    time_series = [({"__name__": "slow_metric"}, {1724112000: 1.5})]
+    response = get_response_to_remote_write(
+        node.ip_address,
+        9093,
+        "/write?max_execution_time=1",
+        convert_time_series_to_protobuf(time_series),
+    )
+
+    # A timed-out insert must be retryable too, so it maps to 503, not 408.
+    assert response.status_code == 503
+    assert "Timeout exceeded" in response.text
+
+
 def test_async_insert_flush_timeout_is_clamped():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
