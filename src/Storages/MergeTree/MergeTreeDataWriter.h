@@ -5,10 +5,12 @@
 #include <IO/WriteBufferFromFile.h>
 #include <Compression/CompressedWriteBuffer.h>
 
+#include <Columns/ColumnsNumber.h>
 
 #include <Interpreters/sortBlock.h>
 
 #include <Processors/Chunk.h>
+#include <Processors/Transforms/DeduplicationTokenTransforms.h>
 
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergedBlockOutputStream.h>
@@ -86,21 +88,15 @@ public:
 
     /** All rows must correspond to same partition.
       * Returns part with unique name starting with 'tmp_', yet not added to MergeTreeData.
-      * `may_have_leftover`: see `MergeTreeData::claimTemporaryPartDirectory`.
       */
-    MergeTreeTemporaryPartPtr writeTempPart(
-        BlockWithPartition & block,
-        StorageMetadataPtr metadata_snapshot,
-        ContextPtr context,
-        bool may_have_leftover = true);
+    MergeTreeTemporaryPartPtr writeTempPart(BlockWithPartition & block, StorageMetadataPtr metadata_snapshot, ContextPtr context);
 
     MergeTreeTemporaryPartPtr writeTempPatchPart(
         BlockWithPartition & block,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        PatchPartIndex patch_part_index,
-        ContextPtr context,
-        bool may_have_leftover = true);
+        SourcePartsSetForPatch source_parts_set,
+        ContextPtr context);
 
     MergeTreeData::MergingParams::Mode getMergingMode() const
     {
@@ -108,29 +104,22 @@ public:
     }
 
     /// For insertion.
-    /// `compression_codec` is the codec chosen for the parent part; the projection inherits it so
-    /// that a projection of a large (`ZSTD(3)`) part is not always written with `LZ4`.
     static MergeTreeTemporaryPartPtr writeProjectionPart(
         const MergeTreeData & data,
+        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
-        CompressionCodecPtr compression_codec,
-        bool merge_is_needed,
-        ContextPtr context);
+        bool merge_is_needed);
 
     /// For mutation: MATERIALIZE PROJECTION.
-    /// `compression_codec` is the codec chosen for the parent part; see `writeProjectionPart`.
     static MergeTreeTemporaryPartPtr writeTempProjectionPart(
         const MergeTreeData & data,
+        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
         IMergeTreeDataPart * parent_part,
-        CompressionCodecPtr compression_codec,
-        size_t block_num,
-        bool use_selected_codec,
-        bool is_explicit_recompression,
-        ContextPtr context);
+        size_t block_num);
 
     static Block mergeBlock(
         Block && block,
@@ -144,23 +133,19 @@ private:
         BlockWithPartition & block_with_partition,
         StorageMetadataPtr metadata_snapshot,
         String partition_id,
-        std::optional<PatchPartIndex> patch_part_index,
+        SourcePartsSetForPatch source_parts_set,
         ContextPtr context,
-        UInt64 block_number,
-        bool may_have_leftover);
+        UInt64 block_number);
 
     static MergeTreeTemporaryPartPtr writeProjectionPartImpl(
         const String & part_name,
         bool is_temp,
         IMergeTreeDataPart * parent_part,
         const MergeTreeData & data,
+        LoggerPtr log,
         Block block,
         const ProjectionDescription & projection,
-        CompressionCodecPtr compression_codec,
-        MergeTreeIndices indices,
-        bool merge_is_needed,
-        bool try_adaptive_codec,
-        bool use_selected_codec = false);
+        bool merge_is_needed);
 
     MergeTreeData & data;
     LoggerPtr log;

@@ -6,7 +6,6 @@
 #include <QueryPipeline/Chain.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <Interpreters/PreparedSets.h>
-#include <Interpreters/Set.h>
 #include <Common/Logger.h>
 #include <Common/Stopwatch.h>
 
@@ -25,7 +24,7 @@ class PushingPipelineExecutor;
 /// Don't return any data. Sets are created when Finish status is returned.
 /// In general, several work() methods need to be called to finish.
 /// Independent processors is created for each subquery.
-class CreatingSetsTransform final : public IAccumulatingTransform
+class CreatingSetsTransform : public IAccumulatingTransform
 {
 public:
     CreatingSetsTransform(
@@ -33,15 +32,12 @@ public:
         SharedHeader out_header_,
         SetAndKeyPtr set_and_key_,
         SizeLimits network_transfer_limits_,
-        PreparedSetsCachePtr prepared_sets_cache_,
-        SetSpillSettings spill_settings_,
-        bool recoverable_build_ = false);
+        PreparedSetsCachePtr prepared_sets_cache_);
 
     ~CreatingSetsTransform() override;
 
     String getName() const override { return "CreatingSetsTransform"; }
 
-    Status prepare() override;
     void work() override;
     void consume(Chunk chunk) override;
     Chunk generate() override;
@@ -61,11 +57,6 @@ private:
 
     SizeLimits network_transfer_limits;
     PreparedSetsCachePtr prepared_sets_cache;
-
-    SetSpillSettings spill_settings;
-
-    /// See `CreatingSetStep::recoverable_build`.
-    bool recoverable_build = false;
 
     size_t rows_to_transfer = 0;
     size_t bytes_to_transfer = 0;

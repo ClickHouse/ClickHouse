@@ -4,23 +4,17 @@
 #include <Parsers/IAST.h>
 #include <Common/SettingsChanges.h>
 
-namespace Poco::JSON { class Object; }
-
 namespace DB
 {
 
 constexpr char QUERY_PARAMETER_NAME_PREFIX[] = "param_";
-
-/// The SQL text hiding the value of a secret setting change, or `nullopt` when it carries no secret.
-std::optional<String> renderSecretChangeValue(const SettingChange & change);
 
 /** SET query
   */
 class ASTSetQuery : public IAST
 {
 public:
-    /// If false, this AST is a part of another query, such as SELECT.
-    bool is_standalone = true;
+    bool is_standalone = true; /// If false, this AST is a part of another query, such as SELECT.
 
     SettingsChanges changes;
     /// settings that will be reset to default value
@@ -37,9 +31,6 @@ public:
     bool hasSecretParts() const override;
 
     QueryKind getQueryKind() const override { return QueryKind::Set; }
-
-    void writeJSON(WriteBuffer & out) const override;
-    void readJSON(const Poco::JSON::Object & json) override;
 
     void appendColumnName(WriteBuffer & ostr) const override;
     void appendColumnNameWithoutAlias(WriteBuffer & ostr) const override { appendColumnName(ostr); }

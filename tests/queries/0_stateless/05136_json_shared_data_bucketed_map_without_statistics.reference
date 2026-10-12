@@ -1,2 +1,0 @@
-Map(String, UInt64)	{'k':1}	Map(String, Tuple(a UInt64))	{'k':(2)}
-1	2

@@ -2,12 +2,13 @@
 
 #include <bit>
 #include <cstring>
+#include <cassert>
 #include <city.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <base/demangle.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 #include <Compression/ICompressionCodec.h>
 #include <Compression/CompressionFactory.h>
 #include <IO/ReadBuffer.h>
@@ -158,7 +159,7 @@ static void readHeaderAndGetCodecAndSize(
     size_decompressed = codec->readDecompressedBlockSize(compressed_buffer);
 
     /// This is for clang static analyzer.
-    chassert(size_decompressed > 0);
+    assert(size_decompressed > 0);
 
     if (size_compressed_without_checksum > DBMS_MAX_COMPRESSED_SIZE)
         throw Exception(ErrorCodes::TOO_LARGE_SIZE_COMPRESSED, "Too large size_compressed_without_checksum: {}. "

@@ -15,8 +15,7 @@ class NATSCoreConsumer : public INATSConsumer
 public:
     using INATSConsumer::INATSConsumer;
 
-protected:
-    void subscribeImpl() override;
+    void subscribe() override;
 };
 
 }

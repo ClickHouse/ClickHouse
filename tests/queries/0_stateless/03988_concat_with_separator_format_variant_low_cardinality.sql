@@ -1,5 +1,5 @@
 -- concatWithSeparator and format had the same bug as concat (fixed in #97654):
--- convertToFullIfWrapped recursively stripped LowCardinality from inside a Variant column
+-- convertToFullIfNeeded recursively stripped LowCardinality from inside a Variant column
 -- while the type was not updated, creating a type/column mismatch in serialization.
 
 SET allow_suspicious_low_cardinality_types = 1;

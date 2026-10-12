@@ -1,7 +1,7 @@
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionStringToString.h>
 #include <base/find_symbols.h>
-#include <Common/Hex.h>
+#include <base/hex.h>
 
 
 namespace DB
@@ -143,7 +143,7 @@ struct CodeURLComponentImpl
         {
             const char * src_data = reinterpret_cast<const char *>(&data[prev_offset]);
             size_t src_size = offsets[i] - prev_offset;
-            size_t dst_size = 0;
+            size_t dst_size;
 
             if constexpr (code_strategy == encode)
             {
