@@ -34,11 +34,13 @@
 #include <Compression/CompressionCodecQuantized.h>
 #include <Compression/CompressionFactory.h>
 #include <Core/BackgroundSchedulePool.h>
+#include <Core/DecimalFunctions.h>
 #include <Core/QueryProcessingStage.h>
 #include <Core/ServerSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
+#include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
@@ -174,6 +176,7 @@
 #include <Common/formatReadable.h>
 
 #include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/predicate.hpp>
 
 #include <Common/Hex.h>
 #include <base/insertAtEnd.h>
@@ -10536,22 +10539,259 @@ static Field convertPartitionFieldToType(const Field & value, const DataTypePtr 
     return converted;
 }
 
-/// Checks a string that a conversion turns into a date or a time the same way as a partition literal. A tuple is
+/// The date, the time of day, the fraction of a second and the time zone designator spelled in a string that a
+/// conversion such as `toDateTime64` reads, in the `YYYY-MM-DD[( |T)hh:mm[:ss[.f...]]][Z| UTC|(+|-)hh[[:]mm]]` format.
+struct SpelledDateTime
+{
+    LocalDateTime date_time;
+    std::string_view fraction;
+    /// Seconds east of UTC, if the string has a time zone designator.
+    std::optional<Int64> utc_offset;
+};
+
+/// Unlike the readers of the conversions, this one does not roll a field over and does not skip characters, it only
+/// takes the fields apart; whether they exist is decided by comparing them with the converted value. Only the date is
+/// taken from a string that a conversion to `Date` or `Date32` reads, as such a conversion ignores the rest.
+static std::optional<SpelledDateTime> splitSpelledDateTime(std::string_view text, bool date_only)
+{
+    size_t pos = 0;
+    auto is_digit_at = [&](size_t at) { return at < text.size() && isNumericASCII(text[at]); };
+    auto is_char_at = [&](size_t at, char c) { return at < text.size() && text[at] == c; };
+    auto skip_char = [&](char c)
+    {
+        if (!is_char_at(pos, c))
+            return false;
+        ++pos;
+        return true;
+    };
+    auto read_two_digits = [&](UInt8 & to)
+    {
+        if (!is_digit_at(pos) || !is_digit_at(pos + 1))
+            return false;
+        to = static_cast<UInt8>((text[pos] - '0') * 10 + (text[pos + 1] - '0'));
+        pos += 2;
+        return true;
+    };
+
+    if (!is_digit_at(0) || !is_digit_at(1) || !is_digit_at(2) || !is_digit_at(3))
+        return {};
+    const auto year = static_cast<UInt16>((text[0] - '0') * 1000 + (text[1] - '0') * 100 + (text[2] - '0') * 10 + (text[3] - '0'));
+    pos = 4;
+
+    UInt8 month = 0;
+    UInt8 day = 0;
+    if (!skip_char('-') || !read_two_digits(month) || !skip_char('-') || !read_two_digits(day))
+        return {};
+
+    SpelledDateTime spelled;
+    if (date_only)
+    {
+        spelled.date_time = LocalDateTime(year, month, day, 0, 0, 0);
+        return spelled;
+    }
+
+    UInt8 hour = 0;
+    UInt8 minute = 0;
+    UInt8 second = 0;
+    if (is_char_at(pos, ' ') || is_char_at(pos, 'T'))
+    {
+        ++pos;
+        if (!read_two_digits(hour) || !skip_char(':') || !read_two_digits(minute))
+            return {};
+        if (is_char_at(pos, ':'))
+        {
+            ++pos;
+            if (!read_two_digits(second))
+                return {};
+            if (is_char_at(pos, '.'))
+            {
+                const size_t fraction_begin = ++pos;
+                while (is_digit_at(pos))
+                    ++pos;
+                spelled.fraction = text.substr(fraction_begin, pos - fraction_begin);
+            }
+        }
+
+        const std::string_view zone = text.substr(pos);
+        if (zone == "Z" || zone == "z" || zone == "UTC" || zone == " UTC")
+        {
+            spelled.utc_offset = 0;
+            pos = text.size();
+        }
+        else if (is_char_at(pos, '+') || is_char_at(pos, '-'))
+        {
+            const bool negative = text[pos] == '-';
+            ++pos;
+            UInt8 offset_hours = 0;
+            UInt8 offset_minutes = 0;
+            if (!read_two_digits(offset_hours))
+                return {};
+            const bool has_colon = skip_char(':');
+            if ((has_colon || pos < text.size()) && !read_two_digits(offset_minutes))
+                return {};
+            /// The readers of the conversions do not check the offset either, so `+00:60` would be read as `+01:00`.
+            if (offset_hours > 23 || offset_minutes > 59)
+                return {};
+            const Int64 offset = offset_hours * 3600 + offset_minutes * 60;
+            spelled.utc_offset = negative ? -offset : offset;
+        }
+    }
+
+    if (pos != text.size())
+        return {};
+
+    spelled.date_time = LocalDateTime(year, month, day, hour, minute, second);
+    return spelled;
+}
+
+/// Whether `converted`, the value of a conversion to `type`, has the date, the time and the fraction of a second
+/// that are spelled. A rolled-over value does not: `'2024-02-29 25:00'` spells hour 25, but is read as
+/// `2024-03-01 01:00:00`.
+static bool hasSpelledFields(const Field & converted, const DataTypePtr & type, const SpelledDateTime & spelled)
+{
+    const DataTypePtr nested_type = removeLowCardinalityAndNullable(type);
+    const DateLUTImpl & utc = DateLUT::instance("UTC");
+    if (WhichDataType(nested_type).isDate())
+        return converted.getType() == Field::Types::UInt64
+            && LocalDate(DayNum(static_cast<UInt16>(converted.safeGet<UInt64>())), utc) == spelled.date_time.toDate();
+    if (WhichDataType(nested_type).isDate32())
+        return converted.getType() == Field::Types::Int64
+            && LocalDate(ExtendedDayNum(static_cast<Int32>(converted.safeGet<Int64>())), utc) == spelled.date_time.toDate();
+
+    Int64 seconds = 0;
+    Int64 fraction = 0;
+    UInt32 scale = 0;
+    const DateLUTImpl * time_zone = nullptr;
+    if (const auto * date_time_type = typeid_cast<const DataTypeDateTime *>(nested_type.get()))
+    {
+        if (converted.getType() != Field::Types::UInt64)
+            return false;
+        seconds = static_cast<Int64>(converted.safeGet<UInt64>());
+        time_zone = &date_time_type->getTimeZone();
+    }
+    else if (const auto * date_time64_type = typeid_cast<const DataTypeDateTime64 *>(nested_type.get()))
+    {
+        if (converted.getType() != Field::Types::Decimal64)
+            return false;
+        const auto & decimal = converted.safeGet<DecimalField<DateTime64>>();
+        scale = decimal.getScale();
+        const Int64 multiplier = DecimalUtils::scaleMultiplier<Int64>(scale);
+        const Int64 value = decimal.getValue().value;
+        seconds = value / multiplier;
+        fraction = value % multiplier;
+        if (fraction < 0)
+        {
+            fraction += multiplier;
+            --seconds;
+        }
+        time_zone = &date_time64_type->getTimeZone();
+    }
+    else
+        return false;
+
+    /// With a time zone designator the fields are a time at that offset from UTC, otherwise in the time zone of the
+    /// type, where the comparison also rejects a local time skipped by a daylight saving time shift.
+    if (spelled.utc_offset)
+    {
+        seconds += *spelled.utc_offset;
+        time_zone = &utc;
+    }
+    if (LocalDateTime(static_cast<time_t>(seconds), *time_zone) != spelled.date_time)
+        return false;
+
+    /// Digits of the fraction past `scale` are dropped by the conversion, so they must be zeros.
+    Int64 spelled_fraction = 0;
+    for (size_t i = 0; i < scale; ++i)
+        spelled_fraction = spelled_fraction * 10 + (i < spelled.fraction.size() ? spelled.fraction[i] - '0' : 0);
+    for (size_t i = scale; i < spelled.fraction.size(); ++i)
+        if (spelled.fraction[i] != '0')
+            return false;
+    return spelled_fraction == fraction;
+}
+
+/// Checks a string that a conversion turns into a date or a time, given the value it was converted to. A tuple is
 /// checked element by element.
-static void checkDateTimeConversionArgument(const Field & value, const DataTypePtr & type)
+///
+/// A conversion reads more spellings than a partition literal, e.g. `'2024-02-29 12:00:00Z'`, and with another reader:
+/// a conversion to `DateTime` or `DateTime64` uses the one of `cast_string_to_date_time_mode`, which rolls an hour such
+/// as `25:00` over even in the `best_effort` mode. So the converted value is accepted only if it has the fields spelled
+/// in the string, or, for a spelling with no such fields such as a Unix timestamp, if it equals the value of the string
+/// read as a partition literal, which rejects a rolled-over value. Any other spelling is rejected.
+static void checkDateTimeConversionArgument(
+    const Field & value, const DataTypePtr & value_type, const Field & converted, const DataTypePtr & type)
 {
     if (value.getType() == Field::Types::String)
     {
-        if (WhichDataType(removeLowCardinalityAndNullable(type)).isDateOrDate32OrDateTimeOrDateTime64())
-            convertPartitionFieldToType(value, type);
+        const DataTypePtr nested_type = removeLowCardinalityAndNullable(type);
+        const WhichDataType which(nested_type);
+        if (!which.isDateOrDate32OrDateTimeOrDateTime64())
+            return;
+
+        const String & text = value.safeGet<String>();
+        auto converted_text = [&]
+        {
+            if (converted.isNull())
+                return String("NULL");
+            auto column = nested_type->createColumn();
+            column->insert(converted);
+            WriteBufferFromOwnString out;
+            nested_type->getDefaultSerialization()->serializeText(*column, 0, out, {});
+            return out.str();
+        };
+
+        /// `toDate('2024-02-29 12:00:00')` ignores the time, so only the date is checked.
+        if (const auto spelled = splitSpelledDateTime(text, which.isDateOrDate32()))
+        {
+            if (!hasSpelledFields(converted, type, *spelled))
+                throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                                "Partition value '{}' is not a valid value of type {}: it is read as {}",
+                                text, type->getName(), converted_text());
+            return;
+        }
+
+        if (tryConvertFieldToType(value, *type).isNull())
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                            "Partition value '{}' of type {} cannot be checked for a date or a time that does not exist: "
+                            "expected the YYYY-MM-DD hh:mm:ss format, optionally followed by a fraction of a second and "
+                            "a time zone designator (Z, UTC or +hh:mm)",
+                            text, type->getName());
+
+        if (convertPartitionFieldToType(value, type) != converted)
+            throw Exception(ErrorCodes::INVALID_PARTITION_VALUE,
+                            "Partition value '{}' is not a valid value of type {}: the conversion reads it as {}, "
+                            "but a partition literal as another value",
+                            text, type->getName(), converted_text());
     }
-    else if (value.getType() == Field::Types::Tuple)
+    else if (value.getType() == Field::Types::Tuple && converted.getType() == Field::Types::Tuple)
     {
         const auto * tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(type).get());
+        const auto * value_tuple_type = typeid_cast<const DataTypeTuple *>(removeNullable(value_type).get());
         const auto & elements = value.safeGet<Tuple>();
-        if (tuple_type && tuple_type->getElements().size() == elements.size())
-            for (size_t i = 0; i < elements.size(); ++i)
-                checkDateTimeConversionArgument(elements[i], tuple_type->getElement(i));
+        const auto & converted_elements = converted.safeGet<Tuple>();
+        if (!tuple_type || !value_tuple_type || value_tuple_type->getElements().size() != elements.size()
+            || tuple_type->getElements().size() != converted_elements.size())
+            return;
+
+        /// Like `FunctionCast::createTupleWrapper`, a cast between named tuples with a common element name matches the
+        /// elements by name, and an element with no counterpart gets the default value; otherwise they are matched by
+        /// position.
+        bool match_by_name = false;
+        if (value_tuple_type->hasExplicitNames() && tuple_type->hasExplicitNames())
+            for (size_t i = 0; i < converted_elements.size() && !match_by_name; ++i)
+                match_by_name = value_tuple_type->tryGetPositionByName(tuple_type->getElementNames()[i]).has_value();
+
+        for (size_t i = 0; i < converted_elements.size(); ++i)
+        {
+            std::optional<size_t> source = i;
+            if (match_by_name)
+                source = value_tuple_type->tryGetPositionByName(tuple_type->getElementNames()[i]);
+            else if (i >= elements.size())
+                source.reset();
+
+            if (source)
+                checkDateTimeConversionArgument(
+                    elements[*source], value_tuple_type->getElement(*source), converted_elements[i], tuple_type->getElement(i));
+        }
     }
 }
 
@@ -10568,11 +10808,15 @@ static void checkDateTimeConversionsInPartitionValue(const ASTPtr & ast, Context
 
     static const std::unordered_set<std::string_view> date_time_conversions
         = {"toDate", "toDate32", "toDateTime", "toDateTime32", "toDateTime64"};
-    if (function->arguments->children.empty() || (!isFunctionCast(function) && !date_time_conversions.contains(function->name)))
+    /// `DATE` is `toDate` registered under a case-insensitive name.
+    const bool is_date_alias = boost::iequals(function->name, "DATE");
+    if (function->arguments->children.empty()
+        || (!isFunctionCast(function) && !is_date_alias && !date_time_conversions.contains(function->name)))
         return;
 
-    const Field argument = evaluateConstantExpression(function->arguments->children[0], context).first;
-    checkDateTimeConversionArgument(argument, evaluateConstantExpression(ast, context).second);
+    const auto [argument, argument_type] = evaluateConstantExpression(function->arguments->children[0], context);
+    const auto [converted, type] = evaluateConstantExpression(ast, context);
+    checkDateTimeConversionArgument(argument, argument_type, converted, type);
 }
 
 String MergeTreeData::getPartitionIDFromQuery(const ASTPtr & ast, ContextPtr local_context, const DataPartsLock * acquired_lock) const
