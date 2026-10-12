@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # - no-fasttest: requires Iceberg (USE_AVRO build option)
+# - no-replicated-database: `ALTER TABLE ... EXECUTE` runs as replicated DDL there and returns no result rows
 # Every `metadata.json` an Iceberg writer produces lists only the previous files in `metadata-log`
 # and omits `parent-snapshot-id` on a snapshot without a parent (#118812).
 
