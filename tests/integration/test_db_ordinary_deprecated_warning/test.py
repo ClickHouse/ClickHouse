@@ -8,6 +8,8 @@ node = cluster.add_instance(
     user_configs=[
         "configs/users.xml",
     ],
+    with_zookeeper=True,
+    macros={"bound_path": "/clickhouse/tables/{database}/"},
     stay_alive = True
 )
 
@@ -42,3 +44,46 @@ def test_warning():
     node.query("DROP DATABASE testdb")
     node.stop_clickhouse()
     node.start_clickhouse()
+
+
+def test_conversion_keeps_queue_keeper_path():
+    # The conversion ends with `RENAME DATABASE <tmp> TO <db>`, which must stay allowed for a queue
+    # whose Keeper path is bound to `<db>`, whether it was loaded eagerly or as a lazy stand-in.
+    databases = ["conv_eager", "conv_lazy"]
+    for database in databases:
+        node.query(f"DROP DATABASE IF EXISTS {database} SYNC")
+
+    node.query("CREATE DATABASE conv_eager ENGINE = Ordinary")
+    node.query("CREATE DATABASE conv_lazy ENGINE = Ordinary SETTINGS lazy_load_tables = 1")
+    for database in databases:
+        node.query(
+            f"CREATE TABLE {database}.q (a UInt32) "
+            "ENGINE = S3Queue('http://whatever-we-dont-care:9001/root/data/', 'u', 'p', CSV) "
+            "SETTINGS mode = 'unordered', keeper_path = '/convert{bound_path}q'"
+        )
+
+    keeper_paths_query = (
+        "SELECT database, value FROM system.s3_queue_settings "
+        "WHERE name = 'keeper_path' AND database IN ('conv_eager', 'conv_lazy') ORDER BY database"
+    )
+    keeper_paths = (
+        "conv_eager\t/convert/clickhouse/tables/conv_eager/q\n"
+        "conv_lazy\t/convert/clickhouse/tables/conv_lazy/q\n"
+    )
+    assert node.query(keeper_paths_query) == keeper_paths
+
+    node.stop_clickhouse()
+    node.exec_in_container(
+        ["bash", "-c", "touch /var/lib/clickhouse/flags/convert_ordinary_to_atomic"]
+    )
+    node.start_clickhouse()
+
+    # A refused closing rename would leave a `.tmp_convert.conv_*` database behind.
+    assert (
+        node.query("SELECT name, engine FROM system.databases WHERE name LIKE '%conv%' ORDER BY name")
+        == "conv_eager\tAtomic\nconv_lazy\tAtomic\n"
+    )
+    assert node.query(keeper_paths_query) == keeper_paths
+
+    for database in databases:
+        node.query(f"DROP DATABASE {database} SYNC")
