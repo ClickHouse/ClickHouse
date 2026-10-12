@@ -1,0 +1,10 @@
+remove_orphan_files, format version 2
+[1,2,3]
+expire_snapshots, format version 2
+deleted_manifest_lists_count	1
+[1,2,3]
+remove_orphan_files, format version 3
+[1,2,3]
+expire_snapshots, format version 3
+deleted_manifest_lists_count	1
+[1,2,3]

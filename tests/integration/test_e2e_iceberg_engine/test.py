@@ -20,6 +20,7 @@ import pytest
 from helpers.catalog_manager_iceberg_azure import IcebergAzureCatalogManager
 from helpers.catalog_manager_iceberg_s3 import IcebergS3CatalogManager
 from helpers.cluster import ClickHouseCluster
+from helpers.test_tools import assert_eq_with_retry
 from pyiceberg.types import LongType
 
 pytestmark = pytest.mark.e2e
@@ -852,3 +853,88 @@ def test_engine_recent_metadata_by_last_updated_ms(node, manager, sales_table):
     )
     result = node.query(f"SELECT count() FROM {tbl} FORMAT TSV").strip()
     assert int(result) == 20
+
+
+# ===================================================================
+# Maintenance: expire_snapshots and remove_orphan_files
+# ===================================================================
+
+_MAINTENANCE_SETTINGS = {
+    "allow_experimental_expire_snapshots": 1,
+    "allow_iceberg_remove_orphan_files": 1,
+}
+
+def _nonzero_metrics(result: str) -> dict:
+    rows = (line.split("\t") for line in result.strip().splitlines())
+    return {name: int(value) for name, value in rows if int(value) != 0}
+
+
+def test_engine_expire_snapshots_and_remove_orphan_files(node, manager):
+    batches = [
+        pa.table({"id": pa.array([1, 2, 3], type=pa.int64()), "value": ["a", "b", "c"]}),
+        pa.table({"id": pa.array([4, 5, 6], type=pa.int64()), "value": ["d", "e", "f"]}),
+    ]
+    table_name, snapshot_ids = manager.create_table_multi_snapshot(batches)
+    # Copy-on-write delete: the first data file is replaced by a rewritten one.
+    manager.delete_rows(table_name, "id = 1")
+    snapshot_count = len(manager.get_snapshot_timestamps(table_name))
+
+    tbl = _create_engine_table(node, manager, table_name)
+    select_all = f"SELECT id, value FROM {tbl} ORDER BY id FORMAT TSV"
+    rows_before = node.query(select_all)
+    assert rows_before == "2\tb\n3\tc\n4\td\n5\te\n6\tf\n"
+
+    expired = _nonzero_metrics(
+        node.query(
+            f"ALTER TABLE {tbl} EXECUTE expire_snapshots(retention_period = '1ms', retain_last = 1)",
+            settings=_MAINTENANCE_SETTINGS,
+        )
+    )
+    assert expired["deleted_data_files_count"] == 1
+    assert expired["deleted_manifest_lists_count"] == snapshot_count - 1
+    assert "No snapshot found" in node.query_and_get_error(
+        f"SELECT count() FROM {tbl}",
+        settings={"iceberg_snapshot_id": snapshot_ids[0]},
+    )
+
+    manager.put_file(table_name, f"data/orphan-{uuid.uuid4().hex[:8]}.parquet", b"orphan")
+    # Object timestamps have one-second precision and come from the storage's clock;
+    # the margin covers normal clock drift between it and the server.
+    cutoff = node.query("SELECT now() + 2").strip()
+    assert_eq_with_retry(node, f"SELECT now() > toDateTime('{cutoff}')", "1")
+
+    query_id = uuid.uuid4().hex
+    removed = _nonzero_metrics(
+        node.query(
+            f"ALTER TABLE {tbl} EXECUTE remove_orphan_files(older_than = '{cutoff}')",
+            settings=_MAINTENANCE_SETTINGS,
+            query_id=query_id,
+        )
+    )
+    # A metadata file of ClickHouse's own commit is missing from `metadata-log`:
+    # https://github.com/ClickHouse/ClickHouse/issues/118812
+    deleted_metadata = removed.pop("deleted_metadata_files_count", 0)
+    assert removed == {"deleted_data_files_count": 1}
+
+    node.query("SYSTEM FLUSH LOGS query_log")
+    is_azure = isinstance(manager, IcebergAzureCatalogManager)
+    delete_event, list_event = ("AzureDeleteObjects", "AzureListObjects") if is_azure else ("S3DeleteObjects", "S3ListObjects")
+    deletes, lists = node.query(
+        f"SELECT ProfileEvents['{delete_event}'], ProfileEvents['{list_event}'] "
+        f"FROM system.query_log WHERE query_id = '{query_id}' AND type = 'QueryFinish' FORMAT TSV"
+    ).split()
+    assert int(deletes) == 1 + deleted_metadata
+    # Counts list requests (pages), not files: a few listings of `metadata/` and one of the table root.
+    # Listing once per file would exceed it.
+    assert int(lists) <= 10
+
+    assert node.query(select_all) == rows_before
+    # The Azure manager's pyiceberg catalog reads data through local copies, so only S3 can prove
+    # that the objects left in storage still make a valid table.
+    if is_azure:
+        return
+    stored = manager.load_stored_table(table_name)
+    assert len(stored.metadata.snapshots) == 1
+    assert stored.scan().to_arrow().sort_by("id").to_pylist() == [
+        {"id": i, "value": v} for i, v in zip(range(2, 7), "bcdef")
+    ]
