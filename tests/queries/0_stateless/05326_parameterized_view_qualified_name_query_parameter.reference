@@ -1,0 +1,6 @@
+2
+2
+1
+2
+2
+SELECT *\nFROM\n(\n    SELECT *\n    FROM default.data\n    WHERE equals(id, _CAST(1, \'UInt64\'))\n) AS filtered
