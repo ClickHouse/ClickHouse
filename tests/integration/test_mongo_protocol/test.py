@@ -939,6 +939,15 @@ def test_server_commands(started_cluster):
     killed = database.command("killCursors", "any_collection", cursors=[])
     assert killed["cursorsKilled"] == []
     assert killed["ok"] == 1
+    # Every requested id is one the server does not know, and a malformed request is refused.
+    killed = database.command("killCursors", "any_collection", cursors=[bson.Int64(123), bson.Int64(456)])
+    assert killed["cursorsNotFound"] == [123, 456]
+    assert killed["cursorsKilled"] == []
+    for malformed in [{"cursors": "oops"}, {}]:
+        with pytest.raises(pymongo.errors.OperationFailure):
+            database.command("killCursors", "any_collection", **malformed)
+    with pytest.raises(pymongo.errors.OperationFailure):
+        database.command("killCursors", "", cursors=[])
     assert database.command("endSessions", [])["ok"] == 1
 
 

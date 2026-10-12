@@ -9,6 +9,8 @@
 
 #include <fmt/format.h>
 
+#include <memory>
+
 namespace DB::ErrorCodes
 {
 extern const int BAD_ARGUMENTS;
@@ -52,7 +54,9 @@ std::vector<Document> ServerCommandsHandler::handle(const std::vector<OpMessageS
 {
     auto command = commandName(documents[0].documents[0]);
 
-    bson_t * bson_doc = bson_new();
+    /// Owned until the reply is built, so a request refused half-way through does not leak it.
+    std::unique_ptr<bson_t, decltype(&bson_destroy)> bson_doc_holder(bson_new(), &bson_destroy);
+    bson_t * bson_doc = bson_doc_holder.get();
 
     if (command == "buildInfo" || command == "buildinfo")
     {
@@ -77,13 +81,47 @@ std::vector<Document> ServerCommandsHandler::handle(const std::vector<OpMessageS
     else if (command == "killCursors")
     {
         /// The whole result of a `find` is returned in the first batch and the cursor is already
-        /// exhausted, so every cursor a client asks about is one this server does not know.
+        /// exhausted, so every cursor a client asks about is one this server does not know: each
+        /// requested id is reported in `cursorsNotFound`. A malformed request is refused rather
+        /// than acknowledged, the same way the other commands refuse theirs.
+        const Document & request = documents[0].documents[0];
+        rejectUnsupportedCommandFields(request.getRapidJSONRepresentation(), {"cursors"}, "killCursors");
+
+        bson_iter_t collection_iter;
+        if (!bson_iter_init_find(&collection_iter, request.getBson(), "killCursors")
+            || !BSON_ITER_HOLDS_UTF8(&collection_iter)
+            || bson_iter_utf8(&collection_iter, nullptr)[0] == '\0')
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'killCursors' command must name a collection as a non-empty string");
+
+        bson_iter_t cursors_iter;
+        if (!bson_iter_init_find(&cursors_iter, request.getBson(), "cursors") || !BSON_ITER_HOLDS_ARRAY(&cursors_iter))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'cursors' field of a 'killCursors' command must be an array of cursor ids");
+
+        std::vector<Int64> requested_ids;
+        bson_iter_t cursor_iter;
+        if (!bson_iter_recurse(&cursors_iter, &cursor_iter))
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Incorrect bson: can not iterate through the 'cursors' of a 'killCursors' command");
+        while (bson_iter_next(&cursor_iter))
+        {
+            if (BSON_ITER_HOLDS_INT64(&cursor_iter))
+                requested_ids.push_back(bson_iter_int64(&cursor_iter));
+            else if (BSON_ITER_HOLDS_INT32(&cursor_iter))
+                requested_ids.push_back(bson_iter_int32(&cursor_iter));
+            else
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "The 'cursors' of a 'killCursors' command must be integer cursor ids");
+        }
+
         bson_t killed;
         bson_append_array_begin(bson_doc, "cursorsKilled", -1, &killed);
         bson_append_array_end(bson_doc, &killed);
 
         bson_t not_found;
         bson_append_array_begin(bson_doc, "cursorsNotFound", -1, &not_found);
+        for (size_t i = 0; i < requested_ids.size(); ++i)
+        {
+            auto key = std::to_string(i);
+            bson_append_int64(&not_found, key.c_str(), static_cast<int>(key.size()), requested_ids[i]);
+        }
         bson_append_array_end(bson_doc, &not_found);
 
         bson_t alive;
@@ -149,7 +187,7 @@ std::vector<Document> ServerCommandsHandler::handle(const std::vector<OpMessageS
     BSON_APPEND_DOUBLE(bson_doc, "ok", 1.0);
 
     std::vector<Document> result;
-    result.emplace_back(bson_doc);
+    result.emplace_back(bson_doc_holder.release());
     return result;
 }
 
