@@ -82,7 +82,7 @@ void ReadFromObjectStorageStep::applyFilters(ActionDAGNodes added_filter_nodes)
     if (!filter_actions_dag)
         return;
 
-    if (boost::iequals(configuration->format, "Parquet") || boost::iequals(configuration->format, "ORC"))
+    if (formatNeedsEagerKeyConditionSets(configuration->format))
         prepareEagerKeyConditionSets(
             filter_actions_dag,
             storage_snapshot, info.source_header,
@@ -163,6 +163,12 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
         configuration->getColumnMapperForCurrentSchema(storage_snapshot->metadata, context),
         query_info.row_level_filter,
         query_info.prewhere_info);
+    format_filter_info->current_schema_column_mapper
+        = configuration->getCurrentSchemaColumnMapperForFilters(storage_snapshot->metadata, context);
+    /// The delete transforms of a data lake need row numbers only for files with attached deletes;
+    /// `StorageObjectStorageSource::createReader` asks for them per file in that case.
+    format_filter_info->need_row_numbers = lazy_row_index_registry != nullptr
+        || VirtualColumnUtils::hasRowDependentVirtualColumns(info.requested_virtual_columns);
     format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)
@@ -237,8 +243,11 @@ bool ReadFromObjectStorageStep::canUseLazyMaterialization() const
 
     /// The global row index requires per-row file row numbers (ChunkInfoRowNumbers), and the lazy
     /// branch requires reading an explicit set of rows (FormatFilterInfo::rows_to_read).
-    /// Only the Parquet reader supports both.
-    if (!boost::iequals(configuration->format, "Parquet"))
+    /// Only the Parquet and Vortex readers support both. The format of a data lake configuration is
+    /// only the format new files are written in, while the files of the snapshot that is read can
+    /// have other formats, so for a data lake the per-file check below decides.
+    if (!configuration->isDataLakeConfiguration()
+        && !boost::iequals(configuration->format, "Parquet") && !boost::iequals(configuration->format, "Vortex"))
         return false;
 
     /// Data lakes can have per-file formats, deletes, and schema evolution; the configuration
