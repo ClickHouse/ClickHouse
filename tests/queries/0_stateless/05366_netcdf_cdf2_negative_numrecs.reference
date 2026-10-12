@@ -1,0 +1,11 @@
+--- 0xFFFFFFFE records in the header of a CDF-2 file is a negative count
+Negative number of records in the NetCDF header
+--- and so is 0x80000000
+Negative number of records in the NetCDF header
+--- the streaming marker is still accepted
+3
+3
+--- and so is a concrete count
+0
+1
+2
