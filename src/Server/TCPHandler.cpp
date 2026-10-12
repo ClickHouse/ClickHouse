@@ -1044,7 +1044,20 @@ void TCPHandler::runImpl()
                     /// the compression wrapper and synchronizes `out`, so moving `sync` before
                     /// the condition would be redundant for them.
                     out->sync();
-                    skipData(*query_state);
+
+                    /// `EndOfStream` is already sent, so the client expects nothing more for this query,
+                    /// and an `Exception` sent after it would break the protocol. A protocol violation
+                    /// in the drain (an out-of-place packet, a malformed block) closes the connection silently.
+                    try
+                    {
+                        skipData(*query_state);
+                    }
+                    catch (...)
+                    {
+                        query_state->cancelOut(out);
+                        tryLogCurrentException(log, "Can't skip excessive input packets after the end of a detached query. Close connection.");
+                        return;
+                    }
                 }
             }
 
