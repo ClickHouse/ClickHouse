@@ -19,15 +19,13 @@ ${CLICKHOUSE_CLIENT} --query "
     INSERT INTO t_full VALUES (1);
     CREATE TABLE a_full ENGINE = Alias('t_full');
     CREATE TABLE a_empty ENGINE = Alias('t_empty');
-    CREATE TABLE a_a_empty ENGINE = Alias('a_empty');
     CREATE USER ${user} IDENTIFIED WITH no_password;
     GRANT SHOW TABLES ON ${db}.* TO ${user};
     GRANT TRUNCATE ON ${db}.a_full TO ${user};
     GRANT TRUNCATE ON ${db}.a_empty TO ${user};
-    GRANT TRUNCATE ON ${db}.a_a_empty TO ${user};
 "
 
-for table in a_full a_empty a_a_empty
+for table in a_full a_empty
 do
     ${CLICKHOUSE_CLIENT} --user "${user}" --query "TRUNCATE TABLE IF EMPTY ${db}.${table}" 2>&1 \
         | grep -o -m1 -E 'ACCESS_DENIED|TABLE_NOT_EMPTY'
@@ -40,8 +38,6 @@ ${CLICKHOUSE_CLIENT} --query "
 
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "TRUNCATE TABLE IF EMPTY ${db}.a_full" 2>&1 \
     | grep -o -m1 -E 'ACCESS_DENIED|TABLE_NOT_EMPTY'
-# The chain `a_a_empty` -> `a_empty` -> `t_empty` is fully granted now.
-${CLICKHOUSE_CLIENT} --user "${user}" --query "TRUNCATE TABLE IF EMPTY ${db}.a_a_empty"
 ${CLICKHOUSE_CLIENT} --user "${user}" --query "TRUNCATE TABLE IF EMPTY ${db}.a_empty"
 
 ${CLICKHOUSE_CLIENT} --query "

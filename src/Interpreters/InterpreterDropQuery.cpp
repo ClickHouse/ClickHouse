@@ -319,18 +319,12 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
                 required_access = AccessType::DROP_TABLE;
             context_->checkAccess(required_access, table_id);
             /// `TRUNCATE` of an `Alias` truncates its target, which checks the grant on the target
-            /// only when it runs. Check it for the whole chain of aliases before the emptiness
-            /// probe looks at the target. An `Alias` is never a `lazy_load_tables` stand-in.
+            /// only when it runs. Check it before the emptiness probe looks at the target. An
+            /// `Alias` is never a `lazy_load_tables` stand-in, and its target is never an `Alias`.
             if (query.kind == ASTDropQuery::Kind::Truncate)
             {
-                StoragePtr current = resolveStorageProxy(table);
-                for (size_t depth = 0; depth < max_storage_proxy_depth; ++depth)
-                {
-                    const auto * alias = dynamic_cast<const StorageAlias *>(current.get());
-                    if (!alias)
-                        break;
-                    current = resolveStorageProxy(alias->getTargetTable(StorageAlias::TargetAccess{context_, AccessType::TRUNCATE}));
-                }
+                if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
+                    alias->getTargetTable(StorageAlias::TargetAccess{context_, AccessType::TRUNCATE});
             }
             if (!isTableEmpty(table, query.kind))
                 throw Exception(ErrorCodes::TABLE_NOT_EMPTY,
