@@ -61,7 +61,7 @@ UInt64 sumNonNullStringBytes(const ColumnPtr & column)
     {
         UInt64 non_null = column_size;
         if (null_map)
-            non_null -= std::count(null_map->begin(), null_map->end(), 1);
+            non_null -= std::count_if(null_map->begin(), null_map->end(), [](UInt8 byte) { return byte != 0; });
         return fs->getN() * non_null;
     }
     if (const auto * s = typeid_cast<const ColumnString *>(values.get()))
