@@ -76,10 +76,11 @@ void CompressedReadBufferFromFile::prefetch(Priority priority)
 
 void CompressedReadBufferFromFile::seek(size_t offset_in_compressed_file, size_t offset_in_decompressed_block)
 {
-    /// Nothing to do if we already at required position
+    /// Nothing to do if we already at required position.
+    /// Without a block (`size_compressed == 0`) `working_buffer` may still hold an exhausted block left by `readBig`,
+    /// so only the pending lazy offset tells where the next read starts.
     if (!size_compressed && static_cast<size_t>(file_in.getPosition()) == offset_in_compressed_file && /// correct position in compressed file
-        ((!buffer().empty() && offset() == offset_in_decompressed_block)     /// correct position in buffer or
-         || nextimpl_working_buffer_offset == offset_in_decompressed_block)) /// we will move our position to correct one
+        nextimpl_working_buffer_offset == offset_in_decompressed_block) /// we will move our position to correct one
         return;
 
     /// Our seek is within working_buffer, so just move the position
