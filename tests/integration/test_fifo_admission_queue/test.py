@@ -249,8 +249,8 @@ def test_all_queued_queries_admitted(started_cluster):
     for qid in waiter_ids:
         pool.apply_async(run_waiter, (qid,))
 
-    # Give all waiters time to enter the queue
-    time.sleep(0.5)
+    # Wait until all waiters have entered the queue
+    wait_for_queue_length(node, len(waiter_ids))
 
     # Kill blockers to release slots — waiters drain
     for qid in blocker_ids:
@@ -346,8 +346,8 @@ def test_replace_running_query_with_admission_queue(started_cluster):
 
     pool.apply_async(run_replacement)
 
-    # Give the replacement time to enter the queue
-    time.sleep(0.5)
+    # Wait until the replacement has entered the queue
+    wait_for_queue_length(node, 1)
 
     # Kill the blocker to free a slot — this should admit the replacement
     node.query(f"KILL QUERY WHERE query_id = '{blocker_id}' SYNC")
@@ -578,24 +578,16 @@ def test_client_disconnect_while_waiting_in_queue(started_cluster):
     sock.connect((node.ip_address, 8123))
     sock.sendall(http_request.encode())
 
-    # Give the server time to receive the request and enter the queue
-    time.sleep(0.5)
-
-    # Verify the query is actually in the queue (metric > 0).
-    # Use Prometheus endpoint to avoid consuming a query slot.
-    queue_len = get_prometheus_metric(node, "QueryAdmissionQueueLength")
-    assert queue_len >= 1, f"Expected queue length >= 1, got {queue_len}"
+    # Wait until the query is actually in the queue.
+    # `wait_for_queue_length` uses the Prometheus endpoint to avoid consuming a query slot.
+    wait_for_queue_length(node, 1)
 
     # Abruptly close the connection — send RST
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b'\x01\x00\x00\x00\x00\x00\x00\x00')
     sock.close()
 
-    # Wait for the alive check to detect the disconnect (interval=500ms, give 1.5s)
-    time.sleep(1.5)
-
-    # Queue should be empty now
-    queue_len = get_prometheus_metric(node, "QueryAdmissionQueueLength")
-    assert queue_len == 0, f"Expected queue length 0 after disconnect, got {queue_len}"
+    # The alive check (interval=500ms) must detect the disconnect and empty the queue
+    wait_for_queue_length(node, 0)
 
     # Clean up: kill blockers
     for qid in blocker_ids:
@@ -662,21 +654,15 @@ def test_prometheus_client_disconnect_while_waiting_in_queue(started_cluster):
         sock.connect((node.ip_address, 9363))
         sock.sendall(http_request.encode())
 
-        # Give the server time to translate the PromQL query and enter the queue.
-        time.sleep(1.0)
-
-        queue_len = get_prometheus_metric(node, "QueryAdmissionQueueLength")
-        assert queue_len >= 1, f"Expected queue length >= 1, got {queue_len}"
+        # Wait until the server has translated the PromQL query and it has entered the queue.
+        wait_for_queue_length(node, 1)
 
         # Abruptly close the connection — send RST.
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, b'\x01\x00\x00\x00\x00\x00\x00\x00')
         sock.close()
 
-        # Wait for the alive check to detect the disconnect (interval=500ms, give 1.5s).
-        time.sleep(1.5)
-
-        queue_len = get_prometheus_metric(node, "QueryAdmissionQueueLength")
-        assert queue_len == 0, f"Expected queue length 0 after disconnect, got {queue_len}"
+        # The alive check (interval=500ms) must detect the disconnect and empty the queue.
+        wait_for_queue_length(node, 0)
     finally:
         for qid in blocker_ids:
             node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
@@ -735,11 +721,8 @@ def test_grpc_client_cancel_while_waiting_in_queue(started_cluster):
         # Cancels only this call (`RST_STREAM`); the channel itself stays connected.
         call.cancel()
 
-        # Wait for the alive check to detect the cancellation (interval=500ms, give 1.5s).
-        time.sleep(1.5)
-
-        queue_len = get_prometheus_metric(node, "QueryAdmissionQueueLength")
-        assert queue_len == 0, f"Expected queue length 0 after the gRPC call was cancelled, got {queue_len}"
+        # The alive check (interval=500ms) must detect the cancellation and empty the queue.
+        wait_for_queue_length(node, 0)
     finally:
         for qid in blocker_ids:
             node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
@@ -1065,8 +1048,8 @@ def test_queue_wait_time_profile_event(started_cluster):
 
     pool.apply_async(run_waiter)
 
-    # Let the waiter accumulate ~1s of queue wait time, then kill blockers
-    time.sleep(1)
+    # Once the waiter is in the queue it accumulates a nonzero queue wait time; then kill blockers
+    wait_for_queue_length(node, 1)
     for qid in blocker_ids:
         node.query(f"KILL QUERY WHERE query_id = '{qid}' SYNC")
 
@@ -1388,8 +1371,8 @@ def test_no_timeout_when_both_zero(started_cluster):
     # Kill one blocker to free a slot — the waiting query should get admitted
     node.query(f"KILL QUERY WHERE query_id = '{blocker_ids[0]}' SYNC")
 
-    # Wait for the waiter to finish
-    time.sleep(1)
+    # Wait for the waiter to be admitted
+    wait_for_queue_length(node, 0)
 
     # Kill the remaining blocker
     node.query(f"KILL QUERY WHERE query_id = '{blocker_ids[1]}' SYNC")
