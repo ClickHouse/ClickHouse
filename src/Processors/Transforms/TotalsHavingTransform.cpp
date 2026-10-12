@@ -9,6 +9,8 @@
 #include <Common/typeid_cast.h>
 #include <Core/SettingsEnums.h>
 #include <DataTypes/DataTypeAggregateFunction.h>
+#include <Functions/IFunction.h>
+#include <Interpreters/ActionsDAG.h>
 #include <Interpreters/ExpressionActions.h>
 
 namespace DB
@@ -167,6 +169,19 @@ void TotalsHavingTransform::work()
         ISimpleTransform::work();
 }
 
+void TotalsHavingTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+    if (expression)
+    {
+        for (const auto & node : expression->getNodes())
+        {
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+                node.function->cancelExecution();
+        }
+    }
+}
+
 void TotalsHavingTransform::transform(Chunk & chunk)
 {
     /// Block with values not included in `max_rows_to_group_by`. We'll postpone it.
@@ -224,7 +239,22 @@ void TotalsHavingTransform::transform(Chunk & chunk)
                 throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Having clause cannot contain arrayJoin");
         }
 
-        expression->execute(finalized_block, num_rows);
+        if (isCancelled())
+        {
+            stopReading();
+            chunk.clear();
+            return;
+        }
+
+        expression->execute(finalized_block, num_rows, false, false, &getCancellationFlag());
+
+        if (isCancelled())
+        {
+            stopReading();
+            chunk.clear();
+            return;
+        }
+
         ColumnPtr filter_column_ptr = finalized_block.getByPosition(filter_column_pos).column;
         if (remove_filter)
             finalized_block.erase(filter_column_name);
@@ -364,7 +394,16 @@ void TotalsHavingTransform::addToTotals(const Chunk & chunk, const IColumn::Filt
 void TotalsHavingTransform::prepareTotals()
 {
     if (isCancelled())
+    {
+        /// The main stream was already cancelled and the result is discarded anyway, so none of the
+        /// totals work below has to be done: no merging of `overflow_aggregates`, no finalization of
+        /// aggregate states, and no evaluation of the `HAVING` expression for the totals row.
+        /// Install an empty chunk matching the totals port header and mark the totals as prepared,
+        /// so that this method is not scheduled again (`prepare` finishes the cancelled totals port).
+        totals = Chunk(getTotalsPort().getHeader().cloneEmptyColumns(), 0);
+        total_prepared = true;
         return;
+    }
 
     /// If totals_mode == AFTER_HAVING_AUTO, you need to decide whether to add aggregates to TOTALS for strings,
     /// not passed max_rows_to_group_by.
@@ -380,11 +419,36 @@ void TotalsHavingTransform::prepareTotals()
     totals = Chunk(std::move(current_totals), 1);
     finalizeChunk(totals, aggregates_mask);
 
+    if (isCancelled())
+    {
+        /// Cancellation could have arrived after the entry check, while the overflow aggregates were
+        /// being merged and the totals row finalized. The result is discarded anyway, so do not start
+        /// evaluating the `HAVING` expression for the totals row; replace the totals with an empty
+        /// chunk matching the totals port header (the finalized chunk still has the pre-expression
+        /// structure), and mark the totals as prepared.
+        totals = Chunk(getTotalsPort().getHeader().cloneEmptyColumns(), 0);
+        total_prepared = true;
+        return;
+    }
+
     if (expression)
     {
         size_t num_rows = totals.getNumRows();
         auto block = finalized_header.cloneWithColumns(totals.detachColumns());
-        expression->execute(block, num_rows);
+
+        expression->execute(block, num_rows, false, false, &getCancellationFlag());
+
+        if (isCancelled())
+        {
+            /// The query is being cancelled and the result is discarded anyway.
+            /// The columns of `totals` are already detached into `block`, so put an empty chunk
+            /// matching the totals port header in its place, and mark the totals as prepared,
+            /// so that `prepare` does not schedule this method again.
+            totals = Chunk(getTotalsPort().getHeader().cloneEmptyColumns(), 0);
+            total_prepared = true;
+            return;
+        }
+
         if (remove_filter)
             block.erase(filter_column_name);
         /// Note: after expression totals may have several rows if `arrayJoin` was used in expression.
