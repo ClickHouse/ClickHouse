@@ -1,7 +1,7 @@
 -- Tags: no-fasttest
 -- no-fasttest: lowerUTF8/upperUTF8 require a build with ICU.
 
--- `ILIKE '%needle%'` folds case per code point with `Poco::Unicode::toLower`, which agrees neither with the
+-- `ILIKE '%needle%'` folds case per code point with `utf8CaseFold`, which agrees neither with the
 -- ICU full case mapping of `lowerUTF8`/`upperUTF8` nor with the ASCII-only matching of the dictionary scan.
 -- The dictionary scan must not answer such a predicate. Every query below must return the same rows it
 -- returns with `use_skip_indexes = 0`.
@@ -49,7 +49,7 @@ INSERT INTO tab VALUES (1, concat('ab', char(0xC5, 0xBF), 'oop zzz')), (2, 'ABSO
 SELECT groupArray(id) FROM tab WHERE message ILIKE '%bsoo%' SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM tab WHERE message ILIKE '%bsoo%';
 
-SELECT 'no preprocessor, U+212A KELVIN SIGN is a token separator but ILIKE reads it as k';
+SELECT 'no preprocessor, ILIKE does not read U+212A KELVIN SIGN as k';
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (id UInt32, message String, INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha))
@@ -69,7 +69,7 @@ INSERT INTO tab VALUES (1, concat('zzzz', char(0xE2, 0x84, 0xAA), 'zzzz')), (2, 
 SELECT groupArray(id) FROM tab WHERE message ILIKE '%zzzk%' SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM tab WHERE message ILIKE '%zzzk%';
 
-SELECT 'upper preprocessor, needle folded to K by the preprocessor is rejected too';
+SELECT 'upper preprocessor, same as above';
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (id UInt32, message String, INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha, preprocessor = upper(message)))
@@ -79,7 +79,7 @@ INSERT INTO tab VALUES (1, concat('zzzz', char(0xE2, 0x84, 0xAA), 'zzzz')), (2, 
 SELECT groupArray(id) FROM tab WHERE message ILIKE '%zzzk%' SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM tab WHERE message ILIKE '%zzzk%';
 
-SELECT 'array tokenizer, same needle restriction';
+SELECT 'array tokenizer, same as above';
 
 DROP TABLE IF EXISTS tab;
 CREATE TABLE tab (id UInt32, tag String, INDEX idx(tag) TYPE text(tokenizer = array))
@@ -88,11 +88,11 @@ INSERT INTO tab VALUES (1, concat('zzzz', char(0xE2, 0x84, 0xAA), 'zzzz')), (2, 
 
 SELECT groupArray(id) FROM tab WHERE tag ILIKE '%zzzk%' SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM tab WHERE tag ILIKE '%zzzk%';
--- The `k` needle must not reach the dictionary scan, a needle without one still must.
+-- Both needles reach the dictionary scan.
 SELECT countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE tag ILIKE '%zzzk%');
 SELECT countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE tag ILIKE '%zzzz%');
 
--- The array tokenizer also accepts arbitrary patterns, which must honour the same restriction.
+-- The array tokenizer also accepts arbitrary patterns. re2 reads U+212A as k, on the column and in the scan alike.
 SELECT groupArray(id) FROM tab WHERE tag ILIKE '%zz_kz%' SETTINGS use_skip_indexes = 0;
 SELECT groupArray(id) FROM tab WHERE tag ILIKE '%zz_kz%';
 SELECT countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE tag ILIKE '%zz_kz%');
@@ -110,7 +110,7 @@ INSERT INTO tab SELECT number, 'Bonjour Monde' FROM numbers(10);
 SELECT 'ILIKE %monde%', countIf(explain LIKE '%Name: idx%'), countIf(explain LIKE '%Granules: 10/20%')
 FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE message ILIKE '%monde%');
 
--- `k` can be spelled with U+212A, which the dictionary never sees.
+-- U+212A does not match `k`, so a `k` needle reaches the dictionary scan too.
 SELECT 'ILIKE %monkey%', countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT count() FROM tab WHERE message ILIKE '%monkey%');
 
 -- Case-sensitive LIKE folds nothing and keeps the optimization.
@@ -118,5 +118,21 @@ SELECT 'LIKE %Monkey%', countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexe
 
 SELECT groupArray(DISTINCT message) FROM tab WHERE message ILIKE '%monkey%';
 SELECT groupArray(DISTINCT message) FROM tab WHERE message LIKE '%Monkey%';
+
+SELECT 'U+212A alone in its granule, the dictionary scan must keep it exactly when the column matches it';
+
+DROP TABLE IF EXISTS tab;
+CREATE TABLE tab (id UInt32, message String, INDEX idx(message) TYPE text(tokenizer = splitByNonAlpha) GRANULARITY 1)
+ENGINE = MergeTree ORDER BY id SETTINGS index_granularity = 1;
+INSERT INTO tab VALUES (1, concat(char(0xE2, 0x84, 0xAA), 'zzz yy')), (2, 'kzzz yy'), (3, 'hello world');
+
+-- A two-letter literal is left to re2, which reads U+212A as k.
+SELECT groupArray(id) FROM tab WHERE message ILIKE 'kz%' SETTINGS use_skip_indexes = 0, text_index_like_min_pattern_length = 2;
+SELECT groupArray(id) FROM tab WHERE message ILIKE 'kz%' SETTINGS text_index_like_min_pattern_length = 2;
+SELECT countIf(explain LIKE '%Name: idx%') FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE message ILIKE 'kz%' SETTINGS text_index_like_min_pattern_length = 2);
+-- A substring is found by the searcher, which does not.
+SELECT groupArray(id) FROM tab WHERE message ILIKE '%kzzz%' SETTINGS use_skip_indexes = 0;
+SELECT groupArray(id) FROM tab WHERE message ILIKE '%kzzz%';
+SELECT countIf(explain LIKE '%Name: idx%'), countIf(explain LIKE '%Granules: 1/3%') FROM (EXPLAIN indexes = 1 SELECT id FROM tab WHERE message ILIKE '%kzzz%');
 
 DROP TABLE tab;
