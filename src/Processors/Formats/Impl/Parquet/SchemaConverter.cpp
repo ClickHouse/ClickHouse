@@ -1114,13 +1114,21 @@ std::optional<RequestedIntegerSpace> getRequestedIntegerSpace(const IDataType & 
 
 }
 
-GeoType SchemaConverter::getGeoTypeFromGeospatialStatistics(size_t column_idx) const
+std::optional<GeoType> SchemaConverter::getGeoTypeFromGeospatialStatistics(size_t column_idx) const
 {
+    /// WKB (ISO) codes of 2D geometries are 1..6. With Z and/or M the code is increased by 1000,
+    /// 2000 or 3000. Such geometries have no corresponding ClickHouse type and cannot be parsed.
+    auto is_2d_geometry_type = [](Int32 geospatial_type) { return geospatial_type >= 1 && geospatial_type <= 6; };
+
     std::optional<Int32> single_type;
+    bool is_mixed = false;
     for (const auto & row_group : file_metadata.row_groups)
     {
         if (column_idx >= row_group.columns.size())
-            return GeoType::Mixed;
+        {
+            is_mixed = true;
+            continue;
+        }
         const auto & column_meta = row_group.columns[column_idx].meta_data;
 
         /// A column chunk with only NULLs has no geometry types.
@@ -1128,19 +1136,25 @@ GeoType SchemaConverter::getGeoTypeFromGeospatialStatistics(size_t column_idx) c
             continue;
 
         /// An empty list means that the types are unknown.
-        if (!column_meta.__isset.geospatial_statistics || column_meta.geospatial_statistics.geospatial_types.size() != 1)
-            return GeoType::Mixed;
-        Int32 geospatial_type = column_meta.geospatial_statistics.geospatial_types[0];
-        if (single_type.has_value() && *single_type != geospatial_type)
-            return GeoType::Mixed;
-        single_type = geospatial_type;
+        if (!column_meta.__isset.geospatial_statistics || column_meta.geospatial_statistics.geospatial_types.empty())
+        {
+            is_mixed = true;
+            continue;
+        }
+
+        for (Int32 geospatial_type : column_meta.geospatial_statistics.geospatial_types)
+        {
+            if (!is_2d_geometry_type(geospatial_type))
+                return std::nullopt;
+            if (single_type.has_value() && *single_type != geospatial_type)
+                is_mixed = true;
+            single_type = geospatial_type;
+        }
     }
 
-    if (!single_type.has_value())
+    if (is_mixed || !single_type.has_value())
         return GeoType::Mixed;
 
-    /// WKB (ISO) codes of 2D geometries. With Z and/or M the code is increased by 1000, 2000 or 3000,
-    /// such geometries have no corresponding specific ClickHouse type.
     switch (*single_type)
     {
         case 1: return GeoType::Point;
@@ -1418,6 +1432,7 @@ void SchemaConverter::processPrimitiveColumn(
         if (options.format.parquet.allow_geoparquet_parser || type_from_hint)
         {
             GeoColumnMetadata column_geo_metadata{GeoEncoding::WKB, GeoType::Mixed, std::nullopt};
+            bool decode_geo = true;
             if (type_from_hint)
             {
                 /// Decode directly into the requested type (a value of another type is an error).
@@ -1434,14 +1449,23 @@ void SchemaConverter::processPrimitiveColumn(
                         thriftToString(element));
                 column_geo_metadata.type = geo_metadata->type;
             }
+            else if (auto type_from_statistics = getGeoTypeFromGeospatialStatistics(column_idx))
+            {
+                column_geo_metadata.type = *type_from_statistics;
+            }
             else
             {
-                column_geo_metadata.type = getGeoTypeFromGeospatialStatistics(column_idx);
+                /// The column has geometries with Z and/or M coordinates, which cannot be parsed.
+                /// Return the raw WKB bytes instead.
+                decode_geo = false;
             }
 
-            out_inferred_type = getGeoDataType(column_geo_metadata.type);
-            out_decoder.string_converter = std::make_shared<GeoConverter>(column_geo_metadata, options.format.precise_float_parsing);
-            return;
+            if (decode_geo)
+            {
+                out_inferred_type = getGeoDataType(column_geo_metadata.type);
+                out_decoder.string_converter = std::make_shared<GeoConverter>(column_geo_metadata, options.format.precise_float_parsing);
+                return;
+            }
         }
     }
 

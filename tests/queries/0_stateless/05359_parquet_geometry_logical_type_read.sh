@@ -110,4 +110,38 @@ $CLICKHOUSE_LOCAL -q "SELECT id, pt FROM file('${FILE}', Parquet, 'id Int32, pt 
 echo "--- spatial functions"
 $CLICKHOUSE_LOCAL -q "SELECT id, abs(round(areaCartesian(geog), 1)) FROM file('${FILE}', Parquet) ORDER BY id"
 
+echo "--- geometries with Z coordinates are returned as raw WKB"
+FILE_Z="${DATA_DIR}/z.parquet"
+python3 - "${FILE_Z}" <<'PY'
+import struct
+import sys
+
+import pyarrow as pa
+import pyarrow.parquet as pq
+
+
+class WKB(pa.ExtensionType):
+    def __init__(self):
+        super().__init__(pa.binary(), "geoarrow.wkb")
+
+    def __arrow_ext_serialize__(self):
+        return b"{}"
+
+    @classmethod
+    def __arrow_ext_deserialize__(cls, storage_type, serialized):
+        return WKB()
+
+
+# `Point Z`: ISO WKB code 1001.
+values = [struct.pack("<BIddd", 1, 1001, 1, 2, 3), struct.pack("<BIddd", 1, 1001, 4, 5, 6)]
+table = pa.table({
+    "id": pa.array([1, 2], pa.int32()),
+    "pt_z": pa.ExtensionArray.from_storage(WKB(), pa.array(values, pa.binary())),
+})
+pq.write_table(table, sys.argv[1], store_schema=False)
+print(pq.ParquetFile(sys.argv[1]).metadata.row_group(0).column(1).geo_statistics.geospatial_types)
+PY
+$CLICKHOUSE_LOCAL -q "DESCRIBE file('${FILE_Z}', Parquet)"
+$CLICKHOUSE_LOCAL -q "SELECT id, hex(pt_z) FROM file('${FILE_Z}', Parquet) ORDER BY id"
+
 rm -rf "${DATA_DIR}"

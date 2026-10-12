@@ -48,3 +48,9 @@ mixed_null	Nullable(String)
 1	100
 2	100
 3	100
+--- geometries with Z coordinates are returned as raw WKB
+[1001]
+id	Nullable(Int32)					
+pt_z	Nullable(String)					
+1	01E9030000000000000000F03F00000000000000400000000000000840
+2	01E9030000000000000000104000000000000014400000000000001840
