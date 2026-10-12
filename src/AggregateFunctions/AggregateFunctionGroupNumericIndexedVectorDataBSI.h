@@ -6,7 +6,6 @@
 #include <Common/JSONBuilder.h>
 #include <Common/MapWithMemoryTracking.h>
 #include <Common/SetWithMemoryTracking.h>
-#include <Common/TargetSpecific.h>
 #include <Common/VectorWithMemoryTracking.h>
 
 #include <base/demangle.h>
@@ -887,20 +886,25 @@ public:
         VectorWithMemoryTracking<UInt32> bit_buffer(64 * k_batch_size, 0);
         size_t cnt = 0;
         constexpr UInt64 shift = 6;
+#ifdef CROARING_IS_X64
+        /// CRoaring builds its SIMD kernels with target attributes whatever the build's `-march` is.
+        const int hardware_support = roaring::internal::croaring_hardware_support();
+#endif
         for (UInt32 offset = 0; offset < length; offset += k_batch_size)
         {
             UInt32 len = std::min(k_batch_size, length - offset);
 
-#if USE_MULTITARGET_CODE
-            if (isArchSupported(TargetArch::x86_64_icelake))
+#ifdef CROARING_IS_X64
+#if CROARING_COMPILER_SUPPORTS_AVX512
+            if (hardware_support & roaring::internal::ROARING_SUPPORTS_AVX512)
                 cnt = roaring::internal::bitset_extract_setbits_avx512(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
             else
 #endif
-#if defined(__AVX2__) && !defined(__e2k__)
-            cnt = roaring::internal::bitset_extract_setbits_avx2(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
-#else
-            cnt = roaring::internal::bitset_extract_setbits(buffer.data() + offset, len, bit_buffer.data(), 0);
+            if (hardware_support & roaring::internal::ROARING_SUPPORTS_AVX2)
+                cnt = roaring::internal::bitset_extract_setbits_avx2(buffer.data() + offset, len, bit_buffer.data(), k_batch_size * 64, 0);
+            else
 #endif
+                cnt = roaring::internal::bitset_extract_setbits(buffer.data() + offset, len, bit_buffer.data(), 0);
             for (size_t i = 0; i < cnt; ++i)
             {
                 UInt64 val = bit_buffer[i];
