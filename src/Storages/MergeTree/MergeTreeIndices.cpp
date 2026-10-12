@@ -457,9 +457,11 @@ MergeTreeIndexSubstreams IMergeTreeIndex::getAllSubstreamsInPart(
 {
     /// Not routed through `getDeserializedFormat`: that answers the read-time question and
     /// reports nothing once a required system column is invalidated, while a file left on disk
-    /// still has to be skipped/stripped here. (minmax overrides to add its legacy `.idx`.)
+    /// still has to be skipped/stripped here. Probes `getPotentialSubstreams`, not `getSubstreams`:
+    /// a part may hold a substream that the current definition does not write (the legacy minmax
+    /// `.idx`, the text index `.pos` after the index was redefined without `support_phrase_search`).
     MergeTreeIndexSubstreams substreams;
-    for (const auto & substream : getSubstreams())
+    for (const auto & substream : getPotentialSubstreams())
         if (indexFileExistsInChecksums(checksums, relative_path_prefix + substream.suffix, substream.extension, storage))
             substreams.push_back(substream);
 
