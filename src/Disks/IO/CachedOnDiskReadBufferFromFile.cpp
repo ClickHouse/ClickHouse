@@ -11,7 +11,7 @@
 #include <IO/ReadBufferFromS3.h>
 #include <IO/IReadBufferMetadataProvider.h>
 #include <Interpreters/Context.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 #include <base/scope_guard.h>
 #include <Common/ElapsedTimeProfileEventIncrement.h>
 #include <Common/OpenTelemetryTraceContext.h>
@@ -1130,7 +1130,8 @@ bool CachedOnDiskReadBufferFromFile::predownloadForFileSegment(
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason,
                 /* reserve_stat */nullptr,
-                reserve_hint);
+                reserve_hint,
+                &info.reserve_ahead);
 
             if (continue_predownload)
             {
@@ -1634,7 +1635,8 @@ size_t CachedOnDiskReadBufferFromFile::readFromFileSegment(
                 info.cache_settings.reserve_space_wait_lock_timeout_milliseconds,
                 failure_reason,
                 /* reserve_stat */nullptr,
-                reserve_hint);
+                reserve_hint,
+                &info.reserve_ahead);
 
             if (success)
             {
@@ -2065,6 +2067,7 @@ off_t CachedOnDiskReadBufferFromFile::seek(off_t offset, int whence)
     first_offset = file_offset_of_buffer_end = new_pos;
 
     info.reset();
+    info.reserve_ahead.reset();
     state.reset();
     initialized = false;
 
