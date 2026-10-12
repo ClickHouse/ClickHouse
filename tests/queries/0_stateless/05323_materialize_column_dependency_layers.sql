@@ -123,3 +123,17 @@ INSERT INTO t_mat_ttl_target_unrelated_mat (a, y) VALUES (1, 100);
 ALTER TABLE t_mat_ttl_target_unrelated_mat MATERIALIZE COLUMN c SETTINGS mutations_sync = 2;
 SELECT y, m FROM t_mat_ttl_target_unrelated_mat;
 DROP TABLE t_mat_ttl_target_unrelated_mat;
+
+-- Case 50: Same as Case 48 for a stored MATERIALIZED column that also reads an EPHEMERAL column:
+-- `m MATERIALIZED y + e` is never recomputed by a mutation, so the reset of `y` would leave it
+-- stale as well. Refused up front.
+DROP TABLE IF EXISTS t_mat_ttl_target_ephemeral;
+CREATE TABLE t_mat_ttl_target_ephemeral
+    (a UInt64, c DateTime MATERIALIZED toDateTime(1000000000),
+     y UInt64 TTL c + INTERVAL 1 SECOND,
+     e UInt64 EPHEMERAL 7,
+     m UInt64 MATERIALIZED y + e)
+    ENGINE = MergeTree() ORDER BY a;
+INSERT INTO t_mat_ttl_target_ephemeral (a, y, e) VALUES (1, 100, 5);
+ALTER TABLE t_mat_ttl_target_ephemeral MATERIALIZE COLUMN c; -- { serverError CANNOT_UPDATE_COLUMN }
+DROP TABLE t_mat_ttl_target_ephemeral;

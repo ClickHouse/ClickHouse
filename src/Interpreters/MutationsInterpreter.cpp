@@ -1749,6 +1749,20 @@ void MutationsInterpreter::prepare(bool dry_run)
                                 backQuote(command.column_name), backQuote(ttl_column_name),
                                 backQuote(mat_column), backQuote(mat_column));
                     }
+
+                    /// A MATERIALIZED column that also reads an EPHEMERAL column is kept out of
+                    /// `materialized_column_dependencies` and is never recomputed, so it goes stale
+                    /// from the same reset (e.g. `m MATERIALIZED y + e` with `e ... EPHEMERAL`).
+                    for (const auto & [mat_column, readable_dependencies] : ephemeral_reading_materialized)
+                    {
+                        if (std::ranges::find(*readable_dependencies, ttl_column_name) != readable_dependencies->end())
+                            throw Exception(ErrorCodes::CANNOT_UPDATE_COLUMN,
+                                "Refused to materialize column {} because it makes the mutation re-evaluate a TTL "
+                                "that can reset column {}, which the stored MATERIALIZED column {} is computed from. "
+                                "The reset would leave the stored value of {} stale",
+                                backQuote(command.column_name), backQuote(ttl_column_name),
+                                backQuote(mat_column), backQuote(mat_column));
+                    }
                 }
             }
 
