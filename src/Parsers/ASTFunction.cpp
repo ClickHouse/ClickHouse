@@ -381,6 +381,12 @@ void ASTFunction::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) 
     ASTWithAlias::updateTreeHashImpl(hash_state, ignore_aliases);
 
     hash_state.update(getNullsAction());
+
+    /// The function composition operator `f | g` and an ordinary call to a function of the same
+    /// name are different expressions, see the formatting of `__compose` below.
+    if (name == "__compose"sv)
+        hash_state.update(isOperator());
+
     if (isWindowFunction())
     {
         hash_state.update(window_name.size());
@@ -971,6 +977,22 @@ void ASTFunction::formatImplWithoutAlias(WriteBuffer & ostr, const FormatSetting
                     ostr << ')';
                 written = true;
             }
+        }
+
+        /// The function composition operator `f | g`. `__compose` is an ordinary (if unusual)
+        /// function name a user can define a function with, so only a call the parser marked as
+        /// operator syntax is formatted back as the operator. The name must stay in sync with
+        /// `function_composition_name` in `Analyzer/Resolve/FunctionCompositionRewrite.h`.
+        if (!written && arguments->children.size() == 2 && name == "__compose"sv && isOperator())
+        {
+            if (frame.need_parens)
+                ostr << '(';
+            arguments->children[0]->format(ostr, settings, state, nested_need_parens);
+            ostr << " | ";
+            arguments->children[1]->format(ostr, settings, state, nested_need_parens);
+            if (frame.need_parens)
+                ostr << ')';
+            written = true;
         }
 
         if (!written && name == "array"sv && isOperator())
