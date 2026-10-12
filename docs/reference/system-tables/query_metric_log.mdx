@@ -113,6 +113,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_FiberStackFreeNanoseconds` ([UInt64](/reference/data-types/int-uint)) — Amount of time spent deallocating fiber stacks.
 - `ProfileEvent_FunctionExecute` ([UInt64](/reference/data-types/int-uint)) — Number of SQL ordinary function calls (SQL functions are called on per-block basis, so this number represents the number of blocks).
 - `ProfileEvent_TableFunctionExecute` ([UInt64](/reference/data-types/int-uint)) — Number of table function calls.
+- `ProfileEvent_DatabaseTablesEnumerated` ([UInt64](/reference/data-types/int-uint)) — Number of tables a database handed out through its table iterator - to `SHOW TABLES`, the system tables that list tables and everything else that walks a database. A condition on the table name in a query over such a system table narrows the enumeration, and this counter shows by how much.
 - `ProfileEvent_DefaultImplementationForNullsRows` ([UInt64](/reference/data-types/int-uint)) — Number of rows processed by default implementation for nulls in function execution
 - `ProfileEvent_DefaultImplementationForNullsRowsWithNulls` ([UInt64](/reference/data-types/int-uint)) — Number of rows which contain null values processed by default implementation for nulls in function execution
 - `ProfileEvent_MarkCacheHits` ([UInt64](/reference/data-types/int-uint)) — Number of times an entry has been found in the mark cache, so we didn't have to load a mark file.
@@ -1625,6 +1626,7 @@ It is safe to truncate or drop this table at any time.
 - `ProfileEvent_RuntimeFilterRowsPassed` ([UInt64](/reference/data-types/int-uint)) — Number of rows that passed (not filtered out by) JOIN Runtime Filters
 - `ProfileEvent_RuntimeFilterRowsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of rows in blocks that were skipped by JOIN Runtime Filters
 - `ProfileEvent_RuntimeFilterBloomFilterBuildsSkipped` ([UInt64](/reference/data-types/int-uint)) — Number of JOIN Runtime Filter Bloom filter builds skipped because the build-side key count from the hash table statistics predicted that the filter would exceed the maximal ratio of set bits
+- `ProfileEvent_RuntimeFilterIndexAnalysisReads` ([UInt64](/reference/data-types/int-uint)) — Number of reads set up to prune granules with a JOIN runtime filter at read time. Counted when the read reaches its pipeline carrying the descriptors and has a primary key or skip index to prune them with, whether or not a granule is later examined, so it shows that the descriptors survived every rebuild of the read step.
 - `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/reference/data-types/int-uint)) — Number of granules examined for read time pruning by JOIN Runtime Filters
 - `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/reference/data-types/int-uint)) — Number of granules pruned at read time by JOIN Runtime Filters
 - `ProfileEvent_RuntimeFilterLookupsBeforeBuildFinished` ([UInt64](/reference/data-types/int-uint)) — Number of blocks looked up in a JOIN Runtime Filter whose build side had not finished yet, which pass through unfiltered
