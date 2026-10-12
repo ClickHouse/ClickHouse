@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Tags: replica, no-parallel, no-fasttest
+# Tags: long, replica, no-parallel, no-fasttest
+# long: 5-replica parallel-ALTER stress + teardown drain legitimately exceeds the 180s flaky-check cap
 
 # This test checks mutations concurrent execution with concurrent inserts.
 # There was a bug in mutations finalization, when mutation finishes not after all
@@ -92,8 +93,9 @@ function detach_attach_thread()
 
 echo "Starting alters"
 
-# We assign a lot of mutations so timeout shouldn't be too big
-TIMEOUT=15
+# We assign a lot of mutations so timeout shouldn't be too big. 10s still exercises the race;
+# 15s piled up a backlog whose post-stress SYNC/CHECK drain overran the 600s timeout on s3/SMT.
+TIMEOUT=10
 
 detach_attach_thread 2> /dev/null &
 
@@ -143,6 +145,9 @@ for i in $(seq $REPLICAS); do
     $CLICKHOUSE_CLIENT --query "SYSTEM SYNC REPLICA concurrent_mutate_mt_$i"
     $CLICKHOUSE_CLIENT --query "CHECK TABLE concurrent_mutate_mt_$i" &> /dev/null # if we will remove something the output of select will be wrong
     $CLICKHOUSE_CLIENT --query "SELECT SUM(toUInt64(value1)) > $INITIAL_SUM FROM concurrent_mutate_mt_$i"
+    # >=1 mutation applied to visible data: initial rows are number+10 over numbers(50) so max is 59, and
+    # insert_thread only ever adds value1 in {7,8,9}, so only ALTER ... UPDATE value1 = value1 + 1 can exceed 59.
+    $CLICKHOUSE_CLIENT --query "SELECT MAX(toUInt64(value1)) > 59 FROM concurrent_mutate_mt_$i"
     $CLICKHOUSE_CLIENT --query "SELECT COUNT() FROM system.mutations WHERE database='${CLICKHOUSE_DATABASE}' and table='concurrent_mutate_mt_$i' and is_done=0" # all mutations have to be done
     $CLICKHOUSE_CLIENT --query "SELECT * FROM system.mutations WHERE database='${CLICKHOUSE_DATABASE}' and table='concurrent_mutate_mt_$i' and is_done=0" # for verbose output
 done

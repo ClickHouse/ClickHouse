@@ -387,12 +387,14 @@ CNFAtomicFormula CNF::pushNotIntoFunction(const CNFAtomicFormula & atom, const C
         {"lessOrEquals", "greater"},
         {"in", "notIn"},
         {"like", "notLike"},
+        {"similarTo", "notSimilarTo"},
         {"empty", "notEmpty"},
         {"notEquals", "equals"},
         {"greaterOrEquals", "less"},
         {"greater", "lessOrEquals"},
         {"notIn", "in"},
         {"notLike", "like"},
+        {"notSimilarTo", "similarTo"},
         {"notEmpty", "empty"},
     };
 
@@ -413,6 +415,7 @@ CNF & CNF::pullNotOutFunctions(const ContextPtr & context)
             {"greater", "lessOrEquals"},
             {"notIn", "in"},
             {"notLike", "like"},
+            {"notSimilarTo", "similarTo"},
             {"notEmpty", "empty"},
         };
 
