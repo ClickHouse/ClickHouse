@@ -41,7 +41,8 @@ public:
 
     String name;
     /// An unresolved function name containing one or more `Identifier` query parameters.
-    /// It is accepted only for a function-like table expression and removed by
+    /// It is accepted only for a function-like table expression, so after substitution the
+    /// name may resolve to any table function or to a parameterized view. It is removed by
     /// `ReplaceQueryParameterVisitor` before query analysis.
     ASTPtr query_parameter_name;
     ASTPtr arguments;
