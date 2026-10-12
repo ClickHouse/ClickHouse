@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS t_m1;
 DROP TABLE IF EXISTS t_mm1;
 DROP VIEW IF EXISTS t_v0;
 DROP VIEW IF EXISTS t_v1;
+DROP VIEW IF EXISTS t_v2;
 
 CREATE TABLE t_local (number UInt64) ENGINE = MergeTree ORDER BY number;
 INSERT INTO t_local SELECT number FROM numbers(10);
@@ -45,6 +46,13 @@ SELECT number FROM t_v1 ORDER BY number SETTINGS additional_result_filter = 'row
 SELECT number AS x FROM t_v1 ORDER BY x SETTINGS additional_result_filter = 'x < 3';
 SELECT number FROM loop(remote('127.0.0.1', numbers(10))) LIMIT 10 SETTINGS additional_result_filter = 'rowNumberInAllBlocks() % 2 = 0', max_threads = 1;
 
+-- A subquery, or a trivial view pushed down to the shards, must not evaluate the filter against its own columns.
+CREATE VIEW t_v2 AS SELECT number FROM t_d2;
+SELECT number AS x FROM t_v2 ORDER BY x SETTINGS additional_result_filter = 'x < 2', optimize_trivial_view_pushdown_to_distributed = 1;
+SELECT y AS z FROM (SELECT number AS y FROM remote('127.0.0.1', numbers(10))) ORDER BY z SETTINGS additional_result_filter = 'z < 3';
+SELECT number AS x FROM numbers(10) WHERE number IN (SELECT number FROM remote('127.0.0.1', numbers(5))) ORDER BY x SETTINGS additional_result_filter = 'x < 3';
+
+DROP VIEW t_v2;
 DROP VIEW t_v1;
 DROP VIEW t_v0;
 DROP TABLE t_mm1;

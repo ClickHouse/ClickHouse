@@ -254,7 +254,7 @@ void checkStoragesSupportTransactions(const PlannerContextPtr & planner_context)
   * 4. Extract filters from ReadFromDummy query plan steps from query plan leaf nodes.
   */
 
-FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const TableExpressionNodes & table_nodes, const ContextPtr & query_context, const ActionsDAG * post_filter)
+FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & query_tree, const TableExpressionNodes & table_nodes, const ContextPtr & query_context, const ActionsDAG * post_filter, size_t subquery_depth)
 {
     bool collect_filters = false;
 
@@ -350,7 +350,8 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         dummy_storage_to_table.emplace(dummy_storage, from_table_expression);
     }
 
-    SelectQueryOptions select_query_options;
+    /// At the caller's depth, so the analysis of a subquery does not apply `additional_result_filter` either.
+    SelectQueryOptions select_query_options(QueryProcessingStage::Complete, subquery_depth);
     Planner planner(updated_query_tree, select_query_options);
     planner.buildQueryPlanIfNeeded();
 
@@ -441,7 +442,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
     auto table_expressions_nodes
         = extractTableExpressions(static_pointer_cast<ITableExpressionNode>(query_tree_node), false /* add_array_join */, true /* recursive */);
 
-    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context, post_filter);
+    return collectFiltersForAnalysis(query_tree_node, table_expressions_nodes, context, post_filter, select_query_options.subquery_depth);
 }
 
 /// Extend lifetime of query context, storages, and table locks
