@@ -153,7 +153,9 @@ def main():
     Result.create_from(
         results=results,
         stopwatch=stop_watch,
-        files=ch.prepare_logs(all=False, info=info),
+        files=ch.prepare_logs(
+            all=False, info=info, job_failed=any(not r.is_ok() for r in results)
+        ),
         info=args.info,
     ).complete_job()
 

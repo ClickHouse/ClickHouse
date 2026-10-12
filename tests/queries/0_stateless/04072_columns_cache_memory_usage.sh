@@ -5,6 +5,10 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CURDIR"/../shell_config.sh
 
+# `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
+# and their `ProfileEvents` and `memory_usage` never reach the `query_log` rows checked below.
+CLICKHOUSE_CLIENT="$CLICKHOUSE_CLIENT --enable_parallel_replicas=0"
+
 # This test verifies two distinct memory properties of the columns cache.
 #
 # Part 1 measures the per-query memory overhead of the cache: the peak memory of one
