@@ -34,6 +34,30 @@ UInt32 toMask(const BitSet & bits)
     return mask;
 }
 
+/// Whether the DP entries of a graph carry the real strictness of their joins. They do for an `ALL`
+/// graph. Otherwise the strictness is stamped on the joins later and the entries read `All`, except
+/// in a semi/anti graph flattened for the conflict detector, where each semi/anti join is an
+/// operator of its own and its entry carries its strictness.
+bool entriesCarryStrictness(const QueryGraph & query_graph)
+{
+    if (query_graph.join_strictness == JoinStrictness::All)
+        return true;
+    const bool is_semi_or_anti = query_graph.join_strictness == JoinStrictness::Semi
+        || query_graph.join_strictness == JoinStrictness::Anti;
+    return query_graph.semi_anti_flattened && is_semi_or_anti;
+}
+
+/// Whether a join may have its inputs swapped. Inner and cross joins commute, and an `ALL`
+/// outer join is mirrored through `reverseJoinKind` (`Left` <-> `Right`), the same equivalence the
+/// enumeration uses. Semi/anti joins keep their sides, and so do `ANY` joins: `ANY LEFT` keeps one
+/// match per left row, `ANY RIGHT` one per right row.
+bool canSwap(JoinKind kind, JoinStrictness strictness)
+{
+    if (isInner(kind) || isCrossOrComma(kind))
+        return true;
+    return strictness == JoinStrictness::All && (isLeft(kind) || isRight(kind) || isFull(kind));
+}
+
 class DPSubJoinOrderOptimizer
 {
 public:
@@ -593,37 +617,21 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
 
-    /// The search costs a join the same whichever way round its inputs go, so the side that ended
-    /// up in `entry.right` is whichever the enumeration reached first. The right side is the one
-    /// read into the hash table, so give that role to the smaller estimate. Skipped when the query
-    /// pinned `query_plan_join_swap_table`, which asks for a particular side and is entitled to it.
-    /// Inner and cross joins commute; `ALL` outer joins are mirrored through `reverseJoinKind`
-    /// (`Left` <-> `Right`), the same equivalence the enumeration itself uses. Semi/anti joins keep
-    /// their sides.
+    /// The search costs a join the same whichever way round its inputs go, so `entry.right` is just
+    /// the side the enumeration reached first. The right side builds the hash table, so give that
+    /// role to the smaller estimate.
     ///
-    /// Not for a graph whose joins get its strictness stamped on later: their entries read `All` here,
-    /// and turning such a join round changes its result (`ANY LEFT` keeps one match per left row,
-    /// `ANY RIGHT` one per right row). Whether it may be swapped at all is decided afterwards by the
-    /// swap in `optimizeJoin`, which knows the strictness. A semi/anti graph flattened for the
-    /// conflict detector is the exception: each semi/anti join is an operator of its own and its
-    /// entry carries its strictness (so it is left alone by the check below), while the rest are the
-    /// inner joins they read.
-    ///
-    /// On equal estimates, or when an input has none (e.g. a `UNION ALL` subquery), keep the input
-    /// with more relations on the left: the enumeration reaches a lone relation against the rest
-    /// first, which would otherwise build the hash table from a whole subtree - the left-deep shape
-    /// greedy produces avoids that. A missing estimate says nothing about the size, so two single
-    /// relations keep their sides.
-    const bool entries_carry_strictness = query_graph.join_strictness == JoinStrictness::All
-        || (query_graph.semi_anti_flattened
-            && (query_graph.join_strictness == JoinStrictness::Semi || query_graph.join_strictness == JoinStrictness::Anti));
-    const bool can_turn_round = entries_carry_strictness
-        && (isInner(entry.kind) || isCrossOrComma(entry.kind)
-            || (entry.strictness == JoinStrictness::All && (isLeft(entry.kind) || isRight(entry.kind) || isFull(entry.kind))));
-    if (!query_graph.join_swap_table && can_turn_round)
+    /// Leave the sides alone when the query pins `query_plan_join_swap_table`, and in a graph whose
+    /// entries do not carry the real strictness: the swap in `optimizeJoin` decides those later.
+    const bool can_swap = entriesCarryStrictness(query_graph) && canSwap(entry.kind, entry.strictness);
+    if (!query_graph.join_swap_table && can_swap)
     {
         const auto & left_rows = left->estimated_rows;
         const auto & right_rows = right->estimated_rows;
+        /// On equal estimates, or when an input has none (e.g. a `UNION ALL` subquery), put the input
+        /// with more relations on the left: the enumeration reaches a lone relation against the rest
+        /// first, and would otherwise build the hash table from a whole subtree. Two single
+        /// relations without an estimate keep their sides.
         const bool fewer_relations_left = std::popcount(entry.left) < std::popcount(entry.right);
         const bool swap_sides = (left_rows && right_rows)
             ? (*left_rows < *right_rows || (*left_rows == *right_rows && fewer_relations_left))

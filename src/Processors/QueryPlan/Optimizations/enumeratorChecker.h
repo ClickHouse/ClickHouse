@@ -105,10 +105,10 @@ EnumeratorCheckerWithCosts<TDPTable, TOptimizer>::accept(const UInt result_subse
     /// it is only read below and copied into the DP entry, so the aliasing is safe.
     const auto & edge = optimizer.collectJoinEdgesMask(left_mask, right_mask);
 
-    /// Tell a real join from a cross product, the way greedy does. `initDPTable` links the two sides
-    /// of a join that has no two-table condition, so the acceptor is reached for pairs that nothing
-    /// actually joins; those have to stay `Cross`, because that is what keeps a cross product local
-    /// in `applyParallelReplicas`.
+    /// Decide whether this pair is a real join or a cross product, the way greedy does. `initDPTable`
+    /// links the two sides of a join that has no two-table condition, so the acceptor is reached for
+    /// pairs that nothing actually joins; those have to stay `Cross`, because that is what keeps a
+    /// cross product local in `applyParallelReplicas`.
     const bool connected = !edge.empty()
         || optimizer.query_graph.areTransitivelyConnected(BitSet::fromUInt(left_mask), BitSet::fromUInt(right_mask));
     if (kind == JoinKind::Cross && connected)

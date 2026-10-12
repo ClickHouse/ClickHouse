@@ -24,13 +24,13 @@ SET query_plan_optimize_join_order_randomize = 0; -- the test asserts on the joi
 -- algorithms do not run at all, so nothing here would exercise the path under test.
 SET query_plan_optimize_join_order_limit = 10;
 
--- DPsub on its own plans an unconditioned join, with or without a detector, and keeps it `CROSS`.
+-- DPsub on its own plans an unconditioned join, even without a detector, and keeps it `CROSS`.
 SELECT '-- dpsub alone plans an unconditioned join';
 SELECT count() FROM t_05238_a CROSS JOIN t_05238_b
-SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub';
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = '';
 SELECT extract(explain, 'Type: [a-z]+') FROM (
     EXPLAIN actions = 1 SELECT count() FROM t_05238_a CROSS JOIN t_05238_b
-    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'c'
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = ''
 ) WHERE explain LIKE '%Type:%';
 
 -- A nested cross product: `t_05238_a` is attached to the rest only by the cross join, even though the
@@ -38,10 +38,10 @@ SELECT extract(explain, 'Type: [a-z]+') FROM (
 -- join that brings in `t_05238_a` stays `CROSS`.
 SELECT '-- dpsub alone plans a nested cross product';
 SELECT count() FROM t_05238_a CROSS JOIN t_05238_b JOIN t_05238_c ON t_05238_b.a = t_05238_c.a
-SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'a';
+SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = '';
 SELECT extract(explain, 'Type: [a-z]+') AS kind FROM (
     EXPLAIN actions = 1 SELECT count() FROM t_05238_a CROSS JOIN t_05238_b JOIN t_05238_c ON t_05238_b.a = t_05238_c.a
-    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = 'c'
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub', query_plan_optimize_join_order_conflict_detector = ''
 ) WHERE explain LIKE '%Type:%' ORDER BY kind;
 
 SELECT '-- nested cross product keeps its kind, CD-C';
@@ -57,7 +57,8 @@ SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub,greedy',
 SELECT '-- cross join, no detector';
 SELECT extract(explain, 'Type: [a-z]+') FROM (
     EXPLAIN SELECT count() FROM t_05238_a CROSS JOIN t_05238_b
-    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub,greedy'
+    SETTINGS query_plan_optimize_join_order_algorithm = 'dpsub,greedy',
+             query_plan_optimize_join_order_conflict_detector = ''
 ) WHERE explain LIKE '%Type:%';
 
 SELECT '-- cross join, CD-A';

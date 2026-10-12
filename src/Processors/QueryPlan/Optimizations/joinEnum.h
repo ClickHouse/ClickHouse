@@ -124,28 +124,33 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_tab
         dp_table[right_mask].column_stats = query_graph.relation_stats[relations[1]].column_stats;
     }
 
+    /// Link two base relations as neighbors, as a join of selectivity 1.
+    auto link_relations = [&](size_t left_relation, size_t right_relation)
+    {
+        const UInt left_mask = static_cast<UInt>(1) << left_relation;
+        const UInt right_mask = static_cast<UInt>(1) << right_relation;
+
+        dp_table[left_mask].neighbor |= right_mask;
+        dp_table[left_mask].estimated_rows = query_graph.relation_stats[left_relation].estimated_rows;
+        dp_table[left_mask].sel = 1.0;
+        dp_table[left_mask].column_stats = query_graph.relation_stats[left_relation].column_stats;
+
+        dp_table[right_mask].neighbor |= left_mask;
+        dp_table[right_mask].estimated_rows = query_graph.relation_stats[right_relation].estimated_rows;
+        dp_table[right_mask].sel = 1.0;
+        dp_table[right_mask].column_stats = query_graph.relation_stats[right_relation].column_stats;
+    };
+
     /// A cross product links its two sides (see `QueryGraph::cross_product_links`): it joins on
     /// nothing, so it is an inner join of selectivity 1 that may go anywhere an inner join may, and
     /// the validity check still gates every ordering. Seeded whatever the conflict detector, so a
-    /// graph that cross products hold together is connected for DPsub.
+    /// graph that cross products hold together is connected for DPsub. One relation of each side
+    /// stands for the whole side.
     for (const auto & [left, right] : query_graph.cross_product_links)
     {
-        if (!left || !right)
+        if (left.none() || right.none())
             continue;
-        const size_t rep_left = *left.begin();
-        const size_t rep_right = *right.begin();
-        const UInt left_mask = static_cast<UInt>(1) << rep_left;
-        const UInt right_mask = static_cast<UInt>(1) << rep_right;
-
-        dp_table[left_mask].neighbor |= right_mask;
-        dp_table[left_mask].estimated_rows = query_graph.relation_stats[rep_left].estimated_rows;
-        dp_table[left_mask].sel = 1.0;
-        dp_table[left_mask].column_stats = query_graph.relation_stats[rep_left].column_stats;
-
-        dp_table[right_mask].neighbor |= left_mask;
-        dp_table[right_mask].estimated_rows = query_graph.relation_stats[rep_right].estimated_rows;
-        dp_table[right_mask].sel = 1.0;
-        dp_table[right_mask].column_stats = query_graph.relation_stats[rep_right].column_stats;
+        link_relations(*left.begin(), *right.begin());
     }
 
     /// A join whose ON clause references only one input side (or none -- a cross product) adds no
@@ -159,32 +164,11 @@ void EnumCcpSub<TConsumer, TDPTable, TQueryGraph>::initDPTable(TDPTable & dp_tab
     if (query_graph.conflict_detector == JoinOrderConflictDetector::NONE)
         return;
 
-    auto first_relation = [](const BitSet & bits) -> std::optional<size_t>
-    {
-        for (auto bit : bits)
-            return bit;
-        return {};
-    };
-
     for (const auto & op : query_graph.conflict_ops)
     {
-        auto rep_left = first_relation(op.left);
-        auto rep_right = first_relation(op.right);
-        if (!rep_left || !rep_right)
+        if (op.left.none() || op.right.none())
             continue;
-
-        const UInt left_mask = static_cast<UInt>(1) << *rep_left;
-        const UInt right_mask = static_cast<UInt>(1) << *rep_right;
-
-        dp_table[left_mask].neighbor |= right_mask;
-        dp_table[left_mask].estimated_rows = query_graph.relation_stats[*rep_left].estimated_rows;
-        dp_table[left_mask].sel = 1.0;
-        dp_table[left_mask].column_stats = query_graph.relation_stats[*rep_left].column_stats;
-
-        dp_table[right_mask].neighbor |= left_mask;
-        dp_table[right_mask].estimated_rows = query_graph.relation_stats[*rep_right].estimated_rows;
-        dp_table[right_mask].sel = 1.0;
-        dp_table[right_mask].column_stats = query_graph.relation_stats[*rep_right].column_stats;
+        link_relations(*op.left.begin(), *op.right.begin());
     }
 }
 

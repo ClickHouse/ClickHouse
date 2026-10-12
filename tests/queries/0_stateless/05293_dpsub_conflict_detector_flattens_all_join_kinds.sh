@@ -25,15 +25,15 @@ DPSUB=(--query_plan_optimize_join_order_algorithm 'dpsub,greedy' --query_plan_op
 GREEDY=(--query_plan_optimize_join_order_algorithm 'greedy' --query_plan_optimize_join_order_conflict_detector '')
 
 $CLICKHOUSE_CLIENT -q "
-    DROP TABLE IF EXISTS t1_05293;
-    DROP TABLE IF EXISTS t2_05293;
-    DROP TABLE IF EXISTS t3_05293;
-    CREATE TABLE t1_05293 (a Nullable(Int32), p Int32) ENGINE = MergeTree ORDER BY tuple();
-    CREATE TABLE t2_05293 (a Nullable(Int32), b Nullable(Int32), q Int32) ENGINE = MergeTree ORDER BY tuple();
-    CREATE TABLE t3_05293 (b Nullable(Int32), r Int32) ENGINE = MergeTree ORDER BY tuple();
-    INSERT INTO t1_05293 SELECT if(number % 7 = 0, NULL, number % 10), number FROM numbers(300);
-    INSERT INTO t2_05293 SELECT if(number % 5 = 0, NULL, number % 8), number % 6, number FROM numbers(40);
-    INSERT INTO t3_05293 SELECT if(number % 4 = 0, NULL, number % 5), number FROM numbers(20);
+    DROP TABLE IF EXISTS table_1;
+    DROP TABLE IF EXISTS table_2;
+    DROP TABLE IF EXISTS table_3;
+    CREATE TABLE table_1 (a Nullable(Int32), p Int32) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE table_2 (a Nullable(Int32), b Nullable(Int32), q Int32) ENGINE = MergeTree ORDER BY tuple();
+    CREATE TABLE table_3 (b Nullable(Int32), r Int32) ENGINE = MergeTree ORDER BY tuple();
+    INSERT INTO table_1 SELECT if(number % 7 = 0, NULL, number % 10), number FROM numbers(300);
+    INSERT INTO table_2 SELECT if(number % 5 = 0, NULL, number % 8), number % 6, number FROM numbers(40);
+    INSERT INTO table_3 SELECT if(number % 4 = 0, NULL, number % 5), number FROM numbers(20);
 "
 
 check()
@@ -50,22 +50,22 @@ check()
     [ "$reordered" = "$expected" ] && echo "same result" || echo "DIFFERENT RESULT: $reordered vs $expected"
 }
 
-check "t1_05293 INNER JOIN t2_05293 ON t1_05293.a = t2_05293.a RIGHT JOIN t3_05293 ON t2_05293.b = t3_05293.b" "t3_05293.r"
-check "t1_05293 INNER JOIN t2_05293 ON t1_05293.a = t2_05293.a FULL JOIN t3_05293 ON t2_05293.b = t3_05293.b" "t1_05293.p, t3_05293.r"
-check "t1_05293 FULL JOIN t2_05293 ON t1_05293.a = t2_05293.a INNER JOIN t3_05293 ON t2_05293.b = t3_05293.b" "t1_05293.p, t3_05293.r"
-check "t1_05293 LEFT JOIN t2_05293 ON t1_05293.a = t2_05293.a RIGHT SEMI JOIN t3_05293 ON t2_05293.b = t3_05293.b" "t3_05293.r"
-check "t1_05293 INNER JOIN t2_05293 ON t1_05293.a = t2_05293.a RIGHT ANTI JOIN t3_05293 ON t2_05293.b = t3_05293.b" "t3_05293.r"
-check "t1_05293 LEFT SEMI JOIN t2_05293 ON t1_05293.a = t2_05293.a FULL JOIN t3_05293 ON t1_05293.p % 6 = t3_05293.b" "t1_05293.p, t3_05293.r"
+check "table_1 INNER JOIN table_2 ON table_1.a = table_2.a RIGHT JOIN table_3 ON table_2.b = table_3.b" "table_3.r"
+check "table_1 INNER JOIN table_2 ON table_1.a = table_2.a FULL JOIN table_3 ON table_2.b = table_3.b" "table_1.p, table_3.r"
+check "table_1 FULL JOIN table_2 ON table_1.a = table_2.a INNER JOIN table_3 ON table_2.b = table_3.b" "table_1.p, table_3.r"
+check "table_1 LEFT JOIN table_2 ON table_1.a = table_2.a RIGHT SEMI JOIN table_3 ON table_2.b = table_3.b" "table_3.r"
+check "table_1 INNER JOIN table_2 ON table_1.a = table_2.a RIGHT ANTI JOIN table_3 ON table_2.b = table_3.b" "table_3.r"
+check "table_1 LEFT SEMI JOIN table_2 ON table_1.a = table_2.a FULL JOIN table_3 ON table_1.p % 6 = table_3.b" "table_1.p, table_3.r"
 
 # A cross product among the plain joins of a group holding a semi join is still a cross product.
-echo "-- join kinds of t1 CROSS JOIN t3 LEFT SEMI JOIN t2"
+echo "-- join kinds of table_1 CROSS JOIN table_3 LEFT SEMI JOIN table_2"
 $CLICKHOUSE_CLIENT "${SETTINGS[@]}" "${DPSUB[@]}" -q "
     SELECT extract(explain, 'Type: [a-z]+') AS kind FROM (
-        EXPLAIN actions = 1 SELECT count() FROM t1_05293 CROSS JOIN t3_05293 LEFT SEMI JOIN t2_05293 ON t1_05293.a = t2_05293.a
+        EXPLAIN actions = 1 SELECT count() FROM table_1 CROSS JOIN table_3 LEFT SEMI JOIN table_2 ON table_1.a = table_2.a
     ) WHERE explain LIKE '%Type:%' ORDER BY kind"
 
 $CLICKHOUSE_CLIENT -q "
-    DROP TABLE t1_05293;
-    DROP TABLE t2_05293;
-    DROP TABLE t3_05293;
+    DROP TABLE table_1;
+    DROP TABLE table_2;
+    DROP TABLE table_3;
 "

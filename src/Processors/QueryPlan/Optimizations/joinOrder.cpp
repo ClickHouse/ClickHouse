@@ -11,6 +11,7 @@
 #include <Core/Joins.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <IO/Operators.h>
+#include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/JoinExpressionActions.h>
 #include <Interpreters/JoinOperator.h>
@@ -361,6 +362,23 @@ private:
     std::function<bool()> interactive_cancel_callback;
 };
 
+/// The tables of a join graph and the joins of its original tree, for an exception message.
+static String dumpJoinGraph(const QueryGraph & query_graph)
+{
+    WriteBufferFromOwnString out;
+    out << "relations:";
+    for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
+        out << (i ? ", " : " ") << i << " " << query_graph.relation_stats[i].table_name;
+    out << "; joins:";
+    for (size_t i = 0; i < query_graph.conflict_ops.size(); ++i)
+    {
+        const auto & op = query_graph.conflict_ops[i];
+        out << (i ? ", " : " ") << toString(op.strictness) << " " << toString(op.kind)
+            << " " << toString(op.left) << " x " << toString(op.right);
+    }
+    return out.str();
+}
+
 std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinReorderMicroseconds);
@@ -376,7 +394,7 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
         if (query_graph.requires_conflict_detector && algorithm != JoinOrderAlgorithm::DPSUB)
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Join order algorithm {} cannot plan a join graph that only DPsub with a conflict detector can reorder. "
-                "This graph should not have reached it.", toString(algorithm));
+                "This graph should not have reached it. Join graph: {}", toString(algorithm), dumpJoinGraph(query_graph));
 
         LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
         switch (algorithm)
