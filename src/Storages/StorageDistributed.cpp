@@ -1451,8 +1451,9 @@ std::optional<QueryPipeline> StorageDistributed::distributedWriteBetweenDistribu
     /// This server can be local for several destination shards, and then the query runs one nested
     /// INSERT per such shard, all of them writing into the same local table. Share one registry of
     /// gates between them, so the `Too many parts` check of a nested INSERT does not count the parts
-    /// a sibling nested INSERT of the same query has already committed, and so a non-parallel quorum
-    /// insert is not started twice for one query.
+    /// a sibling nested INSERT of the same query has already committed. The gates do not order the
+    /// quorum precondition of a non-parallel quorum insert: the nested INSERTs of the local shards are
+    /// independent pipelines here, as they are without this change.
     auto insert_start_gates = std::make_shared<InsertStartGates>();
 
     /// The gates can only be shared by the nested INSERTs running in this process. With
