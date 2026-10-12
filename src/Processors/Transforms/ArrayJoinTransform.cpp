@@ -54,7 +54,9 @@ Chunk ArrayJoinTransform::generate()
     if (!canGenerate())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Can't generate chunk in ArrayJoinTransform");
 
-    auto block = result_iterator->next();
+    auto block = result_iterator->next(&getCancellationFlag());
+    if (isCancelled())
+        return Chunk(getOutputPort().getHeader().cloneEmptyColumns(), 0);
     return Chunk(block.getColumns(), block.rows());
 }
 
