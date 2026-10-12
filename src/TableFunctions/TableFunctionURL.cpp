@@ -583,7 +583,7 @@ import { CloudNotSupportedBadge } from "/snippets/components/CloudNotSupportedBa
 ## Syntax {#syntax}
 
 ```sql
-url(URL [,format] [,structure] [,headers] [,body])
+url(URL [,format] [,structure] [,compression_method] [,headers] [,body])
 ```
 
 ## Parameters {#parameters}
@@ -593,6 +593,7 @@ url(URL [,format] [,structure] [,headers] [,body])
 | `URL`       | A single-quoted URL whose scheme selects the backend. An `http`/`https` (or unrecognized) URL is a server address accepting `GET` or `POST` requests (for `SELECT` or `INSERT` queries correspondingly); a recognized non-HTTP scheme (`file://`, `s3://`, `az://`, `hdfs://`, …) is delegated to the matching table function — see [Dispatching by URL scheme](#scheme-dispatch). Type: [String](/reference/data-types/string). |
 | `format`    | [Format](/reference/formats/index) of the data. Type: [String](/reference/data-types/string).                                                  |
 | `structure` | Table structure in `'UserID UInt64, Name String'` format. Determines column names and types. Type: [String](/reference/data-types/string).     |
+| `compression_method` | Optional. Compression method of the data, e.g. `gzip`, `zstd`, `xz`. By default (`auto`), it is detected from the file extension. Type: [String](/reference/data-types/string). |
 | `headers`   | Headers in `'headers('key1'='value1', 'key2'='value2')'` format. You can set headers for HTTP call.                                                  |
 | `body`      | Request body in `body(content [, format])` form. `content` is either a constant string or a `SELECT` subquery. When a subquery is used, its output rows are streamed into the request body using the given output `format` (defaults to `JSONLines`). Specifying a body promotes the request from `GET` to `POST`.                                              |
 
