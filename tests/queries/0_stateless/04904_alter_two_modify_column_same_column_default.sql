@@ -153,8 +153,9 @@ ALTER TABLE t_mod_def MODIFY COLUMN c REMOVE MATERIALIZED;
 ALTER TABLE t_mod_def MODIFY COLUMN c UInt32; -- { serverError BAD_ARGUMENTS }
 DROP TABLE t_mod_def;
 
--- 10. Two type-carrying subcommands over a pre-existing default compose, and reach the same
---     outcome as the two statements written separately.
+-- 10. Two type-carrying subcommands over a pre-existing default compose: validation follows the
+--     column through the subcommands of the ALTER, so the default is kept once and both modifiers
+--     land on the column instead of colliding on a duplicated default expression.
 CREATE TABLE t_mod_def (event String, c UInt32 MATERIALIZED JSONExtractUInt(event, 'x'))
     ENGINE = MergeTree() ORDER BY tuple();
 ALTER TABLE t_mod_def MODIFY COLUMN c UInt64 CODEC(T64, LZ4),
@@ -165,12 +166,19 @@ INSERT INTO t_mod_def (event) VALUES ('{"x":42}');
 SELECT '10', c FROM t_mod_def;
 DROP TABLE t_mod_def;
 
--- 11. An existing default that cannot be read as the new type is still rejected, with or without a
---     second subcommand, and whether or not the statements are combined.
+-- 11. An existing default that cannot be read as the new type is rejected. Removing that default in
+--     the same ALTER takes effect before the type change is validated, so the combined form reaches
+--     the same outcome as the two separate statements (as in 9).
 CREATE TABLE t_mod_def (event String, c Enum8('x' = 1) MATERIALIZED 'x')
     ENGINE = MergeTree() ORDER BY tuple();
-ALTER TABLE t_mod_def MODIFY COLUMN c REMOVE MATERIALIZED, MODIFY COLUMN c Int8; -- { serverError CANNOT_PARSE_TEXT }
 ALTER TABLE t_mod_def MODIFY COLUMN c Int8; -- { serverError CANNOT_PARSE_TEXT }
+ALTER TABLE t_mod_def MODIFY COLUMN c REMOVE MATERIALIZED, MODIFY COLUMN c Int8;
+SELECT '11', type, default_kind FROM system.columns
+    WHERE database = currentDatabase() AND table = 't_mod_def' AND name = 'c';
+DROP TABLE t_mod_def;
+
+CREATE TABLE t_mod_def (event String, c Enum8('x' = 1) MATERIALIZED 'x')
+    ENGINE = MergeTree() ORDER BY tuple();
 ALTER TABLE t_mod_def MODIFY COLUMN c REMOVE MATERIALIZED;
 ALTER TABLE t_mod_def MODIFY COLUMN c Int8;
 SELECT '11', type, default_kind FROM system.columns

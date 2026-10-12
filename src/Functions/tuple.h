@@ -24,7 +24,10 @@ public:
 
     static FunctionPtr create(ContextPtr context);
 
-    explicit FunctionTuple(bool enable_named_columns_ = false) : enable_named_columns(enable_named_columns_) { }
+    explicit FunctionTuple(bool enable_named_columns_ = false)
+        : enable_named_columns(enable_named_columns_)
+    {
+    }
 
     String getName() const override { return name; }
 
@@ -58,10 +61,17 @@ public:
             name_set.emplace(argument.name);
         }
 
-        if (enable_named_columns && name_set.size() == names.size()
-            && std::all_of(names.cbegin(), names.cend(), [](const auto & n) { return isUnquotedIdentifier(n); }))
-            return std::make_shared<DataTypeTuple>(types, names);
-        return std::make_shared<DataTypeTuple>(types);
+        if (!enable_named_columns)
+            return std::make_shared<DataTypeTuple>(types);
+
+        if (name_set.size() != names.size())
+            return std::make_shared<DataTypeTuple>(types);
+
+        auto invalid_name = std::find_if_not(names.cbegin(), names.cend(), [](const auto & argument_name) { return isUnquotedIdentifier(argument_name); });
+        if (invalid_name != names.cend())
+            return std::make_shared<DataTypeTuple>(types);
+
+        return std::make_shared<DataTypeTuple>(types, names);
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
