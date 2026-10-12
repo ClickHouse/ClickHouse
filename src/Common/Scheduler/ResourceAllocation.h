@@ -52,6 +52,7 @@ private:
 
     ResourceCost allocated = 0; /// Currently allocated.
     bool admitted = false; /// True once `apply(IncreaseRequest)` has incremented `allocations` in the hierarchy for this allocation.
+    bool cancel_only_if_pending = false; /// The pending removal is a `cancelPendingAllocation`. Guarded by the queue mutex.
 
     IncreaseRequest increase;
     DecreaseRequest decrease;

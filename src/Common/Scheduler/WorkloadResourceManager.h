@@ -126,7 +126,8 @@ namespace DB
 class WorkloadResourceManager : public IResourceManager
 {
 public:
-    explicit WorkloadResourceManager(std::shared_ptr<IWorkloadEntityStorage> storage_);
+    /// `query_slot_admission_uses_priority_`: whether the `QUERY` resource orders sibling workloads by `priority` (compatibility) or by `precedence`.
+    explicit WorkloadResourceManager(std::shared_ptr<IWorkloadEntityStorage> storage_, bool query_slot_admission_uses_priority_ = true);
     ~WorkloadResourceManager() override;
     bool hasResource(const String & resource_name) const override;
     ClassifierPtr acquire(const String & workload_name, const ClassifierSettings & settings) override;
@@ -154,7 +155,7 @@ private:
         CostUnit unit; // Cost unit of the resource
         WorkloadSettings settings; // Settings specific for a given resource
 
-        NodeInfo(CostUnit unit_, const ASTPtr & ast, const String & resource_name);
+        NodeInfo(CostUnit unit_, const ASTPtr & ast, const String & resource_name, bool admission_uses_priority);
     };
 
     /// Ownership control for scheduler nodes, which could be referenced by raw pointers
@@ -347,6 +348,7 @@ private:
     /// Hold shared ownership of the storage so it cannot be destroyed during lazy initialization,
     /// which may run concurrently with server shutdown. The storage is only accessed in the constructor.
     std::shared_ptr<IWorkloadEntityStorage> storage;
+    const bool query_slot_admission_uses_priority;
     scope_guard subscription;
 
     mutable std::mutex mutex;
