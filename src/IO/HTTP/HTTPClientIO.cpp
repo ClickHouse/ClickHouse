@@ -1,13 +1,12 @@
 #include <IO/HTTP/HTTPClientIO.h>
 
 #include <Common/Exception.h>
+#include <Common/Hex.h>
 
 #include <Poco/Ascii.h>
 #include <Poco/Net/NetException.h>
 #include <Poco/NumberParser.h>
 #include <Poco/String.h>
-
-#include <base/hex.h>
 
 #include <cstring>
 
