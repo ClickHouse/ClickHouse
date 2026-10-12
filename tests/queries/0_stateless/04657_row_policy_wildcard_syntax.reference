@@ -1,0 +1,27 @@
+-- valid: db.table
+CREATE ROW POLICY db_policy ON db.mytable FOR SELECT USING 1 TO default
+-- valid: db.*
+CREATE ROW POLICY db_policy ON db.* FOR SELECT USING 1 TO default
+-- valid: SHOW POLICIES ON *.* and ON db.*
+1
+1
+-- valid: table in the current database
+CREATE ROW POLICY db_policy ON db.mytable FOR SELECT USING 1 TO default
+-- invalid: prefix wildcards
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR
+-- invalid: *.* must not shrink to the current database
+SYNTAX_ERROR
+SYNTAX_ERROR
+SYNTAX_ERROR

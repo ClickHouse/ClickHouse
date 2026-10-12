@@ -1,4 +1,6 @@
 #include <Storages/IPartitionStrategy.h>
+#include <Formats/FormatFactory.h>
+#include <IO/CompressionMethod.h>
 #include <Parsers/ASTFunction.h>
 #include <Parsers/ASTLiteral.h>
 #include <Interpreters/TreeRewriter.h>
@@ -8,6 +10,8 @@
 #include <Interpreters/Context.h>
 #include <Storages/KeyDescription.h>
 #include <Poco/String.h>
+#include <boost/algorithm/string/join.hpp>
+#include <boost/algorithm/string/case_conv.hpp>
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 
@@ -127,7 +131,8 @@ namespace
         const std::string & file_format,
         bool globbed_path,
         bool contains_partition_wildcard,
-        bool partition_columns_in_data_file)
+        bool partition_columns_in_data_file,
+        const std::string & compression_method)
     {
         if (!partition_by)
         {
@@ -178,7 +183,8 @@ namespace
             sample_block,
             context,
             file_format,
-            partition_columns_in_data_file);
+            partition_columns_in_data_file,
+            compression_method);
     }
 
     std::shared_ptr<IPartitionStrategy> createWildcardPartitionStrategy(
@@ -248,7 +254,8 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
                                                                  const std::string & file_format,
                                                                  bool globbed_path,
                                                                  bool contains_partition_wildcard,
-                                                                 bool partition_columns_in_data_file)
+                                                                 bool partition_columns_in_data_file,
+                                                                 const std::string & compression_method)
 {
     Block block;
     for (const auto & partition_column : partition_columns)
@@ -273,7 +280,8 @@ std::shared_ptr<IPartitionStrategy> PartitionStrategyFactory::get(StrategyType s
                 file_format,
                 globbed_path,
                 contains_partition_wildcard,
-                partition_columns_in_data_file);
+                partition_columns_in_data_file,
+                compression_method);
         case StrategyType::NONE:
         {
             if (!partition_columns_in_data_file && strategy == PartitionStrategyFactory::StrategyType::NONE)
@@ -330,10 +338,12 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
     const Block & sample_block_,
     ContextPtr context_,
     const std::string & file_format_,
-    bool partition_columns_in_data_file_)
+    bool partition_columns_in_data_file_,
+    const std::string & compression_method_)
     : IPartitionStrategy(partition_key_description_, sample_block_, context_),
     file_format(file_format_),
-    partition_columns_in_data_file(partition_columns_in_data_file_)
+    partition_columns_in_data_file(partition_columns_in_data_file_),
+    compression_method(compression_method_)
 {
     const auto partition_columns = getPartitionColumns();
     for (const auto & partition_column : partition_columns)
@@ -352,7 +362,58 @@ HiveStylePartitionStrategy::HiveStylePartitionStrategy(
 
 std::string HiveStylePartitionStrategy::getPathForRead(const std::string & prefix)
 {
-    return prefix + "**." + Poco::toLower(file_format);
+    /// Match every file extension registered for the format, not only the lowercased format
+    /// name: for most formats the name is not the extension real files carry (`JSONEachRow`
+    /// files are named `.jsonl` / `.ndjson`, `CSVWithNames` files are named `.csv`), and a
+    /// glob built from the format name alone silently matches nothing over such a lake.
+    /// The lowercased format name is always one of the registered extensions, so the files
+    /// ClickHouse itself writes (see getPathForWrite) keep matching.
+    const auto extensions = FormatFactory::instance().getFileExtensionsForFormat(file_format);
+
+    /// The glob is matched against the object key as it is stored, before anything decompresses it
+    /// (`GlobIterator` filters the listing, while the compression method is derived much later, in
+    /// `ReadBufferIterator`), so a compressed lake of `key=1/data.jsonl.gz` objects is invisible to
+    /// a glob of bare extensions. The glob has to accept exactly the names the reader would accept,
+    /// which is the rule of `chooseCompressionMethod`:
+    ///  - `auto` (the default): the file name decides, so spell out every suffix it recognizes;
+    ///  - an explicit codec: the file name is ignored, so a `gzip` lake of `data.jsonl.custom` objects
+    ///    is as readable as one of `data.jsonl.gz` objects, and anything after the format extension
+    ///    must match. The bare extension is kept too, because an explicit codec also applies to
+    ///    files named without any suffix - and that is what `getPathForWrite` produces;
+    ///  - `none`: the files carry no compression layer, so a suffix after the format extension is
+    ///    not a compression spelling to accept but foreign data (`.parquet.crc` sidecars and the
+    ///    like), and only the bare extensions match.
+    Strings alternatives = extensions;
+
+    std::string compression_hint = compression_method;
+    boost::algorithm::to_lower(compression_hint);
+
+    if (compression_hint.empty() || compression_hint == "auto")
+    {
+        for (const auto & compression_suffix : getFileSuffixesForCompressionMethodHint(compression_method))
+            for (const auto & extension : extensions)
+                alternatives.push_back(extension + "." + compression_suffix);
+    }
+    else if (compression_hint != "none")
+    {
+        /// A misspelled codec is not validated here: this runs on `ATTACH` and at server startup too,
+        /// where throwing would make existing metadata unloadable. `CREATE TABLE` rejects it in
+        /// `StorageObjectStorageConfiguration::initPartitionStrategy`, and a table attached from older
+        /// metadata keeps the suffix alternatives, so its reads reach `chooseCompressionMethod` and
+        /// fail loudly with `Unknown compression method` instead of silently matching nothing.
+        ///
+        /// The suffix is arbitrary, but it has to be a suffix: `.csv.*` and not `.csv*`, which is a
+        /// prefix match on the extension and would hand the `data.csvwithnames.gz` files of a sibling
+        /// `CSVWithNames` lake to the `CSV` parser (the reader trusts the explicit codec and never looks
+        /// at the name). The format boundary is the `.` after the extension.
+        for (const auto & extension : extensions)
+            alternatives.push_back(extension + ".*");
+    }
+
+    if (alternatives.size() == 1)
+        return prefix + "**." + alternatives.front();
+
+    return prefix + "**.{" + boost::algorithm::join(alternatives, ",") + "}";
 }
 
 std::string HiveStylePartitionStrategy::getPathForWrite(

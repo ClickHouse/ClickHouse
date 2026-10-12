@@ -140,9 +140,16 @@ SELECT 'worker_no_internal_workers',
                                    WHERE event_date >= yesterday() AND is_initial_query = 1 AND is_internal = 0
                                      AND current_database = currentDatabase())) = 0;
 
--- Every source row arrived. The row count is not asserted: fuzzed copies of the `INSERT` write rows too.
-SELECT 'source_rows_written', count(DISTINCT id) = (SELECT count() FROM t05288_worker_src)
-FROM t05288_dst WHERE id < (SELECT count() FROM t05288_worker_src);
+-- Every source row arrived. The statement's own `query_log` row is read, not the table: fuzzed copies of
+-- the `INSERT` write to the table too, and a copy turned into a join can write millions of rows.
+SELECT 'source_rows_written',
+       (SELECT count() > 0 AND countIf(written_rows != (SELECT count() FROM t05288_worker_src)) = 0
+        FROM system.query_log
+        WHERE event_date >= yesterday() AND type = 'QueryFinish'
+          AND is_initial_query = 1 AND is_internal = 0 AND current_database = currentDatabase()
+          AND query_kind = 'Insert'
+          AND has(tables, currentDatabase() || '.t05288_dst')
+          AND has(tables, currentDatabase() || '.t05288_worker_src'));
 
 -- Control: an ordinary statement produces no worker queries. It reads no table, because the fuzzer can
 -- rewrite a table read into a distributed one; the alias makes its rows selectable.

@@ -30,6 +30,14 @@ Total count of addresses which are used for creation connections with connection
 
 Total count of addresses which are banned as faulty for creation connections with connection pools
 
+### AddressToLineCacheBytes {#addresstolinecachebytes}
+
+Approximate memory used by the cache of resolved source locations (file:line:column) used for symbolizing stack traces, in bytes.
+
+### AddressToLineCacheEntries {#addresstolinecacheentries}
+
+Number of code addresses in the cache of resolved source locations (file:line:column) used for symbolizing stack traces in system.trace_log, system.errors and system.error_log.
+
 ### AggregatorThreads {#aggregatorthreads}
 
 Number of threads in the Aggregator thread pool.
@@ -309,6 +317,18 @@ Number of existing cache file segments
 ### CacheWarmerBytesInProgress {#cachewarmerbytesinprogress}
 
 Total size of remote file segments waiting to be asynchronously loaded into filesystem cache.
+
+### ColumnsCacheBytes {#columnscachebytes}
+
+Total size of columns cache in bytes. The columns cache stores deserialized columns from MergeTree tables to avoid repeated decompression and deserialization.
+
+### ColumnsCacheEntries {#columnscacheentries}
+
+Total number of entries in the columns cache.
+
+### ColumnsCacheSizeLimit {#columnscachesizelimit}
+
+The size limit of the columns cache in bytes currently in effect. It is lowered below the configured `columns_cache_size` while the rest of the server is short of memory, and raised back towards it once that usage subsides, see `columns_cache_free_memory_ratio`.
 
 ### ColumnsDescriptionsCacheSize {#columnsdescriptionscachesize}
 
@@ -2114,6 +2134,10 @@ Number of temporary files created for JOIN
 
 Number of temporary files for vertical merge
 
+### TemporaryFilesForSet {#temporaryfilesforset}
+
+Number of temporary files created for `IN` sets in external memory
+
 ### TemporaryFilesForSort {#temporaryfilesforsort}
 
 Number of temporary files created for external sorting
@@ -2173,6 +2197,22 @@ Number of queued or active jobs in the thread pool for remote_filesystem_read_me
 ### ThreadsInOvercommitTracker {#threadsinovercommittracker}
 
 Number of waiting threads inside of OvercommitTracker
+
+### TimeSeriesMetricFamiliesDeduplicationCacheBytes {#timeseriesmetricfamiliesdeduplicationcachebytes}
+
+Approximate size in bytes of the deduplication caches of the metric families tables of TimeSeries tables
+
+### TimeSeriesMetricFamiliesDeduplicationCacheEntries {#timeseriesmetricfamiliesdeduplicationcacheentries}
+
+Number of entries in the deduplication caches of the metric families tables of TimeSeries tables
+
+### TimeSeriesTagsDeduplicationCacheBytes {#timeseriestagsdeduplicationcachebytes}
+
+Approximate size in bytes of the deduplication caches of the tags tables of TimeSeries tables
+
+### TimeSeriesTagsDeduplicationCacheEntries {#timeseriestagsdeduplicationcacheentries}
+
+Number of entries in the deduplication caches of the tags tables of TimeSeries tables
 
 ### TotalTemporaryFiles {#totaltemporaryfiles}
 

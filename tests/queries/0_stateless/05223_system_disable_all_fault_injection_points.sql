@@ -1,4 +1,4 @@
--- Tags: no-parallel
+-- Tags: no-parallel, no-fasttest
 -- no-parallel: fail points are server-wide, and this test disables all of them.
 
 -- `SYSTEM DISABLE ALL FAILPOINTS` disables every fail point at once, so a test harness can

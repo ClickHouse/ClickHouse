@@ -87,3 +87,24 @@ SELECT id FROM tab WHERE hasPhrase(doc, '日本語', 'icu(''ja'')') ORDER BY id;
 
 DROP TABLE tab;
 DROP TABLE tab_noindex;
+
+-- The icu tokenizer never puts the zero padding of a `FixedString` inside a token.
+SELECT tokens(toFixedString('quick brown', 16), 'icu(''en'')');
+SELECT hasPhrase(toFixedString('quick brown', 16), 'quick brown', 'icu(''en'')');
+
+CREATE TABLE tab_fixed_string
+(
+    id UInt32,
+    fs FixedString(16),
+    INDEX idx(fs) TYPE text(tokenizer = icu('en'))
+)
+ENGINE = MergeTree
+ORDER BY id;
+
+INSERT INTO tab_fixed_string VALUES (1, 'quick brown fox'), (2, 'brown quick'), (3, 'zz');
+
+SELECT groupArray(id) FROM (SELECT id FROM tab_fixed_string WHERE hasAllTokens(fs, 'quick brown') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_fixed_string WHERE hasPhrase(fs, 'quick brown') ORDER BY id);
+SELECT groupArray(id) FROM (SELECT id FROM tab_fixed_string WHERE hasPhrase(fs, 'quick brown') ORDER BY id) SETTINGS use_skip_indexes = 0;
+
+DROP TABLE tab_fixed_string;
