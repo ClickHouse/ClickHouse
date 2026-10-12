@@ -267,6 +267,11 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
 
     if (value->isNullable())
     {
+        /// A cast whose target is nullable declines a value it cannot represent by returning NULL,
+        /// and the value under that NULL is the target type's default, which is some element's value.
+        if (value->isNullAt(0))
+            return false;
+
         value = assert_cast<const ColumnNullable &>(*value).getNestedColumnPtr();
         cast_type = removeNullable(cast_type);
     }
@@ -279,9 +284,14 @@ inline __attribute__((always_inline)) bool dictionaryIndexForConstant(
     /// not survive the cast equals no element, whichever slot its image happens to hit -- the default
     /// one, which holds its value whether or not any row references it, as much as any other -- so
     /// decline before looking it up.
-    /// Padding a String to a FixedString is not such a loss, and is not treated as one: the two meet
-    /// as String, where the padding the cast added is trimmed back off.
-    if (!target_type->equals(*value_type_without_low_cardinality)
+    /// A String needle the cast accepted reached the dictionary zero-padded, which is how the
+    /// comparison pads it too, so nothing was lost. The round trip cannot tell that padding from a
+    /// zero byte of the needle's own, because a String and a FixedString meet as String.
+    const bool cast_only_padded = isString(removeNullable(value_type_without_low_cardinality))
+        && isFixedString(removeNullable(cast_type));
+
+    if (!cast_only_padded
+        && !target_type->equals(*value_type_without_low_cardinality)
         && !targetTypeRepresentsValue(original_value, value_type_without_low_cardinality, value, cast_type))
         return false;
 
