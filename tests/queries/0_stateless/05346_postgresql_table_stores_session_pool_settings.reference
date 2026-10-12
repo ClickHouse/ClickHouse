@@ -4,5 +4,7 @@ SETTINGS postgresql_connection_pool_size = 3, postgresql_connection_pool_auto_cl
 
 --- a stated value is kept as stated
 SETTINGS postgresql_connection_pool_size = 5
+--- an ATTACH with the full definition stores them too
+SETTINGS postgresql_connection_pool_size = 3
 --- the table keeps the stored value when attached in a session without it
 PostgreSQL connection pool size: 3

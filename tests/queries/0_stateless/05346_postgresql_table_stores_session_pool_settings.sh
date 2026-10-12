@@ -34,6 +34,16 @@ ${DDL_CLIENT} --postgresql_connection_pool_size 3 \
     --query "CREATE TABLE t_stated (x Int32) ENGINE = ${ENGINE} SETTINGS postgresql_connection_pool_size = 5"
 settings_of t_stated
 
+echo "--- an ATTACH with the full definition stores them too"
+# An `Atomic` or `Replicated` database attaches a table with a full definition only with its UUID; `Ordinary` has none.
+UUID_CLAUSE=""
+if [ "$(${CLICKHOUSE_CLIENT} --query "SELECT engine FROM system.databases WHERE name = currentDatabase()")" != "Ordinary" ]; then
+    UUID_CLAUSE="UUID '$(${CLICKHOUSE_CLIENT} --query "SELECT generateUUIDv4()")'"
+fi
+# The server warns that an ATTACH with the full definition is not recommended.
+${DDL_CLIENT} --send_logs_level fatal --postgresql_connection_pool_size 3 --query "ATTACH TABLE t_attach ${UUID_CLAUSE} (x Int32) ENGINE = ${ENGINE}"
+settings_of t_attach
+
 echo "--- the table keeps the stored value when attached in a session without it"
 ${DDL_CLIENT} --query "DETACH TABLE t_session PERMANENTLY"
 ${DDL_CLIENT} --send_logs_level trace --query "ATTACH TABLE t_session" 2>&1 \

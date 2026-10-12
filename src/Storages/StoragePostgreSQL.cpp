@@ -912,7 +912,14 @@ void registerStoragePostgreSQL(StorageFactory & factory)
 
         postgresql_settings.loadFromQuery(*args.storage_def);
 
-        if (args.mode <= LoadingStrictnessLevel::CREATE)
+        /// The values are stored for every definition this query brings: `CREATE`, an `ATTACH` with the full definition,
+        /// `RESTORE`, and the execution of a `CREATE` on the other replicas of a `Replicated` database. Unlike
+        /// `isFreshTableDefinition`, the latter counts: those replicas run the original query with the initiator's
+        /// settings, and must store the same definition as the initiator. Not for a definition read from the stored
+        /// metadata: on server startup, `UNDROP`, the recovery of a replica, or an `ATTACH` of a detached table by its name.
+        bool is_new_definition = !isLoadingFromExistingMetadata(args.mode) && !args.query.attach_short_syntax
+            && !args.getLocalContext()->isRecoveryFromStoredMetadata();
+        if (is_new_definition)
             postgresql_settings.loadFromQueryContext(*args.getLocalContext(), *args.getContext(), *args.storage_def);
         else
             postgresql_settings.loadFromQueryContext(*args.getLocalContext());
