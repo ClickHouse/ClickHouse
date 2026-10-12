@@ -94,6 +94,7 @@ UInt32 CompressionCodecZSTD::doCompressData(const char * source, UInt32 source_s
 
 UInt32 CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source_size, char * dest, UInt32 uncompressed_size) const
 {
+    static std::atomic<size_t> num_contexts = 0;
     MemoryTrackerBlockerInThread blocker;
     LockMemoryExceptionInThread lock(VariableContext::Global);
     auto holder = contextPool<ZstdDCtxPtr>().get([]
@@ -101,9 +102,16 @@ UInt32 CompressionCodecZSTD::doDecompressData(const char * source, UInt32 source
         ZstdDCtxPtr ctx(ZSTD_createDCtx());
         if (!ctx)
             throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: failed to create decompression context");
+        ++num_contexts;
         return new ZstdDCtxPtr(std::move(ctx));
     });
     size_t res = ZSTD_decompressDCtx(holder->get(), dest, uncompressed_size, source, source_size);
+    /// Same bound as for compression, so that a burst of concurrent reads does not stay resident in the pools.
+    if (num_contexts > 2 * getNumberOfCPUCoresToUse())
+    {
+        delete holder.release();
+        --num_contexts;
+    }
 
     if (ZSTD_isError(res))
         throw Exception(ErrorCodes::CANNOT_DECOMPRESS, "Cannot decompress ZSTD-encoded data: {}", std::string(ZSTD_getErrorName(res)));
