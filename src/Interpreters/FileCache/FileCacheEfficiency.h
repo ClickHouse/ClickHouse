@@ -13,11 +13,9 @@
 namespace DB
 {
 
-/// Splits the bytes of one `FileCache` per efficiency window (`efficiency_window_sec`) into active
-/// (served from the cache), passive (not served, in segments with a hit) and idle bytes, for all
-/// file segments and for large ones (range > `boundary_alignment`).
-/// Keeps the live window and a snapshot of the last full window. One mutex guards the state; it is a
-/// leaf lock, so any method can be called under other cache locks.
+/// Active (served from the cache), passive (not served, in file segments with a hit) and idle bytes of one
+/// `FileCache` per window of `efficiency_window_sec`, for all and for large file segments. Keeps the current
+/// window and a snapshot of the last full one. The mutex is a leaf lock.
 class FileCacheEfficiency
 {
 public:
@@ -41,14 +39,14 @@ public:
     /// Does not rotate.
     Window windowNow() const;
 
-    /// Rotates if the live window ended.
+    /// Rotates if the current window ended.
     Window currentWindow();
 
-    /// No-op unless `window` is the live window. `large` is the size class of the file segment.
-    void addPassiveBytes(Window window, Int64 bytes, bool large);
-    void moveToActive(Window window, Int64 bytes, bool large);
-    /// Moves the active and passive bytes of a file segment that became large (or not large).
-    void moveToClass(Window window, Int64 active, Int64 passive, bool large);
+    /// No-op unless `segment_window` is the current window.
+    void addPassiveBytes(Window segment_window, Int64 bytes, bool large);
+    void moveToActive(Window segment_window, Int64 bytes, bool large);
+    /// A file segment became large or not large.
+    void moveToClass(Window segment_window, Int64 active, Int64 passive, bool large);
 
     /// `reserved_bytes` become passive if the read starts a new window for the file segment.
     struct SegmentRead
@@ -69,12 +67,10 @@ public:
     void shiftTimeForTesting(std::chrono::milliseconds shift) { time_shift_for_testing_ms += shift.count(); }
 
 private:
-    /// Lazy: the first `currentWindow` or `getSnapshot` after the window ends freezes it, so a size
-    /// change before that still counts in it. The asynchronous metrics call `getSnapshot` on every
-    /// update, which bounds the lag.
+    /// Lazy: the first call after the window ends freezes it. The asynchronous metrics bound the lag.
     void rotateIfNeeded(Window now_window) TSA_REQUIRES(mutex);
 
-    struct LiveBytes
+    struct WindowStats
     {
         Int64 active = 0;
         Int64 passive = 0;
@@ -83,14 +79,13 @@ private:
     const UInt64 window_sec;
     const std::function<size_t()> get_used_size;
     const std::function<size_t()> get_large_used_size;
-    /// Windows count from construction.
     Stopwatch watch;
     std::atomic<Int64> time_shift_for_testing_ms = 0;
 
     std::mutex mutex;
-    Window live_window TSA_GUARDED_BY(mutex) = 0;
-    LiveBytes live TSA_GUARDED_BY(mutex);
-    LiveBytes live_large TSA_GUARDED_BY(mutex);
+    Window window TSA_GUARDED_BY(mutex) = 0;
+    WindowStats stats TSA_GUARDED_BY(mutex);
+    WindowStats large_stats TSA_GUARDED_BY(mutex);
     Snapshot snapshot TSA_GUARDED_BY(mutex);
 };
 

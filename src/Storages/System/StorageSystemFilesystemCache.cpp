@@ -50,7 +50,7 @@ public:
     {
         auto caches_by_name = FileCacheFactory::instance().getAll();
 
-        /// Only the caches whose name passes the `cache_name` part of the query filter.
+        /// Only the caches that pass the `cache_name` filter.
         MutableColumnPtr names = ColumnString::create();
         for (const auto & [cache_name, _] : caches_by_name)
             names->insert(cache_name);

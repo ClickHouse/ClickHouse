@@ -71,7 +71,6 @@ namespace DB
         /// The latest earlier window with a cache hit; `nullopt` if there is none.
         std::optional<uint64_t> last_hit_windows_ago;
         uint64_t last_hit_active_bytes = 0;
-        /// Uses the current `downloaded_size`.
         uint64_t last_hit_passive_bytes = 0;
     };
 

@@ -46,6 +46,7 @@
 #include <Common/FailPoint.h>
 #include <Common/QueryScope.h>
 #include <Interpreters/FileCache/FileCacheEfficiency.h>
+#include <Interpreters/FileCache/FileSegmentEfficiency.h>
 #include <Common/SipHash.h>
 #include <Common/filesystemHelpers.h>
 #include <Common/scope_guard_safe.h>
@@ -4385,7 +4386,7 @@ namespace
 {
 
 /// One efficiency granule, and a file segment of 8 granules: reads in whole granules give exact values.
-constexpr size_t G = FileSegment::EFFICIENCY_GRANULE_SIZE;
+constexpr size_t G = FileSegmentEfficiency::GRANULE_SIZE;
 constexpr size_t S = 8 * G;
 /// An efficiency window that the real time of a test never reaches the end of: the tests move to
 /// the next window only with `shiftTimeForTesting`.

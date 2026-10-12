@@ -59,8 +59,8 @@ TEST(FileCacheEfficiency, StaleWindowUpdatesAreIgnored)
 
     t.advance(W);
     EXPECT_EQ(t.efficiency.currentWindow(), 1);
-    t.efficiency.addPassiveBytes(/*window=*/0, 100, /*large=*/false);
-    t.efficiency.moveToActive(/*window=*/0, 100, /*large=*/false);
+    t.efficiency.addPassiveBytes(/*segment_window=*/0, 100, /*large=*/false);
+    t.efficiency.moveToActive(/*segment_window=*/0, 100, /*large=*/false);
 
     t.advance(W);
     expectSnapshot(t.efficiency.getSnapshot(), 0, 0, 100);

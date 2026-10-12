@@ -15,10 +15,10 @@ struct Split
     UInt64 idle = 0;
 };
 
-Split split(Int64 live_active, Int64 live_passive, Int64 used)
+Split split(Int64 window_active, Int64 window_passive, Int64 used)
 {
-    const Int64 active = std::max<Int64>(live_active, 0);
-    const Int64 passive = std::max<Int64>(live_passive, 0);
+    const Int64 active = std::max<Int64>(window_active, 0);
+    const Int64 passive = std::max<Int64>(window_passive, 0);
     return Split{
         .active = static_cast<UInt64>(active),
         .passive = static_cast<UInt64>(passive),
@@ -54,15 +54,18 @@ FileCacheEfficiency::Window FileCacheEfficiency::currentWindow()
 
 void FileCacheEfficiency::rotateIfNeeded(Window now_window)
 {
-    if (now_window <= live_window)
+    if (now_window <= window)
         return;
 
-    /// If the live window is not the last full one, the last full window had no cache hits.
-    const bool live_is_last_full = live_window + 1 == now_window;
-    const auto all = split(
-        live_is_last_full ? live.active : 0, live_is_last_full ? live.passive : 0, static_cast<Int64>(get_used_size()));
-    const auto large = split(
-        live_is_last_full ? live_large.active : 0, live_is_last_full ? live_large.passive : 0, static_cast<Int64>(get_large_used_size()));
+    /// If the window is not the last full one, the last full window had no cache hits.
+    if (window + 1 != now_window)
+    {
+        stats = {};
+        large_stats = {};
+    }
+
+    const auto all = split(stats.active, stats.passive, static_cast<Int64>(get_used_size()));
+    const auto large = split(large_stats.active, large_stats.passive, static_cast<Int64>(get_large_used_size()));
     snapshot = Snapshot{
         .active_bytes = all.active,
         .passive_bytes = all.passive,
@@ -72,43 +75,43 @@ void FileCacheEfficiency::rotateIfNeeded(Window now_window)
         .large_idle_bytes = large.idle,
     };
 
-    live = {};
-    live_large = {};
-    live_window = now_window;
+    stats = {};
+    large_stats = {};
+    window = now_window;
 }
 
-void FileCacheEfficiency::addPassiveBytes(Window window, Int64 bytes, bool large)
+void FileCacheEfficiency::addPassiveBytes(Window segment_window, Int64 bytes, bool large)
 {
     std::lock_guard lock(mutex);
-    if (window != live_window)
+    if (segment_window != window)
         return;
-    live.passive += bytes;
+    stats.passive += bytes;
     if (large)
-        live_large.passive += bytes;
+        large_stats.passive += bytes;
 }
 
-void FileCacheEfficiency::moveToActive(Window window, Int64 bytes, bool large)
+void FileCacheEfficiency::moveToActive(Window segment_window, Int64 bytes, bool large)
 {
     std::lock_guard lock(mutex);
-    if (window != live_window)
+    if (segment_window != window)
         return;
-    live.active += bytes;
-    live.passive -= bytes;
+    stats.active += bytes;
+    stats.passive -= bytes;
     if (large)
     {
-        live_large.active += bytes;
-        live_large.passive -= bytes;
+        large_stats.active += bytes;
+        large_stats.passive -= bytes;
     }
 }
 
-void FileCacheEfficiency::moveToClass(Window window, Int64 active, Int64 passive, bool large)
+void FileCacheEfficiency::moveToClass(Window segment_window, Int64 active, Int64 passive, bool large)
 {
     std::lock_guard lock(mutex);
-    if (window != live_window)
+    if (segment_window != window)
         return;
     const Int64 sign = large ? 1 : -1;
-    live_large.active += sign * active;
-    live_large.passive += sign * passive;
+    large_stats.active += sign * active;
+    large_stats.passive += sign * passive;
 }
 
 FileCacheEfficiency::Window FileCacheEfficiency::countRead(const SegmentRead & read)
@@ -116,17 +119,17 @@ FileCacheEfficiency::Window FileCacheEfficiency::countRead(const SegmentRead & r
     const Window now_window = windowNow();
     std::lock_guard lock(mutex);
     rotateIfNeeded(now_window);
-    const bool new_window = read.segment_window != live_window;
+    const bool new_window = read.segment_window != window;
     const Int64 passive = new_window ? read.reserved_bytes : 0;
     const Int64 active = new_window ? read.active_bytes_in_new_window : read.active_bytes_in_segment_window;
-    live.active += active;
-    live.passive += passive - active;
+    stats.active += active;
+    stats.passive += passive - active;
     if (read.large)
     {
-        live_large.active += active;
-        live_large.passive += passive - active;
+        large_stats.active += active;
+        large_stats.passive += passive - active;
     }
-    return live_window;
+    return window;
 }
 
 FileCacheEfficiency::Snapshot FileCacheEfficiency::getSnapshot()

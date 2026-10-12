@@ -152,7 +152,7 @@ namespace
     }
 
     const HistogramMetrics::Buckets hits_buckets = {0, 1, 2, 4, 8, 16, 32, 64, 128, 256, 1024, 8192};
-    /// The same bounds as `FileCacheSegmentSizes`, so the evicted and the resident file segments compare directly.
+    /// The bounds of `FileCacheSegmentSizes`.
     const HistogramMetrics::Buckets size_buckets(FileCacheSegmentSizes::BOUNDS.begin(), FileCacheSegmentSizes::BOUNDS.end());
 
     DimensionalMetrics::MetricFamily & filesystem_cache_evictions_total = DimensionalMetrics::Factory::instance().registerMetric(

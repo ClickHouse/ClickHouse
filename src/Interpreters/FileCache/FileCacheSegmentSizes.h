@@ -9,18 +9,15 @@
 namespace DB
 {
 
-/// The file segments of one `FileCache` by their range size: the number of segments and their reserved
-/// bytes in each size bucket, and the reserved bytes of large segments (range > `boundary_alignment`).
-/// A file segment counts from its first reservation (or its load on startup) until its removal.
-/// Unbound file segments (temporary data) do not count.
+/// The file segments of one `FileCache` by range size: their number and reserved bytes per bucket, and the
+/// reserved bytes of large ones (range > `boundary_alignment`). Temporary data does not count.
 class FileCacheSegmentSizes
 {
 public:
-    /// Inclusive upper bounds of the buckets. The last bucket has no upper bound.
+    /// Inclusive upper bounds; the last bucket has none.
     static constexpr std::array<size_t, 6> BOUNDS = {512_KiB, 1_MiB, 2_MiB, 4_MiB, 8_MiB, 16_MiB};
     static constexpr size_t NUM_BUCKETS = BOUNDS.size() + 1;
 
-    /// The size class of one file segment.
     struct Class
     {
         UInt8 bucket = 0;
