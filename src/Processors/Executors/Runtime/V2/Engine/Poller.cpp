@@ -81,7 +81,6 @@ void Poller::unregister(ExecutingProcessor * processor)
     epoll.remove(it->second);
     fds.erase(it);
     deadlines->drop(processor);
-    pending_count.fetch_sub(1);
 }
 
 void Poller::updateTimer()
@@ -220,6 +219,7 @@ void Poller::run()
 
         metrics.fired += fired;
         pool.global_tasks.pushManyFront(std::span(fired_buffer).first(fired));
+        pending_count.fetch_sub(fired);
         switch (pool.wakeWorker())
         {
             case WakeOutcome::Skipped:
