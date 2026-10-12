@@ -2305,6 +2305,10 @@ protected:
     static MutableDataPartPtr asMutableDeletingPart(const DataPartPtr & part);
 
 private:
+    /// A writable `table_disk` disk holds the data of one table, which owns its root until the instance is destroyed.
+    void acquireTableDiskRoots();
+    void releaseTableDiskRoots();
+
     /// Checking that candidate part doesn't break invariants: correct partition
     void checkPartPartition(MutableDataPartPtr & part, const DataPartsAnyLock & lock) const;
     void checkPartDuplicate(MutableDataPartPtr & part, Transaction & transaction, const DataPartsAnyLock & lock) const;

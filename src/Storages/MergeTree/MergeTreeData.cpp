@@ -568,6 +568,77 @@ static bool hasColumnsWithDynamicSubcolumns(const Block & block)
     return false;
 }
 
+namespace
+{
+
+struct TableDiskRoot
+{
+    String storage_description;
+    String storage_namespace;
+    fs::path path;
+    String disk_name;
+    const MergeTreeData * owner;
+};
+
+std::mutex table_disk_roots_mutex;
+std::vector<TableDiskRoot> table_disk_roots TSA_GUARDED_BY(table_disk_roots_mutex);
+
+/// Whether one path is equal to the other one or contains it, compared by path components.
+bool pathsOverlap(const fs::path & lhs, const fs::path & rhs)
+{
+    auto [lhs_it, rhs_it] = std::mismatch(lhs.begin(), lhs.end(), rhs.begin(), rhs.end());
+    return lhs_it == lhs.end() || rhs_it == rhs.end();
+}
+
+}
+
+void MergeTreeData::acquireTableDiskRoots()
+{
+    std::vector<TableDiskRoot> roots;
+    for (const auto & disk : getDisks())
+    {
+        if (disk->isReadOnly() || disk->isWriteOnce())
+            continue;
+
+        auto path = fs::path(disk->getPath()).lexically_normal();
+        if (!path.has_filename() && path.has_relative_path())
+            path = path.parent_path();
+
+        auto object_storage = disk->getObjectStorage();
+        roots.push_back({object_storage->getDescription(), object_storage->getObjectsNamespace(), std::move(path), disk->getName(), this});
+    }
+
+    std::lock_guard lock(table_disk_roots_mutex);
+    for (const auto & root : roots)
+    {
+        for (const auto & owned : table_disk_roots)
+        {
+            if (owned.storage_description != root.storage_description || owned.storage_namespace != root.storage_namespace
+                || !pathsOverlap(owned.path, root.path))
+                continue;
+
+            String remedy;
+            if (owned.owner->is_dropped)
+                remedy = "It is dropped and keeps its data until the drop finishes, retry after that (`DROP TABLE ... SYNC` waits for the drop)";
+            else if (owned.owner->is_detached)
+                remedy = "It is detached and its detached instance is still alive, retry after it is released (in an `Atomic` database `DETACH TABLE ... SYNC` waits for that)";
+            else
+                remedy = "A writable disk with `table_disk = true` can hold the data of only one table, use a read-only disk for the other tables";
+
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Table {} cannot store its data at '{}' on disk {}: table {} already stores its data at '{}' on disk {} on the same storage. {}",
+                getStorageID().getNameForLogs(), root.path.string(), backQuote(root.disk_name),
+                owned.owner->getStorageID().getNameForLogs(), owned.path.string(), backQuote(owned.disk_name), remedy);
+        }
+    }
+    table_disk_roots.insert(table_disk_roots.end(), roots.begin(), roots.end());
+}
+
+void MergeTreeData::releaseTableDiskRoots()
+{
+    std::lock_guard lock(table_disk_roots_mutex);
+    std::erase_if(table_disk_roots, [this](const TableDiskRoot & root) { return root.owner == this; });
+}
 
 void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & relative_data_path_, bool attach, const std::string & date_column_name, bool need_create_directories)
 {
@@ -575,6 +646,7 @@ void MergeTreeData::initializeDirectoriesAndFormatVersion(const std::string & re
     if ((*settings)[MergeTreeSetting::table_disk])
     {
         LOG_TRACE(log, "Table is located directly on disk (without database layer)");
+        acquireTableDiskRoots();
     }
     else
     {
@@ -3775,6 +3847,8 @@ MergeTreeData::~MergeTreeData()
     {
         tryLogCurrentException(log, "Failed to deactivate a background task");
     }
+
+    releaseTableDiskRoots();
 }
 
 void MergeTreeData::loadUnexpectedDataParts()
@@ -6700,6 +6774,20 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
         auto copy = getDefaultSettings();
         copy->applyChanges(new_changes, local_context, /*is_loading_from_existing_metadata=*/true);
         alter_effective_settings = std::move(copy);
+    }
+
+    if ((*settings_from_storage)[MergeTreeSetting::table_disk])
+    {
+        /// The roots of a `table_disk` table are taken when it is created, so its disks are fixed.
+        const auto & new_disk = (*alter_effective_settings)[MergeTreeSetting::disk];
+        const auto new_storage_policy = new_disk.changed
+            ? local_context->getStoragePolicyFromDisk(new_disk)
+            : local_context->getStoragePolicy((*alter_effective_settings)[MergeTreeSetting::storage_policy]);
+        if (new_storage_policy != getStoragePolicy())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The disk of table {} with `table_disk = true` cannot be changed",
+                getStorageID().getNameForLogs());
     }
 
     /// A `Replicated` database runs the same ALTER again on every other replica. Only the first run of it,

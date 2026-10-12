@@ -149,6 +149,18 @@ StoragePtr DatabaseOverlay::detachTable(ContextPtr context_, const String & tabl
         getEngineName());
 }
 
+void DatabaseOverlay::waitDetachedTableNotInUse(const UUID & uuid, std::function<void()> throw_if_cancelled)
+{
+    for (auto & db : databases)
+        db->waitDetachedTableNotInUse(uuid, throw_if_cancelled);
+}
+
+void DatabaseOverlay::checkDetachedTableNotInUse(const UUID & uuid)
+{
+    for (auto & db : databases)
+        db->checkDetachedTableNotInUse(uuid);
+}
+
 DatabaseDetachedTablesSnapshotIteratorPtr DatabaseOverlay::getDetachedTablesIterator(
     ContextPtr context_, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const
 {
