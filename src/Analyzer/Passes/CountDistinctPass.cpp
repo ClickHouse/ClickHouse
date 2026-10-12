@@ -11,9 +11,12 @@
 #include <Analyzer/ColumnNode.h>
 #include <Analyzer/FunctionNode.h>
 #include <Analyzer/QueryNode.h>
+#include <Analyzer/TableNode.h>
+#include <Analyzer/TableFunctionNode.h>
 #include <Analyzer/Utils.h>
 
 #include <Core/Settings.h>
+#include <Storages/IStorage.h>
 
 namespace DB
 {
@@ -48,6 +51,19 @@ public:
         auto join_tree_node_type = query_node->getJoinTreeNode()->getNodeType();
         if (join_tree_node_type == QueryTreeNodeType::JOIN || join_tree_node_type == QueryTreeNodeType::CROSS_JOIN || join_tree_node_type == QueryTreeNodeType::ARRAY_JOIN)
             return;
+
+        /// The rewritten subquery must be merged on the initiator. Otherwise, the outer `count()` counts
+        /// duplicate groups returned independently by each shard instead of global distinct keys. Skip a
+        /// remote carrier at any depth, including a `Distributed` table hidden behind a subquery. A purely
+        /// local query remains eligible even when distributed-query settings are enabled in its session.
+        for (const auto & table_expression : extractTableExpressions(query_node->getJoinTreeNodeTyped(), false, true))
+        {
+            if (const auto * table_node = table_expression->as<TableNode>(); table_node && table_node->getStorage()->isRemote())
+                return;
+
+            if (const auto * table_function_node = table_expression->as<TableFunctionNode>(); table_function_node && table_function_node->getStorage()->isRemote())
+                return;
+        }
 
         /// Check that query has only single node in projection
         auto & projection_nodes = query_node->getProjection().getNodes();

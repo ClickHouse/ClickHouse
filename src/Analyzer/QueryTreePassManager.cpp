@@ -290,7 +290,6 @@ void addQueryTreePasses(QueryTreePassManager & manager, bool only_analyze)
     manager.addPass(std::make_unique<RewriteArrayFilterLengthToArrayCountPass>());
     manager.addPass(std::make_unique<RewriteHasToInPass>());
     manager.addPass(std::make_unique<NormalizeCountVariantsPass>());
-
     manager.addPass(std::make_unique<DistanceTransposedPartialReadsPass>());
 
     /// should before AggregateFunctionsArithmeticOperationsPass
