@@ -171,13 +171,13 @@ KeeperRequestDispatcher::KeeperRequestDispatcher(KeeperServer * server_, KeeperS
 void KeeperRequestDispatcher::startupResponseThread()
 {
     chassert(!response_thread.joinable());
-    response_thread = ThreadFromGlobalPool([this] { responseThread(); });
+    response_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { responseThread(); });
 }
 
 void KeeperRequestDispatcher::startupDispatchThread()
 {
     chassert(!dispatch_thread.joinable());
-    dispatch_thread = ThreadFromGlobalPool([this] { dispatchThread(); });
+    dispatch_thread = ThreadFromGlobalPool(ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { dispatchThread(); });
 }
 
 size_t KeeperRequestDispatcher::drainQueues()

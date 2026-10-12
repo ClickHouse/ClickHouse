@@ -97,7 +97,8 @@ IOUringReader::IOUringReader(uint32_t entries_)
     cq_entries = params.cq_entries;
     try
     {
-        ring_completion_monitor = std::make_unique<ThreadFromGlobalPool>([this] { monitorRing(); });
+        ring_completion_monitor = std::make_unique<ThreadFromGlobalPool>(
+            ThreadFromGlobalPoolScheduleMode::FailIfNoWorker, [this] { monitorRing(); });
     }
     catch (...)
     {
