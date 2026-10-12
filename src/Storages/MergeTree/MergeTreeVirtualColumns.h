@@ -56,7 +56,10 @@ struct PartitionIdColumn
 struct PartitionValueColumn
 {
     static const String name;
-    static DataTypePtr type(const KeyDescription * partition_key);
+    /// The values come from `MergeTreePartition::value`, which `produced_key` computes and persists
+    /// (@sa `MergeTreePartition::adjustPartitionKey`); `declared_key` is the user's `PARTITION BY`. An
+    /// element takes the produced type when the declared one cannot represent every produced value.
+    static DataTypePtr type(const KeyDescription & declared_key, const KeyDescription & produced_key);
 };
 
 Field getFieldForConstVirtualColumn(const String & column_name, const IMergeTreeDataPart & part_or_projection);
