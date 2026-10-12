@@ -1,0 +1,11 @@
+-- the default format of $dateToString: with Z in UTC, without it in another time zone
+2024-03-09T23:30:00.123Z	2024-03-09T23:30:00.123Z	2024-03-09T18:30:00.123
+-- a startOfWeek is ignored for a unit other than week
+1709942400	1709942400
+-- a whole amount is added, whether a literal or computed
+1710199800	1710199800
+-- what cannot be honoured is refused
+Code: 48. The 'onNull' field of '$dateToString' is not supported
+Code: 48. '$dateToString' without a 'format' needs a 'timezone' that is a string literal: whether the text ends with 'Z' depends on it
+Code: 36. The 'amount' of '$dateAdd' must be a whole number
+The 'amount' of '$dateSubtract' must be a whole number

@@ -1,0 +1,6 @@
+1	[['name','when'],['name','when']]
+2	[['name','when']]
+3	[['name','price','ref']]
+{"id":1,"events":[{"name":"start","when":"1970-01-01 00:00:00.000000000"},{"name":"stop","when":"1970-01-01 00:00:01.000000000"}]}
+{"id":2,"events":[{"name":"legacy","when":"2019-01-01 00:00:00.000000000"}]}
+{"id":3,"events":[{"name":"id","price":"1.50","ref":"5f2a1b3c4d5e6f7a8b9c0d1e"}]}

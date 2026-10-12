@@ -395,6 +395,12 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
         }
     }
 
+    /// The query of the entry is the formatted AST, which is always ClickHouse SQL, whatever dialect the
+    /// initiator parsed it from (e.g. an `ALTER TABLE ... UPDATE` produced by a Mongo `updateMany`). The
+    /// `dialect` travels in the entry settings and may also be the default of the local profile, so parse
+    /// the entry as ClickHouse SQL regardless, as `prepareSecondaryQuerySettings` does for remote queries.
+    query_context->setSetting("dialect", String("clickhouse"));
+
     return query_context;
 }
 
