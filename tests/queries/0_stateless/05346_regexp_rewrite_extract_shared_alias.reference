@@ -1,0 +1,16 @@
+
+1
+1
+
+1
+	
+1	1
+
+1
+\N
+
+1
+SELECT extract(identity(\'abc123\'), \'(abc)\') AS `extract(identity(\'abc123\'), \'(abc).*$.*$\')`
+FROM system.one AS __table1
+SELECT extract(identity(\'abc123\'), \'(abc)\\\\.*$\') AS `extract(identity(\'abc123\'), \'(abc)\\\\\\\\.*$.*$\')`
+FROM system.one AS __table1
