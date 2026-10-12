@@ -1,4 +1,4 @@
--- Tags: no-parallel-replicas, no-random-merge-tree-settings
+-- Tags: no-random-merge-tree-settings
 
 DROP TABLE IF EXISTS t_sparse_nullable_null_map;
 
