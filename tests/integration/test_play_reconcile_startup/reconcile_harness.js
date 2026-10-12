@@ -1843,8 +1843,20 @@ async function main() {
             r.sandbox.document.dispatchEvent(ev);
             return ev;
         };
+        /// The Documentation button follows the same rule: the docs page of another origin accepts the
+        /// credentials from this trusted host, so a plain click opens the relay that hands them over -
+        /// but only for the server the host handed over.
+        const docs_click = () => {
+            const ev = new Event('click', { cancelable: true });
+            ev.button = 0;
+            r.sandbox.document.getElementById('docs-icon').dispatchEvent(ev);
+        };
+        const relays = () => opened.filter(o => o.href.includes('docs_relay='));
         vm.runInContext("user_elem.value = 'alice'; password_elem.value = 'autofilled';", r.sandbox);
         await sleep(50);
+        docs_click();
+        check('trusted-host-terminal', 'a plain click on Documentation opens no relay for a foreign ?url= server',
+            relays().length === 0, opened);
         const click = plain_click();
         check('trusted-host-terminal', 'a plain click does not embed the terminal of a foreign ?url= server',
             !click.defaultPrevented && embedded().length === 0 && !terminal_panel.classList.contains('active'),
@@ -1862,6 +1874,12 @@ async function main() {
             handed_click.defaultPrevented && embedded().length === 1 && embedded()[0] === 'https://b.example/webterminal'
                 && terminal_panel.classList.contains('active') && opened.length === 1,
             { defaultPrevented: handed_click.defaultPrevented, embedded: embedded(), opened });
+        docs_click();
+        check('trusted-host-terminal', 'a plain click on Documentation relays to the docs of the server the host handed over',
+            relays().length === 1
+                && new URL(relays()[0].href).searchParams.get('docs_relay').startsWith('https://b.example/docs')
+                && !relays()[0].href.includes('secret'),
+            opened);
     }
 
     /// Contract: a docs relay window (`/play?docs_relay=...`, opened by the Documentation button) is not
@@ -1871,11 +1889,16 @@ async function main() {
     /// an older snapshot. A relay with a rejected target stays equally inert, and shows nothing.
     /// A relay can be opened by a foreign page, so it must not send any request either: no connectivity
     /// ping, no credential probe, no Web Terminal probe against the server that served `/play`.
-    for (const [name, target, frames] of [
-        ['docs-relay-no-playground', 'https://clickhouse.com/docs', 1],
-        ['docs-relay-rejected-no-playground', 'javascript:alert(1)', 0],
+    /// The target is accepted only when its docs page takes credentials from the origin of the relay:
+    /// its own origin, or any origin when the relay is on a trusted host. A trusted target origin does
+    /// not help a relay elsewhere, because the docs page checks the origin of the sender, not its own.
+    for (const [name, origin, target, frames] of [
+        ['docs-relay-no-playground', 'https://a.example', 'https://a.example/docs', 1],
+        ['docs-relay-trusted-host', 'https://clickhouse.com', 'https://b.example/docs', 1],
+        ['docs-relay-untrusted-sender', 'https://a.example', 'https://clickhouse.com/docs', 0],
+        ['docs-relay-rejected-no-playground', 'https://a.example', 'javascript:alert(1)', 0],
     ]) {
-        const href = 'https://a.example/play?docs_relay=' + encodeURIComponent(target);
+        const href = origin + '/play?docs_relay=' + encodeURIComponent(target);
         const requests = [];
         const { sandbox, stores, stats } = makeContext({
             href,

@@ -113,7 +113,7 @@ echo "webterminal handshake=${handshake} accepts=${accepts} origins=${origins} w
 content=$(fetch_page play)
 relay=$(echo "$content" | grep -qF "clickhouse-docs-relay-ready" && echo yes || echo no)
 direct_docs_opener=$(echo "$content" | grep -qF "window.open(docs_icon.href" && echo yes || echo no)
-relay_trust_guard=$(echo "$content" | grep -qF "if (!isTrustedHostOrigin(origin)) return;" && echo yes || echo no)
+relay_trust_guard=$(echo "$content" | grep -qF "if (!pageAcceptsHandover(origin)) return;" && echo yes || echo no)
 relay_ordering_guard=$(echo "$content" | grep -qF "if (!credentials || !docs_frame_ready) return;" \
     && echo "$content" | grep -qF "docs_frame_ready = true;" \
     && echo yes || echo no)
@@ -167,9 +167,10 @@ derived_url_scheme=$(echo "$content" | sed -n '/function docsURL()/,/^}/p' \
 # The relay page reads its target out of its OWN URL, and a foreign page can open it
 # (`window.open('/play?docs_relay=...')`) and satisfy the `window.opener` condition. So the target has
 # to be held to the same rule the launcher applies before it opens a relay at all - a real HTTP(S)
-# endpoint at a trusted origin - and it has to be checked before it becomes an iframe `src`.
+# endpoint whose docs page accepts credentials from the origin of the relay (its own origin, or any
+# origin when the relay is on a trusted host) - and it has to be checked before it becomes an iframe `src`.
 relay_target_guard=$(echo "$content" \
-        | grep -qF "isHTTPEndpoint(docs_url) && isTrustedHostOrigin(docs_url.origin)" \
+        | grep -qF "docs_url.origin === window.location.origin || TRUSTED_HOST_ORIGINS.includes(window.location.origin)" \
     && echo validated || echo trusting)
 # Whether the Web Terminal is available is a property of the configured server, which can be edited in
 # the field or replaced wholesale by a handover at any time. A verdict cached from the first probe
@@ -192,7 +193,9 @@ docs_query=$(echo "$content" | sed -n '/function docsURL()/,/^}/p' | grep -qF "u
 # credentials...`, so the inline panel is gated on that same rule, and such a terminal opens in a new
 # tab through the icon's own link instead (which therefore has to carry `target="_blank"`).
 terminal_handover=$(echo "$content" | sed -n '/function terminalAcceptsHandover()/,/^    }$/p' \
-        | grep -qF "TRUSTED_HOST_ORIGINS.includes(location.origin)" \
+        | grep -qF "return pageAcceptsHandover(new URL(terminal_url).origin);" \
+    && echo "$content" | sed -n '/^function pageAcceptsHandover(/,/^}$/p' \
+        | grep -qF "TRUSTED_HOST_ORIGINS.includes(window.location.origin)" \
     && echo "$content" | sed -n '/function activateTerminal()/,/^    }$/p' | grep -qF "!terminalAcceptsHandover()" \
     && echo "$content" | grep -qF 'id="terminal-icon" class="menu-icon" href="" target="_blank"' \
     && echo gated || echo probe-only)

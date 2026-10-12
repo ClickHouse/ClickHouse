@@ -100,6 +100,8 @@ def test_play_reconcile_startup(started_cluster, nodejs_container):
         "cross-origin-terminal",
         "trusted-host-terminal",
         "docs-relay-no-playground",
+        "docs-relay-trusted-host",
+        "docs-relay-untrusted-sender",
         "docs-relay-rejected-no-playground",
         "dirty-startup-format",
         "format-connection-change",

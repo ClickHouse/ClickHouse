@@ -9019,11 +9019,11 @@ function docsURL() {
     let docs_windows = [];
 
     /// A plain click opens a same-origin relay instead of the configured docs page directly when
-    /// that docs page accepts credentials from this page's origin. The relay displays docs in an
-    /// iframe and hands over the password there. Thus an arbitrary configured docs server never
-    /// receives a live `window.opener` to this `/play` page, while the password still never
-    /// appears in a URL. A target outside the exact trusted-origin list keeps the anchor's native
-    /// `noopener` path (connecting as `?user=` with no password), as do modified and middle clicks.
+    /// that docs page accepts credentials from this page's origin (see `pageAcceptsHandover`). The
+    /// relay displays docs in an iframe and hands over the password there. Thus an arbitrary
+    /// configured docs server never receives a live `window.opener` to this `/play` page, while the
+    /// password still never appears in a URL. Any other target keeps the anchor's native `noopener`
+    /// path (connecting as `?user=` with no password), as do modified and middle clicks.
     docs_icon.addEventListener('click', (event) => {
         if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) return;
         let origin;
@@ -9032,7 +9032,7 @@ function docsURL() {
         } catch (e) {
             return; /// Unparsable configured URL: leave the navigation to the anchor.
         }
-        if (!isTrustedHostOrigin(origin)) return;
+        if (!pageAcceptsHandover(origin)) return;
         /// The relay keeps the routing query of this page (`?cluster=a`): it is part of the endpoint
         /// identity, and the relay receives this page's credentials, so it must be served by the same
         /// routed backend rather than by the proxy's default one.
@@ -10908,9 +10908,30 @@ function isTrustedHostOrigin(origin) {
 }
 
 /// The server address the last `clickhouse-credentials` handover from the host page left configured,
-/// or `null` if no connection was handed over. The inline Web Terminal of a cross-origin server is
-/// offered only for this address (see `terminalAcceptsHandover`).
+/// or `null` if no connection was handed over. The credentials of a cross-origin server are handed on
+/// (to its inline Web Terminal or its docs page) only for this address (see `pageAcceptsHandover`).
 let host_handed_server = null;
+
+/// Whether this page may hand the current connection to a built-in page of the configured server at
+/// `target_origin` - its documentation page (through the docs relay) or its Web Terminal.
+///
+/// The receiving page takes the credentials only from a sender at its own origin or at one of its
+/// exact trusted origins - the same list as `TRUSTED_HOST_ORIGINS` here - and applies that rule to
+/// the origin of THIS page (`window.location.origin`), not to its own. So a target at this page's
+/// origin always accepts, and a target at any other origin accepts only when this page itself is
+/// served from a trusted host.
+///
+/// On a trusted host being accepted is not enough: the credentials in the fields may be a login the
+/// browser autofilled for this page's origin, while the server may be one named by a foreign `?url=`
+/// link. Posting them to that server would bypass the rule the rest of this page follows for such a
+/// target (see `isOwnServerTarget`). So the connection goes to a cross-origin server only when it is
+/// the one the trusted host itself handed over (`host_handed_server`), whose credentials came with it.
+function pageAcceptsHandover(target_origin) {
+    if (target_origin === window.location.origin) return true;
+    return TRUSTED_HOST_ORIGINS.includes(window.location.origin)
+        && host_handed_server !== null
+        && sameServerAddress(url_elem.value, host_handed_server);
+}
 
 /// Adopt a connection handed over by the host page.
 ///
@@ -10965,17 +10986,22 @@ function applyConnectionFromHost(data) {
     if (is_docs_relay) {
         /// The relay target arrives in the URL of this window, and this window can be opened by a
         /// foreign page (`window.open('/play?docs_relay=...')`), so it is not trusted input. It is
-        /// held to the same rule the launcher applies before it opens a relay at all: a real HTTP(S)
+        /// held to the rule the launcher applies before it opens a relay at all: a real HTTP(S)
         /// endpoint (`new URL` also accepts `javascript:` and `data:`, which would turn the relay
-        /// into arbitrary-scheme navigation of this origin) at one of the trusted origins. Anything
-        /// else leaves the relay inert - no iframe is created and no credentials are ever requested.
+        /// into arbitrary-scheme navigation of this origin) whose docs page accepts credentials from
+        /// this origin - its own origin, or any origin when this page is on a trusted host (see
+        /// `pageAcceptsHandover`; which server a trusted-host page relays to is restricted by the
+        /// launcher, the only window that can feed the relay credentials). Anything else leaves the
+        /// relay inert - no iframe is created and no credentials are ever requested.
         let docs_url;
         try {
             docs_url = new URL(docs_relay_target);
         } catch (e) {
             docs_url = null;
         }
-        if (docs_url && !(isHTTPEndpoint(docs_url) && isTrustedHostOrigin(docs_url.origin))) docs_url = null;
+        if (docs_url && !(isHTTPEndpoint(docs_url)
+                && (docs_url.origin === window.location.origin || TRUSTED_HOST_ORIGINS.includes(window.location.origin))))
+            docs_url = null;
 
         const relay_opener = window.opener;
         /// Sever the opener relationship before the iframe starts loading; the handle saved above is
@@ -22767,7 +22793,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     }
 
     /// Whether the terminal at the configured server would accept the credentials this page posts
-    /// to it once it is embedded in the inline panel.
+    /// to it once it is embedded in the inline panel (see `pageAcceptsHandover`).
     ///
     /// `webterminal.html` takes a `webterminal-credentials` message only from a parent at its own
     /// origin or at one of its exact `TRUSTED_PARENT_ORIGINS` - the same list as `TRUSTED_HOST_ORIGINS`
@@ -22789,11 +22815,7 @@ document.getElementById('download-button').addEventListener('click', async funct
     function terminalAcceptsHandover() {
         const terminal_url = getTerminalURL();
         if (!terminal_url) return false;
-        const terminal_origin = new URL(terminal_url).origin;
-        if (terminal_origin === location.origin) return true;
-        return TRUSTED_HOST_ORIGINS.includes(location.origin)
-            && host_handed_server !== null
-            && sameServerAddress(url_elem.value, host_handed_server);
+        return pageAcceptsHandover(new URL(terminal_url).origin);
     }
 
     /// The new-tab path of the icon, for the keyboard shortcut: a plain click reaches it through the
