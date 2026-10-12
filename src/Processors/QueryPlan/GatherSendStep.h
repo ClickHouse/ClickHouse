@@ -20,6 +20,8 @@ public:
         , maintain_sort_description(std::move(maintain_sort_description_))
     {
         updateInputHeaders({std::move(input_header_)});
+        /// The exchange name in `EXPLAIN`, to join the step with the exchanges of the query fragments.
+        setStepDescription(exchange_id, exchange_id.size());
     }
 
     String getName() const override { return "GatherSend"; }
