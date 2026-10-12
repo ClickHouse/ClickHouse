@@ -71,7 +71,12 @@ function stop_server()
 #   `logger.errorlog` (the key of `logger_errorlog`). The last occurrence must win across the spellings: the
 #   built-in `--log-file` after `--logger_log`, and `--LOGGER_ERRORLOG:...` after `-E` - which also checks that
 #   an option spelled in a different case and with the `:` separator, both accepted by `Poco`, is recognized.
+# - A setting backed by a key in a section whose mere presence enables a component must not enable that
+#   component: `--prometheus_keeper_metrics_only 1` binds `prometheus.keeper_metrics_only`, but the HTTP port
+#   must not start serving `/metrics`, because the configuration has no `prometheus` section. The value is
+#   still applied, as is `--distributed_ddl_task_max_lifetime` (the `distributed_ddl` section enables the DDL worker).
 srv_dir1="${CLICKHOUSE_TMP}/srv1"
+SRV1_HTTP_PORT=50223
 mkdir -p "$srv_dir1"
 $CLICKHOUSE_BINARY server \
     --max_thread_pool_size 999888 \
@@ -86,9 +91,11 @@ $CLICKHOUSE_BINARY server \
     --load_marks_threadpool_pool_size 13 \
     --query_cache_max_entries 10 \
     --query_cache_max_size_in_bytes 2097152 \
+    --prometheus_keeper_metrics_only 1 \
+    --distributed_ddl_task_max_lifetime 1234 \
     --logger_log "$srv_dir1/loser.log" --log-file "$srv_dir1/winner.log" \
     -E "$srv_dir1/loser.err" --LOGGER_ERRORLOG:"$srv_dir1/winner.err" \
-    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --path "$srv_dir1/" \
+    -- --tcp_port "$CLICKHOUSE_PORT_TCP" --http_port "$SRV1_HTTP_PORT" --path "$srv_dir1/" \
     --max_connections 50 \
     --openssl_server_cache_sessions 1 \
     --openSSL.server.sessionTimeout 4 \
@@ -99,14 +106,18 @@ wait_for_server "${CLICKHOUSE_TMP}/server1.log"
 
 # Path-backed settings are displayed in `system.server_settings` under their dotted path.
 $CLICKHOUSE_CLIENT --query "
-    SELECT name, if(name = 'shutdown_wait_unfinished_queries', toString(value IN ('1', 'true')), value)
+    SELECT name, if(name IN ('shutdown_wait_unfinished_queries', 'prometheus.keeper_metrics_only'), toString(value IN ('1', 'true')), value)
     FROM system.server_settings
     WHERE name IN ('max_thread_pool_size', 'shutdown_wait_unfinished_queries', 'max_connections',
                    'openSSL.server.cacheSessions', 'openSSL.server.sessionTimeout',
                    'dns_max_consecutive_failures', 'http_connections_soft_limit', 'uncompressed_cache_size',
                    'concurrent_threads_soft_limit_num', 'load_marks_threadpool_pool_size',
-                   'query_cache.max_entries', 'query_cache.max_size_in_bytes', 'logger.level')
+                   'query_cache.max_entries', 'query_cache.max_size_in_bytes', 'logger.level',
+                   'prometheus.keeper_metrics_only', 'distributed_ddl.task_max_lifetime')
     ORDER BY name"
+
+# The embedded configuration has no `prometheus` section, so `/metrics` must not be served.
+${CLICKHOUSE_CURL} -sS "http://127.0.0.1:${SRV1_HTTP_PORT}/metrics" | grep -c '^ClickHouse'
 $CLICKHOUSE_CLIENT --query "SELECT name, splitByChar('/', value)[-1] FROM system.server_settings WHERE name IN ('logger.log', 'logger.errorlog') ORDER BY name"
 
 stop_server
