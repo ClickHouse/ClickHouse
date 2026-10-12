@@ -171,6 +171,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return false; }
 
+    /// An empty format consumes no argument.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
     {
         auto is_native_number_or_string = [](const IDataType & type)

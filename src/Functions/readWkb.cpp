@@ -84,6 +84,9 @@ public:
 
     bool useDefaultImplementationForConstants() const override { return true; }
 
+    /// An empty string is not WKB.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     static FunctionPtr create(ContextPtr context)
     {
         return std::make_shared<FunctionReadWKB<ReturnDataTypeName, Geometry, Serializer, NameHolder>>(

@@ -125,6 +125,9 @@ public:
         return true;
     }
 
+    /// An empty string is not WKT.
+    bool canBeExecutedOnDefaultArguments() const override { return false; }
+
     static FunctionPtr create(ContextPtr)
     {
         return std::make_shared<FunctionReadWKT<DataTypeName, Geometry, Serializer, NameHolder>>();
