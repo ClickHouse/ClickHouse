@@ -13,6 +13,7 @@
 #include <Interpreters/StorageID.h>
 #include <sys/types.h>
 #include <atomic>
+#include <condition_variable>
 
 
 namespace DB
@@ -343,6 +344,8 @@ private:
       */
     mutable std::mutex was_cancelled_mutex;
     bool was_cancelled TSA_GUARDED_BY(was_cancelled_mutex) = false;
+    /// Notified when `was_cancelled` is set, to interrupt the wait before a retry after a network error.
+    std::condition_variable retry_backoff_cv;
 
     /// Non-zero while a thread is inside `finish`, the state in which `cancel` has nothing to add:
     /// `finish` reaches its drain only after `tryCancel` sent the Cancel packet, and on every earlier

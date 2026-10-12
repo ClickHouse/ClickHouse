@@ -4,7 +4,6 @@
 #include <QueryPipeline/RemoteQueryExecutorReadContext.h>
 #include <QueryPipeline/UnavailableShardTracker.h>
 
-#include <base/sleep.h>
 #include <Columns/ColumnConst.h>
 #include <Common/CurrentThread.h>
 #include <Common/FailPoint.h>
@@ -1090,7 +1089,17 @@ void RemoteQueryExecutor::prepareRetryAfterNetworkError(const Exception & e)
     }
 
     FailPointInjection::pauseFailPoint(FailPoints::remote_query_executor_prepare_retry_pause);
-    sleepForMilliseconds(context->getSettingsRef()[Setting::distributed_query_retry_interval_ms].totalMilliseconds());
+
+    /// Wait before the retry, but wake up as soon as the executor is cancelled (`tryCancel` notifies),
+    /// e.g. when a `LIMIT` is satisfied by another shard or the user cancels the query, so a terminal
+    /// executor does not have to wait out the whole retry interval.
+    const auto retry_interval = std::chrono::milliseconds(
+        context->getSettingsRef()[Setting::distributed_query_retry_interval_ms].totalMilliseconds());
+    LockAndOverCommitTrackerBlocker<UniqueLock, std::mutex> lock(was_cancelled_mutex);
+    retry_backoff_cv.wait_for(
+        lock.getUnderlyingLock().getUnderlyingLock(),
+        retry_interval,
+        [this] { return TSA_SUPPRESS_WARNING_FOR_READ(was_cancelled); });
 }
 
 RemoteQueryExecutor::ReadResult RemoteQueryExecutor::processPacket(Packet packet)
@@ -1602,6 +1611,8 @@ void RemoteQueryExecutor::tryCancel(const char * reason)
         return;
 
     was_cancelled = true;
+    /// Wake up a `prepareRetryAfterNetworkError` waiting before a retry.
+    retry_backoff_cv.notify_all();
 
     /// A parallel-replicas follower that has not announced yet is still planning, and the only packet
     /// it owes us is the announcement itself - which is worthless once we are cancelling, because it
