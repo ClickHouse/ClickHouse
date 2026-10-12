@@ -285,8 +285,15 @@ std::shared_ptr<TSystemLog> createSystemLog(
 
         const auto * engine_storage = storage_with_comment.storage ? storage_with_comment.storage->as<ASTStorage>() : nullptr;
         const auto * engine_settings = engine_storage ? engine_storage->settings : nullptr;
+        /// A setting omitted from the engine takes the effective `MergeTree` default, which may already be the required value.
+        const bool is_replicated = engine_storage && engine_storage->engine && engine_storage->engine->name.starts_with("Replicated");
+        const MergeTreeSettings & effective_defaults = is_replicated ? context->getReplicatedMergeTreeSettings() : context->getMergeTreeSettings();
         for (const auto & required : default_settings_ast->as<ASTSetQuery &>().changes)
         {
+            /// It only controls how zero-level parts are written before merges, not the bucket layout of merged parts.
+            if (required.name == "map_serialization_version_for_zero_level_parts")
+                continue;
+
             /// The last occurrence wins, e.g. when `settings` from the configuration override the defaults.
             const Field * actual = nullptr;
             if (engine_settings)
@@ -294,7 +301,10 @@ std::shared_ptr<TSystemLog> createSystemLog(
                     if (change.name == required.name)
                         actual = &change.value;
             if (!actual)
-                engine_settings_mismatches.push_back(fmt::format("{} is not set", required.name));
+            {
+                if (effective_defaults.get(required.name) != required.value)
+                    engine_settings_mismatches.push_back(fmt::format("{} is not set", required.name));
+            }
             else if (*actual != required.value)
                 engine_settings_mismatches.push_back(fmt::format("{} = {} instead of {}",
                     required.name, applyVisitor(FieldVisitorToString(), *actual), applyVisitor(FieldVisitorToString(), required.value)));
@@ -1109,7 +1119,10 @@ void SystemLog<LogElement>::prepareTable()
             query_context->makeQueryContext();
             addSettingsForQuery(query_context, IAST::QueryKind::Rename);
 
-            InterpreterRenameQuery(rename, query_context).execute();
+            InterpreterRenameQuery interpreter_rename(rename, query_context);
+            /// Views over the log read it by name, so they stay with the name, not with the archived table.
+            interpreter_rename.setKeepSourceViewDependencies(true);
+            interpreter_rename.execute();
 
             if (rotated_documentation_source)
                 registerSystemTableDocumentationSource(rotated_table_name, rotated_documentation_source);
@@ -1288,6 +1301,10 @@ void SystemLog<LogElement>::prepareUnionTable()
         {
             LOG_DEBUG(log, "Creating new table {} for {}", union_table_id.getNameForLogs(), LogElement::name());
         }
+
+        /// Replacing the table may wait for the previous one to be dropped, which cannot
+        /// happen while it is still referenced here.
+        union_table.reset();
 
         auto query_context = Context::createCopy(context);
         query_context->makeQueryContext();
@@ -1473,7 +1490,27 @@ ASTPtr SystemLog<LogElement>::getCreateUnionTableQuery()
     auto new_columns_list = make_intrusive<ASTColumns>();
     auto ordinary_columns = LogElement::getColumnsDescription();
     auto alias_columns = LogElement::getNamesAndAliases();
-    if (!flush_policy->shouldSkipAliasColumns())
+    if constexpr (std::is_same_v<LogElement, BucketedMetricLogElement>)
+    {
+        /// The per-metric columns of the `bucketed` schema are `ALIAS metrics['...']`, while the rotated
+        /// tables of the `wide` schema (which was the default before) have them as ordinary columns and
+        /// have no `metrics` column at all. An `ALIAS` in the union table would be expanded before reading
+        /// and give the default values for the rotated `wide` tables, so declare these columns as physical
+        /// ones: then every underlying table provides them on its own, either physically or as its `ALIAS`.
+        /// They are `MATERIALIZED` rather than ordinary, so that, like the `ALIAS` columns of the log table,
+        /// they are not expanded by an asterisk: `SELECT *` would otherwise compute a thousand of them.
+        if (!flush_policy->shouldSkipAliasColumns())
+        {
+            ColumnsDescription materialized_columns;
+            materialized_columns.setAliases(std::move(alias_columns));
+            for (auto column : materialized_columns)
+            {
+                column.default_desc.kind = ColumnDefaultKind::Materialized;
+                ordinary_columns.add(std::move(column));
+            }
+        }
+    }
+    else if (!flush_policy->shouldSkipAliasColumns())
         ordinary_columns.setAliases(alias_columns);
     new_columns_list->set(new_columns_list->columns, InterpreterCreateQuery::formatColumns(ordinary_columns));
     create->set(create->columns_list, new_columns_list);

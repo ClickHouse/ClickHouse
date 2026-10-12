@@ -13,7 +13,7 @@ node1 = cluster.add_instance(
 # used when the configuration does not specify `engine` explicitly, hence a separate config.
 node2 = cluster.add_instance(
     "node2",
-    main_configs=["config/metric_log_bucketed_config.xml"],
+    main_configs=["config/metric_log_bucketed_config.xml", "config/union_merge.xml"],
     stay_alive=True,
 )
 node3 = cluster.add_instance(
@@ -209,6 +209,25 @@ def test_bucketed_schema(start_cluster):
     # the old wide table was rotated
     assert int(node2.query("select count() from system.metric_log_0").strip()) > 0
 
+    # The union table reads the per-metric columns from the rotated `wide` table as well,
+    # where they are ordinary columns and there is no `metrics` column.
+    for enable_analyzer in (0, 1):
+        assert node2.query(
+            "SELECT sum(ProfileEvent_Query) FROM system.all_metric_log WHERE _table = 'metric_log_0'",
+            settings={"enable_analyzer": enable_analyzer},
+        ) == node2.query("SELECT sum(ProfileEvent_Query) FROM system.metric_log_0")
+        assert int(
+            node2.query(
+                "SELECT sum(ProfileEvent_Query) FROM system.all_metric_log WHERE _table = 'metric_log'",
+                settings={"enable_analyzer": enable_analyzer},
+            ).strip()
+        ) > 0
+        # Like the `ALIAS` columns of the log table, the per-metric columns are not expanded by an asterisk.
+        assert "ProfileEvent_Query" not in node2.query(
+            "SELECT * FROM system.all_metric_log LIMIT 1 FORMAT TSVWithNames",
+            settings={"enable_analyzer": enable_analyzer},
+        ).split("\n")[0].split("\t")
+
     node2.replace_in_config(BUCKETED_LOG_PATH, ">bucketed<", ">wide<")
     node2.restart_clickhouse()
 
@@ -285,6 +304,8 @@ def test_bucketed_schema_with_explicit_engine_warns(start_cluster):
     restart_with_engine_settings("map_serialization_version = 'with_buckets'")
     assert node7.contains_in_log(warning)
     assert node7.contains_in_log("max_buckets_in_map is not set")
+    # An omitted setting whose `MergeTree` default already has the required value is not reported.
+    assert not node7.contains_in_log("map_serialization_version_for_zero_level_parts is not set")
 
     restart_with_engine_settings(bucketed_settings.replace("'constant'", "'sqrt'"))
     assert node7.contains_in_log(warning)
@@ -292,6 +313,11 @@ def test_bucketed_schema_with_explicit_engine_warns(start_cluster):
 
     restart_with_engine_settings(bucketed_settings)
     assert "max_buckets_in_map = 128" in node7.query("SHOW CREATE TABLE system.metric_log FORMAT TSVRaw")
+    assert int(node7.count_in_log(warning)) == 0
+
+    # `map_serialization_version_for_zero_level_parts` only controls how zero-level parts are written
+    # before merges, so changing it does not affect the bucket layout of merged parts and does not warn.
+    restart_with_engine_settings(bucketed_settings.replace("_zero_level_parts = 'basic'", "_zero_level_parts = 'with_buckets'"))
     assert int(node7.count_in_log(warning)) == 0
 
     node7.replace_in_config(config_path, "<schema_type>bucketed</schema_type>", "")
