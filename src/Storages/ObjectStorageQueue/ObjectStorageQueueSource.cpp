@@ -246,6 +246,20 @@ ObjectStorageQueueSource::FileIterator::next()
                     [&](const std::shared_ptr<RelativePathWithMetadata> & object) { return std::make_shared<ObjectInfo>(*object); });
                 ProfileEvents::increment(ProfileEvents::ObjectStorageQueueListedFiles, new_batch.size());
 
+                /// A file taken over from the previous iterator is listed again by this pass:
+                /// drop the inherited copy, the listed one goes through the regular filtering.
+                if (!inherited_foreign_processing_rechecks.empty())
+                {
+                    std::unordered_set<std::string> relisted;
+                    for (const auto & object_info : new_batch)
+                    {
+                        if (inherited_foreign_processing_rechecks.erase(object_info->getPath()))
+                            relisted.insert(object_info->getPath());
+                    }
+                    if (!relisted.empty())
+                        std::erase_if(foreign_processing_files_to_recheck, [&](const ObjectInfoPtr & object) { return relisted.contains(object->getPath()); });
+                }
+
                 for (auto it = new_batch.begin(); it != new_batch.end();)
                 {
                     if (!recursive && !re2::RE2::FullMatch((*it)->getPath(), *matcher))
@@ -645,17 +659,81 @@ ObjectInfos ObjectStorageQueueSource::FileIterator::takeDueForeignProcessingRech
 {
     const size_t ttl_sec = metadata->getProcessingStateCacheTTLSeconds();
     ObjectInfos due;
-    std::erase_if(foreign_processing_files_to_recheck, [&](ObjectInfoPtr & object)
+    std::erase_if(foreign_processing_files_to_recheck, [&](ObjectInfoPtr & object) TSA_REQUIRES(next_mutex)
     {
         const auto status = metadata->tryGetFileStatus(object->getPath());
         /// An evicted or non-foreign status does not defer the recheck.
         if (status && status->isProcessingObservedInKeeperTrusted(ttl_sec))
             return false;
 
+        inherited_foreign_processing_rechecks.erase(object->getPath());
         due.push_back(std::move(object));
         return true;
     });
     return due;
+}
+
+ObjectInfos ObjectStorageQueueSource::FileIterator::takeForeignProcessingRechecksToInherit()
+{
+    ObjectInfos result;
+    if (mode != ObjectStorageQueueMode::ORDERED)
+    {
+        std::move(foreign_processing_files_to_recheck.begin(), foreign_processing_files_to_recheck.end(), std::back_inserter(result));
+        foreign_processing_files_to_recheck.clear();
+        inherited_foreign_processing_rechecks.clear();
+        return result;
+    }
+
+    /// Ordered mode: the next iterator knows the foreign-held files of a domain only from the
+    /// inherited ones. If a foreign-held file of the domain is not pending a recheck, the next
+    /// iterator could process a later inherited file before its listing pass reaches the smaller
+    /// foreign-held one, advancing the `processed` pointer past the files it blocks. The files
+    /// of such a domain are not inherited: the next listing pass rechecks them in order.
+    std::unordered_set<std::string> pending_paths;
+    for (const auto & object : foreign_processing_files_to_recheck)
+        pending_paths.insert(object->getPath());
+
+    std::map<OrderingDomain, bool> can_inherit_per_domain;
+    for (auto & object : foreign_processing_files_to_recheck)
+    {
+        const auto domain = getOrderingDomain(object->getPath());
+        auto [it, inserted] = can_inherit_per_domain.try_emplace(domain, true);
+        if (inserted)
+        {
+            const auto held = foreign_held_files_per_domain.find(domain);
+            if (held != foreign_held_files_per_domain.end())
+                it->second = std::ranges::all_of(held->second, [&](const std::string & path) { return pending_paths.contains(path); });
+        }
+
+        if (it->second)
+            result.push_back(std::move(object));
+    }
+    foreign_processing_files_to_recheck.clear();
+    inherited_foreign_processing_rechecks.clear();
+    return result;
+}
+
+void ObjectStorageQueueSource::FileIterator::inheritForeignProcessingRechecks(FileIterator & previous)
+{
+    ObjectInfos inherited;
+    {
+        std::lock_guard previous_lock(previous.next_mutex);
+        inherited = previous.takeForeignProcessingRechecksToInherit();
+    }
+    if (inherited.empty())
+        return;
+
+    LOG_TEST(log, "Taking over {} pending rechecks of files processed by another processor from the previous iterator", inherited.size());
+
+    std::lock_guard lock(next_mutex);
+    for (auto & object : inherited)
+    {
+        /// Ordered mode: an inherited file still blocks the later files of its ordering domain,
+        /// as it did in the previous iterator, until its recheck resolves it.
+        recordForeignHeldFile(object->getPath());
+        inherited_foreign_processing_rechecks.insert(object->getPath());
+        foreign_processing_files_to_recheck.push_back(std::move(object));
+    }
 }
 
 std::optional<time_t> ObjectStorageQueueSource::FileIterator::earliestForeignProcessingRecheckTime()
@@ -741,13 +819,25 @@ void ObjectStorageQueueSource::FileIterator::resolveForeignHeldFile(const std::s
     if (it == foreign_held_files_per_domain.end())
         return;
 
-    it->second.erase(path);
-    if (it->second.empty())
-    {
-        const auto domain = it->first;
+    auto & held_files = it->second;
+    const auto held_it = held_files.find(path);
+    if (held_it == held_files.end())
+        return;
+
+    /// Only the smallest blocker of a domain blocks anything that the remaining ones do not.
+    const bool smallest_blocker_resolved = held_it == held_files.begin();
+    held_files.erase(held_it);
+    if (!smallest_blocker_resolved)
+        return;
+
+    const auto domain = it->first;
+    std::optional<std::string> smallest_remaining_blocker;
+    if (held_files.empty())
         foreign_held_files_per_domain.erase(it);
-        recheckBlockedFilesForDomain(domain);
-    }
+    else
+        smallest_remaining_blocker = *held_files.begin();
+
+    recheckBlockedFilesForDomain(domain, smallest_remaining_blocker);
 }
 
 void ObjectStorageQueueSource::FileIterator::rememberBlockedFile(ObjectInfoPtr object)
@@ -796,17 +886,31 @@ void ObjectStorageQueueSource::FileIterator::rememberBlockedFile(ObjectInfoPtr o
     ++blocked_files_count;
 }
 
-void ObjectStorageQueueSource::FileIterator::recheckBlockedFilesForDomain(const OrderingDomain & domain)
+void ObjectStorageQueueSource::FileIterator::recheckBlockedFilesForDomain(
+    const OrderingDomain & domain, const std::optional<std::string> & smallest_remaining_blocker)
 {
     const auto it = blocked_files_per_domain.find(domain);
     if (it == blocked_files_per_domain.end())
         return;
 
-    LOG_TEST(log, "Rechecking {} files after a foreign-held file in their ordering domain was resolved", it->second.size());
-    chassert(blocked_files_count >= it->second.size());
-    blocked_files_count -= it->second.size();
-    std::move(it->second.begin(), it->second.end(), std::back_inserter(foreign_processing_files_to_recheck));
-    blocked_files_per_domain.erase(it);
+    /// The files above the smallest remaining blocker are still blocked by it: keep them.
+    auto & blocked_files = it->second;
+    const auto still_blocked = std::stable_partition(
+        blocked_files.begin(),
+        blocked_files.end(),
+        [&](const ObjectInfoPtr & object) { return smallest_remaining_blocker && *smallest_remaining_blocker < object->getPath(); });
+
+    const size_t unblocked_count = std::distance(still_blocked, blocked_files.end());
+    if (!unblocked_count)
+        return;
+
+    LOG_TEST(log, "Rechecking {} files after a foreign-held file in their ordering domain was resolved", unblocked_count);
+    chassert(blocked_files_count >= unblocked_count);
+    blocked_files_count -= unblocked_count;
+    std::move(still_blocked, blocked_files.end(), std::back_inserter(foreign_processing_files_to_recheck));
+    blocked_files.erase(still_blocked, blocked_files.end());
+    if (blocked_files.empty())
+        blocked_files_per_domain.erase(it);
 }
 
 bool ObjectStorageQueueSource::FileIterator::isBlockedByForeignHeldFile(const std::string & path)

@@ -1041,7 +1041,10 @@ bool StorageObjectStorageQueue::streamToViews(size_t streaming_tasks_index, UInt
         std::lock_guard streaming_lock(streaming_mutex);
         if (!streaming_file_iterator || streaming_file_iterator->isFinished())
         {
+            auto previous_file_iterator = std::move(streaming_file_iterator);
             streaming_file_iterator = createFileIterator(queue_context, nullptr);
+            if (previous_file_iterator)
+                streaming_file_iterator->inheritForeignProcessingRechecks(*previous_file_iterator);
         }
         file_iterator = streaming_file_iterator;
     }

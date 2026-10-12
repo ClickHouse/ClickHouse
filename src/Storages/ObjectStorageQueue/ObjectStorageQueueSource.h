@@ -9,6 +9,7 @@
 #include <Storages/ObjectStorageQueue/ObjectStorageQueueSettings.h>
 #include <base/defines.h>
 #include <condition_variable>
+#include <unordered_set>
 #include <Common/Stopwatch.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 
@@ -90,6 +91,13 @@ public:
         /// the queue is otherwise idle and the polling backoff is large.
         std::optional<time_t> earliestForeignProcessingRecheckTime();
 
+        /// Takes over the pending rechecks of files skipped because of a fresh foreign
+        /// `processing` observation from the previous iterator of the streaming task, whose
+        /// listing pass is over. Otherwise such a file would wait until the new listing pass
+        /// reaches it again, which in a large namespace can take much longer than
+        /// `processing_state_cache_ttl_seconds`.
+        void inheritForeignProcessingRechecks(FileIterator & previous);
+
     private:
         using Bucket = ObjectStorageQueueMetadata::Bucket;
         using Processor = ObjectStorageQueueMetadata::Processor;
@@ -121,17 +129,21 @@ public:
         /// They are rechecked at the next batch boundary after the observation expires
         /// (`processing_state_cache_ttl_seconds`), so the recheck does not wait
         /// for the current listing pass to end. Entries left when the listing is
-        /// exhausted are dropped: the observation timestamps live in the shared file
-        /// status cache, so the next listing pass re-queues them with the original deadlines.
+        /// exhausted are taken over by the next iterator, see `inheritForeignProcessingRechecks`.
         std::deque<ObjectInfoPtr> foreign_processing_files_to_recheck TSA_GUARDED_BY(next_mutex);
+
+        /// Paths in `foreign_processing_files_to_recheck` taken over from the previous iterator.
+        /// The listing pass of this iterator lists them again, and then the listed object
+        /// replaces the inherited one, so that the file is not handed out twice.
+        std::unordered_set<std::string> inherited_foreign_processing_rechecks TSA_GUARDED_BY(next_mutex);
 
         /// Ordered mode only. An ordering domain is the scope of one `processed` pointer:
         /// a bucket, and a partition within it when partitioning is used.
         using OrderingDomain = std::pair<Bucket, std::string>;
 
         /// Ordered mode only. Later files dropped while a smaller foreign-held file
-        /// blocks their ordering domain. Once the last blocker of a domain resolves,
-        /// put these files back through the regular filtering path instead of waiting
+        /// blocks their ordering domain. Once the smallest blocker of a domain resolves,
+        /// put the files below the next blocker (all of them if it was the last one) back through the regular filtering path instead of waiting
         /// for the object-storage listing to start another full pass.
         /// This is only a shortcut, so the number of retained files is capped: a blocker
         /// near the beginning of a large namespace would otherwise buffer the whole rest
@@ -172,7 +184,7 @@ public:
         void recordForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
         void resolveForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
         void rememberBlockedFile(ObjectInfoPtr object) TSA_REQUIRES(next_mutex);
-        void recheckBlockedFilesForDomain(const OrderingDomain & domain) TSA_REQUIRES(next_mutex);
+        void recheckBlockedFilesForDomain(const OrderingDomain & domain, const std::optional<std::string> & smallest_remaining_blocker) TSA_REQUIRES(next_mutex);
         bool isBlockedByForeignHeldFile(const std::string & path) TSA_REQUIRES(next_mutex);
 
         void registerUnresolvedSetProcessing(const std::string & path);
@@ -187,6 +199,7 @@ public:
         std::pair<ObjectInfoPtr, FileMetadataPtr> next();
         void filterProcessableFiles(ObjectInfos & objects) TSA_REQUIRES(next_mutex);
         ObjectInfos takeDueForeignProcessingRechecks() TSA_REQUIRES(next_mutex);
+        ObjectInfos takeForeignProcessingRechecksToInherit() TSA_REQUIRES(next_mutex);
         void recheckForeignProcessingLater(ObjectInfoPtr object_info, const ObjectStorageQueueIFileMetadata::FileStatusPtr & status);
 
         std::atomic<bool> & shutdown_called;
