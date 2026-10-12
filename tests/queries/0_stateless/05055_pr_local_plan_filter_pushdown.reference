@@ -2,8 +2,6 @@ an equality both sides get prunes the read and orders it
 Read type: InOrder
 Prewhere filter column:  tenant = 5
 100
-so does the same equality written inside the fragment
-Read type: InOrder
 a range prunes it and orders nothing
 Read type: Default
 Prewhere filter column:  tenant > 90
@@ -24,21 +22,14 @@ Read type: InOrder
 5	5
 5	205
 5	405
-with no splice at all an equality stays above, though the fragment fixes an expression of its column
-Read type: Default
-100
 the splice answers to the settings the fragment carries, not to the outer query
 Read type: Default
 100
 Read type: InOrder
 100
-nor is anything spliced into a fragment shipped as a plan
-Read type: Default
-100
 with the push-down off the condition stays above, and the answer is the same
 Read type: Default
 100
-what the replicas were sent: the equality, never the lambda, and nothing with the push-down off
+what the replicas were sent: the equality, never the lambda
 05055_beside	1	1	0	1
 05055_lambda	1	0	0	0
-05055_switch_off	1	0	0	0

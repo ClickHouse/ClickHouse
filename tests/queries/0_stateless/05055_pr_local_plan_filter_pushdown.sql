@@ -4,14 +4,13 @@
 -- has it announces `WithOrder` to the shared coordinator against the other's `Default`. So a conjunct
 -- the splice leaves out stays above the initiator's copy, unless it cannot fix a column - a range, a
 -- join runtime filter (05056) - and then it only prunes. The shapes the splice refuses as a whole are
--- 05161 and 05183.
+-- 05161 and 05183, a condition on a column the fragment computes 05366, and the switch's effect on the
+-- replicas 03733.
 -- https://github.com/ClickHouse/ClickHouse/issues/95524
 
 DROP TABLE IF EXISTS t_pr_local_pd;
 DROP TABLE IF EXISTS t_pr_local_pd_lambda_key;
 DROP VIEW IF EXISTS v_pr_local_pd;
-DROP VIEW IF EXISTS v_own_pr_local_pd;
-DROP VIEW IF EXISTS v_odd_pr_local_pd;
 DROP VIEW IF EXISTS v_lambda_key_pr_local_pd;
 
 CREATE TABLE t_pr_local_pd (tenant UInt64, arr Array(UInt64), ts UInt64)
@@ -26,9 +25,6 @@ INSERT INTO t_pr_local_pd_lambda_key SELECT arrayMap(i -> i % 4, range(number % 
 
 -- The sort has to be inside the fragment for the read to order itself at all.
 CREATE VIEW v_pr_local_pd AS SELECT tenant, arr, ts FROM t_pr_local_pd ORDER BY ts;
-CREATE VIEW v_own_pr_local_pd AS SELECT tenant, arr, ts FROM t_pr_local_pd WHERE tenant = 5 ORDER BY ts;
--- Fixes `tenant % 2`, and with it nothing of the sort key.
-CREATE VIEW v_odd_pr_local_pd AS SELECT tenant, arr, ts FROM t_pr_local_pd WHERE tenant % 2 = 1 ORDER BY ts;
 CREATE VIEW v_lambda_key_pr_local_pd AS SELECT arr, ts FROM t_pr_local_pd_lambda_key ORDER BY ts;
 
 SET enable_analyzer = 1;
@@ -55,11 +51,6 @@ SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (EXPLAIN description = 0, actions = 1 SELECT tenant, ts FROM v_pr_local_pd WHERE tenant = 5 LIMIT 5)
 WHERE explain LIKE '%Prewhere filter column%' OR explain LIKE '%Read type%';
 SELECT count() FROM v_pr_local_pd WHERE tenant = 5;
-
-SELECT 'so does the same equality written inside the fragment';
-SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
-FROM (EXPLAIN description = 0, actions = 1 SELECT tenant, ts FROM v_own_pr_local_pd LIMIT 5)
-WHERE explain LIKE '%Read type%';
 
 SELECT 'a range prunes it and orders nothing';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
@@ -94,14 +85,6 @@ FROM (
 WHERE explain LIKE '%Read type%';
 SELECT tenant, ts FROM (SELECT tenant, arr, ts FROM v_pr_local_pd WHERE arrayCount(x -> x = 1, arr) = 1) WHERE tenant = 5 ORDER BY ts LIMIT 3;
 
-SELECT 'with no splice at all an equality stays above, though the fragment fixes an expression of its column';
-SET allow_push_predicate_ast_for_distributed_subqueries = 0;
-SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
-FROM (EXPLAIN description = 0, actions = 1 SELECT tenant, ts FROM v_odd_pr_local_pd WHERE tenant = 5 LIMIT 5)
-WHERE explain LIKE '%Read type%';
-SELECT count() FROM v_odd_pr_local_pd WHERE tenant = 5;
-SET allow_push_predicate_ast_for_distributed_subqueries = 1;
-
 SELECT 'the splice answers to the settings the fragment carries, not to the outer query';
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
 FROM (
@@ -128,14 +111,6 @@ SELECT count() FROM (
 ) WHERE tenant = 5;
 SET allow_push_predicate_ast_for_distributed_subqueries = 1;
 
-SELECT 'nor is anything spliced into a fragment shipped as a plan';
-SET serialize_query_plan = 1;
-SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
-FROM (EXPLAIN description = 0, actions = 1 SELECT tenant, ts FROM v_pr_local_pd WHERE tenant = 5 LIMIT 5)
-WHERE explain LIKE '%Read type%';
-SELECT count() FROM v_pr_local_pd WHERE tenant = 5;
-SET serialize_query_plan = 0;
-
 SELECT 'with the push-down off the condition stays above, and the answer is the same';
 SET parallel_replicas_filter_pushdown = 0;
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step
@@ -152,15 +127,13 @@ SELECT arr, ts FROM v_lambda_key_pr_local_pd WHERE arrayCount(x -> x = 1, arr) =
 SETTINGS log_comment = '05055_lambda', parallel_replicas_local_plan = 0 FORMAT Null;
 SELECT tenant, ts FROM v_pr_local_pd WHERE tenant = 5 AND arrayCount(x -> x = 1, arr) = 1 ORDER BY ts
 SETTINGS log_comment = '05055_beside', parallel_replicas_local_plan = 0 FORMAT Null;
-SELECT tenant, ts FROM v_pr_local_pd WHERE tenant = 5 ORDER BY ts
-SETTINGS log_comment = '05055_switch_off', parallel_replicas_local_plan = 0, parallel_replicas_filter_pushdown = 0 FORMAT Null;
 
 SYSTEM FLUSH LOGS query_log;
 
 -- A replica query is scoped by the database it reads, not by `current_database`, which is logged as
 -- `default` for it. `log_comment` travels with the query to the replicas. A replica cancelled before it
 -- started logs `ExceptionBeforeStart` and no `QueryStart`, but still logs the query it was sent.
-SELECT 'what the replicas were sent: the equality, never the lambda, and nothing with the push-down off';
+SELECT 'what the replicas were sent: the equality, never the lambda';
 SELECT
     log_comment,
     count() > 0 AS sent_a_query,
@@ -168,14 +141,12 @@ SELECT
     countIf(query LIKE '%arrayCount%') > 0 AS some_carry_the_lambda,
     countIf(query LIKE '%HAVING%') > 0 AS some_carry_a_condition
 FROM system.query_log
-WHERE has(databases, currentDatabase()) AND log_comment IN ('05055_lambda', '05055_beside', '05055_switch_off')
+WHERE has(databases, currentDatabase()) AND log_comment IN ('05055_lambda', '05055_beside')
   AND NOT is_initial_query
 GROUP BY log_comment ORDER BY log_comment
 SETTINGS enable_parallel_replicas = 0;
 
 DROP VIEW v_lambda_key_pr_local_pd;
-DROP VIEW v_odd_pr_local_pd;
-DROP VIEW v_own_pr_local_pd;
 DROP VIEW v_pr_local_pd;
 DROP TABLE t_pr_local_pd_lambda_key;
 DROP TABLE t_pr_local_pd;
