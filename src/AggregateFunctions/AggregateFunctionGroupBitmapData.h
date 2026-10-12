@@ -164,6 +164,11 @@ public:
             readStringGrowing(buf, size, in);
 
             roaring_bitmap = std::make_shared<RoaringBitmap>(RoaringBitmap::readSafe(buf.data(), size));
+
+            /// `readSafe` does not validate structure. Reject malformed bitmaps before any set operation.
+            const char * reason = nullptr;
+            if (!roaring_bitmap->internal_validate(&reason))
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid roaring bitmap in groupBitmap state: {}", reason ? reason : "unknown reason");
         }
         else
             throw Exception(ErrorCodes::INCORRECT_DATA, "Unknown type of roaring bitmap");

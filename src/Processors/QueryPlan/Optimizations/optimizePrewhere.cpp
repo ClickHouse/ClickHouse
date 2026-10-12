@@ -265,10 +265,24 @@ void optimizePrewhere(QueryPlan::Node & parent_node, const bool remove_unused_co
         storage.supportedPrewhereColumnsIncludeSubcolumns(),
         getLogger("QueryPlanOptimizePrewhere")};
 
+    /// The existing PREWHERE and the row policy observe the values of the columns they read
+    /// before the moved conditions are applied, so these columns cannot be filtered during the scan.
+    NameSet columns_read_before_filter;
+    if (existing_prewhere_info)
+        for (const auto & input : existing_prewhere_info->prewhere_actions.getInputs())
+            columns_read_before_filter.insert(input->result_name);
+    if (auto row_level_filter = source_step_with_filter->getRowLevelFilter())
+        for (const auto & input : row_level_filter->actions.getInputs())
+            columns_read_before_filter.insert(input->result_name);
+    /// `installTopKDynamicFilter` runs later and prepends `__topKFilter` to PREWHERE, so it reads its column too.
+    if (read_from_merge_tree_step && read_from_merge_tree_step->hasPendingTopKDynamicFilter())
+        columns_read_before_filter.insert(read_from_merge_tree_step->getTopKFilterInfo()->column_name);
+
     auto optimize_result = where_optimizer.optimize(filter_step->getExpression(),
         filter_step->getFilterColumnName(),
         source_step_with_filter->getContext(),
-        is_final);
+        is_final,
+        columns_read_before_filter);
 
     if (optimize_result.prewhere_nodes.empty())
         return;
