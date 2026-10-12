@@ -58,6 +58,14 @@ ColumnCodecs resolveCodecsForWholeColumn(const ColumnDescription & description, 
 
 }
 
+NamesAndTypesList IndexReadTask::getNamesAndTypesList() const
+{
+    NamesAndTypesList res;
+    for (const auto & column : columns)
+        res.emplace_back(column.name, column.type);
+    return res;
+}
+
 String MergeTreeReadTaskColumns::dump() const
 {
     WriteBufferFromOwnString s;
@@ -112,6 +120,20 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
 
     for (size_t i = 0; i < patches.size(); ++i)
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
+}
+
+void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
+{
+    main->updateReadRequestMap(request_map);
+
+    for (auto & reader : prewhere)
+        reader->updateReadRequestMap(request_map);
+
+    if (!patch_request_maps.empty() && patch_request_maps.size() != patches.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} patch request maps for {} patch readers", patch_request_maps.size(), patches.size());
+
+    for (size_t i = 0; i < patch_request_maps.size(); ++i)
+        patches[i]->getReader()->updateReadRequestMap(patch_request_maps[i]);
 }
 
 MergeTreeReadTask::MergeTreeReadTask(
@@ -172,7 +194,7 @@ MergeTreeReadTask::MergeTreeReadTask(
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.
-static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read, const IMergeTreeDataPart & data_part)
+static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read, const IMergeTreeDataPartInfoForReader & part_info)
 {
     if (index_read_tasks.empty())
         return nullptr;
@@ -219,7 +241,11 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
     const auto & index_task = index_read_tasks.at(index_for_step);
     const auto & index = index_task.index.index;
 
-    if (!index->getDeserializedFormat(data_part, index->getFileName()))
+    if (!index->getDeserializedFormat(*part_info.getDataPart(), index->getFileName()))
+        return nullptr;
+
+    /// Or if the index cannot be read in this part (e.g. pending patches).
+    if (!canReadTextIndexInPart(part_info.isProjectionPart() ? nullptr : part_info.getAlterConversions()))
         return nullptr;
 
     return &index_task;
@@ -229,7 +255,9 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const MergeTreeReadTaskInfoPtr & read_info,
     const Extras & extras,
     const MarkRanges & ranges,
-    const std::vector<MarkRanges> & patches_ranges)
+    const std::vector<MarkRanges> & patches_ranges,
+    const MarkRangesPtr & read_request_map,
+    const std::vector<MarkRangesPtr> & patch_read_request_maps)
 {
     Readers new_readers;
 
@@ -243,6 +271,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             ranges,
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
+            extras.columns_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
             extras.reader_settings,
@@ -262,12 +291,13 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         /// is present whenever the list is non-empty; skip the concrete access otherwise.
         const IndexReadTask * index_read_task = read_info->index_read_tasks.empty()
             ? nullptr
-            : getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part_info->getDataPart());
+            : getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part_info);
+
         if (index_read_task)
         {
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
-                index_read_task->index,
+                *index_read_task,
                 pre_columns_per_step,
                 read_info->read_hints.index_granules));
         }
@@ -290,6 +320,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
+            extras.columns_cache,
             extras.mark_cache,
             /*deserialization_prefixes_cache=*/ nullptr,
             extras.reader_settings,
@@ -304,6 +335,11 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             create_patch_reader(i),
             extras.patch_join_cache));
     }
+
+    const auto & map = read_request_map ? read_request_map : read_info->read_request_map;
+    const auto & patch_maps = patch_read_request_maps.empty() ? read_info->patch_read_request_maps : patch_read_request_maps;
+    if (map || !patch_maps.empty())
+        new_readers.updateReadRequestMap(map, patch_maps);
 
     return new_readers;
 }
@@ -552,11 +588,14 @@ void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
-bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere() const
+bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const
 {
     /// Only `prepared_index` (a `MergeTreeReaderIndex`) sits ahead of the PREWHERE readers in the
     /// reader chain and is able to skip whole marks via `canSkipMark`.
-    return readers.prepared_index && readers.prepared_index->canSkipAnyMark();
+    if (!readers.prepared_index)
+        return false;
+    return prewhere_filters_by_top_k_threshold ? readers.prepared_index->canSkipAnyMarkBesidesTopKPrimaryKey()
+                                               : readers.prepared_index->canSkipAnyMark();
 }
 
 bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const

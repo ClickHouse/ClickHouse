@@ -2,6 +2,7 @@
 
 #include <Access/Common/AccessType.h>
 #include <Common/Documentation.h>
+#include <Interpreters/SecretArgumentsSpec.h>
 #include <Common/NamePrompter.h>
 #include <Databases/LoadingStrictnessLevel.h>
 #include <Interpreters/Context_fwd.h>
@@ -56,6 +57,9 @@ public:
         /// True only when the server replays a definition it stored itself, during startup metadata loading.
         /// `internal` does not imply it: wrappers such as `PARALLEL WITH` run user statements as internal ones.
         bool is_metadata_replay = false;
+        /// True when the definition comes from a backup being restored. Weaker than `is_metadata_replay`:
+        /// a backup may be crafted by the user, so it must not skip safety checks.
+        bool is_restore_from_backup = false;
     };
 
     struct EngineFeatures
@@ -84,13 +88,14 @@ public:
         CreatorFn creator_fn;
         EngineFeatures features;
         Documentation documentation;
+        SecretArgumentsSpec secret_arguments;
     };
 
-    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE, bool internal = false, bool is_metadata_replay = false);
+    DatabasePtr get(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode = LoadingStrictnessLevel::CREATE, bool internal = false, bool is_metadata_replay = false, bool is_restore_from_backup = false);
 
     using DatabaseEngines = std::unordered_map<std::string, Creator>;
 
-    void registerDatabase(const std::string & name, CreatorFn creator_fn, EngineFeatures features = EngineFeatures{
+    void registerDatabase(const std::string & name, CreatorFn creator_fn, SecretArgumentsSpec secret_arguments, EngineFeatures features = EngineFeatures{
         .supports_arguments = false,
         .supports_settings = false,
         .supports_table_overrides = false,
@@ -103,6 +108,8 @@ public:
 
     /// Features of a registered database engine, or nullptr if the engine is not registered.
     const EngineFeatures * tryGetDatabaseEngineFeatures(const String & engine_name) const;
+
+    const SecretArgumentsSpec * tryGetSecretArgumentsSpec(const String & engine_name) const;
 
     /// Returns true if the given database engine accesses external data sources.
     bool isDatabaseExternal(const String & engine_name) const;
@@ -118,7 +125,7 @@ public:
 private:
     DatabaseEngines database_engines;
 
-    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal, bool is_metadata_replay);
+    DatabasePtr getImpl(const ASTCreateQuery & create, const String & metadata_path, ContextPtr context, LoadingStrictnessLevel mode, bool internal, bool is_metadata_replay, bool is_restore_from_backup);
 
     /// validate validates the database engine that's specified in the create query for
     /// engine arguments, settings and table overrides.

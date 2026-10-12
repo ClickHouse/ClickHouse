@@ -1,0 +1,28 @@
+1_invalid_utf8	0
+2_valid_utf8	1
+allow_simdjson = 1
+1_invalid_utf8	7B2274657374223A22E0A4227D
+2_valid_utf8	7B2274657374223A22E0A4B9227D
+1_invalid_utf8	7B2261223A22E0A4227D
+2_valid_utf8	7B2261223A22E0A4B9227D
+1_invalid_utf8	7B2261223A22E0A4227D
+2_valid_utf8	7B2261223A22E0A4B9227D
+1_invalid_utf8	E0A4	1	1	1
+2_valid_utf8	E0A4B9	1	1	1
+1_invalid_utf8	1
+2_valid_utf8	1
+1_invalid_utf8	E0A4	1
+2_valid_utf8	E0A4B9	1
+0	0
+allow_simdjson = 0
+1_invalid_utf8	7B2274657374223A22E0A4227D
+2_valid_utf8	7B2274657374223A22E0A4B9227D
+1_invalid_utf8	7B2261223A22E0A4227D
+2_valid_utf8	7B2261223A22E0A4B9227D
+1_invalid_utf8	7B2261223A22E0A4227D
+2_valid_utf8	7B2261223A22E0A4B9227D
+1_invalid_utf8	E0A4	1	1	1
+2_valid_utf8	E0A4B9	1	1	1
+1_invalid_utf8	1
+2_valid_utf8	1
+0	0

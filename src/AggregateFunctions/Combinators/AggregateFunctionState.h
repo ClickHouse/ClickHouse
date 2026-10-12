@@ -34,13 +34,19 @@ private:
 
 public:
     AggregateFunctionState(AggregateFunctionPtr nested_, const DataTypes & arguments_, const Array & params_)
-        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_, nested_->getStateType())
+        : IAggregateFunctionHelper<AggregateFunctionState>(arguments_, params_, createResultType(nested_))
         , nested_func(nested_)
     {}
 
     String getName() const override
     {
         return nested_func->getName() + "State";
+    }
+
+    static DataTypePtr createResultType(const AggregateFunctionPtr & nested_)
+    {
+        DataTypeAggregateFunction::checkSupportedFunctions(nested_);
+        return nested_->getStateType();
     }
 
     const IAggregateFunction & getBaseAggregateFunctionWithSameStateRepresentation() const override
@@ -146,6 +152,16 @@ public:
     void serialize(ConstAggregateDataPtr __restrict place, WriteBuffer & buf, std::optional<size_t> version) const override
     {
         nested_func->serialize(place, buf, version);
+    }
+
+    std::optional<size_t> getSerializedSizeBound(std::optional<size_t> version) const override
+    {
+        return nested_func->getSerializedSizeBound(version);
+    }
+
+    char * serializeToMemory(ConstAggregateDataPtr __restrict place, char * dst, std::optional<size_t> version) const override
+    {
+        return nested_func->serializeToMemory(place, dst, version);
     }
 
     void deserialize(AggregateDataPtr __restrict place, ReadBuffer & buf, std::optional<size_t> version, Arena * arena) const override
