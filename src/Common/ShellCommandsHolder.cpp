@@ -2,6 +2,7 @@
 #include <Common/Exception.h>
 #include <Common/ShellCommandsHolder.h>
 #include <Common/UDFProcessRegistry.h>
+#include <Common/setThreadName.h>
 
 #include <Common/waitForPid.h>
 #include <base/errnoToString.h>
@@ -71,12 +72,17 @@ void ShellCommandsHolder::addCommand(std::unique_ptr<ShellCommand> command)
 void ShellCommandsHolder::addSignalledChild(pid_t pid, std::optional<UInt64> udf_registry_generation)
 {
     std::lock_guard lock(mutex);
-    signalled_children.emplace(pid, udf_registry_generation);
+    /// A pid that is here already was reaped by somebody other than the reaper, and reused: the
+    /// child it stands for now is this one.
+    auto [it, inserted] = signalled_children.insert_or_assign(pid, udf_registry_generation);
 
     /// One that is gone already needs no thread to wait for it - nor does any child once the
-    /// holder is being destroyed: the process is exiting, and the reaper has been stopped.
-    reapSignalledChildren();
-    if (signalled_children.empty() || reaper_shutdown)
+    /// holder is being destroyed: the process is exiting, and the reaper has been stopped. Only
+    /// this child is looked at here, under the mutex that every caller shares: the others are the
+    /// reaper's, which is woken for them below anyway.
+    if (reapSignalledChild(it))
+        return;
+    if (reaper_shutdown)
         return;
 
     if (!reaper)
@@ -115,27 +121,31 @@ ShellCommandsHolder::~ShellCommandsHolder()
         thread->join();
 }
 
+bool ShellCommandsHolder::reapSignalledChild(SignalledChildren::iterator & it)
+{
+    int res = 0;
+    do
+        res = ::waitpid(it->first, nullptr, WNOHANG);
+    while (res < 0 && errno == EINTR);
+
+    /// Still running, or (an error other than `ECHILD`) not known to be gone: tried again later.
+    if (res == 0 || (res < 0 && errno != ECHILD))
+    {
+        ++it;
+        return false;
+    }
+
+    LOG_TRACE(log, "Reaped the signalled command with the pid {}", it->first);
+    if (it->second)
+        UDFProcessRegistry::instance().removeIfGenerationMatches(it->first, *it->second);
+    it = signalled_children.erase(it);
+    return true;
+}
+
 void ShellCommandsHolder::reapSignalledChildren()
 {
     for (auto it = signalled_children.begin(); it != signalled_children.end();)
-    {
-        int res = 0;
-        do
-            res = ::waitpid(it->first, nullptr, WNOHANG);
-        while (res < 0 && errno == EINTR);
-
-        /// Still running, or (an error other than `ECHILD`) not known to be gone: tried again later.
-        if (res == 0 || (res < 0 && errno != ECHILD))
-        {
-            ++it;
-            continue;
-        }
-
-        LOG_TRACE(log, "Reaped the signalled command with the pid {}", it->first);
-        if (it->second)
-            UDFProcessRegistry::instance().removeIfGenerationMatches(it->first, *it->second);
-        it = signalled_children.erase(it);
-    }
+        reapSignalledChild(it);
 }
 
 namespace
@@ -191,6 +201,8 @@ private:
 
 void ShellCommandsHolder::runReaper()
 {
+    setThreadName(ThreadName::SHELL_CMD_REAPER);
+
     /// Without a `pidfd` for some child (an older kernel, a seccomp profile that refuses it) there is
     /// nothing to sleep on until it exits: it is looked at again in steps of this.
     static constexpr int step_without_pidfd_ms = 100;

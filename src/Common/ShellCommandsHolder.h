@@ -36,6 +36,12 @@ public:
     ~ShellCommandsHolder();
 
 private:
+    using SignalledChildren = std::unordered_map<pid_t, std::optional<UInt64>>;
+
+    /// Reaps the signalled child at `it` if it has exited: true, and `it` is moved past the erased
+    /// entry; false, and `it` is advanced, otherwise.
+    bool reapSignalledChild(SignalledChildren::iterator & it) TSA_REQUIRES(mutex);
+
     /// Reaps every signalled child that has exited.
     void reapSignalledChildren() TSA_REQUIRES(mutex);
 
@@ -52,7 +58,7 @@ private:
     std::mutex mutex;
     ShellCommands shell_commands TSA_GUARDED_BY(mutex);
     /// The children `addSignalledChild` took over, with their `UDFProcessRegistry` generations.
-    std::unordered_map<pid_t, std::optional<UInt64>> signalled_children TSA_GUARDED_BY(mutex);
+    SignalledChildren signalled_children TSA_GUARDED_BY(mutex);
     std::optional<std::thread> reaper TSA_GUARDED_BY(mutex);
     /// Opened under `mutex` before the reaper starts and never changed after, so the reaper reads it
     /// without the lock.

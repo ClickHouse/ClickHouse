@@ -215,16 +215,15 @@ void ShellCommand::signalAndHandOverChild()
 
     int retcode = kill(pid, config.terminate_in_destructor_strategy.termination_signal);
     if (retcode != 0)
-    {
         LOG_WARNING(getLogger(), "Cannot kill shell command pid {}, error: '{}'", pid, errnoToString());
-        return;
-    }
 
     /// A UDF command is reaped once it goes on the signal, as a command normally does - left alone,
     /// it would stay a zombie, and an entry in `UDFProcessRegistry`, for as long as the server runs -
     /// but not waited for here: a command can take its time over the signal, and whatever destroys
     /// this (a query, a reload of a whole pool) is not to be held up by it. A command that ignores
-    /// the signal is left running, as it always was. Other commands are left as they always were.
+    /// the signal is left running, as it always was. So is one the signal could not be sent to (it
+    /// has dropped privileges the server lacks, say): still a child of the server, and still in the
+    /// registry, until it exits and is reaped. Other commands are left as they always were.
     if (config.register_in_udf_process_registry)
         handOverChildToReaper();
 }

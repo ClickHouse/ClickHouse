@@ -5,17 +5,10 @@
 #include <Processors/Sources/TimeoutPipeBuffers.h>
 #include <Processors/Sources/ShellCommandSharedMemorySource.h>
 
-#include <climits>
 #include <fcntl.h>
 #include <poll.h>
-#include <sys/ioctl.h>
 
-#include <Common/CurrentMemoryTracker.h>
-#include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
-#include <Common/formatReadable.h>
-#include <Common/LockMemoryExceptionInThread.h>
-#include <Common/ProfileEvents.h>
 #include <Common/Exception.h>
 #include <Common/Stopwatch.h>
 #include <Common/UDFProcessSubtreeSampler.h>
@@ -25,18 +18,11 @@
 #include <Common/ThreadGroupSwitcher.h>
 #include <Common/ErrnoException.h>
 #include <Common/scope_guard_safe.h>
-#include <Common/randomSeed.h>
-#include <pcg_random.hpp>
 
 #include <IO/WriteHelpers.h>
 #include <IO/ReadHelpers.h>
-#include <IO/ReadBufferFromMemory.h>
 
-#include <Common/SharedMemoryRegion.h>
-#include <Common/FailPoint.h>
-#include <Formats/formatBlock.h>
 #include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
 #include <Processors/Executors/CompletedPipelineExecutor.h>
 #include <Processors/Formats/IOutputFormat.h>
 #include <Processors/ISimpleTransform.h>
@@ -45,12 +31,8 @@
 #include <Poco/Util/AbstractConfiguration.h>
 #include <Core/Field.h>
 
-#include <algorithm>
-#include <array>
 #include <atomic>
-#include <cstring>
 
-#include <boost/circular_buffer.hpp>
 #include <fmt/ranges.h>
 
 #include <csignal>
