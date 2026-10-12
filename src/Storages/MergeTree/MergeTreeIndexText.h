@@ -97,7 +97,6 @@ enum class TextIndexScoringKind : UInt8
     BM25 = 1,
 };
 
-/// Parses the value of the `scoring` index argument (`'none'` or `'bm25'`); throws `BAD_ARGUMENTS` for other values.
 TextIndexScoringKind parseTextIndexScoringKind(std::string_view name);
 std::string_view toString(TextIndexScoringKind kind);
 
@@ -179,8 +178,7 @@ struct PostingListBuildContext
 /// Builds one token's posting list during the index build.
 /// Up to inline_capacity row ids live inline (no heap allocation for the many rare tokens).
 /// Frequent tokens spill to `Large`, whose raw values flush to an encoder every `append_granularity` row ids.
-/// `Large` is also the extension point for optional per-token payloads that cannot live inline:
-/// positions for phrase search, term frequencies for BM25 scoring.
+/// `Large` is also the extension point for optional per-token payloads that cannot live inline: positions, scoring data.
 struct PostingListBuilder
 {
 public:
@@ -304,6 +302,7 @@ struct PostingsSerialization
     /// The same, but appends the row ids to `row_ids`. If `term_frequencies` is not null, one exact term frequency
     /// per decoded row id is appended to it (`1` for every row if the posting list stores no term frequencies).
     void deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> * term_frequencies);
+
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
     MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
 
@@ -457,8 +456,7 @@ struct TextIndexSerialization
     /// Appends the per-row `SmallFloat` document lengths to the `.dl` substream, which holds one uncompressed byte per row.
     /// It is read like a column, so it gets a mark per granule of the part (from `state`). The text index has one granule
     /// per part, so the mark of the first granule is written by the caller with the marks of the other substreams.
-    static void serializeDocLengths(
-        const PaddedPODArray<UInt8> & doc_lengths, MergeTreeIndexOutputStreams & streams, const MergeTreeIndexSerializationState & state);
+    static void serializeDocLengths(const PaddedPODArray<UInt8> & doc_lengths, MergeTreeIndexOutputStreams & streams, const MergeTreeIndexSerializationState & state);
 
     /// Reject a token the reader would refuse (throws `TOO_LARGE_STRING_SIZE`); call before copying a token elsewhere.
     static void checkTokenSize(size_t token_size);
@@ -655,8 +653,6 @@ struct MergeTreeIndexTextGranuleBuilder
 
     void incrementCurrentRow();
 
-    /// Continues the row numbering of an empty builder from `row`, so that the row ids of the next temporary
-    /// segment of the index materialization stay absolute within the part. Its `doc_lengths` start at `row`.
     void setCurrentRow(size_t row)
     {
         chassert(is_empty && doc_lengths.empty());
@@ -761,7 +757,6 @@ public:
 
     MergeTreeIndexGranulePtr createIndexGranule() const override;
     MergeTreeIndexAggregatorPtr createIndexAggregator() const override;
-    using IMergeTreeIndex::createIndexCondition;
 
     MergeTreeIndexConditionPtr createIndexCondition(const ActionsDAG::Node * predicate, ContextPtr context) const override;
 

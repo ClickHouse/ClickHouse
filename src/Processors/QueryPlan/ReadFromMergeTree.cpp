@@ -62,6 +62,7 @@
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
 #include <Storages/MergeTree/MergeTreeIndexMinMax.h>
 #include <Storages/MergeTree/MergeTreeIndexReadResultPool.h>
+#include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeIndexVectorSimilarity.h>
 #include <Storages/MergeTree/BM25State.h>
 #include <Storages/MergeTree/MergeTreePrefetchedReadPool.h>
@@ -6634,8 +6635,16 @@ bool ReadFromMergeTree::computesSortColumnForTopK(const ActionsDAG::Node & sort_
     if (sort_column_node.type != ActionsDAG::ActionType::FUNCTION || !sort_column_node.function_base || sort_column_node.function_base->getName() != "bm25")
         return false;
 
-    /// The direct read from a text index rewrites the call, or rejects it when no index can compute it.
-    return std::ranges::any_of(storage_snapshot->metadata->getSecondaryIndices(), [](const auto & index) { return index.type == "text"; });
+    /// The direct read from a text index with scoring rewrites the call, or rejects it when no index can compute it.
+    return std::ranges::any_of(storage_snapshot->metadata->getSecondaryIndices(), [&](const auto & index)
+    {
+        if (index.type != "text")
+            return false;
+
+        auto index_helper = MergeTreeIndexFactory::instance().get(storage_snapshot->metadata, index, *data_settings);
+        const auto * text_index = typeid_cast<const MergeTreeIndexText *>(index_helper.get());
+        return text_index && text_index->getParams().hasScoring();
+    });
 }
 
 RangesInDataParts ReadFromMergeTree::getPartsForPrewhere() const

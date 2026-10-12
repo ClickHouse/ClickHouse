@@ -1897,8 +1897,7 @@ static DictionarySparseIndex serializeTokensAndPostings(
     return DictionarySparseIndex(std::move(sparse_index_tokens), std::move(sparse_index_offsets));
 }
 
-void TextIndexSerialization::serializeDocLengths(
-    const PaddedPODArray<UInt8> & doc_lengths, MergeTreeIndexOutputStreams & streams, const MergeTreeIndexSerializationState & state)
+void TextIndexSerialization::serializeDocLengths(const PaddedPODArray<UInt8> & doc_lengths, MergeTreeIndexOutputStreams & streams, const MergeTreeIndexSerializationState & state)
 {
     auto * stream = streams.at(MergeTreeIndexSubstream::Type::TextIndexDocLengths);
     if (!stream)
