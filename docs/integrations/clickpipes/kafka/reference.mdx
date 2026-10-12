@@ -31,8 +31,6 @@ import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/Experi
 Google Managed Kafka and GCP workload identity authentication are in Private Preview. Follow the [GCP workload identity guide](/integrations/clickpipes/security/gcp-workload-identity) to retrieve and authorize the ClickPipes-managed service account.
 </Note>
 
-For Google Managed Kafka, ClickPipes can authenticate as a ClickPipes-managed Google service account without storing a customer service account key. This requires a ClickHouse Cloud service and ClickPipes deployment running on GCP.
-
 Grant the ClickPipes service account `roles/managedkafka.client` in the project containing the Managed Kafka cluster. At broker connection time, this provides the `managedkafka.clusters.connect` permission required for SASL authentication. It does not replace Kafka ACLs.
 
 If your cluster has ACLs for the selected resources, grant the service account principal (`User:<service-account-email>`) these operations:

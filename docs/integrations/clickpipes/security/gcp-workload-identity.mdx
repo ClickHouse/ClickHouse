@@ -104,14 +104,12 @@ The service context fields have these meanings:
 
 ## Grant access to the source {#grant-source-access}
 
-Use `serviceAccount:<principal>` as the IAM member, where `<principal>` is the email returned in the service context. Grant it only the roles required by your source:
+Use `serviceAccount:<principal>` as the IAM member, where `<principal>` is the email returned in the service context. Grant it only the roles required by your source, as described in the source's permissions section:
 
-| Source | Required access |
-|--------|-----------------|
-| [BigQuery](/integrations/clickpipes/bigquery/overview#permissions) | `roles/bigquery.dataViewer` on the source datasets, `roles/bigquery.jobUser` on the project that runs jobs, and `roles/storage.objectAdmin` plus `roles/storage.bucketViewer` on the staging bucket. |
-| [Google Managed Service for Apache Kafka](/integrations/clickpipes/kafka/reference#gcp-workload-identity) | `roles/managedkafka.client` on the cluster project, plus the required Kafka topic and consumer group ACLs. |
-| [Google Cloud Storage](/integrations/clickpipes/object-storage/gcs/overview#permissions) | `roles/storage.objectViewer` on the source bucket. Unordered ingestion also requires `roles/pubsub.subscriber` and `roles/pubsub.viewer` on the notification subscription. |
-| [Google Cloud Pub/Sub](/integrations/clickpipes/pubsub/auth#required-permissions) | A custom role containing the required Pub/Sub permissions, or `roles/pubsub.editor`, on the project where ClickPipes manages the subscription. |
+- [BigQuery](/integrations/clickpipes/bigquery/overview#permissions)
+- [Google Managed Service for Apache Kafka](/integrations/clickpipes/kafka/reference#gcp-workload-identity)
+- [Google Cloud Storage](/integrations/clickpipes/object-storage/gcs/overview#permissions)
+- [Google Cloud Pub/Sub](/integrations/clickpipes/pubsub/auth#use-workload-identity)
 
 ClickPipes cannot create IAM bindings in your Google Cloud project. Create the grants before creating the ClickPipe. When managing the grants and ClickPipe in the same Terraform configuration, use `depends_on` to enforce this ordering.
 
