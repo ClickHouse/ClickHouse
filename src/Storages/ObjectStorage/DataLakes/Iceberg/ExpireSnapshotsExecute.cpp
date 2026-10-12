@@ -425,6 +425,7 @@ ExpiredFiles collectExpiredFiles(
     ExpiredFiles result;
     std::set<Iceberg::IcebergPathFromMetadata> seen_expired_manifest_list_paths;
     std::set<Iceberg::IcebergPathFromMetadata> seen_expired_manifest_paths;
+    std::set<Iceberg::IcebergPathFromMetadata> seen_expired_file_paths;
     for (const auto & manifest_list_path : expired_manifest_list_paths)
     {
         if (retained_manifest_list_paths.contains(manifest_list_path))
@@ -459,14 +460,23 @@ ExpiredFiles collectExpiredFiles(
                     manifest_entry, current_schema_id);
 
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::DATA))
-                    if (!retained_data_file_paths.contains(entry->parsed_entry->file_path_key))
-                        result.push_back({entry->parsed_entry->file_path_key, FileCategory::DATA_FILE});
+                {
+                    const auto & key = entry->parsed_entry->file_path_key;
+                    if (!retained_data_file_paths.contains(key) && seen_expired_file_paths.insert(key).second)
+                        result.push_back({key, FileCategory::DATA_FILE});
+                }
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::POSITION_DELETE))
-                    if (!retained_data_file_paths.contains(entry->parsed_entry->file_path_key))
-                        result.push_back({entry->parsed_entry->file_path_key, FileCategory::POSITION_DELETE_FILE});
+                {
+                    const auto & key = entry->parsed_entry->file_path_key;
+                    if (!retained_data_file_paths.contains(key) && seen_expired_file_paths.insert(key).second)
+                        result.push_back({key, FileCategory::POSITION_DELETE_FILE});
+                }
                 for (const auto & entry : entries_handle.getFilesWithoutDeleted(FileContentType::EQUALITY_DELETE))
-                    if (!retained_data_file_paths.contains(entry->parsed_entry->file_path_key))
-                        result.push_back({entry->parsed_entry->file_path_key, FileCategory::EQUALITY_DELETE_FILE});
+                {
+                    const auto & key = entry->parsed_entry->file_path_key;
+                    if (!retained_data_file_paths.contains(key) && seen_expired_file_paths.insert(key).second)
+                        result.push_back({key, FileCategory::EQUALITY_DELETE_FILE});
+                }
             }
             catch (...)
             {
@@ -631,7 +641,7 @@ void updateMetadataForExpiration(
     metadata->set(Iceberg::f_last_updated_ms, ms.count());
 }
 
-/// Counts only the files it deleted; a file it fails to delete stays in storage and is counted in `failed_deletions_count`.
+/// Counts only the files it deleted; a removal that throws is counted in `failed_deletions_count` instead.
 ExpireSnapshotsResult deleteExpiredFiles(
     const ExpiredFiles & files,
     const Iceberg::IcebergPathResolver & path_resolver,

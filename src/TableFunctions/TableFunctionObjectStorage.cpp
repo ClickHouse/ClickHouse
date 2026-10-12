@@ -2074,7 +2074,7 @@ The command returns a table with two columns (`metric_name String`, `metric_valu
 | `deleted_manifest_lists_count` | Number of manifest list files deleted |
 | `deleted_statistics_files_count` | Number of statistics files deleted (always 0 currently) |
 | `dry_run` | `1` for dry-run mode, `0` for normal execution |
-| `failed_deletions_count` | Number of files that could not be deleted. They are left in storage and `remove_orphan_files` can delete them later |
+| `failed_deletions_count` | Number of files whose deletion returned an error. Such a file may be left in storage, and `remove_orphan_files` can delete it later |
 
 The command performs the following steps:
 
