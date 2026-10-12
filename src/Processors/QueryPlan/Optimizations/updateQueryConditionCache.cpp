@@ -1,6 +1,8 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
+#include <Processors/QueryPlan/ReadFromMemoryStorageStep.h>
 #include <Functions/IFunction.h>
 #include <Interpreters/Cache/QueryConditionCache.h>
 #include <Interpreters/Context.h>
@@ -28,12 +30,48 @@ using VirtualColumnUtils::isDeterministicAllowingTopKFilter;
 ///
 /// Later on, the hashed filter condition will be used as a key in the query condition cache.
 ///
+/// For a `Memory` table, the source reads the cache and decides whether the filter step may write to it,
+/// by attaching `MarkRangesInfo` to the chunks, see `MemorySourceFilter`.
+static void updateQueryConditionCacheForMemory(const Stack & stack, const ReadFromMemoryStorageStep & read_from_memory)
+{
+    const auto condition_hash = read_from_memory.getFilterConditionHashForQueryConditionCache();
+    if (!condition_hash)
+        return;
+
+    /// The filter step records the granules of the chunks it gets by the positions of the rows, so only
+    /// the expression steps that keep the rows may be between it and the read.
+    for (auto iter = stack.rbegin() + 1; iter != stack.rend(); ++iter)
+    {
+        if (const auto * expression_step = typeid_cast<const ExpressionStep *>(iter->node->step.get()))
+        {
+            if (expression_step->getExpression().hasArrayJoin())
+                return;
+            continue;
+        }
+
+        auto * filter_step = typeid_cast<FilterStep *>(iter->node->step.get());
+        if (!filter_step)
+            return;
+
+        const auto * filter_node = filter_step->getExpression().tryFindInOutputs(filter_step->getFilterColumnName());
+        if (filter_node && VirtualColumnUtils::isDeterministic(filter_node) && !filter_step->getExpression().hasArrayJoin())
+            filter_step->setConditionForQueryConditionCache(*condition_hash, read_from_memory.getFilterActionsDAG()->getNames()[0]);
+        return;
+    }
+}
+
 void updateQueryConditionCache(const Stack & stack, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (!optimization_settings.use_query_condition_cache)
         return;
 
     const auto & frame = stack.back();
+
+    if (const auto * read_from_memory = typeid_cast<const ReadFromMemoryStorageStep *>(frame.node->step.get()))
+    {
+        updateQueryConditionCacheForMemory(stack, *read_from_memory);
+        return;
+    }
 
     auto * read_from_merge_tree = dynamic_cast<ReadFromMergeTree *>(frame.node->step.get());
     if (!read_from_merge_tree)
