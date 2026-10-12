@@ -50,7 +50,18 @@ for predicate in "${PREDICATES[@]}"; do
 done
 
 echo "pruning never changes a result"
+# One client per table and mode: starting a client per predicate is slow under sanitizers.
+matching_ids_for_all()
+{
+    local table=$1 settings=$2 i=0
+    shift 2
+    for predicate in "$@"; do
+        i=$((i + 1))
+        echo "SELECT ${i}, groupArray(id) FROM (SELECT id FROM icebergLocal('${DIR}/${table}') WHERE ${predicate} ORDER BY id) ${settings};"
+    done | $CH --multiquery
+}
 for table in unpartitioned identity day hour bucket; do
+    predicates=()
     for predicate in "${PREDICATES[@]}"; do
         # Bucket pruning for pre-1970 values is not spec-conformant yet: `icebergBucket` truncates
         # nanoseconds to microseconds toward zero instead of flooring (bucket 12 instead of 8 for -1 ns),
@@ -58,10 +69,10 @@ for table in unpartitioned identity day hour bucket; do
         if [ "${table}" = bucket ] && [[ "${predicate}" == *"1969-12-31"* ]]; then
             continue
         fi
-        pruned=$(matching_ids "${table}" "${predicate}")
-        full=$(matching_ids "${table}" "${predicate}" "SETTINGS ${NO_PRUNING}")
-        [ "${pruned}" = "${full}" ] || echo "${table}: ${predicate}: ${pruned} with pruning, ${full} without"
+        predicates+=("${predicate}")
     done
+    diff <(matching_ids_for_all "${table}" "" "${predicates[@]}") \
+         <(matching_ids_for_all "${table}" "SETTINGS ${NO_PRUNING}" "${predicates[@]}") | sed "s/^/${table}: /"
     stats="SELECT count(), min(ts), max(ts), min(tstz), max(tstz) FROM icebergLocal('${DIR}/${table}')"
     [ "$($CH --query "${stats}")" = "$($CH --query "${stats} SETTINGS ${NO_PRUNING}")" ] || echo "${table}: statistics differ"
 done

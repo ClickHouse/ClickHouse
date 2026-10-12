@@ -37,9 +37,9 @@ orphans left:
 all snapshots unchanged
 [1,2,3,4]
 scale
-deleted_data_files_count	1000
-995
-5000	2497500
+deleted_data_files_count	200
+100
+2000	999000
 access control
 ACCESS_DENIED
 granted

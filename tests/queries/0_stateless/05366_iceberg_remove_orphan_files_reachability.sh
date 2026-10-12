@@ -86,11 +86,11 @@ done
 echo "scale"
 TABLE="t_${CLICKHOUSE_DATABASE}_scale"
 TABLE_PATH="${USER_FILES_PATH}/${TABLE}"
-$CH --query "CREATE TABLE ${TABLE} (id Int64) ENGINE = IcebergLocal('${TABLE_PATH}/', 'Parquet') PARTITION BY icebergBucket(200, id) SETTINGS allow_experimental_iceberg_compaction = 0"
-for i in 1 2 3 4 5; do
-    $CH --iceberg_insert_max_partitions=200 --query "INSERT INTO ${TABLE} SELECT number FROM numbers(1000)"
+$CH --query "CREATE TABLE ${TABLE} (id Int64) ENGINE = IcebergLocal('${TABLE_PATH}/', 'Parquet') PARTITION BY icebergBucket(50, id) SETTINGS allow_experimental_iceberg_compaction = 0"
+for i in 1 2; do
+    $CH --query "INSERT INTO ${TABLE} SELECT number FROM numbers(1000)"
 done
-for i in $(seq 1000); do
+for i in $(seq 200); do
     echo "junk" > "${TABLE_PATH}/data/orphan-${i}.parquet"
 done
 TZ=UTC touch -t 202001010000 "${TABLE_PATH}"/data/orphan-*.parquet

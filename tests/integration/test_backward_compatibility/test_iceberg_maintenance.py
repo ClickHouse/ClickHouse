@@ -90,7 +90,7 @@ def test_iceberg_table_maintained_across_versions(started_cluster):
     expected += "5\te\n"
     assert new_node.query(SELECT_ALL) == expected
 
-    # A replica still on the old version reads and writes the table maintained by the new one.
+    # A replica still on the old version reads the table maintained by the new one. It does not write:
+    # 26.3 copies manifest-list entries of newer writers without converting them and corrupts the
+    # table (fixed on master by https://github.com/ClickHouse/ClickHouse/pull/98162, not in 26.3).
     assert old_node.query(SELECT_ALL) == expected
-    old_node.query("INSERT INTO t VALUES (6, 'f')", settings=WRITE_SETTINGS)
-    assert new_node.query(SELECT_ALL) == expected + "6\tf\n"
