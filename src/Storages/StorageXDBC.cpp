@@ -116,7 +116,10 @@ std::function<void(std::ostream &)> StorageXDBC::getReadPOSTDataCallback(
         /*limit=*/ {},
         /*unsupported_functions=*/ {},
         /*local_only_columns=*/ {},
-        /*require_dialect_neutral_literals=*/ true);
+        /*require_dialect_neutral_literals=*/ true,
+        /// ODBC/JDBC bridges do not expose the remote LIMIT syntax, and some supported
+        /// databases (for example Oracle and SQL Server) do not accept LIMIT at all.
+        /*allow_limit_push_down=*/ false);
     LOG_TRACE(log, "Query: {}", query);
 
     NamesAndTypesList cols;

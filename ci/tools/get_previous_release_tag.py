@@ -2,7 +2,7 @@
 
 import logging
 import re
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Iterable, List, Optional, Tuple
 
 from build_download_helper import get_gh_api
 from git_helper import TAG_REGEXP
@@ -13,8 +13,18 @@ from version_helper import (
 )
 
 CLICKHOUSE_TAGS_URL = "https://api.github.com/repos/ClickHouse/ClickHouse/releases"
-PACKAGE_REGEXP = r"\Aclickhouse-common-static_.+[.]deb"
 RELEASES_PER_PAGE = 100
+
+# Packages that the upgrade check actually installs (see `install_packages` in
+# `tests/docker_scripts/stress_tests.lib`). Only these are essential; a hiccup
+# while downloading any of the other assets (e.g. `clickhouse-keeper`) must not
+# fail the job.
+REQUIRED_PACKAGE_PREFIXES = (
+    "clickhouse-common-static_",
+    "clickhouse-common-static-dbg_",
+    "clickhouse-server_",
+    "clickhouse-client_",
+)
 
 logger = logging.getLogger(__name__)
 
@@ -36,6 +46,22 @@ class ReleaseInfo:
         return f"ReleaseInfo: {self.version.describe}"
 
 
+def required_package_prefixes(debug: bool) -> Tuple[str, ...]:
+    # The debug-symbols package is only downloaded (and installed) in debug mode.
+    return tuple(
+        prefix for prefix in REQUIRED_PACKAGE_PREFIXES if debug or "-dbg_" not in prefix
+    )
+
+
+def missing_required_packages(assets: Iterable[str], debug: bool) -> List[str]:
+    names = list(assets)
+    return [
+        prefix
+        for prefix in required_package_prefixes(debug)
+        if not any(n.startswith(prefix) and n.endswith("_amd64.deb") for n in names)
+    ]
+
+
 def find_previous_release(
     server_version: Optional[ClickHouseVersion], releases: List[ReleaseInfo]
 ) -> Tuple[bool, Optional[ReleaseInfo]]:
@@ -50,14 +76,16 @@ def find_previous_release(
     for release in releases:
         if release.version < server_version:
             # A tag exists for a short period before its packages are uploaded.
-            if any(re.match(PACKAGE_REGEXP, name) for name in release.assets.keys()):
+            # The upgrade check installs the debug-symbols package as well.
+            missing = missing_required_packages(release.assets, debug=True)
+            if not missing:
                 return True, release
 
             logger.warning(
-                "Skipping v%s-%s: no uploaded package matching %s",
+                "Skipping v%s-%s: required packages not uploaded yet: %s",
                 release.version,
                 release.type,
-                PACKAGE_REGEXP,
+                ", ".join(missing),
             )
 
     return False, None
