@@ -79,9 +79,7 @@ DataTypeObject::DataTypeObject(
     , max_dynamic_paths(max_dynamic_paths_)
     , max_dynamic_types(max_dynamic_types_)
 {
-    /// Check if regular expressions are valid and keep them compiled: the loop below is
-    /// O(typed_paths * path_regexps_to_skip), so compiling there would make constructing
-    /// the type quadratic in the size of its own declaration.
+    /// Check if regular expressions are valid.
     std::vector<std::unique_ptr<re2::RE2>> compiled_regexps_to_skip;
     compiled_regexps_to_skip.reserve(path_regexps_to_skip.size());
     for (const auto & regexp_str : path_regexps_to_skip)
