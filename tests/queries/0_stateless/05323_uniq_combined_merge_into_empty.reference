@@ -36,10 +36,12 @@ uniqCombined64	small	medium	512	1	1
 uniqCombined64	small_disjoint	large	100324	1	1
 uniqCombined64	small_disjoint	medium	522	1	1
 uniqCombined64	small_full	medium_almost_full	4123	1	1
-merge of a small state into a medium state which the union fills, both orders: the same results as before copying the medium state
+merge of a small state into a medium state which the union fills, both orders
 uniqCombined	new_then_duplicate	8192	8217
 uniqCombined	only_duplicates	8192	8217
 uniqCombined(12)	new_then_duplicate	256	255
 uniqCombined(12)	only_duplicates	255	255
 uniqCombined64	new_then_duplicate	4096	4105
 uniqCombined64	only_duplicates	4096	4105
+merge of a medium state, which is the result of a merge of a small state into a medium state, at the boundary of the medium set
+256

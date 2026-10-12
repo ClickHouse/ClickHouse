@@ -1,5 +1,6 @@
--- `uniqCombined` merge where the right-hand state is in a bigger container than the left-hand one
--- (in particular, merge into an empty state): the right-hand container is copied and the left-hand values are inserted into it.
+-- `uniqCombined` merge where the right-hand state is in a bigger container than the left-hand one (in particular, merge into an empty state).
+-- A right-hand `HyperLogLogCounter` is copied and the left-hand values are inserted into it; medium sets are merged value by value,
+-- because the layout of the hash table, and so when a later merge converts it to `HyperLogLogCounter`, depends on the order of insertion.
 -- The small set holds 16 values. The medium hash set holds 2^(K - 5) values with 64-bit hashes and twice as many with 32-bit hashes:
 -- 8192 for `uniqCombined` (K = 17, 32-bit), 4096 for `uniqCombined64` (K = 17, 64-bit), 256 for `uniqCombined(12)` (32-bit).
 
@@ -57,7 +58,7 @@ WHERE a.fn = b.fn AND (a.name, b.name) IN [
     ('small_full', 'medium_almost_full')]
 ORDER BY a.fn, a.name, b.name;
 
-SELECT 'merge of a small state into a medium state which the union fills, both orders: the same results as before copying the medium state';
+SELECT 'merge of a small state into a medium state which the union fills, both orders';
 -- Either a full medium set and a small set of its values only, or a medium set with one free slot and a small set of a new value followed by one of its values.
 SELECT fn, case,
     multiIf(fn = 'uniqCombined', arrayReduce('uniqCombinedMerge', [arrayReduce('uniqCombinedState', lhs), arrayReduce('uniqCombinedState', rhs)]),
@@ -75,6 +76,14 @@ FROM
         ('new_then_duplicate', [1000000, 0], range(medium_max - 1))]::Array(Tuple(String, Array(UInt64), Array(UInt64))) AS c
 )
 ORDER BY fn, case;
+
+SELECT 'merge of a medium state, which is the result of a merge of a small state into a medium state, at the boundary of the medium set';
+WITH
+    arrayReduce('uniqCombinedState(12)', [toUInt64(1000443)]) AS a,
+    arrayReduce('uniqCombinedState(12)', range(toUInt64(255))) AS b,
+    arrayReduce('uniqCombinedMergeState(12)', [a, b]) AS s,
+    arrayReduce('uniqCombinedState(12)', arrayConcat(range(toUInt64(17)), [toUInt64(1000443)])) AS t
+SELECT arrayReduce('uniqCombinedMerge(12)', [t, s]);
 
 DROP TABLE ranges;
 DROP TABLE states;

@@ -200,12 +200,13 @@ public:
         auto container_type = getContainerType();
         auto rhs_container_type = rhs.getContainerType();
 
-        /// When rhs is in a bigger container, copy that container and insert our values into the copy:
-        /// we have fewer values than rhs, and copying a container is much cheaper than rebuilding it value by value
-        /// (or walking all buckets of `HyperLogLogCounter` one at a time). This is common, as merging into an empty state
-        /// happens in `-Merge`, `AggregatingSortedTransform` and squashing of aggregate function columns.
-        /// The set of values is the same, and `HyperLogLogCounter` does not depend on the order of insertion.
-        /// Whether a medium set is converted to `HyperLogLogCounter` does, so the medium set is copied only when that cannot happen.
+        /// When rhs is `HyperLogLogCounter` and we are not, copy it and insert our values into the copy:
+        /// copying is much cheaper than walking all buckets of `HyperLogLogCounter` one at a time.
+        /// This is common, as merging into an empty state happens in `-Merge`, `AggregatingSortedTransform`
+        /// and squashing of aggregate function columns.
+        /// The result is the same, because `HyperLogLogCounter` does not depend on the order of insertion.
+        /// Medium sets are not copied: the layout of a hash table depends on the order of insertion,
+        /// and so does, through the order of iteration, when a later merge converts it to `HyperLogLogCounter`.
         if (rhs_container_type == details::ContainerType::LARGE && container_type != details::ContainerType::LARGE)
         {
             toLarge(std::make_unique<Large>(rhs.getContainer<Large>()));
@@ -213,23 +214,7 @@ public:
         }
 
         if (rhs_container_type == details::ContainerType::MEDIUM && container_type == details::ContainerType::SMALL)
-        {
-            const auto & rhs_medium = rhs.getContainer<Medium>();
-
-            /// `insert` into a full medium set converts it to `HyperLogLogCounter` even for a value that is already there,
-            /// so whether the merge converts depends on the order of insertion when the union may fill the medium set.
-            /// Copy only if the union cannot fill it before the last value: then neither order converts, and the result is the same.
-            if (rhs_medium.size() + small.size() <= medium_set_size_max)
-            {
-                /// Reserve the same buffer size as rhs, so that the copy does not reallocate.
-                auto tmp_medium = std::make_unique<Medium>(rhs_medium.size());
-                *tmp_medium = rhs_medium;
-                toMedium(std::move(tmp_medium));
-                return;
-            }
-
             toMedium();
-        }
 
         /// Here our container is not smaller than the one of rhs.
         if (rhs_container_type == details::ContainerType::SMALL)
@@ -281,11 +266,12 @@ public:
     }
 
 private:
-    /// Inserts our values into `tmp_medium` (an empty set by default) and switches to it.
-    void toMedium(std::unique_ptr<Medium> tmp_medium = std::make_unique<Medium>())
+    void toMedium()
     {
         if (getContainerType() != details::ContainerType::SMALL)
             throw Poco::Exception("Internal error", ErrorCodes::LOGICAL_ERROR);
+
+        auto tmp_medium = std::make_unique<Medium>();
 
         for (const auto & x : small)
             tmp_medium->insert(x.getValue());
