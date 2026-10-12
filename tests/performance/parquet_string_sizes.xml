@@ -1,0 +1,34 @@
+<!--
+    `length(s)`, `empty(s)`, `notEmpty(s)` and `s != ''` over a Parquet file read only the string
+    lengths (the `s.size` subcolumn) instead of decoding and copying every string.
+
+    The fixture is shaped like ClickBench's `hits.parquet`: `url` is a long, high-cardinality string
+    (PLAIN pages) with 10% empty values, `phrase` is a mostly empty, low-cardinality string
+    (dictionary pages), `counter` is a low-cardinality integer.
+
+    The first queries are ClickBench Q28 and Q31 analogs. The last query is the counterweight: `LIKE`
+    needs the strings, so it must not change.
+-->
+<test>
+    <fill_query><![CDATA[
+        INSERT INTO FUNCTION file('test_parquet_string_sizes.parquet', Parquet)
+        SELECT
+            toUInt32(number % 1000) AS counter,
+            if(number % 10 = 0, '', concat('https://example.com/', repeat('path/', number % 8), toString(intHash64(number)), '.html')) AS url,
+            if(number % 7 = 0, concat('phrase ', toString(number % 1000)), '') AS phrase
+        FROM numbers(10000000)
+        SETTINGS output_format_parquet_row_group_size = 1000000,
+                 engine_file_truncate_on_insert = 1,
+                 max_block_size = 1000000,
+                 max_insert_block_size = 1000000
+    ]]></fill_query>
+
+    <query><![CDATA[SELECT counter, avg(length(url)) AS l, count() AS c FROM file('test_parquet_string_sizes.parquet', Parquet) WHERE url != '' GROUP BY counter ORDER BY l DESC LIMIT 25 SETTINGS max_threads = 1 FORMAT Null]]></query>
+    <query><![CDATA[SELECT counter, count() AS c FROM file('test_parquet_string_sizes.parquet', Parquet) WHERE phrase != '' GROUP BY counter ORDER BY c DESC LIMIT 10 SETTINGS max_threads = 1 FORMAT Null]]></query>
+    <query><![CDATA[SELECT count() FROM file('test_parquet_string_sizes.parquet', Parquet) WHERE notEmpty(phrase) SETTINGS max_threads = 1 FORMAT Null]]></query>
+    <query><![CDATA[SELECT count() FROM file('test_parquet_string_sizes.parquet', Parquet) WHERE empty(url) SETTINGS max_threads = 1 FORMAT Null]]></query>
+    <query><![CDATA[SELECT sum(length(url)) FROM file('test_parquet_string_sizes.parquet', Parquet) SETTINGS max_threads = 1 FORMAT Null]]></query>
+
+    <!-- Counterweight: the strings are needed. -->
+    <query><![CDATA[SELECT count() FROM file('test_parquet_string_sizes.parquet', Parquet) WHERE url LIKE '%abc%' SETTINGS max_threads = 1 FORMAT Null]]></query>
+</test>
