@@ -5,6 +5,8 @@ set enable_analyzer=1;
 set mutations_sync=1;
 set parallel_replicas_local_plan = 1, parallel_replicas_support_projection = 1, optimize_aggregation_in_order = 0;
 SET optimize_use_projections = 1, optimize_use_implicit_projections = 1, optimize_use_projection_filtering = 1;
+-- A `WHERE` moved to `PREWHERE` renders as `Expression`, not `Filter`, in the plans asserted below.
+SET optimize_move_to_prewhere = 1, query_plan_optimize_prewhere = 1;
 
 drop table if exists test;
 
@@ -27,6 +29,8 @@ explain indexes=1 select t from test where t.a = 1 settings enable_parallel_repl
 select trimLeft(*) from (explain indexes=1 select t from test where t.a = 1) where explain like '%ReadFromMergeTree%';
 select t from test where t.a = 1;
 
+-- The sorting key of p3 is `Array(Nullable(Int64))`: a range over such values orders a nested NULL
+-- first while the data and the predicate order it last, so it cannot bound what the predicate compares.
 explain indexes=1 select json from test where json.c[].d.:Int64 = [1] settings enable_parallel_replicas=0;
 select trimLeft(*) from (explain indexes=1 select json from test where json.c[].d.:Int64 = [1]) where explain like '%ReadFromMergeTree%';
 select json from test where json.c[].d.:Int64 = [1];
