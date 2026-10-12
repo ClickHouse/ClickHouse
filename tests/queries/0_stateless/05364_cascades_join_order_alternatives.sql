@@ -44,7 +44,8 @@ SELECT '-- the fact table is joined with the broadcast dimension before any shuf
 SELECT trimLeft(explain) FROM (EXPLAIN SELECT sum(f.v) FROM t_alt_fact AS f JOIN t_alt_bridge AS b ON f.p = b.p AND f.s = b.s JOIN t_alt_dim AS d ON b.p = d.p WHERE d.name LIKE '%keep%'
     -- The fact table and the dimension are joined only through the bridge's key, so the order that joins
     -- them first needs the transitive predicate; the runner may turn that off, and may fix the join sides.
-    SETTINGS enable_join_transitive_predicates = 1, query_plan_join_swap_table = 'auto')
+    -- One other order is enough here: the fact table first is the second cheapest by rows.
+    SETTINGS enable_join_transitive_predicates = 1, query_plan_join_swap_table = 'auto', cascades_join_order_alternatives = 1)
 WHERE explain LIKE '%JoinLogical%' OR explain LIKE '%ReadFromMergeTree%' OR explain LIKE '%Exchange%';
 SELECT '-- the same result with either order and on one node';
 SELECT sum(f.v), count() FROM t_alt_fact AS f JOIN t_alt_bridge AS b ON f.p = b.p AND f.s = b.s JOIN t_alt_dim AS d ON b.p = d.p WHERE d.name LIKE '%keep%';

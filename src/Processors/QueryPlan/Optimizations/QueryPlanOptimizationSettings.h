@@ -145,7 +145,7 @@ struct QueryPlanOptimizationSettings
 
     bool enable_cascades_optimizer = false;
     bool cascades_aggregation_pushdown = true;
-    size_t cascades_join_order_alternatives = 1;
+    size_t cascades_join_order_alternatives = 4;
     /// Set by the second pass while the plan will go through Cascades: join reordering then also builds a
     /// other join orders for Cascades to choose from, see `JoinOrderAlternativesStep`.
     mutable bool build_join_order_alternatives = false;
