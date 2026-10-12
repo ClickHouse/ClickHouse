@@ -33,7 +33,9 @@ namespace DB
   * all inputs are stopped until downstream demands data again, so a stream that the merge has
   * deferred does not read past the announced boundary. Before the first demand for real data
   * (the stream starts with a virtual row while the merge has not reached it yet) no upcoming
-  * input is prefetched either.
+  * input is prefetched either. Only the first input keeps its virtual row; the leading virtual
+  * rows of the other inputs are dropped, because each of them starts where the previous one
+  * ends, and parking a prefetched input on such a boundary would disable the prefetching.
   *
   * This is useful for read-in-order optimization where a single part is split
   * into non-overlapping range groups read by separate sources: we want parallel

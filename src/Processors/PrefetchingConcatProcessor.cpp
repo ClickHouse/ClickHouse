@@ -60,13 +60,23 @@ PrefetchingConcatProcessor::Status PrefetchingConcatProcessor::prepare()
     /// or the inputs were stopped after a virtual row), so pull with `set_not_needed`: it is
     /// allowed for a port that is not needed and leaves it not needed. Whether the input is
     /// needed is decided below on every call.
+    ///
+    /// Only the first input keeps its virtual row: it announces the boundary of the whole
+    /// concatenated stream. Every other input starts where the previous one ends, so its own
+    /// leading virtual row tells downstream nothing it could defer on. If it were buffered, it
+    /// would park the input on its boundary for as long as it is in the prefetch window, and
+    /// since every stream starts with one, nothing would ever be prefetched. Drop it instead.
     {
         size_t idx = 0;
         for (auto & input : inputs)
         {
             if (input.hasData()
                 && (idx == current_input_idx || buffers[idx].hasRoom(max_rows_to_buffer, max_bytes_to_buffer)))
-                buffers[idx].push(input.pull(/* set_not_needed = */ true));
+            {
+                auto chunk = input.pull(/* set_not_needed = */ true);
+                if (idx == 0 || !isVirtualRow(chunk))
+                    buffers[idx].push(std::move(chunk));
+            }
             ++idx;
         }
     }
