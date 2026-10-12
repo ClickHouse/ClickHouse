@@ -3696,6 +3696,8 @@ ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::selectRangesToRead(
 
     /// A masking policy rewrites, for this user only, the values the cached verdicts were computed on.
     const bool table_has_masking_policy = data.hasEnabledMaskingPolicies(context_);
+    if (table_has_masking_policy)
+        reader_settings.use_query_condition_cache = false;
 
     MergeTreeDataSelectExecutor::IndexAnalysisContext filter_context
     {
@@ -4198,7 +4200,9 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
 
     /// The cache key (table, part, condition) cannot express the rows a unique key hides, the values a masking policy rewrites
     /// for this user, or a non-deterministic virtual column's value. A TopK read keys its PREWHERE entries on the dropped filter too.
+    /// `analyzed_result_ptr` already carries the verdict of a PREWHERE probed before, so restoring it must not count the cache again.
     if (analyzed_result_ptr && indexes.has_value() && allow_query_condition_cache
+        && query_info.prewhere_info != query_condition_cache_probed_prewhere
         && !(is_parallel_reading_from_replicas && context->getClientInfo().collaborate_with_initiator)
         && !top_k_filter_info
         && !storage_snapshot->metadata->hasUniqueKey()
@@ -4207,6 +4211,8 @@ void ReadFromMergeTree::updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info
         && MergeTreeDataSelectExecutor::canFilterPartsByQueryConditionCache(
             probe_query_info, vector_search_parameters, top_k_filter_info, mutations_snapshot, context))
     {
+        query_condition_cache_probed_prewhere = query_info.prewhere_info;
+
         RangesInDataParts narrowed = analyzed_result_ptr->parts_with_ranges;
         MergeTreeDataSelectExecutor::filterPartsByQueryConditionCache(
             narrowed, probe_query_info, vector_search_parameters, top_k_filter_info,
@@ -5378,6 +5384,10 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
         reader_settings.use_query_condition_cache = false;
 
     if (filterDependsOnNonDeterministicVirtuals(storage_snapshot->metadata->virtuals, query_info))
+        reader_settings.use_query_condition_cache = false;
+
+    /// A masking policy rewrites, for this user only, the values the cached verdicts are computed on.
+    if (data.hasEnabledMaskingPolicies(context))
         reader_settings.use_query_condition_cache = false;
 
     /// The granules a TopK read drops depend on the running threshold, i.e. on the rows of every part
