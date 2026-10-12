@@ -268,7 +268,13 @@ std::pair<ObjectStoragePtr, std::string> getOrCreateStorageAndKey(
             configure_fn(*cfg, config_prefix);
 
             return ObjectStorageFactory::instance().create(
-                storage_name, *cfg, config_prefix, context, /*run_access_check*/ false, /*run_local_paths_check*/ false);
+                storage_name,
+                *cfg,
+                config_prefix,
+                context,
+                /*run_access_check*/ false,
+                /*run_local_paths_check*/ false,
+                /*run_remote_host_filter_check*/ false);
         });
 }
 
