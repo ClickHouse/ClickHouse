@@ -12,7 +12,7 @@ class MergeTreeReaderTextProjectionIndex : public MergeTreeReaderTextIndex
 public:
     MergeTreeReaderTextProjectionIndex(
         const IMergeTreeReader * main_reader_,
-        MergeTreeIndexWithCondition index_,
+        IndexReadTask index_read_task_,
         NamesAndTypesList columns_,
         MergeTreeIndexGranulePtr index_granule_);
 
@@ -30,6 +30,8 @@ public:
     void setIndexGranule(MergeTreeIndexGranulePtr index_granule) override;
 
 private:
+    const TextSearchQueryPtr & getSearchQuery(const String & column_name) const;
+
     PostingListPtr readPostingsBlockForToken(
         std::string_view token, const ProjectionTokenInfo & token_info, size_t block_idx, const String & index_id);
 

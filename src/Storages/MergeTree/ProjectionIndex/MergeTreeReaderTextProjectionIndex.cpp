@@ -21,34 +21,41 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int LOGICAL_ERROR;
 }
 
 MergeTreeReaderTextProjectionIndex::MergeTreeReaderTextProjectionIndex(
     const IMergeTreeReader * main_reader_,
-    MergeTreeIndexWithCondition index_,
+    IndexReadTask index_read_task_,
     NamesAndTypesList columns_,
     MergeTreeIndexGranulePtr index_granule_)
-    : MergeTreeReaderTextIndex(main_reader_, index_, columns_, nullptr)
+    : MergeTreeReaderTextIndex(main_reader_, std::move(index_read_task_), columns_, nullptr)
     , projection_granule(std::move(index_granule_))
 {
-    auto index_format = index.index->getPhysicalFormat(*data_part_info_for_read, index.index->getFileName());
+    auto index_format = index_read_task.index.index->getPhysicalFormat(*data_part_info_for_read, index_read_task.index.index->getFileName());
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state{
         .version = index_format.version,
-        .condition = index.condition_template->generateUnsubstituted().get(),
+        .condition = index_read_task.index.condition_template->generateUnsubstituted().get(),
         .part_info = *data_part_info_for_read,
-        .index = *index.index,
+        .index = *index_read_task.index.index,
         .readable_ranges = nullptr,
-        /// This reader serves granule reads that do consume posting lists, matching
-        /// MergeTreeReaderTextIndex. Only the single-token count shortcut in
-        /// ReadFromTextIndexCount sets this.
-        .skip_postings_deserialization = false,
+        /// This reader serves granule reads that do consume posting lists, matching `MergeTreeReaderTextIndex`.
+        .text_index_read_postings = true,
         .reader_settings = settings,
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
 }
+const TextSearchQueryPtr & MergeTreeReaderTextProjectionIndex::getSearchQuery(const String & column_name) const
+{
+    auto it = std::ranges::find(index_read_task.columns, column_name, &IndexReadTask::Column::name);
+    if (it == index_read_task.columns.end())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not in the read task of the text index '{}'", column_name, index_read_task.index.index->index.name);
+    return it->search_query;
+}
+
 // ─── Posting block reading ──────────────────────────────────────────────
 
 PostingListPtr MergeTreeReaderTextProjectionIndex::readPostingsBlockForToken(
@@ -210,10 +217,9 @@ void MergeTreeReaderTextProjectionIndex::ensureInitialized()
         return;
     }
 
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
-        auto search_query = condition_text.getSearchQueryForVirtualColumn(columns_to_read[i].name);
+        const auto & search_query = search_queries[i];
         if (search_query && search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint)
             is_always_true[i] = true;
     }
@@ -235,8 +241,7 @@ PostingCursorPtr & MergeTreeReaderTextProjectionIndex::getOrBuildCursor(const St
 
     ensureCursorMap();
 
-    const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
-    auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
+    const auto & search_query = getSearchQuery(column_name);
 
     std::vector<PostingCursorPtr> token_cursors;
     token_cursors.reserve(search_query->getTokens().size());
@@ -369,8 +374,7 @@ void MergeTreeReaderTextProjectionIndex::fillColumnLazy(
         /// evaluates and produces the correct rows. For empty-token queries (e.g.
         /// hasAnyTokens(x, [''])), fill stays 0 (no match) — there is no post-filter to fall
         /// back to and an empty needle cannot match any document.
-        const auto & condition_text = assert_cast<const MergeTreeIndexConditionText &>(*index.condition_template->generateUnsubstituted());
-        auto search_query = condition_text.getSearchQueryForVirtualColumn(column_name);
+        const auto & search_query = getSearchQuery(column_name);
         if (search_query && !search_query->getPatterns().empty())
             memset(column_data.data() + column_offset, 1, num_rows);
         return;
@@ -400,7 +404,7 @@ void MergeTreeReaderTextProjectionIndex::fillBatch(MutableColumns & res_columns,
 void MergeTreeReaderTextProjectionIndex::projectionReadGranule()
 {
     MergeTreeIndexInputStreams empty_streams;
-    projection_granule = index.index->createIndexGranule();
+    projection_granule = index_read_task.index.index->createIndexGranule();
     projection_granule->deserializeBinaryWithMultipleStreams(empty_streams, *deserialization_state);
 }
 
@@ -412,7 +416,7 @@ void MergeTreeReaderTextProjectionIndex::setIndexGranule(MergeTreeIndexGranulePt
 
 void MergeTreeReaderTextProjectionIndex::setPrecomputedGranule(const IndexGranulesMap & granules)
 {
-    auto it = granules.find(index.index->index.name);
+    auto it = granules.find(index_read_task.index.index->index.name);
     if (it != granules.end() && it->second)
     {
         projection_granule = it->second;
