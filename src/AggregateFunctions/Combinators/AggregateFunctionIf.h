@@ -64,6 +64,11 @@ public:
         return nested_func->getNormalizedStateType();
     }
 
+    bool stateIsIndependentOfNullability() const override
+    {
+        return nested_func->stateIsIndependentOfNullability();
+    }
+
     bool canMergeStateFromDifferentVariant(const IAggregateFunction & rhs) const override
     {
         if (!this->haveSameDefinition(rhs))
