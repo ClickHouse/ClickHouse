@@ -85,8 +85,19 @@ def test_config_with_hosts(start_cluster):
             "pw_s3_folded_canary",
             "http://host:123/bucket/k.csv?X-Amz-Signature=[HIDDEN]",
         ),
+        (
+            "SELECT * FROM s3('http://host:123/bucket/k.csv?%73ig=pw_s3_encoded_name_canary', NOSIGN, CSV, 'x UInt8')",
+            "pw_s3_encoded_name_canary",
+            "http://host:123/bucket/k.csv?%73ig=[HIDDEN]",
+        ),
     ],
-    ids=["userinfo", "presigned", "avro_schema_registry", "s3_presigned_in_path"],
+    ids=[
+        "userinfo",
+        "presigned",
+        "avro_schema_registry",
+        "s3_presigned_in_path",
+        "s3_encoded_name_in_path",
+    ],
 )
 def test_rejected_url_credentials_masked(start_cluster, query, secret, masked_url):
     error = node1.query_and_get_error(query)
