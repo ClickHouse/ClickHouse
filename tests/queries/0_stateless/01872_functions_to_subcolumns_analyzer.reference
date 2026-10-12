@@ -13,17 +13,21 @@ QUERY id: 0
             ARGUMENTS
               LIST id: 4, nodes: 1
                 COLUMN id: 5, column_name: id, result_type: UInt64, source_id: 6
-      COLUMN id: 7, column_name: n.null, result_type: UInt8, source_id: 6
-      FUNCTION id: 8, function_name: not, function_type: ordinary, result_type: UInt8
+      FUNCTION id: 7, function_name: notEquals, function_type: ordinary, result_type: UInt8
         ARGUMENTS
-          LIST id: 9, nodes: 1
-            COLUMN id: 10, column_name: n.null, result_type: UInt8, source_id: 6
+          LIST id: 8, nodes: 2
+            COLUMN id: 9, column_name: n.null, result_type: UInt8, source_id: 6
+            CONSTANT id: 10, constant_value: UInt64_0, constant_value_type: UInt8
+      FUNCTION id: 11, function_name: not, function_type: ordinary, result_type: UInt8
+        ARGUMENTS
+          LIST id: 12, nodes: 1
+            COLUMN id: 13, column_name: n.null, result_type: UInt8, source_id: 6
   JOIN TREE
     TABLE id: 6, alias: __table1, table_name: default.t_func_to_subcolumns
 
 SELECT
     _CAST(0, \'UInt8\') AS `isNull(id)`,
-    __table1.`n.null` AS `isNull(n)`,
+    __table1.`n.null` != 0 AS `isNull(n)`,
     NOT __table1.`n.null` AS `isNotNull(n)`
 FROM default.t_func_to_subcolumns AS __table1
 3	0	1	0

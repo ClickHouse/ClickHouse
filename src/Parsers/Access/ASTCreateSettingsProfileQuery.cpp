@@ -69,6 +69,15 @@ ASTPtr ASTCreateSettingsProfileQuery::clone() const
 }
 
 
+/// `settings` and `alter_settings` are held outside `children`.
+bool ASTCreateSettingsProfileQuery::hasSecretParts() const
+{
+    return (settings && settings->hasSecretParts())
+        || (alter_settings && alter_settings->hasSecretParts())
+        || childrenHaveSecretParts();
+}
+
+
 void ASTCreateSettingsProfileQuery::formatImpl(WriteBuffer & ostr, const FormatSettings & format, FormatState &, FormatStateStacked) const
 {
     if (attach)

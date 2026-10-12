@@ -1,0 +1,9 @@
+A filter over a literal with a NUL byte is applied locally and finds its row:
+1
+The same filter through the SQLite table engine:
+1
+An IN set containing a NUL literal is applied locally too:
+1
+2
+A NUL-free predicate in the same query is still pushed down and correct:
+2

@@ -18,7 +18,7 @@ Ces paramètres sont disponibles dans [system.settings](/fr/reference/system-tab
 
 <SettingsInfoBlock type="UInt64" default_value="0" />
 
-Déclenche une exception si la valeur de ce paramètre est inférieure ou égale au nombre actuel de requêtes traitées simultanément.
+Déclenche une exception si le nombre actuel de requêtes traitées simultanément atteint ou dépasse la valeur de ce paramètre.
 
 Exemple : `max_concurrent_queries_for_all_users` peut être défini sur 99 pour tous les utilisateurs, et l’administrateur de la base de données peut le définir sur 100 pour lui-même afin d’exécuter des requêtes d’investigation même lorsque le serveur est surchargé.
 

@@ -8,10 +8,6 @@
 #include <memory>
 #include <utility>
 
-#ifdef __SSE4_2__
-#    include <nmmintrin.h>
-#endif
-
 namespace DB
 {
 

@@ -9,7 +9,7 @@ SELECT '-- MORE CASES --';
 -- { echoOn }
 
 SELECT (1, 2) in [number % 3, number % 5] FROM numbers(2); -- { serverError NO_COMMON_TYPE }
-SELECT (1, 2) in (SELECT [0, 0] UNION ALL SELECT [1, 1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) in (SELECT [0, 0] UNION ALL SELECT [1, 1]); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 
 SELECT (1, 2) in [(number % 3, number % 5)] FROM numbers(2);
 SELECT (1, 2) in (SELECT (0, 0)), (1, 2) in (SELECT (1, 1));
@@ -28,7 +28,7 @@ SELECT 'ANOTHER SETTING';
 set transform_null_in = 1;
 
 SELECT (1, 2) in [number % 3, number % 5] FROM numbers(2); -- { serverError NO_COMMON_TYPE }
-SELECT (1, 2) in (SELECT [0, 0] UNION ALL SELECT [1, 1]); -- { serverError ILLEGAL_TYPE_OF_ARGUMENT }
+SELECT (1, 2) in (SELECT [0, 0] UNION ALL SELECT [1, 1]); -- { serverError NUMBER_OF_COLUMNS_DOESNT_MATCH }
 
 SELECT (1, 2) in [(number % 3, number % 5)] FROM numbers(2);
 SELECT (1, 2) in (SELECT (0, 0)), (1, 2) in (SELECT (1, 1));

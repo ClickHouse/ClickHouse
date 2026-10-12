@@ -1,0 +1,12 @@
+A limit above the group count leaves the adaptive result exact
+1
+The adaptive aggregator engaged under the limit
+1
+A limit below the group count aborts the merge
+TOO_MANY_ROWS
+A bucket Top-K plan still hits the limit
+TOO_MANY_ROWS
+A spilling run hits the limit within a few buckets past it
+aborted near the limit
+A dropping mode stays on the baseline
+0
