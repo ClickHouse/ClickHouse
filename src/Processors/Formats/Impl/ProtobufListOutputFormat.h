@@ -29,6 +29,7 @@ public:
         SharedHeader header_,
         const ProtobufSchemaInfo & schema_info_,
         bool defaults_for_nullable_google_wrappers_,
+        Int64 output_datetime64_scale_,
         const String & google_protos_path);
 
     String getName() const override { return "ProtobufList"; }

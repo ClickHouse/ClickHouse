@@ -26,16 +26,19 @@ ProtobufRowOutputFormat::ProtobufRowOutputFormat(
     bool with_length_delimiter_)
     : IRowOutputFormat(header_, out_)
     , writer(std::make_unique<ProtobufWriter>(out))
-    , descriptor_holder(ProtobufSchemas::instance().getMessageTypeForFormatSchema(
-          schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::No, settings_.protobuf.google_protos_path))
-    , serializer(ProtobufSerializer::create(
-          header_->getNames(),
-          header_->getDataTypes(),
-          descriptor_holder,
-          with_length_delimiter_,
-          /* with_envelope = */ false,
-          settings_.protobuf.output_nullables_with_google_wrappers,
-          *writer))
+    , descriptor_holder(
+          ProtobufSchemas::instance().getMessageTypeForFormatSchema(
+              schema_info_.getSchemaInfo(), ProtobufSchemas::WithEnvelope::No, settings_.protobuf.google_protos_path))
+    , serializer(
+          ProtobufSerializer::create(
+              header_->getNames(),
+              header_->getDataTypes(),
+              descriptor_holder,
+              with_length_delimiter_,
+              /* with_envelope = */ false,
+              settings_.protobuf.output_nullables_with_google_wrappers,
+              settings_.protobuf.output_datetime64_scale,
+              *writer))
     , allow_multiple_rows(with_length_delimiter_ || settings_.protobuf.allow_multiple_rows_without_delimiter)
 {
 }

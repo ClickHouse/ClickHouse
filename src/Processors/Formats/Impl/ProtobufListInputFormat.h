@@ -31,6 +31,7 @@ public:
         const Params & params_,
         const ProtobufSchemaInfo & schema_info_,
         bool flatten_google_wrappers_,
+        Int64 input_datetime64_scale_,
         const String & google_protos_path);
 
     String getName() const override { return "ProtobufListInputFormat"; }
