@@ -5133,6 +5133,13 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     if (isQueryWithFinal())
         reader_settings.use_partial_aggregate_cache = false;
 
+    /// On-fly mutations and patch parts change the visible rows and values of a part while its name and
+    /// `info.mutation` stay the same until the mutation is materialized, so the per-part identity would not
+    /// distinguish the states before and after them. Like the query condition cache, do not read from or
+    /// write to the partial aggregate cache when the read applies any of them.
+    if (mutations_snapshot && (mutations_snapshot->hasDataMutations() || mutations_snapshot->hasPatchParts()))
+        reader_settings.use_partial_aggregate_cache = false;
+
     /// Before any pool or processor copies the settings: both build the PREWHERE steps and must agree on them.
     reader_settings.read_ahead_prewhere_columns = canReadPrewhereColumnsAhead(result.parts_with_ranges);
 
@@ -5792,7 +5799,8 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, cons
     const bool partial_cache_compatible_with_group_by_limits
         = settings[Setting::max_rows_to_group_by] == 0 || settings[Setting::group_by_overflow_mode] == OverflowMode::THROW;
     const bool can_plan_partial_aggregate_cache_hits = build_pipeline_settings.partial_aggregate_cache_query_hash.has_value()
-        && settings[Setting::use_partial_aggregate_cache] && partial_cache_compatible_with_group_by_limits && !index_build_context
+        && settings[Setting::use_partial_aggregate_cache] && reader_settings.use_partial_aggregate_cache
+        && partial_cache_compatible_with_group_by_limits && !index_build_context
         && !output_each_partition_through_separate_port && !is_parallel_reading_from_replicas && !isQueryWithFinal()
         && !result.sampling.use_sampling && !query_info.isStream();
 
