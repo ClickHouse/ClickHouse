@@ -10,17 +10,12 @@ CURDIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 SCHEMA='{"type":"record","name":"r","fields":[{"name":"id","type":"long"},{"name":"m","type":{"type":"map","values":"string"}}]}'
 
-PORT=$(python3 -c "
-import socket
-s = socket.socket()
-s.bind(('127.0.0.1', 0))
-print(s.getsockname()[1])
-s.close()
-")
+PORT_FILE="${CLICKHOUSE_TMP}/${CLICKHOUSE_TEST_UNIQUE_NAME}.port"
 
-# A schema registry that serves the schema above for any id.
+# A schema registry that serves the schema above for any id. It binds to port 0 and reports the port
+# it got, so parallel runs cannot collide.
 python3 -c "
-import json, sys
+import json, os, sys
 from http.server import HTTPServer, BaseHTTPRequestHandler
 body = json.dumps({'schema': sys.argv[1]}).encode()
 class Handler(BaseHTTPRequestHandler):
@@ -32,15 +27,20 @@ class Handler(BaseHTTPRequestHandler):
         self.wfile.write(body)
     def log_message(self, *args):
         pass
-HTTPServer(('127.0.0.1', $PORT), Handler).serve_forever()
-" "$SCHEMA" &
+server = HTTPServer(('127.0.0.1', 0), Handler)
+with open(sys.argv[2] + '.tmp', 'w') as f:
+    f.write(str(server.server_address[1]))
+os.replace(sys.argv[2] + '.tmp', sys.argv[2])
+server.serve_forever()
+" "$SCHEMA" "$PORT_FILE" &
 HTTP_PID=$!
-trap "kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null" EXIT
+trap 'kill $HTTP_PID 2>/dev/null; wait $HTTP_PID 2>/dev/null; rm -f "$PORT_FILE"' EXIT
 
-for _ in $(seq 1 50); do
-    curl -s "http://127.0.0.1:$PORT/schemas/ids/1" -o /dev/null 2>/dev/null && break
+for _ in $(seq 1 300); do
+    [[ -s "$PORT_FILE" ]] && break
     sleep 0.1
 done
+PORT=$(cat "$PORT_FILE")
 
 # Three messages framed with magic byte 0 and schema id 1.
 python3 -c "
