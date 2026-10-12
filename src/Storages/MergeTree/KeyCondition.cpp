@@ -1309,6 +1309,7 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
             else if (name == "indexHint")
             {
                 ActionsDAG::NodeRawConstPtrs children;
+                FunctionOverloadResolverPtr index_hint_resolver;
                 if (const auto * adaptor = typeid_cast<const FunctionToFunctionBaseAdaptor *>(node.function_base.get()))
                 {
                     if (const auto * index_hint = typeid_cast<const FunctionIndexHint *>(adaptor->getFunction().get()))
@@ -1319,10 +1320,16 @@ static const ActionsDAG::Node & cloneDAGWithInversionPushDown(
                         for (auto & arg : children)
                             arg = &cloneDAGWithInversionPushDown(
                                 *arg, inverted_dag, inputs_mapping, context, /* need_inversion */ false, boolean_context);
+
+                        /// `node.function_base` is built for no arguments; the copy gets the hint's arguments as children.
+                        index_hint_resolver = std::make_shared<FunctionToOverloadResolverAdaptor>(adaptor->getFunction());
                     }
                 }
 
-                res = &inverted_dag.addFunction(node.function_base, children, "");
+                if (index_hint_resolver)
+                    res = &inverted_dag.addFunction(index_hint_resolver, children, "");
+                else
+                    res = &inverted_dag.addFunction(node.function_base, children, "");
                 handled_inversion = true;
             }
             else if (name == "materialize" && !isNothing(removeNullable(node.result_type)))
