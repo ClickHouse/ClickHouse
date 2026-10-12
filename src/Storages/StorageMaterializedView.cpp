@@ -411,6 +411,11 @@ StorageMaterializedView::StorageMaterializedView(
 
         /// We will create a query to create an internal table.
         auto create_context = Context::createCopy(local_context);
+        /// A restored inner table gets the data parts from the backup, which are sorted by the original key.
+        /// The internal query does not know it is a part of a restore, and it applies
+        /// `force_primary_key_reverse_order` to the inner tables of an inner `TimeSeries` table, so disable it.
+        if (is_restore_from_backup)
+            create_context->setSetting("force_primary_key_reverse_order", false);
         auto manual_create_query = make_intrusive<ASTCreateQuery>();
         String db_name = getStorageID().database_name;
         String inner_name = generateInnerTableName(getStorageID());
@@ -450,10 +455,6 @@ StorageMaterializedView::StorageMaterializedView(
 
         InterpreterCreateQuery create_interpreter(manual_create_query, create_context);
         create_interpreter.setInternal(true);
-        /// A restored inner table is created from the definition in the backup and gets the data parts
-        /// from it, so the internal query must treat it as a restore too: e.g. not apply
-        /// `force_primary_key_reverse_order` and convert an old definition of an inner `TimeSeries` table.
-        create_interpreter.setIsRestoreFromBackup(is_restore_from_backup);
         create_interpreter.execute();
 
         if (fixed_uuid)
