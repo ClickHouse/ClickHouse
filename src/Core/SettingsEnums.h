@@ -209,6 +209,7 @@ enum class DefaultDatabaseEngine : uint8_t
 {
     Ordinary,
     Atomic,
+    Replicated,
 };
 
 DECLARE_SETTING_ENUM(DefaultDatabaseEngine)
