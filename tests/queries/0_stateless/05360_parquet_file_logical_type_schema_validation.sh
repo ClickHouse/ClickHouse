@@ -13,28 +13,36 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 SRC="${CLICKHOUSE_TMP}/file_logical_type_validation_src.parquet"
 DST="${CLICKHOUSE_TMP}/file_logical_type_validation.parquet"
 
-# Adds `logicalType = FILE` to the schema element of the group named by the second argument.
-# In the Thrift compact protocol, ClickHouse writes such an element as: repetition_type (field 3),
-# name (field 4, header 0x18), num_children (field 5, header 0x15), stop (0x00). The annotation is
-# field 10 (header 0x5C: delta 5, struct) holding a `LogicalType` union with field 19 (`FILE`) set to
-# an empty struct: 0x0C 0x26 0x00 0x00.
+# Adds `logicalType = FILE` to the schema element named by the first argument.
+# In the Thrift compact protocol, ClickHouse writes a group element as: repetition_type (field 3),
+# name (field 4, header 0x18), num_children (field 5, header 0x15), stop (0x00), and a primitive
+# element without annotations as: type (field 1), repetition_type (field 3), name (field 4), stop.
+# The annotation is field 10 (header 0x5C: delta 5 from num_children, or 0x6C: delta 6 from name,
+# struct) holding a `LogicalType` union with field 19 (`FILE`) set to an empty struct: 0x0C 0x26 0x00 0x00.
 annotate()
 {
     python3 -I -c '
-import struct, sys
+import re, struct, sys
 src, name, dst = sys.argv[1], sys.argv[2].encode(), sys.argv[3]
 data = open(src, "rb").read()
 assert data[-4:] == b"PAR1"
 footer_length = struct.unpack("<I", data[-8:-4])[0]
 footer = data[-8 - footer_length:-8]
-pattern = bytes([0x18, len(name)]) + name + b"\x15"
-assert footer.count(pattern) == 1
-pos = footer.index(pattern) + len(pattern)
-while footer[pos] & 0x80:
+matches = list(re.finditer(re.escape(bytes([0x18, len(name)]) + name), footer))
+# Skip the occurrences in `path_in_schema` of the column chunks: in a schema element the name
+# directly follows repetition_type (header 0x25 after type, or 0x35 as the first field).
+matches = [m for m in matches if m.start() >= 2 and footer[m.start() - 2] in (0x25, 0x35)]
+assert len(matches) == 1
+pos = matches[0].end()
+header = 0x6C
+if footer[pos] == 0x15:
+    header = 0x5C
     pos += 1
-pos += 1
+    while footer[pos] & 0x80:
+        pos += 1
+    pos += 1
 assert footer[pos] == 0
-footer = footer[:pos] + bytes([0x5C, 0x0C, 0x26, 0x00, 0x00]) + footer[pos:]
+footer = footer[:pos] + bytes([header, 0x0C, 0x26, 0x00, 0x00]) + footer[pos:]
 open(dst, "wb").write(data[:-8 - footer_length] + footer + struct.pack("<I", len(footer)) + b"PAR1")
 ' "$SRC" "$1" "$DST"
 }
@@ -97,5 +105,9 @@ expect_error 'its field `inline` has unexpected type (expected BYTE_ARRAY withou
 echo "--- nested group"
 make_file 'Tuple(uri Nullable(String), checksum Tuple(a Nullable(String)))'
 expect_error 'its field `checksum` is a group'
+
+echo "--- primitive column"
+make_file 'Int64'
+expect_error 'is a primitive column rather than a group'
 
 rm -f "${SRC}" "${DST}"

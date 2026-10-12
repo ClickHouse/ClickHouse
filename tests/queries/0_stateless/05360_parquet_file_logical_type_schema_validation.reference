@@ -27,3 +27,6 @@ its field `inline` has unexpected type (expected BYTE_ARRAY without annotation)
 --- nested group
 INCORRECT_DATA
 its field `checksum` is a group
+--- primitive column
+INCORRECT_DATA
+is a primitive column rather than a group

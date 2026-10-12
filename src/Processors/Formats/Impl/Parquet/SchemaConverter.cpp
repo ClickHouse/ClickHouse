@@ -394,8 +394,13 @@ void SchemaConverter::processSubtree(TraversalNode & node)
     /// A `FILE` group is validated regardless of whether it is requested (even partially, like
     /// `file.uri`), because a schema that violates the specification makes the file invalid.
     /// After that it is read as a `Tuple`, which is what processSubtreeTuple below produces for it.
-    if (node.element->logicalType.__isset.FILE && !isPrimitiveNode(*node.element))
+    if (node.element->logicalType.__isset.FILE)
+    {
+        if (isPrimitiveNode(*node.element))
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "Parquet column {} has `FILE` logical type, but it is a primitive column rather than a group", node.getNameForLogging());
         validateFileLogicalTypeGroup(file_metadata, schema_idx - 1, node.getNameForLogging());
+    }
 
     if (!processSubtreePrimitive(node) &&
         !processSubtreeMap(node) &&
