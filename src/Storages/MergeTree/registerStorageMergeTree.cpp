@@ -3773,7 +3773,7 @@ ClickHouse can merge the data parts so that different resulting parts of data ca
 
 The values in the columns with the numeric data type are summed. The set of columns is defined by the parameter `columns`.
 
-If the values were 0 in all of the columns for summation, the row is deleted.
+If the values were 0 in all of the columns for summation, the row is deleted during a merge. A query with the [FINAL](/reference/statements/select/from#final-modifier) modifier sums the rows but does not delete such rows, so the set of rows it returns does not depend on which columns the query reads. Note that `FINAL` merges a [nested structure](#nested-structures) whose name ends with `Map` the same way as a merge only if the query reads all columns of that structure.
 
 If column is not in the primary key and is not summed, an arbitrary value is selected from the existing ones.
 
@@ -3863,7 +3863,7 @@ The same rules apply to the flattened sub-columns as to regular columns:
 - Only numeric sub-columns are summed.
 - Sub-columns that belong to a `Tuple` in the sorting key or partition key are excluded from summation.
 - If `columns` is specified, only sub-columns of the listed `Tuple` columns are summed.
-- If all numeric sub-columns of a row are zero after summation, the row is deleted.
+- If all numeric sub-columns of a row are zero after summation, the row is deleted during a merge (but not by a query with `FINAL`).
 
 <Note>
 This setting is immutable and must be specified at table creation time.

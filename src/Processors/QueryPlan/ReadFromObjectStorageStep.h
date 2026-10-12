@@ -110,7 +110,7 @@ private:
 
     void createIterator();
 
-    std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const;
+    std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> makeTopKQueryConditionCacheKey() const;
 
     /// Whether every read of an object is pinned to the generation (`ETag`) the object had when it was listed.
     bool isReadPinnedToListedGeneration() const;

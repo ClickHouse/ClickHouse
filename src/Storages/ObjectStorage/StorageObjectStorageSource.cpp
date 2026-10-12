@@ -1157,9 +1157,11 @@ Chunk StorageObjectStorageSource::generate()
         /// only because the threshold had excluded it. The key covers just the predicate, so such an
         /// entry would make a later plain read, or one with another `LIMIT` or direction, skip rows.
         /// A file the filter was not applied to (see `createReader`; the reader also declines it for a
-        /// file that does not store the sort column) is read as without TopN - unless the entries of the
-        /// TopK key made it skip row groups that the predicate alone would not.
+        /// file that does not store the sort column) writes them as without TopN - unless the entries of the
+        /// TopK key made it skip row groups that the predicate alone would not, or
+        /// `use_query_condition_cache_for_top_k` is off, which makes a TopN read not populate the cache at all.
         else if (format_filter_info->condition_hash && !reader.skipped_row_groups_by_top_k_entry
+            && !(format_filter_info->top_k_filter && !read_context->getSettingsRef()[Setting::use_query_condition_cache_for_top_k])
             && !(reader.getInputFormat() && reader.getInputFormat()->isTopKFilterApplied()))
         {
             const auto & object_info = reader.getObjectInfo();
@@ -1362,9 +1364,9 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
     };
 
     /// Entries under the plain predicate key are only written by reads of files without TopN dynamic
-    /// filtering (see `generate`), so they apply to a file read with it as well. Such a file consults
+    /// filtering (see `generate`), so they apply to a file read with it as well. A TopN read consults
     /// them only while `use_query_condition_cache_for_top_k` is on: that setting makes TopK reads neither
-    /// consult nor populate the cache. A file that does not apply the filter is read as without TopN.
+    /// consult nor populate the cache - also for the files that do not apply the filter.
     /// With the TopK key of this query (`ObjectStorageTopKQueryConditionCacheKey`, made only while the
     /// setting is on), a file also consults the entries a previous run of the same TopN over the same
     /// set of files has written. They tell which row groups hold no row of the result, which holds whether
@@ -1415,7 +1417,7 @@ StorageObjectStorageSource::ReaderHolder StorageObjectStorageSource::createReade
             : query_format_filter_info;
 
         const bool consult_plain_condition = format_filter_info && format_filter_info->condition_hash
-            && (use_query_condition_cache_for_top_k || !is_top_k_filter_allowed(object_info));
+            && (use_query_condition_cache_for_top_k || !format_filter_info->top_k_filter);
 
         if (query_condition_cache && !object_info->file_bucket_info && (consult_plain_condition || use_top_k_query_condition_cache_key))
         {

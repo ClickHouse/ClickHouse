@@ -22,7 +22,6 @@
 #include <Storages/prepareReadingFromFormat.h>
 #include <Storages/VirtualColumnUtils.h>
 #include <boost/algorithm/string/predicate.hpp>
-#include <boost/functional/hash.hpp>
 #include <Common/SipHash.h>
 
 #include <algorithm>
@@ -44,6 +43,11 @@ namespace Setting
     extern const SettingsBool azure_validate_etag_on_read;
     extern const SettingsBool use_query_condition_cache;
     extern const SettingsBool use_query_condition_cache_for_top_k;
+}
+
+namespace DataLakeStorageSetting
+{
+    extern const DataLakeStorageSettingsBool paimon_incremental_read;
 }
 
 
@@ -175,7 +179,7 @@ void ReadFromObjectStorageStep::initializePipeline(QueryPipelineBuilder & pipeli
     };
     auto format_filter_info = make_format_filter_info();
     format_filter_info->top_k_filter = top_k_filter;
-    auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey(*format_filter_info);
+    auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
         /// The verdicts written under the key also cover row groups whose rows were all returned
@@ -253,7 +257,7 @@ void ReadFromObjectStorageStep::createIterator()
         /*ignore_archive_globs=*/ false, /*skip_object_metadata=*/ false, /*with_tags=*/ info.requested_virtual_columns.contains("_tags"));
 }
 
-std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey(const FormatFilterInfo & format_filter_info) const
+std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
 {
     const auto & settings = getContext()->getSettingsRef();
     if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
@@ -281,39 +285,58 @@ std::shared_ptr<ObjectStorageTopKQueryConditionCacheKey> ReadFromObjectStorageSt
     if (is_data_lake ? !datalake_table_state : !isReadPinnedToListedGeneration())
         return {};
 
+    /// An incremental `Paimon` read iterates only the delta since the watermark committed in Keeper
+    /// (or of `paimon_target_snapshot_id`, bounded by `max_consume_snapshots`), so the same snapshot
+    /// yields different sets of files from query to query.
+    if (configuration->getDataLakeSettings()[DataLakeStorageSetting::paimon_incremental_read])
+        return {};
+
     /// The rows the reader drops besides those of the TopN filter must be dropped by a condition the
-    /// key covers. `condition_hash` covers the pushed-down filter and a PREWHERE collected with it.
-    /// Without any of them the reader drops nothing else. A row policy is covered by neither.
+    /// key covers, and so must the rows the filter drops after the format, which do not make the threshold.
+    /// So the key covers the whole filter of the step and a PREWHERE collected with it, not only the part
+    /// pushed into the format (`condition_hash` of `format_filter_info` lacks the conjuncts on virtual
+    /// columns such as `_path`, which narrow down the set of files read).
+    /// Without any of them nothing else drops rows. A row policy is covered by neither.
+    /// With the whole filter in the key, the pruning of data files (by partitions or statistics, depending
+    /// on settings) does not matter: it only removes files without rows passing the filter, which do not
+    /// make the threshold either.
     if (query_info.row_level_filter)
         return {};
 
     auto key = std::make_shared<ObjectStorageTopKQueryConditionCacheKey>();
-    /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where they differ (e.g. Apple).
-    size_t condition_hash = 0;
-    if (format_filter_info.condition_hash)
+    UInt64 condition_hash = 0;
+    if (filter_actions_dag)
     {
-        condition_hash = *format_filter_info.condition_hash;
-        key->condition = format_filter_info.filter_actions_dag->dumpNames() + ", ";
+        auto filter_condition_hash = FormatFilterInfo::computeConditionHash(*filter_actions_dag, query_info.prewhere_info, getContext());
+        if (!filter_condition_hash)
+            return {};
+        condition_hash = *filter_condition_hash;
+        key->condition = filter_actions_dag->dumpNames() + ", ";
     }
-    else if (!filter_actions_dag && !query_info.prewhere_info)
+    else if (!query_info.prewhere_info)
         condition_hash = queryConditionCacheHash(0, queryConditionCacheSettingsSalt(settings));
     else
         return {};
 
     key->condition += fmt::format("TopK by {}", top_k_filter->column_name);
 
-    boost::hash_combine(condition_hash, top_k_filter->plan_hash);
-    key->condition_hash_without_files = condition_hash;
+    SipHash hash;
+    hash.update(condition_hash);
+    hash.update(top_k_filter->plan_hash);
 
-    if (is_data_lake)
+    if (!is_data_lake)
     {
-        WriteBufferFromOwnString table_state;
-        serializeDataLakeTableStateSnapshot(*datalake_table_state, table_state);
-        table_state.finalize();
-
-        boost::hash_combine(condition_hash, sipHash64(table_state.str()));
-        key->condition_hash = condition_hash;
+        key->condition_hash_without_files = hash.get64();
+        return key;
     }
+
+    WriteBufferFromOwnString table_state;
+    serializeDataLakeTableStateSnapshot(*datalake_table_state, table_state);
+    table_state.finalize();
+
+    hash.update(table_state.str().size());
+    hash.update(table_state.str());
+    key->condition_hash = hash.get64();
     return key;
 }
 

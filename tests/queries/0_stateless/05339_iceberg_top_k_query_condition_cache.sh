@@ -74,6 +74,14 @@ run where_1 "SELECT k, s FROM t_05339 WHERE k % 3 = 0 ORDER BY k DESC LIMIT 3"
 run where_2 "SELECT k, s FROM t_05339 WHERE k % 3 = 0 ORDER BY k DESC LIMIT 3"
 run where_plain "SELECT count() FROM t_05339 WHERE k % 3 = 0"
 
+echo "--- with a predicate on _path"
+# The conjunct on `_path` is not pushed into the format, but narrows down the set of files read: without
+# the first data file, the result comes from the first row group of the second one, which the entries of
+# the queries above recorded as holding no row of the result. So the query must not reuse them.
+FIRST_FILE=$(${CLICKHOUSE_CLIENT} --query "SELECT _path FROM t_05339 WHERE k = 1000999")
+run where_path_1 "SELECT k, s FROM t_05339 WHERE k % 3 = 0 AND _path != '${FIRST_FILE}' ORDER BY k DESC LIMIT 3"
+run where_path_2 "SELECT k, s FROM t_05339 WHERE k % 3 = 0 AND _path != '${FIRST_FILE}' ORDER BY k DESC LIMIT 3"
+
 echo "--- a new snapshot"
 # The delete removes the result of the queries above. The new result lies in the first row group of the
 # second data file, which the entries of the previous snapshot recorded as holding no row of the result.
@@ -87,7 +95,7 @@ run gate_1 "SELECT k FROM t_05339 ORDER BY k DESC LIMIT 5" ", use_query_conditio
 run gate_2 "SELECT k FROM t_05339 ORDER BY k DESC LIMIT 5" ", use_query_condition_cache_for_top_k = 0"
 
 echo "--- query condition cache lookups"
-events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 deleted_nowhere_1 deleted_where_1 deleted_nowhere_2 gate_1 gate_2
+events nowhere_1 nowhere_2 nowhere_limit nowhere_plain nowhere_asc where_1 where_2 where_path_1 where_path_2 deleted_nowhere_1 deleted_where_1 deleted_nowhere_2 gate_1 gate_2
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05339"
 rm -rf "${ICEBERG_DIR}"
