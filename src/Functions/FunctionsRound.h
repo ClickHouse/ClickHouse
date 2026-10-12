@@ -653,7 +653,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(X : Number, Array(B : Number)) -> leastSupertype(X, B)";
+        return "(X : Number, const Array(B : Number)) -> leastSupertype(X, B)";
     }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override

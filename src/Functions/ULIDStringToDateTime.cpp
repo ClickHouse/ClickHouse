@@ -54,7 +54,7 @@ public:
         /// rejected during analysis (with ILLEGAL_TYPE_OF_ARGUMENT) rather than only at execution.
         static_assert(ULID_LENGTH == 26, "the signature string below hardcodes the ULID length");
         return
-            "(String | FixedString(26), const tz String) -> DateTime64(3, tz)"
+            "(String | FixedString(26), const tz StringOrFixedString) -> DateTime64(3, tz)"
             " OR (String | FixedString(26)) -> DateTime64(3)";
     }
 

@@ -90,7 +90,7 @@ public:
 
     String getSignatureString() const override
     {
-        return "(String, String) -> String";
+        return "(const String, String) -> String";
     }
 
     bool useDefaultImplementationForConstants() const override { return true; }

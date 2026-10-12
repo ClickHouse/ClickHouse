@@ -50,7 +50,7 @@ namespace
 
         String getSignatureString() const override
         {
-            return "(String, String, NativeInteger) -> String";
+            return "(String, const String, NativeInteger) -> String";
         }
 
         DataTypePtr getReturnTypeForDefaultImplementationForDynamic() const override

@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cfloat>
 #include <cmath>
 
@@ -47,6 +48,8 @@ public:
         for (size_t i = 0; i < Impl::num_args; ++i)
         {
             if (i) args += ", ";
+            if (std::find(std::begin(Impl::const_args), std::end(Impl::const_args), i) != std::end(Impl::const_args))
+                args += "const ";
             args += Impl::arg_matcher;
         }
         return "(" + args + ") -> Tuple(minimum_sample_size Float64, "

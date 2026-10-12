@@ -378,7 +378,7 @@ public:
     String getSignatureString() const override
     {
         return "(UUID) -> DateTime64(3)"
-               " OR (UUID, const tz String) -> DateTime64(3, tz)";
+               " OR (UUID, const tz StringOrFixedString) -> DateTime64(3, tz)";
     }
 
     DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override

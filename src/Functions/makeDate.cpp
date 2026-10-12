@@ -337,7 +337,7 @@ public:
     {
         return
             "(Number, Number, Number, Number, Number, Number) -> DateTime"
-            " OR (Number, Number, Number, Number, Number, Number, const tz String) -> DateTime(tz)";
+            " OR (Number, Number, Number, Number, Number, Number, const tz StringOrFixedString) -> DateTime(tz)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -401,7 +401,7 @@ public:
             "(Number, Number, Number, Number, Number, Number) -> DateTime64(3)"
             " OR (Number, Number, Number, Number, Number, Number, Number) -> DateTime64(3)"
             " OR (Number, Number, Number, Number, Number, Number, Number, const precision Number) -> DateTime64(precision)"
-            " OR (Number, Number, Number, Number, Number, Number, Number, const precision Number, const tz String) -> DateTime64(precision, tz)";
+            " OR (Number, Number, Number, Number, Number, Number, Number, const precision Number, const tz StringOrFixedString) -> DateTime64(precision, tz)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -506,7 +506,7 @@ public:
     {
         return
             "(Number) -> DateTime"
-            " OR (Number, const tz String) -> DateTime(tz)";
+            " OR (Number, const tz StringOrFixedString) -> DateTime(tz)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
@@ -572,7 +572,7 @@ public:
         return
             "(Number) -> DateTime64(3)"
             " OR (Number, const precision Number) -> DateTime64(precision)"
-            " OR (Number, const precision Number, const tz String) -> DateTime64(precision, tz)";
+            " OR (Number, const precision Number, const tz StringOrFixedString) -> DateTime64(precision, tz)";
     }
 
     ColumnPtr executeImpl(const ColumnsWithTypeAndName & arguments, const DataTypePtr &, size_t input_rows_count) const override
