@@ -36,7 +36,7 @@ SAMPLES samples_table TAGS tags_table;
 -- 4 series of the metric `m`: hosts h1, h2 in dc=a and hosts h3, h4 in dc=b,
 -- and 2 series of the metric `n`: host h5 in dc=a and host h6 in dc=b.
 -- Series h4 has a gap at timestamps 110 and 120.
-INSERT INTO prometheus (metric_name, tags, time_series) VALUES
+INSERT INTO prometheus (metric_name, tags, samples) VALUES
     ('m', map('host', 'h1', 'dc', 'a'), [(toDateTime64(100, 3), 1), (toDateTime64(110, 3), 10), (toDateTime64(120, 3), 4), (toDateTime64(130, 3), 1)]),
     ('m', map('host', 'h2', 'dc', 'a'), [(toDateTime64(100, 3), 2), (toDateTime64(110, 3), 20), (toDateTime64(120, 3), 3), (toDateTime64(130, 3), 2)]),
     ('m', map('host', 'h3', 'dc', 'b'), [(toDateTime64(100, 3), 3), (toDateTime64(110, 3), 5), (toDateTime64(120, 3), 2), (toDateTime64(130, 3), 3)]),
@@ -66,21 +66,21 @@ SELECT * FROM prometheusQueryRange('prometheus', 'topk(2, last_over_time(m[10]))
 SET send_logs_level = 'warning';
 
 SELECT '-- sparse or preserves both sides at different steps';
-SELECT count() AS series_count, sum(length(time_series)) AS sample_count
+SELECT count() AS series_count, sum(length(samples)) AS sample_count
 FROM prometheusQueryRange(
     'prometheus',
     'last_over_time(sparse_or_left[10]) or on(test_case) last_over_time(dense_or_right[10])',
     100, 130, 10);
 
 SELECT '-- sparse and keeps only right-present steps';
-SELECT count() AS series_count, sum(length(time_series)) AS sample_count
+SELECT count() AS series_count, sum(length(samples)) AS sample_count
 FROM prometheusQueryRange(
     'prometheus',
     'last_over_time(dense_and_left[10]) and on(test_case) last_over_time(sparse_and_right[10])',
     100, 130, 10);
 
 SELECT '-- sparse unless keeps only right-absent steps';
-SELECT count() AS series_count, sum(length(time_series)) AS sample_count
+SELECT count() AS series_count, sum(length(samples)) AS sample_count
 FROM prometheusQueryRange(
     'prometheus',
     'last_over_time(dense_unless_left[10]) unless on(test_case) last_over_time(sparse_unless_right[10])',
@@ -94,7 +94,7 @@ FROM prometheusQueryRange(
     100, 130, 10);
 
 SELECT '-- empty right vector leaves unless left unchanged';
-SELECT count() AS series_count, sum(length(time_series)) AS sample_count
+SELECT count() AS series_count, sum(length(samples)) AS sample_count
 FROM prometheusQueryRange(
     'prometheus',
     'last_over_time(dense_unless_left[10]) unless last_over_time(missing_metric[10])',

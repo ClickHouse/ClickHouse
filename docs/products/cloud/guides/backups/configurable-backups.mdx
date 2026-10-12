@@ -29,6 +29,8 @@ To configure the backup schedule for a service, go to the **Settings** tab in th
 
 This opens a tab to the right where you can choose values for retention, frequency, and start time. You will need to save the chosen settings for them to take effect.
 
+The backup frequency determines the worst-case age of the newest restore point (your RPO). Retention controls how long backup data is kept; it does not make the newest restore point more recent. For example, with a retention of 1 day and a frequency of every 48 hours, the newest restore point can be almost 48 hours old.
+
 <Image img="/images/cloud/manage/backup-configuration-form.webp" size="lg" alt="Select backup retention and frequency" border/>
 
 <Note>

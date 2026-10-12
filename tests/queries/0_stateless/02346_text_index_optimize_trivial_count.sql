@@ -69,6 +69,16 @@ SELECT count() FROM tab WHERE hasToken(text, 'alpha') AND id > 10;
 SELECT '-- does not fire: not a bare count()';
 SELECT count(explain) FROM (EXPLAIN SELECT id FROM tab WHERE hasToken(text, 'alpha')) WHERE explain LIKE '%Trivial count from text index%';
 
+SELECT '-- does not fire for a constant GROUP BY key: an empty set returns no row';
+-- The pins keep the granules from being dropped before the optimization runs: by the index, which a throwing
+-- max_rows_to_read (set by the CI profile) also moves to analysis, or by the query condition cache.
+SELECT count() FROM tab WHERE hasAnyTokens(text, '-inf') GROUP BY toUInt256(256) SETTINGS use_skip_indexes_on_data_read = 1, use_query_condition_cache = 0, max_rows_to_read = 0;
+SELECT count() FROM tab WHERE hasAllTokens(text, ['alpha', 'zeta']) GROUP BY 'k' SETTINGS use_skip_indexes_on_data_read = 1, use_query_condition_cache = 0, max_rows_to_read = 0;
+SELECT count() FROM tab WHERE hasToken(text, 'alpha') GROUP BY 'k';
+SELECT '-- fires again with empty_result_for_aggregation_by_constant_keys_on_empty_set = 0, which expects a row';
+SELECT count(explain) FROM (EXPLAIN SELECT count() FROM tab WHERE hasToken(text, 'alpha') GROUP BY 'k' SETTINGS empty_result_for_aggregation_by_constant_keys_on_empty_set = 0) WHERE explain LIKE '%Trivial count from text index%';
+SELECT count() FROM tab WHERE hasToken(text, 'missing') GROUP BY 'k' SETTINGS empty_result_for_aggregation_by_constant_keys_on_empty_set = 0;
+
 DROP TABLE tab;
 
 SELECT 'Read limits: an over-limit or concurrency-capped query falls back to the reader';
@@ -247,11 +257,12 @@ SELECT count() FROM tab_partial WHERE hasAllTokens(text, ['alpha', 'beta']);
 SELECT count() FROM tab_partial WHERE hasAllTokens(text, ['alpha', 'beta']) SETTINGS query_plan_optimize_count_from_text_index = 0;
 SELECT count() FROM tab_partial WHERE hasToken(text, 'missing');
 SELECT count() FROM tab_partial WHERE hasToken(text, 'missing') SETTINGS query_plan_optimize_count_from_text_index = 0;
+SELECT count() FROM tab_partial WHERE hasToken(text, 'missing') GROUP BY toUInt256(256) SETTINGS use_skip_indexes_on_data_read = 1, use_query_condition_cache = 0, max_rows_to_read = 0;
 
 SYSTEM FLUSH LOGS query_log;
 SELECT '-- the optimization reads fewer rows: only the unindexed part';
-SELECT (SELECT sum(read_rows) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 120 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'trivial_count_partial_on')
-     < (SELECT sum(read_rows) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 120 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'trivial_count_partial_off');
+SELECT (SELECT sum(read_rows) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'trivial_count_partial_on')
+     < (SELECT sum(read_rows) FROM system.query_log WHERE event_date >= yesterday() AND event_time >= now() - 600 AND type = 'QueryFinish' AND current_database = currentDatabase() AND log_comment = 'trivial_count_partial_off');
 
 SELECT '-- fully materialized after ALTER: back to the plain count source';
 SYSTEM START MERGES tab_partial;

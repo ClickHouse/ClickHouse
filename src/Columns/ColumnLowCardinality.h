@@ -63,6 +63,7 @@ public:
     }
 
     std::string_view getDataAt(size_t n) const override { return getDictionary().getDataAt(getIndexes().getUInt(n)); }
+    bool supportsGetDataAt() const override { return getDictionary().supportsGetDataAt(); }
 
     bool isDefaultAt(size_t n) const override { return getDictionary().isDefaultAt(getIndexes().getUInt(n)); }
     UInt64 get64(size_t n) const override { return getDictionary().get64(getIndexes().getUInt(n)); }
@@ -74,6 +75,8 @@ public:
     bool isNullAt(size_t n) const override { return getDictionary().isNullAt(getIndexes().getUInt(n)); }
     ColumnPtr cut(size_t start, size_t length) const override
     {
+        if (start == 0 && length == size())
+            return getPtr();
         return ColumnLowCardinality::create(dictionary.getColumnUniquePtr(), getIndexes().cut(start, length), isSharedDictionary());
     }
 
@@ -107,6 +110,7 @@ public:
 
     std::string_view serializeValueIntoArena(size_t n, Arena & arena, char const *& begin, const IColumn::SerializationSettings * settings) const override;
     char * serializeValueIntoMemory(size_t n, char * memory, const IColumn::SerializationSettings * settings) const override;
+    void batchSerializeValueIntoMemory(std::span<char *> memories, const IColumn::SerializationSettings * settings) const override;
 
     std::optional<size_t> getSerializedValueSize(size_t n, const IColumn::SerializationSettings * settings) const override;
 
@@ -404,8 +408,8 @@ private:
 
     template <typename IndexColumn>
     void updatePermutationWithIndexType(
-        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & position_by_index,
-        IColumn::Permutation & res, EqualRanges & equal_ranges) const;
+        IColumn::PermutationSortStability stability, size_t limit, const PaddedPODArray<UInt64> & rank_by_index,
+        bool has_value_equal_entries, IColumn::Permutation & res, EqualRanges & equal_ranges) const;
 };
 
 bool isColumnLowCardinalityNullable(const IColumn & column);

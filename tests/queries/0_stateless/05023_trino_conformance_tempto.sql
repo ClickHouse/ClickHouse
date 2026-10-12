@@ -1,10 +1,13 @@
+-- Tags: no-replicated-database
+-- Tag no-replicated-database: the DDL worker re-parses the DDL with the session `dialect`, which cannot parse the added `UUID`
+
 -- Conformance queries derived from the convention-based (Tempto) product tests
 -- of Presto and Trino (https://github.com/prestodb/presto and
 -- https://github.com/trinodb/trino, both Apache License 2.0), executed against
 -- the fixture tables of those tests (TPC-H nation/region are scale-independent).
 -- Expected results verified against the .result files of the original tests.
 
-SET allow_experimental_trino_dialect = 1;
+SET enable_trino_dialect = 1;
 SET dialect = 'trino';
 
 CREATE TABLE nation (n_nationkey Int64, n_name String, n_regionkey Int64, n_comment String) ENGINE = Memory;

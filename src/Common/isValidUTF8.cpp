@@ -1,5 +1,14 @@
+#include "config.h"
+
 #include <Common/isValidUTF8.h>
+
+#include <base/unaligned.h>
+
 #include <cstring>
+
+#if USE_SIMDUTF
+#    include <simdutf.h>
+#endif
 
 /// inspired by https://github.com/cyb70289/utf8/
 
@@ -62,6 +71,33 @@ namespace UTF8
 
 UInt8 isValidUTF8(const UInt8 * data, UInt64 len)
 {
+#if USE_SIMDUTF
+    /// simdutf validates in 64-byte blocks and pads a short tail into a full one, so at and below one
+    /// block it does a whole block's work whatever the input size. From a block up it is entered
+    /// directly, since the ASCII pre-pass below advances only eight bytes per iteration.
+    static constexpr UInt64 simdutf_min_len = 64;
+    if (len >= simdutf_min_len)
+        return simdutf::validate_utf8_with_errors(reinterpret_cast<const char *>(data), len).error == simdutf::SUCCESS;
+#endif
+
+    /// A byte with the high bit clear is a complete code point on its own, and UTF-8 is
+    /// self-synchronising at code point boundaries, so dropping a leading run of them cannot change
+    /// the verdict for the rest.
+    while (len >= 8 && (unalignedLoad<UInt64>(data) & 0x8080808080808080ULL) == 0)
+    {
+        data += 8;
+        len -= 8;
+    }
+
+#if USE_SIMDUTF
+    /// The pre-pass stopped at a word that is not plain ASCII, so what is left has to be walked a code
+    /// point at a time. From this length up a padded block does it for less, except where the walk
+    /// rejects at once.
+    static constexpr UInt64 simdutf_min_len_after_ascii = 16;
+    if (len >= simdutf_min_len_after_ascii)
+        return simdutf::validate_utf8_with_errors(reinterpret_cast<const char *>(data), len).error == simdutf::SUCCESS;
+#endif
+
     while (len)
     {
         int bytes = 0;

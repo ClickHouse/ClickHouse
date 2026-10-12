@@ -121,17 +121,18 @@ Returns the current value of a setting.
     {
         "Usage example",
         R"(
-SELECT getSetting('enable_analyzer');
-SET enable_analyzer = false;
-SELECT getSetting('enable_analyzer');
+SET optimize_move_to_prewhere = false;
+SELECT getSetting('optimize_move_to_prewhere');
+SET optimize_move_to_prewhere = true;
+SELECT getSetting('optimize_move_to_prewhere');
         )",
         R"(
-┌─getSetting('enable_analyzer')─┐
-│ true                          │
-└───────────────────────────────┘
-┌─getSetting('enable_analyzer')─┐
-│ false                         │
-└───────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ false                                   │
+└─────────────────────────────────────────┘
+┌─getSetting('optimize_move_to_prewhere')─┐
+│ true                                    │
+└─────────────────────────────────────────┘
         )"
     }
     };

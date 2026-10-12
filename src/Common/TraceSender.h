@@ -24,7 +24,8 @@ enum class TraceType : uint8_t
     ProfileEvent,
     JemallocSample,
     MemoryAllocatedWithoutCheck,
-    Instrumentation
+    Instrumentation,
+    MemoryLargeAllocation
 };
 
 /// This is the second part of TraceCollector, that sends stacktrace to the pipe.
@@ -49,6 +50,9 @@ public:
     /// Collect a stack trace. This method is signal safe.
     /// Precondition: the TraceCollector object must be created.
     static void send(TraceType trace_type, const StackTrace & stack_trace, Extras extras) noexcept;
+
+    /// True when a TraceCollector is running, i.e. when `send()` can deliver rather than discard.
+    static bool isCollecting() { return pipe.fds_rw[1] >= 0 && !shutdown.load(); }
 
 private:
     friend class TraceCollector;
