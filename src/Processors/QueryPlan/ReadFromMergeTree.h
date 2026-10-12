@@ -785,6 +785,13 @@ private:
     /// nullopt when the index of a part lacks the value.
     std::optional<Block> getFinalMergeVirtualRow(const RangesInDataParts & parts, const Block & pk_header, bool read_in_reverse) const;
 
+    /// Whether `lhs` comes before `rhs` in the order of a FINAL merge: the table's order, reversed for a read in the reverse order.
+    bool virtualRowPrecedes(const Block & lhs, const Block & rhs, bool read_in_reverse) const;
+
+    /// The tighter of a FINAL merge's virtual row and the border its layer starts from, in the columns of `pk_header`.
+    std::optional<Block> tightenFinalMergeVirtualRow(
+        std::optional<Block> virtual_row, const std::vector<Field> & border, const Block & pk_header, bool read_in_reverse) const;
+
     Pipe spreadMarkRanges(
         RangesInDataParts && parts_with_ranges,
         const MergeTreeIndexBuildContextPtr & index_build_context,
