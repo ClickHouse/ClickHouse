@@ -611,10 +611,12 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
-# Position independent code is enabled on every amd64 and aarch64 build:
+# Position independent code is enabled on every amd64 and aarch64 build except the ones with -flto=thin:
 # 1. Position independent binaries and libraries have no limit for maximum size of relocation. It allows to avoid
 # multiple sophisticated problems like linking with sanitizers or linking of rust.
-# 2. -flto=thin leads to some other way of linkage. For example for rust libraries build
+# 2. A position independent executable is loaded at a random address, and in some processes some queries then run
+# 15-40% slower. The -flto=thin build is the release build, so it stays position dependent.
+# 3. -flto=thin leads to some other way of linkage. For example for rust libraries build
 # we don't see any relocation-related errors without -fPIC, but with enabled -flto=thin. While without
 # -flto=thin we have relocation errors like:
 # rust-lld: error: relocation R_X86_64_32S cannot be used against symbol 'SEED_encrypt'; recompile with -fPIC
@@ -628,7 +630,8 @@ include(cmake/dbms_glob_sources.cmake)
 # compile without -fPIC. That only breaks with compilers that do not default to PIE
 # (clang with CLANG_DEFAULT_PIE_ON_LINUX=OFF, as configured by some distributions), because then the
 # non-relocatable objects of those libraries cannot be linked into the PIE executable.
-if (ARCH_AMD64 OR ARCH_AARCH64)
+if (NOT (ENABLE_THINLTO AND NOT ENABLE_TESTS AND NOT SANITIZE AND CMAKE_BUILD_TYPE_UC STREQUAL "RELWITHDEBINFO")
+    AND (ARCH_AMD64 OR ARCH_AARCH64))
     set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
 
     # -fPIC only makes the code relocatable; whether the executable itself is position independent is

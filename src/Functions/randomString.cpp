@@ -1,9 +1,11 @@
 #include <Columns/ColumnString.h>
+#include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeString.h>
 #include <Functions/FunctionFactory.h>
 #include <Functions/FunctionHelpers.h>
 #include <Functions/IFunction.h>
 #include <Functions/FunctionsRandom.h>
+#include <Functions/castTypeToEither.h>
 
 
 namespace DB
@@ -70,15 +72,35 @@ public:
         offsets_to.resize(input_rows_count);
         const IColumn & length_column = *arguments[0].column;
 
-        IColumn::Offset offset = 0;
-        for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+        auto fill_offsets = [&](auto && get_length)
         {
-            size_t length = length_column.getUInt(row_num);
-            if (length > (1 << 30))
-                throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
+            IColumn::Offset offset = 0;
+            for (size_t row_num = 0; row_num < input_rows_count; ++row_num)
+            {
+                size_t length = get_length(row_num);
+                if (length > (1 << 30))
+                    throw Exception(ErrorCodes::TOO_LARGE_STRING_SIZE, "Too large string size in function {}", getName());
 
-            offset += length;
-            offsets_to[row_num] = offset;
+                offset += length;
+                offsets_to[row_num] = offset;
+            }
+        };
+
+        if (isColumnConst(length_column))
+        {
+            const UInt64 length = length_column.getUInt(0);
+            fill_offsets([length](size_t) { return length; });
+        }
+        else if (!castTypeToEither<ColumnUInt8, ColumnUInt16, ColumnUInt32, ColumnUInt64, ColumnInt8, ColumnInt16, ColumnInt32, ColumnInt64>(
+                     &length_column,
+                     [&](const auto & column)
+                     {
+                         const auto & data = column.getData();
+                         fill_offsets([&data](size_t row_num) { return static_cast<UInt64>(data[row_num]); });
+                         return true;
+                     }))
+        {
+            fill_offsets([&length_column](size_t row_num) { return length_column.getUInt(row_num); });
         }
 
         /// Fill random bytes.

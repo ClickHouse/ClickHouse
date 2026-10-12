@@ -55,10 +55,9 @@ def process_glibc_check():
     return ok
 
 
-def process_pie_check():
-    # Nothing in the build fails when the binary comes out position dependent: -fPIC only makes the
-    # code relocatable, and whether the executable itself is position independent is the linker's
-    # decision, so it is checked on the packaged binary instead.
+def process_position_dependent_check():
+    # The release build is linked with -no-pie, and nothing in the build fails when the executable
+    # comes out position independent, so it is checked on the packaged binary.
     header = Shell.get_output(
         f"readelf -h --wide {temp_path}/clickhouse", verbose=True, strict=True
     )
@@ -67,24 +66,13 @@ def process_pie_check():
         print(f"FAILED: no ELF type in the header:\n{header}")
         return False
 
-    ok = True
-    if elf_type.group(1) != "DYN":
+    if elf_type.group(1) != "EXEC":
         print(
-            f"FAILED: ELF type is [{elf_type.group(1)}], a position independent executable is [DYN]"
+            f"FAILED: ELF type is [{elf_type.group(1)}], a position dependent executable is [EXEC]"
         )
-        ok = False
+        return False
 
-    # A shared library is `DYN` as well, so the type alone does not say that this is a position
-    # independent *executable*. `DF_1_PIE` is what the linker sets for `-pie` and nothing else.
-    dynamic = Shell.get_output(
-        f"readelf -d --wide {temp_path}/clickhouse", verbose=True, strict=True
-    )
-    flags = re.search(r"^.*\(FLAGS_1\)\s+Flags:(.*)$", dynamic, re.MULTILINE)
-    if not flags or "PIE" not in flags.group(1).split():
-        print(f"FAILED: DF_1_PIE is not set: [{flags.group(0).strip() if flags else 'no FLAGS_1'}]")
-        ok = False
-
-    return ok
+    return True
 
 
 def parse_args():
@@ -130,8 +118,8 @@ def main():
 
     test_results.append(
         Result.from_commands_run(
-            name="position independent executable",
-            command=process_pie_check,
+            name="position dependent executable",
+            command=process_position_dependent_check,
         )
     )
 
