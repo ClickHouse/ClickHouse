@@ -33,8 +33,9 @@ RegionsHierarchiesDataProvider::RegionsHierarchiesDataProvider(const std::string
 
 void RegionsHierarchiesDataProvider::discoverFilesWithCustomHierarchies()
 {
-    std::string basename = pathToGenericString(fs::path(path).stem());
-    fs::path dir_path = fs::canonical(path).parent_path();
+    const fs::path file_path = pathFromString(path);
+    std::string basename = pathToGenericString(file_path.stem());
+    fs::path dir_path = fs::canonical(file_path).parent_path();
 
     fs::directory_iterator dir_end;
     for (fs::directory_iterator dir_it(dir_path); dir_it != dir_end; ++dir_it)
