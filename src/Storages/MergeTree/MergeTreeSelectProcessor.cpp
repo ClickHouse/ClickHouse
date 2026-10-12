@@ -259,51 +259,58 @@ static void addIndexReadSteps(PrewhereExprSteps & steps, const IndexReadTasks & 
     if (index_read_tasks.empty())
         return;
 
-    PrewhereExprSteps result;
-    result.reserve(steps.size() + index_read_tasks.size());
-    NameSet read_columns;
-
-    /// Adds a step for every index to read its columns that are used and not read by the previous steps.
-    auto add_index_read_steps = [&](auto && is_used)
+    /// Virtual column of an index -> position of the first step that uses it.
+    /// Columns that no step uses are read after the last step.
+    std::unordered_map<String, size_t> first_step_using_column;
+    for (const auto & [_, index_task] : index_read_tasks)
     {
-        for (const auto & [_, index_task] : index_read_tasks)
+        for (const auto & column : index_task.columns)
+            first_step_using_column.emplace(column.name, steps.size());
+    }
+
+    for (size_t i = 0; i < steps.size(); ++i)
+    {
+        Names required_columns = steps[i]->actions
+            ? steps[i]->actions->getActionsDAG().getRequiredColumnsNames()
+            : Names{steps[i]->filter_column_name};
+
+        for (const auto & name : required_columns)
         {
-            NamesAndTypesList columns_to_read;
-            for (const auto & column : index_task.columns)
-            {
-                if (!read_columns.contains(column.name) && is_used(column.name))
-                {
-                    read_columns.insert(column.name);
-                    columns_to_read.emplace_back(column.name, column.type);
-                }
-            }
+            if (auto it = first_step_using_column.find(name); it != first_step_using_column.end())
+                it->second = std::min(it->second, i);
+        }
+    }
 
-            if (columns_to_read.empty())
-                continue;
+    /// (position of the first step that uses the columns, index name) -> columns to read.
+    std::map<std::pair<size_t, String>, NamesAndTypesList> columns_to_read_by_step;
+    for (const auto & [index_name, index_task] : index_read_tasks)
+    {
+        for (const auto & column : index_task.columns)
+        {
+            auto key = std::make_pair(first_step_using_column.at(column.name), index_name);
+            columns_to_read_by_step[key].emplace_back(column.name, column.type);
+        }
+    }
 
+    PrewhereExprSteps result;
+    result.reserve(steps.size() + columns_to_read_by_step.size());
+    auto it = columns_to_read_by_step.begin();
+
+    for (size_t i = 0; i <= steps.size(); ++i)
+    {
+        for (; it != columns_to_read_by_step.end() && it->first.first == i; ++it)
+        {
             auto index_read_step = std::make_shared<PrewhereExprStep>();
             index_read_step->type = PrewhereExprStep::None;
-            index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(columns_to_read), actions_settings);
+            index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(it->second), actions_settings);
             index_read_step->perform_alter_conversions = true;
             result.push_back(std::move(index_read_step));
         }
-    };
 
-    for (auto & step : steps)
-    {
-        add_index_read_steps([&](const String & name)
-        {
-            if (!step->actions)
-                return name == step->filter_column_name;
-
-            const auto & inputs = step->actions->getActionsDAG().getInputs();
-            return std::ranges::any_of(inputs, [&](const auto * input) { return input->result_name == name; });
-        });
-
-        result.push_back(std::move(step));
+        if (i < steps.size())
+            result.push_back(std::move(steps[i]));
     }
 
-    add_index_read_steps([](const String &) { return true; });
     steps = std::move(result);
 }
 
@@ -336,17 +343,8 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
         prewhere_actions.steps.emplace_back(std::make_shared<PrewhereExprStep>(std::move(row_level_filter_step)));
     }
 
-    /// Adjacent conditions on the virtual columns of one index share a step, like conditions on subcolumns of one column,
-    /// so that the index reader fills these columns in one pass.
-    NameToNameMap index_column_storage_names;
-    for (const auto & [_, index_task] : index_read_tasks)
-    {
-        for (const auto & column : index_task.columns)
-            index_column_storage_names.emplace(column.name, index_task.index.index->getFileName());
-    }
-
     if (prewhere_info &&
-        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns, read_ahead_prewhere_columns, &index_column_storage_names)))
+        (!enable_multiple_prewhere_read_steps || !tryBuildPrewhereSteps(prewhere_info, actions_settings, prewhere_actions, force_short_circuit_execution, columns, read_ahead_prewhere_columns, &index_read_tasks)))
     {
         PrewhereExprStep prewhere_step
         {

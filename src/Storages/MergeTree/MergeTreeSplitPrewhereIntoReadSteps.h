@@ -8,10 +8,14 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <Interpreters/ExpressionActions.h>
 
+#include <map>
+
 namespace DB
 {
 
 class ColumnsDescription;
+struct IndexReadTask;
+using IndexReadTasks = std::map<String, IndexReadTask>;
 
 bool tryBuildPrewhereSteps(
     PrewhereInfoPtr prewhere_info,
@@ -20,7 +24,8 @@ bool tryBuildPrewhereSteps(
     bool force_short_circuit_execution,
     const ColumnsDescription * columns = nullptr,
     bool read_ahead_columns = false,
-    /// Overrides the storage names of columns: conditions on columns with one storage name may share a step.
-    const NameToNameMap * storage_column_names = nullptr);
+    /// Adjacent conditions on the virtual columns of one index may share a step, like conditions on subcolumns of one column,
+    /// so that the index reader fills these columns in one pass.
+    const IndexReadTasks * index_read_tasks = nullptr);
 
 }
