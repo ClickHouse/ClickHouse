@@ -4,6 +4,7 @@
             <allow_experimental_ytsaurus_table_function>1</allow_experimental_ytsaurus_table_function>
             <allow_experimental_ytsaurus_table_engine>1</allow_experimental_ytsaurus_table_engine>
             <allow_experimental_ytsaurus_dictionary_source>1</allow_experimental_ytsaurus_dictionary_source>
+            <system_events_show_zero_values>1</system_events_show_zero_values>
         </default>
     </profiles>
 </clickhouse>
