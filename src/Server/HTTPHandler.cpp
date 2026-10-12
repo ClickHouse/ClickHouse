@@ -735,6 +735,9 @@ void HTTPHandler::processQuery(
     used_output.out_maybe_compressed = used_output.out_holder;
     used_output.out = used_output.out_holder;
 
+    /// The compressing buffers below are built before the query is executed, so, like the other response-shaping
+    /// settings read here, `max_generic_compression_threads` comes from the URL parameters and the user profile;
+    /// an in-query `SETTINGS` clause cannot change how the already constructed response is compressed.
     if (client_supports_http_compression && enable_http_compression)
     {
         used_output.out_holder->setCompressionMethodHeader(http_response_compression_method);

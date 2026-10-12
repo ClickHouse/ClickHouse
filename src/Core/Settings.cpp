@@ -373,6 +373,8 @@ Possible values:
 - Positive integer greater than 1 — compress on up to this many threads.
 
 Higher values will lead to higher memory usage.
+
+For HTTP query responses, the compressing buffer is set up before the query is executed, like the other HTTP response-shaping settings (`enable_http_compression`, `http_zlib_compression_level`, `compression`). There the setting must be supplied via the HTTP URL parameter or a user profile; an in-query `SETTINGS` clause does not affect the compression of the HTTP response itself (it still applies to files and storage written by the query, e.g. `INSERT INTO FUNCTION file(...)` or `SELECT ... INTO OUTFILE`).
 )", 0, \
         {"26.10", 1, 1, "New setting to control the number of threads used for parallel gzip compression of output streams."}) \
     DECLARE(UInt64, max_insert_delayed_streams_for_parallel_write, 0, R"(
