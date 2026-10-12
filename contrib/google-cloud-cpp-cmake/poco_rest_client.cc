@@ -31,13 +31,19 @@
 #include <Poco/Net/HTTPResponse.h>
 #include <Poco/Net/HTTPSClientSession.h>
 #include <Poco/Net/NetException.h>
+#include <Poco/Net/SSLException.h>
 #include <Poco/Timespan.h>
 #include <Poco/URI.h>
+
+#include <openssl/ssl.h>
+#include <openssl/x509.h>
+#include <sys/stat.h>
 
 #include <algorithm>
 #include <cctype>
 #include <chrono>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <istream>
 #include <memory>
@@ -143,18 +149,65 @@ std::chrono::seconds RequestTimeout(Options const& options) {
   return timeout;
 }
 
+// Identifies the current contents of the trust store an SSL context loads: the
+// explicit CA bundle (file or directory) when one is configured, otherwise the
+// OpenSSL default locations (honouring `SSL_CERT_FILE` / `SSL_CERT_DIR`). Each
+// path contributes its device, inode, size and modification time, so replacing a
+// bundle in place, or atomically through a rename, yields a different value. For
+// a directory only entries being added, removed or renamed change its mtime, which
+// is how `c_rehash`-style CA directories are updated. A path that cannot be
+// `stat`ed contributes a marker, so it appearing later changes the value too.
+std::string TrustStoreFingerprint(std::string const& ca_location) {
+  std::vector<std::string> paths;
+  if (!ca_location.empty()) {
+    paths.push_back(ca_location);
+  } else {
+    char const* file = std::getenv(X509_get_default_cert_file_env());
+    paths.emplace_back(file != nullptr ? file : X509_get_default_cert_file());
+    char const* dir = std::getenv(X509_get_default_cert_dir_env());
+    paths.emplace_back(dir != nullptr ? dir : X509_get_default_cert_dir());
+  }
+  std::string result;
+  for (auto const& path : paths) {
+    result += path;
+    struct stat st;
+    if (::stat(path.c_str(), &st) != 0) {
+      result += "|-|";
+      continue;
+    }
+    result += "|" + std::to_string(st.st_dev) + ":" + std::to_string(st.st_ino) +
+              ":" + std::to_string(st.st_size) + ":" +
+              std::to_string(st.st_mtim.tv_sec) + "." +
+              std::to_string(st.st_mtim.tv_nsec) + "|";
+  }
+  return result;
+}
+
 // Building a Poco::Net::Context creates an OpenSSL SSL_CTX: it loads the trust
 // store (a `getdents64`/`stat`/`open` walk of the CA directory) and builds the
 // cipher list. That is per-*context* work, not per-connection, and the context is
 // immutable once configured and safe to share, so cache one per CA location
-// instead of rebuilding it for every request.
-Poco::Net::Context::Ptr SslContextFor(std::string const& ca_location) {
+// instead of rebuilding it for every request. The context keeps the roots it
+// loaded, so the cached one is used only while the trust store is unchanged
+// (`trust_store_fingerprint`): after a CA bundle is rotated in place, the next
+// new connection gets a context built from the new roots, and the stale one is
+// dropped once the sessions that still hold it are gone.
+Poco::Net::Context::Ptr SslContextFor(
+    std::string const& ca_location,
+    std::string const& trust_store_fingerprint) {
+  struct CachedContext {
+    std::string trust_store_fingerprint;
+    Poco::Net::Context::Ptr context;
+  };
   static std::mutex mu;
   static auto* contexts =
-      new std::unordered_map<std::string, Poco::Net::Context::Ptr>();
+      new std::unordered_map<std::string, CachedContext>();
   std::lock_guard<std::mutex> lock(mu);
   auto it = contexts->find(ca_location);
-  if (it != contexts->end()) return it->second;
+  if (it != contexts->end() &&
+      it->second.trust_store_fingerprint == trust_store_fingerprint) {
+    return it->second.context;
+  }
   // When an explicit CA bundle is configured via CARootsFilePathOption, trust
   // only that bundle and do not also load the system trust store. This matches
   // the libcurl-based transport, where CAINFO replaces the default trust roots
@@ -164,7 +217,14 @@ Poco::Net::Context::Ptr SslContextFor(std::string const& ca_location) {
       /*certificateFile=*/"", ca_location,
       Poco::Net::Context::VERIFY_STRICT, /*verificationDepth=*/9,
       /*loadDefaultCAs=*/ca_location.empty()));
-  contexts->emplace(ca_location, context);
+  // `TLSV1_2_CLIENT_USE` only selects `TLS_client_method`, which accepts any
+  // protocol version the OpenSSL build allows; set the TLS 1.2 floor explicitly.
+  if (SSL_CTX_set_min_proto_version(context->sslContext(), TLS1_2_VERSION) !=
+      1) {
+    throw Poco::Net::SSLContextException(
+        "Cannot set the minimum TLS protocol version to TLS 1.2");
+  }
+  (*contexts)[ca_location] = CachedContext{trust_store_fingerprint, context};
   return context;
 }
 
@@ -326,12 +386,15 @@ class SessionPool {
 // The TLS trust configuration discriminates too: an HTTPS session verifies its
 // peer with the SSL context it was opened with (`SslContextFor`), so a socket
 // opened under one CA bundle must not be handed to a request that configured
-// another one. The key uses the same `ca_location` that `SslContextFor` keys on.
+// another one. The key uses the same `ca_location` and trust store fingerprint
+// that `SslContextFor` keys on, so a session opened before a CA bundle rotation
+// is not reused afterwards.
 std::string SessionKey(
     Poco::URI const& uri,
     Poco::Net::HTTPClientSession::ProxyConfig const& proxy,
     ::ClickHouse::PocoRestKeepAliveOption::Type const& keep_alive,
-    std::string const& ca_location) {
+    std::string const& ca_location,
+    std::string const& trust_store_fingerprint) {
   return uri.getScheme() + "://" + uri.getHost() + ":" +
          std::to_string(uri.getPort()) + "|" + proxy.host + ":" +
          std::to_string(proxy.port) + "|" + proxy.protocol + "|" +
@@ -340,7 +403,8 @@ std::string SessionKey(
          std::to_string(std::hash<std::string>{}(proxy.password)) + "|" +
          proxy.nonProxyHosts + "|" +
          std::to_string(keep_alive.timeout.count()) + ":" +
-         std::to_string(keep_alive.max_requests) + "|" + ca_location;
+         std::to_string(keep_alive.max_requests) + "|" + ca_location + "|" +
+         trust_store_fingerprint;
 }
 
 // Where a session goes back to, and under which limit. Both are decided by the
@@ -410,7 +474,11 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
     ca_location = options.get<CARootsFilePathOption>();
   }
 
-  auto const key = SessionKey(uri, effective_proxy, keep_alive, ca_location);
+  // Only HTTPS sessions verify a peer, so only they depend on the trust store.
+  std::string const trust_store_fingerprint =
+      uri.getScheme() == "https" ? TrustStoreFingerprint(ca_location) : "";
+  auto const key = SessionKey(uri, effective_proxy, keep_alive, ca_location,
+                              trust_store_fingerprint);
   if (ticket != nullptr) {
     ticket->key = key;
     ticket->proxy = effective_proxy;
@@ -430,7 +498,7 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
   if (!session) {
     if (uri.getScheme() == "https") {
       session = std::make_unique<Poco::Net::HTTPSClientSession>(
-          uri.getHost(), uri.getPort(), SslContextFor(ca_location));
+          uri.getHost(), uri.getPort(), SslContextFor(ca_location, trust_store_fingerprint));
     } else {
       session = std::make_unique<Poco::Net::HTTPClientSession>(uri.getHost(),
                                                                uri.getPort());
