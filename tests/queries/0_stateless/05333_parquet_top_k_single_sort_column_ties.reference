@@ -1,0 +1,29 @@
+20
+-- one sort column: once the threshold reaches the shared minimum (maximum), the other row groups are skipped
+[[0], [0], [0]] rows read < 1050: True
+[[1000000], [1000000], [1000000]] rows read < 1050: True
+-- two sort columns: a row equal to the threshold can still win on v, so every row group is read
+[[0, 19004], [0, 19003], [0, 19002]] rows read < 1050: False
+-- results identical with and without the optimization
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
+OK
