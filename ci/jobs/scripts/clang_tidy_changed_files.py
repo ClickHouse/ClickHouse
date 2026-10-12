@@ -71,14 +71,6 @@ FRAGMENT_SUFFIXES = (".inc", ".inl", ".ipp", ".tcc", ".tpp", ".txx")
 # many direct includers are analyzed instead.
 MAX_INCLUDERS_PER_HEADER = 3
 
-# How far the search for those includers follows headers including the changed
-# header. A header is often included only by other headers (`wide_integer_impl.h`
-# by `wide_integer.h`), so its translation units are found a level or two away.
-# The search runs over an in-memory index of the include directives, so every
-# header on a level is followed: which includers are found must not depend on how
-# their names sort.
-MAX_INCLUDE_DEPTH = 3
-
 # Files that decide what the clang-tidy checks report, or how this one selects
 # and judges its work, without being analyzed themselves. A change to them alone
 # touches no translation unit, yet it can make the full check fail on `master`,
@@ -216,6 +208,11 @@ SELF_PATH = "ci/jobs/scripts/clang_tidy_changed_files.py"
 SELF_TEST_CHANGED_HEADER = "base/base/wide_integer_impl.h"
 SELF_TEST_GENERATOR_INPUT = "src/Common/config.h.in"
 SELF_TEST_CHANGED_FRAGMENT = "src/Dictionaries/RangeHashedDictionaryGetItemsImpl.txx"
+# A header whose nearest translation unit is four include hops away:
+# `NotificationStrategy.h` -> `DefaultStrategy.h` -> `BasicEvent.h` ->
+# `EventChannel.h` -> `EventChannel.cpp`.
+SELF_TEST_DISTANT_HEADER = "base/poco/Foundation/include/Poco/NotificationStrategy.h"
+SELF_TEST_DISTANT_TRANSLATION_UNIT = "base/poco/Foundation/src/EventChannel.cpp"
 
 # Upper bound on the translation units one run analyzes, so that a sweeping
 # change cannot turn the merge-queue gate back into a multi-hour build. Beyond
@@ -613,19 +610,26 @@ def direct_includers(header, repo_dir):
 def find_includers(header, repo_dir, limit, is_built):
     """Translation units that cover `header` through its includers, at most `limit`.
 
-    Breadth-first over the include graph, up to `MAX_INCLUDE_DEPTH` levels: a
-    translation unit including `header` is taken directly, and a header
-    including it is covered the way a changed header is - through its sibling
-    translation unit, or else through its own includers on the next level. Only
-    a few translation units, nearest first: this is the coverage a header-only
-    change gets, not the transitive closure the full check has. Candidates are
-    filtered by `is_built` before the limit is applied, so that includers the
-    build does not compile cannot crowd out ones it does.
+    Breadth-first over the include graph, level by level, until `limit`
+    translation units are found or the graph is exhausted: a translation unit
+    including `header` is taken directly, and a header including it is covered
+    the way a changed header is - through its sibling translation unit, or else
+    through its own includers on the next level. A header is often included only
+    by other headers, so its nearest translation unit can be several levels away
+    (`Poco/NotificationStrategy.h` reaches `EventChannel.cpp` only through
+    `DefaultStrategy.h`, `BasicEvent.h` and `EventChannel.h`), and the search
+    must not stop at an arbitrary depth. It runs over an in-memory index of the
+    include directives, so every header on a level is followed: which includers
+    are found must not depend on how their names sort. Only a few translation
+    units, nearest first: this is the coverage a header-only change gets, not
+    the transitive closure the full check has. Candidates are filtered by
+    `is_built` before the limit is applied, so that includers the build does not
+    compile cannot crowd out ones it does.
     """
     found = []
     seen = {header}
     frontier = [header]
-    for _ in range(MAX_INCLUDE_DEPTH):
+    while frontier:
         sources = []
         siblings = []
         next_frontier = []
@@ -654,7 +658,7 @@ def find_includers(header, repo_dir, limit, is_built):
         for candidate in sorted(sources) + sorted(set(siblings)):
             if candidate not in found:
                 found.append(candidate)
-        if len(found) >= limit or not next_frontier:
+        if len(found) >= limit:
             break
         frontier = sorted(next_frontier)
     return found[:limit]
@@ -669,7 +673,7 @@ def is_coverable(path, repo_dir, compile_commands):
     """True when `select_translation_units` finds a translation unit for `path`.
 
     The same order of lookups: a source file itself, a header's sibling
-    translation unit, or a translation unit including the header directly.
+    translation unit, or a translation unit reached through the header's includers.
     """
 
     def is_built(candidate):
@@ -1076,6 +1080,27 @@ def self_test(repo_dir, build_dir, compile_commands):
         units and not notes,
         f"`select_translation_units` did not cover {header}: {units}, {notes}",
     )
+
+    # The search for includers is not cut off at some depth: a header reaching
+    # its only built translation unit through several other headers is covered.
+    distant_entry = lookup_translation_unit(
+        SELF_TEST_DISTANT_TRANSLATION_UNIT, repo_dir, compile_commands
+    )
+    expect(
+        distant_entry is not None,
+        f"{SELF_TEST_DISTANT_TRANSLATION_UNIT} is not in the compilation database",
+    )
+    if distant_entry is not None:
+        units, notes = select_translation_units(
+            [SELF_TEST_DISTANT_HEADER],
+            repo_dir,
+            {os.path.normpath(distant_entry["file"]): distant_entry},
+        )
+        expect(
+            units == [distant_entry["file"]] and not notes,
+            f"`select_translation_units` did not cover {SELF_TEST_DISTANT_HEADER} "
+            f"through {SELF_TEST_DISTANT_TRANSLATION_UNIT}: {units}, {notes}",
+        )
 
     # A changed C++ fragment is covered through the translation units including it.
     fragment = SELF_TEST_CHANGED_FRAGMENT
