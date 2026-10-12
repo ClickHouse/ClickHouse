@@ -1531,6 +1531,22 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
         {
             ActionsDAG rename_dag;
 
+            for (const auto & interpolate_node : interpolate_list_nodes)
+            {
+                const auto & target_name = interpolate_node->as<InterpolateNode &>().getExpressionName();
+                const ActionsDAG::Node * target_input = nullptr;
+                for (const auto * input_node : interpolate_actions_dag.getInputs())
+                    if (input_node->result_name == target_name)
+                        target_input = input_node;
+
+                if (!target_input)
+                    throw Exception(ErrorCodes::LOGICAL_ERROR, "INTERPOLATE target {} is not present in the block {}",
+                        target_name, query_plan.getCurrentHeader()->dumpNames());
+
+                interpolate_actions_dag.addAlias(*target_input, calculateInterpolateColumnActionNodeName(target_name));
+            }
+
+            std::vector<std::pair<const ActionsDAG::Node *, String>> interpolate_results;
             for (auto & interpolate_node : interpolate_list_nodes)
             {
                 auto & interpolate_node_typed = interpolate_node->as<InterpolateNode &>();
@@ -1559,9 +1575,12 @@ void addWithFillStepIfNeeded(QueryPlan & query_plan,
                         planner_context->getQueryContext());
                 }
 
-                const auto * alias_node = &interpolate_actions_dag.addAlias(*interpolate_expression, interpolate_node_typed.getExpressionName());
-                interpolate_actions_dag.getOutputs().push_back(alias_node);
+                interpolate_results.emplace_back(interpolate_expression, interpolate_node_typed.getExpressionName());
             }
+
+            /// Added after all items are visited, so that no item binds another item's result by name
+            for (const auto & [node, target_name] : interpolate_results)
+                interpolate_actions_dag.getOutputs().push_back(&interpolate_actions_dag.addAlias(*node, target_name));
 
             if (!rename_dag.getOutputs().empty())
                 interpolate_actions_dag = ActionsDAG::merge(std::move(rename_dag), std::move(interpolate_actions_dag));
