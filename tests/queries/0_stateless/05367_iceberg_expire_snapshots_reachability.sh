@@ -4,7 +4,7 @@
 # table over the same path never returns missing rows, and files whose deletion was lost are
 # collected by `remove_orphan_files`.
 #
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

@@ -3,7 +3,7 @@
 # data and delete files of every snapshot, the metadata log and the version hint survive, and every
 # snapshot stays readable through time travel.
 #
-# Tags: no-fasttest
+# Tags: no-fasttest, no-replicated-database
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)

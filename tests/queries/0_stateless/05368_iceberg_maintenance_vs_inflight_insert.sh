@@ -3,7 +3,7 @@
 # `remove_orphan_files` with the default window keeps its files, and an `expire_snapshots`
 # commit in between makes the INSERT retry its commit instead of losing rows.
 #
-# Tags: no-fasttest, no-parallel
+# Tags: no-fasttest, no-parallel, no-replicated-database
 # - no-fasttest: requires `IcebergLocal` (USE_AVRO build option)
 # - no-parallel: failpoints are server-wide and would pause INSERTs of other tests
 
