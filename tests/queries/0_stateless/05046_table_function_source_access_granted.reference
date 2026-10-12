@@ -1,0 +1,22 @@
+=== column-only grant ===
+ACCESS_DENIED
+ACCESS_DENIED
+0
+ACCESS_DENIED
+=== table-level grant ===
+a
+b
+part_name
+mark_number
+rows_in_granule
+a
+b
+a
+b
+1
+1
+There is no index with name 'idx_none'
+There is no index with name 'idx_none'
+=== an authorized user still gets the original error for a source that does not exist ===
+UNKNOWN_TABLE
+UNKNOWN_TABLE
