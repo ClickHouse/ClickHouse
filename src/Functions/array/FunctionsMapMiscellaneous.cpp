@@ -11,6 +11,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeMap.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Functions/FunctionHelpers.h>
@@ -663,6 +664,172 @@ using FunctionMapContainsKey = FunctionMapToArrayAdapter<FunctionArrayIndex<HasA
 struct NameMapContainsValue { static constexpr auto name = "mapContainsValue"; };
 using FunctionMapContainsValue = FunctionMapToArrayAdapter<FunctionArrayIndex<HasAction, NameMapContainsValue>, MapToSubcolumnAdapter<NameMapContainsValue, 1>, NameMapContainsValue>;
 
+struct NameMapGetOrDefault { static constexpr auto name = "mapGetOrDefault"; };
+
+class FunctionMapGetOrDefault final : public IFunction
+{
+public:
+    static constexpr auto name = NameMapGetOrDefault::name;
+
+    explicit FunctionMapGetOrDefault(const ContextPtr & context)
+        : array_element(FunctionFactory::instance().get("arrayElement", context))
+        , function_if(FunctionFactory::instance().get("if", context))
+    {
+    }
+
+    static FunctionPtr create(ContextPtr context) { return std::make_shared<FunctionMapGetOrDefault>(context); }
+
+    String getName() const override { return name; }
+    size_t getNumberOfArguments() const override { return 3; }
+    bool useDefaultImplementationForNulls() const override { return false; }
+    bool useDefaultImplementationForNothing() const override { return false; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
+    bool isShortCircuit(ShortCircuitSettings & settings, size_t number_of_arguments) const override
+    {
+        /// As with dictGetOrDefault, only the fallback is lazy.
+        for (size_t i = 0; i + 1 < number_of_arguments; ++i)
+            settings.arguments_with_disabled_lazy_execution.insert(i);
+
+        settings.enable_lazy_execution_for_common_descendants_of_arguments = false;
+        settings.force_enable_lazy_execution = false;
+        return true;
+    }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo &) const override { return true; }
+
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & arguments) const override
+    {
+        if (arguments.size() != 3)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Number of arguments for function {} doesn't match: passed {}, should be 3",
+                getName(),
+                arguments.size());
+
+        ColumnsWithTypeAndName index_arguments{arguments[0], arguments[1]};
+        MapToSubcolumnAdapter<NameMapGetOrDefault, 0>::extractNestedTypesAndColumns(index_arguments);
+        auto index_type = index_of.getReturnTypeImpl(index_arguments);
+
+        ColumnsWithTypeAndName element_arguments{
+            arguments[0],
+            {nullptr, index_type, ""}};
+        MapToSubcolumnAdapter<NameMapGetOrDefault, 1>::extractNestedTypesAndColumns(element_arguments);
+        auto element_function = array_element->build(element_arguments);
+
+        ColumnsWithTypeAndName if_arguments{
+            {nullptr, std::make_shared<DataTypeUInt8>(), ""},
+            {nullptr, element_function->getResultType(), ""},
+            {nullptr, arguments[2].type, ""}};
+        return function_if->build(if_arguments)->getResultType();
+    }
+
+    ColumnPtr executeImpl(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type, size_t input_rows_count) const override
+    {
+        ColumnsWithTypeAndName index_arguments{arguments[0], arguments[1]};
+        MapToSubcolumnAdapter<NameMapGetOrDefault, 0>::extractNestedTypesAndColumns(index_arguments);
+        auto index_type = index_of.getReturnTypeImpl(index_arguments);
+        auto positions = index_of.executeImpl(index_arguments, index_type, input_rows_count);
+
+        /// indexOf's numeric fast path cannot match NaN keys. Map key comparisons do match NaN
+        /// with NaN, so correct only these rows and preserve the fast path for other lookups.
+        const auto & key_type = assert_cast<const DataTypeArray &>(*index_arguments[0].type).getNestedType();
+        if (isFloat(removeLowCardinality(key_type))
+            && isFloat(removeNullable(removeLowCardinality(index_arguments[1].type))))
+        {
+            ColumnPtr needle_column = recursiveRemoveLowCardinality(index_arguments[1].column);
+            ColumnPtr keys_array_holder;
+            const ColumnArray * keys_array = nullptr;
+            MutableColumnPtr updated_positions;
+
+            for (size_t row = 0; row < input_rows_count; ++row)
+            {
+                if (needle_column->isNullAt(row) || !isNaN(needle_column->getFloat64(row)))
+                    continue;
+
+                if (!updated_positions)
+                {
+                    keys_array_holder = recursiveRemoveLowCardinality(index_arguments[0].column)->convertToFullColumnIfConst();
+                    keys_array = &assert_cast<const ColumnArray &>(*keys_array_holder);
+                    updated_positions = IColumn::mutate(positions->convertToFullColumnIfConst());
+                }
+
+                auto & position_data = assert_cast<ColumnUInt64 &>(*updated_positions).getData();
+                if (position_data[row] != 0)
+                    continue;
+
+                const auto & offsets = keys_array->getOffsets();
+                const auto & keys = keys_array->getData();
+                const size_t begin = offsets[ssize_t(row) - 1];
+                for (size_t key_index = begin; key_index < offsets[row]; ++key_index)
+                {
+                    if (isNaN(keys.getFloat64(key_index)))
+                    {
+                        position_data[row] = key_index - begin + 1;
+                        break;
+                    }
+                }
+            }
+
+            if (updated_positions)
+                positions = std::move(updated_positions);
+        }
+
+        /// indexOf returns a 1-based position and uses zero for a missing key.
+        const auto * const_positions = checkAndGetColumnConst<ColumnUInt64>(positions.get());
+        const UInt64 constant_position = const_positions ? const_positions->getValue<UInt64>() : 0;
+
+        ColumnPtr found;
+        if (const_positions)
+        {
+            found = DataTypeUInt8().createColumnConst(input_rows_count, constant_position != 0);
+        }
+        else
+        {
+            const auto & position_data = assert_cast<const ColumnUInt64 &>(*positions).getData();
+            auto found_column = ColumnUInt8::create(input_rows_count);
+            auto & found_data = found_column->getData();
+            for (size_t row = 0; row < input_rows_count; ++row)
+                found_data[row] = static_cast<UInt8>(position_data[row] != 0);
+            found = std::move(found_column);
+        }
+
+        ColumnsWithTypeAndName element_arguments{
+            arguments[0],
+            {positions, index_type, ""}};
+        MapToSubcolumnAdapter<NameMapGetOrDefault, 1>::extractNestedTypesAndColumns(element_arguments);
+        auto element_function = array_element->build(element_arguments);
+
+        ColumnPtr element_column;
+        if (const_positions && constant_position == 0)
+        {
+            /// arrayElement rejects a constant index 0. Its default element is enough here
+            /// because the outer if selects the caller-provided fallback for every row.
+            element_column = element_function->getResultType()->createColumnConstWithDefaultValue(input_rows_count);
+        }
+        else
+        {
+            element_column = element_function->execute(
+                element_arguments, element_function->getResultType(), input_rows_count, /* dry_run = */ false);
+        }
+
+        ColumnsWithTypeAndName if_arguments{
+            {found, std::make_shared<DataTypeUInt8>(), ""},
+            {element_column, element_function->getResultType(), ""},
+            arguments[2]};
+
+        auto if_function = function_if->build(if_arguments);
+        return if_function->execute(if_arguments, result_type, input_rows_count, /* dry_run = */ false);
+    }
+
+private:
+    FunctionArrayIndex<IndexOfAction, NameMapGetOrDefault> index_of;
+    FunctionOverloadResolverPtr array_element;
+    FunctionOverloadResolverPtr function_if;
+};
+
 struct NameMapFilter { static constexpr auto name = "mapFilter"; };
 using FunctionMapFilter = FunctionMapToArrayAdapter<FunctionArrayFilter, MapToNestedAdapter<NameMapFilter>, NameMapFilter>;
 
@@ -951,6 +1118,38 @@ Determines if a value is contained in a map.
     FunctionDocumentation::Category category_mapContainsValue = FunctionDocumentation::Category::Map;
     FunctionDocumentation documentation_mapContainsValue = {description_mapContainsValue, syntax_mapContainsValue, arguments_mapContainsValue, {}, returned_value_mapContainsValue, examples_mapContainsValue, introduced_in_mapContainsValue, category_mapContainsValue};
     factory.registerFunction<FunctionMapContainsValue>(documentation_mapContainsValue);
+
+    /// mapGetOrDefault documentation
+    FunctionDocumentation::Description description_mapGetOrDefault = R"(
+Returns the value associated with a key in a map, or a caller-provided default value when the key is absent.
+If the map contains duplicate keys, the first matching value is returned.
+)";
+    FunctionDocumentation::Syntax syntax_mapGetOrDefault = "mapGetOrDefault(map, key, default_value)";
+    FunctionDocumentation::Arguments arguments_mapGetOrDefault = {
+        {"map", "Map to search.", {"Map(K, V)"}},
+        {"key", "Key to search for. It follows the same comparison rules as mapContainsKey.", {"Any"}},
+        {"default_value", "Value returned when the key is absent.", {"Any"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapGetOrDefault = {
+        "Returns the value associated with key if present, otherwise default_value. The result type is the common type of map element access and default_value.",
+        {"Any"}};
+    FunctionDocumentation::Examples examples_mapGetOrDefault = {
+        {"Present key", "SELECT mapGetOrDefault(map('a', 1, 'b', 2), 'b', 42)", "2"},
+        {"Missing key", "SELECT mapGetOrDefault(map('a', 1, 'b', 2), 'c', 42)", "42"},
+        {"Nullable default", "SELECT mapGetOrDefault(map('a', toUInt8(1)), 'c', NULL)", "\\N"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapGetOrDefault = {26, 10};
+    FunctionDocumentation::Category category_mapGetOrDefault = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapGetOrDefault = {
+        description_mapGetOrDefault,
+        syntax_mapGetOrDefault,
+        arguments_mapGetOrDefault,
+        {},
+        returned_value_mapGetOrDefault,
+        examples_mapGetOrDefault,
+        introduced_in_mapGetOrDefault,
+        category_mapGetOrDefault};
+    factory.registerFunction<FunctionMapGetOrDefault>(documentation_mapGetOrDefault);
 
     /// mapFilter documentation
     FunctionDocumentation::Description description_mapFilter = R"(
