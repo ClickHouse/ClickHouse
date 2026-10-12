@@ -19,13 +19,13 @@ Float64 getArgumentFloat64(const WindowTransform * transform, size_t function_in
 
 void insertResultFloat64(const WindowTransform * transform, size_t function_index, Float64 value)
 {
-    IColumn & to = *transform->blocks.blockAt(transform->current_row.block).result_columns[function_index];
+    IColumn & to = *transform->blocks.blockAt(transform->current.location.block).result_columns[function_index];
     assert_cast<ColumnFloat64 &>(to).getData().push_back(value);
 }
 
 bool isPartitionFirstRow(const WindowTransform * transform)
 {
-    return transform->current_row_number == 1;
+    return transform->current.row_index_in_partition == 0;
 }
 
 bool isPartitionLastRow(const WindowTransform * transform)
@@ -33,7 +33,7 @@ bool isPartitionLastRow(const WindowTransform * transform)
     if (!transform->partition.bounds().fully_visible)
         return false;
 
-    return transform->blocks.next(transform->current_row) == transform->partition.bounds().end;
+    return transform->blocks.next(transform->current.location) == transform->partition.bounds().end;
 }
 
 }

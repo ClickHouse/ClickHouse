@@ -153,6 +153,11 @@ size_t tryConvertAnyJoinToSemiOrAntiJoin(QueryPlan::Node * parent_node, QueryPla
         return 0;
 
     const auto & filter_dag = filter->getExpression();
+
+    /// Not-built sets keep the join ANY: not every join algorithm can run SEMI.
+    if (dagContainsNonReadySet(filter_dag))
+        return 0;
+
     const auto & filter_column_name = filter->getFilterColumnName();
     const auto & left_stream_input_header = join->getInputHeaders().front();
     const auto & right_stream_input_header = join->getInputHeaders().back();
