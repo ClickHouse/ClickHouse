@@ -114,9 +114,10 @@ TEST(IcebergMetadataGenerator, ReplaceOperationIsPreserved)
 
 /// snapshots / metadata-log / snapshot-log are optional per the Iceberg spec, so external
 /// engines may produce empty-table metadata that omits any of them. generateNextMetadata must
-/// seed them rather than abort: a missing snapshots throws Poco::InvalidAccessException (empty
-/// Var extracted in getParentSnapshot), a missing log array dereferences a null Array::Ptr
-/// (Poco::NullPointerException, "Null pointer").
+/// seed snapshots and snapshot-log rather than abort: a missing snapshots throws
+/// Poco::InvalidAccessException (empty Var extracted in getParentSnapshot), a missing snapshot-log
+/// dereferences a null Array::Ptr (Poco::NullPointerException, "Null pointer"). metadata-log is
+/// left absent by the generator; addPreviousMetadataFile writes it.
 ///
 /// The exception is a missing `snapshots` combined with a live current snapshot: the commit
 /// preserves previous table contents by locating the parent snapshot's manifest list in
