@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Core/ColumnNumbers.h>
+#include <Common/SipHash.h>
 #include <Core/ColumnsWithTypeAndName.h>
 #include <Core/IResolvedFunction.h>
 #include <Core/Names.h>
@@ -197,6 +198,19 @@ public:
     /// Get the main function name.
     virtual String getName() const = 0;
 
+    /** Contributes whatever decides the values this function produces beyond its name, its
+      * parameters and the types it was resolved for: a conversion, for instance, captures the
+      * settings that tell it how to parse. Anything that keys an expression by a hash - the query
+      * condition cache, the reuse of collected statistics - relies on this, so a function that
+      * captures a setting must override this and hash it, as the conversions, the comparisons,
+      * the `JSON*` functions, `JSONAllPaths*`, `JSONAllValues`, `has` / `indexOf` / `countEqual` and
+      * `empty` / `notEmpty` on `JSON`, `countMatches`, `formatQuery`, `toJSONString` and `visibleWidth` do. A
+      * function that does not is keyed by its name and types alone, and two sessions that differ in
+      * the setting it captured share one key (the query condition cache still tells them apart by
+      * `queryConditionCacheSettingsSalt`, the statistics cache does not).
+      */
+    virtual void updateHash(SipHash &) const {}
+
     const Array & getParameters() const final;
 
     /// Do preparations and return executable.
@@ -386,11 +400,12 @@ public:
         bool is_positive = true;     /// true if the function is non-decreasing, false if non-increasing. If is_monotonic = false, then it does not matter.
         bool is_always_monotonic = false; /// Is true if function is monotonic on the whole input range I
         bool is_strict = false;      /// true if the function is strictly decreasing or increasing.
-        /// Is true if the function is monotonic over the whole subset of the input range on which its
-        /// evaluation succeeds, but the evaluation may throw an exception for the rest of the range
-        /// (so it is weaker than is_always_monotonic, which requires the whole range to be mapped).
-        /// It is enough to push a comparison constant through a sorting key expression: stored key
-        /// values always belong to the subset on which the evaluation succeeds.
+        /// Is true if the function is monotonic over the whole subset of the input range on which it
+        /// is defined, while the rest of the range either throws an exception or wraps around (so it
+        /// is weaker than is_always_monotonic, which requires the whole range to be mapped).
+        /// It is enough to push a comparison constant through a sorting or partition key expression:
+        /// a constant outside of that subset is rejected by the guards in `applyFunctionChainToColumn`.
+        /// It is not enough to map a key range through the function, which needs `is_monotonic`.
         bool is_always_monotonic_where_defined = false;
     };
 
@@ -443,6 +458,7 @@ public:
     /// TODO: This method should not be duplicated here and in IFunctionBase
     /// See the comment for the same method in IFunctionBase
     virtual bool isDeterministic() const { return true; }
+
     virtual bool isDeterministicInScopeOfQuery() const { return true; }
     virtual bool isInjective(const ColumnsWithTypeAndName &) const { return false; }
     virtual bool isServerConstant() const { return false; }
@@ -591,6 +607,10 @@ public:
     virtual ~IFunction() = default;
 
     virtual String getName() const = 0;
+
+    /// See the comment for the same method in `IFunctionBase`: the adaptor that wraps this interface
+    /// into one forwards to this.
+    virtual void updateHash(SipHash &) const {}
 
     /// (Does `result_type` always come from a corresponding `getReturnTypeImpl` call?
     ///  No: FunctionCast::prepareRemoveNullable does something complicated and ends up not respecting

@@ -150,6 +150,9 @@ public:
     /// Otherwise, in case of duplicate, return block_id with the collision and previous part name with same hash (useful for logging)
     std::vector<AddPartResult> addPart(const std::vector<std::string> & block_id, const MergeTreePartInfo & part);
 
+    /// Whether at least one of the block ids is already present, so `addPart` would report a duplicate.
+    bool containsAny(const std::vector<std::string> & block_ids);
+
     /// Remove all covered parts from in memory table and add DROP records to the disk
     void dropPart(const MergeTreePartInfo & drop_part_info);
 

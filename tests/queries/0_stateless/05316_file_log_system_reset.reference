@@ -1,0 +1,46 @@
+-- first read
+a.jsonl	0	1
+a.jsonl	8	2
+a.jsonl	16	3
+b.jsonl	0	10
+-- nothing new
+-- all files again
+a.jsonl	0	1
+a.jsonl	8	2
+a.jsonl	16	3
+b.jsonl	0	10
+-- one file again
+a.jsonl	0	1
+a.jsonl	8	2
+a.jsonl	16	3
+-- one file from an offset
+a.jsonl	8	2
+a.jsonl	16	3
+-- skip what the file contains, kept after DETACH and ATTACH
+-- the skipped line
+a.jsonl	24	4
+-- errors
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+BAD_ARGUMENTS
+-- privilege
+ACCESS_DENIED
+necessary to have the grant SYSTEM RESET FILELOG
+granted
+-- one file from an offset, ON CLUSTER
+a.jsonl	16	3
+a.jsonl	24	4
+b.jsonl	0	10
+-- formatting
+SYSTEM RESET FILELOG ON CLUSTER test_shard_localhost db.t FILE \'x.log\' OFFSET 5
+SYSTEM RESET FILELOG db.t FILE \'x.log\' TO END
+-- materialized view, directory table
+5
+6
+-- materialized view, single-file table
+3
+6
+-- lazily loaded table
+7
+TableProxy
+7

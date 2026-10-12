@@ -221,7 +221,7 @@ IProcessor::Status FilterTransform::prepare()
 
     auto status = ISimpleTransform::prepare();
 
-    if (status == IProcessor::Status::Finished)
+    if (status == IProcessor::Status::Finished && !isCancelled())
         writeIntoQueryConditionCache({});
 
     return status;
@@ -232,6 +232,20 @@ void FilterTransform::removeFilterIfNeed(Columns & columns) const
 {
     if (remove_filter_column)
         columns.erase(columns.begin() + filter_column_position);
+}
+
+void FilterTransform::onCancel() noexcept
+{
+    ISimpleTransform::onCancel();
+    if (expression)
+    {
+        const auto & nodes = expression->getNodes();
+        for (const auto & node : nodes)
+        {
+            if (node.type == ActionsDAG::ActionType::FUNCTION && node.function)
+                node.function->cancelExecution();
+        }
+    }
 }
 
 void FilterTransform::transform(Chunk & chunk)
@@ -291,9 +305,26 @@ void FilterTransform::doTransform(Chunk & chunk)
     size_t num_rows_before_filtration = chunk.getNumRows();
     auto columns = chunk.detachColumns();
 
+    if (isCancelled())
+    {
+        stopReading();
+        return;
+    }
+
     if (expression)
         columns = expression->executeOnColumns(
-            std::move(columns), getInputPort().getHeader(), input_positions, num_rows_before_filtration);
+            std::move(columns),
+            getInputPort().getHeader(),
+            input_positions,
+            num_rows_before_filtration,
+            /*dry_run=*/false,
+            &getCancellationFlag());
+
+    if (isCancelled())
+    {
+        stopReading();
+        return;
+    }
 
     size_t num_columns = columns.size();
     ColumnPtr filter_column = columns[filter_column_position];
@@ -425,7 +456,7 @@ void FilterTransform::doTransform(Chunk & chunk)
 
 void FilterTransform::writeIntoQueryConditionCache(const MarkRangesInfoPtr & mark_ranges_info)
 {
-    if (!query_condition_cache)
+    if (!query_condition_cache || isCancelled())
         return;
 
     /// A transform between the reading step and this filter (e.g. `FilterSortedStreamByRange`

@@ -13,6 +13,9 @@ It also emulates Databricks authentication:
 - every proxied route requires `Authorization: Bearer <token>`, where the token
   is either `PAT_TOKEN` or a minted OAuth token, and replies 401 otherwise;
 - `/control/*` endpoints let the test expire tokens.
+
+It vends the MinIO credentials from the command line on
+`POST temporary-table-credentials`, and records the requested `operation`.
 """
 import json
 import re
@@ -47,6 +50,11 @@ ICEBERG_REST_DENIED_BODY = (
     b'{"error_code": "PERMISSION_DENIED", '
     b'"message": "External data access is not enabled on the metastore"}'
 )
+
+TEMPORARY_CREDENTIALS_PATH = "/api/2.1/unity-catalog/temporary-table-credentials"
+STORAGE_ACCESS_KEY = ""
+STORAGE_SECRET_KEY = ""
+CREDENTIAL_OPERATIONS = []
 
 
 def is_authorized(header):
@@ -117,7 +125,25 @@ class Handler(BaseHTTPRequestHandler):
             self._handle_token_request()
             return
 
+        if self.path == TEMPORARY_CREDENTIALS_PATH:
+            self._handle_temporary_credentials_request()
+            return
+
         self._reply(404, b'{"error": "unsupported POST route"}')
+
+    def _handle_temporary_credentials_request(self):
+        if not self._check_auth():
+            return
+        request = json.loads(self._read_body())
+        CREDENTIAL_OPERATIONS.append(request["operation"])
+        body = {
+            "aws_temp_credentials": {
+                "access_key_id": STORAGE_ACCESS_KEY,
+                "secret_access_key": STORAGE_SECRET_KEY,
+                "session_token": "",
+            }
+        }
+        self._reply(200, json.dumps(body).encode())
 
     def _handle_control(self):
         global PAT_VALID, ICEBERG_REST_DENIED
@@ -135,6 +161,11 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(200, b"OK")
         elif self.path == "/control/allow_iceberg_rest":
             ICEBERG_REST_DENIED = False
+            self._reply(200, b"OK")
+        elif self.path == "/control/credential_operations":
+            self._reply(200, json.dumps(CREDENTIAL_OPERATIONS).encode())
+        elif self.path == "/control/reset_credential_operations":
+            CREDENTIAL_OPERATIONS.clear()
             self._reply(200, b"OK")
         else:
             self._reply(404, b'{"error": "unknown control route"}')
@@ -196,4 +227,5 @@ class Handler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
+    STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY = sys.argv[2], sys.argv[3]
     ThreadingHTTPServer(("0.0.0.0", int(sys.argv[1])), Handler).serve_forever()
