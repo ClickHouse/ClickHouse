@@ -1,6 +1,6 @@
 -- `uniqCombined` merge where the right-hand state is in a bigger container than the left-hand one (in particular, merge into an empty state).
--- A right-hand `HyperLogLogCounter` is copied and the left-hand values are inserted into it; medium sets are merged value by value,
--- because the layout of the hash table, and so when a later merge converts it to `HyperLogLogCounter`, depends on the order of insertion.
+-- A right-hand `HyperLogLogCounter` is copied and the left-hand values are inserted into it. The results must not change,
+-- including those which depend on the order of insertion into the medium set (the last two queries).
 -- The small set holds 16 values. The medium hash set holds 2^(K - 5) values with 64-bit hashes and twice as many with 32-bit hashes:
 -- 8192 for `uniqCombined` (K = 17, 32-bit), 4096 for `uniqCombined64` (K = 17, 64-bit), 256 for `uniqCombined(12)` (32-bit).
 

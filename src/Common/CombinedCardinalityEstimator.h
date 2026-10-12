@@ -227,7 +227,7 @@ public:
             for (const auto & x : rhs.getContainer<Medium>())
                 insert(x.getValue());
         }
-        else if (rhs_container_type == details::ContainerType::LARGE)
+        else
             getContainer<Large>().merge(rhs.getContainer<Large>());
     }
 
