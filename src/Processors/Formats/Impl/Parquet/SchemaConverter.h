@@ -149,7 +149,13 @@ private:
     void processPrimitiveColumn(
         const parq::SchemaElement & element, DataTypePtr type_hint,
         PageDecoderInfo & out_decoder, DataTypePtr & out_decoded_type,
-        DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata) const;
+        DataTypePtr & out_inferred_type, std::optional<GeoColumnMetadata> geo_metadata, size_t column_idx) const;
+
+    /// For a column with the `GEOMETRY` or `GEOGRAPHY` logical type: if `GeospatialStatistics` of
+    /// all its column chunks list the same single 2D geometry type, returns that type. If any of
+    /// them lists a geometry type with Z and/or M coordinates (which cannot be parsed), returns
+    /// `std::nullopt`. Otherwise returns `GeoType::Mixed`.
+    std::optional<GeoType> getGeoTypeFromGeospatialStatistics(size_t column_idx) const;
 
     /// Returns element.name or a corresponding name from ColumnMapper.
     /// For nested tuple elements, returns just the element name like `x`, not the whole path like `t.x`.

@@ -1975,7 +1975,7 @@ Indicate which field of protobuf oneof was found by means of setting enum value 
 )", 0, \
         {"25.9", false, false, "New setting"}) \
     DECLARE(Bool, input_format_parquet_allow_geoparquet_parser, true, R"(
-Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types
+When reading Parquet files, decode geometry columns as ClickHouse geo types (`Point`, `MultiPoint`, `LineString`, `Polygon`, `MultiLineString`, `MultiPolygon` or `Geometry`). Applies to columns described by the GeoParquet `geo` metadata and to columns annotated with the Parquet `GEOMETRY` or `GEOGRAPHY` logical type. If disabled, such columns are read as `String` with the raw WKB (or WKT) bytes, unless a geo type is requested explicitly.
 )", 0, \
         {"25.5", false, true, "A new setting to use geo columns in parquet file"}) \
     DECLARE(Bool, input_format_parquet_detect_variant_by_structure, true, R"(
@@ -1986,6 +1986,10 @@ Read a Parquet group that has no `VARIANT` logical type, but has the layout of a
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0, \
         {"25.7", false, true, "A new setting to allow to write information about geo columns in parquet metadata and encode columns in WKB format."}) \
+    DECLARE(Bool, output_format_parquet_geometry_logical_type, false, R"(
+Annotate geo columns written as WKB (see `output_format_parquet_geometadata`) with the Parquet `GEOMETRY` logical type, and write `GeospatialStatistics` (bounding box and geometry types) for them instead of min/max statistics. Readers that support the logical type recognize such columns as geometries even without the GeoParquet `geo` metadata. Has no effect if `output_format_parquet_geometadata` is disabled. A `Geometry` column is also described in the GeoParquet `geo` metadata, with an empty list of geometry types. If disabled, these columns are written as `BYTE_ARRAY` without a geospatial annotation and with min/max statistics, and a `Geometry` column is not described in the `geo` metadata. Disabled by default because readers that do not know this logical type (e.g. Arrow C++ and `pyarrow` before version 20) cannot open the whole file.
+)", 0, \
+        {"26.10", false, false, "New setting"}) \
     DECLARE(Bool, into_outfile_create_parent_directories, false, R"(
 Automatically create parent directories when using INTO OUTFILE if they do not already exists.
 )", 0, \

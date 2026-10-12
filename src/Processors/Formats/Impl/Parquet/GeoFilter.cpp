@@ -151,13 +151,17 @@ bool rowGroupFailsSpatialFilters(
             continue;
 
         const auto & bbox = col_meta.geospatial_statistics.bbox;
-        /// Reject non-finite or inverted bounds: malformed metadata must not prune (fail closed).
+        /// Reject non-finite or inverted Y bounds: malformed metadata must not prune (fail closed).
         if (!std::isfinite(bbox.xmin) || !std::isfinite(bbox.ymin) ||
             !std::isfinite(bbox.xmax) || !std::isfinite(bbox.ymax) ||
-            bbox.xmin > bbox.xmax || bbox.ymin > bbox.ymax)
+            bbox.ymin > bbox.ymax)
             continue;
-        bool disjoint = bbox.xmax < filter.query_xmin
-                      || bbox.xmin > filter.query_xmax
+        /// For X only, `xmin > xmax` is allowed by the spec: the bounding box crosses the
+        /// antimeridian, and the X range is the union of [xmin, +inf) and (-inf, xmax].
+        bool x_disjoint = bbox.xmin <= bbox.xmax
+            ? (bbox.xmax < filter.query_xmin || bbox.xmin > filter.query_xmax)
+            : (filter.query_xmax < bbox.xmin && filter.query_xmin > bbox.xmax);
+        bool disjoint = x_disjoint
                       || bbox.ymax < filter.query_ymin
                       || bbox.ymin > filter.query_ymax;
         if (disjoint)
