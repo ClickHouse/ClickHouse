@@ -1401,8 +1401,73 @@ ColumnPtr RecordBatchDecoder::decodeDictionary(
     return keys->index(*indexes, 0);
 }
 
-ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows)
+namespace
 {
+
+/// The alternative of the requested `Variant` that a union child was written from, or null when the child
+/// carries no `clickhouse.opaque` tag or the request has no alternative of that name. The tag names a type;
+/// requiring the caller to have asked for it is the same rule the other containers follow, and it keeps the
+/// type coming from the request rather than from the file.
+DataTypePtr opaqueUnionChildType(const ArrowField & child, const DataTypeVariant * variant_hint)
+{
+    if (!variant_hint)
+        return nullptr;
+
+    const std::string_view tag = opaqueFieldTypeName(child);
+    if (tag.empty())
+        return nullptr;
+
+    for (const auto & alternative : variant_hint->getVariants())
+        if (tag == alternative->getName())
+            return alternative;
+    return nullptr;
+}
+
+/// Reads an opaque union child back into the type its tag names. The Arrow type states the encoding, as it
+/// does everywhere else: `Binary` is `serializeBinary`, and `Utf8` is the text form, which `serializeText`
+/// wrote and `deserializeWholeText` inverts. A row the union does not select holds undefined bytes, so it
+/// takes the type's default instead of being read.
+MutableColumnPtr deserializeOpaqueUnionChild(
+    const ColumnString & str,
+    const NullMap * null_map,
+    const DataTypePtr & type,
+    const ArrowField & child,
+    const FormatSettings & format_settings)
+{
+    if (child.type.kind == TypeKind::Binary)
+        return deserializeOpaqueBinaryLeaf(str, null_map, type, child, format_settings);
+    if (child.type.kind != TypeKind::Utf8)
+        return nullptr;
+
+    const auto serialization = type->getDefaultSerialization();
+    auto out = type->createColumn();
+    const size_t rows = str.size();
+    out->reserve(rows);
+
+    for (size_t i = 0; i < rows; ++i)
+    {
+        if (null_map && (*null_map)[i])
+        {
+            out->insertDefault();
+            continue;
+        }
+
+        ReadBufferFromMemory rb(str.getDataAt(i));
+        serialization->deserializeWholeText(*out, rb, format_settings);
+    }
+    return out;
+}
+
+}
+
+ColumnPtr RecordBatchDecoder::decodeUnion(
+    const ArrowField & field, size_t rows, const InvisibleRowsMask * invisible_rows, const DataTypePtr & variant_hint,
+    DataTypePtr * decoded_type)
+{
+    /// Only worth resolving when the type built here can be reported back; see `decoded_type`.
+    const auto * requested_variant
+        = decoded_type ? typeid_cast<const DataTypeVariant *>(stripHint(variant_hint).get()) : nullptr;
+
     const ArrowType & type = field.type;
     const bool dense = type.union_mode == flatbuf::UnionMode_Dense;
 
@@ -1489,6 +1554,35 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
             child_null_map = nullable.getNullMapColumn().getPtr();
             child_column = nullable.getNestedColumnPtr();
         }
+
+        /// A child the writer had no Arrow mapping for arrives as the bytes of an encoding, which the type
+        /// derived from its Arrow field alone calls `String`. Read it into the type its tag names, here
+        /// rather than downstream: the element type is settled in this function, and two children both
+        /// left as `String` would collapse into one `Variant` alternative below.
+        if (const DataTypePtr opaque_type = opaqueUnionChildType(child, requested_variant))
+        {
+            if (const auto * str = typeid_cast<const ColumnString *>(child_column.get()))
+            {
+                /// A slot no visible row selects holds undefined bytes per the Arrow spec — a sparse child
+                /// has one per unselected row, and a dense one keeps whatever slicing left behind — so it
+                /// must take a default rather than be read as a value. A size-determined child was built
+                /// from the selected rows alone and has no such slots.
+                NullMap unreadable_storage;
+                const NullMap * unreadable = child_null_map ? &child_null_map->getData() : nullptr;
+                if (!size_determined)
+                    unreadable = unreadable
+                        ? unionNullMaps(*unreadable, &child_invisible, unreadable_storage)
+                        : &child_invisible;
+
+                if (MutableColumnPtr typed
+                    = deserializeOpaqueUnionChild(*str, unreadable, opaque_type, child, settings))
+                {
+                    child_column = std::move(typed);
+                    child_type = opaque_type;
+                }
+            }
+        }
+
         type_id_to_local[tid] = static_cast<int>(variant_columns.size());
         total_child_rows += child_column->size();
         variant_columns.push_back(std::move(child_column));
@@ -1507,6 +1601,8 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
         throw Exception(
             ErrorCodes::INCORRECT_DATA,
             "Arrow IPC union has multiple children mapping to the same ClickHouse type, which Variant cannot represent");
+    if (decoded_type)
+        *decoded_type = variant_data_type;
     UnorderedMapWithMemoryTracking<String, ColumnVariant::Discriminator> name_to_global;
     for (size_t g = 0; g < variant_data_type->getVariants().size(); ++g)
         name_to_global[variant_data_type->getVariants()[g]->getName()] = static_cast<ColumnVariant::Discriminator>(g);
@@ -1590,7 +1686,8 @@ ColumnPtr RecordBatchDecoder::decodeUnion(const ArrowField & field, size_t rows,
 
 ColumnPtr RecordBatchDecoder::decodeField(
     const ArrowField & field, bool allow_low_cardinality, const DataTypePtr & target_hint, const String & path,
-    size_t list_depth, const InvisibleRowsMask * invisible_rows, ColumnUInt8::Ptr * decoded_null_map)
+    size_t list_depth, const InvisibleRowsMask * invisible_rows, ColumnUInt8::Ptr * decoded_null_map,
+    DataTypePtr * decoded_union_type)
 {
     if (decoded_null_map)
         *decoded_null_map = nullptr;
@@ -1612,7 +1709,8 @@ ColumnPtr RecordBatchDecoder::decodeField(
                 ErrorCodes::INCORRECT_DATA,
                 "Arrow IPC Union field '{}' has no validity bitmap but its FieldNode reports {} nulls",
                 field.name, node.null_count());
-        return decodeUnion(field, rows, invisible_rows);
+        return decodeUnion(
+            field, rows, invisible_rows, resolveTargetHint(target_hint, path, list_depth), decoded_union_type);
     }
 
     /// An Arrow `null` field has no buffers and maps to an all-null `Nullable(Nothing)` column.
@@ -1952,6 +2050,7 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
         node_index = first_node;
         buffer_index = first_buffer;
         variadic_index = first_variadic;
+        DataTypePtr union_type;
         decoded.column = decodeField(
             field,
             /*allow_low_cardinality=*/true,
@@ -1959,7 +2058,12 @@ RecordBatchDecoder::DecodedColumn RecordBatchDecoder::decodeBatchColumn(
             path,
             list_depth,
             /*invisible_rows=*/nullptr,
-            decoded_null_map);
+            decoded_null_map,
+            &union_type);
+        /// A union settles its element types while decoding, so take the type from there rather than from
+        /// the field alone.
+        if (union_type)
+            decoded.type = union_type;
     }
     /// Struct null maps survive decoding even when the inferred type has no nullable wrapper.
     decoded.type = matchColumnNullability(decoded.type, decoded.column);
