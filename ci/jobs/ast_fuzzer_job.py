@@ -496,6 +496,10 @@ def run_fuzz_job(check_name: str):
     # originals too for debugging truncated reports.
     paths.extend(sorted(WORKSPACE_PATH.glob("sanitizer.log.*")))
 
+    # jemalloc heap profiles dumped by the server on peak growth and on hitting its memory
+    # limit, plus a symbolized rendering of the latest one (see run-fuzzer.sh).
+    paths.append(WORKSPACE_PATH / "jemalloc.tar.zst")
+
     server_died = False
     server_exit_code = 0
     fuzzer_exit_code = 0
