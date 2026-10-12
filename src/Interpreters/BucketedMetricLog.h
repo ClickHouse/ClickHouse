@@ -55,7 +55,7 @@ Every metric is also available through an `ALIAS` column named after the metric,
 
 Each row also contains a snapshot of registered histogram metrics in the `histograms` Nested column. Bucket counts are cumulative since server startup. By default, histograms whose total `count` is zero are omitted, as are zero-counter buckets within emitted histograms. Set `system_metric_log_show_zero_values_in_histograms = 1` in the default user profile to retain them.
 
-The previous `wide` schema, with a separate column for every metric, is used instead when `default_system_log_flush_policy.skip_alias_columns` is enabled or when `metric_log` has an explicit `engine`. It can also be selected explicitly with:
+The previous `wide` schema, with a separate column for every metric, is used instead when `schema_type` is not set and either `default_system_log_flush_policy.skip_alias_columns` is enabled or `metric_log` has an explicit `engine`. An explicit `engine` can still be combined with `<schema_type>bucketed</schema_type>`, in which case its `SETTINGS` should include the bucketed `Map` serialization. The `wide` schema can also be selected explicitly with:
 
 ```xml
 <clickhouse>
