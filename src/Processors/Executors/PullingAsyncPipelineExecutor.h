@@ -21,7 +21,10 @@ struct ProfileInfo;
 class PullingAsyncPipelineExecutor
 {
 public:
-    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_);
+    /// With `with_query_result_previews`, the pipeline may also emit query result previews (see
+    /// `QueryResultPreview.h`), which `pull` returns with `Block::info.is_preview` set; the caller
+    /// must not take them for a part of the result. Without it, the preview emitters stay dormant.
+    explicit PullingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool with_query_result_previews = false);
     ~PullingAsyncPipelineExecutor();
 
     /// Get structure of returned block or chunk.

@@ -21,6 +21,11 @@ enum class FramedPacketKind : uint8_t
     Data,
     Totals,
     Extremes,
+    /// A real-time preview of the query result (see the `query_result_previews` setting). Each
+    /// `preview` packet carries a complete, self-contained document of the payload format and fully
+    /// replaces the previous one. Unlike `data`/`totals`/`extremes`, previews are additional content:
+    /// they are not part of the byte-exact concatenation invariant of the unframed output.
+    Preview,
 };
 
 /** A framing format multiplexes different parts of the query response in a single stream:

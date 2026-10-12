@@ -67,6 +67,14 @@ protected:
 
     State state;
 
+    /// An out-of-band query result preview chunk (see `QueryResultPreview.h`) pulled from one of
+    /// the inputs, waiting to be forwarded to the output past the merging algorithm.
+    Chunk pending_query_result_preview;
+    /// The sequence number of the last preview pushed to the output.
+    UInt64 last_forwarded_query_result_preview = 0;
+
+    void acceptQueryResultPreview(Chunk chunk);
+
 private:
     struct InputState
     {

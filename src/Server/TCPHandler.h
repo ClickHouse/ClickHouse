@@ -352,6 +352,7 @@ private:
     void sendProfileInfo(QueryState & state, const ProfileInfo & info);
     void sendTotals(QueryState & state, const Block & totals);
     void sendExtremes(QueryState & state, const Block & extremes);
+    void sendPreviewData(QueryState & state, const Block & block);
     void sendProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex) TSA_REQUIRES(callback_mutex);
     void sendSelectProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
     void sendInsertProfileEvents(QueryState & state) TSA_REQUIRES(callback_mutex);
