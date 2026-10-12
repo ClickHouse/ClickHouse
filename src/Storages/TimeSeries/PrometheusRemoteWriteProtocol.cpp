@@ -73,7 +73,7 @@ std::string_view metricTypeToString(prometheus::MetricMetadata::MetricType metri
 void insertTimestamp(Int64 timestamp_ms, UInt32 scale, IColumn & column)
 {
     if (typeid_cast<ColumnDecimal<DateTime64> *>(&column))
-        column.insert(DecimalUtils::convertTo<DateTime64>(scale, DateTime64{timestamp_ms}, 3));
+        column.insert(convertDecimals<DataTypeDateTime64, DataTypeDateTime64>(DateTime64{timestamp_ms}, 3, scale));
     else
         column.insert(DecimalUtils::convertTo<UInt32>(DateTime64{timestamp_ms}, 3));
 }
