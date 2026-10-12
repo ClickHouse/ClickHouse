@@ -22,6 +22,7 @@ ConverterContext::ConverterContext(std::shared_ptr<const PrometheusQueryTree> pr
     , time_series_version(settings_.time_series_version)
     , result_timestamp_type(getPromQLResultTimestampType(settings_.time_scale, settings_.time_zone))
     , result_timestamp_scale(settings_.time_scale)
+    , exact_rate(settings_.exact_rate)
     , result_type(getResultType(*promql_tree_, settings_))
     , node_range_getter(promql_tree_, settings_)
 {

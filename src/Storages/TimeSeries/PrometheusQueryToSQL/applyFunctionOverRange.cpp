@@ -17,6 +17,7 @@
 namespace DB::ErrorCodes
 {
     extern const int CANNOT_EXECUTE_PROMQL_QUERY;
+    extern const int NOT_IMPLEMENTED;
 }
 
 
@@ -56,6 +57,9 @@ namespace
         /// The aggregate function returns a sample's value (can be Float32), a sample's timestamp (a DateTime type) or a count (UInt64)
         /// instead of Float64, so the result must be cast.
         bool needs_cast_to_float64 = false;
+
+        /// The aggregate function takes the optional parameter `exact_rate` (see setting `promql_exact_rate`).
+        bool supports_exact_rate = false;
     };
 
     /// Returns information about how the specified prometheus function is implemented.
@@ -67,12 +71,16 @@ namespace
              {
                  "timeSeriesRateToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ false,
+                 /* supports_exact_rate = */ true,
              }},
 
             {"increase",
              {
                  "timeSeriesIncreaseToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ false,
+                 /* supports_exact_rate = */ true,
              }},
 
             {"irate",
@@ -85,6 +93,8 @@ namespace
              {
                  "timeSeriesDeltaToGrid",
                  /* drop_metric_name = */ true,
+                 /* needs_cast_to_float64 = */ false,
+                 /* supports_exact_rate = */ true,
              }},
 
             {"idelta",
@@ -220,12 +230,38 @@ namespace
 
         return &it->second;
     }
+
+    /// Whether the range vector is a subquery, maybe with the offset and @ modifiers.
+    bool isSubquery(const Node * range_vector_node)
+    {
+        while (range_vector_node->node_type == NodeType::Offset)
+            range_vector_node = static_cast<const PrometheusQueryTree::Offset *>(range_vector_node)->getExpression();
+        return range_vector_node->node_type == NodeType::Subquery;
+    }
 }
 
 
 bool isFunctionOverRange(std::string_view function_name)
 {
     return getImplInfo(function_name) != nullptr;
+}
+
+
+bool needsSamplesBeforeWindow(const Node * range_vector_node, const ConverterContext & context)
+{
+    if (!context.exact_rate || (range_vector_node->result_type != ResultType::RANGE_VECTOR))
+        return false;
+
+    /// Skip the offset and @ modifiers applied to the range vector to find the function taking it.
+    const Node * parent = range_vector_node->parent;
+    while (parent && (parent->result_type == ResultType::RANGE_VECTOR))
+        parent = parent->parent;
+
+    if (!parent || (parent->node_type != NodeType::Function))
+        return false;
+
+    const auto * impl_info = getImplInfo(static_cast<const PrometheusQueryTree::Function *>(parent)->function_name);
+    return impl_info && impl_info->supports_exact_rate;
 }
 
 
@@ -247,6 +283,12 @@ SQLQueryPiece applyFunctionOverRange(
     chassert(impl_info);
 
     checkArgumentTypes(function_name, arguments, context);
+
+    /// The exact mode is not supported for a subquery, like the `anchored` modifier in Prometheus.
+    if (impl_info->supports_exact_rate && context.exact_rate && isSubquery(arguments[0].node))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED,
+                        "Function '{}' does not support a subquery {} with the setting 'promql_exact_rate' enabled",
+                        function_name, getPromQLText(arguments[0], context));
 
     auto node_range = context.node_range_getter.get(node);
     if (node_range.empty())
@@ -277,12 +319,18 @@ SQLQueryPiece applyFunctionOverRange(
         builder.select_list.push_back(make_intrusive<ASTIdentifier>(ColumnNames::Group));
 
     /// <aggregate_function>(<timestamps>, <values>) AS values
-    ASTPtr aggregate_values = addParametersToAggregateFunction(
+    auto aggregate_function = addParametersToAggregateFunction(
         makeASTFunction(impl_info->ch_function_name, std::move(aggregate_function_arguments)),
         timeSeriesTimestampToAST(aggregation_range.start_time, context.result_timestamp_type),
         timeSeriesTimestampToAST(aggregation_range.end_time, context.result_timestamp_type),
         timeSeriesDurationToAST(aggregation_range.step, context.result_timestamp_type),
         timeSeriesDurationToAST(window, context.result_timestamp_type));
+
+    /// The mode is passed explicitly rather than read by the aggregate function from the settings, so it is a part of the function's type.
+    if (impl_info->supports_exact_rate && context.exact_rate)
+        aggregate_function = addParametersToAggregateFunction(std::move(aggregate_function), make_intrusive<ASTLiteral>(static_cast<UInt64>(1)));
+
+    ASTPtr aggregate_values = std::move(aggregate_function);
 
     if (impl_info->needs_cast_to_float64)
     {
