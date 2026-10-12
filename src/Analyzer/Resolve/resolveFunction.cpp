@@ -43,6 +43,7 @@
 #include <Columns/validateColumnType.h>
 #include <Interpreters/castColumn.h>
 #include <Interpreters/Context.h>
+#include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/ExternalDictionariesLoader.h>
 #include <Interpreters/formatWithPossiblyHidingSecrets.h>
 #include <Interpreters/misc.h>
@@ -1621,10 +1622,12 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
         }
         else
         {
+            /// Any number of parts: `a.b.c` is a hierarchical name (see `DatabaseCatalog`), resolved by the dictionaries
+            /// loader or the catalog below.
             size_t parts_size = identifier.getPartsSize();
-            if (parts_size < 1 || parts_size > 2)
+            if (parts_size < 1)
                 throw Exception(ErrorCodes::INVALID_IDENTIFIER,
-                    "Expected {} function first argument identifier to contain 1 or 2 parts. Actual '{}'. In scope {}",
+                    "Expected {} function first argument identifier to contain at least 1 part. Actual '{}'. In scope {}",
                     function_name,
                     identifier.getFullName(),
                     scope.scope_node->formatASTForErrorMessage());
@@ -2487,14 +2490,48 @@ ProjectionNames QueryAnalyzer::resolveFunction(QueryTreeNodePtr & node, Identifi
             if (dictionary_name_node && dictionary_name_node->getValue().getType() == Field::Types::String)
             {
                 const auto & dictionary_name = dictionary_name_node->getValue().safeGet<String>();
-                auto qualified_dictionary_name = scope.context->getExternalDictionariesLoader()
-                    .qualifyDictionaryNameWithDatabase(dictionary_name, scope.context).getFullName();
+                const auto & loader = scope.context->getExternalDictionariesLoader();
+                /// A qualified name is hierarchical (see `DatabaseCatalog`): `ns.d` may be the dictionary `ns.d` of the
+                /// current database, and it is bound the same way.
+                String qualified_dictionary_name;
+                if (auto bound = loader.tryBindQualifiedDictionaryName(dictionary_name, scope.context->getCurrentDatabase()))
+                    qualified_dictionary_name = bound->getFullName();
+                else
+                    qualified_dictionary_name = loader.qualifyDictionaryNameWithDatabase(dictionary_name, scope.context).getFullName();
 
                 /// `assignCentroid` also takes a Nullable or LowCardinality name and its result type follows it.
                 if (qualified_dictionary_name != dictionary_name)
                     dictionary_name_argument = is_special_function_dict_get
                         ? std::make_shared<ConstantNode>(qualified_dictionary_name)
                         : std::make_shared<ConstantNode>(qualified_dictionary_name, dictionary_name_node->getResultType());
+            }
+        }
+    }
+
+    /** Bind a qualified table name of `joinGet` to the table it denotes, for the same reason: a hierarchical name
+      * (`ns.j`, see `DatabaseCatalog`) may be the table `ns.j` of the current database, which a shard would resolve
+      * against its own current database. An unqualified name is left alone, as before.
+      */
+    if (is_special_function_join_get)
+    {
+        auto & join_get_arguments = function_node_ptr->getArguments().getNodes();
+        if (!join_get_arguments.empty())
+        {
+            const auto * table_name_node = join_get_arguments[0]->as<ConstantNode>();
+            if (table_name_node && table_name_node->getValue().getType() == Field::Types::String)
+            {
+                const auto & table_name = table_name_node->getValue().safeGet<String>();
+                if (!table_name.empty())
+                {
+                    StorageID as_written = DatabaseCatalog::parseHierarchicalName(table_name);
+                    if (!as_written.database_name.empty())
+                    {
+                        StorageID resolved = DatabaseCatalog::instance().resolveHierarchicalName(as_written, scope.context);
+                        if (resolved.database_name != as_written.database_name || resolved.table_name != as_written.table_name)
+                            join_get_arguments[0] = std::make_shared<ConstantNode>(
+                                StorageID(resolved.database_name, resolved.table_name).getFullNameNotQuoted());
+                    }
+                }
             }
         }
     }

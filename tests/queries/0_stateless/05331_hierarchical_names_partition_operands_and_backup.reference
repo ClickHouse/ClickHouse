@@ -1,0 +1,17 @@
+--- ATTACH PARTITION FROM ns.src with a grant on the nonexistent database ns only
+ACCESS_DENIED
+ACCESS_DENIED
+0
+--- and with a grant on the table
+1
+1
+--- MOVE PARTITION TO TABLE ns.moved with a grant on the nonexistent database ns only
+ACCESS_DENIED
+1
+--- and with a grant on the table
+0
+1
+--- BACKUP, RESTORE and SNAPSHOT accept at most two parts unquoted
+SYNTAX_ERROR
+SYNTAX_ERROR
+BACKUP TABLE a.`b.c` TO `Null`

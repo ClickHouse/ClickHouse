@@ -22,12 +22,19 @@ InterpreterShowIndexesQuery::InterpreterShowIndexesQuery(const ASTPtr & query_pt
 }
 
 
-String InterpreterShowIndexesQuery::getRewrittenQuery()
+StorageID InterpreterShowIndexesQuery::resolveTable() const
+{
+    const auto & query = query_ptr->as<const ASTShowIndexesQuery &>();
+    /// A hierarchical name (`a.b.c`, or `c` inside `USE a.b`) is the database and the table of the table it refers to
+    /// (see `DatabaseCatalog`).
+    return DatabaseCatalog::instance().resolveHierarchicalName({getContext()->resolveDatabase(query.database), query.table}, getContext());
+}
+
+String InterpreterShowIndexesQuery::getRewrittenQuery(const StorageID & table_id)
 {
     const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String table = escapeString(query.table);
-    String resolved_database = getContext()->resolveDatabase(query.database);
-    String database = escapeString(resolved_database);
+    String table = escapeString(table_id.table_name);
+    String database = escapeString(table_id.database_name);
     String where_expression = query.where_expression ? fmt::format("WHERE ({})", query.where_expression->formatWithSecretsOneLine()) : "";
 
     String rewritten_query = fmt::format(R"(
@@ -123,15 +130,17 @@ ORDER BY index_type, expression, seq_in_index;)", database, table, where_express
 
 BlockIO InterpreterShowIndexesQuery::execute()
 {
-    const auto & query = query_ptr->as<ASTShowIndexesQuery &>();
-    String database = getContext()->resolveDatabase(query.database);
+    /// The visibility of the source database in `system.columns` / `system.tables` is decided by the database the
+    /// table was resolved to, not by the prefix as written (`catalog.ns` of `catalog.ns.t`).
+    StorageID table_id = resolveTable();
+    const String & database = table_id.database_name;
     auto query_context = Context::createCopy(getContext());
     query_context->makeQueryContext();
     query_context->setCurrentQueryId("");
     if (DatabaseCatalog::instance().isRemoteDatabase(database))
         query_context->setSetting("show_remote_databases_in_system_tables", true);
 
-    return executeQuery(getRewrittenQuery(), query_context, QueryFlags{ .internal = true }).second;
+    return executeQuery(getRewrittenQuery(table_id), query_context, QueryFlags{ .internal = true }).second;
 }
 
 void registerInterpreterShowIndexesQuery(InterpreterFactory & factory);

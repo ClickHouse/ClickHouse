@@ -1,5 +1,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/Access/InterpreterGrantQuery.h>
+#include <Interpreters/Access/resolveHierarchicalNamesForAccess.h>
 #include <Parsers/Access/ASTGrantQuery.h>
 #include <Parsers/Access/ASTRolesOrUsersSet.h>
 #include <Access/AccessControl.h>
@@ -486,6 +487,11 @@ BlockIO InterpreterGrantQuery::execute()
     elements_to_grant.replaceEmptyDatabase(current_database);
     elements_to_revoke.replaceEmptyDatabase(current_database);
     query.access_rights_elements.replaceEmptyDatabase(current_database);
+
+    /// A hierarchical name (`GRANT SELECT ON a.b.c`) names the object the same name reads in a query.
+    resolveHierarchicalNamesForAccess(elements_to_grant, getContext());
+    resolveHierarchicalNamesForAccess(elements_to_revoke, getContext());
+    resolveHierarchicalNamesForAccess(query.access_rights_elements, getContext());
 
     /// Executing on cluster.
     if (!query.cluster.empty())
