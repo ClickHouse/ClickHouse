@@ -67,12 +67,36 @@ def should_limit_pipeline(unresolved_count, bypassed) -> bool:
     return unresolved_count > 0 and not bypassed
 
 
-def merge_gate_verdict(config_limited, unresolved_now, override_now):
+def other_open_prs_on_head(info):
+    """Other open PRs whose head is the commit of this run. Raises on API failure.
+
+    Commit statuses are keyed by the commit and the context only, so every open
+    PR with this head sees the `Review Threads` and `Mergeable Check` statuses
+    written for any of them: one PR's success would clear another one's block.
+    """
+    output = GH.get_output_with_retries(
+        f"gh api repos/{info.repo_name}/commits/{info.sha}/pulls",
+        verbose=True,
+        strict=True,
+    )
+    return sorted(
+        {
+            pr["number"]
+            for pr in json.loads(output)
+            if pr["state"] == "open"
+            and pr["head"]["sha"] == info.sha
+            and pr["number"] != info.pr_number
+        }
+    )
+
+
+def merge_gate_verdict(config_limited, unresolved_now, override_now, shared_with=()):
     """The final per-run verdict of the gate, computed at finish time.
 
     :param config_limited: the pipeline ran in limited mode (decided at config time)
     :param unresolved_now: the number of unresolved review threads right now
     :param override_now: the `ignore-unresolved-threads` label is set right now
+    :param shared_with: other open PRs with the same head commit
     :return: (blocked, description); `description` must fit a GH commit status
              (`GH.post_commit_status` truncates it to 80 characters).
     """
@@ -87,6 +111,11 @@ def merge_gate_verdict(config_limited, unresolved_now, override_now):
             True,
             f"{unresolved_now} unresolved review thread(s) - the full CI suite was skipped",
         )
+    if shared_with:
+        # Fail close: a success status here would also be the status of the
+        # other PRs, whatever their own review threads are.
+        others = ", ".join(f"#{pr}" for pr in shared_with)
+        return True, f"head commit is shared with other open PR(s) {others}"[:80]
     if override_now:
         return False, "review threads gate bypassed by CI label"
     if unresolved_now > 0:

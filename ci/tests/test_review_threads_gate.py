@@ -45,6 +45,7 @@ from ci.jobs.scripts.workflow_hooks.review_threads import (
     fetch_thread_state,
     get_unresolved_review_threads_count,
     merge_gate_verdict,
+    other_open_prs_on_head,
     record_limited_pipeline_status,
     review_threads_gate_bypassed,
     should_limit_pipeline,
@@ -409,11 +410,90 @@ def test_merge_gate_descriptions_fit_status_budget():
             assert len(description) <= STATUS_DESCRIPTION_LIMIT, description
 
 
+def test_shared_head_commit_always_blocks():
+    """Commit statuses are not PR-scoped: never write a success to a shared head."""
+    for config_limited in (False, True):
+        for unresolved_now in (0, 2):
+            for override_now in (False, True):
+                blocked, description = merge_gate_verdict(
+                    config_limited, unresolved_now, override_now, [100, 200]
+                )
+                assert blocked, (config_limited, unresolved_now, override_now)
+                assert len(description) <= STATUS_DESCRIPTION_LIMIT, description
+    _, description = merge_gate_verdict(False, 0, True, list(range(100000, 100100)))
+    assert len(description) <= STATUS_DESCRIPTION_LIMIT, description
+
+
+def test_other_open_prs_on_head(monkeypatch):
+    info = FakeInfo()
+    pulls = [
+        {"number": info.pr_number, "state": "open", "head": {"sha": info.sha}},
+        {"number": 100, "state": "open", "head": {"sha": info.sha}},
+        {"number": 200, "state": "closed", "head": {"sha": info.sha}},
+        # The commit is in the PR, but it is not its head.
+        {"number": 300, "state": "open", "head": {"sha": "1" * 40}},
+    ]
+    monkeypatch.setattr(
+        GH, "get_output_with_retries", lambda *_, **__: json.dumps(pulls)
+    )
+    assert other_open_prs_on_head(info) == [100]
+
+
+def test_check_review_threads_blocks_a_shared_head_commit(monkeypatch):
+    from ci.jobs.scripts.workflow_hooks import can_be_merged
+
+    info = FakeInfo(kv={KV_PIPELINE_LIMITED: False})
+    monkeypatch.setattr(can_be_merged, "Info", lambda: info)
+    monkeypatch.setattr(can_be_merged, "fetch_thread_state", lambda _: (0, True, False))
+    monkeypatch.setattr(can_be_merged, "other_open_prs_on_head", lambda _: [100])
+    posted = []
+    monkeypatch.setattr(
+        can_be_merged.GH, "post_commit_status", lambda **kw: posted.append(kw) or True
+    )
+    assert not can_be_merged.check_review_threads()
+    assert posted[0]["status"] == Result.Status.FAIL
+    assert "#100" in posted[0]["description"]
+
+
+@pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
+def test_reconciliation_detects_a_shared_head_commit():
+    """The guard in `rerun_on_review_threads.yml` that refuses to clear a block."""
+    workflow = (
+        Path(__file__).resolve().parents[2]
+        / ".github/workflows/rerun_on_review_threads.yml"
+    ).read_text()
+    anchor = 'shared_sha_prs=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/pulls"'
+    assert anchor in workflow, "the shared head guard moved - update this test"
+    jq_filter = workflow[workflow.index(anchor) :].split("'")[1]
+
+    def shared(pulls):
+        result = subprocess.run(
+            ["jq", "-c", "--arg", "sha", RUN_SHA, jq_filter],
+            input=json.dumps(pulls),
+            capture_output=True,
+            text=True,
+            check=True,
+        )
+        return json.loads(result.stdout)
+
+    own = {"number": 114729, "state": "open", "head": {"sha": RUN_SHA}}
+    assert shared([own]) == [114729]
+    assert shared(
+        [
+            own,
+            {"number": 100, "state": "open", "head": {"sha": RUN_SHA}},
+            {"number": 200, "state": "closed", "head": {"sha": RUN_SHA}},
+            {"number": 300, "state": "open", "head": {"sha": "1" * 40}},
+        ]
+    ) == [100, 114729]
+
+
 def test_check_review_threads_fails_when_the_status_write_fails(monkeypatch):
     from ci.jobs.scripts.workflow_hooks import can_be_merged
 
     info = FakeInfo(kv={KV_PIPELINE_LIMITED: False})
     monkeypatch.setattr(can_be_merged, "Info", lambda: info)
+    monkeypatch.setattr(can_be_merged, "other_open_prs_on_head", lambda _: [])
     monkeypatch.setattr(can_be_merged, "fetch_thread_state", lambda _: (0, False, False))
     monkeypatch.setattr(can_be_merged.GH, "post_commit_status", lambda **_: False)
 
@@ -434,6 +514,7 @@ def test_review_threads_marker_is_independent_of_another_merge_gate(monkeypatch)
     info = FakeInfo(kv={KV_PIPELINE_LIMITED: False})
     posted = []
     monkeypatch.setattr(can_be_merged, "Info", lambda: info)
+    monkeypatch.setattr(can_be_merged, "other_open_prs_on_head", lambda _: [])
     monkeypatch.setattr(can_be_merged, "fetch_thread_state", lambda _: (1, False, False))
     monkeypatch.setattr(
         can_be_merged.GH,
@@ -815,6 +896,7 @@ def test_the_policy_marker_is_printed_only_when_the_gate_blocks(monkeypatch, cap
 
     info = FakeInfo(kv={KV_PIPELINE_LIMITED: False})
     monkeypatch.setattr(can_be_merged, "Info", lambda: info)
+    monkeypatch.setattr(can_be_merged, "other_open_prs_on_head", lambda _: [])
     monkeypatch.setattr(can_be_merged.GH, "post_commit_status", lambda **_: True)
 
     monkeypatch.setattr(can_be_merged, "fetch_thread_state", lambda _: (1, False, False))
@@ -1113,7 +1195,7 @@ head_repo={shlex.quote(head_repo)}
 head_owner={shlex.quote(head_repo.split("/")[0])}
 api_with_retries() {{
   case "$1" in
-    */pulls\?*) echo {shlex.quote(json.dumps(pulls))} ;;
+    */pulls\\?*) echo {shlex.quote(json.dumps(pulls))} ;;
     *) echo {shlex.quote(json.dumps({"workflow_runs": workflow_runs}))} ;;
   esac
 }}

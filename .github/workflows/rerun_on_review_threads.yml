@@ -217,6 +217,24 @@ jobs:
             exit 0
           fi
 
+          # --- Never clear a block on a head commit shared by several PRs ---
+          # Commit statuses are keyed by the commit and the context only, so
+          # GitHub applies a status written here to every PR with this head,
+          # whatever `target_url` says. Fail close: a success (or a re-run whose
+          # finish step would write one) could clear the block of another PR.
+          # The gate in `can_be_merged.py` blocks such PRs as well. A new block
+          # is still recorded below - it only adds a block to the other PRs.
+          if [ "$desired_blocked" != "true" ]; then
+            shared_sha_prs=$(api_with_retries "repos/$GH_REPO/commits/$head_sha/pulls" \
+              | jq -c --arg sha "$head_sha" \
+                '[.[] | select(.state == "open" and .head.sha == $sha) | .number] | unique')
+            if [ "$(echo "$shared_sha_prs" | jq 'length')" -gt 1 ]; then
+              echo "Head commit $head_sha is the head of several open PRs ($shared_sha_prs) -" \
+                   "not clearing the review-thread block, push a distinct commit."
+              exit 0
+            fi
+          fi
+
           # --- Do nothing while a PR workflow run is in progress ---
           # Checked before the refresh-only path as well: a status posted
           # from here while "Finish Workflow" runs would land in the same

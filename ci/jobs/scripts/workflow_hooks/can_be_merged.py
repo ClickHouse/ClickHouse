@@ -8,6 +8,7 @@ from ci.jobs.scripts.workflow_hooks.review_threads import (
     REVIEW_THREADS_STATUS_NAME,
     fetch_thread_state,
     merge_gate_verdict,
+    other_open_prs_on_head,
 )
 from ci.praktika.gh import GH
 from ci.praktika.info import Info
@@ -44,7 +45,9 @@ def check_review_threads():
     PR workflow is still running; otherwise CI must be re-run manually. Posts
     the final `Review Threads` commit status, which that workflow reads as the
     recorded verdict. Fails close: an API failure propagates, failing the
-    post-hook and thereby the Mergeable Check.
+    post-hook and thereby the Mergeable Check. It also blocks while another
+    open PR has the same head commit: commit statuses are not PR-scoped, so a
+    success here would clear the block of the other PR.
     """
     info = Info()
     if info.pr_number <= 0:
@@ -52,12 +55,13 @@ def check_review_threads():
 
     config_limited = bool(info.get_kv_data(KV_PIPELINE_LIMITED))
     unresolved_now, override_now, _ = fetch_thread_state(info)
+    shared_with = other_open_prs_on_head(info)
     blocked, description = merge_gate_verdict(
-        config_limited, unresolved_now, override_now
+        config_limited, unresolved_now, override_now, shared_with
     )
     print(
         f"Review threads gate: config_limited [{config_limited}], unresolved now "
-        f"[{unresolved_now}], override [{override_now}] -> blocked [{blocked}] ({description})"
+        f"[{unresolved_now}], override [{override_now}], shared with {shared_with} -> blocked [{blocked}] ({description})"
     )
 
     status = Result.Status.FAIL if blocked else Result.Status.OK
