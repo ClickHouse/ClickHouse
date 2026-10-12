@@ -12,7 +12,10 @@ namespace DB
 bool isTopNSort(const IQueryPlanStep & step)
 {
     const auto * sorting_step = typeid_cast<const SortingStep *>(&step);
-    return sorting_step != nullptr && sorting_step->getType() == SortingStep::Type::Full && sorting_step->getLimit() > 0;
+    /// A partitioned bounded sort keeps one stream per hash partition instead of merging to
+    /// a global top-N, so the top-N rules (which promise one sorted stream) must not take it.
+    return sorting_step != nullptr && sorting_step->getType() == SortingStep::Type::Full
+        && sorting_step->getLimit() > 0 && !sorting_step->hasPartitions();
 }
 
 bool isDistributionPassthroughStep(const IQueryPlanStep & step)

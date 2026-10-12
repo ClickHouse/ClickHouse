@@ -1,0 +1,106 @@
+-- 1. PARTITION BY window runs per node: shuffle by the partition key, sort and window on each node
+GatherExchange
+  Expression ((Project names + Projection))
+    Window (Partitioned Window step for window \'PARTITION BY __table1.k ORDER BY __table1.v ASC\')
+      Expression ((Before WINDOW + Change column names to column identifiers))
+        Sorting
+          ShuffleExchange
+            ReadFromMergeTree (ParallelRead default.t_win)
+-- 2. results match the single-node plan
+100000	4999950000	169172475000
+100000	4999950000	169172475000
+-- 3. a window without PARTITION BY stays on a single node
+GatherExchange
+  Expression ((Project names + Projection))
+    ScatterExchange
+      Window (Window step for window \'\')
+        GatherExchange
+          Expression ((Before WINDOW + Change column names to column identifiers))
+            ReadFromMergeTree (ParallelRead default.t_win)
+-- 4. a float partition key keeps the window on a single node
+GatherExchange
+  Expression ((Project names + Projection))
+    ScatterExchange
+      Window (Window step for window \'PARTITION BY __table1.k\')
+        GatherExchange
+          Expression ((Before WINDOW + Change column names to column identifiers))
+            Sorting
+              ReadFromMergeTree (ParallelRead default.t_wfloat)
+-- 5. negative and positive zero form one partition, as in the single-node plan
+100000
+100000
+-- 6. the window output order is reused: no new sort for a matching ORDER BY
+Expression (Project names)
+  GatherExchange
+    Expression ((Before ORDER BY + Projection))
+      Window (Partitioned Window step for window \'PARTITION BY __table1.k ORDER BY __table1.v ASC\')
+        Expression ((Before WINDOW + Change column names to column identifiers))
+          Sorting
+            ShuffleExchange
+              ReadFromMergeTree (ParallelRead default.t_win)
+-- 7. the window sort keeps per-partition streams: the aggregation above skips merging
+1
+-- 8. stacked windows: each partitioned window runs per node with its own sort
+GatherExchange
+  Expression ((Project names + Projection))
+    Window (Partitioned Window step for window \'PARTITION BY __table1.k\')
+      Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + Projection))))
+        Sorting
+          ShuffleExchange
+            Window (Partitioned Window step for window \'PARTITION BY __table2.k, __table2.v\')
+              Expression ((Before WINDOW + Change column names to column identifiers))
+                Sorting
+                  ShuffleExchange
+                    ReadFromMergeTree (ParallelRead default.t_win)
+-- 9. stacked window results match the single-node plan
+100000	4999950000	499995000000
+100000	4999950000	499995000000
+-- 10. a single-node window over a partitioned sort keeps the ORDER BY above it
+Expression (Project names)
+  GatherExchange
+    Expression ((Before ORDER BY + Projection))
+      Sorting
+        ScatterExchange
+          Window (Window step for window \'PARTITION BY modulo(__table1.k, 3_UInt8) ORDER BY __table1.v ASC\')
+            GatherExchange
+              Sorting
+                Expression ((Before WINDOW + Change column names to column identifiers))
+                  ReadFromMergeTree (ParallelRead default.t_ord)
+0	0	0
+3	3	3
+6	6	9
+0	8	17
+3	11	28
+6	14	42
+0	16	58
+3	19	77
+6	22	99
+1	1	1
+4	4	5
+7	7	12
+1	9	21
+4	12	33
+7	15	48
+1	17	65
+4	20	85
+7	23	108
+2	2	2
+5	5	7
+2	10	17
+5	13	30
+2	18	48
+5	21	69
+-- 11. same-key stacked windows through an expression share one shuffle and sort
+GatherExchange
+  Expression ((Project names + Projection))
+    Window (Partitioned Window step for window \'PARTITION BY __table1.k\')
+      Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + Projection))) [lifted up part])
+        Expression ((Before WINDOW + (Change column names to column identifiers + (Project names + Projection))))
+          Window (Partitioned Window step for window \'PARTITION BY __table2.k\')
+            Expression ((Before WINDOW + Change column names to column identifiers))
+              Sorting
+                ShuffleExchange
+                  ReadFromMergeTree (ParallelRead default.t_win)
+-- 12. same-key stacked window results match the single-node plan
+100000	50050000	49999500000000
+100000	50050000	49999500000000
