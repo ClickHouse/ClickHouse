@@ -4,7 +4,6 @@
 #include <Core/Settings.h>
 #include <Core/SettingsEnums.h>
 #include <Core/UUID.h>
-#include <DataTypes/DataTypeAggregateFunction.h>
 #include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/StorageID.h>
@@ -1785,25 +1784,31 @@ namespace
                     col->type->getName());
         };
 
-        /// Accepts `Nullable(timestamp_type)` or any aggregate function wrapper.
-        auto check_column_min_max_time = [&](std::string_view column_name)
+        /// Accepts the timestamp type, optionally Nullable, optionally wrapped in a SimpleAggregateFunction with the function
+        /// which aggregates the column (`min` for `min_time`, `max` for `max_time`). The inserts write plain timestamps,
+        /// an aggregating engine merges them with that function; other wrappers can't be filled or would merge them wrongly.
+        auto check_column_min_max_time = [&](std::string_view column_name, std::string_view aggregate_function_name)
         {
             check_column(column_name);
             const auto * col = target_table_columns.tryGet(String(column_name));
-            if (removeNullable(col->type)->equals(*resolved_types.timestamp_type))
-                return;
-            if (typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(col->type->getCustomName()))
-                return;
-            if (typeid_cast<const DataTypeAggregateFunction *>(col->type.get()))
+            DataTypePtr type = col->type;
+            if (const auto * simple_aggregate_function = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName());
+                simple_aggregate_function && (simple_aggregate_function->getFunctionName() == aggregate_function_name)
+                && (simple_aggregate_function->getArgumentsDataTypes().size() == 1))
+            {
+                type = simple_aggregate_function->getArgumentsDataTypes()[0];
+            }
+            if (removeNullable(type)->equals(*resolved_types.timestamp_type))
                 return;
             throw Exception(
                 ErrorCodes::BAD_TYPE_OF_FIELD,
-                "{}: Column {} in the {} table has type {}, but expected {} (optionally Nullable) or an aggregate-function wrapper",
+                "{}: Column {} in the {} table has type {}, but expected {} (optionally Nullable, optionally wrapped in SimpleAggregateFunction({}, ...))",
                 table_id.getNameForLogs(),
                 column_name,
                 target_kind,
                 col->type->getName(),
-                resolved_types.timestamp_type->getName());
+                resolved_types.timestamp_type->getName(),
+                aggregate_function_name);
         };
 
         auto check_metric_family_column = [&](std::string_view column_name)
@@ -1854,8 +1859,8 @@ namespace
 
                 if (time_series_settings.hasMinTimeAndMaxTimeInTagsTable())
                 {
-                    check_column_min_max_time(TimeSeriesColumnNames::MinTime);
-                    check_column_min_max_time(TimeSeriesColumnNames::MaxTime);
+                    check_column_min_max_time(TimeSeriesColumnNames::MinTime, "min");
+                    check_column_min_max_time(TimeSeriesColumnNames::MaxTime, "max");
                 }
                 break;
             }
@@ -1863,8 +1868,8 @@ namespace
             case ViewTarget::TimeRanges:
             {
                 check_column_type(TimeSeriesColumnNames::ID, resolved_types.id_type);
-                check_column_min_max_time(TimeSeriesColumnNames::MinTime);
-                check_column_min_max_time(TimeSeriesColumnNames::MaxTime);
+                check_column_min_max_time(TimeSeriesColumnNames::MinTime, "min");
+                check_column_min_max_time(TimeSeriesColumnNames::MaxTime, "max");
                 break;
             }
 
