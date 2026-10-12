@@ -15,13 +15,15 @@ namespace QueryPlanSerializationSetting
     extern const QueryPlanSerializationSettingsBool enable_adaptive_aggregator;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold;
     extern const QueryPlanSerializationSettingsUInt64 adaptive_aggregator_freeze_threshold_bytes;
+    extern const QueryPlanSerializationSettingsBool adaptive_aggregator_disable_thaw;
 }
 }
 
 using namespace DB;
 
 /// `enable_adaptive_aggregator` and `adaptive_aggregator_freeze_threshold` may go on the wire only towards a peer
-/// whose query-plan serialization version knows the names.
+/// whose query-plan serialization version knows the names, and `adaptive_aggregator_disable_thaw`, a name of a later
+/// version, only towards a peer that knows it.
 ///
 /// `QueryPlanSerializationSettings` is a strict named schema: `writeChangedBinary` writes every touched entry by
 /// name and `readBinary` throws on a name it does not know. Writing either name towards a peer that predates it
@@ -33,8 +35,9 @@ namespace
 
 constexpr UInt64 current_version = DBMS_QUERY_PLAN_SERIALIZATION_VERSION;
 constexpr UInt64 pre_setting_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR - 1;
+constexpr UInt64 pre_disable_thaw_version = DBMS_MIN_QUERY_PLAN_SERIALIZATION_VERSION_WITH_ADAPTIVE_AGGREGATOR_DISABLE_THAW - 1;
 
-QueryPlanSerializationSettings serializeAggregatingStep(bool enable_adaptive_aggregator, UInt64 version)
+QueryPlanSerializationSettings serializeAggregatingStep(bool enable_adaptive_aggregator, UInt64 version, bool disable_thaw = false)
 {
     auto type = std::make_shared<DataTypeUInt64>();
     Block header({ColumnWithTypeAndName(type->createColumn(), type, "k")});
@@ -51,6 +54,7 @@ QueryPlanSerializationSettings serializeAggregatingStep(bool enable_adaptive_agg
     params.enable_adaptive_aggregator = enable_adaptive_aggregator;
     params.adaptive_aggregator_freeze_threshold = 4096;
     params.adaptive_aggregator_freeze_threshold_bytes = 4096;
+    params.adaptive_aggregator_disable_thaw = disable_thaw;
 
     AggregatingStep step(
         std::make_shared<const Block>(header),
@@ -118,4 +122,29 @@ TEST(AdaptiveAggregatorPlanSetting, DefaultsToPreFeatureBehaviorWhenAbsent)
     EXPECT_FALSE(settings[QueryPlanSerializationSetting::enable_adaptive_aggregator]);
     EXPECT_EQ(settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold], 0);
     EXPECT_EQ(settings[QueryPlanSerializationSetting::adaptive_aggregator_freeze_threshold_bytes], 0);
+    EXPECT_FALSE(settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw]);
+}
+
+TEST(AdaptiveAggregatorPlanSetting, DisableThawCarriedTowardsAPeerThatKnowsTheName)
+{
+    /// The value is written for a peer at the current version whichever way it is set, and reaches the remote
+    /// aggregation as it was set.
+    for (bool disable_thaw : {false, true})
+    {
+        const auto settings = serializeAggregatingStep(/*enable_adaptive_aggregator=*/true, current_version, disable_thaw);
+        EXPECT_TRUE(wireCarries(settings, "adaptive_aggregator_disable_thaw")) << "disable_thaw = " << disable_thaw;
+        EXPECT_EQ(settings[QueryPlanSerializationSetting::adaptive_aggregator_disable_thaw], disable_thaw);
+    }
+}
+
+TEST(AdaptiveAggregatorPlanSetting, DisableThawNotCarriedTowardsAPeerThatPredatesTheName)
+{
+    /// A peer that knows the other adaptive names but not this one receives them without it, and thaws as it
+    /// always did, which changes no result.
+    for (bool disable_thaw : {false, true})
+    {
+        const auto settings = serializeAggregatingStep(/*enable_adaptive_aggregator=*/true, pre_disable_thaw_version, disable_thaw);
+        EXPECT_FALSE(wireCarries(settings, "adaptive_aggregator_disable_thaw")) << "disable_thaw = " << disable_thaw;
+        EXPECT_TRUE(wireCarries(settings, "enable_adaptive_aggregator")) << "disable_thaw = " << disable_thaw;
+    }
 }

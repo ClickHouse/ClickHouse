@@ -2,15 +2,15 @@ Count-only value staging under constant pressure
 1
 General aggregates under constant pressure
 1
-String keys persist into the routing table under pressure
+String keys under constant pressure
 1
 Long string keys and a string argument under pressure
 1
-Partial pressure mixes early and merge-time drains
+Partial pressure mixes spilled and in-memory records
 1
-Give-up threads spill through the baseline branch
+Frozen tables of growing states spill as ordinary parts
 1
-Learning-phase spill preserves results
+Tables frozen at the two-level condition spill exactly
 1
 Sparsely populated buckets under pressure
 1

@@ -4,4 +4,5 @@
     <query>SELECT uniqExactArray([number]) FROM numbers_mt(1e7) Format Null</query>
     <query>with (SELECT uniqExactState(number) FROM numbers_mt(1e7)) as a select uniqExactMerge(a)</query>
     <query>SELECT uniqExactOrNull(number) FROM numbers_mt(1e7)</query>
+    <query>SELECT uniqExactIf(number, number % 10 = 0) FROM numbers_mt(1e7)</query>
 </test>

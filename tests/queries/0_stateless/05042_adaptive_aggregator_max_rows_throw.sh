@@ -69,13 +69,12 @@ SET max_rows_to_group_by = 50000;
 SELECT g, c FROM (SELECT number % 200000 AS g, count() AS c FROM numbers_mt(600000) GROUP BY g ORDER BY c DESC LIMIT 10);
 " 2>&1 | grep -oF "TOO_MANY_ROWS" | head -1
 
-# A spilled run merges through the external machinery instead of the counted in-memory merge,
-# so the spill drains hold the limit against their drain tables as they build them, bucket by
-# bucket. The one-byte threshold keeps the pressure valve draining for the whole query, and the
-# staged keys exceed the limit many times over, so the first drain batch must abort the query.
-# The reported group count pins the per-bucket granularity: the abort must come within a few
-# buckets' worth of keys past the limit, not after a whole floor-sized batch (which would
-# report close to a million).
+# Over the threshold the producers write their staged records to disk, and the merge reads them
+# back bucket by bucket, holding the limit against the groups merged so far. The one-byte
+# threshold keeps the producers spilling for the whole query, and the staged keys exceed the
+# limit many times over. The reported group count pins the per-bucket granularity: the abort
+# must come within a few buckets' worth of keys past the limit, not after the whole stream
+# (which would report close to 1.3 million).
 echo "A spilling run hits the limit within a few buckets past it"
 $CLICKHOUSE_LOCAL --query "
 $SETTINGS_COMMON

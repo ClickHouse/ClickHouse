@@ -323,6 +323,7 @@ inline ALWAYS_INLINE bool operator==(PackedStringRef lhs, PackedStringRef rhs)
 
         const char * lhs_ptr = reinterpret_cast<const char *>(lhs.high & PackedStringRef::POINTER_MASK);
         const char * rhs_ptr = reinterpret_cast<const char *>(rhs.high & PackedStringRef::POINTER_MASK);
+        chassert(lhs_ptr && rhs_ptr);
         const size_t size = (lhs_tag & PackedStringRef::LARGE_TAG_BYTE) ? lhs.low : (lhs.low >> 32);
 #if defined(__SSE2__) || (defined(__aarch64__) && defined(__ARM_NEON))
         return memequalWide(lhs_ptr, rhs_ptr, size);

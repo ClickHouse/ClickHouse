@@ -1,0 +1,20 @@
+Few groups of heap states
+matches the baseline	1
+frozen tables written to disk	1
+staged records written to disk	0
+Few groups of arena states
+matches the baseline	1
+frozen tables written to disk	1
+staged records written to disk	0
+Hot keys of arena states next to staged cold keys
+matches the baseline	1
+frozen tables written to disk	1
+staged records written to disk	1
+States that do not grow keep the tables in memory
+matches the baseline	1
+frozen tables written to disk	0
+staged records written to disk	1
+Top-K by a distinct count of heap states
+matches the baseline	1
+frozen tables written to disk	1
+staged records written to disk	0

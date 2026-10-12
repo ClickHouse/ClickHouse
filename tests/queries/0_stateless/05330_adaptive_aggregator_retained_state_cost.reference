@@ -1,0 +1,6 @@
+uniqCombined(16)(n % 200000)
+uniqCombined64(16)(n % 200000)
+uniqCombined(16)(toString(n % 200000))
+uniqCombined(16)(tuple(n % 200000, toString(n % 200000)))
+uniqCombined(16)(n % 200000, toString(n % 200000))
+Repeated admission	1	1

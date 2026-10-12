@@ -1,0 +1,12 @@
+Immediate freeze with inline count
+1000000	1000000	499999500000
+Immediate freeze with sum
+10000	499999500000
+Immediate freeze with growing distinct states
+10000	1000000
+Immediate freeze without aggregate states
+1000000	499999500000
+Immediate freeze with fixed distinct states
+1
+Freeze with retained keys
+1000000	499999500000
