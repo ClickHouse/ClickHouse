@@ -227,6 +227,9 @@
          ClickHouse will extract information about proxy-forwarded client address from the header.
     -->
     <!-- <tcp_with_proxy_port>9011</tcp_with_proxy_port> -->
+    <!-- Set to false to reject the native protocol's interserver mode on tcp_with_proxy_port,
+         for example when that port is exposed to untrusted clients through a proxy. -->
+    <!-- <tcp_with_proxy_allow_interserver_mode>false</tcp_with_proxy_allow_interserver_mode> -->
 
     <!-- Port for communication between replicas. Used for data exchange.
          It provides low-level data access between servers.
