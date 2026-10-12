@@ -68,4 +68,11 @@ void ReadSettings::useForSmallRemoteRead(size_t buffer_size)
     remote_fs_settings.buffer_size = buffer_size;
 }
 
+void ReadSettings::useForPositionalReadAt()
+{
+    local_fs_settings.method = LocalFSReadMethod::pread;
+    local_fs_settings.direct_io_threshold = 0;
+    reader_executor.enabled = false;
+}
+
 }
