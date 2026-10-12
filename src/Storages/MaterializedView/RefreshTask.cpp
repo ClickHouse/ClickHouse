@@ -16,6 +16,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/InterpreterInsertQuery.h>
+#include <Interpreters/InterpreterSetQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
 #include <Interpreters/OpenTelemetrySpanLog.h>
 #include <Interpreters/ProcessList.h>
@@ -184,10 +185,22 @@ std::vector<StorageID> parseRefreshDependencies(const ASTRefreshStrategy & strat
 /// now, or by an older one that an `ALTER` or a settings-profile update has since replaced.
 UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata, const ContextPtr & refresh_context)
 {
+    /// `StorageMaterializedView::prepareRefresh` applies the stored query's own `SETTINGS` on top of the
+    /// refresh context, so hash the settings the refresh actually runs with: a definer-profile change of a
+    /// setting that the query overrides anyway (e.g. `max_rows_to_read`) does not change what the refresh
+    /// produces and must not discard the watermark of an `APPEND` view.
+    ContextPtr effective_context = refresh_context;
+    if (metadata.select.select_query)
+    {
+        auto query_context = Context::createCopy(refresh_context);
+        InterpreterSetQuery::applySettingsFromQuery(metadata.select.select_query->clone(), query_context);
+        effective_context = query_context;
+    }
+
     /// The `additional_table_filters` entries keyed by a table the refresh never reads are left out.
     std::optional<NameSet> additional_table_filters_matchable_names;
     if (metadata.select.select_query)
-        additional_table_filters_matchable_names = collectNamesMatchableByAdditionalTableFilters(metadata.select.select_query, refresh_context);
+        additional_table_filters_matchable_names = collectNamesMatchableByAdditionalTableFilters(metadata.select.select_query, effective_context);
 
     SipHash hash;
     /// The operational entries of the query's own `SETTINGS` are left out, like those of the refresh
@@ -211,7 +224,7 @@ UInt128 computeViewDefinitionHash(const StorageInMemoryMetadata & metadata, cons
     /// `additional_table_filters` entry for a table the refresh does not read.
     updateHashWithRowAffectingSettings(
         hash,
-        refresh_context->getSettingsRef(),
+        effective_context->getSettingsRef(),
         additional_table_filters_matchable_names ? &*additional_table_filters_matchable_names : nullptr);
     return hash.get128();
 }
