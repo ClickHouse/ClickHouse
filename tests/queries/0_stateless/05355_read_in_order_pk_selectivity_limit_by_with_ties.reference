@@ -1,0 +1,11 @@
+plain LIMIT keeps read-in-order
+0
+LIMIT BY does not let the read stop early
+1
+LIMIT WITH TIES does not let the read stop early
+1
+results
+path/0/file.log
+path/1/file.log
+path/10/file.log
+100	1

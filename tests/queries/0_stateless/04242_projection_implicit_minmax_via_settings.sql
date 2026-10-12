@@ -2,6 +2,12 @@
 
 SET explain_query_plan_default = 'legacy';
 
+-- The stateless-test server config sets `max_rows_to_read` / `max_rows_to_read_leaf`, and with a row limit in
+-- effect an accepted read-in-order redoes range analysis on the parts the projection optimizer already selected,
+-- so the reported part and granule totals would be relative to that narrowed set. Pin the limits off to keep the
+-- plan counts below independent of the server configuration.
+SET max_rows_to_read = 0, max_rows_to_read_leaf = 0;
+
 CREATE TABLE test_proj_minmax
 (
     a UInt32,

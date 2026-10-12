@@ -1,6 +1,8 @@
 <test>
     <settings>
         <max_threads>1</max_threads>
+        <!-- This test relies on read-in-order for ORDER BY ... LIMIT 1 BY key -->
+        <read_in_order_max_primary_key_ratio>1.0</read_in_order_max_primary_key_ratio>
     </settings>
 
     <substitutions>

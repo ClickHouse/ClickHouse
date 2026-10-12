@@ -2,6 +2,8 @@
     <settings>
         <optimize_aggregation_in_order>1</optimize_aggregation_in_order>
         <optimize_read_in_order>1</optimize_read_in_order>
+        <!-- This test explicitly validates read-in-order behavior -->
+        <read_in_order_max_primary_key_ratio>1.0</read_in_order_max_primary_key_ratio>
         <max_partitions_per_insert_block>2000</max_partitions_per_insert_block>
         <max_insert_block_size>10000000</max_insert_block_size>
         <max_threads>8</max_threads>

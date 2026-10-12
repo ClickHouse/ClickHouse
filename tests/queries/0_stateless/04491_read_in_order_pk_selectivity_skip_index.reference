@@ -1,0 +1,6 @@
+skip_index_prunes_keeps_in_order
+0
+poor_selectivity_full_sort
+1
+correctness
+10000

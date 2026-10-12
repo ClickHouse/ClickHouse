@@ -1,0 +1,8 @@
+negative LIMIT BY does not let the read stop early
+1
+the same query with the guard disabled keeps read-in-order
+0
+result
+path/999/file.log	0
+path/999/file.log	1
+path/999/file.log	2

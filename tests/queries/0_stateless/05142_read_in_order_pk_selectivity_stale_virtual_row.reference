@@ -1,0 +1,6 @@
+no virtual row when the guard rejected read-in-order
+0
+virtual row when read-in-order is kept
+1
+result
+100

@@ -1,6 +1,8 @@
 -- Tags: long, no-random-merge-tree-settings
 --- FIXME no-random-merge-tree-settings requires investigation
 
+set read_in_order_max_primary_key_ratio = 1.0;
+
 drop table if exists data_01513;
 create table data_01513 (key String) engine=MergeTree() order by key;
 -- 10e3 groups, 1e3 keys each

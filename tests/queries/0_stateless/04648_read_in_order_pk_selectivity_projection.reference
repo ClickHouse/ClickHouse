@@ -1,0 +1,11 @@
+projection_used
+1
+projection_exempt_from_guard
+0
+0
+0
+base_table_guard_fires
+1
+0
+correctness
+50000

@@ -1,0 +1,8 @@
+LIMIT BY with exact_rows_before_limit does not let the read stop early
+1
+the same query with the guard disabled keeps read-in-order
+0
+result
+path/0/file.log
+path/1/file.log
+path/10/file.log

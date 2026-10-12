@@ -1,6 +1,7 @@
 -- Tags: no-random-merge-tree-settings
 
 SET use_uncompressed_cache=0;
+SET read_in_order_max_primary_key_ratio = 1.0;
 
 -- `apply_string_filters_during_scan` materializes the values that do not match a substring condition
 -- of PREWHERE as empty strings, so the in-memory size of the read block, which the estimation is based on,
