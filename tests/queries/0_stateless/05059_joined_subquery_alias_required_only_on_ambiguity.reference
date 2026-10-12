@@ -65,6 +65,9 @@ a	b	c
 1	5
 a	b
 1	5
+-- PASTE JOIN does not validate the duplicate column names of a subquery behind ARRAY JOIN, so it still requires an alias
+y
+1
 -- ARRAY JOIN keeps the columns of the table expression it wraps
 1
 0

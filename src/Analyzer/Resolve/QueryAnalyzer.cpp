@@ -3051,10 +3051,9 @@ void QueryAnalyzer::validateMatchedColumnsFromJoinCanBeQualified(
         /// columns matters: a `PASTE JOIN` elsewhere in the tree says nothing about them.
         const auto * combining_join = findInnermostJoinCombiningTableExpressions(join_tree_node, first_column_source, second_column_source);
         const auto * combining_join_node = combining_join ? combining_join->as<JoinNode>() : nullptr;
-        bool combined_by_paste_join = combining_join_node && combining_join_node->getKind() == JoinKind::Paste;
 
         auto unaliased_table_expression = IdentifierResolver::getUnaliasedTableExpressionRequiringAlias(
-            first_node, matched_nodes[i], combined_by_paste_join, scope);
+            first_node, matched_nodes[i], combining_join_node, scope);
         if (!unaliased_table_expression)
             continue;
 

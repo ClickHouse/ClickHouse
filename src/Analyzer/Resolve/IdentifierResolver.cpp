@@ -1299,19 +1299,44 @@ QueryTreeNodePtr IdentifierResolver::getUnaliasedSubqueryOrTableFunctionSource(c
     return nullptr;
 }
 
+/** Returns true if the table expression is an operand of the `PASTE JOIN`, directly or through nested `PASTE JOIN`s.
+  * Equally named columns of such operands are rejected by `QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin`
+  * or reported as ambiguous, while a subquery behind `ARRAY JOIN` or another kind of join escapes that validation and
+  * would let `single_join_prefer_left_table` silently pick a side.
+  *
+  * Example: SELECT x FROM (SELECT [1] AS arr) ARRAY JOIN arr AS x PASTE JOIN (SELECT 0 AS x);
+  */
+static bool isPasteJoinOperand(const JoinNode * paste_join_node, const IQueryTreeNode * table_expression)
+{
+    for (const auto & operand : {paste_join_node->getLeftTableExpressionNode(), paste_join_node->getRightTableExpressionNode()})
+    {
+        if (operand.get() == table_expression)
+            return true;
+
+        if (const auto * operand_join_node = operand->as<JoinNode>();
+            operand_join_node && operand_join_node->getKind() == JoinKind::Paste && isPasteJoinOperand(operand_join_node, table_expression))
+            return true;
+    }
+
+    return false;
+}
+
 QueryTreeNodePtr IdentifierResolver::getUnaliasedTableExpressionRequiringAlias(
     const QueryTreeNodePtr & first_resolved_expression,
     const QueryTreeNodePtr & second_resolved_expression,
-    bool combined_by_paste_join,
+    const JoinNode * combining_join_node,
     const IdentifierResolveScope & scope)
 {
+    bool combined_by_paste_join = combining_join_node && combining_join_node->getKind() == JoinKind::Paste;
     for (const auto * resolved_expression : {&first_resolved_expression, &second_resolved_expression})
     {
         auto unaliased_table_expression = getUnaliasedSubqueryOrTableFunctionSource(*resolved_expression, scope);
         if (!unaliased_table_expression)
             continue;
 
-        if (combined_by_paste_join && unaliased_table_expression->getNodeType() == QueryTreeNodeType::QUERY)
+        if (combined_by_paste_join
+            && unaliased_table_expression->getNodeType() == QueryTreeNodeType::QUERY
+            && isPasteJoinOperand(combining_join_node, unaliased_table_expression.get()))
             continue;
 
         return unaliased_table_expression;
@@ -1340,10 +1365,8 @@ static QueryTreeNodePtr getUnaliasedTableExpressionOfAmbiguousIdentifier(
     if (!scope.context->getSettingsRef()[Setting::joined_subquery_requires_alias])
         return nullptr;
 
-    const auto * join = join_node->as<const JoinNode>();
-    bool combined_by_paste_join = join && join->getKind() == JoinKind::Paste;
     return IdentifierResolver::getUnaliasedTableExpressionRequiringAlias(
-        first_resolved_identifier, second_resolved_identifier, combined_by_paste_join, scope);
+        first_resolved_identifier, second_resolved_identifier, join_node->as<const JoinNode>(), scope);
 }
 
 [[noreturn]] static void throwAliasRequiredForAmbiguousIdentifier(

@@ -123,13 +123,14 @@ public:
       *
       * `PASTE JOIN` concatenates the operands positionally and allows equally named columns: the duplicate column names of
       * its unaliased subqueries are validated separately (see QueryAnalyzer::checkDuplicateTableNamesOrAliasForPasteJoin),
-      * so when `combined_by_paste_join` is set, an unaliased subquery does not require an alias. That validation does not
-      * cover unions and table functions, so they still require it.
+      * so when `combining_join_node` is a `PASTE JOIN`, an unaliased subquery that is its operand (directly or through nested
+      * `PASTE JOIN`s) does not require an alias. That validation does not cover unions, table functions and subqueries
+      * behind `ARRAY JOIN`, so they still require it.
       */
     static QueryTreeNodePtr getUnaliasedTableExpressionRequiringAlias(
         const QueryTreeNodePtr & first_resolved_expression,
         const QueryTreeNodePtr & second_resolved_expression,
-        bool combined_by_paste_join,
+        const JoinNode * combining_join_node,
         const IdentifierResolveScope & scope);
 
     static std::shared_ptr<TableNode> tryResolveTableIdentifier(
