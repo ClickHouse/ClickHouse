@@ -99,16 +99,9 @@ void registerTableFunctionZeros(TableFunctionFactory & factory)
                 [example:1]
                 This query will test the speed of `randomPrintableASCII` function using multiple threads.
                 See also the `system.zeros` table.)",
-            .examples={
-                {"1",
-                 "SELECT count() FROM zeros(100000000) WHERE NOT ignore(randomPrintableASCII(10))",
-                 R"(
-┌───count()─┐
-│ 100000000 │
-└───────────┘
-)"}},
+            .examples={{"1", "SELECT count() FROM zeros(100000000) WHERE NOT ignore(randomPrintableASCII(10))", ""}},
             .category = FunctionDocumentation::Category::TableFunction
-    }, SecretArgumentsSpec{});
+    });
 
     factory.registerFunction<TableFunctionZeros<false>>(
         {.description = R"DOCS_MD(
@@ -140,7 +133,7 @@ SELECT * FROM system.zeros_mt LIMIT 10;
 │    0 │
 └──────┘
 ```
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction});
 }
 
 }

@@ -44,7 +44,7 @@
           "pages": [
             "fr/clickstack/deployment/overview",
             {
-              "group": "Open source",
+              "group": "Open Source",
               "pages": [
                 "fr/clickstack/deployment/oss",
                 "fr/clickstack/deployment/all-in-one",
@@ -89,8 +89,7 @@
             "fr/clickstack/features/dashboards/overview",
             "fr/clickstack/features/dashboards/dashboard-templates",
             "fr/clickstack/features/dashboards/sql-visualizations",
-            "fr/clickstack/features/dashboards/row-click-drilldowns",
-            "fr/clickstack/features/dashboards/release-markers"
+            "fr/clickstack/features/dashboards/row-click-drilldowns"
           ]
         },
         "fr/clickstack/notebooks",
@@ -103,64 +102,28 @@
         "fr/clickstack/mcp",
         "fr/clickstack/url-parameters",
         {
-          "group": "Journées de démonstration",
+          "group": "Demo days",
           "pages": [
             "fr/clickstack/demo-days/index",
             {
               "group": "2026",
               "pages": [
-                {
-                  "group": "Septembre",
-                  "pages": [
-                    "fr/clickstack/demo-days/2026/2026-09-10",
-                    "fr/clickstack/demo-days/2026/2026-09-04"
-                  ]
-                },
-                {
-                  "group": "Août",
-                  "pages": [
-                    "fr/clickstack/demo-days/2026/2026-08-28",
-                    "fr/clickstack/demo-days/2026/2026-08-21",
-                    "fr/clickstack/demo-days/2026/2026-08-15",
-                    "fr/clickstack/demo-days/2026/2026-08-07"
-                  ]
-                },
-                {
-                  "group": "Juillet",
-                  "pages": [
-                    "fr/clickstack/demo-days/2026/2026-07-31",
-                    "fr/clickstack/demo-days/2026/2026-07-24",
-                    "fr/clickstack/demo-days/2026/2026-07-17",
-                    "fr/clickstack/demo-days/2026/2026-07-10",
-                    "fr/clickstack/demo-days/2026/2026-07-02"
-                  ]
-                },
-                {
-                  "group": "Juin",
-                  "pages": [
-                    "fr/clickstack/demo-days/2026/2026-06-26",
-                    "fr/clickstack/demo-days/2026/2026-06-18",
-                    "fr/clickstack/demo-days/2026/2026-06-12",
-                    "fr/clickstack/demo-days/2026/2026-06-05"
-                  ]
-                },
-                {
-                  "group": "Mai",
-                  "pages": [
-                    "fr/clickstack/demo-days/2026/2026-05-29",
-                    "fr/clickstack/demo-days/2026/2026-05-22",
-                    "fr/clickstack/demo-days/2026/2026-05-15",
-                    "fr/clickstack/demo-days/2026/2026-05-08"
-                  ]
-                },
-                {
-                  "group": "Avril",
-                  "pages": [
-                    "fr/clickstack/demo-days/2026/2026-04-17",
-                    "fr/clickstack/demo-days/2026/2026-04-10",
-                    "fr/clickstack/demo-days/2026/2026-04-03"
-                  ]
-                }
+                "fr/clickstack/demo-days/2026/2026-07-31",
+                "fr/clickstack/demo-days/2026/2026-07-24",
+                "fr/clickstack/demo-days/2026/2026-07-17",
+                "fr/clickstack/demo-days/2026/2026-07-10",
+                "fr/clickstack/demo-days/2026/2026-07-02",
+                "fr/clickstack/demo-days/2026/2026-06-26",
+                "fr/clickstack/demo-days/2026/2026-06-18",
+                "fr/clickstack/demo-days/2026/2026-06-12",
+                "fr/clickstack/demo-days/2026/2026-06-05",
+                "fr/clickstack/demo-days/2026/2026-05-29",
+                "fr/clickstack/demo-days/2026/2026-05-22",
+                "fr/clickstack/demo-days/2026/2026-05-15",
+                "fr/clickstack/demo-days/2026/2026-05-08",
+                "fr/clickstack/demo-days/2026/2026-04-17",
+                "fr/clickstack/demo-days/2026/2026-04-10",
+                "fr/clickstack/demo-days/2026/2026-04-03"
               ]
             }
           ]
@@ -169,13 +132,12 @@
     },
     {
       "expanded": true,
-      "group": "Gérer ClickStack",
+      "group": "Administrer ClickStack",
       "pages": [
         "fr/clickstack/managing/overview",
         "fr/clickstack/managing/admin",
         "fr/clickstack/managing/config",
         "fr/clickstack/managing/estimating-resources",
-        "fr/clickstack/managing/isolating-read-write",
         "fr/clickstack/managing/materialized-views",
         "fr/clickstack/managing/performance-tuning",
         "fr/clickstack/managing/production",
@@ -187,9 +149,9 @@
       "group": "Guides",
       "pages": [
         {
-          "expanded": true,
-          "group": "Ingérer des données",
+          "group": "Ingestion de données",
           "pages": [
+            "fr/clickstack/ingesting-data/index",
             "fr/clickstack/ingesting-data/overview",
             "fr/clickstack/ingesting-data/opentelemetry",
             "fr/clickstack/ingesting-data/vector",
@@ -208,7 +170,7 @@
                 "fr/clickstack/integration-examples/cloudwatch",
                 "fr/clickstack/integration-examples/aws-lambda",
                 {
-                  "group": "Journaux des hôtes",
+                  "group": "Logs de l’hôte",
                   "pages": [
                     "fr/clickstack/integration-examples/host-logs",
                     "fr/clickstack/integration-examples/host-logs/ec2"
@@ -229,7 +191,7 @@
               ]
             },
             {
-              "group": "SDK par langage",
+              "group": "SDKs par langage",
               "pages": [
                 "fr/clickstack/ingesting-data/sdks/index",
                 "fr/clickstack/ingesting-data/sdks/browser",
@@ -254,7 +216,7 @@
           "pages": [
             "fr/clickstack/migration/index",
             {
-              "group": "Migrer depuis Elastic",
+              "group": "Migration depuis Elastic",
               "pages": [
                 "fr/clickstack/migration/elastic/index",
                 "fr/clickstack/migration/elastic/intro",
@@ -278,8 +240,7 @@
         "fr/clickstack/integration-partners/index",
         "fr/clickstack/integration-partners/bindplane",
         "fr/clickstack/integration-partners/bitdrift",
-        "fr/clickstack/integration-partners/odigos",
-        "fr/clickstack/integration-partners/telflo"
+        "fr/clickstack/integration-partners/odigos"
       ]
     },
     {

@@ -72,7 +72,7 @@ MergingAggregatedTransform::MergingAggregatedTransform(
     {
         if (!header_->has("__grouping_set"))
             throw Exception(ErrorCodes::LOGICAL_ERROR,
-                "Cannot find __grouping_set column in header of MergingAggregatedTransform with grouping sets. "
+                "Cannot find __grouping_set column in header of MergingAggregatedTransform with grouping sets."
                 "Header {}", header_->dumpStructure());
 
         auto in_header = *header_;
@@ -267,10 +267,9 @@ Chunk MergingAggregatedTransform::generate()
                 auto res_header = params->params.getHeader(params->header, params->final);
                 for (auto & agg_chunk : merged_chunks)
                 {
-                    size_t num_rows = agg_chunk.chunk.getNumRows();
                     auto block = res_header.cloneWithColumns(agg_chunk.chunk.detachColumns());
-                    grouping_set.creating_missing_keys_actions->execute(block, num_rows);
-                    agg_chunk.chunk = Chunk(block.getColumns(), num_rows);
+                    grouping_set.creating_missing_keys_actions->execute(block);
+                    agg_chunk.chunk = Chunk(block.getColumns(), block.rows());
                 }
             }
 

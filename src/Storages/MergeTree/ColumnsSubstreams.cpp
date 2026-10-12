@@ -11,7 +11,6 @@ namespace DB
 
 namespace ErrorCodes
 {
-    extern const int CORRUPTED_DATA;
     extern const int LOGICAL_ERROR;
 }
 
@@ -235,7 +234,8 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
     size_t num_columns = 0;
     DB::readText(num_columns, buf);
     assertString(" columns:\n", buf);
-    /// Counts are untrusted file content: containers grow as entries are parsed.
+    columns_substreams.reserve(num_columns);
+    first_substream_positions.reserve(num_columns);
     for (size_t i = 0; i != num_columns; ++i)
     {
         size_t num_substreams = 0;
@@ -245,26 +245,18 @@ void ColumnsSubstreams::readText(ReadBuffer & buf)
         readBackQuotedStringWithSQLStyle(entry->column, buf);
         assertString(":\n", buf);
 
-        if (num_substreams == 0)
-            throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid columns substreams: column {} has no substreams", entry->column);
-
+        entry->substreams.resize(num_substreams);
+        entry->substream_to_local_position.reserve(num_substreams);
         for (size_t j = 0; j != num_substreams; ++j)
         {
             assertChar('\t', buf);
-            readString(entry->substreams.emplace_back(), buf);
+            readString(entry->substreams[j], buf);
             assertChar('\n', buf);
-        }
-
-        /// Filled after parsing to reserve the exact size: the interned copy of the entry keeps the bucket count.
-        entry->substream_to_local_position.reserve(entry->substreams.size());
-        for (size_t j = 0; j != entry->substreams.size(); ++j)
-        {
-            if (!entry->substream_to_local_position.emplace(entry->substreams[j], j).second)
-                throw Exception(ErrorCodes::CORRUPTED_DATA, "Invalid columns substreams: column {} has duplicate substream {}", entry->column, entry->substreams[j]);
+            entry->substream_to_local_position[entry->substreams[j]] = j;
         }
 
         first_substream_positions.push_back(static_cast<UInt32>(total_substreams));
-        total_substreams += entry->substreams.size();
+        total_substreams += num_substreams;
         columns_substreams.emplace_back(std::move(entry));
     }
 }
@@ -298,14 +290,14 @@ bool ColumnsSubstreams::operator==(const ColumnsSubstreams & other) const
 #pragma clang diagnostic ignored "-Wused-but-marked-unused"
 
 /// Feed a string into the hash state, length-prefixed so concatenations are unambiguous.
-static void updateHashWithString(XXH_INLINE_XXH3_state_t & state, std::string_view s)
+static void updateHashWithString(XXH3_state_t & state, std::string_view s)
 {
     UInt64 size = s.size();
     XXH_INLINE_XXH3_128bits_update(&state, &size, sizeof(size));
     XXH_INLINE_XXH3_128bits_update(&state, s.data(), s.size());
 }
 
-static void updateHashWithColumnEntry(XXH_INLINE_XXH3_state_t & state, const ColumnsSubstreams::ColumnEntry & entry)
+static void updateHashWithColumnEntry(XXH3_state_t & state, const ColumnsSubstreams::ColumnEntry & entry)
 {
     updateHashWithString(state, entry.column);
     UInt64 size = entry.substreams.size();
@@ -319,7 +311,7 @@ UInt128 ColumnsSubstreams::getHash() const
     /// XXH3 instead of the more usual SipHash: this hashes hundreds of substream names per part
     /// on the part loading path, and XXH3 is several times faster (the hash is only used to key
     /// an in-memory cache, so it does not need to be cryptographic or stable across versions).
-    XXH_INLINE_XXH3_state_t state;
+    XXH3_state_t state;
     XXH_INLINE_XXH3_128bits_reset(&state);
 
     UInt64 columns = columns_substreams.size();
@@ -334,7 +326,7 @@ UInt128 ColumnsSubstreams::getHash() const
 
 UInt128 ColumnsSubstreams::getColumnEntryHash(const ColumnEntry & entry)
 {
-    XXH_INLINE_XXH3_state_t state;
+    XXH3_state_t state;
     XXH_INLINE_XXH3_128bits_reset(&state);
     updateHashWithColumnEntry(state, entry);
     auto hash = XXH_INLINE_XXH3_128bits_digest(&state);
@@ -349,24 +341,15 @@ void ColumnsSubstreams::internColumnEntries(const std::function<ColumnEntryPtr(c
         entry = intern(entry);
 }
 
-std::vector<String> ColumnsSubstreams::getColumnNames() const
-{
-    std::vector<String> columns;
-    columns.reserve(columns_substreams.size());
-    for (const auto & entry : columns_substreams)
-        columns.push_back(entry->column);
-    return columns;
-}
-
-void ColumnsSubstreams::validateColumns(const std::vector<String> & columns, int error_code) const
+void ColumnsSubstreams::validateColumns(const std::vector<String> & columns) const
 {
     if (columns.size() != columns_substreams.size())
-        throw Exception(error_code, "Invalid columns substreams: expected {} columns, got {}", columns.size(), columns_substreams.size());
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid columns substreams: expected {} columns, got {}", columns.size(), columns_substreams.size());
 
     for (size_t i = 0; i != columns_substreams.size(); ++i)
     {
         if (columns_substreams[i]->column != columns[i])
-            throw Exception(error_code, "Unexpected column at position {} in columns substreams: expected {}, got {}", i, columns[i], columns_substreams[i]->column);
+            throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected column at position {} in columns substreams: expected {}, got {}", i, columns[i], columns_substreams[i]->column);
     }
 }
 

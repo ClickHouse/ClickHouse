@@ -1,4 +1,3 @@
-#include <Compression/CompressionFactory.h>
 #include <IO/Operators.h>
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
@@ -23,47 +22,6 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
-}
-
-namespace
-{
-
-/// Resolves the codecs to use for estimating the compressed size of a whole column.
-///
-/// The writer applies a column's `CODEC` per substream: it resolves the codec description against the
-/// substream's type and, for structural substreams (`Array` offsets, null map, ...), keeps only the
-/// generic codecs and ignores the type entirely. The estimation these codecs feed serializes the whole
-/// column into a single buffer, so a type-specific codec can only be used when the column consists of a
-/// single stream carrying the column type itself, i.e. a plain numeric or date column. For every other
-/// column keep only the generic codecs - they dominate the ratio anyway - exactly as the writer does for
-/// structural substreams.
-///
-/// Which of the two applies is not decided here - the metadata does not describe the sample on its own,
-/// so `estimateCompressedColumnSize` picks between them per block. Only the type-specific resolution has
-/// to happen here, because it can throw: `T64` on a `Tuple` or `GCD` on a `Nullable` is rejected by the
-/// factory, so it is attempted only for a type whose default serialization is a single stream of it.
-ColumnCodecs resolveCodecsForWholeColumn(const ColumnDescription & description, const CompressionCodecPtr & default_codec)
-{
-    auto & factory = CompressionCodecFactory::instance();
-    auto generic = factory.get(description.codec, nullptr, default_codec, /*only_generic=*/true);
-
-    if (!isSerializedAsSingleStreamOfColumnType(*description.type->getDefaultSerialization(), description.type))
-        return {.generic = std::move(generic)};
-
-    return {
-        .type_specific = factory.get(description.codec, description.type.get(), default_codec),
-        .type_specific_for = description.type,
-        .generic = std::move(generic)};
-}
-
-}
-
-NamesAndTypesList IndexReadTask::getNamesAndTypesList() const
-{
-    NamesAndTypesList res;
-    for (const auto & column : columns)
-        res.emplace_back(column.name, column.type);
-    return res;
 }
 
 String MergeTreeReadTaskColumns::dump() const
@@ -122,20 +80,6 @@ void MergeTreeReadTask::Readers::updateAllMarkRanges(const MarkRanges & ranges, 
         patches[i]->getReader()->updateAllMarkRanges(patches_ranges[i]);
 }
 
-void MergeTreeReadTask::Readers::updateReadRequestMap(const MarkRangesPtr & request_map, const std::vector<MarkRangesPtr> & patch_request_maps)
-{
-    main->updateReadRequestMap(request_map);
-
-    for (auto & reader : prewhere)
-        reader->updateReadRequestMap(request_map);
-
-    if (!patch_request_maps.empty() && patch_request_maps.size() != patches.size())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Got {} patch request maps for {} patch readers", patch_request_maps.size(), patches.size());
-
-    for (size_t i = 0; i < patch_request_maps.size(); ++i)
-        patches[i]->getReader()->updateReadRequestMap(patch_request_maps[i]);
-}
-
 MergeTreeReadTask::MergeTreeReadTask(
     MergeTreeReadTaskInfoPtr info_,
     Readers readers_,
@@ -154,26 +98,10 @@ MergeTreeReadTask::MergeTreeReadTask(
 {
     if (updater)
     {
-        /// Resolved once rather than per block, and taken from the table metadata because a part does
-        /// not record the codecs of its columns: `default_codec` is only the part-wide default, and a
-        /// part's `ColumnsDescription` is built from a `NamesAndTypesList`, which carries no codec.
-        /// A borrowed part carries no part-level codec; the server default stands in for it, which is the
-        /// same substitution `CompressionCodecFactory::get` makes for a null current default.
-        const auto part_codec = info->data_part_info->getDefaultCompressionCodec();
-        const auto default_codec = part_codec ? part_codec : CompressionCodecFactory::instance().getDefaultCodec();
-        const auto & metadata_columns = readers.main->getStorageSnapshot()->metadata->getColumns();
-        ColumnCodecByName resolved_codecs;
-        for (const auto & name : info->task_columns.getAllColumnNames())
-        {
-            const auto * description = metadata_columns.tryGet(name);
-            if (description && description->codec)
-                resolved_codecs.emplace(name, resolveCodecsForWholeColumn(*description, default_codec));
-        }
-
-        dataflow_cache_update_cb = [this, default_codec, column_codecs = std::move(resolved_codecs)](const ColumnsWithTypeAndName & columns,
-                                                           const NameSet & partially_read_columns,
-                                                           size_t read_bytes,
-                                                           std::optional<bool> & should_continue_sampling) -> void
+        dataflow_cache_update_cb = [&](const ColumnsWithTypeAndName & columns,
+                                       const NameSet & partially_read_columns,
+                                       size_t read_bytes,
+                                       std::optional<bool> & should_continue_sampling) -> void
         {
             chassert(updater);
             const auto & part_columns = info->data_part_info->getColumns();
@@ -185,8 +113,6 @@ MergeTreeReadTask::MergeTreeReadTask(
                 partially_read_columns,
                 part_columns,
                 column_sizes ? *column_sizes : no_column_sizes,
-                column_codecs,
-                default_codec,
                 read_bytes,
                 should_continue_sampling);
         };
@@ -255,9 +181,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
     const MergeTreeReadTaskInfoPtr & read_info,
     const Extras & extras,
     const MarkRanges & ranges,
-    const std::vector<MarkRanges> & patches_ranges,
-    const MarkRangesPtr & read_request_map,
-    const std::vector<MarkRangesPtr> & patch_read_request_maps)
+    const std::vector<MarkRanges> & patches_ranges)
 {
     Readers new_readers;
 
@@ -271,7 +195,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             ranges,
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
-            extras.columns_cache,
             extras.mark_cache,
             is_prewhere ? nullptr : read_info->deserialization_prefixes_cache.get(),
             extras.reader_settings,
@@ -292,12 +215,11 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
         const IndexReadTask * index_read_task = read_info->index_read_tasks.empty()
             ? nullptr
             : getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part_info);
-
         if (index_read_task)
         {
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
-                *index_read_task,
+                index_read_task->index,
                 pre_columns_per_step,
                 read_info->read_hints.index_granules));
         }
@@ -320,7 +242,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             patches_ranges[part_idx],
             read_info->const_virtual_fields,
             extras.uncompressed_cache,
-            extras.columns_cache,
             extras.mark_cache,
             /*deserialization_prefixes_cache=*/ nullptr,
             extras.reader_settings,
@@ -335,11 +256,6 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
             create_patch_reader(i),
             extras.patch_join_cache));
     }
-
-    const auto & map = read_request_map ? read_request_map : read_info->read_request_map;
-    const auto & patch_maps = patch_read_request_maps.empty() ? read_info->patch_read_request_maps : patch_read_request_maps;
-    if (map || !patch_maps.empty())
-        new_readers.updateReadRequestMap(map, patch_maps);
 
     return new_readers;
 }
@@ -588,14 +504,11 @@ void MergeTreeReadTask::addPrewhereUnmatchedMarks(const MarkRanges & mark_ranges
     prewhere_unmatched_marks.insert(prewhere_unmatched_marks.end(), mark_ranges_.begin(), mark_ranges_.end());
 }
 
-bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere(bool prewhere_filters_by_top_k_threshold) const
+bool MergeTreeReadTask::readersChainCanSkipMarksBeforePrewhere() const
 {
     /// Only `prepared_index` (a `MergeTreeReaderIndex`) sits ahead of the PREWHERE readers in the
     /// reader chain and is able to skip whole marks via `canSkipMark`.
-    if (!readers.prepared_index)
-        return false;
-    return prewhere_filters_by_top_k_threshold ? readers.prepared_index->canSkipAnyMarkBesidesTopKPrimaryKey()
-                                               : readers.prepared_index->canSkipAnyMark();
+    return readers.prepared_index && readers.prepared_index->canSkipAnyMark();
 }
 
 bool MergeTreeReadTask::appliesMutationsBeforePrewhere() const

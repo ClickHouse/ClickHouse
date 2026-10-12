@@ -8,7 +8,6 @@
 #include <Interpreters/JoinExpressionActions.h>
 
 #include <DataTypes/DataTypeAggregateFunction.h>
-#include <DataTypes/TypeTree.h>
 #include <DataTypes/getLeastSupertype.h>
 
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -148,12 +147,7 @@ bool constifyFilterColumnAfterPushDown(ActionsDAG & expression, const String & f
 }
 }
 
-static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(
-    QueryPlan::Node * parent_node,
-    bool step_changes_the_number_of_rows,
-    const Names & available_inputs,
-    bool allow_index_hints,
-    size_t child_idx = 0)
+static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(QueryPlan::Node * parent_node, bool step_changes_the_number_of_rows, const Names & available_inputs, size_t child_idx = 0)
 {
     QueryPlan::Node * child_node = parent_node->children.front();
     checkChildrenSize(child_node, child_idx + 1);
@@ -176,7 +170,7 @@ static std::optional<ActionsDAG::ActionsForFilterPushDown> splitFilter(
         original_filter_const_column = filter->getOutputHeader()->getByName(filter_column_name).column;
 
     auto result = expression.splitActionsForFilterPushDown(
-        filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions, allow_index_hints);
+        filter_column_name, removes_filter, available_inputs, all_inputs, allow_deterministic_functions);
     if (result)
     {
         if (is_filter_column_const_before && !result->is_filter_const_after_push_down)
@@ -273,10 +267,9 @@ static size_t tryAddNewFilterStep(
     bool step_changes_the_number_of_rows,
     QueryPlan::Nodes & nodes,
     const Names & allowed_inputs,
-    bool allow_index_hints = true,
     size_t child_idx = 0)
 {
-    if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, allow_index_hints, child_idx))
+    if (auto split_filter = splitFilter(parent_node, step_changes_the_number_of_rows, allowed_inputs, child_idx))
         return addNewFilterStepOrThrow(parent_node, nodes, std::move(*split_filter), child_idx);
     return 0;
 }
@@ -723,16 +716,14 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     };
     std::vector<CrossTypeReplacement> cross_type_replacements_for_left_stream;
     std::vector<CrossTypeReplacement> cross_type_replacements_for_right_stream;
-    /// Names substituted by a cast of the opposite side's key, as opposed to the equal-typed renames above.
-    NameSet cross_type_equivalent_columns;
 
-    /// The map keyed by a name of one side is applied to the filter pushed to the other side, while the
-    /// flag admitting its keys is the one of that name's own side, so a pair it rejects stays inert below.
-    if (logical_join)
+    if (logical_join
+        && (!left_stream_filter_push_down_input_columns_available
+            || !right_stream_filter_push_down_input_columns_available))
     {
         const auto & join_output_header = *join_header;
 
-        auto create_replacement_name = [&](const String & replaced_name)
+        auto create_cast_name = [&](const String & replaced_name)
         {
             String name = fmt::format("__filterpushdown_cast{}", replaced_name);
             int counter = 0;
@@ -756,49 +747,14 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             if (!replaced || !replaced->type->equals(*supertype))
                 return;
 
-            /// A float key can be join-equal while bit-different: `-0.0` and `+0.0` are equal to the comparison a merge-based
-            /// algorithm joins on, so a bit-sensitive predicate disagrees between the two sides. The supertype is what the JOIN
-            /// compares in, and a nested float is no different. A `Dynamic` or `JSON` supertype describes neither the runtime
-            /// contents nor the representation, and a predicate can read either, so both are declined outright.
-            if (anyInTypeTree(*supertype, [](const IDataType & type) { return isFloat(type) || isDynamic(type) || isObject(type); }))
-                return;
-
-            /// The pushed-down filter computes this key and the JOIN computes it again, so the key must return
-            /// the same value twice within one query and must not change the number of rows. This pass already
-            /// requires both properties of the filters it pushes.
-            static constexpr auto changes_between_evaluations = [](const IFunctionBase & function)
-            { return function.isStateful() || !function.isDeterministicInScopeOfQuery(); };
-            const auto source_dag = JoinExpressionActions::getSubDAG(source);
-            for (const auto & node : source_dag.getNodes())
-            {
-                if (node.type == ActionsDAG::ActionType::FUNCTION)
-                {
-                    if (changes_between_evaluations(*node.function_base))
-                        return;
-                }
-                else if (node.type != ActionsDAG::ActionType::INPUT
-                    && node.type != ActionsDAG::ActionType::COLUMN
-                    && node.type != ActionsDAG::ActionType::ALIAS)
-                    return;
-
-                if (ActionsDAG::hasUnsafeHiddenLambdaBody(node, changes_between_evaluations))
-                    return;
-            }
-
-            cross_type_equivalent_columns.insert(replaced_name);
-
-            /// A source that already has the supertype is not cast by the JOIN either, so it can stand in
-            /// under its own name provided that name denotes a single type here: the JOIN republishes an
-            /// input's name at its output type, and a pushed filter binds its inputs to those outputs by name.
-            const auto * source_in_output = join_output_header.findByName(source.getColumnName());
-            if (source.getType()->equals(*supertype)
-                && (!source_in_output || source_in_output->type->equals(*source.getType())))
+            /// The side that already has the supertype is not cast by the JOIN either.
+            if (source.getType()->equals(*supertype))
             {
                 equivalent_columns[replaced_name] = source.getColumn();
                 return;
             }
 
-            auto name = create_replacement_name(replaced_name);
+            auto name = create_cast_name(replaced_name);
             equivalent_columns[replaced_name] = ColumnWithTypeAndName(nullptr, supertype, name);
             replacements.push_back({source, supertype, std::move(name)});
         };
@@ -880,7 +836,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         equivalent_columns_to_push_down,
         equivalent_left_stream_column_to_right_stream_column,
         equivalent_right_stream_column_to_left_stream_column,
-        cross_type_equivalent_columns,
         filter_is_always_false);
 
     if (is_filter_column_const_before && !join_filter_push_down_actions.is_filter_const_after_all_push_downs)
@@ -981,14 +936,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             /// serialization to `String`, which never appear as a supertype cast - and the date-time
             /// overflow behavior is pinned by `createInternalCast` whether or not a context is given.
             required_actions.push_back(JoinActionRef::transform({replacement.source},
-                [&](ActionsDAG & dag, auto && args)
-                {
-                    /// A replacement renamed to keep its type unambiguous has nothing to convert.
-                    const auto & arg = *args.at(0);
-                    if (arg.result_type->equals(*replacement.target_type))
-                        return &dag.addAlias(arg, replacement.name);
-                    return &dag.addCast(arg, replacement.target_type, replacement.name, nullptr);
-                }));
+                [&](ActionsDAG & dag, auto && args) { return &dag.addCast(*args.at(0), replacement.target_type, replacement.name, nullptr); }));
         }
     };
 
@@ -1011,9 +959,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             join_filter_push_down_actions.left_stream_filter_removes_filter = true;
         }
 
-        /// Copy the name: the DAG is moved into the new FilterStep below, whose constructor may fold and
-        /// prune the very node this name belongs to, leaving a reference dangling.
-        const String result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
+        const auto & result_name = join_filter_push_down_actions.left_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(
             parent_node,
             nodes,
@@ -1048,9 +994,7 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             join_filter_push_down_actions.right_stream_filter_removes_filter = true;
         }
 
-        /// Copy the name: the DAG is moved into the new FilterStep below, whose constructor may fold and
-        /// prune the very node this name belongs to, leaving a reference dangling.
-        const String result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
+        const auto & result_name = join_filter_push_down_actions.right_stream_filter_to_push_down->getOutputs()[0]->result_name;
         updated_steps += addNewFilterStepOrThrow(
             parent_node,
             nodes,
@@ -1093,7 +1037,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     }
 
     const bool disj_pushdown_enabled = (join && join->useJoinDisjunctionsPushDown()) || (logical_join && logical_join->getSettings().use_join_disjunctions_push_down);
-    size_t pushed_partial_filters = 0;
     if (filter && disj_pushdown_enabled)
     {
         if ((join && join->isDisjunctionsOptimizationApplied()) ||
@@ -1113,13 +1056,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
         Names right_stream_stable_columns_to_push_down = get_available_columns_for_filter(
             false /*push_to_left_stream*/, right_stream_filter_push_down_input_columns_available, /*require_stable_types=*/true);
 
-        /// An empty column set does not mean "nothing is pushable": a column-free conjunct such as a folded
-        /// `WHERE 0` still passes `tryToExtractPartialPredicate`, because it depends on no column at all.
-        /// A side whose push-down is disabled must not receive it either: for a prepared lookup on the
-        /// right (`JoinStepLogicalLookup`) the inserted `Filter` would hide the storage from the direct-join
-        /// detection, and a forced `join_algorithm = 'direct'` would fail with `NOT_IMPLEMENTED` instead
-        /// of returning an empty result. The estimator still sees the empty read from the other side.
-        if (left_stream_filter_push_down_input_columns_available)
         {
             auto left_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), left_stream_stable_columns_to_push_down);
             if (left_partial_filter_dag.has_value())
@@ -1127,7 +1063,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                 const auto partial_predicate_column_name = left_partial_filter_dag->getOutputs().front()->result_name;
                 addFilterOnTop(*child_node, 0, nodes, std::move(*left_partial_filter_dag));
                 ++updated_steps;
-                ++pushed_partial_filters;
                 LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
                     "Pushed down partial filter {} to the {} side of join",
                     partial_predicate_column_name,
@@ -1135,7 +1070,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             }
         }
 
-        if (right_stream_filter_push_down_input_columns_available)
         {
             auto right_partial_filter_dag = tryToExtractPartialPredicate(filter->getExpression(), filter->getFilterColumnName(), right_stream_stable_columns_to_push_down);
             if (right_partial_filter_dag.has_value())
@@ -1143,7 +1077,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
                 const auto partial_predicate_column_name = right_partial_filter_dag->getOutputs().front()->result_name;
                 addFilterOnTop(*child_node, 1, nodes, std::move(*right_partial_filter_dag));
                 ++updated_steps;
-                ++pushed_partial_filters;
                 LOG_DEBUG(&Poco::Logger::get("QueryPlanOptimizations"),
                     "Pushed down partial filter {} to the {} side of join",
                     partial_predicate_column_name,
@@ -1157,15 +1090,6 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
             logical_join->setDisjunctionsOptimizationApplied(true);
         if (filled_join)
             filled_join->setDisjunctionsOptimizationApplied(true);
-
-        /// A partial filter is inserted two levels below this node, as a new child of the join, with the
-        /// expression that renames the read's columns under it. The return value is how many layers the
-        /// traversal comes back down, so reporting one leaves the new filter unvisited: it is never
-        /// merged with that expression, stays one step away from the read, and `optimizePrewhere` - which
-        /// only takes a filter adjacent to the read - cannot move it. Three reaches it, the same depth
-        /// the union push above reports for the filters it inserts.
-        if (pushed_partial_filters)
-            updated_steps = std::max<size_t>(updated_steps, 3);
     }
 
     return updated_steps;
@@ -1225,7 +1149,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty())
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, /*allow_index_hints=*/false))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
             return updated_steps;
     }
 
@@ -1248,7 +1172,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// inside a surviving partition before the window runs, which can change which row
         /// becomes row_number() = 1. Unlike SortingStep, the window value depends on the set of
         /// rows in the partition, so non-deterministic filters are not safe to move below it.
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys, /*allow_index_hints=*/false))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, partition_keys))
             return updated_steps;
     }
 
@@ -1272,7 +1196,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         if (keys.empty() || limit_by->getGroupOffset() != 0 || limit_by->getGroupLength() == 0)
             return 0;
 
-        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys, /*allow_index_hints=*/false))
+        if (auto updated_steps = tryAddNewFilterStep(parent_node, true, nodes, keys))
             return updated_steps;
     }
 
@@ -1332,7 +1256,7 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         ///        select number as x, number % 4 as y from numbers(10)
         ///    ) group by y with totals) where y != 2`
         /// Optimization will replace totals row `y, sum(x)` from `(0, 45)` to `(0, 37)`.
-        /// It is expected to be OK, because the AST-level push-down that preceded this optimization did the same.
+        /// It is expected to ok, cause AST optimization `enable_optimize_predicate_expression = 1` also brakes it.
         if (auto updated_steps = tryAddNewFilterStep(parent_node, false, nodes, keys))
             return updated_steps;
     }

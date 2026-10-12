@@ -4,7 +4,6 @@ import json
 
 import pytest
 import os
-import time
 
 from multiprocessing.dummy import Pool
 CONFIG_DIR = os.path.join(os.path.dirname(os.path.realpath(__file__)), "configs")
@@ -44,33 +43,6 @@ def started_cluster():
     finally:
         cluster.shutdown()
 
-def send_rcfg(started_cluster, node, json_command, timeout_sec):
-    # rcfg refuses to run while `node` sees no live leader, which a late leader
-    # heartbeat causes for about a second even in a healthy cluster. Nothing is
-    # applied before that refusal, so it is safe to send the command again.
-    deadline = time.monotonic() + 30
-    while True:
-        result = json.loads(
-            keeper_utils.send_4lw_cmd(
-                started_cluster,
-                node,
-                cmd="rcfg",
-                port=9181,
-                argument=json_command,
-                timeout_sec=timeout_sec,
-            )
-        )
-        message = result["message"]
-        no_live_leader = (
-            "there is no active leader" in message
-            or "there is no leader currently" in message
-        )
-        if not no_live_leader:
-            return result
-        assert time.monotonic() < deadline, f"rcfg on {node.name} kept refusing: {message}"
-        print("rcfg refused, retrying:", message)
-        time.sleep(0.5)
-
 def five_to_three_reconfig(started_cluster):
     keeper_utils.wait_until_connected(cluster, node3)
     zk = keeper_utils.get_fake_zk(cluster, "node3")
@@ -103,8 +75,9 @@ def five_to_three_reconfig(started_cluster):
     print(json_command)
     print(zk.get("/keeper/config"))
 
-    result = send_rcfg(started_cluster, node3, json_command, timeout_sec=180)
-    print("Result:", result)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=180)
+    print("Result:", result_str)
+    result = json.loads(result_str)
     assert result["status"] == "ok"
 
     leader = keeper_utils.get_leader(started_cluster, [node3, node4, node5])
@@ -152,7 +125,7 @@ def three_to_five_reconfig(started_cluster):
         },
         "actions": [
             {
-                "set_priority": [{"id": 3, "priority": 1}, {"id": 4, "priority": 1}, {"id": 5, "priority": 1}]
+                "set_priority": [{"id": 3, "priority": 1}]
             },
             {
                 "add_members": [
@@ -181,8 +154,9 @@ def three_to_five_reconfig(started_cluster):
     print(json_command)
     print(zk.get("/keeper/config"))
 
-    result = send_rcfg(started_cluster, node5, json_command, timeout_sec=180)
-    print("Result:", result)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node5, cmd="rcfg", port=9181, argument=json_command, timeout_sec=180)
+    print("Result:", result_str)
+    result = json.loads(result_str)
     assert result["status"] == "ok"
     waiter1.wait()
     waiter2.wait()
@@ -233,7 +207,8 @@ def test_no_remove_itself(started_cluster):
         ]
     }
     json_command = json.dumps(command)
-    result = send_rcfg(started_cluster, node3, json_command, timeout_sec=300)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=300)
+    result = json.loads(result_str)
     assert result["status"] == "error"
     assert "Reconfigure command cannot remove current server id" in result["message"]
 
@@ -244,7 +219,8 @@ def test_precondition_failure(started_cluster):
         },
     }
     json_command = json.dumps(command)
-    result = send_rcfg(started_cluster, node3, json_command, timeout_sec=300)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=300)
+    result = json.loads(result_str)
     assert result["status"] == "error"
     assert "expected leader id" in result["message"]
 
@@ -254,6 +230,7 @@ def test_precondition_failure(started_cluster):
         },
     }
     json_command = json.dumps(command)
-    result = send_rcfg(started_cluster, node3, json_command, timeout_sec=300)
+    result_str = keeper_utils.send_4lw_cmd(started_cluster, node3, cmd="rcfg", port=9181, argument=json_command, timeout_sec=300)
+    result = json.loads(result_str)
     assert result["status"] == "error"
     assert "found in cluster, but precondition" in result["message"]

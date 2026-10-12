@@ -9,21 +9,24 @@ keywords: ['ClickStack の管理', 'パフォーマンス', 'materialized view',
 
 このセクションでは、ClickStack の管理方法について説明します。
 
-## 管理ガイド {#admin-guides}
+<div id="admin-guides">
+  ## 管理ガイド
+</div>
 
-| Section                                                      | Description                                                                       |
-| ------------------------------------------------------------ | --------------------------------------------------------------------------------- |
-| [基本的な管理](/ja/clickstack/managing/admin)                         | ClickStackで一般的な管理タスクを実行するための入門ガイド。                                                |
-| [設定オプション](/ja/clickstack/managing/config)                       | ClickStack の各コンポーネントで利用可能な設定オプション。                                                |
-| [リソースの見積もり](/ja/clickstack/managing/estimating-resources)       | 取り込み量に基づいて Managed ClickStack のコンピュートリソースをサイジングするためのガイドです。                        |
-| [本番運用に向けて](/ja/clickstack/managing/production)                  | ClickStack を本番環境で運用する前に推奨される手順とベストプラクティス。                                         |
-| [読み取りと書き込みの分離](/ja/clickstack/managing/isolating-read-write)    | ClickHouse Cloud の warehouse を使用して、ClickStack のインジェストとクエリのワークロードを専用のコンピュートに分離します。 |
-| [materialized view](/ja/clickstack/managing/materialized-views) | ClickStack で materialized view を使用してクエリパフォーマンスを向上させるための詳細ガイド。                     |
-| [パフォーマンスチューニング](/ja/clickstack/managing/performance-tuning)     | 大規模ワークロード向けに ClickStack をチューニングするための包括的なガイド。                                      |
-| [RBAC](/ja/clickstack/managing/rbac)                            | ダッシュボード、保存済み検索、ログソースに対するチームの権限を管理するためのロールベースのアクセス制御を構成します。                        |
-| [TTL の管理](/ja/clickstack/managing/ttl)                          | ClickStack における TTL (time-to-live) を使用したデータ保持の管理。                                 |
+| Section                                                      | Description                                                   |
+| ------------------------------------------------------------ | ------------------------------------------------------------- |
+| [基本的な管理](/ja/clickstack/managing/admin)                         | ClickStackで一般的な管理タスクを実行するための入門ガイド。                            |
+| [設定オプション](/ja/clickstack/managing/config)                       | ClickStack の各コンポーネントで利用可能な設定オプション。                            |
+| [リソースの見積もり](/ja/clickstack/managing/estimating-resources)       | 取り込み量に基づいて Managed ClickStack のコンピュートリソースをサイジングするためのガイドです。    |
+| [本番運用に向けて](/ja/clickstack/managing/production)                  | ClickStack を本番環境で運用する前に推奨される手順とベストプラクティス。                     |
+| [materialized view](/ja/clickstack/managing/materialized-views) | ClickStack で materialized view を使用してクエリパフォーマンスを向上させるための詳細ガイド。 |
+| [パフォーマンスチューニング](/ja/clickstack/managing/performance-tuning)     | 大規模ワークロード向けに ClickStack をチューニングするための包括的なガイド。                  |
+| [RBAC](/ja/clickstack/managing/rbac)                            | ダッシュボード、保存済み検索、ログソースに対するチームの権限を管理するためのロールベースのアクセス制御を構成します。    |
+| [TTL の管理](/ja/clickstack/managing/ttl)                          | ClickStack における TTL (time-to-live) を使用したデータ保持の管理。             |
 
-## ClickHouse の中核概念 {#core-concepts}
+<div id="core-concepts">
+  ## ClickHouse の中核概念
+</div>
 
 ClickStack の管理タスクの多くでは、基盤となる ClickHouse データベースに関する理解が必要です。管理作業やパフォーマンス関連の操作を行う前に、以下に示す ClickHouse の中核概念を確認することをお勧めします。
 
