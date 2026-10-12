@@ -14,6 +14,18 @@ namespace ErrorCodes
 namespace
 {
 
+size_t getTaskWeight(const ObjectInfoPtr & object_info)
+{
+    if (object_info->file_bucket_info)
+        if (auto size = object_info->file_bucket_info->getByteSize())
+            return std::max<size_t>(1, *size);
+    if (auto size = object_info->getFileSizeHint())
+        return std::max<size_t>(1, *size);
+    if (auto metadata = object_info->getObjectMetadata(); metadata && metadata->is_size_known && metadata->size_bytes)
+        return metadata->size_bytes;
+    return 1;
+}
+
 String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over_whole_archive)
 {
     if (send_over_whole_archive && object_info->isArchive())
@@ -205,7 +217,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(s
 
         std::vector<size_t> remaining_per_replica(ids_of_nodes.size(), 0);
         for (const auto & [_, file_and_owner] : unprocessed_files)
-            ++remaining_per_replica[file_and_owner.second];
+            remaining_per_replica[file_and_owner.second] += getTaskWeight(file_and_owner.first);
 
         auto best = unprocessed_files.end();
         for (auto it = unprocessed_files.begin(); it != unprocessed_files.end(); ++it)

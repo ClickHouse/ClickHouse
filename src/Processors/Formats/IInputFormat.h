@@ -57,6 +57,7 @@ struct FileBucketInfo
     virtual String getIdentifier() const = 0;
     virtual String getFormatName() const = 0;
     virtual std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const = 0;
+    virtual std::optional<UInt64> getByteSize() const { return std::nullopt; }
 
     virtual ~FileBucketInfo() = default;
 };

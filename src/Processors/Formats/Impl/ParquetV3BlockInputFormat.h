@@ -28,6 +28,12 @@ struct ParquetFileBucketInfo : public FileBucketInfo
         return "Parquet";
     }
     std::shared_ptr<FileBucketInfo> filterByMatchingRowGroups(const std::vector<size_t> & matching_row_groups) const override;
+    std::optional<UInt64> getByteSize() const override
+    {
+        if (byte_range.has_value())
+            return byte_range->second;
+        return std::nullopt;
+    }
 };
 using ParquetFileBucketInfoPtr = std::shared_ptr<ParquetFileBucketInfo>;
 
