@@ -9,8 +9,8 @@ SET optimize_multiif_to_if = 1, optimize_if_chain_to_multiif = 0, optimize_group
     optimize_if_transform_strings_to_enum = 0;
 SET allow_correlated_subqueries = 1;
 
-DROP DICTIONARY IF EXISTS d05271;
-CREATE DICTIONARY d05271 (id UInt64, v String) PRIMARY KEY id SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
+DROP DICTIONARY IF EXISTS d05385;
+CREATE DICTIONARY d05385 (id UInt64, v String) PRIMARY KEY id SOURCE(NULL()) LAYOUT(FLAT()) LIFETIME(0);
 
 -- A correlated subquery cannot appear in ORDER BY, so the collapsing key is ordered by instead, or
 -- the aggregation is wrapped. Both are needed: ROLLUP emits its grouping sets in no fixed order.
@@ -182,13 +182,13 @@ ORDER BY a SETTINGS group_by_use_nulls = 0;
 
 -- The condition becomes constant only when the dictionary lookup, which matches no key, is optimized away.
 SELECT 'dictionary condition, rollup', (SELECT c0) FROM (SELECT 1::Bool AS c0, 1::UInt64 AS id) t0
-GROUP BY if(dictGet('d05271', 'v', id) = 'x', false, c0) WITH ROLLUP
-ORDER BY if(dictGet('d05271', 'v', id) = 'x', false, c0) NULLS LAST
+GROUP BY if(dictGet('d05385', 'v', id) = 'x', false, c0) WITH ROLLUP
+ORDER BY if(dictGet('d05385', 'v', id) = 'x', false, c0) NULLS LAST
 SETTINGS group_by_use_nulls = 1, optimize_inverse_dictionary_lookup = 1;
 
 SELECT 'nested dictionary condition, rollup', (SELECT c0) FROM (SELECT 1::Bool AS c0, 1::UInt64 AS id) t0
-GROUP BY if(1, if(dictGet('d05271', 'v', id) = 'x', false, c0), false) WITH ROLLUP
-ORDER BY if(1, if(dictGet('d05271', 'v', id) = 'x', false, c0), false) NULLS LAST
+GROUP BY if(1, if(dictGet('d05385', 'v', id) = 'x', false, c0), false) WITH ROLLUP
+ORDER BY if(1, if(dictGet('d05385', 'v', id) = 'x', false, c0), false) NULLS LAST
 SETTINGS group_by_use_nulls = 1, optimize_inverse_dictionary_lookup = 1;
 
 -- A key that does not collapse to the correlated column keeps rejecting the query.
@@ -213,7 +213,7 @@ GROUP BY if(1, c0, false::LowCardinality(Bool)) WITH ROLLUP
 SETTINGS group_by_use_nulls = 1, allow_suspicious_low_cardinality_types = 1; -- { serverError NOT_IMPLEMENTED }
 
 SELECT (SELECT c0) FROM (SELECT 1::Bool AS c0, 1::UInt64 AS id) t0
-GROUP BY if(1, if(dictGet('d05271', 'v', id) = 'x', false, c0), false) WITH ROLLUP
+GROUP BY if(1, if(dictGet('d05385', 'v', id) = 'x', false, c0), false) WITH ROLLUP
 SETTINGS group_by_use_nulls = 1, optimize_inverse_dictionary_lookup = 0; -- { serverError NOT_IMPLEMENTED }
 
 -- An uncorrelated reference to the column is still rejected: the column is not one of the keys as written.
@@ -221,4 +221,4 @@ SELECT c0 FROM (SELECT 1::Bool) t0(c0)
 GROUP BY if(82, c0, false) WITH ROLLUP
 SETTINGS group_by_use_nulls = 1; -- { serverError NOT_AN_AGGREGATE }
 
-DROP DICTIONARY d05271;
+DROP DICTIONARY d05385;

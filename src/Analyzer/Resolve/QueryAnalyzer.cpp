@@ -13,6 +13,7 @@
 #include <Analyzer/JoinNode.h>
 #include <Analyzer/LambdaNode.h>
 #include <Analyzer/MatcherNode.h>
+#include <Analyzer/Passes/IfConstantConditionPass.h>
 #include <Analyzer/QueryNode.h>
 #include <Analyzer/QueryTreeBuilder.h>
 #include <Analyzer/QueryTreePassManager.h>
@@ -4895,7 +4896,9 @@ void QueryAnalyzer::resolveGroupByNode(QueryNode & query_node_typed, IdentifierR
     if (!nullable_group_by_keys.empty())
     {
         registerNullableGroupByKeys(nullable_group_by_keys, scope);
-        registerCollapsedGroupByKeyColumns(nullable_group_by_keys, scope);
+        /// Only if `IfConstantConditionPass` folds the keys of this query, so that the collapsed columns exist after aggregation.
+        if (!ifConstantConditionFoldingMergesGroupingKeys(query_node_typed, scope.context))
+            registerCollapsedGroupByKeyColumns(nullable_group_by_keys, scope);
     }
 
     /// With group_by_use_nulls the projection (and the other clauses) are re-resolved after GROUP BY

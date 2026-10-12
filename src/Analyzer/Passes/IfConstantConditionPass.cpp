@@ -60,7 +60,7 @@ public:
     void enterImpl(QueryTreeNodePtr & node)
     {
         if (const auto * query_node = node->as<QueryNode>())
-            skip_query_folding.push_back(foldingMergesGroupingKeys(*query_node));
+            skip_query_folding.push_back(ifConstantConditionFoldingMergesGroupingKeys(*query_node, getContext()));
     }
 
     /// After the arguments, so that a chain collapses in one visit and visiting a shared node again is a no-op.
@@ -123,52 +123,52 @@ public:
     }
 
 private:
-    /// ROLLUP, CUBE and GROUPING SETS take their grouping sets from the distinct keys, so folding may make two keys
-    /// equal only if they are in the same grouping sets; a ROLLUP or CUBE key is told apart by its position.
-    bool foldingMergesGroupingKeys(const QueryNode & query_node) const
-    {
-        if (!query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube() && !query_node.isGroupByWithGroupingSets())
-            return false;
-
-        QueryTreeNodePtrWithHashMap<std::vector<size_t>> key_grouping_sets;
-        auto add_key = [&](const QueryTreeNodePtr & key, size_t grouping_set)
-        {
-            auto & grouping_sets = key_grouping_sets[cloneForComparison(key)];
-            if (grouping_sets.empty() || grouping_sets.back() != grouping_set)
-                grouping_sets.push_back(grouping_set);
-        };
-
-        const auto & group_by_nodes = query_node.getGroupBy().getNodes();
-        for (size_t i = 0; i < group_by_nodes.size(); ++i)
-        {
-            if (query_node.isGroupByWithGroupingSets())
-            {
-                for (const auto & key : group_by_nodes[i]->as<ListNode &>().getNodes())
-                    add_key(key, i);
-            }
-            else
-            {
-                add_key(group_by_nodes[i], i);
-            }
-        }
-
-        QueryTreeNodePtrWithHashMap<const std::vector<size_t> *> folded_key_grouping_sets;
-        for (const auto & [key, grouping_sets] : key_grouping_sets)
-        {
-            auto folded_key = key.node->clone();
-            IfConstantConditionVisitor(getContext()).visit(folded_key);
-            auto [it, inserted] = folded_key_grouping_sets.emplace(std::move(folded_key), &grouping_sets);
-            if (!inserted && *it->second != grouping_sets)
-                return true;
-        }
-
-        return false;
-    }
-
     /// Whether folding is skipped in the expressions of each enclosing query; nested queries decide for themselves.
     std::vector<bool> skip_query_folding;
 };
 
+}
+
+/// ROLLUP, CUBE and GROUPING SETS take their grouping sets from the distinct keys, so folding may make two keys
+/// equal only if they are in the same grouping sets; a ROLLUP or CUBE key is told apart by its position.
+bool ifConstantConditionFoldingMergesGroupingKeys(const QueryNode & query_node, const ContextPtr & context)
+{
+    if (!query_node.isGroupByWithRollup() && !query_node.isGroupByWithCube() && !query_node.isGroupByWithGroupingSets())
+        return false;
+
+    QueryTreeNodePtrWithHashMap<std::vector<size_t>> key_grouping_sets;
+    auto add_key = [&](const QueryTreeNodePtr & key, size_t grouping_set)
+    {
+        auto & grouping_sets = key_grouping_sets[cloneForComparison(key)];
+        if (grouping_sets.empty() || grouping_sets.back() != grouping_set)
+            grouping_sets.push_back(grouping_set);
+    };
+
+    const auto & group_by_nodes = query_node.getGroupBy().getNodes();
+    for (size_t i = 0; i < group_by_nodes.size(); ++i)
+    {
+        if (query_node.isGroupByWithGroupingSets())
+        {
+            for (const auto & key : group_by_nodes[i]->as<ListNode &>().getNodes())
+                add_key(key, i);
+        }
+        else
+        {
+            add_key(group_by_nodes[i], i);
+        }
+    }
+
+    QueryTreeNodePtrWithHashMap<const std::vector<size_t> *> folded_key_grouping_sets;
+    for (const auto & [key, grouping_sets] : key_grouping_sets)
+    {
+        auto folded_key = key.node->clone();
+        IfConstantConditionVisitor(context).visit(folded_key);
+        auto [it, inserted] = folded_key_grouping_sets.emplace(std::move(folded_key), &grouping_sets);
+        if (!inserted && *it->second != grouping_sets)
+            return true;
+    }
+
+    return false;
 }
 
 void IfConstantConditionPass::run(QueryTreeNodePtr & query_tree_node, ContextPtr context)
