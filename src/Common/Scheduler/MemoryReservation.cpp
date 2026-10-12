@@ -308,20 +308,24 @@ ResourceCost MemoryReservation::updateReclaimable(const ISpillable * spillable, 
     return total_bytes;
 }
 
-void MemoryReservation::reportReclaimable(bool force, ResourceCost settled_bytes)
+void MemoryReservation::reportReclaimable(bool force)
 {
     std::lock_guard report_lock(reclaimable_report_mutex);
-    ResourceCost total = 0;
+    struct SpillReport
+    {
+        ResourceCost reclaimable_total;
+        ResourceCost settled_bytes;
+    } report{};
     {
         std::lock_guard lock(mutex);
-        total = reclaimable_total;
+        const auto total = reclaimable_total;
 
         /// No processor can service the remaining demand. Claimed requests are settled by `finishSpill` instead.
         if (total == 0)
-            settled_bytes += std::exchange(enqueued_spill, 0);
+            pending_settled_bytes += std::exchange(enqueued_spill, 0);
 
         /// A completion must settle its claim even if the estimate is unchanged or below the reporting threshold.
-        if (settled_bytes == 0)
+        if (pending_settled_bytes == 0)
         {
             if (total == reported_reclaimable)
                 return;
@@ -329,14 +333,15 @@ void MemoryReservation::reportReclaimable(bool force, ResourceCost settled_bytes
                 && std::abs(total - reported_reclaimable) * RECLAIMABLE_REPORT_RATIO < reported_reclaimable)
                 return;
         }
+        report = {total, std::exchange(pending_settled_bytes, 0)};
         reported_reclaimable = total;
         reclaimable_increment.changeTo(total);
     }
 
-    if (settled_bytes > 0)
-        queue.finishSpill(*this, settled_bytes, total);
+    if (report.settled_bytes > 0)
+        queue.finishSpill(*this, report.settled_bytes, report.reclaimable_total);
     else
-        queue.setReclaimable(*this, total);
+        queue.setReclaimable(*this, report.reclaimable_total);
 }
 
 ResourceCost MemoryReservation::takeSpillRequest(
@@ -407,9 +412,11 @@ ResourceCost MemoryReservation::finishSpill(const ISpillable * spillable, Resour
             reclaimable_total = reclaimable_total - entry.reclaimable + total_bytes;
             entry.reclaimable = total_bytes;
         }
+        /// Any concurrent reporter must publish the completion's estimate together with its settlement.
+        pending_settled_bytes += settled_bytes;
     }
 
-    reportReclaimable(/*force=*/ true, settled_bytes);
+    reportReclaimable();
 
     return total_bytes;
 }

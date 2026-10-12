@@ -88,7 +88,7 @@ public:
     void removeSpillListener(ISpillRequestListener & listener);
     /// Reclaimable memory of the query's spillable processors, keyed by the object that owns the
     /// state so that processors sharing it are counted once. Sampling and publication are serialized.
-    /// A spill completion defers reporting until `finishSpill` has synchronized the tracker.
+    /// A spill completion publishes its estimate and settlement together after tracker synchronization.
     ResourceCost updateReclaimable(const ISpillable * spillable, bool report = true);
 
     [[nodiscard]] ResourceCost takeSpillRequest(
@@ -99,7 +99,7 @@ public:
 
 private:
     void throwIfNeeded();
-    void reportReclaimable(bool force = false, ResourceCost settled_bytes = 0);
+    void reportReclaimable(bool force = false);
     void notifySpillRequested();
 
     // Unlinks this allocation from the scheduler and waits until removal completes.
@@ -117,8 +117,8 @@ private:
     const ResourceCost reserved_size;
     const ResourceCost min_bytes_to_spill;
 
-    /// Keeps reclaimable totals from reaching the queue out of order.
-    /// Reporters take this lock first, read the total under `MemoryReservation::mutex`,
+    /// Keeps reclaimable totals and settlements from reaching the queue out of order.
+    /// Reporters take this lock first, snapshot both under `MemoryReservation::mutex`,
     /// then release `MemoryReservation::mutex` before calling the queue while still holding this lock.
     /// The `spillAllocation` callback also reports, and must run outside the queue mutex.
     /// Do not hold this lock across `syncWithMemoryTracker`.
@@ -163,6 +163,8 @@ private:
 
     /// Sum of the last reported per-object reclaimable estimates.
     ResourceCost reclaimable_total = 0;
+    /// Settlements accumulated with estimate changes under `mutex`, consumed by the next report.
+    ResourceCost pending_settled_bytes = 0;
     /// Last total sent to the scheduler (small updates are not sent)
     ResourceCost reported_reclaimable = 0;
 
