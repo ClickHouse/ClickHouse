@@ -315,30 +315,18 @@ void WindowTransform::advanceFrameEndCurrentRow()
         // peer group's end with a fast equal-range scan.
         // First check whether frame_end is still a peer of the current row -- the reference (the current row)
         // may be in a different block, so we compare against it directly.
-        const size_t order_by_columns = params.order_by_indices.size();
-        size_t i = 0;
-        for (; i < order_by_columns; ++i)
-        {
-            const auto * reference_column = blocks.blockAt(current.location.block).materialized_columns[params.order_by_indices[i]].get();
-            const auto * compared_column = blocks.blockAt(frame_end.block).materialized_columns[params.order_by_indices[i]].get();
-            if (compared_column->compareAt(frame_end.row, current.location.row, *reference_column, 1 /* nan_direction_hint */) != 0)
-            {
-                break;
-            }
-        }
-
-        if (i < order_by_columns)
+        const Columns & frame_end_columns = blocks.blockAt(frame_end.block).materialized_columns;
+        if (!params.haveEqualOrderByValues(
+                frame_end_columns, frame_end.row, blocks.blockAt(current.location.block).materialized_columns, current.location.row))
         {
             // frame_end is already past the current row's peer group.
             frame_ended = true;
             return;
         }
 
-        // frame_end is a peer; extend over the run of equal ORDER BY values within this block,
-        // narrowing key by key (the data is sorted lexicographically). With no ORDER BY, all rows are peers,
-        // so the scan will just return the end of the block.
-        const Int64 peer_group_end_row
-            = getEqualRangeEndAssumeSorted(blocks.blockAt(frame_end.block).materialized_columns, params.order_by_indices, frame_end.row, rows_end, 1 /* nan_direction_hint */);
+        // frame_end is a peer; extend over the run of equal ORDER BY values within this block.
+        // With no ORDER BY, all rows are peers, so the scan will just return the end of the block.
+        const Int64 peer_group_end_row = params.getOrderByEqualRangeEnd(frame_end_columns, frame_end.row, rows_end);
 
         if (peer_group_end_row < rows_end)
         {
@@ -480,13 +468,12 @@ RowNumber WindowTransform::findPeerGroupEnd(const RowNumber & start, RowNumber &
 
         // Try to jump over the whole peer group at once: the end of the run of rows equal to `cur` across
         // all ORDER BY columns, within the sorted, partition-bounded range [cur.row, end_bound).
-        const Int64 run_end = getEqualRangeEndAssumeSorted(
-            blocks.blockAt(cur.block).materialized_columns, params.order_by_indices, cur.row, end_bound, 1 /* nan_direction_hint */);
+        const Int64 run_end = params.getOrderByEqualRangeEnd(blocks.blockAt(cur.block).materialized_columns, cur.row, end_bound);
 
         if (run_end < end_bound)
             return RowNumber{cur.block, run_end};   // a real peer-group boundary inside this block
 
-        // No earlier boundary, so the run of peers reached the bound. getEqualRangeEndAssumeSorted
+        // No earlier boundary, so the run of peers reached the bound. The scan
         // never returns past `end_bound`, so the group extends exactly to the end of what we scanned
         // in this block -- the precondition for both the partition-end and cross-block cases below.
         chassert(run_end == end_bound);
