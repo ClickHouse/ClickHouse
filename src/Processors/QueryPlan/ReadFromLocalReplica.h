@@ -11,7 +11,10 @@ namespace DB
 class ReadFromLocalParallelReplicaStep : public ISourceStep
 {
 public:
-    ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr context_, bool replicas_get_pushed_conditions_);
+    /// The conjuncts of a condition that the replicas would not get. See `conjunctsTheReplicasMiss`.
+    using LeftOutConjuncts = std::function<ActionsDAG::NodeRawConstPtrs(const ActionsDAG::Node & condition)>;
+
+    explicit ReadFromLocalParallelReplicaStep(QueryPlanPtr query_plan_, ContextPtr context_, LeftOutConjuncts left_out_conjuncts_ = {});
 
     String getName() const override { return "ReadFromLocalReplica"; }
 
@@ -27,30 +30,17 @@ public:
     /// SETTINGS that are shipped to remote replicas.
     ContextPtr getContext() const { return context; }
 
-    /// Whether a condition pushed into this fragment also reaches the replicas running it. It does when
-    /// they were given a query to run and the rewrite that splices the condition into that query accepts
-    /// it (`canSpliceFiltersIntoRemoteQuery`); it does not when they were given a plan, which is built
-    /// and shipped whole. Answered where the fragment is shipped, and carried here rather than guessed
-    /// at from the shape of the local copy.
-    bool replicasGetPushedConditions() const { return replicas_get_pushed_conditions; }
-
     void addFilter(FilterDAGInfo filter);
 
-    /// Take the snapshot of what this fragment fixes on its own - what the replicas will fix too -
-    /// before a condition from outside is pushed in, and hold each of its reads to that. One snapshot
-    /// per read: a fragment can hold several coordinated reads, and they do not fix the same columns.
-    void restrictFixedColumnsToOwnFilters();
-
-    /// The opposite answer, for a condition the replicas receive as well: this read may order itself by
-    /// everything pushed into it. Final, and it lifts a restriction taken for an earlier condition -
-    /// conditions arrive one at a time, and the first of them may not answer for the rest.
-    void allowFixedColumnsFromPushedConditions();
+    /// The conjuncts (`ActionsDAG::extractConjunctionAtoms`) of a condition pushed down onto this step that
+    /// the replicas would not get: those the splice into the query they are sent leaves out, or all of
+    /// them when nothing is spliced.
+    ActionsDAG::NodeRawConstPtrs conjunctsTheReplicasMiss(const ActionsDAG::Node & condition) const;
 
 private:
     QueryPlanPtr query_plan;
     ContextPtr context;
-    bool replicas_get_pushed_conditions;
-    bool fixed_columns_from_pushed_conditions_allowed = false;
+    LeftOutConjuncts left_out_conjuncts;
 };
 
 }

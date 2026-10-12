@@ -9636,7 +9636,7 @@ Push a condition standing above the part of the query parallel replicas execute 
 
 Turn it off to keep the condition above the read on the initiator, as versions before 26.10 did. It is the way out if the push-down misbehaves: the answer does not change either way, only how much work the replicas do and how early they do it.
 )", 0, \
-        {"26.10", false, true, "A condition standing above the part of the query parallel replicas execute is now pushed into it and spliced into the query the replicas are sent, the way the distributed path has always done it. The read-mode disagreement the setting was added to avoid is prevented directly now, by withholding the ordering rather than the condition. The setting stays as the way out if the push-down misbehaves in production."}, \
+        {"26.10", false, true, "A condition standing above the part of the query parallel replicas execute is now pushed into it and spliced into the query the replicas are sent, the way the distributed path has always done it. A part of the condition the replicas would not get stays above it, unless it cannot decide how the read is ordered, which is the read-mode disagreement the setting was added to avoid. The setting stays as the way out if the push-down misbehaves in production."}, \
         {"26.2", false, false, "New setting"}) \
     DECLARE(Bool, parallel_replicas_allow_view_over_mergetree, false, R"(
 Allow parallel replicas to execute the outer query of a simple view over `MergeTree` tables (instead of the view's inner query), improving parallelization across nodes. Also applies to `UNION ALL` views whose branches all read from different `MergeTree` tables.

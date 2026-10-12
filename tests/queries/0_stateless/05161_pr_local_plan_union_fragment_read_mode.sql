@@ -3,14 +3,9 @@
 
 -- A fragment can hold more than one coordinated read: `parallel_replicas_allow_view_over_mergetree`
 -- ships the outer query of a view, and a view that expands to `UNION ALL` puts every branch's read in
--- the one fragment, each answering to the coordinator. A condition arriving from outside that fragment
--- is pushed into it whole, so every branch may derive ordering from it - but only where the replicas
--- run the fragment with that condition too. Where they do not, a branch that fixes nothing of its own
--- must not order its read.
---
--- The branches name their columns alike, which is the point: holding them to one set of column names
--- taken at the fragment root would let a column fixed in the first branch pass for the same-named
--- column in the second, and the second would read in order off a condition only this replica has.
+-- the one fragment, each answering to the coordinator. A condition from outside the fragment reaches
+-- every branch where it is spliced into the replicas' query too; where it is not, it stays above the
+-- fragment, and each branch orders its read only by what it fixes itself.
 
 DROP TABLE IF EXISTS t_pr_union_mode_a;
 DROP TABLE IF EXISTS t_pr_union_mode_b;
@@ -73,10 +68,8 @@ SELECT count() FROM v_pr_union_mode_ordered WHERE tenant = 5;
 SELECT * FROM v_pr_union_mode_ordered WHERE tenant = 5 ORDER BY ts LIMIT 5;
 
 SELECT 'where it does not reach them, only the branch with its own filter reads in order';
--- With the rewrite turned off the replicas run the fragment as it was written, and the pushed
--- `tenant = 5` is the initiator's alone: `InOrder` for the branch that fixes `tenant` itself, `Default`
--- for the branch that does not. Each read is held to the filters on its own branch - one set of column
--- names taken at the fragment root would fix `tenant` for both.
+-- With the rewrite turned off the replicas run the fragment as it was written, so `tenant = 5` stays
+-- above it: `InOrder` for the branch that fixes `tenant` itself, `Default` for the branch that does not.
 SET allow_push_predicate_ast_for_distributed_subqueries = 0;
 
 SELECT replaceRegexpOne(explain, '^[^A-Za-z]*', '') AS step

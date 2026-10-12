@@ -1,12 +1,14 @@
-limit by: the condition reaches the read and prunes it, and orders nothing
+join: the condition stays above the fragment, and nothing is ordered
 Read type: Default
-Prewhere filter column:  tenant = 5
-1
-non-deterministic select list: the replicas do not get the condition, so nothing is ordered
 Read type: Default
-Prewhere filter column:  tenant = 5
 1000
-untuple: the rewrite takes it, so the read may order itself off the condition
+limit by: the same
+Read type: Default
+1
+non-deterministic select list: the same
+Read type: Default
+1000
+untuple: the rewrite takes it, so the condition goes in and orders the read
 Read type: InOrder
 Prewhere filter column:  tenant = 5
 1000

@@ -250,38 +250,6 @@ static ASTSelectQuery * tryGetSelectQuery(ASTPtr ast)
     return ast->as<ASTSelectQuery>();
 }
 
-/// A lambda, or the capture a lambda with bound arguments becomes. Two cases because a lambda with no
-/// capture can be constant-folded into a plain function.
-static bool isLambdaLike(const ActionsDAG::Node & node)
-{
-    return WhichDataType(node.result_type).isFunction()
-        || (node.type == ActionsDAG::ActionType::FUNCTION && typeid_cast<const FunctionCapture *>(node.function_base.get()));
-}
-
-/// Whether the rewrite would drop a condition rather than carry it, for a reason that is the
-/// condition's own rather than the query's shape: it cannot write a lambda back into an AST. Asked by
-/// the push-down, which may not let a read order itself by a condition the replicas will not get.
-bool remoteRewriteDropsCondition(const ActionsDAG::Node & condition)
-{
-    std::vector<const ActionsDAG::Node *> stack{&condition};
-    std::unordered_set<const ActionsDAG::Node *> visited;
-    while (!stack.empty())
-    {
-        const auto * node = stack.back();
-        stack.pop_back();
-        if (!visited.emplace(node).second)
-            continue;
-
-        if (isLambdaLike(*node))
-            return true;
-
-        for (const auto * child : node->children)
-            stack.push_back(child);
-    }
-
-    return false;
-}
-
 /// This is an attempt to convert filters (pushed down from the plan optimizations) from ActionsDAG back to AST.
 /// It should not be needed after we send a full plan for distributed queries.
 ASTPtr tryBuildAdditionalFilterAST(
@@ -289,7 +257,8 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_set<std::string> & projection_names,
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
-    ContextMutablePtr & context)
+    ContextMutablePtr & context,
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts)
 {
     std::unordered_map<const ActionsDAG::Node *, ASTPtr> node_to_ast;
 
@@ -352,7 +321,10 @@ ASTPtr tryBuildAdditionalFilterAST(
         }
 
         /// Lambdas are not supported (converting back to AST is complicated).
-        if (isLambdaLike(*node))
+        /// We have two cases here cause function with no capture can be constant-folded.
+        if (WhichDataType(node->result_type).isFunction()
+            || (node->type == ActionsDAG::ActionType::FUNCTION
+                && typeid_cast<const FunctionCapture *>(node->function_base.get())))
         {
             node_to_ast[node] = nullptr;
             stack.pop();
@@ -470,6 +442,11 @@ ASTPtr tryBuildAdditionalFilterAST(
         if (!has_all_args && !is_function_and)
             continue;
 
+        if (!has_all_args && dropped_conjuncts)
+            for (const auto * child : node->children)
+                if (!node_to_ast[child])
+                    dropped_conjuncts->push_back(child);
+
         if (is_function_and && arguments.empty())
             continue;
 
@@ -556,9 +533,6 @@ ASTPtr tryBuildAdditionalFilterAST(
 ///   - TableNode (a real table)
 ///   - TableFunctionNode (e.g. `numbers(3)`, `remote(...)`)
 ///   - QueryNode wrapping any of the above (one level of subquery)
-///
-/// The columns are left to the caller that rewrites: asking whether there is a target has to stay cheap,
-/// it is asked of every query that ships a fragment.
 struct RewriteTarget
 {
     StorageSnapshotPtr snapshot;
@@ -625,7 +599,10 @@ static std::optional<RewriteTarget> findRewriteTarget(const QueryNode & query_no
     return RewriteTarget{std::move(table_snapshot), std::move(table_identifier_ast), std::move(table_alias)};
 }
 
-bool canSpliceFiltersIntoRemoteQuery(
+/// Whether a condition pushed down on the initiator would be spliced into the query the remote side runs
+/// at all: the settings allow it, and the query is one `findRewriteTarget` and
+/// `subqueryAcceptsPushedPredicate` take.
+static bool canSpliceFiltersIntoRemoteQuery(
     const ASTPtr & query_ast, const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context, const ContextPtr & context)
 {
     if (!query_ast || !query_tree || !planner_context)
@@ -653,6 +630,59 @@ bool canSpliceFiltersIntoRemoteQuery(
         context);
 }
 
+/// We are building a set with projection names and a map with execution names here.
+/// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
+struct ProjectionNames
+{
+    std::unordered_set<std::string> names;
+    std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_query_tree;
+
+    ProjectionNames(const QueryNode & query_node, const PlannerContext & planner_context)
+    {
+        for (const auto & col : query_node.getProjectionColumns())
+            names.insert(col.name);
+
+        for (const auto & node : query_node.getProjection())
+            execution_name_to_query_tree[calculateActionNodeName(node, planner_context)] = node;
+    }
+};
+
+ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
+    const ActionsDAG::Node & condition,
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const ContextPtr & rewrite_context)
+{
+    auto atoms = ActionsDAG::extractConjunctionAtoms(&condition);
+    if (!canSpliceFiltersIntoRemoteQuery(query_ast, query_tree, planner_context, rewrite_context))
+        return atoms;
+
+    /// Converted out of a DAG of its own, built the way the remote step builds one from what is pushed
+    /// into it, because the conversion's answer depends on the DAG around the condition. The copy is
+    /// made node for node, so its atoms come in the same order as these. No external tables: only a
+    /// `GLOBAL IN` needs them, and creating them is not something to do for a question.
+    auto dag = ActionsDAG::buildFilterActionsDAG({&condition});
+    ProjectionNames projection(*query_tree->as<QueryNode>(), *planner_context);
+    ContextMutablePtr no_context;
+    std::vector<const ActionsDAG::Node *> dropped;
+    if (!dag
+        || !tryBuildAdditionalFilterAST(*dag, projection.names, projection.execution_name_to_query_tree, nullptr, no_context, &dropped))
+        return atoms;
+
+    auto copied_atoms = ActionsDAG::extractConjunctionAtoms(dag->getOutputs().front());
+    if (copied_atoms.size() != atoms.size())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "A copy of a filter condition has {} conjuncts, the condition {}",
+            copied_atoms.size(), atoms.size());
+
+    ActionsDAG::NodeRawConstPtrs left_out;
+    for (const auto * node : dropped)
+        for (const auto * copied_atom : ActionsDAG::extractConjunctionAtoms(node))
+            if (auto it = std::ranges::find(copied_atoms, copied_atom); it != copied_atoms.end())
+                left_out.push_back(atoms[it - copied_atoms.begin()]);
+    return left_out;
+}
+
 /// `context` is the one the rewrite mutates (external tables for GLOBAL IN); `rewrite_context` is the
 /// one whose settings decide whether the rewrite happens at all, and it is whichever context the plan
 /// was optimized with, so that the decision here matches the one the push-down made.
@@ -669,19 +699,10 @@ static void addFilters(
         return;
 
     const auto * query_node = query_tree->as<QueryNode>();
+    ProjectionNames projection(*query_node, *planner_context);
 
-    /// We are building a set with projection names and a map with execution names here.
-    /// They are needed to substitute inputs in ActionsDAG. See comment in tryBuildAdditionalFilterAST.
-
-    std::unordered_set<std::string> projection_names;
-    for (const auto & col : query_node->getProjectionColumns())
-        projection_names.insert(col.name);
-
-    std::unordered_map<std::string, QueryTreeNodePtr> execution_name_to_projection_query_tree;
-    for (const auto & node : query_node->getProjection())
-        execution_name_to_projection_query_tree[calculateActionNodeName(node, *planner_context)] = node;
-
-    ASTPtr predicate = tryBuildAdditionalFilterAST(pushed_down_filters, projection_names, execution_name_to_projection_query_tree, external_tables, context);
+    ASTPtr predicate = tryBuildAdditionalFilterAST(
+        pushed_down_filters, projection.names, projection.execution_name_to_query_tree, external_tables, context);
     if (!predicate)
         return;
 
@@ -1249,22 +1270,12 @@ void ReadFromParallelRemoteReplicasStep::enforceAggregationInOrder(const SortDes
 
 void ReadFromParallelRemoteReplicasStep::initializePipeline(QueryPipelineBuilder & pipeline, const BuildQueryPipelineSettings &)
 {
-    /// Whatever was pushed into the fragment the replicas execute is spliced into the query they run,
-    /// exactly as the distributed path above does it. The setting that used to gate this was a switch
-    /// for a filter push-down that could leave the initiator reading in a different order than the
-    /// replicas; that is prevented directly now, by withholding the ordering rather than the condition.
-    ///
-    /// Nor when the push-down has been turned off: then the condition was never put into the
-    /// initiator's copy of the fragment either, and shipping it here alone would leave the replicas
-    /// filtering - and ordering - by something the initiator does not have.
-    ///
-    /// Not when the replicas are being sent a plan. This query text is still their fallback:
-    /// `RemoteQueryExecutor::sendQuery` drops the plan and sends the text instead to a replica too old
-    /// to receive a plan carrying execution limits. The initiator has withheld the ordering by then,
-    /// having answered that a fragment shipped as a plan carries no pushed condition, so a replica that
-    /// read the condition out of the fallback text would fix a column the initiator did not and announce
-    /// `WithOrder` against its `Default`. Through an upgrade window that replica filters late; the
-    /// coordination mode is not negotiable.
+    /// Whatever was pushed into the fragment the replicas execute is spliced into the query they run, as
+    /// the distributed path above does it. The initiator's copy of the fragment holds what this splice
+    /// carries and nothing else that could order a read (see `tryPushDownFilter`), so it splices only
+    /// where that copy was told it would: not with the push-down off, and not when the replicas are sent
+    /// a plan - this text is then only the fallback `RemoteQueryExecutor::sendQuery` sends to a replica
+    /// too old to receive the plan, and a condition read out of it could order that replica's read.
     if (filter_actions_dag && !query_plan
         && filter_rewrite_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown])
         addFilters(

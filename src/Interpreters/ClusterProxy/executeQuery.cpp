@@ -71,7 +71,6 @@ namespace Setting
     extern const SettingsUInt64 force_optimize_skip_unused_shards;
     extern const SettingsUInt64 force_optimize_skip_unused_shards_nesting;
     extern const SettingsBool http_allow_database_as_path;
-    extern const SettingsBool parallel_replicas_filter_pushdown;
     extern const SettingsBool http_allow_filters_as_path;
     extern const SettingsBool http_allow_filters_as_unrecognized_url_parameters;
     extern const SettingsBool http_allow_table_as_file;
@@ -1173,17 +1172,18 @@ void executeQueryWithParallelReplicas(
         else if (const auto * union_node = query_tree->as<UnionNode>())
             local_context = union_node->getContext();
 
-        /// A condition pushed into the local copy of the fragment reaches the replicas as well when they
-        /// are given a query to run and the splice accepts it. Asked here, where both are known, and on
-        /// the same context the splice will answer to; the local plan is then optimized knowing it.
-        /// Asked rather than assumed, because the answer is usually yes, and then the fragment keeps the
-        /// ordering it would read with - a merge instead of a sort above it, an aggregation in order.
-        const bool replicas_get_pushed_conditions = !remote_query_plan
-            && local_context->getSettingsRef()[Setting::parallel_replicas_filter_pushdown]
-            && canSpliceFiltersIntoRemoteQuery(forwarded_query_ast, query_tree, planner_context, local_context);
+        /// What of a condition pushed into the local copy of the fragment the replicas get as well is
+        /// decided by the splice into the query they are sent, on the context it answers to. A plan
+        /// sent instead carries nothing pushed into this copy.
+        ReadFromLocalParallelReplicaStep::LeftOutConjuncts left_out_conjuncts;
+        if (!remote_query_plan)
+            left_out_conjuncts = [forwarded_query_ast, query_tree, planner_context, local_context](const ActionsDAG::Node & condition)
+            {
+                return conjunctsLeftOutOfRemoteQuery(condition, forwarded_query_ast, query_tree, planner_context, local_context);
+            };
 
         auto read_from_local = std::make_unique<ReadFromLocalParallelReplicaStep>(
-            std::move(local_plan), local_context, replicas_get_pushed_conditions);
+            std::move(local_plan), local_context, std::move(left_out_conjuncts));
         auto stub_local_plan = std::make_unique<QueryPlan>();
         stub_local_plan->addStep(std::move(read_from_local));
 
@@ -1199,9 +1199,6 @@ void executeQueryWithParallelReplicas(
             header,
             processed_stage,
             new_context,
-            /// Same context the local copy of the fragment is optimized with, so that the decision to
-            /// splice the pushed-down condition into the replicas' query and the decision to order the
-            /// local read off that condition are taken on one set of settings.
             std::move(local_context),
             getThrottler(new_context),
             std::move(scalars),
@@ -1243,8 +1240,7 @@ void executeQueryWithParallelReplicas(
             header,
             processed_stage,
             new_context,
-            /// No local copy of the fragment here, so there is nothing to agree with: the remote step's
-            /// own context decides.
+            /// No local copy of the fragment to agree with.
             new_context,
             getThrottler(new_context),
             std::move(scalars),

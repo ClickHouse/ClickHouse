@@ -13,8 +13,8 @@ SET optimize_aggregation_in_order=1; -- issue is related to this optimization
 SYSTEM ENABLE FAILPOINT parallel_replicas_wait_for_unused_replicas;
 
 -- This query used to fail with the condition pushed into the fragment - the initiator read in order
--- off a condition the replicas did not have. It is pushed and shipped unconditionally now, and the
--- ordering is withheld where the shipping does not reach, so the read modes agree.
+-- off a condition the replicas did not have. It goes into the fragment now only as far as it is
+-- shipped to the replicas too, so the read modes agree.
 -- https://github.com/ClickHouse/ClickHouse/issues/95524
 SELECT a
 FROM t1

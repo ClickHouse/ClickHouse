@@ -20,18 +20,14 @@ using UnavailableShardTrackerPtr = std::shared_ptr<UnavailableShardTracker>;
 class ParallelReplicasReadingCoordinator;
 using ParallelReplicasReadingCoordinatorPtr = std::shared_ptr<ParallelReplicasReadingCoordinator>;
 
-/// Whether a condition pushed down on the initiator would be spliced into the query the remote side
-/// runs, asked before there is a condition to splice. Everything the splice needs is already known:
-/// the settings it answers to, and the shape of the query - it rewrites a single-table `SELECT` and
-/// refuses a union, a join, a `LIMIT BY`, and the rest of `subqueryAcceptsPushedPredicate`'s list. The
-/// initiator has to know the answer while it is still choosing how to read, so this is the same check
-/// the splice itself makes, asked early rather than a second statement of it.
-bool canSpliceFiltersIntoRemoteQuery(
-    const ASTPtr & query_ast, const QueryTreeNodePtr & query_tree, const PlannerContextPtr & planner_context, const ContextPtr & context);
-
-/// Whether the splice would drop this particular condition whatever the query's shape says - it cannot
-/// express a lambda. `canSpliceFiltersIntoRemoteQuery` answers for the fragment, this for one condition.
-bool remoteRewriteDropsCondition(const ActionsDAG::Node & condition);
+/// The conjuncts of `condition` (`ActionsDAG::extractConjunctionAtoms`) the splice would leave out of the
+/// remote query - all of them where it does not run. Answered by the conversion the splice itself makes.
+ActionsDAG::NodeRawConstPtrs conjunctsLeftOutOfRemoteQuery(
+    const ActionsDAG::Node & condition,
+    const ASTPtr & query_ast,
+    const QueryTreeNodePtr & query_tree,
+    const PlannerContextPtr & planner_context,
+    const ContextPtr & rewrite_context);
 
 /// Reading step from remote servers.
 /// Unite query results from several shards.
@@ -122,10 +118,8 @@ public:
         SharedHeader header_,
         QueryProcessingStage::Enum stage_,
         ContextMutablePtr context_,
-        /// The settings that decide whether a pushed-down condition is spliced into the query the
-        /// replicas run. This is the context the fragment carries, the same one the local copy of it
-        /// is optimized with - the two have to answer alike, or the initiator orders its read off a
-        /// condition the replicas were never given.
+        /// Whose settings decide whether a pushed-down condition is spliced into the replicas' query:
+        /// the fragment's, which the initiator's copy of the fragment is optimized with too.
         ContextPtr filter_rewrite_context_,
         ThrottlerPtr throttler_,
         Scalars scalars_,
@@ -187,6 +181,8 @@ ASTPtr tryBuildAdditionalFilterAST(
     const std::unordered_set<std::string> & projection_names,
     const std::unordered_map<std::string, QueryTreeNodePtr> & execution_name_to_projection_query_tree,
     Tables * external_tables,
-    ContextMutablePtr & context);
+    ContextMutablePtr & context,
+    /// The conjuncts the conversion leaves out of a positive `AND`, when asked.
+    std::vector<const ActionsDAG::Node *> * dropped_conjuncts = nullptr);
 
 }
