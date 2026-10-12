@@ -123,7 +123,10 @@ void FairAllocation::propagateUpdate(ISpaceSharedNode & from_child, Update && up
 {
     SCHED_DBG("{} -- propagateUpdate(from_child={}, update={})", getPath(), from_child.basename, update.toString());
     apply(update);
-    if (update.attached || update.detached || update.increase)
+    // `update.admissions` (a zero-size allocation became running under `from_child`) changes no byte usage and
+    // no increase pointer, but can take the child from zero to one running allocation, so it must still run
+    // `setIncrease` -> `updateKey` to refresh `running_children` membership.
+    if (update.attached || update.detached || update.increase || update.admissions)
     {
         if (setIncrease(from_child, update.increase ? *update.increase : from_child.increase, update.detached == &from_child))
             update.setIncrease(increase);

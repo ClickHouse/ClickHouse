@@ -51,7 +51,10 @@ private:
     bool setDecrease();
     void ensureUsable() const;
 
-    /// Protects all the following fields
+    /// Protects all the following fields.
+    /// Never call propagate() while holding it: propagation can re-enter this queue through
+    /// selectAllocationToKill() (a parent limit selecting a victim here), which re-acquires the
+    /// mutex and would self-deadlock. Build the Update under the lock, release, then propagate.
     mutable std::mutex mutex;
 
     Int64 max_queued; /// Limit on the number of pending allocation
@@ -60,6 +63,7 @@ private:
     std::exception_ptr cancel_error; /// preallocated exception for cancelling requests
 
     ResourceAllocation::PendingList pending_allocations; /// Pending new allocations
+    ResourceAllocation::AdmittingList admitting_allocations; /// Zero-size allocations awaiting scheduler-thread admission
     ResourceAllocation::RunningSet running_allocations; /// Currently running (not pending) allocations
     ResourceAllocation::IncreasingSet increasing_allocations; /// Allocations with pending increase request
     ResourceAllocation::DecreasingList decreasing_allocations; /// Allocations with pending decrease request

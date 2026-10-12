@@ -46,36 +46,42 @@ public:
         ISpaceSharedNode * detached = nullptr; /// Detached node (may be not an immediate child) or nullptr if no node detached
         std::optional<IncreaseRequest *> increase; /// New increase request or nullptr if no more increase requests, null_opt means no change
         std::optional<DecreaseRequest *> decrease; /// New decrease request or nullptr if no more decrease requests, null_opt means no change
+        size_t admissions = 0; /// Number of zero-size allocations that became running (admitted) in the subtree being propagated up.
 
-        explicit operator bool() const { return attached || detached || increase || decrease; }
+        explicit operator bool() const { return attached || detached || increase || decrease || admissions; }
 
         Update & setAttached(ISpaceSharedNode * new_attached) & noexcept { attached = new_attached; return *this; }
         Update & setDetached(ISpaceSharedNode * new_detached) & noexcept { detached = new_detached; return *this; }
         Update & setIncrease(IncreaseRequest * new_increase) & noexcept { increase = new_increase; return *this; }
         Update & setDecrease(DecreaseRequest * new_decrease) & noexcept { decrease = new_decrease; return *this; }
+        Update & setAdmissions(size_t new_admissions) & noexcept { admissions = new_admissions; return *this; }
         Update & resetAttached() & noexcept { attached = nullptr; return *this; }
         Update & resetDetached() & noexcept { detached = nullptr; return *this; }
         Update & resetIncrease() & noexcept { increase = std::nullopt; return *this; }
         Update & resetDecrease() & noexcept { decrease = std::nullopt; return *this; }
+        Update & resetAdmissions() & noexcept { admissions = 0; return *this; }
 
         // To keep Update().setXXX() methods usable in rvalue context and avoid copies
         Update && setAttached(ISpaceSharedNode * new_attached) && noexcept { attached = new_attached; return std::move(*this); }
         Update && setDetached(ISpaceSharedNode * new_detached) && noexcept { detached = new_detached; return std::move(*this); }
         Update && setIncrease(IncreaseRequest * new_increase) && noexcept { increase = new_increase; return std::move(*this); }
         Update && setDecrease(DecreaseRequest * new_decrease) && noexcept { decrease = new_decrease; return std::move(*this); }
+        Update && setAdmissions(size_t new_admissions) && noexcept { admissions = new_admissions; return std::move(*this); }
         Update && resetAttached() && noexcept { attached = nullptr; return std::move(*this); }
         Update && resetDetached() && noexcept { detached = nullptr; return std::move(*this); }
         Update && resetIncrease() && noexcept { increase = std::nullopt; return std::move(*this); }
         Update && resetDecrease() && noexcept { decrease = std::nullopt; return std::move(*this); }
+        Update && resetAdmissions() && noexcept { admissions = 0; return std::move(*this); }
 
         // For debugging purposes only
         String toString() const
         {
-            return fmt::format("{{ attached={}, detached={}, increase={}, decrease={} }}",
+            return fmt::format("{{ attached={}, detached={}, increase={}, decrease={}, admissions={} }}",
                 attached ? attached->getPath() : "nullptr",
                 detached ? detached->getPath() : "nullptr",
                 increase ? (*increase ? (*increase)->allocation.id : "nullptr") : "no_change",
-                decrease ? (*decrease ? (*decrease)->allocation.id : "nullptr") : "no_change");
+                decrease ? (*decrease ? (*decrease)->allocation.id : "nullptr") : "no_change",
+                admissions);
         }
     };
 
@@ -119,6 +125,14 @@ public:
     bool isIncreasing() const noexcept { return increasing_hook.is_linked(); }
     bool isDecreasing() const noexcept { return decreasing_hook.is_linked(); }
 
+    /// Account for `count` zero-size allocations that have just become running (admitted) under this node.
+    /// A zero-size admission adds no resource cost, so it only bumps the running-allocation counters.
+    void applyAdmissions(size_t count)
+    {
+        allocations += count;
+        admits += count;
+    }
+
     void apply(Update & update)
     {
         if (update.attached)
@@ -131,6 +145,7 @@ public:
             allocated -= update.detached->allocated;
             allocations -= update.detached->allocations;
         }
+        applyAdmissions(update.admissions);
         ++updates;
     }
 
@@ -138,10 +153,8 @@ public:
     {
         allocated += request.size;
         ++increases;
-        if (request.kind == IncreaseRequest::Kind::Initial || request.kind == IncreaseRequest::Kind::Pending)
+        if (request.kind == IncreaseRequest::Kind::Pending)
         {
-            // Note this results in a lag for Kind::Initial.
-            // They are admitted earlier, but we count them here to avoid unnecessary complexity.
             ++allocations;
             ++admits;
         }
