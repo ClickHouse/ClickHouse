@@ -54,6 +54,9 @@ struct DeserializeBinaryBulkStateMapKeysOrValuesWithBuckets : public ISerializat
     ISerialization::DeserializeBinaryBulkStatePtr bucket_index_state;
     bool has_bucket_index = false;
 
+    /// Merged dictionary of `LowCardinality` keys or values of the buckets.
+    MapBucketsLowCardinalityDictionary low_cardinality_dictionary;
+
     ISerialization::DeserializeBinaryBulkStatePtr clone() const override
     {
         auto new_state = std::make_shared<DeserializeBinaryBulkStateMapKeysOrValuesWithBuckets>(*this);
@@ -234,7 +237,8 @@ template <typename IndexColumn>
 void collectMapKeysOrValuesFromBucketsWithOrderImpl(
     const VectorWithMemoryTracking<ColumnPtr> & keys_or_values_buckets,
     const IndexColumn & bucket_index_col,
-    IColumn & keys_or_values_column)
+    IColumn & keys_or_values_column,
+    MapBucketsLowCardinalityDictionary & low_cardinality_dictionary)
 {
     if (keys_or_values_buckets.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Empty list of buckets provided");
@@ -253,6 +257,23 @@ void collectMapKeysOrValuesFromBucketsWithOrderImpl(
     auto & offsets = array_column.getOffsets();
     size_t num_rows = keys_or_values_buckets[0]->size();
     offsets.reserve(offsets.size() + num_rows);
+
+    /// For `LowCardinality`, `insertFrom` from another dictionary is a hash table lookup for every element.
+    if (data.lowCardinality())
+    {
+        size_t num_elements = offsets.empty() ? 0 : offsets.back();
+        for (size_t i = 0; i != num_rows; ++i)
+        {
+            for (const auto * bucket_offsets : offsets_buckets)
+                num_elements += (*bucket_offsets)[ssize_t(i)] - (*bucket_offsets)[ssize_t(i) - 1];
+            offsets.push_back(num_elements);
+        }
+
+        /// Keys and values use the same serialization here, so it is not known whether the dictionaries are disjoint.
+        SerializationMap::collectLowCardinalityFromBucketsWithOrder(
+            data_buckets, bucket_index_col, data, low_cardinality_dictionary, /*disjoint_dictionaries=*/ false);
+        return;
+    }
 
     const auto & bucket_index_data = bucket_index_col.getData();
     std::vector<size_t> bucket_positions(keys_or_values_buckets.size());
@@ -286,21 +307,22 @@ void collectMapKeysOrValuesFromBucketsWithOrderImpl(
 void collectMapKeysOrValuesFromBucketsWithOrder(
     const VectorWithMemoryTracking<ColumnPtr> & keys_or_values_buckets,
     const IColumn & bucket_index_column,
-    IColumn & keys_or_values_column)
+    IColumn & keys_or_values_column,
+    MapBucketsLowCardinalityDictionary & low_cardinality_dictionary)
 {
     switch (bucket_index_column.getDataType())
     {
         case TypeIndex::UInt8:
-            collectMapKeysOrValuesFromBucketsWithOrderImpl(keys_or_values_buckets, static_cast<const ColumnVector<UInt8> &>(bucket_index_column), keys_or_values_column);
+            collectMapKeysOrValuesFromBucketsWithOrderImpl(keys_or_values_buckets, static_cast<const ColumnVector<UInt8> &>(bucket_index_column), keys_or_values_column, low_cardinality_dictionary);
             break;
         case TypeIndex::UInt16:
-            collectMapKeysOrValuesFromBucketsWithOrderImpl(keys_or_values_buckets, static_cast<const ColumnVector<UInt16> &>(bucket_index_column), keys_or_values_column);
+            collectMapKeysOrValuesFromBucketsWithOrderImpl(keys_or_values_buckets, static_cast<const ColumnVector<UInt16> &>(bucket_index_column), keys_or_values_column, low_cardinality_dictionary);
             break;
         case TypeIndex::UInt32:
-            collectMapKeysOrValuesFromBucketsWithOrderImpl(keys_or_values_buckets, static_cast<const ColumnVector<UInt32> &>(bucket_index_column), keys_or_values_column);
+            collectMapKeysOrValuesFromBucketsWithOrderImpl(keys_or_values_buckets, static_cast<const ColumnVector<UInt32> &>(bucket_index_column), keys_or_values_column, low_cardinality_dictionary);
             break;
         case TypeIndex::UInt64:
-            collectMapKeysOrValuesFromBucketsWithOrderImpl(keys_or_values_buckets, static_cast<const ColumnVector<UInt64> &>(bucket_index_column), keys_or_values_column);
+            collectMapKeysOrValuesFromBucketsWithOrderImpl(keys_or_values_buckets, static_cast<const ColumnVector<UInt64> &>(bucket_index_column), keys_or_values_column, low_cardinality_dictionary);
             break;
         default:
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected bucket index column type: {}", bucket_index_column.getName());
@@ -368,7 +390,8 @@ void SerializationMapKeysOrValues::deserializeBinaryBulkWithMultipleStreams(
                 *bucket_index_column, total_kv_pairs, settings, map_keys_or_values_with_buckets_state->bucket_index_state, cache);
             settings.path.pop_back();
 
-            collectMapKeysOrValuesFromBucketsWithOrder(keys_or_values_buckets, *bucket_index_column, column);
+            collectMapKeysOrValuesFromBucketsWithOrder(
+                keys_or_values_buckets, *bucket_index_column, column, map_keys_or_values_with_buckets_state->low_cardinality_dictionary);
         }
         else
         {
