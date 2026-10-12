@@ -1341,7 +1341,7 @@ InterpreterCreateQuery::TableProperties InterpreterCreateQuery::getTableProperti
     /// the outer query has already rewritten. The exception is an internal `TimeSeries` table, e.g. the one
     /// behind `CREATE MATERIALIZED VIEW ... ENGINE = TimeSeries`: the default engines of its own inner tables
     /// are added only above by `normalizeTimeSeriesDefinition`, so the outer query could not rewrite them.
-    /// `StorageMaterializedView` disables the setting for that internal query when restoring from a backup.
+    /// `StorageMaterializedView` marks that internal query as a restore when it is a part of one.
     if ((!internal || create.is_time_series_table) && !create.is_clone_as && !is_restore_from_backup
         && mode <= LoadingStrictnessLevel::CREATE
         && getContext()->getSettingsRef()[Setting::force_primary_key_reverse_order])
