@@ -252,7 +252,6 @@ public:
 
     void onPipelineFinished() override
     {
-        /// Stop the nested insert the same way, so that its sinks finalize their output.
         if (isStoppedByBreak() && executor)
         {
             executor->stopOnTimeout();
