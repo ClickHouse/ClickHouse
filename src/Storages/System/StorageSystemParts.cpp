@@ -13,7 +13,6 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/MergeTreeTransaction/VersionMetadata.h>
-#include <Interpreters/ProcessList.h>
 
 
 namespace
@@ -35,8 +34,6 @@ std::string_view getRemovalStateDescription(DB::DataPartRemovalState state)
         return "Waiting mutation parent to be removed";
     case DB::DataPartRemovalState::EMPTY_PART_COVERS_OTHER_PARTS:
         return "Waiting for covered parts to be removed first";
-    case DB::DataPartRemovalState::PINNED_BY_DELETE_BITMAP:
-        return "Holds the only copy of another part's delete bitmap";
     case DB::DataPartRemovalState::REMOVE:
         return "Part was selected to be removed";
     case DB::DataPartRemovalState::REMOVE_ROLLED_BACK:
@@ -158,18 +155,10 @@ void StorageSystemParts::processNextStorage(
     MergeTreeData::DataPartStateVector all_parts_state;
     MergeTreeData::DataPartsVector all_parts;
 
-    QueryStatusPtr query_status = context->getProcessListElement();
+    all_parts = info.getParts(all_parts_state, has_state_column);
 
-    all_parts = info.getParts(all_parts_state, has_state_column, query_status);
-
-    PartitionKeySamples partition_key_samples;
     for (size_t part_number = 0; part_number < all_parts.size(); ++part_number)
     {
-        if (query_status && !query_status->checkTimeLimit())
-            break;
-
-        slowDownSystemPartsEnumeration(info.table);
-
         const auto & part = all_parts[part_number];
         auto part_state = all_parts_state[part_number];
 
@@ -191,7 +180,7 @@ void StorageSystemParts::processNextStorage(
         size_t src_index = 0;
         size_t res_index = 0;
         if (columns_mask[src_index++])
-            columns[res_index++]->insert(part->partition.serializeToString(partition_key_samples.get(*part)));
+            columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
         if (columns_mask[src_index++])
             columns[res_index++]->insert(part->name);
         if (columns_mask[src_index++])
@@ -374,7 +363,7 @@ void StorageSystemParts::processNextStorage(
 
         auto get_tid_as_field = [](const TransactionID & tid) -> Field
         {
-            return Tuple{tid.start_csn, tid.local_tid, tid.host_id, tid.session_node_version};
+            return Tuple{tid.start_csn, tid.local_tid, tid.host_id};
         };
 
         auto current_version_info = part->version->getInfo();

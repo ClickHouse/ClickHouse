@@ -22,6 +22,7 @@ namespace DB
 {
 namespace Setting
 {
+    extern const SettingsBool allow_experimental_analyzer;
 }
 
 namespace
@@ -34,10 +35,12 @@ class FunctionIsNotNull final : public IFunction
 public:
     static constexpr auto name = "isNotNull";
 
-    static FunctionPtr create(ContextPtr)
+    static FunctionPtr create(ContextPtr context)
     {
-        return std::make_shared<FunctionIsNotNull>();
+        return std::make_shared<FunctionIsNotNull>(context->getSettingsRef()[Setting::allow_experimental_analyzer]);
     }
+
+    explicit FunctionIsNotNull(bool use_analyzer_) : use_analyzer(use_analyzer_) {}
 
     std::string getName() const override
     {
@@ -46,6 +49,10 @@ public:
 
     ColumnPtr getConstantResultForNonConstArguments(const ColumnsWithTypeAndName & arguments, const DataTypePtr & result_type) const override
     {
+        /// (column IS NULL) triggers a bug in old analyzer when it is replaced to constant.
+        if (!use_analyzer)
+            return nullptr;
+
         /// SELECT arrayFilter(x -> (x IS NOT NULL), []) can trigger `defaultImplementationForNothing()`
         /// which will give return type Nothing. We cannot create constant column of type Nothing so return nullptr.
         if (isNothing(result_type))
@@ -140,6 +147,7 @@ private:
             res[i] = !null_map[i];
     }
 
+    bool use_analyzer;
 };
 }
 

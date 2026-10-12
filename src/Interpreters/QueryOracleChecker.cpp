@@ -57,7 +57,6 @@ namespace DB
 namespace Setting
 {
 extern const SettingsBool ast_fuzzer_oracle;
-extern const SettingsJoinStrictness join_default_strictness;
 }
 
 namespace ErrorCodes
@@ -75,11 +74,10 @@ namespace
 /// functions are picked up dynamically via `FunctionFactory::tryGet`'s
 /// `isDeterministic` (no list maintenance needed there). This set covers what
 /// `FunctionFactory` does not reach: table functions (registered in
-/// `TableFunctionFactory`), and aggregate functions not registered as
-/// `is_order_dependent` whose metamorphic `State`/`Merge` rewrite legitimately
-/// produces a different value than direct evaluation (so they aren't
-/// "non-deterministic functions" in the `system.functions` sense, but they are
-/// unsafe for oracle equality).
+/// `TableFunctionFactory`), and aggregate functions whose metamorphic
+/// `State`/`Merge` rewrite legitimately produces a different value than direct
+/// evaluation (so they aren't "non-deterministic functions" in the
+/// `system.functions` sense, but they are unsafe for oracle equality).
 const std::unordered_set<String> non_deterministic_functions = {
     "rand", "rand32", "rand64", "randConstant", "randUniform", "randNormal",
     "randBernoulli", "randExponential", "randChiSquared", "randStudentT",
@@ -112,10 +110,10 @@ const std::unordered_set<String> non_deterministic_functions = {
     "fuzzQuery",
     "materialize",
     /// Non-deterministic or approximate aggregate functions.
+    "any", "anyLast", "anyHeavy",
     "anyRespectNulls", "anyLastRespectNulls",
-    /// `anyRespectNulls` / `anyLastRespectNulls` are aliases; these are the
-    /// names they are registered under and are equally valid in a query.
-    "any_respect_nulls", "anyLast_respect_nulls",
+    "first_value", "last_value",
+    "topK", "topKWeighted",
     "uniqHLL12", "uniqCombined", "uniqCombined64", "uniqTheta",
     /// Approximate quantile/median functions: State/Merge gives different results
     /// than direct computation due to approximate merging algorithms. Block both
@@ -138,36 +136,32 @@ const std::unordered_set<String> non_deterministic_functions = {
     "quantileExactExclusive", "quantileExactInclusive",
     "quantilesExactExclusive", "quantilesExactInclusive",
     "quantileInterpolatedWeighted", "quantilesInterpolatedWeighted",
-    /// `quantilePrometheusHistogram` accumulates the cumulative bucket value per
-    /// bucket bound, and that value may be a `Float64` — so the per-bucket sums
-    /// are order-dependent, unlike the `UInt64`-weighted
-    /// `quantileExactWeightedInterpolated`, which stays exact and is therefore
-    /// deliberately NOT listed here.
-    "quantilePrometheusHistogram", "quantilesPrometheusHistogram",
-    /// Floating-point aggregates whose State/Merge path can differ from direct
-    /// computation. `sum` / `sumWithOverflow` are
+    /// Order-dependent or floating-point aggregates whose State/Merge path
+    /// can differ from direct computation. `sum` / `sumWithOverflow` are
     /// blocked because floating-point addition is non-associative — the
     /// metamorphic `sumState`/`sumMerge` rewrite can legitimately produce a
     /// different rounded value than direct `sum` over Float32/Float64
     /// arguments. We don't try to inspect argument types here, so we exclude
     /// `sum` family unconditionally — that costs some integer-sum coverage
     /// but eliminates a flaky-mismatch source.
+    "deltaSum", "deltaSumTimestamp",
     "stddevPop", "stddevSamp", "stddevPopStable", "stddevSampStable",
     "varPop", "varSamp", "varPopStable", "varSampStable",
     "covarPop", "covarSamp", "covarPopStable", "covarSampStable", "corr", "corrStable",
-    "corrMatrix", "covarPopMatrix", "covarSampMatrix",
     "avg", "avgWeighted",
     "skewPop", "skewSamp", "kurtPop", "kurtSamp",
-    "sum", "sumWithOverflow", "sumKahan", "sumCount",
-    /// Per-key sums over maps and arrays add the same floating-point values in
-    /// a merge-order-dependent order, exactly like `sum` above.
-    "sumMappedArrays", "sumMapWithOverflow",
-    "sumMapFiltered", "sumMapFilteredWithOverflow",
+    "sum", "sumWithOverflow", "sumKahan",
+    "stochasticLinearRegression", "stochasticLogisticRegression",
     "initializeAggregation",
     /// Order-dependent aggregate functions.
-    "groupArraySorted",
-    /// Events with equal timestamps are matched in arrival order.
-    "sequenceMatch", "sequenceCount", "sequenceMatchEvents", "sequenceNextNode",
+    "groupArray", "groupUniqArray", "groupArrayInsertAt",
+    "groupArrayMovingSum", "groupArrayMovingAvg",
+    "groupArraySorted", "groupArrayLast",
+    /// `argMin`/`argMax`/`groupConcat` are order-dependent on ties: the
+    /// `State`/`Merge`, DQP and subquery-rewrite paths can legitimately
+    /// pick a different "arg" value or concatenation order than direct
+    /// evaluation, so exact row equality is wrong here.
+    "argMin", "argMax", "groupConcat",
     /// Approximate/formatting-dependent aggregates.
     "entropy", "exponentialMovingAverage", "exponentialTimeDecayedAvg",
     "simpleLinearRegression", "sparkBar", "histogram",
@@ -179,18 +173,13 @@ const std::unordered_set<String> non_deterministic_functions = {
     /// plan-changing rewrite (DQP setting toggle, State/Merge, subquery wrap)
     /// then legitimately differs from direct evaluation.
     "largestTriangleThreeBuckets",
-    /// `boundingRatio` divides by the gap between the leftmost and rightmost
-    /// points: on ties in the x argument which point wins is merge-order
-    /// dependent, and the ratio is a Float64 either way.
-    "boundingRatio",
     /// Depends on physical data layout, not values.
     "estimateCompressionRatio",
     /// Statistical hypothesis-test / correlation aggregates: they return
     /// floating-point statistics or p-values computed with rank/tie handling
     /// and non-associative summation, so the State/Merge, DQP and
     /// subquery-rewrite paths legitimately differ from direct evaluation.
-    "mannWhitneyUTest", "studentTTest", "studentTTestOneSample", "welchTTest", "meanZTest",
-    "analysisOfVariance",
+    "mannWhitneyUTest", "studentTTest", "welchTTest", "meanZTest",
     "kolmogorovSmirnovTest", "rankCorr", "theilsU", "cramersV",
     "cramersVBiasCorrected", "contingency", "categoricalInformationValue",
 };
@@ -207,8 +196,8 @@ constexpr size_t MAX_ORACLE_RESULT_ROWS = 10'000'000;
 
 /// Case-insensitive view of `non_deterministic_functions`. ClickHouse resolves
 /// aggregate (and scalar) function names case-insensitively and the parser
-/// preserves whatever spelling the fuzzer produced, so a query using `SUM` or
-/// `AVG` must still match the unsafe set. Compare lowercased.
+/// preserves whatever spelling the fuzzer produced, so a query using `SUM`,
+/// `argmax`, or `ANY` must still match the unsafe set. Compare lowercased.
 const std::unordered_set<String> non_deterministic_functions_lower = []
 {
     std::unordered_set<String> result;
@@ -250,68 +239,18 @@ String stripAggregateCombinators(String name)
     return name;
 }
 
-/// Resolve an aggregate function alias to the name it was registered under.
-/// ClickHouse aliases plenty of aggregates whose `State`/`Merge` rewrite is
-/// unsafe for the oracle — `min_by`/`max_by` for `argMin`/`argMax`, `array_agg`
-/// for `groupArray`, `lttb` for `largestTriangleThreeBuckets`, every `median*`
-/// for the matching `quantile*`, `approx_top_count` for `approx_top_k`, `anova`
-/// for `analysisOfVariance`, `STDDEV_POP`/`VAR_SAMP`/`COVAR_POP` for the
-/// `stddev*`/`var*`/`covar*` families — and listing each alias by hand is the
-/// kind of bookkeeping that rots silently: one missing spelling is one false
-/// oracle mismatch reddening master CI. Resolve through the factory instead:
-/// `getAliasToOrName` consults both alias maps, so a case-insensitive alias
-/// resolves through any spelling of it (`StdDev_Pop` as much as `STDDEV_POP`),
-/// and a name that is not an alias comes back unchanged. Over-matching a
-/// spelling ClickHouse would not resolve at all only skips one more query,
-/// which is safe.
-String resolveAggregateAlias(const String & name)
-{
-    return AggregateFunctionFactory::instance().getAliasToOrName(name);
-}
-
 /// True if `name`, after removing zero or more combinator suffixes, names an
 /// entry of `non_deterministic_functions` (matched case-insensitively).
 /// Membership must be tested at EVERY stripping stage, not only at the
 /// fixpoint: real aggregate names can themselves end in a combinator-looking
-/// word, e.g. `retentionStateOrNull` strips to `retentionState` (a set
-/// member), but one more iteration eats the literal `State` and produces
-/// `retention`, which the set does not contain.
-bool namesUnsafeFunctionAfterStripping(String name)
-{
-    while (true)
-    {
-        if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
-            return true;
-        if (!stripLongestCombinatorSuffix(name))
-            return false;
-    }
-}
-
-/// As above, but a name is also unsafe when the aggregate function it is an
-/// alias of is, or when it names an aggregate registered as order-dependent.
+/// word, e.g. `groupUniqArrayOrNull` strips to `groupUniqArray` (a set
+/// member), but one more iteration eats the literal `Array` and produces
+/// `groupUniq`, which the set does not contain.
 bool isOracleUnsafeFunctionName(String name)
 {
-    /// Window functions are registered as order-dependent too; their order comes from `OVER`.
-    if (const auto properties = AggregateFunctionFactory::instance().tryGetProperties(name, NullsAction::EMPTY);
-        properties && properties->is_order_dependent && !properties->is_window_function)
-        return true;
-
     while (true)
     {
         if (non_deterministic_functions_lower.contains(Poco::toLower(name)))
-            return true;
-        /// The raw spelling is tested first and separately, never replaced by
-        /// the canonical one: the set is free to name a function by whichever
-        /// spelling reads best, so resolving before the lookup would turn a
-        /// listed alias into an unlisted canonical and lose the match.
-        /// The alias is resolved at every stripping stage rather than once up
-        /// front, because the combinators the fuzzer appends hide the alias
-        /// from the factory (`min_byIf` is not a registered name, `min_by` is).
-        /// The expansion is then stripped in turn: an alias may well expand to
-        /// a name that itself carries a combinator, as `array_concat_agg` does
-        /// to `groupArrayArray` (`groupArray` plus `Array`).
-        if (const String canonical = resolveAggregateAlias(name);
-            canonical != name && namesUnsafeFunctionAfterStripping(canonical))
             return true;
         if (!stripLongestCombinatorSuffix(name))
             return false;
@@ -327,9 +266,9 @@ bool isOracleUnsafeFunctionName(String name)
 ///   1. Table functions (`file`, `url`, `s3`, `numbers`, ...) — registered in
 ///      `TableFunctionFactory`; would slip through as scalar calls otherwise.
 ///   2. Aggregate functions whose `State`/`Merge` rewrite legitimately
-///      diverges from direct evaluation (`quantile*`, `sum` on floats, ...):
-///      semantically deterministic but unsafe for our exact equality oracle.
-///      Order-dependent aggregates are read from their registration instead.
+///      diverges from direct evaluation (`any`, `topK`, `quantile*`, `sum` on
+///      floats, ...) — semantically deterministic but unsafe for our exact
+///      equality oracle.
 /// We strip aggregate combinator suffixes before lookup so e.g.
 /// `first_valueOrNull` resolves to `first_value` — the fuzzer routinely
 /// appends `*OrNull`/`*Distinct`/`*State` chains and neither
@@ -694,19 +633,6 @@ bool hasNestedThreadSettings(const ASTPtr & ast, const ASTPtr & top_level_settin
     return false;
 }
 
-/// True if `ast` is built only from literals and function calls, so it means the same in any query.
-bool isScopeFreeExpression(const ASTPtr & ast)
-{
-    if (ast->as<ASTLiteral>())
-        return true;
-    if (!ast->as<ASTFunction>() && !ast->as<ASTExpressionList>())
-        return false;
-    for (const auto & child : ast->children)
-        if (!isScopeFreeExpression(child))
-            return false;
-    return true;
-}
-
 /// True if `clause` defines an alias that is referenced anywhere else in the
 /// SELECT. ClickHouse aliases are visible query-wide, so an oracle rewrite
 /// that removes or replaces such a clause (TLP's reference query drops WHERE
@@ -811,23 +737,16 @@ bool usesFinalAnywhere(const ASTPtr & ast)
 /// ASOF JOIN tie-breaking among equal asof-column values is
 /// implementation-defined, so which right-side row a left row pairs with can
 /// change between plans — observed as a `Subquery wrap` false mismatch.
-/// `ANY` pairs with an arbitrary match (`ANY INNER` keeps one row per key), so it is plan-dependent too.
-/// A join written without a strictness gets `join_default_strictness`, or `ALL` if it is `LATERAL`.
-/// Checked recursively: such a join in any subquery taints the whole query.
-bool hasNonDeterministicJoinAnywhere(const ASTPtr & ast, JoinStrictness default_strictness)
+/// Checked recursively: an ASOF join in any subquery taints the whole query.
+bool hasAsofJoinAnywhere(const ASTPtr & ast)
 {
     if (!ast)
         return false;
     if (const auto * join = ast->as<ASTTableJoin>())
-    {
-        auto strictness = join->strictness;
-        if (strictness == JoinStrictness::Unspecified && !join->lateral && join->kind != JoinKind::Cross && join->kind != JoinKind::Comma)
-            strictness = default_strictness;
-        if (strictness == JoinStrictness::Asof || strictness == JoinStrictness::Any || strictness == JoinStrictness::RightAny)
+        if (join->strictness == JoinStrictness::Asof)
             return true;
-    }
     for (const auto & child : ast->children)
-        if (hasNonDeterministicJoinAnywhere(child, default_strictness))
+        if (hasAsofJoinAnywhere(child))
             return true;
     return false;
 }
@@ -1067,9 +986,6 @@ bool referencesUnscreenedDefinitionAnywhere(const ASTPtr & ast, const ContextPtr
 
                 for (const auto & definition : definitions)
                     if (hasNonDeterministicFunctionsImpl(definition, context)
-                        || hasNonDeterministicJoinAnywhere(definition, context->getSettingsRef()[Setting::join_default_strictness])
-                        || hasNonStrippableInlineSettings(definition)
-                        || hasNestedThreadSettings(definition, nullptr)
                         || referencesSystemDatabaseAnywhere(definition, context->getCurrentDatabase())
                         || referencesDistributedTableAnywhere(definition, context)
                         || referencesUnscreenedDefinitionAnywhere(definition, context, depth + 1))
@@ -1360,6 +1276,8 @@ ContextMutablePtr QueryOracleChecker::makeOracleContext(const ContextMutablePtr 
     oracle_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
     oracle_context->setSetting("ast_fuzzer_oracle", Field(false));
     oracle_context->setSetting("max_execution_time", Field(UInt64(10)));
+    /// Prevent the optimizer from pushing TLP predicates across subquery/JOIN boundaries.
+    oracle_context->setSetting("enable_optimize_predicate_expression", Field(false));
     /// A seed query's `SET aggregate_functions_null_for_empty = 1` would leak
     /// into oracle sub-queries and break NoREC: `count()` over zero input rows
     /// becomes NULL while `countIf` still aggregates every row and returns 0.
@@ -2006,6 +1924,8 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
         {{"optimize_move_to_prewhere", Field(false)}},
         {{"query_plan_remove_redundant_sorting", Field(false)}},
         {{"optimize_rewrite_sum_if_to_count_if", Field(false)}},
+        /// `enable_optimize_predicate_expression` is unconditionally `false` in
+        /// `makeOracleContext`, so toggling it here would be a no-op.
         {{"optimize_if_chain_to_multiif", Field(false)}},
         {{"optimize_if_transform_strings_to_enum", Field(false)}},
         {{"optimize_functions_to_subcolumns", Field(false)}},
@@ -2249,15 +2169,6 @@ bool QueryOracleChecker::checkTLPAggregate(const ASTSelectQuery & select, const 
                 const auto * agg_func = aggregate_ast->as<ASTFunction>();
                 String alias = agg_to_alias[agg_func];
                 auto merge_func = makeASTFunction(agg_func->name + "Merge", make_intrusive<ASTIdentifier>(alias));
-                /// A `-Merge` function takes its parameters from its own call, not from the state.
-                if (agg_func->parameters)
-                {
-                    /// The outer query reads other columns, where an identifier or an asterisk means something else.
-                    if (!isScopeFreeExpression(agg_func->parameters))
-                        return false;
-                    merge_func->parameters = agg_func->parameters->clone();
-                    merge_func->children.push_back(merge_func->parameters);
-                }
                 outer_select_list->children.push_back(std::move(merge_func));
                 is_aggregate = true;
                 break;
@@ -2695,9 +2606,9 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         }
     }
 
-    if (hasNonDeterministicJoinAnywhere(query_ast, context->getSettingsRef()[Setting::join_default_strictness]))
+    if (hasAsofJoinAnywhere(query_ast))
     {
-        LOG_TRACE(logger, "Oracle skip: ASOF or ANY JOIN (the matched row is plan-dependent)");
+        LOG_TRACE(logger, "Oracle skip: ASOF JOIN (tie-breaking is plan-dependent)");
         return false;
     }
 
