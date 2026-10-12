@@ -1,5 +1,6 @@
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/projectionsCommon.h>
 #include <Processors/QueryPlan/Optimizations/useDataParallelAggregation.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -265,6 +266,10 @@ bool optimizePrimaryKeyFilterElimination(
     QueryDAG query;
     if (!query.build(*original_root, /*remove_trivial_wrappers=*/false) || !query.filter_node
         || query.dag->hasNonDeterministic() || query.dag->hasCorrelatedColumns())
+        return false;
+
+    /// Splitting the read changes block boundaries and expression evaluation counts, including inside lambdas.
+    if (isSensitiveToEvaluationCount(*query.dag))
         return false;
 
     NameSet predicate_columns;
