@@ -8,6 +8,7 @@
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
+#include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/QueryPlan.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
@@ -86,7 +87,9 @@ static bool canObserveOnlyTopKRows(const ActionsDAG & dag)
 
 bool dependsOnItsBlock(const ActionsDAG & actions)
 {
-    return actions.hasNonDeterministicOrStatefulFunctions();
+    /// Functions with observable side effects (`sleepEachRow`, ...) count as well: the threshold filter
+    /// changes the set of rows they are evaluated on.
+    return isSensitiveToEvaluationCount(actions);
 }
 
 /// True if a value of this type can contain a floating-point number anywhere inside it - directly,
