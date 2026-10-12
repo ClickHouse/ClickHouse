@@ -1,0 +1,22 @@
+Types: LowCardinality(String) input
+LowCardinality(UInt32)
+LowCardinality(FixedString(16))
+LowCardinality(UInt32)
+LowCardinality(FixedString(16))
+LowCardinality(Nullable(UInt32))
+LowCardinality(Nullable(FixedString(16)))
+Types: LowCardinality(Nullable(String)) input
+LowCardinality(Nullable(UInt32))
+LowCardinality(Nullable(FixedString(16)))
+Non-LowCardinality input stays non-LowCardinality
+UInt32
+Nullable(FixedString(16))
+Values match the plain path
+1
+1
+1
+1
+1
+Over many rows through the fast path
+LowCardinality(UInt32)
+[1,2,1]

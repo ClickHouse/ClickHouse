@@ -373,6 +373,16 @@ public:
 
     bool useDefaultImplementationForConstants() const final { return true; }
     bool useDefaultImplementationForNulls() const final { return false; }
+
+    /// For a `LowCardinality` argument the function runs on the values of its dictionary, which always
+    /// holds the type's default value. A default argument of `dictGetOrDefault` is converted to the
+    /// attribute type, and the type's default value (such as an empty `String` for a numeric attribute)
+    /// may be impossible to convert, though no row uses it.
+    bool canBeExecutedOnDefaultArguments() const override
+    {
+        return dictionary_get_function_type != DictionaryGetFunctionType::getOrDefault;
+    }
+
     ColumnNumbers getArgumentsThatAreAlwaysConstant() const final
     {
         if constexpr (dictionary_get_function_type == DictionaryGetFunctionType::getAll)
@@ -906,6 +916,8 @@ private:
     bool isVariadic() const override { return true; }
 
     bool useDefaultImplementationForConstants() const final { return true; }
+
+    bool canBeExecutedOnDefaultArguments() const override { return impl.canBeExecutedOnDefaultArguments(); }
 
     bool isDeterministic() const override { return false; }
 

@@ -1,0 +1,19 @@
+Fully constant expressions stay String (no LowCardinality for constants)
+x	String
+\N	Nullable(String)
+b	String
+\N	Nullable(String)
+United States	String
+United States	String
+Non-constant condition or input still gets LowCardinality
+x	LowCardinality(String)
+y	LowCardinality(String)
+a	LowCardinality(String)
+b	LowCardinality(String)
+zero	LowCardinality(String)
+one	LowCardinality(String)
+Constant string consumers accept fully constant if/multiIf/transform results
+6
+3
+v
+one

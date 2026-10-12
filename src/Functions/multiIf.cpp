@@ -11,6 +11,7 @@
 #include <Interpreters/castColumn.h>
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
+#include <Columns/IColumn.h>
 #include <Common/VectorWithMemoryTracking.h>
 #include <Interpreters/Context.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -21,15 +22,18 @@
 #include <DataTypes/DataTypeDate32.h>
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeDateTime64.h>
+#include <DataTypes/DataTypeLowCardinality.h>
+#include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypeVariant.h>
 #include <DataTypes/getLeastSupertype.h>
-
 
 namespace DB
 {
 namespace Setting
 {
     extern const SettingsBool allow_execute_multiif_columnar;
+    extern const SettingsBool optimize_if_transform_const_strings_to_lowcardinality;
+    extern const SettingsBool optimize_if_transform_strings_to_enum;
     extern const SettingsBool use_variant_as_common_type;
     extern const SettingsBool allow_lossy_numeric_supertype;
 }
@@ -62,17 +66,28 @@ public:
     static FunctionPtr create(ContextPtr context_)
     {
         const auto & settings = context_->getSettingsRef();
+        /// Mirror FunctionIf::create: the LowCardinality optimisation is disabled when
+        /// `optimize_if_transform_strings_to_enum` is enabled, so that `if` and `multiIf` produce
+        /// the same result type. Otherwise `multiIf` would return `LowCardinality(String)` while a
+        /// flag-less `if` returns `String`, and `MultiIfToIfPass` could no longer rewrite `multiIf` to `if`.
+        const bool use_low_cardinality_optimisation = settings[Setting::optimize_if_transform_const_strings_to_lowcardinality]
+            && !settings[Setting::optimize_if_transform_strings_to_enum];
         return std::make_shared<FunctionMultiIf>(
             settings[Setting::allow_execute_multiif_columnar],
             settings[Setting::use_variant_as_common_type],
-            settings[Setting::allow_lossy_numeric_supertype]);
+            settings[Setting::allow_lossy_numeric_supertype],
+            use_low_cardinality_optimisation);
     }
 
     explicit FunctionMultiIf(
-        bool allow_execute_multiif_columnar_, bool use_variant_as_common_type_, bool allow_lossy_numeric_supertype_ = false)
+        bool allow_execute_multiif_columnar_,
+        bool use_variant_as_common_type_,
+        bool allow_lossy_numeric_supertype_ = false,
+        bool optimize_if_transform_const_strings_to_lowcardinality_ = false)
         : allow_execute_multiif_columnar(allow_execute_multiif_columnar_)
         , use_variant_as_common_type(use_variant_as_common_type_)
         , allow_lossy_numeric_supertype(allow_lossy_numeric_supertype_)
+        , optimize_if_transform_const_strings_to_lowcardinality(optimize_if_transform_const_strings_to_lowcardinality_)
     {}
 
     String getName() const override { return name; }
@@ -86,6 +101,7 @@ public:
     }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
     size_t getNumberOfArguments() const override { return 0; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
     bool useDefaultImplementationForNulls() const override { return false; }
     bool useDefaultImplementationForNothing() const override { return false; }
     bool canBeExecutedOnLowCardinalityDictionary() const override { return false; }
@@ -98,10 +114,9 @@ public:
         return args;
     }
 
-    DataTypePtr getReturnTypeImpl(const DataTypes & args) const override
+    DataTypePtr getReturnTypeImpl(const ColumnsWithTypeAndName & args) const override
     {
         /// Arguments are the following: cond1, then1, cond2, then2, ... condN, thenN, else.
-
         auto for_conditions = [&args](auto && f)
         {
             size_t conditions_end = args.size() - 1;
@@ -120,34 +135,157 @@ public:
         if (!(args.size() >= 3 && args.size() % 2 == 1))
             throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Invalid number of arguments for function {}", getName());
 
-        for_conditions([&](const DataTypePtr & arg)
+        size_t const_branches_count = 0;
+        size_t string_branches_count = 0;
+        size_t nullable_string_branches_count = 0;
+        size_t non_null_string_value_branches_count = 0;
+        size_t only_null_branches_count = 0;
+        /// Whether a constant prefix of the conditions already determines which branch is selected,
+        /// mirroring the way `executeImpl` walks the conditions: it skips the always-false ones and
+        /// stops at the first always-true one. It is not enough for *all* conditions to be constant -
+        /// a constant prefix is already sufficient, e.g. in `multiIf(1, 'max', number = 1, 'sum', 'avg')`
+        /// the first branch is always selected. If no condition is left to evaluate at runtime, the whole
+        /// expression (with all branches constant) folds into a single constant value.
+        auto is_selected_branch_decided_by_constants = [&args]()
         {
-            const IDataType * nested_type = nullptr;
-            if (arg->isNullable())
+            size_t conditions_end = args.size() - 1;
+            for (size_t i = 0; i < conditions_end; i += 2)
             {
-                if (arg->onlyNull())
+                const auto & condition = args[i];
+                /// A condition whose type is `Nullable(Nothing)` is always NULL and never true -
+                /// `executeImpl` skips it - even when it is not a constant (e.g. `materialize(NULL)`),
+                /// so it can be skipped from the type alone, without a column.
+                if (condition.type->onlyNull())
+                    continue;
+
+                if (!condition.column)
+                    return false;
+
+                const auto condition_column = condition.column->convertToFullColumnIfLowCardinality();
+                /// An always-NULL condition is never true - `executeImpl` skips it.
+                if (condition_column->onlyNull())
+                    continue;
+
+                const auto * condition_const_column = checkAndGetColumn<ColumnConst>(&*condition_column);
+                if (!condition_const_column)
+                    return false;
+
+                const Field value = condition_const_column->getField();
+                /// A constant false or NULL condition is skipped, a constant true one selects its branch.
+                if (value.isNull() || value.safeGet<UInt64>() == 0)
+                    continue;
+                return true;
+            }
+            /// Every condition is constant and false - the `else` branch is selected.
+            return true;
+        };
+
+        /// Whether every branch is the same constant value. Then the result is that value regardless of the
+        /// conditions, which `if` also recognises (see the identical-branch fast path in `if.cpp` returning a
+        /// `ColumnConst`). `if` therefore keeps plain `String` for `if(cond, x, x)`, so `multiIf` has to do the
+        /// same: otherwise the result types diverge, `MultiIfToIfPass` (which rewrites only when they match)
+        /// silently stops rewriting `multiIf(cond, x, x)`, and consumers of constant string arguments such as
+        /// `arrayReduce` no longer receive a `Const(String)`.
+        auto are_all_branches_identical_constants = [&for_branches]()
+        {
+            const ColumnWithTypeAndName * first_branch = nullptr;
+            bool identical = true;
+            for_branches([&](const ColumnWithTypeAndName & arg)
+            {
+                if (!identical)
                     return;
 
-                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg);
+                if (!arg.column || !isColumnConst(*arg.column))
+                {
+                    identical = false;
+                    return;
+                }
+
+                if (!first_branch)
+                {
+                    first_branch = &arg;
+                    return;
+                }
+
+                if (!recursiveRemoveLowCardinality(first_branch->type)->equals(*recursiveRemoveLowCardinality(arg.type))
+                    || (*first_branch->column)[0] != (*arg.column)[0])
+                    identical = false;
+            });
+            return identical;
+        };
+
+        for_conditions([&](const ColumnWithTypeAndName & arg)
+        {
+            const auto & arg_type = recursiveRemoveLowCardinality(arg.type);
+            const IDataType * nested_type = nullptr;
+            if (arg_type->isNullable())
+            {
+                if (arg_type->onlyNull())
+                    return;
+
+                const DataTypeNullable & nullable_type = static_cast<const DataTypeNullable &>(*arg_type);
                 nested_type = nullable_type.getNestedType().get();
             }
             else
             {
-                nested_type = arg.get();
+                nested_type = arg_type.get();
             }
 
             if (!WhichDataType(nested_type).isUInt8())
                 throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Illegal type {} of argument (condition) of function {}. "
-                    "Must be UInt8.", arg->getName(), getName());
+                    "Must be UInt8.", arg_type->getName(), getName());
         });
 
         DataTypes types_of_branches;
         types_of_branches.reserve(args.size() / 2 + 1);
 
-        for_branches([&](const DataTypePtr & arg)
+        for_branches([&](const ColumnWithTypeAndName & arg)
         {
-            types_of_branches.emplace_back(arg);
+            /// Compute the common type on LowCardinality-stripped branch types, restoring the contract
+            /// of the default LowCardinality implementation this function opted out of (see
+            /// `useDefaultImplementationForLowCardinalityColumns` above). Otherwise an explicit
+            /// `LowCardinality` branch would leak into the result type (e.g. as
+            /// `Variant(..., LowCardinality(String), ...)` with `use_variant_as_common_type`),
+            /// diverging from `if`, whose default implementation strips it. The strip has to be
+            /// recursive, like `convertLowCardinalityColumnsToFull` in the default implementation:
+            /// a nested carrier such as `Map(String, LowCardinality(String))` must become
+            /// `Map(String, String)` as well.
+            const auto branch_type = recursiveRemoveLowCardinality(arg.type);
+            const bool is_const_branch = arg.column && isColumnConst(*arg.column);
+            const bool is_string_branch = isString(branch_type);
+            const bool is_nullable_string_branch = branch_type->isNullable() && isString(removeNullable(branch_type));
+            const_branches_count += is_const_branch;
+            string_branches_count += is_string_branch;
+            nullable_string_branches_count += is_nullable_string_branch;
+            non_null_string_value_branches_count
+                += is_string_branch || (is_nullable_string_branch && is_const_branch && !arg.column->isNullAt(0));
+            only_null_branches_count += branch_type->onlyNull();
+            types_of_branches.emplace_back(branch_type);
         });
+
+        auto const num_branches = types_of_branches.size();
+
+        /// If the selected branch is decided by constant conditions too, the whole expression is constant and gets
+        /// folded into a single `Const(LowCardinality(String))` value. `LowCardinality` gives no benefit for a
+        /// constant, and functions that opt out of the default LowCardinality implementation (e.g. `arrayReduce`,
+        /// `joinGet`, `tupleElement`) expect their constant string arguments as `Const(String)`, so keep plain
+        /// `String` then.
+        if (optimize_if_transform_const_strings_to_lowcardinality && const_branches_count == num_branches
+            && !is_selected_branch_decided_by_constants() && !are_all_branches_identical_constants())
+        {
+            if (string_branches_count == num_branches)
+                return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>());
+            /// A mix of (possibly nullable) string branches and only-NULL branches.
+            /// Require at least one constant branch whose value is a non-NULL string: a mix of only-NULL
+            /// branches without any string (e.g. `CASE WHEN ... THEN NULL ... END`) must keep its
+            /// `Nullable(Nothing)` common type, and a typed all-NULL case (every `Nullable(String)`
+            /// branch holding a NULL constant) must keep plain `Nullable(String)` - there is no
+            /// dictionary-compression benefit when no actual string value exists.
+            else if (
+                non_null_string_value_branches_count > 0
+                && (only_null_branches_count + string_branches_count + nullable_string_branches_count) == num_branches)
+                return std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeNullable>(std::make_shared<DataTypeString>()));
+        }
 
         if (use_variant_as_common_type)
             return getLeastSupertypeOrVariant(types_of_branches, allow_lossy_numeric_supertype);
@@ -222,7 +360,22 @@ public:
                 }
             }
 
-            const ColumnWithTypeAndName & source_col = arguments[source_idx];
+            ColumnWithTypeAndName source_col = arguments[source_idx];
+            /// The common type is computed on LowCardinality-stripped branch types (see getReturnTypeImpl).
+            /// When it is not LowCardinality itself, convert a LowCardinality branch to its full column -
+            /// as the default LowCardinality implementation did before this function opted out of it -
+            /// since castColumn cannot cast e.g. LowCardinality(String) to a Variant that only
+            /// contains String. The check and the strip are recursive so that nested carriers like
+            /// `Map(String, LowCardinality(String))` are normalized too, matching getReturnTypeImpl.
+            if (!return_type->lowCardinality())
+            {
+                auto full_type = recursiveRemoveLowCardinality(source_col.type);
+                if (full_type.get() != source_col.type.get())
+                {
+                    source_col.column = recursiveRemoveLowCardinality(source_col.column);
+                    source_col.type = std::move(full_type);
+                }
+            }
             if (source_col.type->equals(*return_type))
             {
                 instruction.source = source_col.column;
@@ -540,6 +693,7 @@ private:
     const bool allow_execute_multiif_columnar;
     const bool use_variant_as_common_type;
     const bool allow_lossy_numeric_supertype;
+    const bool optimize_if_transform_const_strings_to_lowcardinality;
 };
 
 }
@@ -604,9 +758,16 @@ FROM LEFT_RIGHT;
     factory.registerAlias("caseWithoutExpression", "multiIf");
 }
 
-FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(bool allow_execute_multiif_columnar, bool use_variant_as_common_type, bool allow_lossy_numeric_supertype)
+FunctionOverloadResolverPtr createInternalMultiIfOverloadResolver(
+    bool allow_execute_multiif_columnar,
+    bool use_variant_as_common_type,
+    bool allow_lossy_numeric_supertype,
+    bool optimize_if_transform_const_strings_to_lowcardinality)
 {
-    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(allow_execute_multiif_columnar, use_variant_as_common_type, allow_lossy_numeric_supertype));
+    return std::make_unique<FunctionToOverloadResolverAdaptor>(std::make_shared<FunctionMultiIf>(
+        allow_execute_multiif_columnar,
+        use_variant_as_common_type,
+        allow_lossy_numeric_supertype,
+        optimize_if_transform_const_strings_to_lowcardinality));
 }
-
 }
