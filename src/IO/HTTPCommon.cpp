@@ -111,8 +111,8 @@ Strings requestCredentialSecrets(const Poco::Net::HTTPRequest & request)
     /// Only a bearer token is recoverable from the header, and it is a secret as a whole. A `Basic`
     /// header holds base64 of `user:password` and is deliberately not decoded here: its value is
     /// user input whenever it came from `headers()`, decoding throws on anything outside the base64
-    /// alphabet, and the user name of a pair is an identifier rather than a credential. A caller
-    /// that authenticated the request itself adds the plain text it holds.
+    /// alphabet, and the user name of a pair is an identifier rather than a credential. A password
+    /// is therefore not scrubbed from a response body; no peer is known to echo one back.
     if (Poco::icompare(scheme, "Bearer") == 0 && !auth_info.empty())
         return {auth_info};
 
