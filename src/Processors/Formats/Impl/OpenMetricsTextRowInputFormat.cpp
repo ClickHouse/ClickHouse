@@ -567,15 +567,23 @@ void OpenMetricsTextRowInputFormat::parseAll()
         const auto meta_it = family_meta.find(metric_family);
         const FamilyMeta & fm = (meta_it == family_meta.end()) ? empty_meta : meta_it->second;
 
-        /// Histogram buckets must carry `le` and bare summary samples `quantile` (the same rule the writer
-        /// enforces), otherwise the sample is indistinguishable from an unrelated series.
+        /// Histogram buckets must carry a valid `le` and bare summary samples a valid `quantile` (the same
+        /// rule the writer enforces), otherwise the sample is indistinguishable from an unrelated series.
         if (metric_family.size() <= stem.size() && stem.starts_with(metric_family))
         {
             const std::string_view suffix = std::string_view{stem}.substr(metric_family.size());
-            if (const char * boundary = OpenMetricsText::requiredBoundaryLabel(fm.type, suffix);
-                boundary && !labels.contains(boundary))
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "OpenMetrics {} sample '{}' is missing the '{}' label", fm.type, stem, boundary);
+            if (const char * boundary = OpenMetricsText::requiredBoundaryLabel(fm.type, suffix))
+            {
+                const auto boundary_it = labels.find(boundary);
+                if (boundary_it == labels.end())
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "OpenMetrics {} sample '{}' is missing the '{}' label", fm.type, stem, boundary);
+                double boundary_value = 0;
+                if (!OpenMetricsText::tryParseBoundaryValue(boundary, boundary_it->second, boundary_value))
+                    throw Exception(ErrorCodes::INCORRECT_DATA,
+                        "OpenMetrics {} sample '{}' has an invalid '{}' label value '{}'",
+                        fm.type, stem, boundary, boundary_it->second);
+            }
         }
 
         /// `std::map` iterates in sorted label-name order, giving a deterministic, canonical tag order.

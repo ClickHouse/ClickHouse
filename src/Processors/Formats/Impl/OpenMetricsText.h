@@ -3,10 +3,13 @@
 #include <base/types.h>
 #include <base/arithmeticOverflow.h>
 #include <Common/Exception.h>
+#include <IO/ReadBufferFromString.h>
 #include <IO/WriteHelpers.h>
+#include <IO/readFloatText.h>
 
 #include <algorithm>
 #include <array>
+#include <cmath>
 #include <cstddef>
 #include <limits>
 #include <string>
@@ -262,6 +265,26 @@ inline bool isStrictRealNumberToken(std::string_view token)
     }
 
     return i == token.size();
+}
+
+/// Parses the value of a boundary label returned by `requiredBoundaryLabel`. A histogram `le` must be
+/// a finite real number or `+Inf` (never `NaN`), and a summary `quantile` a real number in `[0, 1]`.
+/// The real-number path uses the strict `realnumber` grammar. Returns false for an invalid value.
+inline bool tryParseBoundaryValue(std::string_view label, std::string_view value, double & out)
+{
+    if (label == "le" && value == "+Inf")
+    {
+        out = std::numeric_limits<double>::infinity();
+        return true;
+    }
+    if (!isStrictRealNumberToken(value))
+        return false;
+    ReadBufferFromString buf(value);
+    if (!tryReadFloatTextPrecise(out, buf) || !buf.eof() || !std::isfinite(out))
+        return false;
+    if (label == "quantile")
+        return out >= 0 && out <= 1;
+    return true;
 }
 
 /// Rescale a raw `DateTime64` value between decimal scales (`DateTime64` scales are at most 9, so the

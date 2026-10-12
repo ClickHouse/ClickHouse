@@ -4,8 +4,10 @@
 
 #include <algorithm>
 #include <cmath>
+#include <map>
 #include <optional>
 #include <set>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -294,10 +296,20 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
 
     /// For the types with a suffix rule (counter, histogram, gaugehistogram, summary, info), each sample
     /// name must be the family name plus one of the type's suffixes, which is the same table the reader
-    /// uses to fold samples back into their family. Histogram buckets must also carry `le`, and bare
-    /// summary samples `quantile`.
+    /// uses to fold samples back into their family. Histogram buckets must also carry a valid `le`, and
+    /// bare summary samples a valid `quantile`.
     if (const auto * suffixes = OpenMetricsText::familySampleSuffixes(current_family.type))
     {
+        /// The canonical position of each series within the family, used below to order the samples.
+        struct SortKey
+        {
+            std::vector<std::pair<String, String>> labels; /// sorted labels without the boundary label
+            size_t suffix_rank = 0;                        /// index of the suffix in `familySampleSuffixes`
+            double boundary = 0;                           /// value of `le` / `quantile`, if required
+        };
+        std::vector<SortKey> keys;
+        keys.reserve(current_family.series.size());
+
         for (const auto & series : current_family.series)
         {
             const std::string_view name = series.metric_name;
@@ -311,16 +323,54 @@ void OpenMetricsTextOutputFormat::flushCurrentFamily()
                     "OpenMetrics {} sample '{}' is not a valid sample name of metric family '{}' for output format '{}'",
                     current_family.type, series.metric_name, current_family.name, FORMAT_NAME);
 
-            if (const char * boundary = OpenMetricsText::requiredBoundaryLabel(current_family.type, *it))
+            SortKey key;
+            key.suffix_rank = static_cast<size_t>(it - suffixes->begin());
+            const char * boundary = OpenMetricsText::requiredBoundaryLabel(current_family.type, *it);
+            if (boundary)
             {
-                const bool has_boundary = std::any_of(series.tags.begin(), series.tags.end(),
+                const auto boundary_it = std::find_if(series.tags.begin(), series.tags.end(),
                     [&](const auto & tag) { return tag.first == boundary; });
-                if (!has_boundary)
+                if (boundary_it == series.tags.end())
                     throw Exception(ErrorCodes::BAD_ARGUMENTS,
                         "OpenMetrics {} sample '{}' is missing the '{}' label for output format '{}'",
                         current_family.type, series.metric_name, boundary, FORMAT_NAME);
+                if (!OpenMetricsText::tryParseBoundaryValue(boundary, boundary_it->second, key.boundary))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                        "OpenMetrics {} sample '{}' has an invalid '{}' label value '{}' for output format '{}'",
+                        current_family.type, series.metric_name, boundary, boundary_it->second, FORMAT_NAME);
             }
+            for (const auto & tag : series.tags)
+                if (!boundary || tag.first != boundary)
+                    key.labels.push_back(tag);
+            std::sort(key.labels.begin(), key.labels.end());
+            keys.push_back(std::move(key));
         }
+
+        /// OpenMetrics orders the samples of a metric point: histogram buckets by increasing `le` and
+        /// summary quantiles by increasing `quantile`, followed by the other samples in the suffix order
+        /// (`_count`, `_sum`, `_created`, ...). Sort the series accordingly, keeping the series of one label
+        /// set together in the order the label sets first appear, so the output does not depend on how the
+        /// query orders e.g. `le="+Inf"` and `le="1"`.
+        std::map<std::vector<std::pair<String, String>>, size_t> label_set_rank;
+        for (const auto & key : keys)
+            label_set_rank.try_emplace(key.labels, label_set_rank.size());
+
+        std::vector<size_t> order(current_family.series.size());
+        for (size_t i = 0; i < order.size(); ++i)
+            order[i] = i;
+        std::stable_sort(order.begin(), order.end(), [&](size_t lhs, size_t rhs)
+        {
+            const auto & l = keys[lhs];
+            const auto & r = keys[rhs];
+            return std::tuple(label_set_rank.at(l.labels), l.suffix_rank, l.boundary)
+                < std::tuple(label_set_rank.at(r.labels), r.suffix_rank, r.boundary);
+        });
+
+        std::vector<Series> sorted;
+        sorted.reserve(order.size());
+        for (size_t i : order)
+            sorted.push_back(std::move(current_family.series[i]));
+        current_family.series = std::move(sorted);
     }
 
     /// Validate every label value before emitting any bytes, so a malformed value (a tab or other
@@ -546,7 +596,8 @@ Point timestamps are carried as `DateTime64` inside the `samples` tuple. OpenMet
 The writer enforces the [OpenMetrics 1.0](https://prometheus.io/docs/specs/om/open_metrics_spec/) structural rules, raising `BAD_ARGUMENTS` when a row cannot be represented conformantly:
 
 - **Metric type vocabulary.** `type` must be one of `unknown`, `gauge`, `counter`, `stateset`, `info`, `histogram`, `gaugehistogram`, `summary`, or empty. The Prometheus spelling `untyped` is normalized to `unknown` on both input and output.
-- **Sample names.** For the types with a suffix rule, each sample name must be the family name plus one of the type's suffixes: `_total` or `_created` for `counter`; `_bucket`, `_count`, `_sum`, or `_created` for `histogram`; `_bucket`, `_gcount`, `_gsum`, or `_created` for `gaugehistogram`; no suffix, `_count`, `_sum`, or `_created` for `summary`; `_info` for `info`. A `counter` family name must not end with `_total`: the suffix lives on `metric_name`, never on `metric_family`. Histogram `_bucket` samples must carry an `le` label, and bare `summary` samples a `quantile` label.
+- **Sample names.** For the types with a suffix rule, each sample name must be the family name plus one of the type's suffixes: `_total` or `_created` for `counter`; `_bucket`, `_count`, `_sum`, or `_created` for `histogram`; `_bucket`, `_gcount`, `_gsum`, or `_created` for `gaugehistogram`; no suffix, `_count`, `_sum`, or `_created` for `summary`; `_info` for `info`. A `counter` family name must not end with `_total`: the suffix lives on `metric_name`, never on `metric_family`. Histogram `_bucket` samples must carry an `le` label (a real number or `+Inf`, not `NaN`), and bare `summary` samples a `quantile` label (a real number in `[0, 1]`).
+- **Sample order.** Within a `histogram`, `gaugehistogram`, or `summary` family, the series of each label set are kept together, buckets are sorted by increasing `le` and quantiles by increasing `quantile`, and they are followed by the other samples in the order `_count` (`_gcount`), `_sum` (`_gsum`), `_created`. The writer establishes this order itself, so the query only has to keep each family contiguous.
 - **Unit suffix rule.** When `unit` is set, `metric_family` must end with `_<unit>`.
 - **Exposition structure.** `# HELP`/`# TYPE`/`# UNIT` are emitted at most once per family; there are no blank lines between families; the stream ends with `# EOF`.
 
@@ -565,7 +616,7 @@ The reader accepts Prometheus-style exposition: it normalizes `untyped` → `unk
 
 ### Input validation {#input-validation}
 
-Malformed exposition raises `INCORRECT_DATA`, including duplicate label keys, invalid or empty metric/label names (also in `# HELP`, `# TYPE`, and `# UNIT` lines), a `# TYPE` that is not in the metric type vocabulary, raw control characters inside a quoted label value, whitespace between a metric name and its `{labels}` block, a missing ASCII space or tab between the metric descriptor and sample value, float tokens that are not fully consumed, invalid timestamp or exemplar tokens (OpenMetrics `realnumber` grammar), timestamps whose value overflows the target `Int64`, trailing characters after the value or timestamp on a sample line, invalid exemplar syntax after `#`, a histogram `_bucket` sample without an `le` label, a duplicate `# HELP`/`# TYPE`/`# UNIT` for the same family, a descriptor that follows the family's samples, a `# EOF` line with extra non-whitespace on the same line, and any non-blank content after a valid `# EOF` line.
+Malformed exposition raises `INCORRECT_DATA`, including duplicate label keys, invalid or empty metric/label names (also in `# HELP`, `# TYPE`, and `# UNIT` lines), a `# TYPE` that is not in the metric type vocabulary, raw control characters inside a quoted label value, whitespace between a metric name and its `{labels}` block, a missing ASCII space or tab between the metric descriptor and sample value, float tokens that are not fully consumed, invalid timestamp or exemplar tokens (OpenMetrics `realnumber` grammar), timestamps whose value overflows the target `Int64`, trailing characters after the value or timestamp on a sample line, invalid exemplar syntax after `#`, a histogram `_bucket` sample without a valid `le` label, a bare `summary` sample without a valid `quantile` label, a duplicate `# HELP`/`# TYPE`/`# UNIT` for the same family, a descriptor that follows the family's samples, a `# EOF` line with extra non-whitespace on the same line, and any non-blank content after a valid `# EOF` line.
 
 On **output**, label values are quoted with OpenMetrics-specific escaping (`\\`, `\"`, and `\n` only); other control characters in a label value raise `BAD_ARGUMENTS`, as do duplicate keys within one series' `tags` and invalid metric/label names.
 
