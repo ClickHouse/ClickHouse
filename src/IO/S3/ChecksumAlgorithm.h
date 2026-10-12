@@ -6,13 +6,13 @@
 #include <string>
 #include <string_view>
 
-/// Upload checksum algorithm for S3 requests, plus the pure (AWS-SDK-free) helpers that
+/// Upload and delete checksum algorithm for S3 requests, plus the pure (AWS-SDK-free) helpers that
 /// operate on it. Kept separate from `Requests.h` so it can be used from translation units
 /// that are compiled without `USE_AWS_S3` (e.g. `S3RequestSettings.cpp`).
 namespace DB::S3::RequestChecksum
 {
 
-/// The enum member names ARE the accepted `upload_checksum_algorithm` setting spellings,
+/// The enum member names ARE the accepted `upload_checksum_algorithm` and `delete_checksum_algorithm` setting spellings,
 /// so this enum is the single source of truth: parsing and validation derive from it via
 /// `magic_enum`, with no separate hand-maintained list of names that could drift out of sync.
 enum class Algorithm

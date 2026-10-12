@@ -6,9 +6,14 @@
 #include <Common/UnorderedSetWithMemoryTracking.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
+#include <IO/S3RequestSettings.h>
 #include <Common/BlobStorageLogWriter.h>
 #include <IO/S3/S3Capabilities.h>
 #include <IO/S3/getObjectInfo.h>
+
+#include <base/EnumReflection.h>
+
+#include <mutex>
 
 
 namespace ProfileEvents
@@ -83,6 +88,7 @@ void deleteFilesFromS3(
     const Strings & keys,
     bool if_exists,
     S3Capabilities & s3_capabilities,
+    const S3::S3RequestSettings & request_settings,
     size_t batch_size,
     BlobStorageLogWriterPtr blob_storage_log,
     const Strings & local_paths_for_blob_storage_log,
@@ -113,6 +119,31 @@ void deleteFilesFromS3(
 
     if (try_batch_delete)
     {
+        /// `GCS` rejects the `x-amz-checksum-*` headers and has no `DeleteObjects` anyway, so it keeps the SDK default.
+        const bool use_checksum_header = !s3_client->isClientForGCS();
+        const bool explicit_checksum_algorithm = S3::RequestChecksum::hasExplicitDeleteChecksumAlgorithm(request_settings);
+
+        /// Throws for an explicit algorithm that cannot work (`MD5` under FIPS or on `S3Express`): fail closed.
+        std::optional<S3::RequestChecksum::Algorithm> checksum_algorithm;
+        if (use_checksum_header)
+        {
+            checksum_algorithm = S3::RequestChecksum::getDeleteChecksumAlgorithm(
+                request_settings, s3_client->isS3ExpressBucket(), s3_capabilities.isDeleteMD5Rejected());
+
+            if (*checksum_algorithm == S3::RequestChecksum::Algorithm::SHA256 && !explicit_checksum_algorithm
+                && !s3_client->isS3ExpressBucket())
+            {
+                static std::once_flag log_once;
+                std::call_once(log_once, [&]
+                {
+                    LOG_INFO(log, "Using a SHA256 checksum for DeleteObjects instead of Content-MD5, because MD5 is unavailable "
+                             "or was rejected by the server. Set `delete_checksum_algorithm` to choose explicitly");
+                });
+            }
+            LOG_TRACE(log, "DeleteObjects checksum algorithm: {} ({})", magic_enum::enum_name(*checksum_algorithm),
+                      explicit_checksum_algorithm ? "explicit setting" : "automatic");
+        }
+
         bool need_retry_with_plain_delete_object = false;
         size_t current_position = 0;
 
@@ -136,16 +167,47 @@ void deleteFilesFromS3(
             delkeys.SetObjects(current_chunk);
             delkeys.SetQuiet(true);
 
-            S3::DeleteObjectsRequest request;
-            request.SetBucket(bucket);
-            request.SetDelete(delkeys);
+            auto send_delete_objects = [&]
+            {
+                S3::DeleteObjectsRequest request;
+                request.SetBucket(bucket);
+                request.SetDelete(delkeys);
+                if (checksum_algorithm)
+                    request.setUploadChecksumAlgorithm(*checksum_algorithm);
 
-            ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
-            if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
-                ProfileEvents::increment(*profile_event);
+                ProfileEvents::increment(ProfileEvents::S3DeleteObjects);
+                if (profile_event && *profile_event != ProfileEvents::S3DeleteObjects)
+                    ProfileEvents::increment(*profile_event);
+
+                return s3_client->DeleteObjects(request);
+            };
 
             Stopwatch watch;
-            auto outcome = s3_client->DeleteObjects(request);
+            auto outcome = send_delete_objects();
+
+            /// With the automatic default (`MD5`), a server that rejects the digest gets one retry of the same batch
+            /// with `SHA256`. The outcome is remembered so later batches start with `SHA256`. An explicit algorithm
+            /// is never replaced.
+            if (!outcome.IsSuccess() && use_checksum_header && !explicit_checksum_algorithm
+                && checksum_algorithm == S3::RequestChecksum::Algorithm::MD5 && !s3_client->isS3ExpressBucket())
+            {
+                const auto & err = outcome.GetError();
+                const auto & error_name = err.GetExceptionName();
+                if (error_name == "MissingContentMD5" || error_name == "InvalidDigest" || error_name == "InvalidRequest"
+                    || error_name == "InvalidArgument")
+                {
+                    if (s3_capabilities.setDeleteMD5Rejected())
+                        LOG_WARNING(log, "DeleteObjects with Content-MD5 was rejected: {} ({}). Retrying with a SHA256 checksum, "
+                                    "and using it for later batches. Set `delete_checksum_algorithm` to choose explicitly",
+                                    err.GetMessage(), error_name);
+                    else
+                        LOG_DEBUG(log, "DeleteObjects with Content-MD5 was rejected: {} ({}). Retrying with a SHA256 checksum",
+                                  err.GetMessage(), error_name);
+
+                    checksum_algorithm = S3::RequestChecksum::Algorithm::SHA256;
+                    outcome = send_delete_objects();
+                }
+            }
             auto elapsed = watch.elapsedMicroseconds();
 
             if (blob_storage_log)

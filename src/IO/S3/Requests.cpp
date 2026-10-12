@@ -28,6 +28,7 @@ namespace ErrorCodes
 namespace DB::S3RequestSetting
 {
     extern const S3RequestSettingsString upload_checksum_algorithm;
+    extern const S3RequestSettingsString delete_checksum_algorithm;
 }
 
 namespace DB::S3
@@ -70,6 +71,52 @@ RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3R
     /// checksum header - the pre-flexible-checksum behavior, which is kept as the default because support for
     /// `x-amz-checksum-*` outside AWS is inconsistent. Set the setting explicitly to attach one.
     return RequestChecksum::Algorithm::MD5;
+}
+
+bool RequestChecksum::hasExplicitDeleteChecksumAlgorithm(const S3RequestSettings & request_settings)
+{
+    return !request_settings[DB::S3RequestSetting::delete_checksum_algorithm].value.empty();
+}
+
+RequestChecksum::Algorithm RequestChecksum::getDeleteChecksumAlgorithm(
+    const S3RequestSettings & request_settings, bool is_s3express_bucket, bool md5_rejected_by_server)
+{
+    const auto md5_available = OpenSSLInitializer::instance().isMD5Available();
+
+    const auto & name = request_settings[DB::S3RequestSetting::delete_checksum_algorithm].value;
+    if (!name.empty())
+    {
+        const auto algorithm = tryParse(name);
+        if (!algorithm)
+            throw Exception(
+                ErrorCodes::INVALID_SETTING_VALUE,
+                "Setting delete_checksum_algorithm has invalid value {} which only supports {}",
+                name, supportedAlgorithms());
+
+        if (*algorithm == Algorithm::MD5)
+        {
+            if (is_s3express_bucket)
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting delete_checksum_algorithm cannot be MD5 for S3Express buckets, "
+                    "which require a flexible checksum; use CRC32 or SHA256");
+            if (!md5_available)
+                throw Exception(
+                    ErrorCodes::INVALID_SETTING_VALUE,
+                    "Setting delete_checksum_algorithm cannot be MD5 because the MD5 digest is not available (FIPS mode?); "
+                    "use CRC32 or SHA256");
+        }
+        return *algorithm;
+    }
+
+    if (is_s3express_bucket)
+        return Algorithm::CRC32; /// flexible checksum is mandatory, `Content-MD5` not accepted
+
+    /// `DeleteObjects` cannot go without a digest, and without `MD5` the SDK would silently omit the header.
+    if (!md5_available || md5_rejected_by_server)
+        return Algorithm::SHA256;
+
+    return Algorithm::MD5;
 }
 
 namespace

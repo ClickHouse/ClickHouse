@@ -22,6 +22,7 @@
 #include <aws/core/client/RetryStrategy.h>
 #include <aws/core/http/URI.h>
 
+#include <Common/Crypto/OpenSSLInitializer.h>
 #include <Common/RemoteHostFilter.h>
 #include <IO/ReadBufferFromS3.h>
 #include <IO/ReadHelpers.h>
@@ -29,9 +30,12 @@
 #include <IO/WriteBufferFromS3.h>
 #include <IO/S3Common.h>
 #include <IO/S3/Client.h>
+#include <IO/S3/Requests.h>
+#include <Common/Exception.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/S3Settings.h>
+#include <IO/S3RequestSettings.h>
 #include <Poco/Util/ServerApplication.h>
 
 #include <IO/S3/tests/TestPocoHTTPServer.h>
@@ -40,6 +44,7 @@ namespace DB::S3RequestSetting
 {
     extern const S3RequestSettingsUInt64 max_single_read_retries;
     extern const S3RequestSettingsUInt64 max_unexpected_write_error_retries;
+    extern const S3RequestSettingsString delete_checksum_algorithm;
 }
 
 /*
@@ -127,6 +132,30 @@ static void doWriteRequest(std::shared_ptr<const DB::S3::Client> client, const D
 }
 
 using RequestFn = std::function<void(std::shared_ptr<const DB::S3::Client>, const DB::S3::URI &)>;
+
+/// Sends a `DeleteObjects` request the way `deleteFilesFromS3` does. The test server answers with an empty `200`,
+/// which `deleteFilesFromS3` would reject, so the request is built and sent directly.
+static RequestFn makeDeleteObjectsRequest(const String & delete_checksum_algorithm)
+{
+    return [delete_checksum_algorithm](std::shared_ptr<const DB::S3::Client> client, const DB::S3::URI & uri)
+    {
+        DB::S3::S3RequestSettings request_settings;
+        if (!delete_checksum_algorithm.empty())
+            request_settings[DB::S3RequestSetting::delete_checksum_algorithm] = delete_checksum_algorithm;
+
+        Aws::S3::Model::ObjectIdentifier object;
+        object.SetKey(uri.key);
+        Aws::S3::Model::Delete to_delete;
+        to_delete.AddObjects(object);
+
+        DB::S3::DeleteObjectsRequest request;
+        request.SetBucket(uri.bucket);
+        request.SetDelete(to_delete);
+        request.setUploadChecksumAlgorithm(DB::S3::RequestChecksum::getDeleteChecksumAlgorithm(request_settings, client->isS3ExpressBucket(), /*md5_rejected_by_server=*/false));
+
+        (void)client->DeleteObjects(request);
+    };
+}
 
 static void testServerSideEncryption(
     RequestFn do_request,
@@ -317,6 +346,98 @@ TEST(IOTestAwsS3Client, ChecksumHeaderIsPresentForS3Express)
         "x-amz-meta-clickhouse-idempotency-id;"
         "x-amz-sdk-checksum-algorithm, ...\n",
         /*is_s3express_bucket=*/true);
+}
+
+TEST(IOTestAwsS3Client, DeleteObjectsSendsRequestedChecksum)
+{
+    testServerSideEncryption(
+        makeDeleteObjectsRequest("CRC32"),
+        "",
+        {},
+        "authorization: ... SignedHeaders="
+        "amz-sdk-invocation-id;"
+        "amz-sdk-request;"
+        "content-length;"
+        "content-type;"
+        "host;"
+        "x-amz-api-version;"
+        "x-amz-checksum-crc32;"
+        "x-amz-content-sha256;"
+        "x-amz-date;"
+        "x-amz-sdk-checksum-algorithm, ...\n");
+
+    testServerSideEncryption(
+        makeDeleteObjectsRequest("SHA256"),
+        "",
+        {},
+        "authorization: ... SignedHeaders="
+        "amz-sdk-invocation-id;"
+        "amz-sdk-request;"
+        "content-length;"
+        "content-type;"
+        "host;"
+        "x-amz-api-version;"
+        "x-amz-checksum-sha256;"
+        "x-amz-content-sha256;"
+        "x-amz-date;"
+        "x-amz-sdk-checksum-algorithm, ...\n");
+}
+
+TEST(IOTestAwsS3Client, DeleteChecksumAlgorithmSelection)
+{
+    using DB::S3::RequestChecksum::Algorithm;
+    using DB::S3::RequestChecksum::getDeleteChecksumAlgorithm;
+
+    DB::S3::S3RequestSettings automatic;
+    DB::S3::S3RequestSettings explicit_md5;
+    explicit_md5[DB::S3RequestSetting::delete_checksum_algorithm] = "MD5";
+    DB::S3::S3RequestSettings explicit_crc32;
+    explicit_crc32[DB::S3RequestSetting::delete_checksum_algorithm] = "CRC32";
+
+    const bool md5_available = DB::OpenSSLInitializer::instance().isMD5Available();
+
+    EXPECT_EQ(getDeleteChecksumAlgorithm(automatic, false, false), md5_available ? Algorithm::MD5 : Algorithm::SHA256);
+    /// A server rejection of `MD5` switches the automatic default to `SHA256`.
+    EXPECT_EQ(getDeleteChecksumAlgorithm(automatic, false, true), Algorithm::SHA256);
+    EXPECT_EQ(getDeleteChecksumAlgorithm(automatic, true, false), Algorithm::CRC32);
+    /// An explicit value is used as given, whatever the server did before.
+    EXPECT_EQ(getDeleteChecksumAlgorithm(explicit_crc32, false, true), Algorithm::CRC32);
+    EXPECT_THROW(getDeleteChecksumAlgorithm(explicit_md5, true, false), DB::Exception);
+    if (md5_available)
+        EXPECT_EQ(getDeleteChecksumAlgorithm(explicit_md5, false, true), Algorithm::MD5);
+    else
+        EXPECT_THROW(getDeleteChecksumAlgorithm(explicit_md5, false, false), DB::Exception);
+}
+
+TEST(IOTestAwsS3Client, DeleteObjectsDefaultChecksum)
+{
+    /// Without an available `MD5` digest (FIPS) the default is `SHA256`, otherwise the SDK's `Content-MD5`.
+    const bool fips = !DB::OpenSSLInitializer::instance().isMD5Available();
+    testServerSideEncryption(
+        makeDeleteObjectsRequest(""),
+        "",
+        {},
+        fips ? "authorization: ... SignedHeaders="
+               "amz-sdk-invocation-id;"
+               "amz-sdk-request;"
+               "content-length;"
+               "content-type;"
+               "host;"
+               "x-amz-api-version;"
+               "x-amz-checksum-sha256;"
+               "x-amz-content-sha256;"
+               "x-amz-date;"
+               "x-amz-sdk-checksum-algorithm, ...\n"
+             : "authorization: ... SignedHeaders="
+               "amz-sdk-invocation-id;"
+               "amz-sdk-request;"
+               "content-length;"
+               "content-md5;"
+               "content-type;"
+               "host;"
+               "x-amz-api-version;"
+               "x-amz-content-sha256;"
+               "x-amz-date, ...\n");
 }
 
 TEST(IOTestAwsS3Client, DetectRegionFromS3ExpressEndpoint)

@@ -720,7 +720,7 @@ void BackupWriterS3::removeFiles(const Strings & file_names)
     size_t batch_size = 1000;
 
     deleteFilesFromS3(client, s3_uri.bucket, keys, /* if_exists = */ true,
-                      s3_capabilities, batch_size, blob_storage_log);
+                      s3_capabilities, s3_settings.request_settings, batch_size, blob_storage_log);
 }
 
 }

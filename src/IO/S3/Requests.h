@@ -106,6 +106,18 @@ inline std::string calculateFlexibleChecksum(Model::UploadPartRequest & req, Alg
 
 Algorithm getUploadChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket);
 
+/// Whether `delete_checksum_algorithm` was set explicitly. An explicit value is never changed behind the user's back.
+bool hasExplicitDeleteChecksumAlgorithm(const S3RequestSettings & request_settings);
+
+/// The checksum for `DeleteObjects`, which cannot go without a digest. An explicit `delete_checksum_algorithm` wins;
+/// an explicit `MD5` is rejected when `S3Express` or when the `MD5` digest is unavailable (FIPS). Otherwise `MD5`,
+/// or `SHA256` when `MD5` is unavailable or the server already rejected it (`md5_rejected_by_server`).
+Algorithm getDeleteChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket, bool md5_rejected_by_server);
+
+/// Like `getUploadChecksumAlgorithm`, but for `DeleteObjects`, which cannot go without a digest: under FIPS
+/// the default is `CRC32` instead of the unavailable `MD5`.
+Algorithm getDeleteChecksumAlgorithm(const S3RequestSettings & request_settings, bool is_s3express_bucket);
+
 template <typename R>
 inline void setChecksumAlgorithm(R & request, Algorithm algorithm)
 {
@@ -277,8 +289,8 @@ public:
 class DeleteObjectsRequest : public ExtendedRequest<Model::DeleteObjectsRequest>
 {
 public:
-    bool RequestChecksumRequired() const override { return is_s3express_bucket; }
-    bool ShouldComputeContentMd5() const override { return !is_s3express_bucket; }
+    bool RequestChecksumRequired() const override { return hasFlexibleChecksum(); }
+    bool ShouldComputeContentMd5() const override { return !hasFlexibleChecksum(); }
 };
 
 class ComposeObjectRequest : public ExtendedRequest<Aws::S3::S3Request>
