@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS t_lc;
 DROP TABLE IF EXISTS t_plain;
 DROP TABLE IF EXISTS t_mut;
 DROP TABLE IF EXISTS t_order;
+DROP TABLE IF EXISTS t_order_merged;
 DROP TABLE IF EXISTS t_mixed;
 DROP TABLE IF EXISTS t_nested;
 DROP TABLE IF EXISTS t_text;
@@ -56,6 +57,15 @@ INSERT INTO t_order SELECT * FROM t_lc SETTINGS max_block_size = 100000, min_ins
 SELECT (SELECT count() FROM t_order WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_order WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 0);
 SELECT (SELECT count() FROM t_order WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_order WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes = 0);
 SELECT replaceRegexpOne(explain, '^[│└├─ ]+', '') FROM (EXPLAIN indexes = 1 SELECT count() FROM t_order WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes_on_data_read = 0) WHERE explain ILIKE '%Name: i%' OR explain ILIKE '%Granules: %/%';
+
+-- The same with an engine that merges the inserted block: the sorting key is computed before the merge, the indexes after it.
+CREATE TABLE t_order_merged (id UInt64, m Map(LowCardinality(String), LowCardinality(String)),
+    INDEX ik mapKeys(m) TYPE bloom_filter GRANULARITY 1, INDEX iv mapValues(m) TYPE bloom_filter GRANULARITY 1)
+ENGINE = ReplacingMergeTree ORDER BY mapKeys(m) SETTINGS index_granularity = 2, index_granularity_bytes = 10485760, min_bytes_for_wide_part = 0;
+INSERT INTO t_order_merged SELECT * FROM t_lc SETTINGS optimize_on_insert = 1, max_block_size = 100000, min_insert_block_size_rows = 1000000, min_insert_block_size_bytes = 0, max_insert_threads = 1;
+SELECT count() FROM t_order_merged WHERE mapKeys(m) = ['k3', 'common'] SETTINGS force_primary_key = 1;
+SELECT (SELECT count() FROM t_order_merged WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_order_merged WHERE has(mapKeys(m), 'k3') SETTINGS use_skip_indexes = 0);
+SELECT (SELECT count() FROM t_order_merged WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes = 1), (SELECT count() FROM t_order_merged WHERE has(mapValues(m), 'v3') SETTINGS use_skip_indexes = 0);
 
 -- Indexes of four types over the same expression, built on INSERT and rebuilt by a mutation of a compact part.
 CREATE TABLE t_mixed (id UInt64, m Map(LowCardinality(String), LowCardinality(String)),
@@ -127,6 +137,7 @@ DROP TABLE t_lc;
 DROP TABLE t_plain;
 DROP TABLE t_mut;
 DROP TABLE t_order;
+DROP TABLE t_order_merged;
 DROP TABLE t_mixed;
 DROP TABLE t_nested;
 DROP TABLE t_text;
