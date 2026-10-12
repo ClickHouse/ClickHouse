@@ -919,10 +919,11 @@ private:
 
     /// Drains one partition's records into `table`, with `alive_bins` only those whose count bin within the bucket is
     /// marked alive (see `AdaptiveTopKPruning`). String-like keys are emplaced pointing into the records, which are
-    /// freed only after the table is converted or written. With `count_only`, a general record only adds one row to
-    /// the count its group keeps in the mapped value, as a lone `count()` keeps it, and builds no state (see the
-    /// count-first units of `mergeAndConvertAdaptiveBucket`). Returns how many records it skipped.
-    template <typename Method, typename Table>
+    /// freed only after the table is converted or written. With `on_count`, a general record only adds one row to the
+    /// count its group keeps in the mapped value, as a lone `count()` keeps it, and builds no state (see the
+    /// count-first units of `mergeAndConvertAdaptiveBucket`); `on_count(count, key, hash)` then takes the grown count.
+    /// Returns how many records it skipped.
+    template <typename Method, typename Table, typename OnCount = std::nullptr_t>
     size_t drainAdaptivePartition(
         Table & table,
         Arena * arena,
@@ -930,7 +931,7 @@ private:
         const bool * alive_bins,
         PaddedPODArray<AggregateDataPtr> & places,
         RowStorePointers & records,
-        bool count_only = false) const;
+        const OnCount & on_count = nullptr) const;
 
     /// Estimates the work of the selected aggregate states and, when requested, adds rank counts to the producer's
     /// top-K bins. Both statistics visit the same cells before the producer hands its table to the merge.

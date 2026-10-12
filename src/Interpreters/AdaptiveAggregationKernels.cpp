@@ -1363,7 +1363,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     ProfileEvents::increment(ProfileEvents::AdaptiveAggregationStagedBytes, key_bytes);
 }
 
-template <typename Method, typename Table>
+template <typename Method, typename Table, typename OnCount>
 size_t NO_INLINE Aggregator::drainAdaptivePartition(
     Table & table,
     Arena * arena,
@@ -1371,9 +1371,10 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
     const bool * alive_bins,
     PaddedPODArray<AggregateDataPtr> & places,
     RowStorePointers & records,
-    bool count_only) const
+    [[maybe_unused]] const OnCount & on_count) const
 {
     using Key = AdaptiveRecordKey<Method>;
+    constexpr bool count_only = !std::is_same_v<OnCount, std::nullptr_t>;
 
     /// Walks the partition's records in order. The table slot of the record
     /// `adaptive_drain_prefetch_look_ahead` positions ahead is prefetched only into a table that
@@ -1532,17 +1533,20 @@ size_t NO_INLINE Aggregator::drainAdaptivePartition(
                 record + StagedArgumentRecord::keyOffset(argument_layout.fixed_bytes), StagedArgumentRecord::keySize(record)};
         };
 
-        if (count_only)
+        if constexpr (count_only)
         {
             const auto count = [&](const char * key_pos, size_t key_size, UInt64 hash) ALWAYS_INLINE
             {
                 typename Table::LookupResult it;
                 bool inserted = false;
-                emplaceStagedKey<Key>(table, key_pos, key_size, hash, it, inserted);
+                const Key key = readStagedKey<Key>(key_pos, key_size, hash);
+                table.emplace(key, it, inserted, hash);
+                UInt64 & group_count = getInlineCountState(it->getMapped());
                 if (inserted)
-                    getInlineCountState(it->getMapped()) = 1;
+                    group_count = 1;
                 else
-                    ++getInlineCountState(it->getMapped());
+                    ++group_count;
+                on_count(group_count, key, hash);
             };
             if (fixed_stride)
             {
