@@ -59,7 +59,7 @@ UInt64 estimateRowsFor(const Estimator & estimator, const String & expression, c
     auto syntax_result = TreeRewriter(context).analyze(ast, columns);
     ActionsDAG dag = ExpressionAnalyzer(ast, syntax_result, context).getActionsDAG(/*add_aliases=*/ false, /*remove_unused_result=*/ false);
     const auto * node = &dag.findInOutputs(ast->getColumnName());
-    return estimator->estimateRelationProfile(nullptr, node).rows;
+    return estimator->estimateRelationProfile(context, nullptr, node).rows;
 }
 
 }
