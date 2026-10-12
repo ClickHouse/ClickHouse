@@ -1,5 +1,7 @@
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
+#include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
+
 #include <stack>
 #include <cmath>
 
@@ -11,6 +13,7 @@
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/IDataType.h>
 #include <DataTypes/DataTypesNumber.h>
+#include <Functions/IFunction.h>
 #include <Core/Settings.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/convertFieldToType.h>
@@ -22,6 +25,7 @@
 #include <Storages/MergeTree/IMergeTreeDataPart.h>
 #include <Storages/MergeTree/RangesInDataPart.h>
 #include <Formats/ParseError.h>
+#include <algorithm>
 
 
 namespace ProfileEvents
@@ -43,6 +47,18 @@ namespace Setting
     extern const SettingsUInt64 statistics_max_set_size_for_exact_selectivity_estimation;
 }
 
+/// Names of the conditions a `PREWHERE` applies: its filter node and, for a conjunction, every
+/// conjunct.
+static void collectConjunctNames(const ActionsDAG::Node * node, std::unordered_set<String> & names)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    names.insert(node->result_name);
+    if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base && node->function_base->getName() == "and")
+        for (const auto * child : node->children)
+            collectConjunctNames(child, names);
+}
+
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const StorageMetadataPtr & metadata, const ActionsDAG::Node * filter, const ActionsDAG::Node * prewhere) const
 {
     if (filter == nullptr && prewhere == nullptr)
@@ -57,8 +73,18 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
     {
         return estimateRelationProfile(metadata, filter);
     }
+    std::unordered_set<String> prewhere_conditions;
+    collectConjunctNames(prewhere, prewhere_conditions);
     std::vector<RPNElement> rpn = RPNBuilder<RPNElement>(filter, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
     {
+        /// A condition moved to `PREWHERE` stays in the filter as an input column. The rows it
+        /// removes are counted once, by the `PREWHERE` atoms below.
+        if (!node_.isFunction() && !node_.isConstant() && prewhere_conditions.contains(node_.getColumnName()))
+        {
+            out.selectivity = Selectivity(1.0);
+            out.finalized = true;
+            return false;
+        }
         return extractAtomFromTree(metadata, node_, out);
     }).extractRPN();
     std::vector<RPNElement> prewhere_rpn = RPNBuilder<RPNElement>(prewhere, getContext(), [&](const RPNBuilderTreeNode & node_, RPNElement & out)
@@ -83,10 +109,17 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(const Sto
 
 RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
     const StorageMetadataPtr & metadata,
-    const std::vector<RPNBuilderTreeNode> & nodes) const
+    const std::vector<RPNBuilderTreeNode> & nodes,
+    Float64 row_fraction) const
 {
     if (nodes.empty())
-        return estimateRelationProfile();
+    {
+        if (row_fraction == 1.0)
+            return estimateRelationProfile();
+        std::vector<RPNElement> always_true(1);
+        always_true.front().function = RPNElement::ALWAYS_TRUE;
+        return estimateRelationProfileImpl(always_true, metadata, row_fraction);
+    }
 
     /// Build a combined RPN sequence by concatenating per-node RPNs and inserting an
     /// FUNCTION_AND token after every node past the first (standard postfix AND for
@@ -109,7 +142,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile(
             combined_rpn.push_back(and_elem);
         }
     }
-    return estimateRelationProfileImpl(combined_rpn, metadata);
+    return estimateRelationProfileImpl(combined_rpn, metadata, row_fraction);
 }
 
 static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const ColumnStatisticsPtr & stats, const String & column_name)
@@ -126,12 +159,12 @@ static bool isCompatibleStatistics(const StorageMetadataPtr & metadata, const Co
     return column->type->equals(*stats->getDataType());
 }
 
-/// NDV is clamped by the caller to the estimated row count; the value range and NULL fraction
-/// describe the whole relation regardless of the filter.
-static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStatisticsPtr & stats)
+/// The value range and NULL fraction describe the whole relation regardless of the filter.
+static ColumnStats makeColumnStats(UInt64 num_distinct_values, UInt64 domain_distinct_values, const ColumnStatisticsPtr & stats)
 {
     ColumnStats result;
     result.num_distinct_values = num_distinct_values;
+    result.domain_distinct_values = domain_distinct_values;
     if (!stats)
         return result;
 
@@ -143,7 +176,7 @@ static ColumnStats makeColumnStats(UInt64 num_distinct_values, const ColumnStati
     return result;
 }
 
-RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata) const
+RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::vector<RPNElement> & rpn, const StorageMetadataPtr & metadata, Float64 row_fraction) const
 {
     /// walk through the tree and calculate selectivity for every rpn node.
     std::stack<RPNElement *> rpn_stack;
@@ -225,7 +258,7 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     auto * final_element = rpn_stack.top();
     final_element->finalize(column_estimators, metadata);
     RelationProfile result;
-    Float64 final_rows = final_element->selectivity.true_sel * static_cast<Float64>(total_rows);
+    Float64 final_rows = final_element->selectivity.true_sel * row_fraction * static_cast<Float64>(total_rows);
     /// Clamp to [0, total_rows] and handle NaN/Inf to avoid undefined behavior
     /// in the float-to-UInt64 cast below (UBSAN float-cast-overflow).
     if (!std::isfinite(final_rows) || final_rows < 0)
@@ -233,13 +266,18 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfileImpl(std::
     else if (final_rows > static_cast<Float64>(total_rows))
         final_rows = static_cast<Float64>(total_rows);
     result.rows = static_cast<UInt64>(final_rows);
+    result.estimate_from_defaults = std::ranges::any_of(rpn, [](const RPNElement & element) { return element.used_default; });
     for (const auto & [column_name, estimator] : column_estimators)
     {
         if (!isCompatibleStatistics(metadata, estimator.stats, column_name))
             continue;
 
-        UInt64 cardinality = std::min(result.rows, estimator.estimateCardinality());
-        result.column_stats.emplace(column_name, makeColumnStats(cardinality, estimator.stats));
+        /// A value survives the filter when any of its rows does. Without a `uniq` sketch the column
+        /// has no distinct count: exporting the fallback ratio would make the join take a guess for a
+        /// measured value.
+        const UInt64 domain = estimator.stats->hasCardinality() ? estimator.estimateCardinality() : 0;
+        const UInt64 cardinality = domain ? QueryPlanOptimizations::distinctValuesAfterFilter(domain, total_rows, result.rows) : 0;
+        result.column_stats.emplace(column_name, makeColumnStats(cardinality, domain, estimator.stats));
     }
     return result;
 }
@@ -250,7 +288,8 @@ RelationProfile ConditionSelectivityEstimator::estimateRelationProfile() const
     result.rows = total_rows;
     for (const auto & [column_name, estimator] : column_estimators)
     {
-        result.column_stats.emplace(column_name, makeColumnStats(estimator.estimateCardinality(), estimator.stats));
+        const UInt64 domain = estimator.stats->hasCardinality() ? estimator.estimateCardinality() : 0;
+        result.column_stats.emplace(column_name, makeColumnStats(domain, domain, estimator.stats));
     }
     return result;
 }
@@ -302,6 +341,13 @@ static std::optional<String> tryGetNullMapParentColumn(const String & column_nam
     return parent_name;
 }
 
+static const ActionsDAG::Node * skipDAGAliases(const ActionsDAG::Node * node)
+{
+    while (node->type == ActionsDAG::ActionType::ALIAS)
+        node = node->children.front();
+    return node;
+}
+
 bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr & metadata, const RPNBuilderTreeNode & node, RPNElement & out) const
 {
     const auto * node_dag = node.getDAGNode();
@@ -328,15 +374,42 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
         size_t num_args = func.getArgumentsSize();
 
         String func_name = func.getFunctionName();
+
+        /// `x = x` (left behind by the decorrelation of a subquery) is true on every row, not an
+        /// unknown predicate. Not for a floating point value, where NaN is not equal to itself, nor
+        /// for `equals` on a Nullable value, where a NULL row gives NULL; those stay unknown.
+        if (num_args == 2 && (func_name == "equals" || func_name == "isNotDistinctFrom"))
+        {
+            const auto * first = func.getArgumentAt(0).getDAGNode();
+            const auto * second = func.getArgumentAt(1).getDAGNode();
+            if (first && second && skipDAGAliases(first) == skipDAGAliases(second))
+            {
+                const auto & argument_type = skipDAGAliases(first)->result_type;
+                const bool is_float = WhichDataType(removeNullable(removeLowCardinality(argument_type))).isFloat();
+                const bool nullable_equals = func_name == "equals" && argument_type->isNullable();
+                if (!is_float && !nullable_equals)
+                {
+                    out.function = RPNElement::ALWAYS_TRUE;
+                    return true;
+                }
+            }
+        }
+
         auto atom_it = atom_map.find(func_name);
         if (atom_it == atom_map.end())
         {
             /// LIKE/ILIKE cannot be represented as a range. Pre-set selectivity
             /// so the estimator uses a tighter default than `default_unknown_cond_factor`.
             if (func_name == "like" || func_name == "ilike")
+            {
                 out.selectivity.true_sel = default_like_factor;
+                out.used_default = true;
+            }
             else if (func_name == "notLike" || func_name == "notILike")
+            {
                 out.selectivity.true_sel = 1.0 - default_like_factor;
+                out.used_default = true;
+            }
             else if (func_name == "__applyFilter")
             {
                 /// Runtime join filter. Selectivity 1.0 keeps it last in prewhere ordering
@@ -412,9 +485,12 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                     /// change the estimate for such an atom - and skip the size-based path, which would
                     /// otherwise read `set_size / <no cardinality>` as "matches everything".
                     if (metadata && !metadata->getColumns().tryGet(lhs_name))
+                    {
                         out.selectivity.true_sel = negative ? 1.0 - default_cond_equal_factor : default_cond_equal_factor;
+                        out.used_default = true;
+                    }
                     else
-                        out.selectivity = estimateSelectivityFromSetSize(metadata, lhs_name, *columns[0], negative);
+                        out.selectivity = estimateSelectivityFromSetSize(metadata, lhs_name, *columns[0], negative, out.used_default);
 
                     out.finalized = true;
                     return false;
@@ -500,6 +576,7 @@ bool ConditionSelectivityEstimator::extractAtomFromTree(const StorageMetadataPtr
                         out.selectivity.true_sel = 1.0 - default_cond_equal_factor;
                     else /// less, greater, lessOrEquals, greaterOrEquals
                         out.selectivity.true_sel = default_cond_range_factor;
+                    out.used_default = true;
                     out.finalized = true;
                     return false;
                 }
@@ -692,7 +769,7 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Select
     };
 }
 
-ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges) const
+ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::ColumnEstimator::estimateRanges(const PlainRanges & ranges, bool & used_default) const
 {
     if (stats->getNumRows() == 0)
         return {0, 0};
@@ -702,9 +779,15 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::Column
         if (auto estimate = stats->estimateRange(range))
             result += *estimate;
         else if (range.left == range.right)
+        {
             result += static_cast<Float64>(stats->getNonNullRowCount()) * default_cond_equal_factor;
+            used_default = true;
+        }
         else
+        {
             result += static_cast<Float64>(stats->getNonNullRowCount()) * default_cond_range_factor;
+            used_default = true;
+        }
     }
     Float64 rows = static_cast<Float64>(stats->getNumRows());
     Float64 selectivity = result / rows;
@@ -725,7 +808,7 @@ UInt64 ConditionSelectivityEstimator::ColumnEstimator::estimateCardinality() con
 
 
 ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::estimateSelectivityFromSetSize(
-    const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements, bool negative) const
+    const StorageMetadataPtr & metadata, const String & column_name, const IColumn & set_elements, bool negative, bool & used_default) const
 {
     ProfileEvents::increment(ProfileEvents::SelectivityEstimatorInSetEstimatedFromSize);
 
@@ -737,6 +820,7 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::estima
     if (it == column_estimators.end() || !isCompatibleStatistics(metadata, it->second.stats, column_name))
     {
         /// No statistics: match what `finalize` assumes for a list of point ranges on an unknown column.
+        used_default = true;
         const Selectivity selectivity{std::min(static_cast<Float64>(set_size) * default_cond_equal_factor, 1.0), 0};
         return negative ? selectivity.applyNot() : selectivity;
     }
@@ -749,7 +833,7 @@ ConditionSelectivityEstimator::Selectivity ConditionSelectivityEstimator::estima
     Field max_value;
     set_elements.getExtremes(min_value, max_value, 0, set_size);
     if (!min_value.isNull() && !max_value.isNull())
-        selectivity = it->second.estimateRanges(PlainRanges(Range(min_value, true, max_value, true)));
+        selectivity = it->second.estimateRanges(PlainRanges(Range(min_value, true, max_value, true)), used_default);
 
     /// Second upper bound: at most `set_size` of the column's distinct values can match, and the
     /// estimator assumes every distinct value carries the same share of rows, so at most
@@ -930,7 +1014,10 @@ bool ConditionSelectivityEstimator::RPNElement::tryToMergeClauses(RPNElement & l
             if (side->finalized)
                 absorbed_and_selectivity = absorbed_and_selectivity.applyAnd(side->selectivity);
             else if (side->function == FUNCTION_UNKNOWN)
+            {
                 absorbed_and_selectivity = absorbed_and_selectivity.applyAnd(Selectivity{default_unknown_cond_factor, 0});
+                used_default = true;
+            }
         }
 
         merge_column_ranges(column_ranges, lhs.column_ranges, rhs.column_ranges, false);
@@ -963,6 +1050,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
     if (function == FUNCTION_UNKNOWN)
     {
         selectivity = {default_unknown_cond_factor, 0};
+        used_default = true;
         return;
     }
 
@@ -986,6 +1074,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
             if (range.isInfinite())
                 return Selectivity{1.0, 0.0};
 
+            used_default = true;
             if (range.left == range.right)
                 equal_selectivity += default_cond_equal_factor;
             else
@@ -1009,7 +1098,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
     for (const auto & [column_name, ranges] : column_ranges)
     {
         if (const auto * est = get_estimator(column_name))
-            estimate_results.emplace(column_name, est->estimateRanges(ranges));
+            estimate_results.emplace(column_name, est->estimateRanges(ranges, used_default));
         else
             estimate_results.emplace(column_name, estimate_unknown_ranges(ranges));
     }
@@ -1018,7 +1107,7 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
     {
         Selectivity not_ranges_selectivity;
         if (const auto * est = get_estimator(column_name))
-            not_ranges_selectivity = est->estimateRanges(ranges).applyNot();
+            not_ranges_selectivity = est->estimateRanges(ranges, used_default).applyNot();
         else
             not_ranges_selectivity = estimate_unknown_ranges(ranges).applyNot();
 
@@ -1073,6 +1162,8 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         Float64 cur_selectivity = default_cond_equal_factor;
         if (const auto * est = get_estimator(column_name))
             cur_selectivity = est->stats->estimateIsNull();
+        else
+            used_default = true;
 
         if (!estimate_results.contains(column_name))
         {
@@ -1099,6 +1190,8 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
         Float64 cur_selectivity = 1.0 - default_cond_equal_factor;
         if (const auto * est = get_estimator(column_name))
             cur_selectivity = est->stats->estimateIsNotNull();
+        else
+            used_default = true;
 
         if (!estimate_results.contains(column_name))
         {
@@ -1135,7 +1228,10 @@ void ConditionSelectivityEstimator::RPNElement::finalize(const ColumnEstimators 
     /// total row count (e.g. IN with many values and over-counting statistics),
     /// or become NaN from floating-point edge cases.
     if (!std::isfinite(selectivity.true_sel))
+    {
         selectivity.true_sel = default_unknown_cond_factor;
+        used_default = true;
+    }
     else
         selectivity.true_sel = std::max(0.0, std::min(1.0, selectivity.true_sel));
 

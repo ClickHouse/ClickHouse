@@ -37,9 +37,14 @@ struct DPJoinEntry
     DPJoinEntryPtr right;
 
     double cost = 0.0;
-    /// NDV-based selectivity of the join predicates, see `SelectivityEstimate::reported_value`; reported by `EXPLAIN` as `estimated (NDV)`.
+    /// One over the largest key NDV of the join predicates, a key without an NDV counting its relation's
+    /// rows; reported by `EXPLAIN` as `estimated (NDV)`. See `JoinKeyEstimate::selectivity`.
     double selectivity = 0.0;
     std::optional<UInt64> estimated_rows = {};
+    /// Rows the result cannot exceed; see `RelationStats::max_rows` and `estimateJoinRowsUpperBound`.
+    std::optional<UInt64> max_rows = {};
+    /// A default selectivity stood in for a predicate in some relation of this entry.
+    bool estimate_from_defaults = false;
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     /// For join nodes
@@ -50,7 +55,7 @@ struct DPJoinEntry
     int relation_id = -1;
 
     /// Constructor for a leaf node (base relation)
-    DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_ = {});
+    DPJoinEntry(size_t id, const RelationStats & relation_stats);
 
     /// Constructor for a join node
     DPJoinEntry(DPJoinEntryPtr lhs,
@@ -92,6 +97,10 @@ struct QueryGraph
 
     std::vector<JoinActionRef> edges;
 
+    /// The graph is one semi or anti join whose probe side was built from the preserved side's
+    /// key values, see `JoinStepLogical::probeKeysWithinPreservedSide`.
+    bool probe_keys_within_preserved_side = false;
+
     /// Operators of the original join tree, in tree (not enumeration) order. Populated during
     /// `buildQueryGraph` and consumed by the conflict detector (CD-A/CD-C) when it is enabled; empty
     /// otherwise. See `ConflictJoinOp`.
@@ -101,6 +110,12 @@ struct QueryGraph
     /// (see conflictDetector.h) over `conflict_ops` instead of the per-relation `join_kinds`
     /// restrictions. Set from settings in `optimizeJoinOrder`; affects only the DPsub algorithm.
     JoinOrderConflictDetector conflict_detector = JoinOrderConflictDetector::NONE;
+
+
+    /// Strictness of every join of this graph (a graph mixes strictnesses only under a conflict
+    /// detector, which carries the strictness per operator). A semi or anti join estimated as an
+    /// outer join would keep its whole preserved side.
+    JoinStrictness join_strictness = JoinStrictness::All;
 
     /// Restriction for a null-supplying relation of an outer join.
     /// Maps (relation id) -> (set of relations referenced by the outer join's ON clause, join kind).

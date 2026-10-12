@@ -39,8 +39,8 @@ DPJoinEntryPtr evaluateJoin(
     std::vector<JoinActionRef *> & predicates,
     LoggerPtr log)
 {
-    auto selectivity = computeSelectivity(query_graph, dp_table, expression_selectivity, predicates, left->relations, right->relations);
-    auto new_cost = computeJoinCost(left, right, selectivity);
+    auto keys = computeSelectivity(query_graph, dp_table, expression_selectivity, predicates, left->relations, right->relations);
+    auto new_cost = computeJoinCost(query_graph, left, right, keys, join_kind, query_graph.join_strictness);
 
     const BitSet combined_rels = left->relations | right->relations;
     auto current_best = dp_table.find(combined_rels);
@@ -51,12 +51,12 @@ DPJoinEntryPtr evaluateJoin(
     bool connected = !predicates.empty()
         || query_graph.areTransitivelyConnected(left->relations, right->relations);
     auto effective_kind = (connected && join_kind == JoinKind::Cross) ? JoinKind::Inner : join_kind;
-    auto cardinality = estimateJoinCardinality(left, right, selectivity, effective_kind);
+    auto cardinality = estimateJoinCardinality(left, right, keys, effective_kind, query_graph.join_strictness);
     JoinOperator join_operator(
-        effective_kind, JoinStrictness::All, JoinLocality::Unspecified,
+        effective_kind, query_graph.join_strictness, JoinLocality::Unspecified,
         std::ranges::to<std::vector>(predicates | std::views::transform([](const auto * p) { return *p; })));
-    auto new_entry = std::make_shared<DPJoinEntry>(
-        left, right, new_cost, selectivity.reported_value, cardinality, std::move(join_operator));
+    auto new_entry = std::make_shared<DPJoinEntry>(left, right, new_cost, keys.selectivity, cardinality, std::move(join_operator));
+    new_entry->estimate_from_defaults |= assumesIndependentKeys(keys, left->estimated_rows, right->estimated_rows);
 
     LOG_TEST(log, "New best plan for '{}' as '{} JOIN {}', cost: {}, cardinality: {}, operator: {}",
         new_entry->dump(), left->dump(), right->dump(),

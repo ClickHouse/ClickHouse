@@ -1,6 +1,7 @@
 #include <Formats/FormatSettings.h>
 #include <IO/Operators.h>
 #include <IO/WriteHelpers.h>
+#include <Interpreters/HashTablesStatistics.h>
 #include <Interpreters/IJoin.h>
 #include <Interpreters/QueryExecutionCounters.h>
 #include <Interpreters/TableJoin.h>
@@ -503,6 +504,13 @@ void JoinStep::setLogicalJoinInfo(LogicalJoinInfo && logical_join_info)
     estimation = logical_join_info.estimation;
     locality = logical_join_info.locality;
     cluster_id = logical_join_info.cluster_id;
+    build_input_mark = std::move(logical_join_info.build_input_mark);
+}
+
+void JoinStep::markBuildInputFilteredFromOutside()
+{
+    if (build_input_mark)
+        build_input_mark->filtered_from_outside = true;
 }
 
 void JoinStep::updateOutputHeader()

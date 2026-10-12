@@ -2479,11 +2479,15 @@ void JoinStepLogical::buildPhysicalJoin(
         }
     }
 
+    if (hash_table_key_hash && !join_step->join_algorithm_params->build_input_mark)
+        join_step->join_algorithm_params->build_input_mark = std::make_shared<JoinBuildInputMark>();
+
     LogicalJoinInfo logical_join_info{
         .readable_relation_name = join_step->getReadableRelationName(),
         .estimation = join_step->getEstimation(),
         .locality = join_step->join_operator.locality,
-        .cluster_id = join_step->getClusterId()
+        .cluster_id = join_step->getClusterId(),
+        .build_input_mark = join_step->join_algorithm_params->build_input_mark,
     };
 
     auto new_node = buildPhysicalJoinImpl(
@@ -2505,7 +2509,15 @@ void JoinStepLogical::buildPhysicalJoin(
         join_step->isDisjunctionsOptimizationApplied()
     );
 
-    new_node.cost_estimation = node.cost_estimation;
+    /// The estimate of the logical join holds for the physical join step and for the expressions
+    /// stacked on top of it, which keep the row count. A filter between them would change it.
+    for (QueryPlanNode * physical = &new_node;;)
+    {
+        physical->cost_estimation = node.cost_estimation;
+        if (physical->children.size() != 1 || !typeid_cast<const ExpressionStep *>(physical->step.get()))
+            break;
+        physical = physical->children.front();
+    }
 
     node = std::move(new_node);
 }
@@ -2937,10 +2949,13 @@ QueryPlanStepPtr JoinStepLogical::clone() const
     result_step->optimized = optimized;
     result_step->runtime_filter_declined_small_probe = runtime_filter_declined_small_probe;
     result_step->result_rows_estimation = result_rows_estimation;
+    result_step->result_rows_upper_bound = result_rows_upper_bound;
+    result_step->estimation_origin = estimation_origin;
     result_step->estimated_cost = estimated_cost;
     result_step->estimated_selectivity = estimated_selectivity;
     result_step->cluster_id = cluster_id;
     result_step->imprecise_estimate = imprecise_estimate;
+    result_step->estimate_from_defaults = estimate_from_defaults;
     result_step->result_column_stats = result_column_stats;
     result_step->right_hash_table_cache_key = right_hash_table_cache_key;
     result_step->join_output_cache_key = join_output_cache_key;

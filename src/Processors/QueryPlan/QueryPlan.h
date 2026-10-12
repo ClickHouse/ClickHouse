@@ -8,6 +8,7 @@
 #include <Columns/IColumn_fwd.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Processors/QueryPlan/ExchangeLookup.h>
+#include <Processors/QueryPlan/CostEstimationInfo.h>
 #include <Parsers/IAST_fwd.h>
 
 #include <functional>
@@ -84,6 +85,8 @@ struct ExplainPlanOptions
     bool pretty = false;
     /// Show estimates
     bool estimates = false;
+    /// With `estimates`, also show the rows a step cannot exceed and whether its estimate took a default
+    bool bounds = false;
     /// For EXPLAIN ANALYZE: print the per-processor elapsed time distribution (min/median/max/sum).
     bool processors_profile = false;
     /// For EXPLAIN ANALYZE: make joins do the extra per-row bookkeeping needed for the matched
@@ -97,12 +100,6 @@ struct ExplainPlanOptions
     SettingsChanges toSettingsChanges() const;
 };
 struct DistributedQueryPlan;
-
-struct CostEstimationInfo
-{
-    Float64 cost = 0.0;
-    Float64 rows = 0.0;
-};
 
 /// A tree of query steps.
 /// The goal of QueryPlan is to build QueryPipeline.

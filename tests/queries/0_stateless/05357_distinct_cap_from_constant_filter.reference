@@ -1,0 +1,18 @@
+-- DISTINCT over v IN (three values): at most 3 rows
+│  a[hint~1000] ⋈ d[no_stats<=3]
+-- GROUP BY v, w with v = 5 and w IN (two values): at most 2 rows
+│  a[hint~1000] ⋈ d[no_stats<=2]
+-- DISTINCT over a UNION ALL of three and two values: at most 5 rows
+│  a[hint~1000] ⋈ d[no_stats<=5]
+-- NOT IN proves nothing: the bound stays the rows of the read
+│  a[hint~1000] ⋈ d[no_stats<=10000]
+-- GROUPING SETS fills a key missing from a set with a default, so v = 5 proves no single value: the bound is the rows of each set
+│  a[hint~1000] ⋈ d[no_stats<=20000]
+-- a Decimal column compared with a Float64 constant: several values can compare equal, no proof
+│  a[hint~1000] ⋈ d[no_stats<=10000]
+-- a set from a subquery: no proof
+│  a[hint~1000] ⋈ d
+-- a projection alias is visible in WHERE: the filter is on substring(substring(s, 1, 2), 1, 2), which is the alias itself, at most 3 rows
+│  a[hint~1000] ⋈ d[no_stats<=3]
+-- a shorter prefix of the alias keeps several values of it: no proof
+│  a[hint~1000] ⋈ d[no_stats<=10000]

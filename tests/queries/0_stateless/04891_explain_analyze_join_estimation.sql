@@ -70,16 +70,27 @@ FROM (EXPLAIN ANALYZE
     INNER JOIN table2 ON table1.id = table2.id
     INNER JOIN table3 ON table2.id = table3.id);
 
--- Without the join-order optimizer there are no estimates: every estimated field reads
--- `no stats` and `q-error` disappears, but the actual values are still collected.
+-- Without the join-order optimizer the join is estimated in place from its inputs: the output
+-- rows, the selectivity and both sides are estimated. Only the cost, which accumulates over a
+-- reorder cluster, reads `no stats`.
 SELECT
     countIf(explain LIKE '%Cost: estimated no stats · actual 100.00%') = 1,
-    countIf(explain LIKE '%Selectivity: estimated (NDV) no stats · actual (cartesian) 0.01%') = 1,
+    countIf(explain LIKE '%Selectivity: estimated (NDV) 0.01 · actual (cartesian) 0.01%') = 1,
+    countIf(explain LIKE '%Output rows: estimated 100.00 · actual 100.00 · q-error 1.00%') = 1,
+    countIf(explain LIKE '%Left: rows estimated 100.00 · rows 100.00%') = 1,
+    countIf(explain LIKE '%Right: rows estimated 100.00 · rows 100.00%') = 1
+FROM (EXPLAIN ANALYZE SELECT * FROM table1 INNER JOIN table2 ON table1.id = table2.id
+      SETTINGS query_plan_optimize_join_order_limit = 0);
+
+-- An input without a row estimate (a filter on a column without statistics that the primary key
+-- cannot use) leaves the output rows unknown: the field reads `no stats` and `q-error`
+-- disappears, the known side keeps its estimate, and the actual values are still collected.
+SELECT
     countIf(explain LIKE '%Output rows: estimated no stats · actual 100.00%') = 1,
     countIf(explain LIKE '%q-error%') = 0,
-    countIf(explain LIKE '%Left: rows estimated no stats · rows 100.00%') = 1,
+    countIf(explain LIKE '%Left: rows estimated 100.00 · rows 100.00%') = 1,
     countIf(explain LIKE '%Right: rows estimated no stats · rows 100.00%') = 1
-FROM (EXPLAIN ANALYZE SELECT * FROM table1 INNER JOIN table2 ON table1.id = table2.id
+FROM (EXPLAIN ANALYZE SELECT * FROM table1 INNER JOIN table2 ON table1.id = table2.id WHERE table2.v2 != ''
       SETTINGS query_plan_optimize_join_order_limit = 0);
 
 DROP TABLE table1;

@@ -5,6 +5,7 @@
 #include <Core/SortDescription.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Processors/QueryPlan/BuildQueryPipelineSettings.h>
+#include <Processors/QueryPlan/CostEstimationInfo.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
 #include <span>
 #include <string_view>
@@ -120,6 +121,11 @@ public:
     /// Updates the input streams of the given step. Used during query plan optimizations.
     /// It won't do any validation of new streams, so it is your responsibility to ensure that this update doesn't break anything
     String getUniqID() const;
+
+    /// The estimate the optimizer attached to this step's plan node, copied here when the pipeline is
+    /// built so that the processors can record it in `system.processors_profile_log`.
+    void setEstimation(const std::optional<CostEstimationInfo> & estimation_) { estimation = estimation_; }
+    const std::optional<CostEstimationInfo> & getEstimation() const { return estimation; }
 
     /// (e.g. you correctly remove / add columns).
     void updateInputHeaders(SharedHeaders input_headers_);
@@ -251,6 +257,7 @@ protected:
 
 private:
     size_t step_index = 0;
+    std::optional<CostEstimationInfo> estimation;
 };
 
 }

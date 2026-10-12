@@ -441,6 +441,10 @@ private:
 
     const IQueryPlanStep * query_plan_step = nullptr;
     String step_uniq_id;
+    /// The step's row estimate and its origin, copied when the step is assigned because the step
+    /// may be gone when the profile log is written.
+    std::optional<Float64> plan_step_estimated_rows;
+    String plan_step_estimate_source;
     size_t query_plan_step_group = 0;
     StepWallClock * query_plan_step_wall_clock_ptr = nullptr;
 

@@ -1,13 +1,42 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/RuleUtils.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
+#include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Processors/QueryPlan/BuildRuntimeFilterStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ReadFromMergeTree.h>
 #include <Processors/QueryPlan/SortingStep.h>
+#include <Common/logger_useful.h>
 #include <fmt/format.h>
+#include <cmath>
+#include <limits>
 
 namespace DB
 {
+
+ReplicationDecision decideReplicationOf(const Group & group, const OptimizerContext & context, const String & rule_name, bool repeats_scan)
+{
+    /// Without statistics the size is unknown and has no bound.
+    ReplicationSize size;
+    if (group.statistics)
+    {
+        const auto & statistics = *group.statistics;
+        if (!statistics.rows_unknown)
+            size.estimated_rows = ceilToRowCount(statistics.estimated_row_count);
+        size.estimate_from_defaults = statistics.estimate_from_defaults;
+        if (statistics.max_row_count < Float64(std::numeric_limits<UInt64>::max()))
+            size.max_rows = ceilToRowCount(statistics.max_row_count);
+        size.bytes_per_row = statistics.estimated_bytes_per_row;
+        if (repeats_scan && statistics.physical_read_bytes > 0)
+            size.scan_bytes = ceilToRowCount(statistics.physical_read_bytes);
+    }
+
+    const ReplicationBudget budget{.max_rows = std::nullopt, .max_bytes = context.max_bytes_to_broadcast};
+    const auto decision = decideReplication(size, budget);
+    LOG_TEST(getLogger(rule_name), "{}", decision.describe(size, budget));
+    return decision;
+}
 
 bool isTopNSort(const IQueryPlanStep & step)
 {

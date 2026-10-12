@@ -383,7 +383,14 @@ on TPC-H and would multiply the search space. The rule-based planner's
 `distributed_plan_default_shuffle_join_bucket_count`,
 `distributed_plan_default_reader_bucket_count`, and
 `distributed_plan_max_rows_to_broadcast` heuristics are not used: fan-out and
-broadcast-vs-shuffle are decided by estimated cost.
+broadcast-vs-shuffle are decided by estimated cost. The byte budget
+`distributed_plan_max_bytes_to_broadcast` does apply, as an admission check before the cost
+comparison: a result is replicated to every node (a broadcast join side, a replicated read, a
+replicated subplan) only when its estimated rows, or its proven row bound when the rows are
+unknown, times the row width fit the budget; a result with neither an estimate nor a bound is
+never replicated, and a replicated read also has to fit the bytes it scans. The check lives in
+`decideReplicationOf` (`RuleUtils.h`) over the shared `decideReplication`
+(`Optimizations/ReplicationEligibility.h`), which the rule-based planner uses as well.
 
 The per-query environment (cluster size, cost configuration, and the query settings the
 rules honor) is fixed before the search starts and lives on the memo

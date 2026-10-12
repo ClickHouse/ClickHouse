@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/Cascades/Cost.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/OptimizerDefaults.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Memo.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Group.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/GroupExpression.h>
@@ -256,8 +257,18 @@ static Cost exchangeCost(const CostInputs & inputs, const IQueryPlanStep & step)
     /// sends or receives them sequentially, so their transfer stays undivided and each row
     /// pays the funnel cost. Without it a gather of a large input looks as cheap as a
     /// shuffle, so the optimizer distributes work (e.g. a sort) that should stay local.
+    /// An unknown join carries a search value that is the product of its inputs and a stand-in
+    /// selectivity, which can be far below its rows, even below one row; such a result is funnelled
+    /// at the rows it cannot exceed, capped at the largest known leaf. Other unknown results keep
+    /// their search value: an aggregation of a small input is small.
     if (dynamic_cast<const GatherExchangeStep *>(&step) || dynamic_cast<const ScatterExchangeStep *>(&step))
-        cost.sequential += inputs.config.funnel_sequential_cost_per_row * rows;
+    {
+        Float64 funnelled_rows = rows;
+        if (inputs.output_stats.rows_unknown && inputs.output_stats.search_value_is_join_product)
+            funnelled_rows = std::max(1.0, std::min(inputs.output_stats.max_row_count, inputs.unknown_exchange_rows));
+        cost.network += std::max(0.0, funnelled_rows - rows) * inputs.output_stats.estimated_bytes_per_row;
+        cost.sequential += inputs.config.funnel_sequential_cost_per_row * funnelled_rows;
+    }
     return cost;
 }
 
@@ -391,6 +402,7 @@ ExpressionCost CostEstimator::estimateCost(GroupExpressionPtr expression)
         .parallelism = parallelism,
         .node_count = distribution_node_count,
         .exchange_rows_override = exchange_rows_override,
+        .unknown_exchange_rows = memo.getLargestKnownLeafRows().value_or(CascadesDefaults::DEFAULT_UNKNOWN_READ_ROWS),
         .config = memo.getContext().cost_config,
     };
     inputs.input_stats.reserve(expression->inputs.size());

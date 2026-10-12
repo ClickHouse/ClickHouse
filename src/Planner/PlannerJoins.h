@@ -241,6 +241,8 @@ JoinClausesAndActions buildJoinClausesAndActions(
   */
 std::optional<bool> tryExtractConstantFromJoinNode(const QueryTreeNodePtr & join_node);
 
+struct JoinBuildInputMark;
+
 struct JoinAlgorithmParams
 {
     bool join_any_take_last_row;
@@ -268,6 +270,9 @@ struct JoinAlgorithmParams
 
     std::optional<UInt64> rhs_size_estimation;
     std::optional<UInt64> result_rows_estimation;
+
+    /// Shared with the physical join step, which fills it once runtime filters are placed.
+    std::shared_ptr<JoinBuildInputMark> build_input_mark;
 
     explicit JoinAlgorithmParams(const Context & context);
 

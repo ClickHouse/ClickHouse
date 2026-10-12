@@ -52,7 +52,7 @@ private:
     friend class DB::EnumeratorCheckerWithCosts;
 
     std::optional<UInt64> estimateCardinality(
-        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
+        std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const JoinKeyEstimate & keys, JoinKind join_kind,
         JoinStrictness strictness = JoinStrictness::All) const;
 
     /// Native-mask counterparts used exclusively by the DPsub acceptor.
@@ -79,7 +79,7 @@ private:
     }
 
     const std::vector<JoinActionRef *> & collectJoinEdgesMask(UInt32 left_mask, UInt32 right_mask);
-    SelectivityEstimate computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
+    JoinKeyEstimate computeSelectivityMask(const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask);
 
     QueryGraph & query_graph;
     SelectivityCache expression_selectivity;
@@ -132,10 +132,10 @@ private:
 };
 
 std::optional<UInt64> DPSubJoinOrderOptimizer::estimateCardinality(
-    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const SelectivityEstimate & selectivity, JoinKind join_kind,
+    std::optional<UInt64> left_rows, std::optional<UInt64> right_rows, const JoinKeyEstimate & keys, JoinKind join_kind,
     JoinStrictness strictness) const
 {
-    return estimateJoinCardinality(left_rows, right_rows, selectivity, join_kind, strictness);
+    return estimateJoinCardinality(left_rows, right_rows, keys, join_kind, strictness);
 }
 
 void DPSubJoinOrderOptimizer::initDPsubScratch()
@@ -416,7 +416,7 @@ DPSubJoinOrderOptimizer::resolveJoinMask(UInt32 left_mask, UInt32 right_mask) co
         return isValidJoinOrderMaskConflict(left_mask, right_mask);
 
     if (auto kind = isValidJoinOrderMask(left_mask, right_mask))
-        return std::make_pair(*kind, JoinStrictness::All);
+        return std::make_pair(*kind, query_graph.join_strictness);
     return std::nullopt;
 }
 
@@ -473,10 +473,12 @@ const std::vector<JoinActionRef *> & DPSubJoinOrderOptimizer::collectJoinEdgesMa
     return out;
 }
 
-SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
+JoinKeyEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
     const std::vector<JoinActionRef *> & edges, UInt32 left_mask, UInt32 right_mask)
 {
-    auto estimate = DB::computeSelectivity(query_graph, dp_table, expression_selectivity, edges);
+    JoinKeyEstimate keys;
+    keys.probe_keys_within_preserved_side = query_graph.probe_keys_within_preserved_side;
+    collectEdgeKeys(query_graph, dp_table, expression_selectivity, edges, BitSet::fromUInt(left_mask), keys);
 
     /// Account for transitively-equivalent columns spanning both sides, visiting only the classes
     /// incident to the left relations. A generation stamp deduplicates classes without allocating
@@ -493,32 +495,48 @@ SelectivityEstimate DPSubJoinOrderOptimizer::computeSelectivityMask(
                 continue;
             dpsub_data.class_visited[class_idx] = generation;
 
-            UInt64 max_ndv = 0;
-            UInt64 max_ndv_upper_bound = 0;
+            KeyDistinctValues left_distinct_values;
+            KeyDistinctValues right_distinct_values;
+            UInt64 domain_distinct_values = 0;
             bool has_left = false;
             bool has_right = false;
+            std::vector<UInt64> left_columns;
+            std::vector<UInt64> right_columns;
             for (const auto & equiv_member : *dpsub_data.equiv_classes[class_idx])
             {
                 auto relation = equiv_member.getSourceRelations().getSingleBit();
                 if (!relation)
                     continue;
                 const UInt32 relation_bit = static_cast<UInt32>(1) << *relation;
+                KeyDistinctValues * side = nullptr;
                 if (left_mask & relation_bit)
+                {
                     has_left = true;
+                    side = &left_distinct_values;
+                    left_columns.push_back(keyColumnId(equiv_member.getColumnName()));
+                }
                 else if (right_mask & relation_bit)
+                {
                     has_right = true;
+                    side = &right_distinct_values;
+                    right_columns.push_back(keyColumnId(equiv_member.getColumnName()));
+                }
                 else
                     continue;
-                auto ndv = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
-                max_ndv = std::max(max_ndv, ndv.ndv.value_or(0));
-                max_ndv_upper_bound = std::max(max_ndv_upper_bound, ndv.upper_bound);
+                const auto member_values = getColumnStats(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName());
+                side->from_statistics = std::max(side->from_statistics, member_values.from_statistics);
+                side->rows = std::max(side->rows, member_values.rows);
+                domain_distinct_values = std::max(domain_distinct_values, getColumnDomain(query_graph, dp_table, equiv_member.getSourceRelations(), equiv_member.getColumnName()));
             }
             if (has_left && has_right)
-                applyEquiKeyDistinctValues(estimate, max_ndv, max_ndv_upper_bound);
+            {
+                keys.add(left_distinct_values, right_distinct_values, domain_distinct_values);
+                keys.countIndependentKey(left_distinct_values, right_distinct_values, left_columns, right_columns);
+            }
         }
     }
 
-    return estimate;
+    return keys;
 }
 
 template <typename DPTable, std::unsigned_integral TUInt>
@@ -526,7 +544,7 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
 {
     auto& entry = dptable[S];
     if (!entry.left && !entry.right)
-        return std::make_shared<DPJoinEntry>(std::countr_zero(S), entry.estimated_rows, entry.column_stats);
+        return std::make_shared<DPJoinEntry>(std::countr_zero(S), query_graph.relation_stats[std::countr_zero(S)]);
 
     /// `entry.strictness` is All for every DP entry except semi/anti joins admitted by the
     /// conflict detector (CD-A/CD-C), which must keep their strictness in the reordered tree.
@@ -547,7 +565,9 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::buildPhysicalPlan(const DP
 
     auto left = buildPhysicalPlan(dptable, entry.left);
     auto right = buildPhysicalPlan(dptable, entry.right);
-    return std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
+    auto join_entry = std::make_shared<DPJoinEntry>(left, right, entry.cost, entry.sel, entry.estimated_rows, std::move(join_operator));
+    join_entry->estimate_from_defaults |= entry.assumes_independent_keys;
+    return join_entry;
 }
 
 /** Implements the `Dpsub` bottom-up dynamic programming algorithm for optimal bushy join tree generation.
@@ -588,9 +608,12 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
         Bitvector left{0};
         Bitvector right{0};
         std::optional<UInt64> estimated_rows = {};
+        std::optional<UInt64> max_rows = {};
         std::unordered_map<String, ColumnStats> column_stats = {};
         double cost{.0};
         double sel{.0};
+        /// The rows rest on the independence of the key columns, see `assumesIndependentKeys`.
+        bool assumes_independent_keys = false;
         JoinKind kind{JoinKind::Inner};
         JoinStrictness strictness{JoinStrictness::All};
         std::vector<JoinActionRef*> edges; // needed for physical plan generation
@@ -614,6 +637,15 @@ std::shared_ptr<DPJoinEntry> DPSubJoinOrderOptimizer::solve()
     }
 
     Checker checker(n, *this);
+    /// The table starts with empty leaves; without the relation estimates every leaf would be
+    /// costed as one row and every join cardinality would be unknown.
+    for (size_t i = 0; i < n; ++i)
+    {
+        auto & leaf = checker.getDPTable()[static_cast<Bitvector>(1) << i];
+        leaf.estimated_rows = query_graph.relation_stats[i].estimated_rows;
+        leaf.max_rows = query_graph.relation_stats[i].max_rows;
+        leaf.column_stats = query_graph.relation_stats[i].column_stats;
+    }
     Enumerator enumerator(n, max_nr_ccps, log);
     enumerator.enumerate(checker, query_graph);
 

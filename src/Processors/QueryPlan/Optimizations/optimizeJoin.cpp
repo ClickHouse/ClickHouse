@@ -21,8 +21,11 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
+#include <Processors/QueryPlan/CommonSubplanReferenceStep.h>
+#include <Processors/QueryPlan/ReadFromCommonBufferStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsUtils.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
@@ -45,6 +48,7 @@
 namespace ProfileEvents
 {
     extern const Event JoinOptimizeMicroseconds;
+    extern const Event JoinOrderJoinsCostedWithoutRowEstimate;
 }
 
 namespace DB
@@ -116,8 +120,9 @@ struct RuntimeHashStatisticsContext
         if (auto cache_key = getCachedKey(node))
         {
             auto & hash_table_stats = getHashTablesStatistics<HashJoinEntry>();
+            /// A size recorded under a runtime filter from outside the build side describes that plan only.
             if (auto hint = hash_table_stats.getSizeHint(params.setKey(cache_key)))
-                return hint->source_rows;
+                return hint->unfiltered_source_rows;
         }
         return {};
     }
@@ -187,7 +192,7 @@ struct RuntimeHashStatisticsContext
     }
 };
 
-bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings &)
+bool optimizeJoinLegacy(QueryPlan::Node & node, QueryPlan::Nodes & /*nodes*/, const QueryPlanOptimizationSettings & /*optimization_settings*/)
 {
     auto * join_step = typeid_cast<JoinStep *>(node.step.get());
     if (!join_step || node.children.size() != 2 || join_step->isOptimized())
@@ -287,6 +292,9 @@ struct QueryGraphBuilder
     std::vector<QueryPlan::Node *> inputs;
 
     std::vector<JoinActionRef> join_edges;
+
+    /// See `QueryGraph::probe_keys_within_preserved_side`.
+    bool probe_keys_within_preserved_side = false;
 
     /// Outer joined relation should be joined after all other relations involved in its join expressions.
     /// It is joined with specified join kind.
@@ -393,6 +401,89 @@ static void uniteGraphs(QueryGraphBuilder & lhs, QueryGraphBuilder rhs)
 }
 
 void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, QueryPlan::Nodes & nodes, int join_steps_limit);
+
+void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+static void estimateJoinInPlace(JoinStepLogical & join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings);
+
+/// Gives the join an estimate: by reordering it, or in place when the planner forbade reordering
+/// (a decorrelated subquery, a forced order).
+static void ensureJoinEstimated(JoinStepLogical & join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    if (!join_step.isOptimized())
+        optimizeJoinLogicalImpl(&join_step, node, nodes, optimization_settings);
+    else if (!join_step.hasRowsEstimation())
+        estimateJoinInPlace(join_step, node, nodes, optimization_settings);
+}
+
+/// Estimates the join a single-child chain below `node` ends in, so that the estimate of the
+/// subquery the chain forms is known. A chain that reads a shared subplan, directly or through a
+/// buffer, continues in that subplan.
+static void optimizeJoinsBelow(QueryPlan::Node * node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    auto * child_node = node;
+    while (true)
+    {
+        if (child_node->children.size() == 1)
+            child_node = child_node->children[0];
+        else if (const auto * reference = typeid_cast<const CommonSubplanReferenceStep *>(child_node->step.get()))
+            child_node = reference->getSubplanReferenceRoot();
+        else if (const auto * buffer_read = typeid_cast<const ReadFromCommonBufferStep *>(child_node->step.get()))
+            child_node = buffer_read->getSubplanRoot();
+        else
+            break;
+    }
+
+    if (auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get()))
+        ensureJoinEstimated(*child_join_step, *child_node, nodes, optimization_settings);
+}
+
+/// A join the join order optimizer leaves in place (a residual condition, a locality, a `PASTE`
+/// join, or join ordering turned off) still takes an estimate from its inputs with the formulas of
+/// the join order optimizer; without it everything above the join is unknown. The residual
+/// condition is not priced.
+static void estimateJoinInPlace(JoinStepLogical & join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
+{
+    for (auto * child : node.children)
+        optimizeJoinsBelow(child, nodes, optimization_settings);
+
+    const RelationStats left_stats = estimateReadRowsCount(*node.children[0]);
+    const RelationStats right_stats = estimateReadRowsCount(*node.children[1]);
+    const auto join = estimateJoin(left_stats, right_stats, join_step.getJoinOperator(), join_step.probeKeysWithinPreservedSide());
+
+    auto input_estimate = [](const RelationStats & stats)
+    {
+        RelationEstimateInfo estimate;
+        estimate.estimated_rows = stats.estimated_rows;
+        estimate.max_rows = stats.max_rows;
+        estimate.source = stats.source;
+        estimate.imprecise_estimate = stats.imprecise_estimate;
+        return estimate;
+    };
+    join_step.setInPlaceEstimation(
+        join.rows,
+        join.column_stats,
+        left_stats.imprecise_estimate || right_stats.imprecise_estimate,
+        join.selectivity,
+        join.max_rows,
+        join.estimate_from_defaults,
+        input_estimate(left_stats),
+        input_estimate(right_stats));
+
+    /// Annotate the plan nodes like the join-order path does, so that `EXPLAIN estimates` and the
+    /// profile log see the estimate. A node that already carries an annotation keeps it: a plan
+    /// fragment arrives with the estimates of the planner that decided it.
+    if (!node.children[0]->cost_estimation)
+        node.children[0]->cost_estimation = toCostEstimationInfo(left_stats);
+    if (!node.children[1]->cost_estimation)
+        node.children[1]->cost_estimation = toCostEstimationInfo(right_stats);
+    if (!node.cost_estimation)
+        node.cost_estimation = CostEstimationInfo{
+            .rows = join.rows ? std::optional<Float64>(Float64(*join.rows)) : std::nullopt,
+            .cost = std::nullopt,
+            .source = RowEstimateSource::NoSource,
+            .max_rows = join.max_rows ? std::optional<Float64>(Float64(*join.max_rows)) : std::nullopt,
+            .estimate_from_defaults = join.estimate_from_defaults};
+}
 
 static String dumpStatsForLogs(const RelationStats & stats)
 {
@@ -530,30 +621,21 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
 
     /// When the leaf is a subquery with Join-s wrapped in Expression/Aggregating steps, we cannot Joins to the graph, but we want to optimize
     /// those child Join to get proper statistics to use in the parent Join reordering.
-    {
-        auto * child_node = node;
-        while (child_node->children.size() == 1)
-        {
-            child_node = child_node->children[0];
-        }
-
-        auto * child_join_step = typeid_cast<JoinStepLogical *>(child_node->step.get());
-        if (child_join_step && !child_join_step->isOptimized())
-        {
-            optimizeJoinLogicalImpl(child_join_step, *child_node, nodes, graph.context->optimization_settings);
-        }
-    }
+    optimizeJoinsBelow(node, nodes, graph.context->optimization_settings);
 
     graph.inputs.push_back(node);
     RelationStats stats = estimateReadRowsCount(*node);
 
     std::optional<size_t> num_rows_from_cache = graph.context->statistics_context.getCachedHint(node);
-    if (graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
-        && (!stats.estimated_rows || num_rows_from_cache.value() < stats.estimated_rows.value()))
+    const bool use_rows_from_cache = graph.context->join_settings.use_hash_table_stats_for_join_reordering && num_rows_from_cache
+        && (!stats.estimated_rows || num_rows_from_cache.value() < stats.estimated_rows.value());
+    if (use_rows_from_cache)
     {
-        /// A measured row count beats statistics: take the minimum and mark it a precise cache value.
-        stats.estimated_rows = num_rows_from_cache;
-        stats.imprecise_estimate = false;
+        /// The row count a past execution built the hash table from beats a larger statistics
+        /// estimate, but it describes that execution's input, not this one's, so it stays imprecise,
+        /// and a past count of zero does not prove the input empty.
+        stats.estimated_rows = std::max<size_t>(1, *num_rows_from_cache);
+        stats.imprecise_estimate = true;
         stats.source = RowEstimateSource::HashTableCache;
     }
 
@@ -564,7 +646,7 @@ static size_t addChildQueryGraph(QueryGraphBuilder & graph, QueryPlan::Node * no
         stats = getRandomizedStats(seed, graph.relation_stats.size(), stats.table_name, *node->step->getOutputHeader());
 
     LOG_TRACE(getLogger("optimizeJoin"), "Estimated statistics{} for {} {}",
-        num_rows_from_cache.has_value() ? " (from cache)" : "",
+        use_rows_from_cache ? " (from cache)" : (num_rows_from_cache ? " (cache not used)" : ""),
         node->step->getName(), dumpStatsForLogs(stats));
     graph.relation_stats.push_back(stats);
     return 1;
@@ -948,6 +1030,8 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     query_graph.join_kinds = std::move(query_graph_builder.join_kinds);
     query_graph.outer_join_conditions = std::move(query_graph_builder.outer_join_conditions);
     query_graph.conflict_ops = std::move(query_graph_builder.conflict_ops);
+    query_graph.join_strictness = join_strictness;
+    query_graph.probe_keys_within_preserved_side = query_graph_builder.probe_keys_within_preserved_side;
     for (size_t i = 0; i < query_graph_builder.inputs.size(); ++i)
     {
         if (typeid_cast<const JoinStepLogicalLookup *>(query_graph_builder.inputs[i]->step.get()))
@@ -959,14 +1043,17 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     std::unordered_map<BitSet, RelationEstimateInfo> relation_infos;
     Strings relations_without_statistics;
     std::vector<UInt8> leaf_imprecise(query_graph.relation_stats.size());
+    std::vector<UInt8> leaf_without_estimate(query_graph.relation_stats.size());
     for (size_t i = 0; i < query_graph.relation_stats.size(); ++i)
     {
         const auto & rel = query_graph.relation_stats[i];
         leaf_imprecise[i] = rel.imprecise_estimate;
+        leaf_without_estimate[i] = !rel.estimated_rows;
 
         relation_infos[BitSet().set(i)] = RelationEstimateInfo{
             .name = rel.table_name.empty() ? fmt::format("R{}", i) : rel.table_name,
             .estimated_rows = rel.estimated_rows,
+            .max_rows = rel.max_rows,
             .source = rel.source,
             .imprecise_estimate = rel.imprecise_estimate};
 
@@ -1087,6 +1174,13 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
             size_t relation_id = safe_cast<size_t>(entry->relation_id);
             if (relation_id >= input_nodes.size())
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Invalid relation id: {}, input nodes size: {}", relation_id, input_nodes.size());
+            /// `relation_infos` keeps the leaf estimates; the query graph itself was handed to the optimizer above.
+            const auto & leaf_info = relation_infos.at(BitSet().set(relation_id));
+            input_nodes[relation_id]->cost_estimation = CostEstimationInfo{
+                .rows = leaf_info.estimated_rows ? std::optional<Float64>(Float64(*leaf_info.estimated_rows)) : std::nullopt,
+                .cost = std::nullopt,
+                .source = leaf_info.source,
+                .max_rows = leaf_info.max_rows ? std::optional<Float64>(Float64(*leaf_info.max_rows)) : std::nullopt};
             node_stack.push(input_nodes[relation_id]);
         }
         else
@@ -1307,20 +1401,31 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             join_step->setDisjunctionsOptimizationApplied(disjunctions_optimization_applied);
 
-            /// Diagnostic only: a join is imprecise if any of its leaves was (see `leaf_imprecise` above).
+            /// Diagnostic only: a join is imprecise if any of its leaves was, or had no estimate at
+            /// all, in which case its cost stood on a bound or a placeholder.
             bool imprecise_estimate = false;
+            bool costed_without_estimate = false;
             for (size_t i = 0; i < leaf_imprecise.size(); ++i)
-                if (entry->relations.test(i))
-                    imprecise_estimate |= leaf_imprecise[i];
+            {
+                if (!entry->relations.test(i))
+                    continue;
+                imprecise_estimate |= leaf_imprecise[i] || leaf_without_estimate[i];
+                costed_without_estimate |= leaf_without_estimate[i];
+            }
+            if (costed_without_estimate)
+                ProfileEvents::increment(ProfileEvents::JoinOrderJoinsCostedWithoutRowEstimate);
 
             join_step->setInputRelations(relation_infos[left_rels], relation_infos[right_rels]);
             relation_infos[entry->relations] = RelationEstimateInfo{
                 .name = join_step->getReadableRelationName(),
                 .estimated_rows = entry->estimated_rows,
+                .max_rows = entry->max_rows,
                 .imprecise_estimate = imprecise_estimate,
                 .composite = true};
 
-            join_step->setOptimized(entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id);
+            join_step->setJoinOrderEstimation(
+                entry->estimated_rows, entry->column_stats, imprecise_estimate, entry->cost, entry->selectivity, cluster_id, entry->max_rows,
+                entry->estimate_from_defaults);
 
             auto & new_node = nodes.emplace_back();
 
@@ -1333,6 +1438,12 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
 
             new_node.step = std::move(join_step);
             new_node.children = {left_child_node, right_child_node};
+            new_node.cost_estimation = CostEstimationInfo{
+                .rows = entry->estimated_rows ? std::optional<Float64>(Float64(*entry->estimated_rows)) : std::nullopt,
+                .cost = entry->cost,
+                .source = RowEstimateSource::NoSource,
+                .max_rows = entry->max_rows ? std::optional<Float64>(Float64(*entry->max_rows)) : std::nullopt,
+                .estimate_from_defaults = entry->estimate_from_defaults};
             node_stack.push(&new_node);
         }
     }
@@ -1471,14 +1582,14 @@ static bool joinGraphHasOverlappingColumnNames(
 void optimizeJoinLogical(QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto * join_step = typeid_cast<JoinStepLogical *>(node.step.get());
-    if (!join_step || join_step->isOptimized())
+    if (!join_step)
         return;
 
     if (node.children.size() != 2)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinStepLogical should have exactly 2 children, but has {}", node.children.size());
 
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::JoinOptimizeMicroseconds);
-    optimizeJoinLogicalImpl(join_step, node, nodes, optimization_settings);
+    ensureJoinEstimated(*join_step, node, nodes, optimization_settings);
 }
 
 void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node, QueryPlan::Nodes & nodes, const QueryPlanOptimizationSettings & optimization_settings)
@@ -1500,7 +1611,7 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
         || !join_operator.residual_filter.empty()
     )
     {
-        join_step->setOptimized();
+        estimateJoinInPlace(*join_step, node, nodes, optimization_settings);
         return;
     }
 
@@ -1529,6 +1640,8 @@ void optimizeJoinLogicalImpl(JoinStepLogical * join_step, QueryPlan::Node & node
 
     QueryGraphBuilder query_graph_builder(optimization_settings, node, join_step->getJoinSettings(), join_step->getSortingSettings());
     query_graph_builder.context->stats_hint = join_step->getTableStatsHint();
+    /// A swap-only semi or anti join keeps its graph to itself, so the property holds for the graph.
+    query_graph_builder.probe_keys_within_preserved_side = query_graph_size_limit == 2 && join_step->probeKeysWithinPreservedSide();
 
     buildQueryGraph(query_graph_builder, node, nodes, query_graph_size_limit);
     node = chooseJoinOrder(std::move(query_graph_builder), nodes, strictness);

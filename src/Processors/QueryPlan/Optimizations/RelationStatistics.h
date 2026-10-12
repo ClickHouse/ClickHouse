@@ -2,8 +2,11 @@
 
 #include <optional>
 #include <unordered_map>
+#include <vector>
 
 #include <Core/Joins.h>
+#include <Core/Names.h>
+#include <Processors/QueryPlan/CostEstimationInfo.h>
 #include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 #include <base/types.h>
@@ -16,16 +19,35 @@ class ActionsDAG;
 struct RelationStats
 {
     std::optional<UInt64> estimated_rows = {};
+    /// Rows the relation cannot exceed: the selected rows of a read, carried through the steps above
+    /// it by their semantics (a filter keeps the bound, a limit lowers it). Known for many relations
+    /// whose point estimate is unknown, so a missing point does not have to be costed as one row.
+    std::optional<UInt64> max_rows = {};
     std::optional<Float64> avg_row_bytes = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;
     bool imprecise_estimate = false;
+    /// A default selectivity stood in for a predicate the statistics could not estimate somewhere
+    /// below, so `estimated_rows` is a guess; the steps above a read carry it.
+    bool estimate_from_defaults = false;
 
     /// Diagnostic annotation of where `estimated_rows` came from; see `RowEstimateSource`.
     /// `NoSource` means the producer of the estimate did not track it; set it wherever it is known.
     RowEstimateSource source = RowEstimateSource::NoSource;
 };
+
+/// The plan node annotation of a relation estimate, for `EXPLAIN estimates = 1` and the
+/// processors profile log. A missing row count stays missing.
+inline CostEstimationInfo toCostEstimationInfo(const RelationStats & stats)
+{
+    return CostEstimationInfo{
+        .rows = stats.estimated_rows ? std::optional<Float64>(Float64(*stats.estimated_rows)) : std::nullopt,
+        .cost = std::nullopt,
+        .source = stats.source,
+        .max_rows = stats.max_rows ? std::optional<Float64>(Float64(*stats.max_rows)) : std::nullopt,
+        .estimate_from_defaults = stats.estimate_from_defaults};
+}
 
 namespace QueryPlanOptimizations
 {
@@ -35,8 +57,74 @@ namespace QueryPlanOptimizations
 /// single-argument function of it (which cannot increase the distinct count).
 void remapColumnStats(std::unordered_map<String, ColumnStats> & mapped, const ActionsDAG & actions);
 
+/// Distinct value combinations of a set of keys among `rows` rows: the rows of an aggregation or a
+/// `DISTINCT` over them.
+struct GroupCountEstimate
+{
+    /// Unknown when no key has an NDV.
+    std::optional<UInt64> estimated_rows;
+    /// The rows the input cannot exceed; the key NDVs are estimates and do not tighten it.
+    std::optional<UInt64> max_rows;
+};
+
+/// Width of a `UNION ALL` row or value from the widths of two inputs (zero = unknown): weighted by
+/// the inputs' rows, the wider one when the rows are unknown.
+Float64 unionWidth(Float64 width, Float64 rows, Float64 other_width, Float64 other_rows);
+
+/// Column statistics of a `UNION ALL`: adds the `other` input's values to `result`, matching the
+/// columns by position (`result_columns` names the output, `other_columns` the other input); the
+/// rows of both inputs (zero = unknown) weight the value widths.
+void addUnionColumnStats(
+    std::unordered_map<String, ColumnStats> & result,
+    const Names & result_columns,
+    const std::unordered_map<String, ColumnStats> & other,
+    const Names & other_columns,
+    UInt64 result_rows,
+    UInt64 other_rows);
+
+/// The largest known key NDV, capped by the rows: the groups are at least that many when the NDV is
+/// exact, and real keys are correlated more often than not. `key_distinct_values` holds one NDV per
+/// key, zero for a key without one. No keys: one group.
+GroupCountEstimate estimateGroupCount(const std::vector<UInt64> & key_distinct_values, std::optional<UInt64> rows, std::optional<UInt64> max_rows);
+
+/// Distinct values of a join key: the NDV its column statistics give, and the rows of its relation,
+/// which stand in for a key without an NDV (the key then counts as unique); a relation without a
+/// row estimate gives the rows it cannot exceed. Zero means unknown.
+struct KeyDistinctValues
+{
+    UInt64 from_statistics = 0;
+    UInt64 rows = 0;
+
+    UInt64 orRows() const { return from_statistics ? from_statistics : rows; }
+};
+
+KeyDistinctValues keyDistinctValues(const RelationStats & relation, const String & column);
+/// NDV of the whole base column the key comes from; zero when unknown.
+UInt64 keyDomain(const RelationStats & relation, const String & column);
+
+/// Distinct values of a column left by a filter that keeps `rows_after` of `rows_before` rows, when
+/// the column's `distinct_values` are spread evenly over the rows: a value survives when any of its
+/// rows does. Zero when the NDV is unknown; never above `rows_after`.
+UInt64 distinctValuesAfterFilter(UInt64 distinct_values, UInt64 rows_before, UInt64 rows_after);
+
+/// Sets `max_distinct_values` of the columns `predicate` limits to constants, for each conjunct: one
+/// value for `x = c` without a lossy conversion, the size of the set for `x IN (c1, ...)` with a set of
+/// literals. `x` is an input of the step, which passes through, or one of `outputs` (the step's outputs,
+/// may be null). A column without an entry gets one.
+void capDistinctValuesByFilter(
+    const ActionsDAG::Node * predicate,
+    std::unordered_map<String, ColumnStats> & column_stats,
+    const ActionsDAG::NodeRawConstPtrs * outputs = nullptr);
+
+/// Share of one side's key values that the other side also has, from the two NDVs (zero =
+/// unknown) and the key's domain: fewer values on the other side all lie within this side's; as
+/// many or more meet this side's in proportion to their share of the domain, all of them when the
+/// domain is unknown. Nothing when either NDV is unknown.
+std::optional<double> keyContainment(UInt64 side_distinct_values, UInt64 other_distinct_values, UInt64 domain_distinct_values = 0);
+
 /// Tighten equi-join key NDVs to their minimum, respecting which side each join kind preserves.
-/// Anti joins and full joins leave both inputs unchanged.
+/// Anti joins and full joins leave both inputs unchanged. A zero NDV is unknown: it is bounded by
+/// the other side's NDV when the join filters its side, and never narrows the other side.
 void updateJoinKeyDistinctCounts(
     ColumnStats & left_stats,
     ColumnStats & right_stats,

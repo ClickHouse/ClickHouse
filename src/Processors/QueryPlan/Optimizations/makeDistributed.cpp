@@ -4,6 +4,7 @@
 #include <Processors/QueryPlan/ReadFromMergeTreeAtWorker.h>
 #endif
 #include <algorithm>
+#include <utility>
 #include <Columns/ColumnConst.h>
 #include <Core/Block.h>
 #include <Core/Settings.h>
@@ -30,6 +31,8 @@
 #include <Processors/QueryPlan/MergingAggregatedStep.h>
 #include <Processors/QueryPlan/Optimizations/Optimizations.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatisticsEstimator.h>
+#include <Processors/QueryPlan/Optimizations/ReplicationEligibility.h>
+#include <Processors/QueryPlan/Optimizations/Cascades/Statistics.h>
 #include <Processors/QueryPlan/Optimizations/Utils.h>
 #include <Processors/QueryPlan/Optimizations/keyTypeBreaksHashSharding.h>
 #include <Processors/QueryPlan/ReadFromObjectStorageStep.h>
@@ -548,6 +551,14 @@ static bool shuffleJoinKeysHaveCommonType(const JoinOperator & join_info)
     return true;
 }
 
+/// Limits on the data a plan copies to every node, from the settings.
+static ReplicationBudget replicationBudget(const QueryPlanOptimizationSettings & optimization_settings)
+{
+    return ReplicationBudget{
+        .max_rows = optimization_settings.distributed_plan_max_rows_to_broadcast,
+        .max_bytes = optimization_settings.distributed_plan_max_bytes_to_broadcast};
+}
+
 /// Replaces LogicalJoin step with a subtree like this:
 ///
 ///   GatherExchange
@@ -583,7 +594,9 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     QueryPlan::Node * source_a = node.children[0];
     QueryPlan::Node * source_b = node.children[1];
 
-    auto row_count_b = estimateReadRowsCount(*source_b).estimated_rows;
+    auto stats_b = estimateReadRowsCount(*source_b);
+    if (!source_b->cost_estimation)
+        source_b->cost_estimation = toCostEstimationInfo(stats_b);
 
     enum DistributedJoinStrategy
     {
@@ -600,21 +613,27 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
         = join_info.kind == JoinKind::Right
         || join_info.kind == JoinKind::Full;
 
-    /// Check if right table is small enough for broadcast
-    if (!broadcast_unsafe && row_count_b && row_count_b <= optimization_settings.distributed_plan_max_rows_to_broadcast)
+    /// The right side is copied to every node: it has to fit the row limit and the byte budget,
+    /// on its estimate when that is a measurement, on its proven row bound otherwise.
+    const ReplicationSize size_b{
+        .estimated_rows = stats_b.estimated_rows,
+        .estimate_from_defaults = stats_b.estimate_from_defaults,
+        .max_rows = stats_b.max_rows,
+        .bytes_per_row = stats_b.avg_row_bytes.value_or(estimateRowWidth(*source_b->step->getOutputHeader(), stats_b.column_stats))};
+    const auto budget = replicationBudget(optimization_settings);
+    const auto broadcast = decideReplication(size_b, budget);
+    if (!broadcast_unsafe && broadcast.allowed)
         strategy = Broadcast;
 
     QueryPlan::Node * exchange_scatter_a_node = nullptr;
     QueryPlan::Node * exchange_scatter_b_node = nullptr;
 
     size_t bucket_count = optimization_settings.distributed_plan_default_shuffle_join_bucket_count;
+    LOG_DEBUG(getLogger("tryMakeDistributedJoin"), "Right source: {}. Using {}", broadcast.describe(size_b, budget),
+        strategy == Broadcast ? "broadcast join" : fmt::format("{} buckets for shuffle join", bucket_count));
 
     if (strategy == Broadcast)
     {
-        LOG_DEBUG(getLogger("tryMakeDistributedJoin"),
-            "Estimated number of rows in right source: {}. Using broadcast join",
-            row_count_b.transform(toString<UInt64>).value_or("unknown"));
-
         exchange_scatter_a_node = &nodes.emplace_back();
         exchange_scatter_b_node = &nodes.emplace_back();
 
@@ -628,11 +647,6 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     }
     else
     {
-        LOG_DEBUG(getLogger("tryMakeDistributedJoin"),
-            "Estimated number of rows in right source: {}. Using {} buckets for shuffle join",
-            row_count_b.transform(toString<UInt64>).value_or("unknown"),
-            bucket_count);
-
         /// Keep type-incompatible joins single-node. Must precede preCalculateKeys(): bailing after
         /// it would leave the step with an input no child produces (LOGICAL_ERROR on deserialize).
         if (!shuffleJoinKeysHaveCommonType(join_info))
@@ -706,12 +720,14 @@ void tryMakeDistributedJoin(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     auto & new_join_node = nodes.emplace_back();
     new_join_node.step = std::move(node.step);
     new_join_node.children = {exchange_scatter_a_node, exchange_scatter_b_node};
+    new_join_node.cost_estimation = std::exchange(node.cost_estimation, std::nullopt);
 
     /// Add gather exchange step above join
     QueryPlan::Node gather_node;
     QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_join_node.step->getOutputHeader(), bucket_count);
     gather_node.step = std::move(exchange_gather_step);
     gather_node.children = {&new_join_node};
+    gather_node.cost_estimation = new_join_node.cost_estimation;
 
     /// Replace join node with gather node
     node = std::move(gather_node);
@@ -761,20 +777,19 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         Shuffle,            /// Partition data by aggregation keys and do aggregation in disjoint buckets, then just unite the results
     } strategy = PartialAggregation;
 
+    auto input_stats = estimateReadRowsCount(*source);
+    if (!source->cost_estimation)
+        source->cost_estimation = toCostEstimationInfo(input_stats);
+    /// The aggregation's own estimate, unknown when the statistics give no group count; the strategy
+    /// decision below then falls back to the input rows without reporting them as groups.
+    const auto aggregation_stats = estimateAggregatingStepStats(*aggregating_step, input_stats);
+    if (!node.cost_estimation)
+        node.cost_estimation = toCostEstimationInfo(aggregation_stats);
+
     /// Choose Shuffle when the estimated number of groups is high.
     if (!aggregation_keys.empty())
     {
-        auto input_stats = estimateReadRowsCount(*source);
-
-        /// Use max NDV among GROUP BY keys as a lower-bound estimate for groups.
-        std::optional<UInt64> estimated_groups;
-        for (const auto & key : aggregation_keys)
-        {
-            auto it = input_stats.column_stats.find(key);
-            if (it != input_stats.column_stats.end() && it->second.num_distinct_values > 0)
-                estimated_groups = std::max(estimated_groups.value_or(0), it->second.num_distinct_values);
-        }
-
+        std::optional<UInt64> estimated_groups = aggregation_stats.estimated_rows;
         /// Fall back to input row count as an upper bound when NDV is unavailable.
         if (!estimated_groups && input_stats.estimated_rows)
             estimated_groups = input_stats.estimated_rows;
@@ -891,12 +906,14 @@ void tryMakeDistributedAggregation(QueryPlan::Node & node, QueryPlan::Nodes & no
         auto & new_aggregation_node = nodes.emplace_back();
         new_aggregation_node.step = std::move(node.step);
         new_aggregation_node.children = {&exchange_scatter_node};
+        new_aggregation_node.cost_estimation = std::exchange(node.cost_estimation, std::nullopt);
 
         /// Add gather exchange step above aggregation
         QueryPlan::Node gather_node;
         QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_aggregation_node.step->getOutputHeader(), bucket_count);
         gather_node.step = std::move(exchange_gather_step);
         gather_node.children = {&new_aggregation_node};
+        gather_node.cost_estimation = new_aggregation_node.cost_estimation;
 
         /// Replace aggregation node with gather node
         node = std::move(gather_node);
@@ -995,11 +1012,27 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 
     if (read_from_merge_tree_step)
     {
-        /// Check if table is big enough for distributed read
+        /// A small table stays one read task, which the plan copies to every node when the other
+        /// side of a join is distributed; so it has to fit the row limit and the byte budget. The
+        /// rows and the row width come from the estimator, as for the right side of a broadcast
+        /// join: a hint or column statistics widen a row beyond what its types alone say.
         /// TODO: implement better logic for choosing number of parallel readers
-        auto analysis_result = read_from_merge_tree_step->getOrCreateAnalyzedResult();
-        if (analysis_result && analysis_result->selected_rows <= optimization_settings.distributed_plan_max_rows_to_broadcast)
-            return;
+        auto analysis_result = read_from_merge_tree_step->getAnalyzedResultForEstimation();
+        if (analysis_result)
+        {
+            const auto stats = estimateReadRowsCount(node);
+            const Float64 bytes_per_row = stats.avg_row_bytes.value_or(estimateRowWidth(*read_from_merge_tree_step->getOutputHeader(), stats.column_stats));
+            /// Every node scans the selected ranges whatever the filter leaves of them.
+            const UInt64 scanned_rows = std::max<UInt64>(analysis_result->selected_rows, stats.estimated_rows.value_or(0));
+            const ReplicationSize size{
+                .estimated_rows = stats.estimated_rows,
+                .estimate_from_defaults = stats.estimate_from_defaults,
+                .max_rows = stats.max_rows ? stats.max_rows : std::optional<UInt64>(analysis_result->selected_rows),
+                .bytes_per_row = bytes_per_row,
+                .scan_bytes = static_cast<UInt64>(static_cast<Float64>(scanned_rows) * bytes_per_row)};
+            if (decideReplication(size, replicationBudget(optimization_settings)).allowed)
+                return;
+        }
 
         /// The coordinator computes each bucket's authoritative marks: contiguous mark slices for a plain
         /// read, primary-key-range layers for FINAL (one merge per layer, so rows sharing a sort key are
@@ -1014,9 +1047,21 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
     else if (read_from_object_storage_step)
     {
 #if CLICKHOUSE_CLOUD
-        /// Check if table is big enough for distributed read
+        /// As for a MergeTree read, sized by the estimator, which takes the rows a data lake table
+        /// keeps in its metadata. A filtered read has only that row count as its bound, which still
+        /// decides; a table with neither an estimate nor a bound is read distributed.
         /// TODO: implement better logic for choosing number of parallel readers
-        if (read_from_object_storage_step->totalRows() <= optimization_settings.distributed_plan_max_rows_to_broadcast)
+        const auto stats = estimateReadRowsCount(node);
+        const Float64 bytes_per_row = stats.avg_row_bytes.value_or(estimateRowWidth(*read_from_object_storage_step->getOutputHeader(), stats.column_stats));
+        /// Every node scans all the rows of the table whatever the filter leaves of them.
+        const auto scanned_rows = stats.max_rows ? stats.max_rows : stats.estimated_rows;
+        const ReplicationSize size{
+            .estimated_rows = stats.estimated_rows,
+            .estimate_from_defaults = stats.estimate_from_defaults,
+            .max_rows = stats.max_rows,
+            .bytes_per_row = bytes_per_row,
+            .scan_bytes = scanned_rows ? std::optional<UInt64>(static_cast<UInt64>(static_cast<Float64>(*scanned_rows) * bytes_per_row)) : std::nullopt};
+        if (decideReplication(size, replicationBudget(optimization_settings)).allowed)
             return;
 
         read_from_object_storage_step->setDistributedRead(bucket_count);
@@ -1027,12 +1072,14 @@ void tryMakeDistributedRead(QueryPlan::Node & node, QueryPlan::Nodes & nodes, co
 
     auto & new_read_node = nodes.emplace_back();
     new_read_node.step = std::move(node.step);
+    new_read_node.cost_estimation = std::exchange(node.cost_estimation, std::nullopt);
 
     /// Add gather exchange step above read
     QueryPlan::Node gather_node;
     QueryPlanStepPtr exchange_gather_step = std::make_unique<GatherExchangeStep>(new_read_node.step->getOutputHeader(), bucket_count);
     gather_node.step = std::move(exchange_gather_step);
     gather_node.children = {&new_read_node};
+    gather_node.cost_estimation = new_read_node.cost_estimation;
 
     /// Replace aggregation node with gather node
     node = std::move(gather_node);
@@ -1415,6 +1462,13 @@ String dumpQueryPlanShort(const QueryPlan & query_plan)
 /// Builds distributed plan by splitting the query plan into multiple stages connected by exchanges.
 /// Exchange steps are split into ExchangeSink and ExchangeSource.
 /// This allows to build a separate plan fragment (a part of the original full plan) for each stage.
+/// A fragment is assembled from the steps alone; the estimate of the node a step came from goes to the
+/// fragment node that holds the step, so the task's processors log it like the coordinator's own would.
+static void keepEstimate(QueryPlan & fragment, const QueryPlan::Node & node)
+{
+    fragment.getRootNode()->cost_estimation = node.cost_estimation;
+}
+
 DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::Node * root, const QueryPlanOptimizationSettings & optimization_settings)
 {
     auto logger = getLogger("makeDistributedPlan");
@@ -1570,6 +1624,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 /// Step has multiple inputs
                 current_plan = std::make_unique<QueryPlan>();
                 current_plan->unitePlans(std::move(frame.node->step), std::move(frame.child_plans));
+                keepEstimate(*current_plan, *frame.node);
             }
             else if (frame.child_plans.size() == 1)
             {
@@ -1613,6 +1668,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                     /// Finish current plan fragment with exchange sink
                     current_plan->addStep(std::move(send_and_receive_steps.first));
+                    keepEstimate(*current_plan, *frame.node);
                     /// Create stage with the current plan fragment
                     {
                         DistributedQueryStage stage;
@@ -1657,6 +1713,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                     /// And start a new plan fragment with exchange source
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(send_and_receive_steps.second));
+                    keepEstimate(*current_plan, *frame.node);
                     frame.list_of_shards = std::move(destination_stage_tasks);
                     frame.shards_are_copies = typeid_cast<const BroadcastExchangeStep *>(exchange_step) != nullptr;
                 }
@@ -1664,6 +1721,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
                 {
                     /// Add current step on top of the current plan
                     current_plan->addStep(std::move(frame.node->step));
+                    keepEstimate(*current_plan, *frame.node);
                 }
             }
             else
@@ -1707,6 +1765,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(worker_step));
+                    keepEstimate(*current_plan, *frame.node);
 
                     populate_shards(std::move(shards_for_read), std::move(read_buckets), read_bucket_param_name);
                 }
@@ -1727,6 +1786,7 @@ DistributedQueryPlan makeDistributedPlan(QueryPlan::Nodes /*nodes*/, QueryPlan::
 
                     current_plan = std::make_unique<QueryPlan>();
                     current_plan->addStep(std::move(frame.node->step));
+                    keepEstimate(*current_plan, *frame.node);
 
                     populate_shards(std::move(shards_for_read), std::move(read_buckets), read_bucket_param_name);
                 }

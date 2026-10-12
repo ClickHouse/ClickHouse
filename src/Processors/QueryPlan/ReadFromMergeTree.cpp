@@ -371,6 +371,7 @@ namespace MergeTreeSetting
 
 namespace ErrorCodes
 {
+    extern const int TOO_MANY_ROWS;
     extern const int ILLEGAL_COLUMN;
     extern const int INDEX_NOT_USED;
     extern const int LOGICAL_ERROR;
@@ -2860,6 +2861,28 @@ bool ReadFromMergeTree::hasThrowingReadRowLimit() const
     const auto & settings = context->getSettingsRef();
     return (settings[Setting::read_overflow_mode] == OverflowMode::THROW && settings[Setting::max_rows_to_read])
         || (settings[Setting::read_overflow_mode_leaf] == OverflowMode::THROW && settings[Setting::max_rows_to_read_leaf]);
+}
+
+ReadFromMergeTree::AnalysisResultPtr ReadFromMergeTree::getAnalyzedResultForEstimation() const
+{
+    if (analyzed_result_ptr)
+        return analyzed_result_ptr;
+    if (!hasThrowingReadRowLimit())
+        return selectRangesToRead();
+
+    /// The analysis of the executed read is kept when it fits the row limit, so the index is analyzed
+    /// once. When it does not fit, the plan can still make the executed read smaller than the analysis
+    /// counts, so the size comes from an analysis that does not enforce the limit and is not kept.
+    try
+    {
+        return selectRangesToRead();
+    }
+    catch (const Exception & e)
+    {
+        if (e.code() != ErrorCodes::TOO_MANY_ROWS)
+            throw;
+    }
+    return selectRangesToReadForEstimation(/*allow_query_condition_cache_=*/true);
 }
 
 std::optional<size_t> ReadFromMergeTree::estimateCompressedBytesToRead() const

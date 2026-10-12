@@ -10811,6 +10811,10 @@ Maximum rows to use broadcast join instead of shuffle join in distributed query 
 A heuristic for the rule-based distributed planner. When the cost-based optimizer is enabled, the broadcast-vs-shuffle choice is made by estimated cost and this setting has no effect.
 )", EXPERIMENTAL, \
         {"25.7", 20000, 20000, "New experimental setting."}) \
+    DECLARE(UInt64, distributed_plan_max_bytes_to_broadcast, 1000000000, R"(
+Largest modeled size in bytes of a result that a distributed query plan replicates to every node: the right side of a broadcast join, a table read that every node repeats, a subplan that every node computes. The size is the estimated rows times the average row width; a result whose rows are unknown, or whose estimate took a default selectivity in place of a measurement, counts with its proven row bound instead, and a result with neither is never replicated. Above the budget the planner takes a shuffle or a local alternative. Applies to the rule-based distributed planner together with `distributed_plan_max_rows_to_broadcast`, and to the cost-based optimizer, which otherwise picks replication by cost alone. 0 disables the budget.
+)", EXPERIMENTAL, \
+        {"26.10", 1000000000, 1000000000, "New setting: byte budget for the data a distributed query plan replicates to every node."}) \
     DECLARE(Bool, distributed_plan_read_in_order, false, R"(
 Allow the read-in-order optimization for `ORDER BY` in a distributed query plan, so a sorted read of the
 table's sorting key can skip the sort and stop early instead of scanning and sorting.

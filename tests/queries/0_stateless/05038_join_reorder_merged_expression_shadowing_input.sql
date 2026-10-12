@@ -103,27 +103,30 @@ SELECT count() FROM (
              query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 0
 ) WHERE explain LIKE '%a[%' AND explain LIKE '%x[%' AND explain LIKE '%y[%';
 
--- Refusing the merge must not disable the reordering of the parent join. Only a relation the join
--- order optimizer costed carries a bracketed label, so this reads `0` when reordering never ran,
--- which the arms above cannot tell apart from a refused merge.
+-- Refusing the merge must not disable the reordering of the parent join. Only a join the join
+-- order optimizer costed carries a cost; a join left in place is estimated but not costed. So the
+-- top join line reads `cost:` only when reordering ran, which the arms above cannot tell apart
+-- from a refused merge.
 SELECT '-- the parent join of a refused merge is still reordered';
 SELECT count() > 0 FROM (
-    EXPLAIN SELECT a.c0, v.c0
+    EXPLAIN estimates = 1 SELECT a.c0, v.c0
     FROM t_a_05038 AS a
     INNER JOIN view(SELECT toInt32(x.c0 + 1) AS c0 FROM t_a_05038 AS x, t_b_05038 AS y) AS v
     ON a.c0 = v.c0
     SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,
-             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1
-) WHERE explain LIKE '%a[%';
+             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1,
+             explain_query_plan_default = 'pretty'
+) WHERE explain LIKE 'Join (%cost: %';
 
 SELECT '-- and the same query is not reordered once reordering is off';
 SELECT count() > 0 FROM (
-    EXPLAIN SELECT a.c0, v.c0
+    EXPLAIN estimates = 1 SELECT a.c0, v.c0
     FROM t_a_05038 AS a
     INNER JOIN view(SELECT toInt32(x.c0 + 1) AS c0 FROM t_a_05038 AS x, t_b_05038 AS y) AS v
     ON a.c0 = v.c0
-    SETTINGS query_plan_optimize_join_order_limit = 0, query_plan_merge_expression_into_join = 1
-) WHERE explain LIKE '%a[%';
+    SETTINGS query_plan_optimize_join_order_limit = 0, query_plan_merge_expression_into_join = 1,
+             explain_query_plan_default = 'pretty'
+) WHERE explain LIKE 'Join (%cost: %';
 
 -- A stored view pushes a second expression step converting the subquery result to the view
 -- structure, so it reaches the peel through a different plan shape than `view(...)` does.
@@ -162,16 +165,18 @@ SELECT count() FROM (
 -- The stored view reaches the peel through its own plan shape, so it needs its own reordering pair.
 SELECT '-- the parent join of a refused stored view merge is still reordered';
 SELECT count() > 0 FROM (
-    EXPLAIN SELECT a.c0, v.c0 FROM t_a_05038 AS a INNER JOIN v_shadow_05038 AS v ON a.c0 = v.c0
+    EXPLAIN estimates = 1 SELECT a.c0, v.c0 FROM t_a_05038 AS a INNER JOIN v_shadow_05038 AS v ON a.c0 = v.c0
     SETTINGS query_plan_optimize_join_order_limit = 16, query_plan_optimize_join_order_randomize = 0,
-             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1
-) WHERE explain LIKE '%a[%';
+             query_plan_optimize_join_order_algorithm = 'greedy', query_plan_merge_expression_into_join = 1,
+             explain_query_plan_default = 'pretty'
+) WHERE explain LIKE 'Join (%cost: %';
 
 SELECT '-- and the same stored view query is not reordered once reordering is off';
 SELECT count() > 0 FROM (
-    EXPLAIN SELECT a.c0, v.c0 FROM t_a_05038 AS a INNER JOIN v_shadow_05038 AS v ON a.c0 = v.c0
-    SETTINGS query_plan_optimize_join_order_limit = 0, query_plan_merge_expression_into_join = 1
-) WHERE explain LIKE '%a[%';
+    EXPLAIN estimates = 1 SELECT a.c0, v.c0 FROM t_a_05038 AS a INNER JOIN v_shadow_05038 AS v ON a.c0 = v.c0
+    SETTINGS query_plan_optimize_join_order_limit = 0, query_plan_merge_expression_into_join = 1,
+             explain_query_plan_default = 'pretty'
+) WHERE explain LIKE 'Join (%cost: %';
 
 DROP VIEW v_plain_05038;
 DROP VIEW v_shadow_05038;

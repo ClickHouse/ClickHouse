@@ -101,6 +101,7 @@ static OptimizerContext buildContext(const ContextPtr & query_context, const Que
     context.distributed_plan_execute_locally = optimization_settings.distributed_plan_execute_locally;
     context.distributed_aggregation_memory_efficient = optimization_settings.distributed_aggregation_memory_efficient;
     context.distributed_plan_force_shuffle_aggregation = optimization_settings.distributed_plan_force_shuffle_aggregation;
+    context.max_bytes_to_broadcast = optimization_settings.distributed_plan_max_bytes_to_broadcast;
     context.cascades_aggregation_pushdown = optimization_settings.cascades_aggregation_pushdown;
     context.exact_rows_before_limit = optimization_settings.exact_rows_before_limit;
 
@@ -475,10 +476,16 @@ QueryPlanPtr CascadesOptimizer::buildBestPlan(GroupId subtree_root_group_id, Exp
             result->unitePlans(std::move(step), std::move(frame.child_plans));
         }
 
+        const auto & group_statistics = *memo.getGroup(frame.group_id)->statistics;
         result->getRootNode()->cost_estimation = CostEstimationInfo
             {
+                .rows = group_statistics.rows_unknown ? std::nullopt : std::optional<Float64>(group_statistics.estimated_row_count),
                 .cost = frame.expression->cost->subtree_cost.total(cost_config),
-                .rows = memo.getGroup(frame.group_id)->statistics->estimated_row_count
+                .source = group_statistics.source,
+                .max_rows = group_statistics.max_row_count < Float64(std::numeric_limits<UInt64>::max())
+                    ? std::optional<Float64>(group_statistics.max_row_count) : std::nullopt,
+                .estimate_from_defaults = group_statistics.estimate_from_defaults,
+                .search_rows = group_statistics.rows_unknown ? std::optional<Float64>(group_statistics.estimated_row_count) : std::nullopt,
             };
         LOG_TEST(getLogger("buildBestPlan"), "Plan for group #{}:\n{}", frame.group_id, dumpQueryPlanShort(*result));
 

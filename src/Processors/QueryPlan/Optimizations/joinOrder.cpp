@@ -1,4 +1,5 @@
 #include <Processors/QueryPlan/Optimizations/joinOrder.h>
+#include <Processors/QueryPlan/Optimizations/joinOrderCommon.h>
 #include <Processors/QueryPlan/Optimizations/joinOrderAlgorithms.h>
 #include <Processors/QueryPlan/Optimizations/RelationStatistics.h>
 #include <Common/CurrentThread.h>
@@ -40,11 +41,13 @@ LoggerPtr getJoinOrderOptimizerLogger()
     return log;
 }
 
-DPJoinEntry::DPJoinEntry(size_t id, std::optional<UInt64> rows, std::unordered_map<String, ColumnStats> column_stats_)
+DPJoinEntry::DPJoinEntry(size_t id, const RelationStats & relation_stats)
     : relations()
     , cost(0.0)
-    , estimated_rows(rows)
-    , column_stats(std::move(column_stats_))
+    , estimated_rows(relation_stats.estimated_rows)
+    , max_rows(relation_stats.max_rows)
+    , estimate_from_defaults(relation_stats.estimate_from_defaults)
+    , column_stats(relation_stats.column_stats)
     , relation_id(static_cast<int>(id))
 {
     relations.set(id);
@@ -63,6 +66,8 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     , cost(cost_)
     , selectivity(selectivity_)
     , estimated_rows(cardinality_)
+    , max_rows(estimateJoinRowsUpperBound(left->max_rows, right->max_rows, join_operator_.kind, join_operator_.strictness))
+    , estimate_from_defaults(left->estimate_from_defaults || right->estimate_from_defaults)
     , join_operator(std::move(join_operator_))
     , join_method(join_method_)
 {
@@ -70,10 +75,26 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
     column_stats = left->column_stats;
     column_stats.insert(right->column_stats.begin(), right->column_stats.end());
 
+    /// An outer join pads the unmatched rows of one side with NULLs or defaults for the other side's
+    /// columns: one more value each.
+    const auto add_padding_value = [&](const std::unordered_map<String, ColumnStats> & padded_side)
+    {
+        for (const auto & [column, _] : padded_side)
+            if (auto & values = column_stats[column].max_distinct_values; values != 0)
+                values = saturatingAdd(values, UInt64{1});
+    };
+    if (join_operator.strictness != JoinStrictness::Semi && join_operator.strictness != JoinStrictness::Anti)
+    {
+        if (join_operator.kind == JoinKind::Left || join_operator.kind == JoinKind::Full)
+            add_padding_value(right->column_stats);
+        if (join_operator.kind == JoinKind::Right || join_operator.kind == JoinKind::Full)
+            add_padding_value(left->column_stats);
+    }
+
     for (const auto & predicate : join_operator.expression)
     {
         auto [op, left_node, right_node] = predicate.asBinaryPredicate();
-        if (op != JoinConditionOperator::Equals)
+        if (op != JoinConditionOperator::Equals && op != JoinConditionOperator::NullSafeEquals)
             continue;
 
         if (left_node.fromRight() && right_node.fromLeft())
@@ -85,15 +106,17 @@ DPJoinEntry::DPJoinEntry(DPJoinEntryPtr lhs,
         const auto & right_col = right_node.getColumnName();
         auto left_it = column_stats.find(left_col);
         auto right_it = column_stats.find(right_col);
+        const bool left_known = left_it != column_stats.end() && left_it->second.num_distinct_values > 0;
+        const bool right_known = right_it != column_stats.end() && right_it->second.num_distinct_values > 0;
+        if (!left_known && !right_known)
+            continue;
 
-        if (left_it != column_stats.end() && right_it != column_stats.end())
-        {
-            QueryPlanOptimizations::updateJoinKeyDistinctCounts(
-                left_it->second,
-                right_it->second,
-                join_operator.kind,
-                join_operator.strictness);
-        }
+        /// A key without an entry gets one, so that the known side's values bound it.
+        QueryPlanOptimizations::updateJoinKeyDistinctCounts(
+            column_stats[left_col],
+            column_stats[right_col],
+            join_operator.kind,
+            join_operator.strictness);
     }
 
     /// Cap all NDVs at the estimated output rows.

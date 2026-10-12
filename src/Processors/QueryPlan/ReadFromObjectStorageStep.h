@@ -36,6 +36,9 @@ public:
     std::string getName() const override { return STEP_NAME; }
 
     StorageMetadataPtr getStorageMetadata() const { return storage_snapshot->metadata; }
+    String getTableName() const;
+    /// Rows of the table from its metadata, when the format keeps them (a data lake table does).
+    std::optional<UInt64> totalRows() const { return configuration->totalRows(context); }
 
     void applyFilters(ActionDAGNodes added_filter_nodes) override;
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;

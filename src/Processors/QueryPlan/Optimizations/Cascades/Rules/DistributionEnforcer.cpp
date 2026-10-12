@@ -241,7 +241,11 @@ std::vector<GroupExpressionPtr> DistributionEnforcer::applyImpl(GroupExpressionP
     {
         if (required_properties.distribution.is_replicated)
         {
-            enforcers.addBroadcast();
+            /// A broadcast copies the whole result to every node, so it has to fit the byte budget.
+            /// Without one the replicated requirement stays unsatisfied and the alternative that
+            /// asked for it gets no plan; the local and shuffle alternatives of the operator remain.
+            if (decideReplicationOf(*memo.getGroup(expression->group_id), memo.getContext(), getName(), /*repeats_scan*/ false).allowed)
+                enforcers.addBroadcast();
         }
         else if (required_properties.distribution.node_count > 1)
         {

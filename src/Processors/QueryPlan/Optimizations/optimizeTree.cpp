@@ -980,6 +980,10 @@ void optimizeTreeSecondPass(
         traverseQueryPlan(
             stack, root, [&](auto & frame_node) { tryPushHavingPrefilterIntoAggregation(&frame_node, nodes, extra_settings); });
     }
+
+    /// Runs when every runtime filter has reached its final place.
+    if (optimization_settings.collect_hash_table_stats_during_joins)
+        markJoinBuildInputsFilteredFromOutside(root);
 }
 
 void addStepsToBuildSets(

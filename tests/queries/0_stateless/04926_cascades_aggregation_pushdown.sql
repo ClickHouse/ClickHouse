@@ -71,7 +71,9 @@ SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 10
 
 -- cardinality gate negatives (see `AggregationPushdown::buildPushdownAlternative`): the rule
 -- itself refuses to build the alternative, unlike case 3's cost-based rejection above.
-SELECT '-- 3a. negative: missing NDV for the pushed join key (cardinality gate), classic shape';
+-- The key without an NDV gets the default group ratio of its input, so the aggregation is
+-- shuffled rather than merged on one node; the rule itself refuses the pushdown.
+SELECT '-- 3a. negative: missing NDV for the pushed join key (cardinality gate), no pushdown';
 SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';
 EXPLAIN SELECT count() FROM t_push_facts AS t1 LEFT JOIN t_push_dims AS t2 ON t1.key = t2.key GROUP BY t1.key;
 SET param__internal_join_table_stat_hints = '{"t_push_facts": {"cardinality": 100000000, "avg_row_bytes": 12, "distinct_keys": {"key": 100}}, "t_push_dims": {"cardinality": 1000, "avg_row_bytes": 20, "distinct_keys": {"key": 1000}}}';

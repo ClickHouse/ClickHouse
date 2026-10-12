@@ -239,6 +239,11 @@ bool tryAddJoinRuntimeFilter(QueryPlan::Node & node, QueryPlan::Nodes & nodes, c
 /// so that index pruning (MergeTree primary key) on the other side picks them up
 size_t tryPropagatePredicateAcrossEquiJoin(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
+/// Marks each hash join whose build input is reduced by a runtime filter built outside that input.
+/// Such a join records the size of its build side, but join ordering does not reuse it. Runs after
+/// runtime filters are placed and pushed down.
+void markJoinBuildInputsFilteredFromOutside(QueryPlan::Node & root);
+
 /// Optimize ORDER BY ... LIMIT n query by using skip index or Prewhere threshold filtering
 size_t tryOptimizeTopK(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings);
 
