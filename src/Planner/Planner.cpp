@@ -52,6 +52,7 @@
 #include <Storages/StorageDistributed.h>
 #include <Storages/StorageDummy.h>
 #include <Storages/StorageMerge.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageView.h>
 #include <Storages/ObjectStorage/StorageObjectStorageCluster.h>
 
@@ -226,7 +227,7 @@ FiltersForTableExpressionMap collectFiltersForAnalysis(const QueryTreeNodePtr & 
         const auto * raw = storage_ptr.get();
         if (typeid_cast<const StorageDistributed *>(raw))
             return true;
-        if (parallel_replicas_estimation_enabled && std::dynamic_pointer_cast<MergeTreeData>(storage_ptr))
+        if (parallel_replicas_estimation_enabled && castStorage<MergeTreeData>(storage_ptr, DeferredTable::Load))
             return true;
         if (typeid_cast<const StorageObjectStorageCluster *>(raw))
             return true;
@@ -2420,6 +2421,9 @@ void Planner::buildPlanForQueryNode()
         && select_query_options.to_stage != QueryProcessingStage::Complete // Don't do it for INSERT SELECT, for example
         && client_info.distributed_depth <= 1 // Makes sense for higher depths too, just not supported
         && !client_info.is_replicated_database_internal
+        // A local shard/replica plan is united into the parent pipeline in this process, where
+        // nothing unmarshalls the blocks.
+        && !select_query_options.is_local_plan_for_distributed_query
     )
         query_plan.addStep(std::make_unique<BlocksMarshallingStep>(query_plan.getCurrentHeader()));
 

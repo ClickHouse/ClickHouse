@@ -50,6 +50,9 @@ std::unique_ptr<QueryPlan> createLocalPlan(
         .ignoreASTOptimizations();
 
     select_query_options.build_logical_plan = build_logical_plan;
+    /// A logical plan is serialized and shipped to a shard, which sends the blocks back over the
+    /// network, so it must keep marshalling. Only the plan executed in this process must skip it.
+    select_query_options.is_local_plan_for_distributed_query = !build_logical_plan;
 
     if (context->getSettingsRef()[Setting::allow_experimental_analyzer])
     {
