@@ -220,7 +220,13 @@ TEST(AIQueryValidation, RejectsExternalServerOwnedTables)
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "iceberg_files"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "remote_data_paths"));
 
-    EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "tables"));
+    /// `system.tables` and `information_schema.views` expose the stored texts of the queries of
+    /// the views (`create_table_query`, `as_select`, `view_definition`).
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "tables"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("information_schema", "views"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("INFORMATION_SCHEMA", "VIEWS"));
+    EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("information_schema", "columns"));
+    EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("INFORMATION_SCHEMA", "TABLES"));
 
     /// The list applies to `system` only: a user table that happens to be named `replicas` is
     /// judged by its engine like any other.

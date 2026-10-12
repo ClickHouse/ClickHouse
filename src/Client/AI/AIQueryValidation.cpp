@@ -550,6 +550,11 @@ bool isServerOwnedDatabaseForAIAgent(const String & database)
 
 bool isAllowedServerOwnedTableForAIAgent(const String & database, const String & table)
 {
+    /// `information_schema.views` is `system.tables.as_select` under another name: the stored
+    /// texts of the queries of the views, which is why `system.tables` is not allowed below.
+    if (database == "information_schema" || database == "INFORMATION_SCHEMA")
+        return table != "views" && table != "VIEWS";
+
     if (database != "system")
         return true;
 
@@ -575,6 +580,12 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
     /// returns only what is safe of it.
     static const std::unordered_set<std::string_view> disallowed_system_tables
     {
+        /// The stored definitions of the tables and views: `create_table_query` and `as_select`
+        /// hold the texts of the queries of the views, kept off the unconfirmed path just like
+        /// `SHOW CREATE` of a view is. The names and the engines of the tables are available
+        /// through the `list_tables` tool, and the columns in `system.columns`.
+        "tables",
+
         "zookeeper",
         "zookeeper_connection",
         "zookeeper_info",

@@ -10,5 +10,8 @@ exists_local: OK
 exists_foreign_database: BLOCKED
 show_columns_local: OK
 show_columns_foreign_database: BLOCKED
-system_tables: OK
+system_columns: OK
+system_tables: BLOCKED
+information_schema_views: BLOCKED
+information_schema_tables: OK
 show_databases: OK

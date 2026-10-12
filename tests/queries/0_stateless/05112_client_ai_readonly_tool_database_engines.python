@@ -50,7 +50,11 @@ CASES = [
     ("exists_foreign_database", "EXISTS TABLE fs_db.anything", False),
     ("show_columns_local", "SHOW COLUMNS FROM plain FROM default", True),
     ("show_columns_foreign_database", "SHOW COLUMNS FROM anything FROM fs_db", False),
-    ("system_tables", "SELECT count() FROM system.tables", True),
+    ("system_columns", "SELECT count() FROM system.columns", True),
+    # `system.tables` and `information_schema.views` expose the stored texts of the queries of views.
+    ("system_tables", "SELECT count() FROM system.tables", False),
+    ("information_schema_views", "SELECT count() FROM information_schema.views", False),
+    ("information_schema_tables", "SELECT count() FROM information_schema.tables", True),
     ("show_databases", "SHOW DATABASES", True),
 ]
 
