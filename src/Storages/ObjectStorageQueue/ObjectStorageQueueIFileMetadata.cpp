@@ -391,6 +391,16 @@ bool ObjectStorageQueueIFileMetadata::tryTerminalizeExhaustedRetriableMarker() c
     if (failed_node_path.empty())
         return false;
 
+    /// Another processor may still be running an attempt that started under the old retry
+    /// limit. Terminalizing now would race with its commit, so leave the marker alone.
+    bool processing_exists = false;
+    ObjectStorageQueueMetadata::getKeeperRetriesControl(log).retryLoop([&]
+    {
+        processing_exists = ObjectStorageQueueMetadata::getZooKeeper(log, zookeeper_name)->exists(processing_node_path);
+    });
+    if (processing_exists)
+        return false;
+
     auto retrieable_failed_node_path = failed_node_path + ".retriable";
 
     Coordination::Stat retriable_stat;
@@ -968,6 +978,10 @@ void ObjectStorageQueueIFileMetadata::prepareFailedRequestsImpl(
 
         /// Remove Processing node.
         requests.push_back(zkutil::makeRemoveRequest(processing_node_path, -1));
+        /// Remove a live `.retriable` marker left by an earlier attempt (e.g. loading_retries
+        /// was lowered to 0 while a retry was already in flight), otherwise it would
+        /// resurrect the failure once the terminal node is removed by TTL or SYSTEM DROP.
+        addClearRetriableRequestIfExists(requests);
         /// Create Failed node.
         requests.push_back(zkutil::makeCreateRequest(failed_node_path, node_metadata.toString(), zkutil::CreateMode::Persistent));
         return;
