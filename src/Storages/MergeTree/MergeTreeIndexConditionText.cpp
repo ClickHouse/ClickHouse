@@ -393,26 +393,29 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
         || function_name == "has"
         || function_name == "mapContainsKey"
         || function_name == "mapContainsValue"
-        || function_name == "hasAll")
+        || function_name == "hasAll"
+        || function_name == "hasAny"
+        || function_name == "in"
+        || function_name == "globalIn")
     {
         /// These functions compare the searched token as a whole and therefore
         /// exact direct read is only possible with array token extractor, that doesn't
         /// split documents into tokens. Otherwise we can only use direct read as a hint.
+        /// With such tokenizers `hasAny` and `IN` create one query per element, which are read as OR-ed hints.
         return can_be_exact_read_mode ? TextIndexDirectReadMode::Exact : getHintOrNoneMode();
-    }
-
-    if (function_name == "hasAny")
-    {
-        /// Function hasAny creates several text search queries with
-        /// tokenizers that split strings, so we can't use direct read as a hint.
-        return can_be_exact_read_mode ? TextIndexDirectReadMode::Exact : TextIndexDirectReadMode::None;
     }
 
     if (function_name == "like"
         || function_name == "startsWith"
         || function_name == "endsWith"
         || function_name == "mapContainsKeyLike"
-        || function_name == "mapContainsValueLike")
+        || function_name == "mapContainsValueLike"
+        /// One query per alternative, needle or pattern, which are read as OR-ed hints:
+        /// the tokens of a query are necessary but not sufficient for the match.
+        || function_name == "match"
+        || function_name == "multiSearchAny"
+        || function_name == "multiSearchAnyUTF8"
+        || function_name == "multiMatchAny")
     {
         return getHintOrNoneMode();
     }
@@ -420,18 +423,19 @@ TextIndexDirectReadMode MergeTreeIndexConditionText::getDirectReadMode(const Str
     return TextIndexDirectReadMode::None;
 }
 
-TextSearchQueryPtr MergeTreeIndexConditionText::createTextSearchQuery(const ActionsDAG::Node & node) const
+std::vector<TextSearchQueryPtr> MergeTreeIndexConditionText::createTextSearchQueries(const ActionsDAG::Node & node) const
 {
     RPNElement rpn_element;
     RPNBuilderTreeNode rpn_node(&node, getContext());
 
     if (!traverseAtomNode(rpn_node, rpn_element))
-        return nullptr;
+        return {};
 
-    if (rpn_element.text_search_queries.size() != 1)
-        return nullptr;
+    /// Only the queries of `FUNCTION_HAS_ANY_ELEMENTS` are OR-ed.
+    if (rpn_element.text_search_queries.size() > 1 && rpn_element.function != RPNElement::FUNCTION_HAS_ANY_ELEMENTS)
+        return {};
 
-    return rpn_element.text_search_queries.front();
+    return std::move(rpn_element.text_search_queries);
 }
 
 bool MergeTreeIndexConditionText::canAnswerFunctionNode(const ActionsDAG::Node & node) const
@@ -1436,10 +1440,11 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
             return true;
         }
 
-        if ((is_array_tokenizer && !has_preprocessor && !has_postprocessor) || function_name == "hasAll")
+        if (is_array_tokenizer || function_name == "hasAll")
         {
             /// Fold all needle elements into a single TextSearchQuery.
             /// This unlocks exact direct read optimizations for hasAny and hasAll.
+            /// The `array` tokenizer makes one token of an element, so `hasAny` is a union of their posting lists.
             VectorWithMemoryTracking<String> tokens;
             tokens.reserve(elements.size());
 
@@ -1487,7 +1492,7 @@ bool MergeTreeIndexConditionText::traverseFunctionNode(
                     return false;
                 }
 
-                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(element_tokens)));
+                out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(element_tokens)));
             }
 
             out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
@@ -2324,6 +2329,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
 
     /// `m['key']` answered by a `mapValues(m)` index: an absent key reads the value type's default.
     bool has_index_for_map_element_value = false;
+    /// The index is built on the argument itself, not on `mapValues` of its map or on `JSONAllValues`.
+    bool has_index_for_argument = false;
 
     auto has_index = [&](const RPNBuilderTreeNode & argument)
     {
@@ -2333,11 +2340,17 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             has_index_for_map_element_value = true;
             return true;
         }
-        return hasIndexForColumn(node.getColumnName())
-            || tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types);
+        if (hasIndexForColumn(node.getColumnName()))
+        {
+            has_index_for_argument = true;
+            return true;
+        }
+        return tryMatchNodeToJSONIndex(node, header, "JSONAllValues", json_argument_types).has_value();
     };
 
-    if (lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple")
+    const bool lhs_is_tuple = lhs.isFunction() && lhs.toFunctionNode().getFunctionName() == "tuple";
+
+    if (lhs_is_tuple)
     {
         const auto function = lhs.toFunctionNode();
         auto arguments_size = function.getArgumentsSize();
@@ -2373,6 +2386,16 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
     if (!prepared_set || !prepared_set->hasExplicitSetElements())
         return false;
 
+    /// Direct read is used only for a list of constants. A set from a subquery or a table only skips granules.
+    auto direct_read_mode = typeid_cast<const FutureSetFromTuple *>(future_set.get())
+        ? getDirectReadMode(function_name)
+        : TextIndexDirectReadMode::None;
+
+    /// Exact direct read answers `x IN (...)` for the indexed `x` itself. The original predicate is still needed
+    /// to bind the other components of a tuple, the key of `m['key']` on a `mapValues(m)` index or a JSON path.
+    if (direct_read_mode == TextIndexDirectReadMode::Exact && (lhs_is_tuple || !has_index_for_argument))
+        direct_read_mode = getHintOrNoneMode();
+
     Columns columns = prepared_set->getSetElements();
     /// Set columns with tuple may be unpacked. Unpack them here to get the correct column index.
     if (columns.size() == 1 && isTuple(columns.front()->getDataType()))
@@ -2400,6 +2423,8 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
         .padding_never_in_terms = !has_preprocessor && tokenizerSplitsAtZeroByte(tokenizer->getType()),
     };
     String normalized;
+    std::vector<VectorWithMemoryTracking<String>> tokens_of_elements;
+    tokens_of_elements.reserve(total_row_count);
 
     for (size_t row = 0; row < total_row_count; ++row)
     {
@@ -2446,8 +2471,32 @@ bool MergeTreeIndexConditionText::tryPrepareSetForTextSearch(
             return false;
         }
 
-        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, TextIndexDirectReadMode::None, std::move(tokens)));
+        tokens_of_elements.push_back(std::move(tokens));
     }
+
+    /// With one token per element (the `array` tokenizer), `IN` is a union of their posting lists: search them
+    /// as one `Any` query, which is read as one virtual column. Otherwise an element is a query of its own.
+    const bool single_token_elements = !tokens_of_elements.empty()
+        && std::ranges::all_of(tokens_of_elements, [](const auto & tokens) { return tokens.size() == 1; });
+
+    if (tokenizer->getType() == ITokenizer::Type::Array && single_token_elements)
+    {
+        VectorWithMemoryTracking<String> tokens;
+        tokens.reserve(tokens_of_elements.size());
+        for (auto & element_tokens : tokens_of_elements)
+            tokens.push_back(std::move(element_tokens.front()));
+
+        out.function = RPNElement::FUNCTION_HAS_ANY_TOKENS;
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::Any, direct_read_mode, std::move(tokens)));
+        return true;
+    }
+
+    /// Exact direct read of an OR of queries is not supported.
+    if (direct_read_mode == TextIndexDirectReadMode::Exact)
+        direct_read_mode = getHintOrNoneMode();
+
+    for (auto & tokens : tokens_of_elements)
+        out.text_search_queries.emplace_back(std::make_shared<TextSearchQuery>(function_name, TextSearchMode::All, direct_read_mode, std::move(tokens)));
 
     out.function = RPNElement::FUNCTION_HAS_ANY_ELEMENTS;
     return true;

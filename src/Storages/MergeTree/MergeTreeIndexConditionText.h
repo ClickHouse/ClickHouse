@@ -117,8 +117,9 @@ public:
     TextSearchMode getGlobalSearchMode() const { return global_search_mode; }
     const Block & getHeader() const { return header; }
 
-    /// Create text search query for the function node if it is suitable for optimization.
-    TextSearchQueryPtr createTextSearchQuery(const ActionsDAG::Node & node) const;
+    /// Create text search queries for the function node if it is suitable for optimization.
+    /// Several queries are OR-ed: the alternatives of `match`, the needles of `multiSearchAny`, the elements of `IN`.
+    std::vector<TextSearchQueryPtr> createTextSearchQueries(const ActionsDAG::Node & node) const;
     /// Whether the index can answer the predicate of the function node.
     bool canAnswerFunctionNode(const ActionsDAG::Node & node) const;
     /// Returns the name of the virtual column that replaces the function node of the query,

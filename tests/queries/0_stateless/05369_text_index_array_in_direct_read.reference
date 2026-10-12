@@ -1,0 +1,112 @@
+-- a list of values
+idx	1
+idx	2
+idx	3
+scan	1
+scan	2
+scan	3
+count	3
+-- a single value behaves like equals
+idx	4
+scan	4
+-- no value of the list matches
+idx	0
+scan	0
+-- the index prunes granules
+Granules: 3/3
+Name: idx
+Granules: 1/3
+-- exact direct read: the predicate is replaced by a text index virtual column
+replaced	1
+-- combined with AND, OR and NOT
+and idx	2
+and idx	3
+and scan	2
+and scan	3
+or idx	2
+or idx	4
+or idx	5
+or scan	2
+or scan	4
+or scan	5
+not idx	4
+not scan	4
+not in idx	4
+not in idx	5
+not in idx	6
+not in scan	4
+not in scan	5
+not in scan	6
+-- an OR chain of equals is folded into IN by the analyzer
+idx	1
+idx	2
+idx	3
+idx	4
+scan	1
+scan	2
+scan	3
+scan	4
+replaced	1
+-- the empty string is not indexed, so the index is bypassed
+idx	1
+idx	3
+idx	6
+scan	1
+scan	3
+scan	6
+not replaced	0
+-- a tuple left-hand side is answered by a token union only as a hint
+idx	1
+scan	1
+hint	1
+original predicate	1
+-- a set from a subquery skips granules, but has no direct read
+idx	1
+idx	3
+scan	1
+scan	3
+empty subquery	0
+not replaced	0
+-- transform_null_in = 1 produces nullIn, which is not read directly
+idx	1
+idx	2
+idx	3
+not replaced	0
+-- LowCardinality, Nullable and FixedString columns
+lc idx	1
+lc idx	2
+lc scan	1
+lc scan	2
+lc replaced	1
+n idx	1
+n scan	1
+n replaced	1
+not n idx	3
+not n scan	3
+f idx	1
+f idx	2
+f scan	1
+f scan	2
+f replaced	1
+-- indexes that do not store the value as it is keep the predicate: direct read is a hint
+preprocessor idx	2
+preprocessor idx	3
+preprocessor scan	2
+preprocessor scan	3
+preprocessor hint	1
+preprocessor original predicate	1
+map values idx	1
+map values idx	3
+map values scan	1
+map values scan	3
+map values hint	1
+map values original predicate	1
+-- a part without a materialized index must not lose rows under exact direct read
+some part has no materialized index	1
+idx	1
+idx	2
+idx	3
+scan	1
+scan	2
+scan	3
+replaced	1

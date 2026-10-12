@@ -1,0 +1,36 @@
+-- results are the same with and without direct read
+multiSearchAny	320	320
+multiSearchAnyUTF8	320	320
+match	320	320
+multiMatchAny	320	320
+NOT match	7680	7680
+-- one virtual column per search, OR-ed and AND-ed with the original predicate
+virtual columns	2
+or	1
+original predicate	1
+-- the hint is used for each function
+dread_multiSearchAny	320
+dread_multiSearchAnyUTF8	320
+dread_match	320
+dread_multiMatchAny	320
+dread_match	1	0
+dread_multiMatchAny	1	0
+dread_multiSearchAny	1	0
+dread_multiSearchAnyUTF8	1	0
+-- a search without tokens matches every row, so there is no direct read
+match with .*	8000	8000
+not replaced	0
+needle shorter than an n-gram	320	320
+not replaced	0
+-- query_plan_text_index_direct_read_max_branches
+3 needles, limit 3	1
+3 needles, limit 2	0
+3 needles, no limit	1
+17 needles, default limit	0
+17 needles, results	177	177
+above the limit, granules are skipped	1
+-- without hints there is no direct read
+add_hint = 0	0
+-- a part without a materialized index
+results	110	110
+replaced	1

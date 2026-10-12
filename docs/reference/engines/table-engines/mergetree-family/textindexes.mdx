@@ -547,7 +547,7 @@ Search tokens that the postprocessor maps to an empty string are ignored, i.e. t
 | [hasAny](/reference/functions/regular-functions/array-functions#hasAny)                               | yes | `array` | yes |
 | [hasAll](/reference/functions/regular-functions/array-functions#hasAll)                               | yes | `array` | yes |
 
-¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan.
+¹ `LIKE` and `match` use direct read as a hint for the listed tokenizers, otherwise they fall back to brute-force scan. For `match`, every alternative of the regular expression is a separate search, see [direct read as a hint](#direct-read).
 `LIKE` additionally supports evaluation by a dictionary scan (enabled via `use_text_index_like_evaluation_by_dictionary_scan`) for the `splitByNonAlpha` and `array` tokenizers without preprocessor or postprocessor, see section [LIKE/ILIKE queries](#like-ilike-queries-perf) below.
 
 ² `ILIKE` is only supported via evaluation by a dictionary scan (`use_text_index_like_evaluation_by_dictionary_scan = 1`, `splitByNonAlpha` or `array` tokenizer).
@@ -1352,7 +1352,7 @@ Direct read is controlled by two settings:
 **Supported functions**
 
 The direct read optimization supports functions `hasToken`, `hasAllTokens`, and `hasAnyTokens`.
-If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, and `mapContainsValue`.
+If the text index is defined with an `array` tokenizer, direct read is also supported for functions `equals`, `IN`, `has`, `hasAny`, `hasAll`, `mapContainsKey`, and `mapContainsValue`; for `IN`, the set must be a list of constant values.
 If the text index is defined with a `keyValuePairs` tokenizer, direct read is supported for `equals` and `IN` on a map element (`map['key'] = 'value'`, `map['key'] IN ('value1', 'value2')`) and for `mapContainsKeyValue`; for `IN`, the set must be a list of constant values.
 These functions can also be combined by `AND`, `OR`, and `NOT` operators.
 The `WHERE` or `PREWHERE` clauses can also contain additional non-text-search-functions filters (for text columns or other columns) - in that case, the direct read optimization will still be used but less effective (it only applies to the supported text search functions).
@@ -1413,7 +1413,13 @@ However, even if the text column is accessed elsewhere in the query, direct read
 Direct read as a hint is based on the same principles as normal direct read, but instead adds an additional filter build from the text index data without removing the underlying text column.
 It is used for functions when reading only from the text index would produce false positives.
 
-Supported functions are: `like`, `startsWith`, `endsWith`, `equals`, `has`, `hasPhrase`, `mapContainsKey`, and `mapContainsValue`.
+Supported functions are: `like`, `startsWith`, `endsWith`, `equals`, `IN`, `has`, `hasAny`, `hasAll`, `hasPhrase`, `mapContainsKey`, `mapContainsValue`, `match`, `multiSearchAny`, `multiSearchAnyUTF8`, and `multiMatchAny`.
+
+Some of these functions are an `OR` of several searches: `match` with alternatives (`'error|warning'`), `multiSearchAny` and `multiMatchAny` with several needles or patterns, as well as `IN` and `hasAny` on a text index with a tokenizer that splits strings into several tokens.
+Each search is read into its own virtual column, and these columns are combined with `OR`.
+If one of the searches has no tokens (e.g. the alternative `.*`), it matches every row, and the index is used only to skip granules.
+The number of searches read this way is limited by setting `query_plan_text_index_direct_read_max_branches` (16 by default): a predicate with more searches uses the index only to skip granules.
+For `IN`, the set must be a list of constant values.
 
 The additional filter can provide additional selectivity to restrict the result set in combination with other filters further, helping to reduce the amount of data read from other columns.
 
