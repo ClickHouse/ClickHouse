@@ -84,6 +84,7 @@ namespace Setting
     extern const SettingsBool http_write_exception_in_output_format;
     extern const SettingsInt64 http_zlib_compression_level;
     extern const SettingsUInt64 input_format_max_block_wait_ms;
+    extern const SettingsUInt64 max_generic_compression_threads;
     extern const SettingsUInt64 readonly;
     extern const SettingsBool run_query_in_background;
     extern const SettingsBool send_progress_in_http_headers;
@@ -734,6 +735,9 @@ void HTTPHandler::processQuery(
     used_output.out_maybe_compressed = used_output.out_holder;
     used_output.out = used_output.out_holder;
 
+    /// The compressing buffers below are built before the query is executed, so, like the other response-shaping
+    /// settings read here, `max_generic_compression_threads` comes from the URL parameters and the user profile;
+    /// an in-query `SETTINGS` clause cannot change how the already constructed response is compressed.
     if (client_supports_http_compression && enable_http_compression)
     {
         used_output.out_holder->setCompressionMethodHeader(http_response_compression_method);
@@ -746,7 +750,8 @@ void HTTPHandler::processQuery(
             DBMS_DEFAULT_BUFFER_SIZE,
             nullptr,
             0,
-            false);
+            false,
+            context->getSettingsRef()[Setting::max_generic_compression_threads]);
         used_output.out_maybe_compressed = used_output.wrap_compressed_holder;
         used_output.out = used_output.wrap_compressed_holder;
     }
@@ -772,7 +777,8 @@ void HTTPHandler::processQuery(
                 DBMS_DEFAULT_BUFFER_SIZE,
                 nullptr,
                 0,
-                false);
+                false,
+                settings[Setting::max_generic_compression_threads]);
             used_output.out_maybe_compressed = used_output.generic_compression_holder;
             used_output.out = used_output.generic_compression_holder;
         }
