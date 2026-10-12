@@ -43,6 +43,7 @@ namespace FailPoints
     extern const char rmt_mutate_task_pause_before_rename_part[];
     extern const char rmt_mutate_task_pause_after_temporary_part_released[];
     extern const char rmt_mutate_task_pause_after_zero_copy_lock[];
+    extern const char mt_mutate_task_pause_before_merge_list[];
 }
 
 MutateFromLogEntryTask::~MutateFromLogEntryTask()
@@ -184,6 +185,8 @@ ReplicatedMergeMutateTaskBase::PrepareResult MutateFromLogEntryTask::prepare()
 
     /// mutation_ids can be empty here.
     mutation_ids_for_log = mutation_ids;
+
+    FailPointInjection::pauseFailPoint(FailPoints::mt_mutate_task_pause_before_merge_list);
 
     /// Once we mutate part, we must reserve space on the same disk, because mutations can possibly create hardlinks.
     /// Can throw an exception.
