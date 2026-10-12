@@ -1,0 +1,5 @@
+-- the codec of a scoring index is not taken from the table setting
+-- the index stays loadable after the gate is turned off and the default codec changes
+4
+1
+3

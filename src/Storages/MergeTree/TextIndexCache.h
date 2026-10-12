@@ -158,11 +158,14 @@ enum class TextIndexPostingsCacheKind : UInt8
     Roaring = 0,
     Segment = 1,
     Phrase = 3, /// phrase-search result, a sorted array of doc ids
+    /// Flat postings of one posting-list block (sorted row ids and per-row term frequencies), decoded for BM25 scoring.
+    ScoringPostings = 4,
 };
 
 /// A single cell of TextIndexPostingsCache. It holds one of:
 ///   - PostingListPtr:        a decoded Roaring bitmap of one posting-list block;
 ///   - PaddedPODArrayPtr:     a sorted array of doc ids of a phrase-search result;
+///   - ScoringPostingsPtr:    flat sorted row ids of one posting-list block with their term frequencies (BM25 scoring);
 ///   - PostingListSegmentPtr: a decoded segment (payload + per-block index) of a compressed posting list (lazy cursor).
 /// Every payload is held by shared_ptr, so a consumer keeps its data alive by copying the inner pointer
 /// out of the cell — the data then outlives eviction of the (bounded) cache independently of the cell.
@@ -178,12 +181,17 @@ struct TextIndexPostingsCacheCell
     {
     }
 
+    explicit TextIndexPostingsCacheCell(ScoringPostingsPtr scoring_postings)
+        : value(std::move(scoring_postings))
+    {
+    }
+
     explicit TextIndexPostingsCacheCell(PostingListSegmentPtr segment)
         : value(std::move(segment))
     {
     }
 
-    std::variant<PostingListPtr, PaddedPODArrayPtr, PostingListSegmentPtr> value;
+    std::variant<PostingListPtr, PaddedPODArrayPtr, ScoringPostingsPtr, PostingListSegmentPtr> value;
 };
 
 /// Estimate of the memory usage (bytes) of a posting cache cell
@@ -202,6 +210,8 @@ struct TextIndexPostingsWeightFunction
                 return payload->getSizeInBytes();
             else if constexpr (std::is_same_v<T, PaddedPODArrayPtr>)
                 return payload->allocated_bytes();
+            else if constexpr (std::is_same_v<T, ScoringPostingsPtr>)
+                return payload->row_ids.allocated_bytes() + payload->term_frequencies.allocated_bytes();
             else if constexpr (std::is_same_v<T, PostingListSegmentPtr>)
                 return payload->bytesAllocated();
             else

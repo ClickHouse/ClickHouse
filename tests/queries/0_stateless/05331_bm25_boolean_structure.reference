@@ -1,0 +1,64 @@
+-- hasAllTokens(consensus, raft) OR hasToken(stream): the failed conjunction of row 4 adds nothing
+1	2.205
+4	1.5522
+7	2.0975
+8	1.5522
+1	OK
+4	OK
+7	OK
+8	OK
+-- (raft AND consensus) OR (raft AND log): a predicate in two clauses counts twice
+1	OK
+4	OK
+5	OK
+7	OK
+-- the score follows the filter as the analyzer rewrote it: the default factoring to raft AND (consensus OR log) counts raft once
+1	OK
+4	OK
+5	OK
+7	OK
+-- raft OR NOT consensus: the negated predicate adds nothing
+1	OK
+4	OK
+5	OK
+6	OK
+7	OK
+8	OK
+9	OK
+10	OK
+-- (raft AND price > 10) OR stream: a conjunction with a non-text predicate is masked by the whole conjunction
+4	OK
+5	OK
+7	OK
+8	OK
+-- (quorum = 1) OR stream: a predicate inside an opaque function adds nothing
+4	OK
+7	OK
+8	OK
+10	OK
+-- hasAnyTokens(consensus, raft) AND price > 4: the root conjunction needs no mask, the filter drops the rest
+1	OK
+2	OK
+3	OK
+5	OK
+7	OK
+-- the root conjunction is not masked, a nested one is
+0
+1
+-- the read step reports the scoring index, the number of scoring predicates and the parameters
+1
+-- the score is available in the SELECT list, in expressions and as the sort key at once
+4	1.5522	1
+8	1.5522	1
+7	1.3109	1
+5	0.855	0
+-- part-distribution invariance for the structured score
+1	OK
+2	OK
+3	OK
+4	OK
+6	OK
+7	OK
+8	OK
+9	OK
+10	OK

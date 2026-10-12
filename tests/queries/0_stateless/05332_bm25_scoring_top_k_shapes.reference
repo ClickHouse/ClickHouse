@@ -1,0 +1,40 @@
+-- masked conjunction over a regular column
+1
+7	30	1.5857
+11	9	1.4529
+12	22	1.3259
+7	30	1.5857
+11	9	1.4529
+12	22	1.3259
+-- sort by an alias of the score
+1
+1	1.6851
+7	1.5857
+11	1.4529
+1	1.6851
+7	1.5857
+11	1.4529
+-- explicit parameters
+1
+5	0.6023
+4	0.6441
+2	0.8509
+5	0.6023
+4	0.6441
+2	0.8509
+-- PREWHERE on a regular column: no dynamic filter on the score
+0
+1	1.6851
+7	1.5857
+11	1.4529
+1	1.6851
+7	1.5857
+11	1.4529
+-- scoring predicate in PREWHERE: no dynamic filter on the score
+0
+1	1.6851
+7	1.5857
+11	1.4529
+1	1.6851
+7	1.5857
+11	1.4529

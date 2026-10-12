@@ -83,7 +83,13 @@ public:
             }
 
             auto block = MergeTreeIndexGranuleText::readPostingsBlock(
-                postings_stream, state, token_info, block_idx, serialization, index_id);
+                postings_stream,
+                state,
+                token_info,
+                block_idx,
+                serialization,
+                index_id,
+                /*with_term_frequencies=*/ false).postings;
 
             if (block)
                 postings |= *block;
@@ -186,6 +192,7 @@ UInt64 computeCountForPart(
         .index = *index.index,
         .readable_ranges = nullptr,
         .text_index_read_postings = !single_token,
+        .index_read_task = nullptr,
         .reader_settings = reader_settings,
     };
 

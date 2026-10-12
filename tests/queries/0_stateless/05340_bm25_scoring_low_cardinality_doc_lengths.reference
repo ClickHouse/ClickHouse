@@ -1,0 +1,9 @@
+-- scores of the first and of a repeated occurrence of the same values
+0	raft 	2.9559
+7	raft filler filler filler filler filler filler filler	1.729
+14	raft filler	2.6838
+91	raft 	2.9559
+98	raft filler filler filler filler filler filler filler	1.729
+105	raft filler	2.6838
+-- the same scores as for String
+0	286

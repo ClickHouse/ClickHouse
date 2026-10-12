@@ -1,0 +1,19 @@
+-- the index was materialized from several temporary segments
+1
+-- filtering over the materialized index
+20000
+200
+8
+-- scores over the materialized index match the index built at insert time
+17172	0
+-- top-k with dynamic filtering uses the block-max metadata of the materialized index
+7	5.786244
+707	5.786244
+1407	5.786244
+2107	5.786244
+2807	5.786244
+7	5.786244
+707	5.786244
+1407	5.786244
+2107	5.786244
+2807	5.786244

@@ -7,8 +7,12 @@
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/TextIndexPhraseSearch.h>
 #include <Storages/MergeTree/PostingListCursor.h>
+#include <Storages/MergeTree/PostingListScoringCursor.h>
 #include <Storages/MergeTree/LoadedMergeTreeDataPartInfoForReader.h>
+#include <Storages/MergeTree/MergeTreeMarksLoader.h>
+#include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Storages/MergeTree/MergeTreeIndexConditionText.h>
+#include <Storages/MergeTree/BM25State.h>
 #include <Storages/MergeTree/TextIndexUtils.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -47,8 +51,16 @@ namespace Setting
 namespace ErrorCodes
 {
     extern const int CORRUPTED_DATA;
+    extern const int FILE_DOESNT_EXIST;
     extern const int LOGICAL_ERROR;
     extern const int NOT_IMPLEMENTED;
+    extern const int BAD_ARGUMENTS;
+}
+
+/// A `Float32` virtual column is the BM25 score of its search query, a `UInt8` one is its match.
+static bool isScoreColumn(const NameAndTypePair & column)
+{
+    return WhichDataType(column.type).isFloat32();
 }
 
 MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
@@ -76,7 +88,19 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
 
     for (const auto & column : columns_)
     {
-        if (!column.name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX) || !WhichDataType(column.type).isUInt8())
+        if (!column.name.starts_with(TEXT_INDEX_VIRTUAL_COLUMN_PREFIX))
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Column {} with type {} should not be filled by text index reader",
+                column.name, column.type->getName());
+        }
+
+        if (isScoreColumn(column))
+        {
+            if (!index_read_task.bm25_score_state)
+                throw Exception(ErrorCodes::LOGICAL_ERROR, "Column '{}' is read by the text index reader, but the BM25 query state is not set", column.name);
+        }
+        else if (!WhichDataType(column.type).isUInt8())
         {
             throw Exception(ErrorCodes::LOGICAL_ERROR,
                 "Column {} with type {} should not be filled by text index reader",
@@ -88,6 +112,45 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Column {} is not in the read task of the text index '{}'", column.name, index_read_task.index.index->index.name);
 
         search_queries.push_back(task_column_it->search_query);
+    }
+
+    /// The match column of a scoring predicate is filled in the same pass over the scoring cursors as its
+    /// score column: a row matches exactly when it receives a score contribution (any token for the union
+    /// scorer, all tokens for the intersection scorer), so the postings are decoded once for both columns.
+    /// The planner reads the score column only along with the match column of the same predicate.
+    filled_with_score.resize(columns_to_read.size(), false);
+
+    for (size_t score_idx = 0; score_idx < columns_to_read.size(); ++score_idx)
+    {
+        if (!isScoreColumn(columns_to_read[score_idx]))
+            continue;
+
+        const auto & score_query = *search_queries[score_idx];
+        std::optional<size_t> match_idx;
+
+        for (size_t i = 0; i < columns_to_read.size(); ++i)
+        {
+            if (!isScoreColumn(columns_to_read[i]) && search_queries[i]->getHash() == score_query.getHash())
+                match_idx = i;
+        }
+
+        if (!match_idx)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Score column {} of the text index '{}' is read without the match column of its predicate {}",
+                columns_to_read[score_idx].name, index_read_task.index.index->index.name, score_query.getFunctionName());
+        }
+
+        score_leaves.push_back(ScoreLeaf
+        {
+            .score_column = score_idx,
+            .match_column = *match_idx,
+            .intersect = score_query.getSearchMode() == TextSearchMode::All,
+            .cursors = {},
+        });
+
+        filled_with_score[score_idx] = true;
+        filled_with_score[*match_idx] = true;
     }
 
     auto data_part = getDataPart();
@@ -102,6 +165,7 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
         .index = *index_read_task.index.index,
         .readable_ranges = nullptr,
         .text_index_read_postings = true,
+        .index_read_task = &index_read_task,
         .reader_settings = settings,
     };
 
@@ -124,6 +188,12 @@ void MergeTreeReaderTextIndex::setIndexGranule(MergeTreeIndexGranulePtr index_gr
 {
     chassert(index_granule);
     granule = std::dynamic_pointer_cast<const MergeTreeIndexGranuleText>(index_granule);
+
+    if (!granule)
+    {
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected granule type for the text index '{}'", index_read_task.index.index->index.name);
+    }
+
     /// Phrase search results are cached per granule; drop them when the granule changes.
     phrase_search_doc_ids.clear();
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(granule->getPostingsCodecType());
@@ -246,6 +316,10 @@ void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
         fallback_reader->updateAllMarkRanges(ranges);
     }
 
+    /// The `.dl` stream was bounded by the ranges it was created with; a reused reader may read further.
+    if (score_doc_lengths)
+        score_doc_lengths->adjustRightMark(last_mark_to_read);
+
     if (!ranges.empty())
     {
         const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
@@ -297,6 +371,11 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
     {
         const auto & column = columns_to_read[i];
         const auto & search_query = search_queries[i];
+
+        /// The score columns are filled from the scoring cursors.
+        if (isScoreColumn(column))
+            continue;
+
         const auto & query_builder = analyzer.getQueryBuilder(*search_query);
 
         if (search_query->getTokens().empty() && search_query->getPatterns().empty())
@@ -367,6 +446,17 @@ void MergeTreeReaderTextIndex::classifyVirtualColumns()
             }
         }
     }
+
+    /// The scoring cursors fill the match column only where the match is resolved from the postings.
+    for (const auto & leaf : score_leaves)
+    {
+        if (is_always_true[leaf.match_column] || use_fallback[leaf.match_column])
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Match column {} of the scoring predicate {} of the text index '{}' cannot be filled from the scoring cursors",
+                columns_to_read[leaf.match_column].name, search_queries[leaf.match_column]->getFunctionName(), index_read_task.index.index->index.name);
+        }
+    }
 }
 
 PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info)
@@ -381,20 +471,214 @@ PostingListCursorPtr MergeTreeReaderTextIndex::makeLazyCursor(std::string_view t
         granule->getIndexIdForCaches());
 }
 
+std::shared_ptr<PostingListScoringCursor> MergeTreeReaderTextIndex::makeScoringCursor(const String & token, const TokenPostingsInfo & token_info)
+{
+    if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
+    {
+        if (token_info.embedded_postings.empty())
+            return nullptr;
+
+        auto scoring_postings = std::make_shared<ScoringPostings>();
+        scoring_postings->row_ids.insert(token_info.embedded_postings.begin(), token_info.embedded_postings.end());
+
+        /// Embedded postings without stored term frequencies imply `tf == 1` for every row.
+        if (token_info.embedded_term_frequencies.empty())
+            scoring_postings->term_frequencies.resize_fill(scoring_postings->row_ids.size(), 1u);
+        else
+            scoring_postings->term_frequencies.insert(token_info.embedded_term_frequencies.begin(), token_info.embedded_term_frequencies.end());
+
+        scoring_postings->calculateMaxTermFrequency();
+        return std::make_shared<PostingListScoringCursor>(std::move(scoring_postings), score_doc_lengths.get());
+    }
+
+    if (!postings_serialization.has_value())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Postings serialization is not set");
+
+    if (token_info.offsets.size() == 1)
+    {
+        /// Decoded with the term frequencies during the analysis of the granule (`MergeTreeIndexGranuleText::analyzePostings`).
+        auto scoring_postings = granule->getScoringPostings(token_info.offsets[0]);
+
+        if (!scoring_postings)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Postings of the scoring token '{}' were not decoded during the analysis of the text index '{}'",
+                token, index_read_task.index.index->index.name);
+        }
+
+        if (scoring_postings->row_ids.empty())
+            return nullptr;
+
+        return std::make_shared<PostingListScoringCursor>(std::move(scoring_postings), score_doc_lengths.get());
+    }
+
+    if (!(token_info.header & PostingsSerialization::Flags::IsCompressed))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Unexpected scoring token '{}': multi-block postings must be compressed", token);
+
+    auto [stream_it, inserted] = scoring_postings_streams.try_emplace(token);
+    if (inserted)
+        stream_it->second = makePostingsStream(token_info);
+
+    return std::make_shared<PostingListScoringCursor>(
+        *stream_it->second, token_info, score_doc_lengths.get(), condition_text->postingsCache().get(), granule->getIndexIdForCaches());
+}
+
+void MergeTreeReaderTextIndex::initializeScoreLeaves()
+{
+    score_leaves_initialized = true;
+
+    chassert(granule && index_read_task.bm25_score_state);
+    const auto & analyzer = granule->getAnalyzer();
+
+    /// The whole filter is false in this part: no row of the part is observable, so all scores stay zero.
+    if (analyzer.alwaysFalse())
+        return;
+
+    const auto & scoring_stats = granule->getTextIndexScoringStats();
+
+    /// The pool pre-pass has already rejected parts without BM25 scoring data; keep a defensive check.
+    if (granule->getTextIndexScoringKind() != TextIndexScoringKind::BM25)
+    {
+        throw Exception(ErrorCodes::BAD_ARGUMENTS,
+            "Cannot compute bm25(): the text index '{}' in part '{}' was written without BM25 scoring data. "
+            "Recreate the index with `scoring = 'bm25'` and run `ALTER TABLE ... MATERIALIZE INDEX {}`",
+            index_read_task.index.index->index.name, getDataPart()->name, index_read_task.index.index->index.name);
+    }
+
+    if (!score_doc_lengths)
+    {
+        auto substreams = index_read_task.index.index->getSubstreams();
+
+        auto doc_lengths_substream = std::ranges::find_if(substreams,[](const auto & substream)
+        {
+            return substream.type == MergeTreeIndexSubstream::Type::TextIndexDocLengths;
+        });
+
+        if (doc_lengths_substream == substreams.end())
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Text index '{}' has no doc-lengths substream to compute bm25() from",
+                index_read_task.index.index->index.name);
+        }
+
+        score_doc_lengths = std::make_unique<TextIndexDocLengthsReader>(
+            makeDocLengthsStream(*doc_lengths_substream),
+            data_part_info_for_read->getIndexGranularity(),
+            scoring_stats.num_docs);
+    }
+
+    absl::flat_hash_map<std::string_view, const BM25ScoringToken *> scoring_tokens;
+    for (const auto & scoring_token : index_read_task.bm25_score_state->tokens)
+        scoring_tokens.emplace(scoring_token.token, &scoring_token);
+
+    for (auto & leaf : score_leaves)
+    {
+        const auto & search_query = *search_queries[leaf.score_column];
+
+        /// The analysis decodes the postings only of the tokens of the queries that can still match,
+        /// so a leaf takes the tokens from the state of its query, not from all token infos of the granule.
+        const auto & query_builder = analyzer.getQueryBuilder(search_query);
+        const auto & token_infos = query_builder.tokens;
+
+        /// The predicate matches no row of the part: its columns stay 0.
+        if (query_builder.is_failed)
+            continue;
+
+        bool can_match = true;
+
+        /// The tokens are sorted; a repeated token must contribute once.
+        const String * previous_token = nullptr;
+
+        for (const auto & token : search_query.getTokens())
+        {
+            if (previous_token && *previous_token == token)
+                continue;
+            previous_token = &token;
+
+            auto scoring_token_it = scoring_tokens.find(token);
+            if (scoring_token_it == scoring_tokens.end())
+            {
+                throw Exception(ErrorCodes::LOGICAL_ERROR,
+                    "Token '{}' of the scoring predicate {} has no BM25 weight", token, columns_to_read[leaf.score_column].name);
+            }
+
+            auto info_it = token_infos.find(token);
+            std::shared_ptr<PostingListScoringCursor> cursor;
+            if (info_it != token_infos.end() && info_it->second)
+                cursor = makeScoringCursor(token, *info_it->second);
+
+            /// The token is absent from the readable rows of this part: the predicate never matches
+            /// when it requires the token, otherwise the token contributes 0 to every row.
+            if (!cursor)
+            {
+                if (leaf.intersect)
+                {
+                    can_match = false;
+                    break;
+                }
+
+                continue;
+            }
+
+            leaf.cursors.push_back(ScoreCursor
+            {
+                .cursor = std::move(cursor),
+                .weight = &scoring_token_it->second->weight,
+                .cardinality = info_it->second->cardinality,
+            });
+        }
+
+        if (!can_match)
+        {
+            leaf.cursors.clear();
+            continue;
+        }
+
+        /// The conjunction scorer leads with the sparsest cursor.
+        std::ranges::sort(leaf.cursors, {}, &ScoreCursor::cardinality);
+    }
+}
+
+void MergeTreeReaderTextIndex::fillColumnScores(MutableColumns & res_columns, ScoreLeaf & leaf, size_t from_mark, size_t row_offset, size_t num_rows)
+{
+    auto & score_data = assert_cast<ColumnFloat32 &>(*res_columns[leaf.score_column]).getData();
+    size_t old_size = score_data.size();
+    score_data.resize_fill(old_size + num_rows);
+
+    auto & match_column_data = assert_cast<ColumnUInt8 &>(*res_columns[leaf.match_column]).getData();
+    chassert(match_column_data.size() == old_size);
+    match_column_data.resize_fill(old_size + num_rows, 0);
+
+    if (!score_leaves_initialized)
+        initializeScoreLeaves();
+
+    if (leaf.cursors.empty())
+        return;
+
+    requireRowOffsetRepresentable(row_offset);
+    score_doc_lengths->readRows(from_mark, row_offset, num_rows);
+
+    Float32 * score_ptr = score_data.data() + old_size;
+    UInt8 * match_ptr = match_column_data.data() + old_size;
+
+    if (leaf.intersect)
+        scoreCursorsIntersection(score_ptr, match_ptr, leaf.cursors, row_offset, num_rows);
+    else
+        scoreCursorsUnion(score_ptr, match_ptr, leaf.cursors, row_offset, num_rows);
+}
+
 void MergeTreeReaderTextIndex::initializePositionsStream()
 {
     const auto & data_part = getDataPart();
 
     auto index_format = index_read_task.index.index->getDeserializedFormat(*data_part, index_read_task.index.index->getFileName());
-    if (index_format.version != 2)
-        return;
 
     const auto positions_substream = std::ranges::find_if(
         index_format.substreams,
         [](const auto & substream) { return substream.type == MergeTreeIndexSubstream::Type::TextIndexPositions; });
 
     if (positions_substream == index_format.substreams.end())
-        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text index format V2 has no positions substream for index `{}`", index_read_task.index.index->index.name);
+        return;
 
     positions_stream = makeTextIndexInputStream(
         *data_part_info_for_read,
@@ -508,11 +792,20 @@ size_t MergeTreeReaderTextIndex::readRows(
         if (!use_lazy_mode)
             mark_postings = buildPostingsForMark(from_mark, RowsRange(from_row, from_row + rows_to_read - 1));
 
+        for (auto & leaf : score_leaves)
+            fillColumnScores(res_columns, leaf, from_mark, from_row, rows_to_read);
+
         for (size_t i = 0; i < res_columns.size(); ++i)
         {
             auto & column_mutable = *res_columns[i];
+            const auto & search_query = search_queries[i];
 
-            if (is_always_true[i])
+            if (filled_with_score[i])
+            {
+                /// Filled from the scoring cursors above.
+                continue;
+            }
+            else if (is_always_true[i])
             {
                 auto & column_data = assert_cast<ColumnUInt8 &>(column_mutable).getData();
                 column_data.resize_fill(column_mutable.size() + rows_to_read, 1);
@@ -526,8 +819,7 @@ size_t MergeTreeReaderTextIndex::readRows(
                     fallback_offset,
                     rows_to_read);
             }
-            else if (const auto & search_query = search_queries[i];
-                     search_query && search_query->getSearchMode() == TextSearchMode::Phrase)
+            else if (search_query->getSearchMode() == TextSearchMode::Phrase)
             {
                 /// Phrase queries are resolved from positional data (.pos), not per-mark posting lists.
                 applyPostingsPhrase(column_mutable, search_query, from_row, rows_to_read);
@@ -595,6 +887,56 @@ MergeTreeReaderStream & MergeTreeReaderTextIndex::getPostingsStream(std::string_
     return *it->second;
 }
 
+std::unique_ptr<MergeTreeReaderStream> MergeTreeReaderTextIndex::makeDocLengthsStream(const MergeTreeIndexSubstream & substream) const
+{
+    /// The `.dl` substream has the marks of the part, so it is read like a column:
+    /// only the granules of `all_mark_ranges`, through a buffer sized to the largest of them.
+
+    auto stream_name = index_read_task.index.index->getFileName() + substream.suffix;
+    auto actual_stream_name = IMergeTreeDataPart::getStreamNameOrHash(stream_name, substream.extension, data_part_info_for_read->getChecksums());
+
+    if (!actual_stream_name)
+        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "File for text index stream {} does not exist", stream_name + substream.extension);
+
+    auto context = data_part_info_for_read->getContext();
+    auto * load_marks_threadpool = settings.load_marks_asynchronously ? &context->getLoadMarksThreadpool() : nullptr;
+    const auto & index_granularity_info = data_part_info_for_read->getIndexGranularityInfo();
+    size_t marks_count = data_part_info_for_read->getIndexGranularity().getMarksCountWithoutFinal();
+
+    auto marks_loader = std::make_shared<MergeTreeMarksLoader>(
+        data_part_info_for_read,
+        mark_cache,
+        index_granularity_info.getMarksFilePath(*actual_stream_name),
+        marks_count,
+        index_granularity_info,
+        settings.save_marks_in_cache,
+        settings.read_settings,
+        load_marks_threadpool,
+        /*num_columns_in_mark=*/ 1,
+        settings.use_streaming_marks_compression);
+
+    marks_loader->startAsyncLoad();
+
+    auto stream_settings = settings;
+    stream_settings.is_compressed = MergeTreeIndexSubstream::isCompressed(substream.type);
+
+    auto stream = std::make_unique<MergeTreeReaderStreamSingleColumn>(
+        data_part_info_for_read->getDataPartStorage(),
+        *actual_stream_name,
+        substream.extension,
+        marks_count,
+        all_mark_ranges,
+        stream_settings,
+        uncompressed_cache,
+        data_part_info_for_read->getFileSizeOrZero(*actual_stream_name + substream.extension),
+        std::move(marks_loader),
+        ReadBufferFromFileBase::ProfileCallback{},
+        CLOCK_MONOTONIC_COARSE);
+
+    stream->adjustRightMark(last_mark_to_read);
+    return stream;
+}
+
 std::optional<RowsRange> MergeTreeReaderTextIndex::getRowsRangeForMark(size_t mark) const
 {
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
@@ -627,7 +969,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
 
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
-        if (is_always_true[i] || use_fallback[i])
+        if (is_always_true[i] || use_fallback[i] || filled_with_score[i])
             continue;
 
         const auto & search_query = search_queries[i];
@@ -719,7 +1061,8 @@ std::vector<PostingListPtr> MergeTreeReaderTextIndex::readPostingsBlocksForToken
                 token_info,
                 block_idx,
                 postings_serialization.value(),
-                granule->getIndexIdForCaches());
+                granule->getIndexIdForCaches(),
+                /*with_term_frequencies=*/ false).postings;
         }
 
         result.push_back(it->second);
@@ -732,6 +1075,11 @@ void MergeTreeReaderTextIndex::resetCursors()
 {
     lazy_cursors.clear();
     resolved_searches.assign(resolved_searches.size(), {});
+
+    for (auto & leaf : score_leaves)
+        leaf.cursors.clear();
+
+    score_leaves_initialized = false;
 }
 
 void MergeTreeReaderTextIndex::cleanupPostingsBlocks(const RowsRange & range)
@@ -905,7 +1253,8 @@ PostingList MergeTreeReaderTextIndex::readAllPostingsForToken(std::string_view t
                 token_info,
                 block_idx,
                 postings_serialization.value(),
-                granule->getIndexIdForCaches());
+                granule->getIndexIdForCaches(),
+                /*with_term_frequencies=*/ false).postings;
         }
 
         result |= *it->second;

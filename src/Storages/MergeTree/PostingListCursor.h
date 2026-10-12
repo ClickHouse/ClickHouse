@@ -6,7 +6,9 @@
 #include <Storages/MergeTree/PostingListBlockCodec.h>
 #include <Storages/MergeTree/PostingListSegment.h>
 #include <Core/SettingsEnums.h>
+#include <Common/VectorWithMemoryTracking.h>
 #include <memory>
+#include <utility>
 #include <vector>
 
 namespace DB
@@ -16,6 +18,7 @@ struct TokenPostingsInfo;
 class TextIndexPostingsCache;
 class IColumn;
 class MergeTreeReaderStream;
+class MergeTreeIndexGranularity;
 
 /// Operation type for padding the column with the posting list.
 enum class PadOp { Or, And };
@@ -95,6 +98,9 @@ public:
     /// or already-decoded postings). Cardinality, density and the row-id range derive from the array itself.
     explicit PostingListCursor(PaddedPODArrayPtr shared_values_);
 
+    /// Virtual so `PostingListScoringCursor` can extend the cursor polymorphically.
+    virtual ~PostingListCursor() = default;
+
     /// Sets bits in `data` for all doc_ids in [row_offset, row_offset + num_rows).
     /// Returns the range of rows for which bytes were set.
     PostingsApplyWindow linearOr(UInt8 * data, size_t row_offset, size_t num_rows);
@@ -125,7 +131,12 @@ public:
     /// Used to sort cursors by selectivity for leapfrog intersection.
     UInt32 cardinality() const;
 
-private:
+protected:
+    /// Decodes the packed block. The base implementation decodes the doc-id deltas only and
+    /// requires them to consume the whole Index Section span, unless the token carries term
+    /// frequencies (then a sub-payload the base cursor does not read follows the deltas).
+    virtual void decodeBlock(size_t block_idx);
+
     /// Point `current_segment` at the `segment_idx`-th segment (from the cache or `buildPostingSegment`)
     /// without decoding block data yet. No-op for shared-array cursors, which already hold the array.
     void prepareSegment(size_t segment_idx);
@@ -134,13 +145,14 @@ private:
     /// Invoked on a cache miss (or directly when no posting cache is available).
     PostingListSegment buildPostingSegment(size_t segment_idx);
 
+    /// Decodes postings from the packed block into `decoded_values`.
+    /// Returns the number of consumed bytes.
+    size_t decodeBlockPostings(size_t block_idx);
+
     /// Advance to the first doc_id >= target within the current segment.
     /// Uses binary search on `block_last_row_ids` for O(log N) access.
     /// Returns false if target exceeds this segment's range.
     bool advanceImpl(uint32_t target);
-
-    /// Decode the packed block at `block_idx` into `decoded_values`.
-    void decodeBlock(size_t block_idx);
 
     /// Linear scan over an embedded (fully materialized) posting list.
     /// Returns the range of rows written.
@@ -206,6 +218,10 @@ private:
 
 using PostingListCursorPtr = std::shared_ptr<PostingListCursor>;
 using PostingListCursorMap = absl::flat_hash_map<std::string_view, PostingListCursorPtr>;
+
+/// Posting-list doc IDs are 32-bit, so `row_offset > UInt32::max` cannot legitimately occur.
+/// Throw a `LOGICAL_ERROR` rather than wrap the offset and corrupt the output column.
+void requireRowOffsetRepresentable(size_t row_offset);
 
 /// Sorts the cursors for `lazyUnionPostingLists` by descending density, so the densest cursor fills the output first.
 void sortCursorsForUnion(std::vector<PostingListCursor *> & cursors);

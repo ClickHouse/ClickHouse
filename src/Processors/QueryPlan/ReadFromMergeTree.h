@@ -31,6 +31,7 @@ using PartitionIdToMaxBlockPtr = std::shared_ptr<const PartitionIdToMaxBlock>;
 class LazilyReadFromMergeTree;
 class RuntimeFilterReadRangesRefiner;
 struct QueryIdHolder;
+struct BM25Params;
 
 struct MergeTreeDataSelectSamplingData
 {
@@ -374,6 +375,7 @@ public:
         const Names & all_column_names,
         LoggerPtr log,
         std::optional<Indexes> & indexes,
+        const IndexReadTasks & index_read_tasks,
         bool find_exact_ranges,
         bool is_parallel_reading_from_replicas_,
         bool allow_query_condition_cache_,
@@ -533,6 +535,9 @@ public:
     /// Removes physical text columns that were eliminated by direct read from text index.
     void createReadTasksForTextIndex(IndexReadTasks text_index_read_tasks, const Names & removed_columns);
 
+    /// Marks the read task of the text index as computing `bm25()` with the given parameters.
+    void attachTextIndexScoring(const String & index_name, const BM25Params & params);
+
     const std::optional<Indexes> & getIndexes() const { return indexes; }
     /// A temporary part snapshot for PREWHERE costs; does not publish range analysis.
     RangesInDataParts getPartsForPrewhere() const;
@@ -568,6 +573,8 @@ public:
 
     void setTopKColumn(const TopKFilterInfo & top_k_filter_info_);
     bool isSkipIndexAvailableForTopK(const String & sort_column) const;
+    /// Whether the read computes the sort column itself, though it does not read it.
+    bool computesSortColumnForTopK(const ActionsDAG::Node & sort_column_node) const;
 
     /// Gate this read on the seal of a join marked with enableSealGatedProbeReading: nothing
     /// is read until the seal arrives, and the given filters (covering a primary key prefix)
@@ -806,6 +813,10 @@ private:
     /// ports is a part of the plan: the JOIN above consumes exactly one port per layer and pairs the
     /// ports of its two sides positionally (see `QueryPipelineBuilder::joinPipelinesYShapedByShards`).
     size_t getNumStreamsWhenNothingToRead(const AnalysisResult & result) const;
+
+    /// Prepares the query-global BM25 state for `bm25()`, if any index read task scores.
+    /// The statistics are collected from the whole part snapshot the step was created with (`prepared_parts`), before any pruning.
+    void prepareBM25State();
 
     Pipe spreadMarkRangesAmongStreams(
         RangesInDataParts && parts_with_ranges,

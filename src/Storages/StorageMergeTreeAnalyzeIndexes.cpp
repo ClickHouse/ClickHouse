@@ -215,6 +215,7 @@ protected:
             .query_info = query_info,
             .context = context,
             .indexes = *indexes,
+            .index_read_tasks = {},
             .top_k_filter_info = std::nullopt,
             .reader_settings = reader_settings,
             .log = getLogger("MergeTreeAnalyzeIndexSource"),

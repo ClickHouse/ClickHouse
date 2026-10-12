@@ -10585,6 +10585,11 @@ Selects the algorithm that intersects posting lists in lazy posting list apply m
 Intersections of 256 or more tokens always use leapfrog.
 )", 0, \
         {"26.10", "auto", "auto", "New setting superseding `text_index_lazy_intersection_density_threshold`: selects the posting list intersection algorithm in lazy posting list apply mode. `auto` keeps the previous default behavior, so `compatibility` must not change it."}) \
+    DECLARE(Bool, allow_experimental_bm25_scoring, false, R"(
+Allow the function `bm25`: the BM25 relevance score computed by the direct read from a text index created with `scoring = 'bm25'`.
+The query must filter by `hasToken`, `hasAnyTokens` or `hasAllTokens` on the indexed column, and the direct read from the text index must be enabled (`query_plan_direct_read_from_text_index`).
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to allow the function `bm25` computed by the direct read from a text index with `scoring = 'bm25'`."}) \
     DECLARE(Bool, stop_refreshable_materialized_views_on_startup, false, R"(
 On server startup, prevent scheduling of refreshable materialized views, as if with SYSTEM STOP VIEWS. You can manually start them with `SYSTEM START VIEWS` or `SYSTEM START VIEW <name>` afterwards. Also applies to newly created views. Has no effect on non-refreshable materialized views.
 )", EXPERIMENTAL) \

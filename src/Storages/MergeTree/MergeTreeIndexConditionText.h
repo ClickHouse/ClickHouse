@@ -124,6 +124,9 @@ public:
     /// Returns the name of the virtual column that replaces the function node of the query,
     /// or nothing if the query is not one of this condition or cannot be read directly.
     std::optional<String> tryGetVirtualColumnName(const TextSearchQuery & query, const String & index_name) const;
+    /// Returns the name of the BM25 score virtual column of the query (`__text_index_<index>_bm25_<hash>`).
+    /// The reader fills it with the query's score for the rows the query matches and 0 elsewhere.
+    String getScoreVirtualColumnName(const TextSearchQuery & query, const String & index_name) const;
 
     TextIndexTokensCachePtr tokensCache() const { return tokens_cache; }
     TextIndexHeaderCachePtr headerCache() const { return header_cache; }
@@ -131,7 +134,7 @@ public:
     TokensCardinalitiesCachePtr cardinalitiesCache() const { return cardinalities_cache; }
     bool useGlobalHeaderCache() const { return use_global_header_cache; }
 
-    TokenizerPtr getTokenizer() const { return tokenizer; }
+    TokenizerPtr getTokenizer() const { return tokenizer.get(); }
     MergeTreeIndexTextPreprocessorPtr getPreprocessor() const { return preprocessor; }
     MergeTreeIndexTextPostprocessorPtr getPostprocessor() const { return postprocessor; }
 
@@ -243,10 +246,7 @@ private:
     std::optional<size_t> indexed_fixed_string_size;
     std::optional<String> normalized_index_column_name;
     NameSet columns_shadowing_map_subcolumns;
-    /// A private clone of the index tokenizer when it is stateful, so concurrent conditions do not
-    /// share mutable parsing state; null otherwise.
-    std::shared_ptr<const ITokenizer> owned_tokenizer;
-    TokenizerPtr tokenizer;
+    std::shared_ptr<const ITokenizer> tokenizer;
     RPN rpn;
     PreparedSetsPtr prepared_sets;
 

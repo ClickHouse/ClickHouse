@@ -1,0 +1,35 @@
+top-K dynamic filter applied	1
+direct read applied	1
+results desc
+1	1.9949
+7	1.8783
+11	1.7124
+results desc reference
+1	1.9949
+7	1.8783
+11	1.7124
+results asc
+5	0.7128
+4	0.7823
+2	1.0305
+results asc reference
+5	0.7128
+4	0.7823
+2	1.0305
+results with extra condition
+1	1.9949
+7	1.8783
+11	1.7124
+results with extra condition reference
+1	1.9949
+7	1.8783
+11	1.7124
+top-K on other sort column applied	1
+results other sort column
+7	30	1.8783
+13	22	1.5603
+2	20	1.0305
+results other sort column reference
+7	30	1.8783
+13	22	1.5603
+2	20	1.0305
