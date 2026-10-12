@@ -4,6 +4,7 @@
 #include <Core/Range.h>
 #include <Core/Settings.h>
 #include <DataTypes/IDataType.h>
+#include <DataTypes/TypeTree.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
@@ -87,9 +88,7 @@ static bool isSupportedKeyType(const IDataType & type)
 
 static bool isSupportedKeyTypeRecursive(const DataTypePtr & type)
 {
-    bool supported = isSupportedKeyType(*type);
-    type->forEachChild([&](const IDataType & child) { supported = supported && isSupportedKeyType(child); });
-    return supported;
+    return !anyInTypeTree(*type, [](const IDataType & node) { return !isSupportedKeyType(node); });
 }
 
 /// Follows `name` from the outputs of the expressions between the aggregation and the reading step down to a
