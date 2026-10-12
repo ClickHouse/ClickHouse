@@ -27,6 +27,14 @@ std::vector<Iceberg::TableStateSnapshot> example_iceberg_states = {
         .snapshot_id = std::nullopt,
     },
 };
+
+int readProtocolVersion(const String & serialized_state)
+{
+    ReadBufferFromMemory read_buffer(serialized_state);
+    int protocol_version = 0;
+    readVarInt(protocol_version, read_buffer);
+    return protocol_version;
+}
 }
 
 TEST(DatalakeStateSerde, IcebergStateSerde)
@@ -58,12 +66,31 @@ TEST(DatalakeStateSerde, DataLakeStateSerde)
             WriteBufferFromString write_buffer{str};
             serializeDataLakeTableStateSnapshot(initial_state, write_buffer);
         }
+        ASSERT_EQ(readProtocolVersion(str), DATA_LAKE_TABLE_STATE_SNAPSHOT_INITIAL_PROTOCOL_VERSION);
         ReadBufferFromMemory read_buffer(str);
         DataLakeTableStateSnapshot serde_state = deserializeDataLakeTableStateSnapshot(read_buffer);
         ASSERT_TRUE(read_buffer.eof());
         ASSERT_EQ(initial_state, serde_state);
     }
 }
+
+
+#if USE_PARQUET && USE_DELTA_KERNEL_RS
+TEST(DatalakeStateSerde, DeltaLakeStateSerde)
+{
+    DataLakeTableStateSnapshot initial_state = DeltaLake::TableStateSnapshot{.version = 42};
+    String str;
+    {
+        WriteBufferFromString write_buffer{str};
+        serializeDataLakeTableStateSnapshot(initial_state, write_buffer);
+    }
+    ASSERT_EQ(readProtocolVersion(str), DATA_LAKE_TABLE_STATE_SNAPSHOT_INITIAL_PROTOCOL_VERSION);
+    ReadBufferFromMemory read_buffer(str);
+    DataLakeTableStateSnapshot serde_state = deserializeDataLakeTableStateSnapshot(read_buffer);
+    ASSERT_TRUE(read_buffer.eof());
+    ASSERT_EQ(initial_state, serde_state);
+}
+#endif
 
 
 TEST(DatalakeStateSerde, IcebergObjectSerializableInfoRoundTrip)
@@ -177,6 +204,7 @@ TEST(DatalakeStateSerde, PaimonStateSerde)
             WriteBufferFromString write_buffer{str};
             serializeDataLakeTableStateSnapshot(initial_state, write_buffer);
         }
+        ASSERT_EQ(readProtocolVersion(str), DATA_LAKE_TABLE_STATE_SNAPSHOT_PROTOCOL_VERSION_WITH_PAIMON_INDEX_MANIFEST);
         ReadBufferFromMemory read_buffer(str);
         DataLakeTableStateSnapshot serde_state = deserializeDataLakeTableStateSnapshot(read_buffer);
         ASSERT_TRUE(read_buffer.eof());
