@@ -13908,6 +13908,25 @@ void MergeTreeData::checkAddedIndexNameHasNoStaleFiles(const String & index_name
     /// so this state needs a drop killed while the name was free, and a replica behind on it.
     const auto metadata_snapshot = getInMemoryMetadataPtr(local_context, false);
 
+    /// With `escape_index_filenames` = 0 the file name is the index name verbatim, so the files that
+    /// would be probed for `a.pos` can be a substream of another index that is alive in the metadata,
+    /// for example the `.pos` substream of a text index `a`. Those files are not stale, they belong to
+    /// the sibling, so they must not make the name look taken.
+    NameSet files_of_live_indices;
+    for (const auto & other : metadata_snapshot->getSecondaryIndices())
+    {
+        if (other.name == index_name)
+            continue;
+        const auto other_index = MergeTreeIndexFactory::instance().get(metadata_snapshot, other, *getSettings());
+        const String other_file_name = other_index->getFileName();
+        for (const auto & substream : other_index->getPotentialSubstreams())
+            files_of_live_indices.insert(other_file_name + substream.suffix + substream.extension);
+    }
+
+    const String file_name = getIndexFileName(index_name, metadata_snapshot->escape_index_filenames);
+    if (files_of_live_indices.contains(file_name + ".idx") || files_of_live_indices.contains(file_name + ".idx2"))
+        return;
+
     for (const auto & part : getDataPartsVectorForInternalUsage())
     {
         if (!part->hasSecondaryIndex(index_name, metadata_snapshot))
