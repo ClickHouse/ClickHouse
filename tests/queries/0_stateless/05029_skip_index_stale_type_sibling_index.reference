@@ -1,0 +1,23 @@
+-- 28. a second index over the same absent column keeps the column absent
+1
+1
+1
+1
+2
+1
+1
+0
+0
+0
+0
+-- 29. a sibling index whose granules this mutation rebuilds does not keep the column absent
+1
+1
+1
+2
+1
+1
+0
+0
+64
+64
