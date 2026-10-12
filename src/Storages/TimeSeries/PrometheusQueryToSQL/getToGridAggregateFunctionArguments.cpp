@@ -47,8 +47,12 @@ ASTs getToGridAggregateFunctionArguments(const SQLQueryPiece & range_vector, Con
 
         case StoreMethod::SCALAR_GRID:
         {
-            /// values: the `values` column of the scalar grid
-            values = make_intrusive<ASTIdentifier>(ColumnNames::Values);
+            /// Normalize scalar grids before feeding them to another range aggregation.
+            /// Some range functions produce Array(Nullable(Float64)) even for scalar-derived grids.
+            values = makeASTFunction(
+                "CAST",
+                make_intrusive<ASTIdentifier>(ColumnNames::Values),
+                make_intrusive<ASTLiteral>("Array(Float64)"));
             break;
         }
 
