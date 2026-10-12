@@ -144,6 +144,7 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
         preprocessor_column_name,
         std::make_shared<DataTypeString>(),
         convertASTForConstant(index_description, expression_ast)))
+    , expression_ast_for_index_column(convertASTForIndexColumn(index_description, expression_ast, true))
 {
     if (expression_ast)
     {
@@ -179,6 +180,13 @@ std::pair<ColumnPtr, size_t> MergeTreeIndexTextPreprocessor::processColumn(const
         index_column = index_column->cut(start_row, n_rows);
 
     return {executeUnaryExpressionActions(actions_for_index_column, index_column, index_column_type, preprocessor_column_name, n_rows), 0};
+}
+
+ActionsDAG MergeTreeIndexTextPreprocessor::getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const
+{
+    ASTPtr expression_ast = expression_ast_for_index_column->clone();
+    replaceExpressionToIdentifier(expression_ast, preprocessor_column_name, col_name);
+    return buildActionsDAGFromAST(std::move(expression_ast), {{col_name, col_type}});
 }
 
 String MergeTreeIndexTextPreprocessor::processConstant(const String & input) const

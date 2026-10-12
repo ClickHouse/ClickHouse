@@ -322,7 +322,6 @@ MergeTreeIndexConditionBloomFilter::MergeTreeIndexConditionBloomFilter(
     , header(header_)
     , hash_functions(hash_functions_)
     , validate_enum_literals_in_operators(context_->getSettingsRef()[Setting::validate_enum_literals_in_operators])
-      
 {
     if (!predicate)
     {
@@ -1023,11 +1022,12 @@ bool MergeTreeIndexConditionBloomFilter::traverseTreeEquals(
                     return false;
             }
 
-            /// With validation off, `equals` against a name the enum lacks is constant false for every row,
-            /// so the conversion below must not throw; `KeyCondition` folds the same way.
-            if (function_name == "equals" && !validate_enum_literals_in_operators && isUnknownEnumElement(*actual_type, value_field))
+            /// With validation off, `equals`/`notEquals` against a name the enum lacks fold to a constant
+            /// for every row, so the conversion below must not throw; `KeyCondition` folds the same way.
+            if ((function_name == "equals" || function_name == "notEquals")
+                && !validate_enum_literals_in_operators && isUnknownEnumElement(*actual_type, value_field))
             {
-                out.function = RPNElement::ALWAYS_FALSE;
+                out.function = function_name == "equals" ? RPNElement::ALWAYS_FALSE : RPNElement::ALWAYS_TRUE;
                 return true;
             }
 

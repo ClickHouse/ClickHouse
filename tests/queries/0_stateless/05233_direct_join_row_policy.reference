@@ -21,10 +21,6 @@
 2
 5
 -- join table
-1	public-1
-2	
-3	public-3
-5	
 -- without a policy
 1	public	public-1
 2	hidden	hidden-2

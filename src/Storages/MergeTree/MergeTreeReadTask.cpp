@@ -99,7 +99,8 @@ MergeTreeReadTask::MergeTreeReadTask(
 }
 
 /// Returns pointer to the index if all columns in the read step belongs to the read step for that index.
-static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read, const IMergeTreeDataPart & data_part)
+static const IndexReadTask * getIndexReadTaskForReadStep(
+    const IndexReadTasks & index_read_tasks, const NamesAndTypesList & columns_to_read, const IMergeTreeDataPart & data_part, const AlterConversionsPtr & alter_conversions)
 {
     if (index_read_tasks.empty())
         return nullptr;
@@ -149,6 +150,10 @@ static const IndexReadTask * getIndexReadTaskForReadStep(const IndexReadTasks & 
     if (!index->getDeserializedFormat(data_part.checksums, index->getFileName(), &data_part.getDataPartStorage()))
         return nullptr;
 
+    /// Or if the index cannot be read in this part (e.g. pending patches).
+    if (!canReadTextIndexInPart(data_part.isProjectionPart() ? nullptr : alter_conversions))
+        return nullptr;
+
     return &index_task;
 }
 
@@ -187,7 +192,7 @@ MergeTreeReadTask::Readers MergeTreeReadTask::createReaders(
 
     for (const auto & pre_columns_per_step : read_info->task_columns.pre_columns)
     {
-        if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part))
+        if (const auto * index_read_task = getIndexReadTaskForReadStep(read_info->index_read_tasks, pre_columns_per_step, *read_info->data_part, read_info->alter_conversions))
         {
             new_readers.prewhere.push_back(createMergeTreeReaderIndex(
                 new_readers.main.get(),
