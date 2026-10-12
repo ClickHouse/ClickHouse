@@ -38,9 +38,9 @@ namespace
     class BitpackingPostingListBlockCodec : public IPostingListBlockCodec
     {
     public:
-        size_t encodeBlock(std::span<uint32_t> deltas, PODArray<char> & out) override
+        size_t encodeBlock(std::span<const uint32_t> values, PODArray<char> & out) override
         {
-            auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(deltas);
+            auto [needed_bytes_without_header, max_bits] = BitpackingBlockCodec::calculateNeededBytesAndMaxBits(values);
             size_t needed_bytes_with_header = needed_bytes_without_header + 1;
 
             /// Block Layout: [1byte(max_bits)][payload]
@@ -48,7 +48,7 @@ namespace
             out.resize(out.size() + needed_bytes_with_header);
             std::span<char> out_span(out.data() + offset, needed_bytes_with_header);
             writeByte(static_cast<uint8_t>(max_bits), out_span);
-            auto used_memory = BitpackingBlockCodec::encode(deltas, max_bits, out_span);
+            auto used_memory = BitpackingBlockCodec::encode(values, max_bits, out_span);
 
             if (used_memory != needed_bytes_without_header || !out_span.empty())
             {
@@ -57,7 +57,7 @@ namespace
                     "but actually used {} bytes with {} bytes remaining in buffer",
                     needed_bytes_without_header,
                     max_bits,
-                    deltas.size(),
+                    values.size(),
                     used_memory,
                     out_span.size());
             }
@@ -102,17 +102,17 @@ namespace
     class PForPostingListBlockCodec : public IPostingListBlockCodec
     {
     public:
-        size_t encodeBlock(std::span<uint32_t> deltas, PODArray<char> & out) override
+        size_t encodeBlock(std::span<const uint32_t> values, PODArray<char> & out) override
         {
             /// `MAX_BLOCK_BYTES` bounds one block, so an oversized input would overrun the reserved tail.
-            if (deltas.empty() || deltas.size() > BLOCK_SIZE)
+            if (values.empty() || values.size() > BLOCK_SIZE)
                 throw Exception(ErrorCodes::LOGICAL_ERROR,
-                    "PFor block must hold 1 to {} values, got {}", BLOCK_SIZE, deltas.size());
+                    "PFor block must hold 1 to {} values, got {}", BLOCK_SIZE, values.size());
 
             /// The encoded size is only known afterwards; `PODArray::resize` does not zero-fill, so grow to the bound and shrink.
             const size_t offset = out.size();
             out.resize(offset + MAX_BLOCK_BYTES);
-            const size_t written = PFor::encodeBlocks<uint32_t>(deltas, PFor::Delta::none, reinterpret_cast<uint8_t *>(out.data() + offset));
+            const size_t written = PFor::encodeBlocks<uint32_t>(values, PFor::Delta::none, reinterpret_cast<uint8_t *>(out.data() + offset));
             chassert(written > 0 && written <= MAX_BLOCK_BYTES);
             out.resize(offset + written);
             return written;
