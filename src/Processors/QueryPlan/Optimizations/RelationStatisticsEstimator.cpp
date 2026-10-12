@@ -14,6 +14,7 @@
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
 #include <Processors/QueryPlan/ITransformingStep.h>
+#include <Processors/QueryPlan/JoinOrderAlternativesStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitStep.h>
 #include <Processors/QueryPlan/LogicalExchangeStep.h>
@@ -521,6 +522,10 @@ RelationStats estimateReadRowsCountImpl(QueryPlan::Node & node, const ActionsDAG
             .imprecise_estimate = join_step->hasImpreciseEstimate(),
             .estimate_from_defaults = join_step->isEstimateFromDefaults()};
     }
+
+    /// Both join orders produce the same rows, so the first one stands for the step.
+    if (typeid_cast<const JoinOrderAlternativesStep *>(step))
+        return estimateReadRowsCount(*node.children.front(), filter);
 
     if (const auto * union_step = typeid_cast<const UnionStep *>(step))
     {

@@ -1,5 +1,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
+#include <Processors/QueryPlan/ExpressionStep.h>
+#include <Processors/QueryPlan/JoinOrderAlternativesStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -282,6 +284,28 @@ void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, con
 /// creates a step it did not see; `convertToDistributed` throws if one slips through. Nothing is
 /// lost by skipping: every worker re-optimizes its fragment with `make_distributed_plan = 0` and
 /// applies these passes to its own part of the plan.
+/// Replaces every `JoinOrderAlternativesStep` left in the plan by its first input, the order the join order
+/// optimizer chose. The step becomes an expression that passes the columns through, so that no plan node
+/// is left without a step.
+static void resolveJoinOrderAlternatives(QueryPlan::Node & root)
+{
+    std::vector<QueryPlan::Node *> stack{&root};
+    while (!stack.empty())
+    {
+        auto * node = stack.back();
+        stack.pop_back();
+        if (typeid_cast<const JoinOrderAlternativesStep *>(node->step.get()))
+        {
+            auto * chosen = node->children.front();
+            const auto & header = chosen->step->getOutputHeader();
+            node->step = std::make_unique<ExpressionStep>(header, ActionsDAG(header->getColumnsWithTypeAndName()));
+            node->children = {chosen};
+        }
+        for (auto * child : node->children)
+            stack.push_back(child);
+    }
+}
+
 void optimizeTreeSecondPass(
     const QueryPlanOptimizationSettings & optimization_settings, QueryPlan::Node & root, QueryPlan::Nodes & nodes, QueryPlan & query_plan)
 {
@@ -375,6 +399,12 @@ void optimizeTreeSecondPass(
     /// Join steps avoid this for exactly the same reason by computing their key before the filter is
     /// added. The plan here is already deterministic (post first pass and subplan materialization).
     setAggregationHashTableCacheKeys(optimization_settings, root);
+
+    /// Join reordering also builds a second join order when Cascades will choose between them, see
+    /// `JoinOrderAlternativesStep`; the same condition decides below whether Cascades runs.
+    optimization_settings.build_join_order_alternatives = optimization_settings.cascades_join_order_alternatives
+        && optimization_settings.make_distributed_plan && optimization_settings.enable_cascades_optimizer
+        && !planContainsLogicalExchange(root);
 
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
     const bool add_join_runtime_filters = optimization_settings.enable_join_runtime_filters && CurrentThread::tryGetQueryContext();
@@ -553,6 +583,11 @@ void optimizeTreeSecondPass(
         CascadesOptimizer cascades_optimizer(query_plan, optimization_settings);
         cascades_optimizer.optimize();
     }
+
+    /// Cascades chose between the join orders; any left (Cascades did not run on this plan) keep the first.
+    if (optimization_settings.build_join_order_alternatives)
+        resolveJoinOrderAlternatives(root);
+    optimization_settings.build_join_order_alternatives = false;
 
     stack.push_back({.node = &root});
     while (!stack.empty())

@@ -20,6 +20,7 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
+#include <Processors/QueryPlan/JoinOrderAlternativesStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
@@ -1171,6 +1172,40 @@ static size_t tryPushDownOverJoinStep(QueryPlan::Node * parent_node, QueryPlan::
     return updated_steps;
 }
 
+/// Moves the filter of `parent_node` below its child, a step that passes every input through unchanged,
+/// and puts a copy of the filter on every input. `new_child` replaces the child with the filtered input headers.
+///                - Something           - Filter - Something
+/// Filter - Union - Something   =>  Union - Filter - Something
+///                - Something           - Filter - Something
+static size_t pushDownFilterIntoEveryInput(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, QueryPlanStepPtr new_child)
+{
+    auto & parent = parent_node->step;
+    auto * child_node = parent_node->children.front();
+    auto & child = child_node->step;
+
+    child = std::move(new_child);
+
+    std::swap(parent, child);
+    std::swap(parent_node->children, child_node->children);
+    std::swap(parent_node->children.front(), child_node->children.front());
+
+    const auto * filter = assert_cast<const FilterStep *>(child.get());
+    for (size_t i = 1; i < parent_node->children.size(); ++i)
+    {
+        auto & filter_node = nodes.emplace_back();
+        filter_node.children.push_back(parent_node->children[i]);
+        parent_node->children[i] = &filter_node;
+
+        filter_node.step = std::make_unique<FilterStep>(
+            filter_node.children.front()->step->getOutputHeader(),
+            filter->getExpression().clone(),
+            filter->getFilterColumnName(),
+            filter->removesFilterColumn());
+    }
+
+    return 3;
+}
+
 size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes, const Optimization::ExtraSettings & settings)
 {
     if (parent_node->children.size() != 1)
@@ -1406,43 +1441,19 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         /// Union does not change header.
         /// We can push down filter and update header.
         auto union_input_headers = child->getInputHeaders();
-        auto expected_output = filter->getOutputHeader();
-
         for (auto & input_header : union_input_headers)
-            input_header = expected_output;
+            input_header = filter->getOutputHeader();
 
-        ///                - Something
-        /// Filter - Union - Something
-        ///                - Something
+        return pushDownFilterIntoEveryInput(
+            parent_node, nodes,
+            std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isNarrowingAllowed()));
+    }
 
-        child = std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isNarrowingAllowed());
-
-        std::swap(parent, child);
-        std::swap(parent_node->children, child_node->children);
-        std::swap(parent_node->children.front(), child_node->children.front());
-
-        ///       - Filter - Something
-        /// Union - Something
-        ///       - Something
-
-        for (size_t i = 1; i < parent_node->children.size(); ++i)
-        {
-            auto & filter_node = nodes.emplace_back();
-            filter_node.children.push_back(parent_node->children[i]);
-            parent_node->children[i] = &filter_node;
-
-            filter_node.step = std::make_unique<FilterStep>(
-                filter_node.children.front()->step->getOutputHeader(),
-                filter->getExpression().clone(),
-                filter->getFilterColumnName(),
-                filter->removesFilterColumn());
-        }
-
-        ///       - Filter - Something
-        /// Union - Filter - Something
-        ///       - Filter - Something
-
-        return 3;
+    if (typeid_cast<JoinOrderAlternativesStep *>(child.get()))
+    {
+        /// Both inputs have the header of the step, so the filter applies to each of them.
+        SharedHeaders input_headers(child->getInputHeaders().size(), filter->getOutputHeader());
+        return pushDownFilterIntoEveryInput(parent_node, nodes, std::make_unique<JoinOrderAlternativesStep>(input_headers));
     }
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))

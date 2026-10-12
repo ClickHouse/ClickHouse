@@ -145,6 +145,10 @@ struct QueryPlanOptimizationSettings
 
     bool enable_cascades_optimizer = false;
     bool cascades_aggregation_pushdown = true;
+    bool cascades_join_order_alternatives = true;
+    /// Set by the second pass while the plan will go through Cascades: join reordering then also builds a
+    /// second join order for Cascades to choose from, see `JoinOrderAlternativesStep`.
+    mutable bool build_join_order_alternatives = false;
 
     bool make_distributed_plan = false;
     /// The query's record of resolved server-local objects (dictionaries, `Join` tables, ...): a live pointer to the

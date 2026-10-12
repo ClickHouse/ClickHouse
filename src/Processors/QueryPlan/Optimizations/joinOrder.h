@@ -142,6 +142,11 @@ struct QueryGraph
     /// looked up by a fixed key.
     BitSet prepared_storage_relations;
 
+    /// When set, the DP solvers keep `full_set_runner_up`: the cheapest plan over all relations whose
+    /// top join splits them differently from the best plan, not just with its inputs swapped.
+    bool keep_runner_up = false;
+    mutable DPJoinEntryPtr full_set_runner_up;
+
     /// Build equivalence classes from existing edges. Call after all edges are populated.
     void buildColumnEquivalences();
 
@@ -152,6 +157,13 @@ struct QueryGraph
 
 struct QueryPlanOptimizationSettings;
 
-DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings);
+struct JoinOrderResult
+{
+    DPJoinEntryPtr best;
+    /// Another complete order, see `QueryGraph::full_set_runner_up`; null when not asked for or not found.
+    DPJoinEntryPtr runner_up;
+};
+
+JoinOrderResult optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings);
 
 }

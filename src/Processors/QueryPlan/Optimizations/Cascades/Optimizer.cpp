@@ -1,4 +1,5 @@
 #include <Common/ThreadStatus.h>
+#include <Processors/QueryPlan/JoinOrderAlternativesStep.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/Optimizer.h>
 #include <Processors/QueryPlan/Optimizations/Cascades/OptimizerContext.h>
 #include <Processors/QueryPlan/Optimizations/QueryPlanOptimizationSettings.h>
@@ -173,6 +174,23 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addGroup(QueryPlan::
         ExpressionProperties stripped_props;
         stripped_props.sorting = sorting_step->getSortDescription();
         return {child_group_id, stripped_props};
+    }
+
+    /// Two join trees with the same result go into one group: the root expression of the second tree
+    /// becomes another logical expression of the group of the first, and the search keeps the cheaper one.
+    /// The group statistics come from the first tree, the order the join order optimizer chose.
+    if (typeid_cast<const JoinOrderAlternativesStep *>(node.step.get()))
+    {
+        chassert(node.children.size() == 2);
+        auto [group_id, pending_props] = addGroup(*node.children[0]);
+        auto [alternative_group_id, alternative_pending_props] = addGroup(*node.children[1]);
+        if (pending_props == alternative_pending_props)
+        {
+            auto group = memo.getGroup(group_id);
+            for (const auto & expression : memo.getGroup(alternative_group_id)->logical_expressions)
+                group->addLogicalExpression(expression);
+        }
+        return {group_id, pending_props};
     }
 
     std::optional<ExpressionStatistics> prepopulated_statistics = estimateStatistics(node);

@@ -376,6 +376,8 @@ public:
 
     std::shared_ptr<DPJoinEntry> solve();
 
+    DPJoinEntryPtr getRunnerUp() const { return query_graph.full_set_runner_up; }
+
 private:
     QueryGraph query_graph;
     const UInt64 max_searched_plans;
@@ -394,6 +396,8 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     for (const auto & algorithm : enabled_algorithms)
     {
         LOG_TRACE(log, "Solving join order using {} algorithm", toString(algorithm));
+        /// The runner-up belongs to the algorithm that returns the plan.
+        query_graph.full_set_runner_up = nullptr;
         switch (algorithm)
         {
             case JoinOrderAlgorithm::DPSUB:
@@ -426,7 +430,25 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     return best_plan;
 }
 
-DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings)
+namespace
+{
+
+/// A copy of the tree that shares no entry with `entry`: `cleanupJoinPredicates` changes the join
+/// operators of the tree it gets, and two trees from one search share entries.
+DPJoinEntryPtr deepCopyJoinTree(const DPJoinEntryPtr & entry)
+{
+    auto copy = std::make_shared<DPJoinEntry>(*entry);
+    if (!entry->isLeaf())
+    {
+        copy->left = deepCopyJoinTree(entry->left);
+        copy->right = deepCopyJoinTree(entry->right);
+    }
+    return copy;
+}
+
+}
+
+JoinOrderResult optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (query_graph.relation_stats.size() <= 1)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "JoinOrderOptimizer: number of relations must be greater than 1");
@@ -451,9 +473,21 @@ DPJoinEntryPtr optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiza
     if (!best_plan)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Failed to find a valid join order");
 
+    DPJoinEntryPtr runner_up;
+    if (auto found = reorderer.getRunnerUp())
+    {
+        runner_up = deepCopyJoinTree(found);
+        best_plan = deepCopyJoinTree(best_plan);
+        LOG_TRACE(getJoinOrderOptimizerLogger(), "Runner-up join order '{}', cost: {}", runner_up->dump(), runner_up->cost);
+    }
+
     if (optimization_settings.enable_join_transitive_predicates)
+    {
         cleanupJoinPredicates(best_plan, column_equivalences, prepared_storage_relations);
-    return best_plan;
+        if (runner_up)
+            cleanupJoinPredicates(runner_up, column_equivalences, prepared_storage_relations);
+    }
+    return {.best = best_plan, .runner_up = runner_up};
 }
 
 }

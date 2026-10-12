@@ -1,0 +1,22 @@
+-- the fact table is joined with the broadcast dimension before any shuffle
+GatherExchange
+JoinLogical (Shuffle HashJoin )
+ShuffleExchange
+ReadFromMergeTree (ParallelRead default.t_alt_bridge)
+ShuffleExchange
+JoinLogical (Broadcast HashJoin )
+ReadFromMergeTree (ParallelRead default.t_alt_fact)
+ReadFromMergeTree (ReplicatedRead default.t_alt_dim)
+-- the same result with either order and on one node
+31398000	4000
+31398000	4000
+31398000	4000
+-- the runtime filter from the outer table reaches the reads inside the subquery
+ReadFromMergeTree (ParallelRead t_alt_bridge)
+filtered by t_alt_out
+ReadFromMergeTree (ParallelRead t_alt_fact)
+filtered by t_alt_out
+ReadFromMergeTree (ReplicatedRead t_alt_dim)
+filtered by t_alt_out
+ReadFromMergeTree (ReplicatedRead t_alt_out)
+20
