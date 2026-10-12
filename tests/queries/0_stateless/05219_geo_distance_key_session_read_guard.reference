@@ -1,0 +1,11 @@
+-- baseline session: the key and both skip indexes are used and the result is right
+2
+2
+2
+2
+-- deviating session: the value is rounded, so the row is found only while nothing prunes by name
+2
+2
+2
+2
+2
