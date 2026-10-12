@@ -13,7 +13,9 @@
 #include <Parsers/ASTDropQuery.h>
 #include <Parsers/ASTIdentifier.h>
 #include <Storages/IStorage.h>
+#include <Storages/StorageAlias.h>
 #include <Storages/StorageMaterializedView.h>
+#include <Storages/StorageMerge.h>
 #include <Storages/StorageTableFunction.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/StorageTimeSeries.h>
@@ -35,6 +37,7 @@
 
 #if USE_LIBPQXX
 #   include <Databases/PostgreSQL/DatabaseMaterializedPostgreSQL.h>
+#   include <Storages/PostgreSQL/StorageMaterializedPostgreSQL.h>
 #endif
 
 namespace DB
@@ -155,6 +158,101 @@ BlockIO InterpreterDropQuery::executeToTable(ASTDropQuery & query)
     return res;
 }
 
+/// Loads the lazy stand-ins of the tables whose row count `table->totalRows` delegates to. Loading
+/// a `StorageTableProxy` keeps the same object in the catalog, which then forwards `totalRows` to
+/// the loaded storage, so the delegating storage sees the count when it looks up its target again.
+/// The depth bound only guards against a cycle.
+static void loadRowCountTargets(const StoragePtr & table, const ContextPtr & context, size_t depth = 0)
+{
+    if (!table || depth >= max_storage_proxy_depth)
+        return;
+
+    std::vector<StoragePtr> targets;
+    if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
+        targets.push_back(alias->tryGetTargetTable());
+    else if (const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get());
+             materialized_view && materialized_view->hasInnerTable())
+        targets.push_back(materialized_view->tryGetTargetTable());
+    else if (const auto * time_series = dynamic_cast<const StorageTimeSeries *>(table.get()))
+    {
+        for (auto target_kind : StorageTimeSeries::getTargetKinds())
+            if (time_series->isInnerTable(target_kind))
+                targets.push_back(time_series->tryGetTargetTable(target_kind, context));
+    }
+#if USE_LIBPQXX
+    else if (const auto * materialized_postgresql = dynamic_cast<const StorageMaterializedPostgreSQL *>(table.get()))
+        targets.push_back(materialized_postgresql->tryGetNested());
+#endif
+
+    for (const auto & target : targets)
+        if (target)
+            loadRowCountTargets(resolveStorageProxyLoading(target), context, depth + 1);
+}
+
+/// Whether `table` is a table function (`CREATE TABLE t AS url(...)`) that has not been resolved
+/// yet. Resolving it creates the external storage and starts it up.
+static bool isUnresolvedTableFunction(const StoragePtr & table)
+{
+    const auto * proxy = typeid_cast<const StorageTableFunctionProxy *>(table.get());
+    return proxy && !proxy->tryGetNested();
+}
+
+/// `IF EMPTY` must not drop a table whose contents it cannot vouch for. The row count a storage
+/// derives from its metadata is exact whenever it is reported, but many storages cannot report
+/// one, and some deliberately withhold it when their metadata is self-contradictory (see
+/// `IcebergMetadata::totalRows`). Treating an unknown count as zero would let `IF EMPTY` drop a
+/// table full of rows (and, for storages that remove their data on drop, delete the data), so an
+/// unknown count refuses the drop. The table is deliberately not read to find out: a read would
+/// see the caller's row policies rather than the table, and would consume messages from
+/// stream-like engines such as `Kafka`. A plain view stores no rows, so it is always empty, and
+/// so is a materialized view with a `TO` table: its rows belong to the target table, which its
+/// drop does not touch. Likewise, dropping or detaching an `Alias` only removes the alias itself,
+/// so it holds no rows of its own; `TRUNCATE` of an alias truncates its target, so it is judged
+/// by the target's row count. The same holds for dropping or detaching a `Merge` table: it only
+/// removes the wrapper, not the rows of its source tables. A `lazy_load_tables` database hands out a `StorageTableProxy`, which
+/// reports no row count until it is loaded, so the stand-in is loaded first: otherwise `IF EMPTY`
+/// would refuse to drop an empty table that nobody has touched since the database was attached.
+/// An `Alias`, a materialized view with an inner table, a `TimeSeries` table and a
+/// `MaterializedPostgreSQL` table report the row count of their targets, which they look up in the
+/// catalog themselves, so the stand-ins of those targets are loaded too. `DETACH` of any of these
+/// wrappers only removes the wrapper and leaves its inner tables (and their rows) in place, so a
+/// detached wrapper holds no rows of its own.
+bool InterpreterDropQuery::isTableEmpty(const StoragePtr & table_or_proxy, ASTDropQuery::Kind kind) const
+{
+    const StoragePtr table = resolveStorageProxyLoading(table_or_proxy);
+    if (kind != ASTDropQuery::Kind::Truncate
+        && (dynamic_cast<const StorageAlias *>(table.get()) || dynamic_cast<const StorageMerge *>(table.get())))
+        return true;
+    if (kind == ASTDropQuery::Kind::Detach
+        && (dynamic_cast<const StorageMaterializedView *>(table.get()) || dynamic_cast<const StorageTimeSeries *>(table.get())))
+        return true;
+#if USE_LIBPQXX
+    /// Except in a `MaterializedPostgreSQL` database: the only detach it supports is
+    /// `DETACH ... PERMANENTLY`, which removes the table from replication and drops the nested
+    /// table with its rows (see `DatabaseMaterializedPostgreSQL::detachTablePermanently`).
+    if (kind == ASTDropQuery::Kind::Detach && dynamic_cast<const StorageMaterializedPostgreSQL *>(table.get()))
+    {
+        auto database = DatabaseCatalog::instance().tryGetDatabase(table->getStorageID().database_name);
+        if (!typeid_cast<const DatabaseMaterializedPostgreSQL *>(database.get()))
+            return true;
+    }
+#endif
+    /// A table function that has not been resolved yet reports no row count, so it is refused
+    /// anyway. Do not resolve it to ask whether it is a view: that would instantiate the external
+    /// storage and start it up.
+    if (isUnresolvedTableFunction(table))
+        return false;
+    if (table->isView())
+    {
+        const auto * materialized_view = dynamic_cast<const StorageMaterializedView *>(table.get());
+        if (!materialized_view || !materialized_view->hasInnerTable())
+            return true;
+    }
+    loadRowCountTargets(table, getContext());
+    auto rows = table->totalRows(getContext());
+    return rows && *rows == 0;
+}
+
 BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, ASTDropQuery & query, DatabasePtr & db, UUID & uuid_to_wait)
 {
     if (query.kind == ASTDropQuery::Kind::Detach && query.isTemporary())
@@ -165,7 +263,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     if (query.isTemporary() || table_id.database_name.empty())
     {
         if (context_->tryResolveStorageID(table_id, Context::ResolveExternal))
-            return executeToTemporaryTable(table_id.getTableName(), query.kind);
+            return executeToTemporaryTable(table_id.getTableName(), query.kind, query.if_empty);
         query.setDatabase(table_id.database_name = context_->getCurrentDatabase());
     }
 
@@ -185,11 +283,6 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     if (database && table)
     {
         const auto & settings = getContext()->getSettingsRef();
-        if (query.if_empty)
-        {
-            if (auto rows = table->totalRows(getContext()); rows > 0)
-                throw Exception(ErrorCodes::TABLE_NOT_EMPTY, "Table {} is not empty", backQuoteIfNeed(table_id.table_name));
-        }
         checkStorageSupportsTransactionsIfNeeded(table, context_);
 
         auto & ast_drop_query = query.as<ASTDropQuery &>();
@@ -203,6 +296,41 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
             throw Exception(ErrorCodes::INCORRECT_QUERY,
                 "Table {} is not a Dictionary",
                 table_id.getNameForLogs());
+
+        if (query.if_empty)
+        {
+            /// Check the access first: otherwise `IF EMPTY` would tell a user who may not drop
+            /// the table whether it is empty. Telling a view from a table would resolve a table
+            /// function that has not been resolved yet, which `IF EMPTY` refuses anyway, so such a
+            /// table requires both grants instead. Nothing is loaded before the check: a
+            /// `lazy_load_tables` stand-in is never a view, a dictionary or a table function (see
+            /// `DatabaseOrdinary::shouldLazyLoad`), and loading it would start the storage up for a
+            /// user who may not touch it.
+            AccessFlags required_access;
+            if (query.kind == ASTDropQuery::Kind::Truncate)
+                required_access = AccessType::TRUNCATE;
+            else if (isUnresolvedTableFunction(resolveStorageProxy(table)))
+                required_access = AccessFlags(AccessType::DROP_TABLE) | AccessType::DROP_VIEW;
+            else if (table->isView())
+                required_access = AccessType::DROP_VIEW;
+            else if (table->isDictionary())
+                required_access = AccessType::DROP_DICTIONARY;
+            else
+                required_access = AccessType::DROP_TABLE;
+            context_->checkAccess(required_access, table_id);
+            /// `TRUNCATE` of an `Alias` truncates its target, which checks the grant on the target
+            /// only when it runs. Check it before the emptiness probe looks at the target. An
+            /// `Alias` is never a `lazy_load_tables` stand-in, and its target is never an `Alias`.
+            if (query.kind == ASTDropQuery::Kind::Truncate)
+            {
+                if (const auto * alias = dynamic_cast<const StorageAlias *>(table.get()))
+                    alias->getTargetTable(StorageAlias::TargetAccess{context_, AccessType::TRUNCATE});
+            }
+            if (!isTableEmpty(table, query.kind))
+                throw Exception(ErrorCodes::TABLE_NOT_EMPTY,
+                    "Table {} is not empty or its storage does not know how many rows it has",
+                    backQuoteIfNeed(table_id.table_name));
+        }
 
         bool secondary_query = getContext()->isDDLOrOnClusterInternal();
 
@@ -413,7 +541,7 @@ BlockIO InterpreterDropQuery::executeToTableImpl(const ContextPtr & context_, AS
     return {};
 }
 
-BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind)
+BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name, ASTDropQuery::Kind kind, bool if_empty)
 {
     /// The guard in `executeToTableImpl` only catches the explicit
     /// `DETACH TEMPORARY TABLE` form (`query.isTemporary()` is true). When a user
@@ -428,6 +556,10 @@ BlockIO InterpreterDropQuery::executeToTemporaryTable(const String & table_name,
     if (resolved_id)
     {
         StoragePtr table = DatabaseCatalog::instance().getTable(resolved_id, getContext());
+        if (if_empty && !isTableEmpty(table, kind))
+            throw Exception(ErrorCodes::TABLE_NOT_EMPTY,
+                "Temporary table {} is not empty or its storage does not know how many rows it has",
+                backQuoteIfNeed(table_name));
         if (kind == ASTDropQuery::Kind::Truncate)
         {
             auto table_lock

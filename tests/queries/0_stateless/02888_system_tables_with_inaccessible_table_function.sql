@@ -82,12 +82,13 @@ SELECT length(data_paths) = 1
     AND basename(data_paths[1]) = currentDatabase() || '_02888_data_paths.tsv'
     FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc09';
 
--- A never resolved proxy reports an unknown row count, so the emptiness interlock no longer
--- refuses it. Only the proxy's own name goes away; the rows it would have read are untouched.
+-- A never resolved proxy reports an unknown row count. `DROP TABLE ... IF EMPTY` does not take an
+-- unknown count for zero and refuses without reading the table. The rows of `mem` behind the proxy
+-- are untouched either way.
 CREATE TABLE {CLICKHOUSE_DATABASE:Identifier}.tablefunc10 (x UInt64) AS merge(currentDatabase(), '^mem$');
 -- ignore_drop_queries_probability = 0: the stress runner sets it, and because this table stores no
 -- data on disk a rewritten DROP becomes a TRUNCATE that resolves the table function.
-DROP TABLE IF EMPTY {CLICKHOUSE_DATABASE:Identifier}.tablefunc10 SETTINGS ignore_drop_queries_probability = 0;
+DROP TABLE IF EMPTY {CLICKHOUSE_DATABASE:Identifier}.tablefunc10 SETTINGS ignore_drop_queries_probability = 0; -- { serverError TABLE_NOT_EMPTY }
 SELECT count() FROM system.tables WHERE database = currentDatabase() AND name = 'tablefunc10';
 SELECT count() FROM {CLICKHOUSE_DATABASE:Identifier}.mem;
 
