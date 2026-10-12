@@ -806,6 +806,7 @@ ExpireSnapshotsResult expireSnapshots(
         {
             updateMetadataForExpiration(metadata, expired_ref_names, partition.retained_snapshots, partition.expired_snapshot_ids);
 
+            auto dropped_metadata_files = MetadataGenerator(metadata).trimMetadataLog();
             std::string json_representation = stringifyJSON(metadata, 4);
             auto metadata_info = filename_generator.generateMetadataPathWithInfo();
             auto hint_path = filename_generator.generateVersionHint();
@@ -834,6 +835,8 @@ ExpireSnapshotsResult expireSnapshots(
                         "The table metadata may be in an inconsistent state");
                 }
             }
+
+            removeDroppedMetadataFiles(metadata, dropped_metadata_files, persistent_table_components.path_resolver, object_storage, log);
         }
         persistent_table_components.invalidateMetadataCache();
 

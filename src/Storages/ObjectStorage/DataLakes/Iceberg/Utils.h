@@ -79,6 +79,14 @@ bool writeMetadataFileAndVersionHint(
     DB::ContextPtr context,
     bool try_write_version_hint);
 
+/// After a confirmed commit, deletes the files `trimMetadataLog` dropped if the table sets `write.metadata.delete-after-commit.enabled`.
+void removeDroppedMetadataFiles(
+    const Poco::JSON::Object::Ptr & committed_metadata,
+    const std::vector<IcebergPathFromMetadata> & dropped_metadata_files,
+    const IcebergPathResolver & resolver,
+    DB::ObjectStoragePtr object_storage,
+    LoggerPtr log);
+
 struct TransformAndArgument
 {
     String transform_name;

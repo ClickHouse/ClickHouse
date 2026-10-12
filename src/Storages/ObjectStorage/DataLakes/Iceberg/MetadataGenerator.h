@@ -67,6 +67,9 @@ public:
     /// Appends the file this object was read from to `metadata-log`; call it before `last-updated-ms` changes.
     void addPreviousMetadataFile(const Iceberg::IcebergPathFromMetadata & previous_metadata_file);
 
+    /// Drops the oldest `metadata-log` entries beyond `write.metadata.previous-versions-max` and returns the files no longer listed.
+    std::vector<Iceberg::IcebergPathFromMetadata> trimMetadataLog();
+
     /// Callers that retry a commit generate the id once so their manifests stay valid across attempts.
     Int64 generateSnapshotId();
 

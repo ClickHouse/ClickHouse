@@ -820,6 +820,8 @@ static bool writeConsolidatedManifestFile(
         }
     };
 
+    const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
+    std::vector<Iceberg::IcebergPathFromMetadata> dropped_metadata_files;
     try
     {
         for (auto & [partition_key, pd] : partitions_map)
@@ -946,6 +948,7 @@ static bool writeConsolidatedManifestFile(
 
         // Commit: write metadata file with If-None-Match + ETag-based CAS version hint; returns false if another writer claimed this version, so the caller retries.
         {
+            dropped_metadata_files = MetadataGenerator(metadata_object).trimMetadataLog();
             std::ostringstream oss; // STYLE_CHECK_ALLOW_STD_STRING_STREAM
             Poco::JSON::Stringifier::stringify(metadata_object, oss, 4);
             std::string json_representation = removeEscapedSlashes(oss.str());
@@ -956,7 +959,6 @@ static bool writeConsolidatedManifestFile(
 
             /// A transactional catalog is the source of truth for the current metadata; for it the storage-side
             /// version hint is irrelevant, so only write the metadata file + version hint when no such catalog owns the table.
-            const bool catalog_writes_metadata_file = catalog && catalog->isTransactional();
             if (!catalog_writes_metadata_file
                 && !writeMetadataFileAndVersionHint(
                     path_resolver,
@@ -991,6 +993,9 @@ static bool writeConsolidatedManifestFile(
         cleanup();
         throw;
     }
+
+    if (!catalog_writes_metadata_file)
+        removeDroppedMetadataFiles(metadata_object, dropped_metadata_files, path_resolver, object_storage, log);
 
     LOG_INFO(log, "Successfully created {} partition manifest file(s) covering {} data files",
              consolidated_manifest_paths.size(), total_data_files);

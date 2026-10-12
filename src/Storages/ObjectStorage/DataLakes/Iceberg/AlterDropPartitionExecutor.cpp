@@ -679,9 +679,13 @@ bool AlterDropPartitionExecutor::tryCommit(SnapshotState & state, const DropPlan
 
     auto [metadata_info, new_snapshot] = writeManifestList(state, plan, filename_generator, files_for_cleanup);
 
+    auto dropped_metadata_files = MetadataGenerator(state.metadata_object).trimMetadataLog();
     committed = commitMetadataJSON(state, filename_generator, metadata_info, new_snapshot);
     if (!committed)
         return false;
+
+    if (!(catalog && catalog->isTransactional()))
+        removeDroppedMetadataFiles(state.metadata_object, dropped_metadata_files, components.path_resolver, object_storage, log);
 
     LOG_INFO(
         log,

@@ -2209,6 +2209,17 @@ The command returns a table with `metric_name` and `metric_value` columns showin
 - The `older_than` threshold protects against deleting files from in-progress writes — the default 3-day threshold provides a generous safety margin
 </Note>
 
+### Metadata Log Retention {#iceberg-metadata-log-retention}
+
+Each commit records the previous metadata file in the `metadata-log` of the new one. ClickHouse honors two Iceberg table properties that bound this log:
+
+| Property | Default | Description |
+|---|---|---|
+| `write.metadata.previous-versions-max` | `100` | Maximum number of previous metadata files kept in `metadata-log`. Older entries are dropped on commit, and the files they name become collectable by `remove_orphan_files`. |
+| `write.metadata.delete-after-commit.enabled` | `false` | When `true`, metadata files dropped from `metadata-log` are deleted right after the commit. |
+
+Files are not deleted by ClickHouse when a transactional catalog (REST, Unity) manages the table's metadata files.
+
 ## See Also {#see-also}
 
 * [Iceberg engine](/reference/engines/table-engines/integrations/iceberg)

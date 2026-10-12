@@ -453,6 +453,46 @@ void MetadataGenerator::addPreviousMetadataFile(const Iceberg::IcebergPathFromMe
     metadata_log->add(entry);
 }
 
+std::vector<Iceberg::IcebergPathFromMetadata> MetadataGenerator::trimMetadataLog()
+{
+    Int64 max_previous_versions = 100;
+    if (metadata_object->has(Iceberg::f_properties))
+    {
+        auto properties = metadata_object->getObject(Iceberg::f_properties);
+        if (properties && properties->has(Iceberg::f_metadata_previous_versions_max))
+        {
+            const auto & value = properties->get(Iceberg::f_metadata_previous_versions_max);
+            String value_string = value.isEmpty() ? "" : value.toString();
+            if (!tryParse(max_previous_versions, value_string))
+                throw Exception(
+                    ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid value '{}' of Iceberg table property '{}'",
+                    value_string,
+                    Iceberg::f_metadata_previous_versions_max);
+            max_previous_versions = std::max<Int64>(max_previous_versions, 1);
+        }
+    }
+
+    if (!metadata_object->has(Iceberg::f_metadata_log))
+        return {};
+    auto metadata_log = metadata_object->getArray(Iceberg::f_metadata_log);
+    if (!metadata_log || metadata_log->size() <= static_cast<size_t>(max_previous_versions))
+        return {};
+
+    const size_t first_retained = metadata_log->size() - static_cast<size_t>(max_previous_versions);
+    std::vector<Iceberg::IcebergPathFromMetadata> dropped;
+    Poco::JSON::Array::Ptr retained = new Poco::JSON::Array;
+    for (UInt32 i = 0; i < metadata_log->size(); ++i)
+    {
+        if (i >= first_retained)
+            retained->add(metadata_log->get(i));
+        else if (auto entry = metadata_log->getObject(i); entry && entry->has(Iceberg::f_metadata_file))
+            dropped.push_back(Iceberg::IcebergPathFromMetadata::deserialize(entry->getValue<String>(Iceberg::f_metadata_file)));
+    }
+    metadata_object->set(Iceberg::f_metadata_log, retained);
+    return dropped;
+}
+
 void MetadataGenerator::generateDropColumnMetadata(const String & column_name)
 {
     auto current_schema_id = metadata_object->getValue<Int32>(Iceberg::f_current_schema_id);

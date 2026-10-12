@@ -1,6 +1,7 @@
 
 #include <charconv>
 #include <memory>
+#include <set>
 #include <string>
 #include <unordered_set>
 #include <config.h>
@@ -497,6 +498,81 @@ bool writeMetadataFileAndVersionHint(
         /* create */ try_write_version_hint,
         /* assert_version_exactly */ false);
     return true;
+}
+
+void removeDroppedMetadataFiles(
+    const Poco::JSON::Object::Ptr & committed_metadata,
+    const std::vector<IcebergPathFromMetadata> & dropped_metadata_files,
+    const IcebergPathResolver & resolver,
+    ObjectStoragePtr object_storage,
+    LoggerPtr log)
+{
+    if (dropped_metadata_files.empty())
+        return;
+
+    try
+    {
+        if (!committed_metadata->has(Iceberg::f_properties))
+            return;
+        auto properties = committed_metadata->getObject(Iceberg::f_properties);
+        if (!properties || !properties->has(Iceberg::f_metadata_delete_after_commit_enabled))
+            return;
+        const auto & enabled = properties->get(Iceberg::f_metadata_delete_after_commit_enabled);
+        if (enabled.isEmpty() || Poco::toLower(enabled.toString()) != "true")
+            return;
+
+        /// One object can be listed under different spellings, so retained and dropped entries are compared resolved.
+        std::unordered_set<String> retained;
+        if (committed_metadata->has(Iceberg::f_metadata_log))
+        {
+            auto metadata_log = committed_metadata->getArray(Iceberg::f_metadata_log);
+            for (UInt32 i = 0; metadata_log && i < metadata_log->size(); ++i)
+            {
+                auto entry = metadata_log->getObject(i);
+                if (entry && entry->has(Iceberg::f_metadata_file))
+                    retained.insert(resolver.resolve(IcebergPathFromMetadata::deserialize(entry->getValue<String>(Iceberg::f_metadata_file))));
+            }
+        }
+
+        const String metadata_directory = (resolver.getTableRoot().empty() ? "" : resolver.getTableRoot() + "/") + "metadata/";
+        std::set<String> paths_to_remove;
+        for (const auto & dropped : dropped_metadata_files)
+        {
+            String path;
+            try
+            {
+                path = resolver.resolve(dropped);
+            }
+            catch (...)
+            {
+                LOG_WARNING(log, "Not removing metadata file {} dropped from metadata-log: {}", dropped, getCurrentExceptionMessage(false));
+                continue;
+            }
+            if (retained.contains(path))
+                continue;
+
+            /// `metadata-log` entries can be written by any engine: only this table's metadata files are removed.
+            std::string_view name = std::string_view(path).substr(std::min(path.size(), metadata_directory.size()));
+            if (!path.starts_with(metadata_directory) || name.contains('/') || !name.ends_with(".metadata.json"))
+            {
+                LOG_WARNING(log, "Not removing {} dropped from metadata-log: it is not a metadata file of this table", path);
+                continue;
+            }
+            paths_to_remove.insert(std::move(path));
+        }
+
+        if (paths_to_remove.empty())
+            return;
+        StoredObjects objects;
+        for (const auto & path : paths_to_remove)
+            objects.emplace_back(path);
+        object_storage->removeObjectsIfExist(objects);
+        LOG_DEBUG(log, "Removed {} metadata files dropped from metadata-log", objects.size());
+    }
+    catch (...)
+    {
+        LOG_WARNING(log, "Failed to remove metadata files dropped from metadata-log: {}", getCurrentExceptionMessage(false));
+    }
 }
 
 
