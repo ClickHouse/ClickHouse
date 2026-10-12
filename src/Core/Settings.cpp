@@ -1632,7 +1632,7 @@ Possible values:
 
 - 1 — skipping enabled.
 
-    If a shard is unavailable, ClickHouse returns a result based on partial data and does not report node availability issues.
+    If a shard is unavailable, ClickHouse returns a result based on partial data and does not report node availability issues. On a read, if *every* shard was skipped before returning any data there is no partial data left to return, so the query throws `ALL_CONNECTION_TRIES_FAILED` instead of returning an empty result. This check covers reads only; `INSERT` has its own handling of a fully unavailable destination cluster.
 
 - 0 — skipping disabled.
 
@@ -1656,7 +1656,7 @@ Possible values:
 When `skip_unavailable_shards` is enabled, limits the maximum number of shards that can be silently skipped.
 If the number of unavailable shards exceeds this value, an exception is thrown instead of silently skipping.
 
-A value of 0 means no limit (default behavior — all unavailable shards can be skipped).
+A value of 0 means no limit on the count. On a read, skipping *every* shard before any of them returned data still throws `ALL_CONNECTION_TRIES_FAILED`, because such a query has no partial result to return. This limit applies to reads only.
 )", 0, \
         {"26.3", 0, 0, "New setting to limit the number of shards that can be silently skipped when skip_unavailable_shards is enabled."}) \
     \
@@ -1664,7 +1664,7 @@ A value of 0 means no limit (default behavior — all unavailable shards can be 
 When `skip_unavailable_shards` is enabled, limits the maximum ratio (0 to 1) of shards that can be silently skipped.
 If the ratio of unavailable shards to total shards exceeds this value, an exception is thrown instead of silently skipping.
 
-A value of 0 means no limit (default behavior — all unavailable shards can be skipped).
+A value of 0 means no limit on the ratio. On a read, skipping *every* shard before any of them returned data still throws `ALL_CONNECTION_TRIES_FAILED`, because such a query has no partial result to return. This limit applies to reads only.
 )", 0, \
         {"26.3", 0, 0, "New setting to limit the ratio of shards that can be silently skipped when skip_unavailable_shards is enabled."}) \
     \
@@ -5723,6 +5723,15 @@ Possible values:
 - 0 — Optimization disabled.
 - 1 — Optimization enabled.
 )", 0) \
+    DECLARE(Bool, optimize_min_max_from_files, true, R"(
+Enables or disables computing `min` and `max` of columns from the statistics stored in data files instead of reading the data, for queries whose only aggregate functions are `min` and `max` of table columns, without `GROUP BY` and without filters. It applies to the table function/engine `file` with the `Parquet` format (not to files inside archives), for integer (up to 64 bits), date, date-time and decimal columns whose column chunk statistics are present in every row group.
+
+Possible values:
+
+- 0 - Optimization disabled.
+- 1 - Optimization enabled.
+)", 0, \
+        {"26.10", false, true, "New setting to compute `min` / `max` from Parquet column chunk statistics."}) \
     DECLARE(Bool, use_cache_for_count_from_files, true, R"(
 Enables caching of rows number during count from files in table functions `file`/`s3`/`url`/`hdfs`/`azureBlobStorage`.
 
@@ -12065,11 +12074,16 @@ void writeQueryParameters(const NameToNameMap & parameters, WriteBuffer & out)
 NameToNameMap readQueryParameters(ReadBuffer & in)
 {
     NameToNameMap parameters;
+    size_t num_parameters = 0;
     while (true)
     {
-        String name = BaseSettingsHelpers::readString(in);
+        String name = BaseSettingsHelpers::readName(in);
         if (name.empty())
             break;
+
+        if (++num_parameters > MAX_SETTINGS_IN_A_SEQUENCE)
+            BaseSettingsHelpers::throwTooManySettings("query parameters");
+
         std::ignore = BaseSettingsHelpers::readFlags(in);
         String value;
         ReadBufferFromOwnString buf(BaseSettingsHelpers::readString(in));
