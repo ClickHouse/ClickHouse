@@ -67,7 +67,8 @@ $CLICKHOUSE_CLIENT --query "
          WHERE current_database = currentDatabase() AND query_id = '${CLICKHOUSE_DATABASE}_b_first' AND type = 'QueryFinish') AS first,
         (SELECT ProfileEvents['FilesystemCacheEvictedNoHitBytes'] FROM system.query_log
          WHERE current_database = currentDatabase() AND query_id = '${CLICKHOUSE_DATABASE}_a_second' AND type = 'QueryFinish') AS second
-    SELECT first > 0, second * 10 < first;
+    SELECT first > 0 AS no_hit_bytes_when_b_evicts_unserved_a, second * 10 < first AS no_hit_bytes_10x_less_when_a_evicts_served_b
+    FORMAT TSKV;
     DROP TABLE t_no_hit_a;
     DROP TABLE t_no_hit_b;
 "

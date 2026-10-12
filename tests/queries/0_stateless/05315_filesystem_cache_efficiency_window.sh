@@ -61,29 +61,36 @@ $CLICKHOUSE_CLIENT --query "
 "
 
 # 1. A scan on an empty cache fills it. Filling is not reuse, so nothing is active yet.
+echo "1. A scan on an empty cache"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
 $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "SELECT sum(key), sum(value) FROM t_efficiency FORMAT Null"
 $CLICKHOUSE_CLIENT --query "
-    SELECT count() > 0, sum(idle_bytes) = sum(downloaded_size), sum(active_bytes) = 0
-    FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    SELECT count() > 0 AS has_segments, sum(idle_bytes) = sum(downloaded_size) AS all_bytes_idle, sum(active_bytes) = 0 AS no_active_bytes
+    FROM system.filesystem_cache WHERE cache_name = '$cache_name'
+    FORMAT TSKV"
 
 # 2. SLRU: the first fill is probationary.
-$CLICKHOUSE_CLIENT --query "SELECT DISTINCT queue_entry_type FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+echo "2. The queue of the first fill"
+$CLICKHOUSE_CLIENT --query "SELECT DISTINCT queue_entry_type FROM system.filesystem_cache WHERE cache_name = '$cache_name' FORMAT TSKV"
 
 # 3. A second scan reads from the cache: it reuses almost every byte of the segments it reads, and
 # its hits move the data segments to protected. Marks come from the mark cache, so their small
 # segments get no hit.
+echo "3. A second scan"
 $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "SELECT sum(key), sum(value) FROM t_efficiency FORMAT Null"
 $CLICKHOUSE_CLIENT --query "
-    SELECT sum(active_bytes) > 0,
-        sum(active_bytes) >= 0.99 * (sum(active_bytes) + sum(passive_bytes)),
-        sum(active_bytes + passive_bytes + idle_bytes) = sum(downloaded_size)
-    FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    SELECT sum(active_bytes) > 0 AS has_active_bytes,
+        sum(active_bytes) >= 0.99 * (sum(active_bytes) + sum(passive_bytes)) AS efficiency_at_least_0_99,
+        sum(active_bytes + passive_bytes + idle_bytes) = sum(downloaded_size) AS classes_add_up_to_downloaded_size
+    FROM system.filesystem_cache WHERE cache_name = '$cache_name'
+    FORMAT TSKV"
 $CLICKHOUSE_CLIENT --query "
-    SELECT sumIf(downloaded_size, queue_entry_type = 'SLRU_Protected') > 0.9 * sum(downloaded_size)
-    FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    SELECT sumIf(downloaded_size, queue_entry_type = 'SLRU_Protected') > 0.9 * sum(downloaded_size) AS protected_share_above_0_9
+    FROM system.filesystem_cache WHERE cache_name = '$cache_name'
+    FORMAT TSKV"
 
 # 4. Point queries: the first run fills 4 MiB segments, the second reuses a small part of each.
+echo "4. Point queries, run twice"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
 for _ in 1 2; do
     $CLICKHOUSE_CLIENT "${read_settings[@]}" --query "
@@ -92,17 +99,20 @@ for _ in 1 2; do
         FORMAT Null"
 done
 $CLICKHOUSE_CLIENT --query "
-    SELECT sum(active_bytes) > 0,
-        sum(active_bytes) < 0.5 * (sum(active_bytes) + sum(passive_bytes))
-    FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    SELECT sum(active_bytes) > 0 AS has_active_bytes,
+        sum(active_bytes) < 0.5 * (sum(active_bytes) + sum(passive_bytes)) AS efficiency_below_0_5
+    FROM system.filesystem_cache WHERE cache_name = '$cache_name'
+    FORMAT TSKV"
 
 # 5. Write-through puts data into the cache without a read.
+echo "5. Write-through"
 $CLICKHOUSE_CLIENT --query "SYSTEM DROP FILESYSTEM CACHE '$cache_name'"
 $CLICKHOUSE_CLIENT --enable_filesystem_cache_on_write_operations 1 \
     --query "INSERT INTO t_efficiency_write SELECT number, cityHash64(number) FROM numbers(500000)"
 $CLICKHOUSE_CLIENT --query "
-    SELECT sum(idle_bytes) > 0, sum(active_bytes) * 100 < sum(downloaded_size)
-    FROM system.filesystem_cache WHERE cache_name = '$cache_name'"
+    SELECT sum(idle_bytes) > 0 AS has_idle_bytes, sum(active_bytes) * 100 < sum(downloaded_size) AS active_below_1_percent
+    FROM system.filesystem_cache WHERE cache_name = '$cache_name'
+    FORMAT TSKV"
 
 $CLICKHOUSE_CLIENT --query "
     DROP TABLE t_efficiency;
