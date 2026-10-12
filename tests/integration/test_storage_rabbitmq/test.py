@@ -4005,13 +4005,22 @@ def test_rabbitmq_read_consumers_in_parallel(rabbitmq_cluster, unique):
     credentials = pika.PlainCredentials("root", "clickhouse")
     connection = pika.BlockingConnection(pika.ConnectionParameters(
         rabbitmq_cluster.rabbitmq_ip, rabbitmq_cluster.rabbitmq_port, "/", credentials))
-    channel = connection.channel()
-    channel.confirm_delivery()
-    # Publish only once all 4 consumers are subscribed (the queue is 1_<queue_base>).
+    # Publish only once all 4 consumers are subscribed (the queue is 1_<queue_base>). The table declares the queue
+    # asynchronously after CREATE returns, and a passive declare of a missing queue closes the channel, so use a new one.
     deadline = time.monotonic() + DEFAULT_TIMEOUT_SEC
-    while channel.queue_declare(queue=f"1_{unique}", passive=True).method.consumer_count < 4:
+    while True:
+        probe = connection.channel()
+        try:
+            consumer_count = probe.queue_declare(queue=f"1_{unique}", passive=True).method.consumer_count
+            probe.close()
+        except pika.exceptions.ChannelClosedByBroker:
+            consumer_count = 0
+        if consumer_count >= 4:
+            break
         assert time.monotonic() < deadline, "not all consumers subscribed"
         time.sleep(0.1)
+    channel = connection.channel()
+    channel.confirm_delivery()
     for i in range(messages_num):
         channel.basic_publish(exchange=unique, routing_key="", body=json.dumps({"key": i, "sent": time.time()}))
         time.sleep(0.01)
