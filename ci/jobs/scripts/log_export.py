@@ -117,6 +117,36 @@ def create_config(config_dir, host, password, users_dir=""):
     return True
 
 
+# The values for the extra columns of the destination tables. They have to come
+# in exactly the EXTRA_COLUMNS order (LogCluster.META_COLUMNS): the local
+# `_sender` table is created as `SELECT {expression}, *`, so its header follows
+# the expression while the destination table follows EXTRA_COLUMNS, and a
+# `Distributed` table with a different header converts every batch by name and
+# logs a structure-mismatch warning for each of them - which `system.text_log`
+# then exports as well.
+#
+# `test_name` and `node_name` sit in the middle of that order. A job that
+# exports the logs of one server has nothing to put there, while the integration
+# tests fill them in per server, so they also need the expression in two parts
+# (see `tests/integration/helpers/ci_logs_export.py`).
+
+
+def extra_columns_expression_head(
+    check_start_time, check_name_suffix="", commit_sha=""
+):
+    """The part of the expression before `test_name`."""
+    return LogCluster.extra_columns_expression_head(
+        Utils.timestamp_to_str(check_start_time),
+        check_name=Info().job_name + check_name_suffix,
+        commit_sha=commit_sha,
+    )
+
+
+def extra_columns_expression_tail():
+    """The part of the expression after `node_name`."""
+    return LogCluster.extra_columns_expression_tail()
+
+
 def _set_server_port(port):
     if port:
         os.environ[SERVER_PORT_ENV] = str(port)
