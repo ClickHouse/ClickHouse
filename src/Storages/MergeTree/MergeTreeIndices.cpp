@@ -8,10 +8,11 @@
 #include <DataTypes/DataTypeDateTime.h>
 #include <DataTypes/DataTypeEnum.h>
 #include <DataTypes/DataTypeLowCardinality.h>
-#include <DataTypes/DataTypeMapHelpers.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <DataTypes/NestedUtils.h>
+#include <DataTypes/Serializations/ISerialization.h>
+#include <DataTypes/Serializations/SerializationMap.h>
 #include <Interpreters/ExpressionActions.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/MergeTree/IDataPartStorage.h>
@@ -74,6 +75,51 @@ String getIndexFileName(const String & index_name, bool escape_filename)
     return String(SKIP_INDEX_FILE_PREFIX) + index_name;
 }
 
+bool isKeySubcolumnOfMap(
+    const ColumnsDescription & columns, const String & column_name, const String & map_column_name)
+{
+    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
+    auto resolved_key = columns.tryGetColumn(options, column_name);
+    auto resolved_map = columns.tryGetColumn(options, map_column_name);
+
+    if (!resolved_key || !resolved_map || !resolved_key->isSubcolumn())
+        return false;
+
+    if (resolved_key->getNameInStorage() != resolved_map->getNameInStorage())
+        return false;
+
+    auto key_info = resolved_key->getTypeInStorage()->tryGetSubcolumnInfo(resolved_key->getSubcolumnName());
+    if (!key_info || !SerializationMap::isKeyValueSubcolumn(key_info->substreams_path))
+        return false;
+
+    /// The key's parent must be this index's map; an empty path means the map is the storage column
+    /// itself. Distinct paths can render to the same subcolumn name under one storage column, so
+    /// only the paths decide. `bucket` carries no identity: it is a Map-with-buckets read detail.
+    ISerialization::SubstreamPath map_path;
+    if (resolved_map->isSubcolumn())
+    {
+        auto map_info = resolved_map->getTypeInStorage()->tryGetSubcolumnInfo(resolved_map->getSubcolumnName());
+        if (!map_info)
+            return false;
+        map_path = map_info->substreams_path;
+    }
+
+    const auto & key_path = key_info->substreams_path;
+    if (key_path.size() != map_path.size() + 1)
+        return false;
+
+    for (size_t i = 0; i < map_path.size(); ++i)
+    {
+        if (key_path[i].type != map_path[i].type
+            || key_path[i].name_of_substream != map_path[i].name_of_substream
+            || key_path[i].variant_element_name != map_path[i].variant_element_name
+            || key_path[i].object_path_name != map_path[i].object_path_name)
+            return false;
+    }
+
+    return true;
+}
+
 String IMergeTreeIndex::getFileName() const
 {
     return getIndexFileName(index.name, index.escape_filenames);
@@ -87,19 +133,6 @@ Names IMergeTreeIndex::getColumnsRequiredForIndexCalc() const
 const NamesAndTypesList & IMergeTreeIndex::getColumnsWithTypesRequiredForIndexCalc() const
 {
     return index.expression->getRequiredColumnsWithTypes();
-}
-
-NameSet IMergeTreeIndex::getColumnsShadowingMapSubcolumns() const
-{
-    NameSet result;
-    /// Subcolumn names are flat, so a Tuple element or a typed JSON path can claim `<map>.key_<k>`
-    /// just as a top-level column can, and a predicate on that name reads the claimant. A genuine Map
-    /// key subcolumn is generated per key on demand, so it is absent here and stays parseable.
-    auto options = GetColumnsOptions(GetColumnsOptions::All).withSubcolumns();
-    for (const auto & column : metadata_snapshot->getColumns().get(options))
-        if (looksLikeMapSubcolumnName(column.name))
-            result.insert(column.name);
-    return result;
 }
 
 namespace
