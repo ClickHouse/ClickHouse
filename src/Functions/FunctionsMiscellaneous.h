@@ -44,8 +44,8 @@ public:
 
     using SignaturePtr = std::shared_ptr<Signature>;
 
-    ExecutableFunctionExpression(ExpressionActionsPtr expression_actions_, SignaturePtr signature_)
-        : expression_actions(std::move(expression_actions_)), signature(std::move(signature_))
+    ExecutableFunctionExpression(ExpressionActionsPoolPtr actions_pool_, SignaturePtr signature_)
+        : actions_pool(std::move(actions_pool_)), signature(std::move(signature_))
     {
     }
 
@@ -66,7 +66,7 @@ public:
         if (input_rows_count == 0)
             return result_type->createColumn();
 
-        if (!expression_actions)
+        if (!actions_pool)
             throw Exception(ErrorCodes::LOGICAL_ERROR, "No actions were passed to FunctionExpression");
 
         DB::Block expr_columns;
@@ -80,6 +80,9 @@ public:
         /// Do not propagate the outer dry_run into the lambda body: non-deterministic
         /// functions (e.g. WASM UDFs) would return defaults during dry-run, producing
         /// wrong constant-folding results for higher-order functions.
+        /// The same lambda is executed from every pipeline stream, and `AdaptiveExpressionActions` is stateful,
+        /// so an instance is leased for the duration of the execution. Plain actions are shared without locking.
+        auto expression_actions = actions_pool->acquire();
         expression_actions->execute(expr_columns, dry_run);
 
         return expr_columns.getByName(signature->return_name).column;
@@ -96,7 +99,7 @@ public:
     bool useDefaultImplementationForReplicatedColumns() const override { return false; }
 
 private:
-    ExpressionActionsPtr expression_actions;
+    ExpressionActionsPoolPtr actions_pool;
     SignaturePtr signature;
 };
 
@@ -226,8 +229,11 @@ public:
     using Signature = ExecutableFunctionExpression::Signature;
     using SignaturePtr = ExecutableFunctionExpression::SignaturePtr;
 
-    FunctionExpression(LambdaCapturePtr capture_, ExpressionActionsPtr expression_actions_)
-        : expression_actions(std::move(expression_actions_))
+    /// Every `FunctionExpression` built from the same lambda should share one pool, so that the profile of
+    /// `AdaptiveExpressionActions` survives across blocks.
+    FunctionExpression(LambdaCapturePtr capture_, ExpressionActionsPoolPtr actions_pool_)
+        : expression_actions(actions_pool_->getPrototype())
+        , actions_pool(std::move(actions_pool_))
         , capture(std::move(capture_))
     {
         Names names;
@@ -266,11 +272,12 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionExpression>(expression_actions, signature);
+        return std::make_unique<ExecutableFunctionExpression>(actions_pool, signature);
     }
 
 private:
     ExpressionActionsPtr expression_actions;
+    ExpressionActionsPoolPtr actions_pool;
     LambdaCapturePtr capture;
 
     /// This is redundant and is built from capture.
@@ -285,8 +292,8 @@ private:
 class ExecutableFunctionCapture final : public IExecutableFunction
 {
 public:
-    ExecutableFunctionCapture(ExpressionActionsPtr expression_actions_, LambdaCapturePtr capture_)
-        : expression_actions(std::move(expression_actions_)), capture(std::move(capture_))
+    ExecutableFunctionCapture(ExpressionActionsPoolPtr actions_pool_, LambdaCapturePtr capture_)
+        : expression_actions(actions_pool_->getPrototype()), actions_pool(std::move(actions_pool_)), capture(std::move(capture_))
     {
     }
 
@@ -320,7 +327,7 @@ public:
             types.push_back(lambda_argument.type);
         }
 
-        auto function = std::make_unique<FunctionExpression>(capture, expression_actions);
+        auto function = std::make_unique<FunctionExpression>(capture, actions_pool);
 
         /// If all the captured arguments are constant, let's also return ColumnConst (with ColumnFunction inside it).
         /// Consequently, it allows to treat higher order functions with constant arrays and constant captured columns
@@ -356,6 +363,7 @@ public:
 
 private:
     ExpressionActionsPtr expression_actions;
+    ExpressionActionsPoolPtr actions_pool;
     LambdaCapturePtr capture;
 };
 
@@ -368,6 +376,7 @@ public:
         DataTypePtr return_type_,
         String name_)
         : expression_actions(std::move(expression_actions_))
+        , actions_pool(std::make_shared<ExpressionActionsPool>(expression_actions))
         , capture(std::move(capture_))
         , return_type(std::move(return_type_))
         , name(std::move(name_))
@@ -393,7 +402,9 @@ public:
 
     ExecutableFunctionPtr prepare(const ColumnsWithTypeAndName &) const override
     {
-        return std::make_unique<ExecutableFunctionCapture>(expression_actions, capture);
+        /// A prepared function is shared by every copy of the `ActionsDAG`, i.e. by every pipeline stream,
+        /// so the lambda body is not executed directly, but through a pool of instances.
+        return std::make_unique<ExecutableFunctionCapture>(actions_pool, capture);
     }
 
     const LambdaCapture & getCapture() const { return *capture; }
@@ -401,6 +412,7 @@ public:
 
 private:
     ExpressionActionsPtr expression_actions;
+    ExpressionActionsPoolPtr actions_pool;
     LambdaCapturePtr capture;
     DataTypePtr return_type;
     String name;

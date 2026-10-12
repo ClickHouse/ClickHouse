@@ -33,6 +33,7 @@
 #include <Processors/QueryPlan/QueryPlanFormat.h>
 #include <Processors/Sources/NullSource.h>
 
+#include <algorithm>
 #include <atomic>
 #include <functional>
 #include <memory>
@@ -88,6 +89,27 @@ struct MemorySourceFilter
 };
 
 using MemorySourceFilterPtr = std::shared_ptr<const MemorySourceFilter>;
+
+/// `AdaptiveExpressionActions` (e.g. the split PREWHERE steps with `enable_adaptive_short_circuit_lazy_execution`)
+/// are stateful and not thread safe, so every stream needs its own copy of the filter with such actions.
+static MemorySourceFilterPtr cloneSourceFilterForStream(const MemorySourceFilterPtr & filter)
+{
+    if (!filter)
+        return filter;
+
+    auto is_adaptive = [](const MemorySourceFilter::Step & step)
+    {
+        return step.actions->getSettings().enable_adaptive_short_circuit_lazy_execution;
+    };
+    if (std::ranges::none_of(filter->steps, is_adaptive))
+        return filter;
+
+    auto result = std::make_shared<MemorySourceFilter>(*filter);
+    for (auto & step : result->steps)
+        if (is_adaptive(step))
+            step.actions = step.actions->clone();
+    return result;
+}
 
 class MemorySource : public ISource
 {
@@ -596,7 +618,7 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
     {
         const auto & row_level_filter = *query_info.row_level_filter;
         result->steps.push_back({
-            .actions = std::make_shared<ExpressionActions>(row_level_filter.actions.clone(), actions_settings),
+            .actions = ExpressionActions::create(row_level_filter.actions.clone(), actions_settings),
             .filter_column_name = row_level_filter.column_name,
             .remove_filter_column = row_level_filter.do_remove_column,
             .input_columns = {},
@@ -636,7 +658,7 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
         {
             const auto & prewhere_info = *query_info.prewhere_info;
             result->steps.push_back({
-                .actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions.clone(), actions_settings),
+                .actions = ExpressionActions::create(prewhere_info.prewhere_actions.clone(), actions_settings),
                 .filter_column_name = prewhere_info.prewhere_column_name,
                 .remove_filter_column = prewhere_info.remove_prewhere_column,
                 .input_columns = {},
@@ -732,8 +754,9 @@ Pipe ReadFromMemoryStorageStep::makePipe()
 
     for (size_t stream = 0; stream < num_streams; ++stream)
     {
+        auto stream_filter = stream == 0 ? source_filter : cloneSourceFilterForStream(source_filter);
         auto source = std::make_shared<MemorySource>(
-            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, source_filter, output_header,
+            physical_columns, virtual_columns, current_data, parallel_execution_index, nullptr, nullptr, std::move(stream_filter), output_header,
             nested_arrays);
         if (stream == 0)
             source->addTotalRowsApprox(snapshot_data.rows);

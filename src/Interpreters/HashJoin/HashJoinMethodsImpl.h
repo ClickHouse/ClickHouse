@@ -167,7 +167,7 @@ JoinResultPtr HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::joinBlockImpl(
         join.savedBlockSample(),
         join,
         std::move(join_on_keys),
-        join.table_join->getMixedJoinExpression(),
+        join.mixed_join_expression_pool,
         join.additional_filter_required_rhs_pos,
         join_features.is_asof_join,
         is_join_get,
