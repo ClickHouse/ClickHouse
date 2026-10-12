@@ -10,6 +10,9 @@
 #include <Common/typeid_cast.h>
 #include <Core/Settings.h>
 #include <Core/ServerSettings.h>
+#include <DataTypes/DataTypeFactory.h>
+#include <DataTypes/DataTypeNullable.h>
+#include <DataTypes/dataTypeToAST.h>
 #include <Databases/DatabaseFactory.h>
 #include <Databases/DatabaseReplicated.h>
 #include <Databases/IDatabase.h>
@@ -69,6 +72,7 @@ namespace Setting
     extern const SettingsUInt64 max_parser_depth;
     extern const SettingsUInt64 max_parser_backtracks;
     extern const SettingsBool use_legacy_to_time;
+    extern const SettingsBool data_type_default_nullable;
 }
 
 namespace ServerSetting
@@ -117,6 +121,28 @@ void normalizeLegacyToTimeInAlterMetadataDefinitions(ASTAlterQuery & alter)
             if (payload)
                 replaceLegacyToTime(*payload);
         }
+    }
+}
+
+/// The resolved type is spelled out in the query, so the hosts that replay it do not depend on the setting.
+void applyDataTypeDefaultNullableToColumnDeclarations(ASTAlterQuery & alter)
+{
+    for (const auto & child : alter.command_list->children)
+    {
+        auto * command = child->as<ASTAlterCommand>();
+        const bool is_add = command->type == ASTAlterCommand::ADD_COLUMN;
+        if (!is_add && command->type != ASTAlterCommand::MODIFY_COLUMN)
+            continue;
+
+        auto & col_decl = command->col_decl->as<ASTColumnDeclaration &>();
+        if (!col_decl.getType() || col_decl.null_modifier)
+            continue;
+
+        /// Like `AlterCommand::parse`, only `ADD COLUMN` pins the current aggregate function state version.
+        DataTypePtr type = is_add
+            ? InterpreterCreateQuery::getColumnType(col_decl, /*make_columns_nullable=*/ true, /*pin_current_state_version=*/ true)
+            : makeNullable(DataTypeFactory::instance().get(col_decl.getType()));
+        col_decl.setType(dataTypeToAST(type));
     }
 }
 
@@ -470,6 +496,10 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
     if (getContext()->getSettingsRef()[Setting::use_legacy_to_time])
         normalizeLegacyToTimeInAlterMetadataDefinitions(query_ptr->as<ASTAlterQuery &>());
 
+    if (settings[Setting::data_type_default_nullable] && !getContext()->isDDLOrOnClusterInternal()
+        && !getContext()->getClientInfo().is_shared_catalog_internal)
+        applyDataTypeDefaultNullableToColumnDeclarations(query_ptr->as<ASTAlterQuery &>());
+
     auto table_id = getContext()->tryResolveStorageID(alter);
     StoragePtr table;
 
@@ -762,6 +792,12 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
     AccessRightsElements required_access;
     const auto & alter = query_ptr->as<ASTAlterQuery &>();
     const auto row_exists_column_kind = getRowExistsColumnKind(storage, getContext());
+    /// Session temporary tables are not visible on the hosts of `ON CLUSTER`, so the source of
+    /// `REPLACE PARTITION ... FROM` is resolved only for a local query. For `ON CLUSTER` its database
+    /// must stay empty: `executeDDLQueryOnCluster` then substitutes the default database both into
+    /// the access check and into the query sent to the hosts.
+    const ContextPtr context_for_source = alter.cluster.empty() ? getContext() : nullptr;
+
     /// A `MODIFY SQL SECURITY` in the same statement decides what the new body will execute as, and
     /// `processSQLSecurityOption` has already authorized exactly that. The stored security then says
     /// nothing about the body being written, so it must not add a requirement of its own.
@@ -773,7 +809,7 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccess(const StoragePtr &
     {
         const auto & command = child->as<ASTAlterCommand &>();
         required_access.append_range(
-            getRequiredAccessForCommand(command, alter.getDatabase(), alter.getTable(), row_exists_column_kind));
+            getRequiredAccessForCommand(command, alter.getDatabase(), alter.getTable(), row_exists_column_kind, context_for_source));
 
         if (command.type == ASTAlterCommand::MODIFY_QUERY && !sql_security_is_being_replaced)
             addRequiredAccessForModifyQuerySQLSecurity(required_access, storage);
@@ -786,7 +822,8 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
     const ASTAlterCommand & command,
     const String & database,
     const String & table,
-    RowExistsColumnKind row_exists_column_kind)
+    RowExistsColumnKind row_exists_column_kind,
+    const ContextPtr & context_)
 {
     AccessRightsElements required_access;
 
@@ -1007,8 +1044,28 @@ AccessRightsElements InterpreterAlterQuery::getRequiredAccessForCommand(
         }
         case ASTAlterCommand::REPLACE_PARTITION:
         {
-            required_access.emplace_back(AccessType::SELECT, command.from_database, command.from_table);
-            required_access.emplace_back(AccessType::ALTER_DELETE | AccessType::INSERT, database, table);
+            /// The source may be a session temporary table (`CREATE TEMPORARY TABLE src ENGINE = MergeTree ...`):
+            /// `MergeTreeData::alterPartition` resolves the unqualified name through the temporary-table namespace
+            /// first, while `checkAccess` would bind an empty database to the current database and demand
+            /// `SELECT ON <current_db>.src`, a grant that has nothing to do with the table actually read.
+            /// Resolve the name the same way the execution does, so a temporary source is checked as
+            /// `TEMPORARY_DATABASE` (access to temporary tables is always granted to their owner session).
+            /// Any other source keeps its database as written, so an empty one is still bound by the caller.
+            StorageID from_id{command.from_database, command.from_table};
+            if (context_ && command.from_database.empty())
+            {
+                if (auto temporary_id = context_->tryResolveStorageID(from_id, Context::ResolveExternal))
+                    from_id = temporary_id;
+            }
+            required_access.emplace_back(AccessType::SELECT, from_id.database_name, from_id.table_name);
+            /// `REPLACE PARTITION ... FROM` drops the data currently in the destination partition,
+            /// so it needs `ALTER DELETE` on top of `INSERT`. `ATTACH PARTITION ... FROM` is the same
+            /// command with `replace = false`: it only adds parts to the destination and never removes
+            /// anything, so `INSERT` alone is enough - the same privilege a plain `INSERT` would need.
+            if (command.replace)
+                required_access.emplace_back(AccessType::ALTER_DELETE | AccessType::INSERT, database, table);
+            else
+                required_access.emplace_back(AccessType::INSERT, database, table);
             break;
         }
         case ASTAlterCommand::FETCH_PARTITION:
