@@ -153,6 +153,37 @@ private:
     FunctionOverloadResolverPtr function_map_from_arrays;
 };
 
+ColumnPtr normalizeMapKeyColumn(ColumnPtr data_keys, const String & function_name)
+{
+    if (!isColumnNullableOrLowCardinalityNullable(*data_keys))
+        return data_keys;
+
+    if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_keys.get()))
+    {
+        const auto & null_map = nullable->getNullMapData();
+        if (!memoryIsZero(null_map.data(), 0, null_map.size()))
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The nested column of first argument in function {} must not contain NULLs",
+                function_name);
+
+        return nullable->getNestedColumnPtr();
+    }
+
+    if (const auto * low_cardinality = checkAndGetColumn<ColumnLowCardinality>(data_keys.get()))
+    {
+        if (low_cardinality->containsNull())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "The nested column of first argument in function {} must not contain NULLs",
+                function_name);
+
+        return low_cardinality->cloneWithDefaultOnNull();
+    }
+
+    return data_keys;
+}
+
 /// mapFromArrays(keys, values) is a function that allows you to make key-value pair from a pair of arrays or maps
 class FunctionMapFromArrays final : public IFunction
 {
@@ -232,27 +263,7 @@ public:
         auto [col_values, values_holder] = get_array_column(arguments[1].column);
 
         /// Nullable(T) or LowCardinality(Nullable(T)) are okay as nested key types but actual NULL values are not okay.
-        ColumnPtr data_keys = col_keys->getDataPtr();
-        if (isColumnNullableOrLowCardinalityNullable(*data_keys))
-        {
-            if (const auto * nullable = checkAndGetColumn<ColumnNullable>(data_keys.get()))
-            {
-                const auto * null_map = &nullable->getNullMapData();
-                if (null_map && !memoryIsZero(null_map->data(), 0, null_map->size()))
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS, "The nested column of first argument in function {} must not contain NULLs", getName());
-
-                data_keys = nullable->getNestedColumnPtr();
-            }
-            else if (const auto * low_cardinality = checkAndGetColumn<ColumnLowCardinality>(data_keys.get()))
-            {
-                if (low_cardinality->containsNull())
-                    throw Exception(
-                        ErrorCodes::BAD_ARGUMENTS, "The nested column of first argument in function {} must not contain NULLs", getName());
-
-                data_keys = low_cardinality->cloneWithDefaultOnNull();
-            }
-        }
+        ColumnPtr data_keys = normalizeMapKeyColumn(col_keys->getDataPtr(), getName());
 
         if (!col_keys->hasEqualOffsets(*col_values))
             throw Exception(ErrorCodes::SIZES_OF_ARRAYS_DONT_MATCH, "Two arguments of function {} must have equal sizes", getName());
@@ -261,6 +272,88 @@ public:
         const auto & offsets = col_keys->getOffsetsPtr();
         auto nested_column = ColumnArray::create(ColumnTuple::create(Columns{std::move(data_keys), data_values}), offsets);
         return ColumnMap::create(nested_column);
+    }
+};
+
+/// mapFromEntries(entries) creates a map from an array of key-value tuples.
+class FunctionMapFromEntries final : public IFunction
+{
+public:
+    static constexpr auto name = "mapFromEntries";
+
+    static FunctionPtr create(ContextPtr) { return std::make_shared<FunctionMapFromEntries>(); }
+    String getName() const override { return name; }
+
+    size_t getNumberOfArguments() const override { return 1; }
+
+    bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return false; }
+    bool useDefaultImplementationForNulls() const override { return true; }
+    bool useDefaultImplementationForConstants() const override { return true; }
+    bool useDefaultImplementationForLowCardinalityColumns() const override { return false; }
+
+    DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
+    {
+        if (arguments.size() != 1)
+            throw Exception(
+                ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH,
+                "Function {} requires 1 argument, but {} given",
+                getName(),
+                arguments.size());
+
+        const auto * array_type = checkAndGetDataType<DataTypeArray>(arguments[0].get());
+        if (!array_type)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument of function {} must be Array(Tuple(K, V)), but {} is given",
+                getName(),
+                arguments[0]->getName());
+
+        const auto & nested_type = array_type->getNestedType();
+        if (isNothing(nested_type))
+            return std::make_shared<DataTypeMap>(nested_type, nested_type);
+
+        const auto * tuple_type = checkAndGetDataType<DataTypeTuple>(nested_type.get());
+        if (!tuple_type || tuple_type->getElements().size() != 2)
+            throw Exception(
+                ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
+                "Argument of function {} must be Array(Tuple(K, V)), but {} is given",
+                getName(),
+                arguments[0]->getName());
+
+        auto key_type = removeNullableOrLowCardinalityNullable(tuple_type->getElement(0));
+        return std::make_shared<DataTypeMap>(key_type, tuple_type->getElement(1));
+    }
+
+    ColumnPtr executeImpl(
+        const ColumnsWithTypeAndName & arguments, const DataTypePtr & /* result_type */, size_t /* input_rows_count */) const override
+    {
+        ColumnPtr holder = arguments[0].column->convertToFullColumnIfConst();
+        const auto * entries = checkAndGetColumn<ColumnArray>(holder.get());
+        if (!entries)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Argument column of function {} must be Array(Tuple(K, V)), but {} is given",
+                getName(),
+                holder->getName());
+
+        const auto & nested_type = assert_cast<const DataTypeArray &>(*arguments[0].type).getNestedType();
+        const auto & offsets = entries->getOffsetsPtr();
+
+        /// Array(Nothing) is the type of an untyped empty array. Build the physical
+        /// two-column tuple expected by ColumnMap without materializing any data.
+        if (isNothing(nested_type))
+            return ColumnMap::create(entries->getDataPtr(), entries->getDataPtr(), offsets);
+
+        const auto * tuple_column = checkAndGetColumn<ColumnTuple>(entries->getDataPtr().get());
+        if (!tuple_column || tuple_column->tupleSize() != 2)
+            throw Exception(
+                ErrorCodes::ILLEGAL_COLUMN,
+                "Argument column of function {} must be Array(Tuple(K, V)), but {} is given",
+                getName(),
+                holder->getName());
+
+        auto keys = normalizeMapKeyColumn(tuple_column->getColumnPtr(0), getName());
+        return ColumnMap::create(keys, tuple_column->getColumnPtr(1), offsets);
     }
 };
 
@@ -617,6 +710,27 @@ The function is a convenient alternative to syntax `CAST([...], 'Map(key_type, v
     FunctionDocumentation documentation_mapFromArrays = {description_mapFromArrays, syntax_mapFromArrays, arguments_mapFromArrays, {}, returned_value_mapFromArrays, examples_mapFromArrays, introduced_in_mapFromArrays, category_mapFromArrays};
     factory.registerFunction<FunctionMapFromArrays>(documentation_mapFromArrays);
     factory.registerAlias("MAP_FROM_ARRAYS", "mapFromArrays");
+
+    /// mapFromEntries function documentation
+    FunctionDocumentation::Description description_mapFromEntries = R"(
+Creates a map from an array of key-value tuples.
+Duplicate keys are preserved.
+The function infers the key and value types from the input, unlike casting an array of tuples to a Map.
+)";
+    FunctionDocumentation::Syntax syntax_mapFromEntries = "mapFromEntries(entries)";
+    FunctionDocumentation::Arguments arguments_mapFromEntries = {
+        {"entries", "Array of two-element tuples containing the map keys and values.", {"Array(Tuple(K, V))"}}
+    };
+    FunctionDocumentation::ReturnedValue returned_value_mapFromEntries = {"Returns a map constructed from the key-value tuples.", {"Map(K, V)"}};
+    FunctionDocumentation::Examples examples_mapFromEntries = {
+        {"Basic usage", "SELECT mapFromEntries([('a', 1), ('b', 2)])", "{'a':1,'b':2}"},
+        {"With mapEntries", "SELECT mapFromEntries(mapEntries(map('a', 1, 'b', 2)))", "{'a':1,'b':2}"}
+    };
+    FunctionDocumentation::IntroducedIn introduced_in_mapFromEntries = {26, 10};
+    FunctionDocumentation::Category category_mapFromEntries = FunctionDocumentation::Category::Map;
+    FunctionDocumentation documentation_mapFromEntries = {description_mapFromEntries, syntax_mapFromEntries, arguments_mapFromEntries, {}, returned_value_mapFromEntries, examples_mapFromEntries, introduced_in_mapFromEntries, category_mapFromEntries};
+    factory.registerFunction<FunctionMapFromEntries>(documentation_mapFromEntries);
+    factory.registerAlias("MAP_FROM_ENTRIES", "mapFromEntries");
 
     /// mapUpdate function documentation
     FunctionDocumentation::Description description_mapUpdate = R"(

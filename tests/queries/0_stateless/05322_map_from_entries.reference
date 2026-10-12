@@ -1,0 +1,22 @@
+{'a':1,'b':2}
+Map(String, UInt8)
+{'a':1}
+0	{'a':1}
+1	{'a':1}
+[('a',1),('a',2),('b',3)]
+{}
+{}	Map(Nothing, Nothing)
+{'a':1,'b':2}
+{'a':1,'b':2}
+{'a':1,'b':2}
+Map(String, UInt8)
+{}	Map(String, UInt8)
+{'a':1,'b':2}	Map(LowCardinality(String), UInt8)
+0	{'0':0}
+1	{'1':1}
+{'a':1,'b':NULL}
+{'a':'x','b':'y'}	Map(LowCardinality(String), LowCardinality(String))
+{'a':[1,2],'b':[3]}
+0	{'a':0,'b':1}
+1	{'a':1,'b':2}
+[('a',1),('a',2)]
