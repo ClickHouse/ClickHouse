@@ -1,0 +1,10 @@
+-- first read
+app	10
+app.tmp	1
+app.tmp	2
+rot.log	100
+one.tmp	1000
+-- after ATTACH
+-- after renaming rot.log to rot.log.tmp
+rot.log.tmp	200
+-- after ATTACH

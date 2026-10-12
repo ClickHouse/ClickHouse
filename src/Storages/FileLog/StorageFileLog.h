@@ -162,6 +162,8 @@ private:
     /// otherwise, it equals to user_files_path/ + path_argument/, e.g. path
     String root_data_path;
     String metadata_base_path;
+    /// Temporary meta files are kept out of `metadata_base_path`, where any name can be a data file's.
+    String tmp_metadata_path;
 
     /// Set when the file name of `path` has globs.
     std::shared_ptr<const re2::RE2> file_name_matcher;
@@ -247,6 +249,7 @@ private:
     void serialize(UInt64 inode, const FileMeta & file_meta) const;
     /// Writes the meta file of `file_meta` to a temporary path and returns that path.
     String writeTemporaryMeta(UInt64 inode, const FileMeta & file_meta) const;
+    String getTemporaryMetaPath(const String & file_name) const { return std::filesystem::path(tmp_metadata_path) / file_name; }
 
     void deserialize();
     void checkOffsetIsValid(const String & filename, UInt64 offset) const;

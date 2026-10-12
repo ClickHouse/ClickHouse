@@ -96,9 +96,6 @@ namespace
     }
 }
 
-static constexpr auto TMP_SUFFIX = ".tmp";
-
-
 class ReadFromStorageFileLog final : public ReadFromStreamLikeEngine
 {
 public:
@@ -196,6 +193,7 @@ StorageFileLog::StorageFileLog(
     , filelog_settings(std::move(settings))
     , path(resolveFileLogPath(path_, getContext()->getUserFilesPath()))
     , metadata_base_path(std::filesystem::path(metadata_base_path_) / "metadata")
+    , tmp_metadata_path(std::filesystem::path(metadata_base_path_) / "tmp_metadata")
     , format_name(format_name_)
     , log(getLogger("StorageFileLog (" + table_id_.getFullTableName() + ")"))
     , disk(getContext()->getStoragePolicy("default")->getDisks().at(0))
@@ -234,6 +232,10 @@ StorageFileLog::StorageFileLog(
             created_metadata_directory = true;
         }
 
+        if (disk->existsDirectory(tmp_metadata_path))
+            disk->removeRecursive(tmp_metadata_path);
+        disk->createDirectories(tmp_metadata_path);
+
         loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode);
         loadFiles();
 
@@ -256,7 +258,11 @@ StorageFileLog::StorageFileLog(
         if (mode <= LoadingStrictnessLevel::ATTACH)
         {
             if (created_metadata_directory)
+            {
                 disk->removeRecursive(metadata_base_path);
+                if (disk->existsDirectory(tmp_metadata_path))
+                    disk->removeRecursive(tmp_metadata_path);
+            }
             throw;
         }
 
@@ -399,7 +405,7 @@ void StorageFileLog::loadFiles()
             {
                 /// Through a temporary name: the renames of a rotation chain are visited in any order.
                 if (disk->existsFile(getFullMetaPath(it->second.file_name)))
-                    disk->replaceFile(getFullMetaPath(it->second.file_name), getFullMetaPath(file) + TMP_SUFFIX);
+                    disk->replaceFile(getFullMetaPath(it->second.file_name), getTemporaryMetaPath(file));
                 it->second.file_name = file;
                 renamed_files.push_back(file);
             }
@@ -412,8 +418,8 @@ void StorageFileLog::loadFiles()
         }
     }
     for (const auto & file : renamed_files)
-        if (disk->existsFile(getFullMetaPath(file) + TMP_SUFFIX))
-            disk->replaceFile(getFullMetaPath(file) + TMP_SUFFIX, getFullMetaPath(file));
+        if (disk->existsFile(getTemporaryMetaPath(file)))
+            disk->replaceFile(getTemporaryMetaPath(file), getFullMetaPath(file));
 
     /// Clear unneeded meta file, because data files may be deleted
     if (file_infos.meta_by_inode.size() > file_infos.context_by_name.size())
@@ -456,7 +462,7 @@ void StorageFileLog::serialize(UInt64 inode, const FileMeta & file_meta) const
 
 String StorageFileLog::writeTemporaryMeta(UInt64 inode, const FileMeta & file_meta) const
 {
-    std::string tmp_path = getFullMetaPath(file_meta.file_name) + TMP_SUFFIX;
+    std::string tmp_path = getTemporaryMetaPath(file_meta.file_name);
     disk->removeFileIfExists(tmp_path);
 
     try
@@ -488,17 +494,18 @@ void StorageFileLog::deserialize()
     for (const auto dir_iter = disk->iterateDirectory(metadata_base_path); dir_iter->isValid(); dir_iter->next())
     {
         const auto & filename = dir_iter->name();
-        if (filename.ends_with(TMP_SUFFIX))
-        {
-            files_to_remove.push_back(getFullMetaPath(filename));
-            continue;
-        }
-
         auto [metadata, inode] = readMetadata(filename);
         if (!metadata)
             continue;
 
-        file_infos.meta_by_inode.emplace(inode, metadata);
+        /// Meta files of one inode under several names describe the same file; the larger offset is how far it was read.
+        auto [it, inserted] = file_infos.meta_by_inode.emplace(inode, metadata);
+        if (!inserted)
+        {
+            if (it->second.last_writen_position < metadata.last_writen_position)
+                std::swap(it->second, metadata);
+            files_to_remove.push_back(getFullMetaPath(metadata.file_name));
+        }
     }
 
     for (const auto & file : files_to_remove)
@@ -545,6 +552,7 @@ void StorageFileLog::drop()
     try
     {
         disk->removeRecursive(metadata_base_path);
+        disk->removeRecursive(tmp_metadata_path);
     }
     catch (...)
     {
