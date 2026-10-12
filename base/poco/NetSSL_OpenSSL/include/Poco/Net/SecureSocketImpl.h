@@ -163,8 +163,6 @@ namespace Net
         /// Performs post-connect (or post-accept) peer certificate validation,
         /// using the peer host name set with setPeerHostName(), or the peer's
         /// IP address string if no peer host name has been set.
-        /// If a server name was set with setServerNameIndication(), a certificate
-        /// that names either the server name or the peer host name is accepted.
 
         void verifyPeerCertificate(const std::string & hostName);
         /// Performs post-connect (or post-accept) peer certificate validation
@@ -174,9 +172,7 @@ namespace Net
         /// Sets the peer host name for certificate validation purposes.
 
         void setServerNameIndication(const std::string & serverName);
-        /// Sets the name sent in the TLS Server Name Indication extension instead
-        /// of the peer host name. A peer certificate that names either this name
-        /// or the peer host name is then accepted.
+        /// Sends serverName as SNI instead of the peer host name; a certificate naming either is accepted.
 
         const std::string & getPeerHostName() const;
         /// Returns the peer host name.
@@ -305,7 +301,6 @@ namespace Net
         /// Falls back to `BIO_s_socket()` when no custom method was set via `setBioMethod`.
 
         long matchPeerCertificate(const std::string & hostName);
-        /// Checks that the peer certificate names the given host name or IP address.
 
         struct StdRecursiveMutex final : RecursiveMutex
         {

@@ -637,7 +637,7 @@ void SecureSocketImpl::verifyPeerCertificate()
 		return;
 	}
 	long certErr = verifyPeerCertificateImpl(_serverNameIndication);
-	/// The host is matched by name only: the loopback exemption must not switch the check off for a tunnel endpoint.
+	/// Name match only: the loopback exemption must not apply to a tunnel endpoint.
 	if (certErr != X509_V_OK && matchPeerCertificate(hostName) == X509_V_OK)
 		certErr = X509_V_OK;
 	if (certErr != X509_V_OK)

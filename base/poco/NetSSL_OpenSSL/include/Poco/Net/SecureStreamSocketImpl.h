@@ -164,9 +164,7 @@ namespace Net
         /// Sets the peer host name for certificate validation purposes.
 
         void setServerNameIndication(const std::string & serverName);
-        /// Sets the name sent in the TLS Server Name Indication extension instead
-        /// of the peer host name. A peer certificate that names either this name
-        /// or the peer host name is then accepted.
+        /// Sends serverName as SNI instead of the peer host name; a certificate naming either is accepted.
 
         const std::string & getPeerHostName() const;
         /// Returns the peer host name.

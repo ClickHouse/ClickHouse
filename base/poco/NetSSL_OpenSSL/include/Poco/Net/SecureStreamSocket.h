@@ -157,9 +157,7 @@ namespace Net
         /// Sets the peer's host name used for certificate validation.
 
         void setServerNameIndication(const std::string & serverName);
-        /// Sets the name sent in the TLS Server Name Indication extension instead
-        /// of the peer's host name. A peer certificate that names either this name
-        /// or the peer's host name is then accepted.
+        /// Sends serverName as SNI instead of the peer's host name; a certificate naming either is accepted.
 
         void bind(const SocketAddress& address, bool reuseAddress);
         /// Binds the socket to the given address
@@ -193,12 +191,7 @@ namespace Net
 
         static SecureStreamSocket
         attach(const StreamSocket & streamSocket, const std::string & peerHostName, const std::string & serverNameIndication);
-        /// Creates a SecureStreamSocket over an existing socket
-        /// connection. The given StreamSocket must be connected.
-        /// A SSL handshake will be performed.
-        ///
-        /// A non-empty serverNameIndication is sent in the TLS Server
-        /// Name Indication extension (see setServerNameIndication()).
+        /// As above; a non-empty serverNameIndication is passed to setServerNameIndication().
 
         static SecureStreamSocket attach(const StreamSocket & streamSocket, const std::string & peerHostName, Context::Ptr pContext);
         /// Creates a SecureStreamSocket over an existing socket
