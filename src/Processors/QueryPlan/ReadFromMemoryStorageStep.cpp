@@ -618,7 +618,7 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
     {
         const auto & row_level_filter = *query_info.row_level_filter;
         result->steps.push_back({
-            .actions = std::make_shared<ExpressionActions>(row_level_filter.actions.clone(), actions_settings),
+            .actions = ExpressionActions::create(row_level_filter.actions.clone(), actions_settings),
             .filter_column_name = row_level_filter.column_name,
             .remove_filter_column = row_level_filter.do_remove_column,
             .input_columns = {},
@@ -658,7 +658,7 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
         {
             const auto & prewhere_info = *query_info.prewhere_info;
             result->steps.push_back({
-                .actions = std::make_shared<ExpressionActions>(prewhere_info.prewhere_actions.clone(), actions_settings),
+                .actions = ExpressionActions::create(prewhere_info.prewhere_actions.clone(), actions_settings),
                 .filter_column_name = prewhere_info.prewhere_column_name,
                 .remove_filter_column = prewhere_info.remove_prewhere_column,
                 .input_columns = {},
