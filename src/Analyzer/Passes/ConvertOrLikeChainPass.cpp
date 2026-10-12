@@ -261,7 +261,7 @@ public:
         , and_function_resolver(std::move(and_function_resolver_))
     {}
 
-    bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType &)
+    bool needChildVisit(VisitQueryTreeNodeType & parent, VisitQueryTreeNodeType & child)
     {
         const auto & settings = getSettings();
 
@@ -273,6 +273,13 @@ public:
         if (auto * function = parent->as<FunctionNode>())
             if (function->getFunctionName() == "indexHint")
                 return false;
+
+        /// An OR node referenced from several places of the query tree is replaced by the same node at each of them.
+        if (auto it = replaced_nodes.find(child); it != replaced_nodes.end())
+        {
+            child = it->second;
+            return false;
+        }
 
         return true;
     }
@@ -610,12 +617,14 @@ public:
             processed_nodes.insert(or_child);
 
         /// Replace the original node with the AND expression
+        replaced_nodes.emplace(node, and_node);
         node = std::move(and_node);
     }
 private:
     const FunctionOverloadResolverPtr or_function_resolver;
     const FunctionOverloadResolverPtr and_function_resolver;
     std::unordered_set<const FunctionNode *> processed_nodes;
+    std::unordered_map<QueryTreeNodePtr, QueryTreeNodePtr> replaced_nodes;
 };
 
 }
