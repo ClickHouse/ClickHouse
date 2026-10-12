@@ -1083,18 +1083,26 @@ def test_retry_suppression_needs_finish_workflow_to_be_the_only_non_green_job(
     assert _retry_non_green_jobs(green + [flaky, finish]) != "Finish Workflow"
 
 
-def _run_runs_filter(workflow_runs, pr, head_ref, head_repo):
+def _run_runs_filter(workflow_runs, pr, head_ref, head_repo, open_prs=None):
     """Run the "runs of this PR" lookup of `rerun_on_review_threads.yml`, sliced
-    out of the workflow, with the GitHub API stubbed, and return the ids it kept."""
+    out of the workflow, with the GitHub API stubbed, and return the ids it kept,
+    or `None` when it gives up as ambiguous. `open_prs` are the open PRs of the
+    head branch; by default, only this PR."""
     workflow = (
         Path(__file__).resolve().parents[2]
         / ".github/workflows/rerun_on_review_threads.yml"
     ).read_text()
     start = workflow.index(
-        '          runs=$(api_with_retries "repos/$GH_REPO/actions/runs?'
+        '          shared_head_prs=$(api_with_retries "repos/$GH_REPO/pulls?'
     )
     end = workflow.index("          active=$(")
     snippet = "\n".join(line[10:] for line in workflow[start:end].splitlines())
+    if open_prs is None:
+        open_prs = [(pr, head_ref, head_repo)]
+    pulls = [
+        {"number": n, "head": {"ref": ref, "repo": {"full_name": repo}}}
+        for n, ref, repo in open_prs
+    ]
     script = f"""
 set -euo pipefail
 GH_REPO=ClickHouse/ClickHouse
@@ -1102,14 +1110,23 @@ head_sha={RUN_SHA}
 pr={pr}
 head_ref={shlex.quote(head_ref)}
 head_repo={shlex.quote(head_repo)}
-api_with_retries() {{ echo {shlex.quote(json.dumps({"workflow_runs": workflow_runs}))}; }}
+head_owner={shlex.quote(head_repo.split("/")[0])}
+api_with_retries() {{
+  case "$1" in
+    */pulls\?*) echo {shlex.quote(json.dumps(pulls))} ;;
+    *) echo {shlex.quote(json.dumps({"workflow_runs": workflow_runs}))} ;;
+  esac
+}}
 {snippet}
-echo "$runs" | jq -c '[.[].id]'
+echo "kept=$(echo "$runs" | jq -c '[.[].id]')"
 """
     result = subprocess.run(
         ["bash", "-c", script], capture_output=True, text=True, check=True
     )
-    return json.loads(result.stdout.strip().splitlines()[-1])
+    last = result.stdout.strip().splitlines()[-1]
+    if not last.startswith("kept="):
+        return None
+    return json.loads(last[len("kept="):])
 
 
 @pytest.mark.skipif(shutil.which("jq") is None, reason="jq is not installed")
@@ -1140,6 +1157,21 @@ def test_rerun_considers_only_the_runs_of_its_own_pr():
     # Run 3 names both PRs but was triggered from the branch of PR 100.
     assert _run_runs_filter(runs, 200, "feature-copy", "ClickHouse/ClickHouse") == [2]
     assert _run_runs_filter(runs, 300, "feature", "someone/ClickHouse") == [4]
+
+    # The same branch into two base branches: the runs do not tell which PR
+    # they belong to, so none of them may be used.
+    two_bases = [
+        (100, "feature", "ClickHouse/ClickHouse"),
+        (700, "feature", "ClickHouse/ClickHouse"),
+    ]
+    assert _run_runs_filter(runs, 100, "feature", "ClickHouse/ClickHouse", two_bases) is None
+    # PRs of other branches or repositories do not make it ambiguous.
+    others = [
+        (100, "feature", "ClickHouse/ClickHouse"),
+        (300, "feature", "someone/ClickHouse"),
+        (200, "feature-copy", "ClickHouse/ClickHouse"),
+    ]
+    assert _run_runs_filter(runs, 100, "feature", "ClickHouse/ClickHouse", others) == [1, 3]
 
 
 def _run_pr_resolution(payload_prs, commit_prs, head_branch, head_repo, head_repo_id):

@@ -142,6 +142,7 @@ jobs:
           head_sha=$(echo "$pr_data" | jq -r '.head.sha')
           head_ref=$(echo "$pr_data" | jq -r '.head.ref')
           head_repo=$(echo "$pr_data" | jq -r '.head.repo.full_name // ""')
+          head_owner=$(echo "$pr_data" | jq -r '.head.repo.owner.login // ""')
           override=$(echo "$pr_data" | jq -r --arg label "$OVERRIDE_LABEL" \
             '[.labels[].name] | index($label) != null')
           if [ "$state" != "open" ]; then
@@ -228,6 +229,21 @@ jobs:
           # `pull_requests` lists every PR that shares the head commit, so a
           # match there alone would accept another PR's run; when it is
           # filled in, it must also name this PR.
+          #
+          # A run carries no base branch, and `pull_requests` names every PR of
+          # its head branch whatever their base, so the runs of PRs from the
+          # same branch into different base branches cannot be told apart.
+          # Then a run picked here could belong to the other PR: rerun it on
+          # the wrong base, or green this PR from its conclusion.
+          # `workflow_run` events already skip such PRs as ambiguous.
+          shared_head_prs=$(api_with_retries "repos/$GH_REPO/pulls?state=open&head=$head_owner:$head_ref&per_page=100" \
+            | jq -c --arg head_ref "$head_ref" --arg head_repo "$head_repo" \
+              '[.[] | select(.head.ref == $head_ref and .head.repo.full_name == $head_repo) | .number] | unique')
+          if [ "$(echo "$shared_head_prs" | jq 'length')" -gt 1 ]; then
+            echo "Branch $head_repo:$head_ref is the head of several open PRs ($shared_head_prs) -" \
+                 "their runs cannot be told apart, nothing to do."
+            exit 0
+          fi
           runs=$(api_with_retries "repos/$GH_REPO/actions/runs?head_sha=$head_sha&event=pull_request&per_page=100" \
             | jq --argjson pr "$pr" --arg head_ref "$head_ref" --arg head_repo "$head_repo" \
               '[.workflow_runs[] | select(.name == "PR")
