@@ -12,6 +12,11 @@ from praktika.utils import Shell, Utils
 from ci.jobs.scripts import log_export
 from ci.jobs.scripts.server_cleanup import kill_leftover_server_processes
 
+# From the same root as `log_export`, which raises it: under CI's `PYTHONPATH=.:./ci` a
+# bare `praktika` import is a distinct module object, so its copy of this class is a
+# different type and an `except` bound to it would not catch the raise.
+from ci.praktika import SecretFetchFailed
+
 temp_dir = f"{Utils.cwd()}/ci/tmp/"
 
 # Thresholds based on baseline run with ClickHouse 26.3 and ClickHouse-dialect queries.
@@ -294,7 +299,17 @@ def main():
         # Configure export of system log tables to the central CI logs cluster
         # (skipped for local runs, where the credentials are not available).
         if not info.is_local_run:
-            ch.create_log_export_config()
+            # Without the credentials `setup_log_cluster.sh` creates no `_sender` table,
+            # so leaving the export unconfigured is a supported state.
+            try:
+                # A failed copy of the `ci_logs_sender` user config is reported by
+                # return value, not by raising.
+                if not ch.create_log_export_config():
+                    print("WARNING: Failed to configure log export")
+                    info.add_workflow_warning("Failed to configure log export")
+            except SecretFetchFailed as e:
+                print(f"WARNING: Failed to configure log export: {e}")
+                info.add_workflow_warning(f"Failed to configure log export: {e}")
         if not ch.start():
             return False
         if not info.is_local_run:
