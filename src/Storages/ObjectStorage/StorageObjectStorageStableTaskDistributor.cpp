@@ -27,11 +27,14 @@ String getSchedulingIdentifier(const ObjectInfoPtr & object_info, bool send_over
 StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistributor(
     std::shared_ptr<IObjectIterator> iterator_,
     std::vector<std::string> && ids_of_nodes_,
-    bool send_over_whole_archive_)
+    bool send_over_whole_archive_,
+    std::chrono::milliseconds wait_for_owner_)
     : iterator(std::move(iterator_))
     , send_over_whole_archive(send_over_whole_archive_)
+    , wait_for_owner(wait_for_owner_)
     , connection_to_files(ids_of_nodes_.size())
     , ids_of_nodes(std::move(ids_of_nodes_))
+    , replica_seen(ids_of_nodes.size(), false)
     , iterator_exhausted(false)
 {
 }
@@ -39,6 +42,15 @@ StorageObjectStorageStableTaskDistributor::StorageObjectStorageStableTaskDistrib
 ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getNextTask(size_t number_of_current_replica)
 {
     LOG_TRACE(log, "Received request from replica {} looking for a file", number_of_current_replica);
+
+    {
+        std::lock_guard lock(mutex);
+        if (number_of_current_replica < replica_seen.size() && !replica_seen[number_of_current_replica])
+        {
+            replica_seen[number_of_current_replica] = true;
+            replica_seen_cv.notify_all();
+        }
+    }
 
     // 1. Check pre-queued files first
     if (auto file = getPreQueuedFile(number_of_current_replica))
@@ -172,7 +184,7 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
         // Queue file for its assigned replica
         {
             std::lock_guard lock(mutex);
-            unprocessed_files.emplace(file_identifier, object_info);
+            unprocessed_files.emplace(file_identifier, std::make_pair(object_info, file_replica_idx));
             connection_to_files[file_replica_idx].push_back(object_info);
         }
     }
@@ -182,23 +194,46 @@ ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getMatchingFileFromIter
 
 ObjectInfoPtr StorageObjectStorageStableTaskDistributor::getAnyUnprocessedFile(size_t number_of_current_replica)
 {
-    std::lock_guard lock(mutex);
+    std::unique_lock lock(mutex);
 
-    if (!unprocessed_files.empty())
+    if (!stealing_allowed_since)
+        stealing_allowed_since = std::chrono::steady_clock::now() + wait_for_owner;
+
+    while (!unprocessed_files.empty())
     {
-        auto it = unprocessed_files.begin();
-        auto next_file = it->second;
-        unprocessed_files.erase(it);
+        const bool deadline_passed = std::chrono::steady_clock::now() >= *stealing_allowed_since;
 
-        auto file_path = getSchedulingIdentifier(next_file, send_over_whole_archive);
-        LOG_TRACE(
-            log,
-            "Iterator exhausted. Assigning unprocessed file {} to replica {}",
-            file_path,
-            number_of_current_replica
-        );
+        std::vector<size_t> remaining_per_replica(ids_of_nodes.size(), 0);
+        for (const auto & [_, file_and_owner] : unprocessed_files)
+            ++remaining_per_replica[file_and_owner.second];
 
-        return next_file;
+        auto best = unprocessed_files.end();
+        for (auto it = unprocessed_files.begin(); it != unprocessed_files.end(); ++it)
+        {
+            const size_t owner = it->second.second;
+            if (!deadline_passed && owner != number_of_current_replica && !replica_seen[owner])
+                continue;
+            if (best == unprocessed_files.end() || remaining_per_replica[owner] > remaining_per_replica[best->second.second])
+                best = it;
+        }
+
+        if (best != unprocessed_files.end())
+        {
+            auto next_file = best->second.first;
+            const size_t owner = best->second.second;
+            unprocessed_files.erase(best);
+
+            LOG_TRACE(
+                log,
+                "Iterator exhausted. Assigning unprocessed file {} of replica {} to replica {}",
+                getSchedulingIdentifier(next_file, send_over_whole_archive),
+                owner,
+                number_of_current_replica);
+
+            return next_file;
+        }
+
+        replica_seen_cv.wait_until(lock, *stealing_allowed_since);
     }
 
     return {};
