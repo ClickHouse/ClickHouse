@@ -39,20 +39,16 @@ $CLICKHOUSE_CLIENT $settings -q "
     ENGINE = ReplacingMergeTree(version) ORDER BY k
     SETTINGS index_granularity = 1, allow_nullable_key = 1;
     SYSTEM STOP MERGES t_null_u64;
-    INSERT INTO t_null_u64 SELECT 5, 1, 1;
-    INSERT INTO t_null_u64 SELECT 5, 0, 2;
-    INSERT INTO t_null_u64 SELECT NULL, 1, 1;
-    INSERT INTO t_null_u64 SELECT NULL, 0, 2;
+    INSERT INTO t_null_u64 VALUES (5, 1, 1), (NULL, 1, 1);
+    INSERT INTO t_null_u64 VALUES (5, 0, 2), (NULL, 0, 2);
 
     -- 2. Nullable(String) primary key holding a NULL
     CREATE TABLE t_null_str (k Nullable(String), flag UInt8, version UInt64)
     ENGINE = ReplacingMergeTree(version) ORDER BY k
     SETTINGS index_granularity = 1, allow_nullable_key = 1;
     SYSTEM STOP MERGES t_null_str;
-    INSERT INTO t_null_str SELECT 'a', 1, 1;
-    INSERT INTO t_null_str SELECT 'a', 0, 2;
-    INSERT INTO t_null_str SELECT NULL, 1, 1;
-    INSERT INTO t_null_str SELECT NULL, 0, 2;
+    INSERT INTO t_null_str VALUES ('a', 1, 1), (NULL, 1, 1);
+    INSERT INTO t_null_str VALUES ('a', 0, 2), (NULL, 0, 2);
 
     -- 3. LowCardinality(Nullable(String)). This cell is the reason the fix tests
     -- \`isNullableOrLowCardinalityNullable\`: \`DataTypeLowCardinality::isNullable\` returns
@@ -62,20 +58,16 @@ $CLICKHOUSE_CLIENT $settings -q "
     ENGINE = ReplacingMergeTree(version) ORDER BY k
     SETTINGS index_granularity = 1, allow_nullable_key = 1;
     SYSTEM STOP MERGES t_null_lc;
-    INSERT INTO t_null_lc SELECT 'a', 1, 1;
-    INSERT INTO t_null_lc SELECT 'a', 0, 2;
-    INSERT INTO t_null_lc SELECT NULL, 1, 1;
-    INSERT INTO t_null_lc SELECT NULL, 0, 2;
+    INSERT INTO t_null_lc VALUES ('a', 1, 1), (NULL, 1, 1);
+    INSERT INTO t_null_lc VALUES ('a', 0, 2), (NULL, 0, 2);
 
     -- 4. two-column primary key with the NULL in the second component
     CREATE TABLE t_null_2nd (a UInt64, k Nullable(UInt64), flag UInt8, version UInt64)
     ENGINE = ReplacingMergeTree(version) ORDER BY (a, k)
     SETTINGS index_granularity = 1, allow_nullable_key = 1;
     SYSTEM STOP MERGES t_null_2nd;
-    INSERT INTO t_null_2nd SELECT 1, 5, 1, 1;
-    INSERT INTO t_null_2nd SELECT 1, 5, 0, 2;
-    INSERT INTO t_null_2nd SELECT 1, NULL, 1, 1;
-    INSERT INTO t_null_2nd SELECT 1, NULL, 0, 2;
+    INSERT INTO t_null_2nd VALUES (1, 5, 1, 1), (1, NULL, 1, 1);
+    INSERT INTO t_null_2nd VALUES (1, 5, 0, 2), (1, NULL, 0, 2);
 
     -- 5. control: a non-nullable primary key. Correct before the fix, and it is what
     -- makes the cells above specific to nullability rather than to the fixture shape.
@@ -83,10 +75,8 @@ $CLICKHOUSE_CLIENT $settings -q "
     ENGINE = ReplacingMergeTree(version) ORDER BY k
     SETTINGS index_granularity = 1;
     SYSTEM STOP MERGES t_nonnull;
-    INSERT INTO t_nonnull SELECT 5, 1, 1;
-    INSERT INTO t_nonnull SELECT 5, 0, 2;
-    INSERT INTO t_nonnull SELECT 7, 1, 1;
-    INSERT INTO t_nonnull SELECT 7, 0, 2;
+    INSERT INTO t_nonnull VALUES (5, 1, 1), (7, 1, 1);
+    INSERT INTO t_nonnull VALUES (5, 0, 2), (7, 0, 2);
 
     -- 6. Nullable(Float64) holding both nan and NULL. Also a broken shape before the fix,
     -- and it pins that the fix reaches a float key rather than only integers and strings.
@@ -94,12 +84,8 @@ $CLICKHOUSE_CLIENT $settings -q "
     ENGINE = ReplacingMergeTree(version) ORDER BY k
     SETTINGS index_granularity = 1, allow_nullable_key = 1;
     SYSTEM STOP MERGES t_null_f64;
-    INSERT INTO t_null_f64 SELECT 5.5, 1, 1;
-    INSERT INTO t_null_f64 SELECT 5.5, 0, 2;
-    INSERT INTO t_null_f64 SELECT nan, 1, 1;
-    INSERT INTO t_null_f64 SELECT nan, 0, 2;
-    INSERT INTO t_null_f64 SELECT NULL, 1, 1;
-    INSERT INTO t_null_f64 SELECT NULL, 0, 2;
+    INSERT INTO t_null_f64 VALUES (5.5, 1, 1), (nan, 1, 1), (NULL, 1, 1);
+    INSERT INTO t_null_f64 VALUES (5.5, 0, 2), (nan, 0, 2), (NULL, 0, 2);
 
     -- 7. control: a plain Float64 key holding nan, correct before the fix and unchanged by it.
     -- A nan key sorts like a NULL one but is not one, so this cell documents that a non-nullable
@@ -109,10 +95,8 @@ $CLICKHOUSE_CLIENT $settings -q "
     ENGINE = ReplacingMergeTree(version) ORDER BY k
     SETTINGS index_granularity = 1;
     SYSTEM STOP MERGES t_plain_f64;
-    INSERT INTO t_plain_f64 SELECT 5.5, 1, 1;
-    INSERT INTO t_plain_f64 SELECT 5.5, 0, 2;
-    INSERT INTO t_plain_f64 SELECT nan, 1, 1;
-    INSERT INTO t_plain_f64 SELECT nan, 0, 2;
+    INSERT INTO t_plain_f64 VALUES (5.5, 1, 1), (nan, 1, 1);
+    INSERT INTO t_plain_f64 VALUES (5.5, 0, 2), (nan, 0, 2);
 
     -- 8. control: a Nullable(UInt64) key whose data holds no NULL, correct before the fix.
     -- It separates \"the key type admits NULL\" from \"a NULL is present\": only the latter broke.
@@ -120,10 +104,8 @@ $CLICKHOUSE_CLIENT $settings -q "
     ENGINE = ReplacingMergeTree(version) ORDER BY k
     SETTINGS index_granularity = 1, allow_nullable_key = 1;
     SYSTEM STOP MERGES t_null_absent;
-    INSERT INTO t_null_absent SELECT 5, 1, 1;
-    INSERT INTO t_null_absent SELECT 5, 0, 2;
-    INSERT INTO t_null_absent SELECT 7, 1, 1;
-    INSERT INTO t_null_absent SELECT 7, 0, 2;
+    INSERT INTO t_null_absent VALUES (5, 1, 1), (7, 1, 1);
+    INSERT INTO t_null_absent VALUES (5, 0, 2), (7, 0, 2);
 
     -- 9. control: Array(Nullable(UInt64)). A NULL nested inside a container is correct before
     -- the fix and stays correct after it, because the winner set only ever builds a null map
@@ -132,10 +114,8 @@ $CLICKHOUSE_CLIENT $settings -q "
     ENGINE = ReplacingMergeTree(version) ORDER BY k
     SETTINGS index_granularity = 1, allow_nullable_key = 1;
     SYSTEM STOP MERGES t_arr_null;
-    INSERT INTO t_arr_null SELECT [1], 1, 1;
-    INSERT INTO t_arr_null SELECT [1], 0, 2;
-    INSERT INTO t_arr_null SELECT [NULL], 1, 1;
-    INSERT INTO t_arr_null SELECT [NULL], 0, 2;
+    INSERT INTO t_arr_null VALUES ([1], 1, 1), ([NULL], 1, 1);
+    INSERT INTO t_arr_null VALUES ([1], 0, 2), ([NULL], 0, 2);
 "
 
 $CLICKHOUSE_CLIENT $settings -q "
