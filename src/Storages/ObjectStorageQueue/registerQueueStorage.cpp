@@ -538,6 +538,10 @@ if the failed set must not be trimmed by count.
 
 [`tracked_file_ttl_sec`](#tracked_file_ttl_sec) is the retention of the *processed* set and does not expire failed
 files; `failed_files_ttl_sec` is the only time-based control over the failed set.
+
+Tables created before `failed_files_ttl_sec` existed are an exception: on them this setting is inherited from
+`tracked_file_ttl_sec` and follows later changes to `tracked_file_ttl_sec`, until `failed_files_ttl_sec` is set
+explicitly. After that the two are independent.
 :::
 
 Possible values:

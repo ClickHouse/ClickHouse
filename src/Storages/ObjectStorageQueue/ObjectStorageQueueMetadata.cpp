@@ -504,17 +504,20 @@ void ObjectStorageQueueMetadata::alterSettings(const SettingsChanges & changes, 
                 continue;
             }
             new_table_metadata.tracked_files_ttl_sec = value;
+            if (new_table_metadata.failed_files_ttl_sec_inherited)
+                new_table_metadata.failed_files_ttl_sec = value;
         }
         else if (change.name == "failed_files_ttl_sec")
         {
             const auto value = change.value.safeGet<UInt64>();
-            if (table_metadata.failed_files_ttl_sec == value)
+            if (table_metadata.failed_files_ttl_sec == value && !table_metadata.failed_files_ttl_sec_inherited)
             {
                 LOG_TRACE(log, "Setting `failed_files_ttl_sec` already equals {}. "
                         "Will do nothing", value);
                 continue;
             }
             new_table_metadata.failed_files_ttl_sec = value;
+            new_table_metadata.failed_files_ttl_sec_inherited = false;
         }
         else if (change.name == "buckets")
         {

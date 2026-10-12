@@ -36,6 +36,7 @@ struct ObjectStorageQueueTableMetadata
     std::atomic<UInt64> tracked_files_limit;
     std::atomic<UInt64> tracked_files_ttl_sec;
     std::atomic<UInt64> failed_files_ttl_sec;
+    std::atomic<bool> failed_files_ttl_sec_inherited{false};
     std::atomic<UInt64> buckets;
 
     bool processing_threads_num_changed = false;
@@ -62,6 +63,7 @@ struct ObjectStorageQueueTableMetadata
         , tracked_files_limit(other.tracked_files_limit.load())
         , tracked_files_ttl_sec(other.tracked_files_ttl_sec.load())
         , failed_files_ttl_sec(other.failed_files_ttl_sec.load())
+        , failed_files_ttl_sec_inherited(other.failed_files_ttl_sec_inherited.load())
         , buckets(other.buckets.load())
     {
     }
@@ -74,6 +76,7 @@ struct ObjectStorageQueueTableMetadata
         tracked_files_limit = other.tracked_files_limit.load();
         tracked_files_ttl_sec = other.tracked_files_ttl_sec.load();
         failed_files_ttl_sec = other.failed_files_ttl_sec.load();
+        failed_files_ttl_sec_inherited = other.failed_files_ttl_sec_inherited.load();
     }
 
     explicit ObjectStorageQueueTableMetadata(const Poco::JSON::Object::Ptr & json);

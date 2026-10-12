@@ -1349,6 +1349,160 @@ def test_legacy_metadata_inherits_failed_files_ttl_from_tracked_ttl(started_clus
     node.query(f"DROP TABLE {dst_table_name}")
 
 
+def test_legacy_inherited_failed_files_ttl_follows_tracked_ttl_alter(started_cluster):
+    """On a table whose metadata predates `failed_files_ttl_sec`, the failed TTL is inherited from
+    `tracked_file_ttl_sec` and must keep following it when `tracked_file_ttl_sec` is altered later,
+    as long as `failed_files_ttl_sec` was never set explicitly.
+
+    The terminal failed znode must survive while the inherited TTL is large, and disappear once
+    `tracked_file_ttl_sec` is lowered by ALTER. `tracked_files_limit` is pinned to 0 so the
+    count-based sweep cannot account for the removal.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_legacy_alter_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    cleanup_interval_ms = 2000
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_file_ttl_sec": 3600,
+            "tracked_files_limit": 0,
+            "cleanup_interval_min_ms": cleanup_interval_ms,
+            "cleanup_interval_max_ms": cleanup_interval_ms,
+            "s3queue_loading_retries": 0,
+        },
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    metadata_path = f"{keeper_path}/metadata"
+
+    raw, _ = zk.get(metadata_path)
+    metadata = json.loads(raw.decode())
+    assert "failed_files_ttl_sec" in metadata, metadata
+    del metadata["failed_files_ttl_sec"]
+    metadata.pop("failed_files_ttl_sec_inherited", None)
+    zk.set(metadata_path, json.dumps(metadata).encode())
+
+    node.query(f"DETACH TABLE {table_name}")
+    node.query(f"ATTACH TABLE {table_name}")
+
+    put_s3_file_content(
+        started_cluster, f"{files_path}/bad_file.csv", b"invalid,data,here\n"
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    def terminal_failed_znodes():
+        result = node.query(
+            f"SELECT name FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        names = result.split("\n") if result else []
+        return {name for name in names if not name.endswith(".retriable")}
+
+    terminal_ready = False
+    for _ in range(60):
+        if terminal_failed_znodes():
+            terminal_ready = True
+            break
+        time.sleep(1)
+    assert terminal_ready, "expected the invalid file to reach terminal failure"
+
+    time.sleep(4 * cleanup_interval_ms / 1000)
+    assert terminal_failed_znodes(), (
+        "the terminal failed znode expired while the inherited TTL was still 3600"
+    )
+
+    node.query(f"ALTER TABLE {table_name} MODIFY SETTING tracked_file_ttl_sec=3")
+
+    expired = False
+    for _ in range(30):
+        if not terminal_failed_znodes():
+            expired = True
+            break
+        time.sleep(1)
+    assert expired, (
+        "the terminal failed znode survived after tracked_file_ttl_sec was lowered - "
+        "the inherited failed_files_ttl_sec did not follow the ALTER"
+    )
+
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
+
+
+def test_explicit_failed_files_ttl_ignores_tracked_ttl_alter(started_cluster):
+    """When `failed_files_ttl_sec` is set explicitly, it is independent of `tracked_file_ttl_sec`:
+    lowering `tracked_file_ttl_sec` by ALTER must not expire the terminal failed znode.
+
+    `tracked_files_limit` is pinned to 0 so the count-based sweep cannot remove the znode either.
+    """
+    node = started_cluster.instances["instance"]
+
+    table_name = f"test_explicit_alter_{uuid.uuid4().hex[:8]}"
+    dst_table_name = f"{table_name}_dst"
+    keeper_path = f"/clickhouse/test_{table_name}"
+    files_path = f"{table_name}_data"
+    failed_path = f"{keeper_path}/failed"
+    cleanup_interval_ms = 2000
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "tracked_file_ttl_sec": 3600,
+            "failed_files_ttl_sec": 3600,
+            "tracked_files_limit": 0,
+            "cleanup_interval_min_ms": cleanup_interval_ms,
+            "cleanup_interval_max_ms": cleanup_interval_ms,
+            "s3queue_loading_retries": 0,
+        },
+    )
+
+    put_s3_file_content(
+        started_cluster, f"{files_path}/bad_file.csv", b"invalid,data,here\n"
+    )
+    create_mv(node, table_name, dst_table_name)
+
+    def terminal_failed_znodes():
+        result = node.query(
+            f"SELECT name FROM system.zookeeper WHERE path = '{failed_path}'"
+        ).strip()
+        names = result.split("\n") if result else []
+        return {name for name in names if not name.endswith(".retriable")}
+
+    terminal_ready = False
+    for _ in range(60):
+        if terminal_failed_znodes():
+            terminal_ready = True
+            break
+        time.sleep(1)
+    assert terminal_ready, "expected the invalid file to reach terminal failure"
+
+    node.query(f"ALTER TABLE {table_name} MODIFY SETTING tracked_file_ttl_sec=3")
+
+    time.sleep(3 + 4 * cleanup_interval_ms / 1000)
+
+    assert terminal_failed_znodes(), (
+        "the terminal failed znode expired after tracked_file_ttl_sec was lowered - "
+        "an explicitly set failed_files_ttl_sec must not follow tracked_file_ttl_sec"
+    )
+
+    node.query(f"DROP TABLE {table_name}")
+    node.query(f"DROP TABLE {dst_table_name}")
+
+
 def test_wait_for_path_reads_loading_retries_live(started_cluster):
     """`waitForPathToBeProcessed()` must react to `ALTER TABLE ... MODIFY SETTING s3queue_loading_retries`
     made while a `SYSTEM FLUSH OBJECT STORAGE QUEUE ... PATH` wait is already in progress, not to a

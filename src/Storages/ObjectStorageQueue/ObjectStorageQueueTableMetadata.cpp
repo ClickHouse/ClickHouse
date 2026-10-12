@@ -116,6 +116,7 @@ String ObjectStorageQueueTableMetadata::toString() const
     json.set("tracked_files_limit", tracked_files_limit.load());
     json.set("tracked_files_ttl_sec", tracked_files_ttl_sec.load());
     json.set("failed_files_ttl_sec", failed_files_ttl_sec.load());
+    json.set("failed_files_ttl_sec_inherited", failed_files_ttl_sec_inherited.load() ? 1 : 0);
     json.set("processing_threads_num", processing_threads_num.load());
     json.set("buckets", buckets.load());
     json.set("format_name", format_name);
@@ -229,6 +230,7 @@ ObjectStorageQueueTableMetadata::ObjectStorageQueueTableMetadata(const Poco::JSO
     /// be declared in, and reordering the declarations would silently read an uninitialised atomic.
     /// In the body both are already initialised, whatever that order is.
     failed_files_ttl_sec = getOrDefault(json, "failed_files_ttl_sec", "", tracked_files_ttl_sec.load());
+    failed_files_ttl_sec_inherited = !json->has("failed_files_ttl_sec") || getOrDefault(json, "failed_files_ttl_sec_inherited", "", 0ULL);
 }
 
 ObjectStorageQueueTableMetadata ObjectStorageQueueTableMetadata::parse(const String & metadata_str)
@@ -267,6 +269,9 @@ void ObjectStorageQueueTableMetadata::adjustFromKeeper(const ObjectStorageQueueT
         }
         /// else: user explicitly set it locally, let checkImmutableFieldsEquals throw METADATA_MISMATCH
     }
+
+    if (!failed_files_ttl_sec_changed)
+        failed_files_ttl_sec_inherited = from_zk.failed_files_ttl_sec_inherited.load();
 }
 
 void ObjectStorageQueueTableMetadata::checkEquals(const ObjectStorageQueueTableMetadata & from_zk) const
