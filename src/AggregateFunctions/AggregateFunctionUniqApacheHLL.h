@@ -114,6 +114,10 @@ public:
 
         datasketches::hll_union * u = getSkUnion(lg_config_k);
 
+        /// The rows that are already pending in this state come before `rhs`. They can be there after a merge, for example when
+        /// the rows of the tail of a block are added to a state that has already merged the lookup tables of the block.
+        foldUpdateIntoUnionIfNeeded();
+
         /// `rhs` may hold both sketches; take both without modifying it, in the order of `foldUpdateIntoUnionIfNeeded`: the union, then the
         /// updates. The registers of the result do not depend on the order, but the HIP estimate and the bytes of the sketch do.
         /// The union accepts a sketch of any type, and `HLL_8` is its own type, so there is no re-encoding.
@@ -122,8 +126,6 @@ public:
 
         if (rhs_has_update)
             u->update(*rhs.sk_update);
-
-        foldUpdateIntoUnionIfNeeded();
     }
 
     /// You can only call this for an empty object. The sketch is kept as it was written, with its own resolution and

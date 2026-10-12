@@ -46,6 +46,9 @@ SELECT count() = 3 AND uniqExact(r) = 1 FROM
     SELECT finalizeAggregation(CAST(toString(uniqApacheHLLState(11, 'HLL_8')(x)), 'AggregateFunction(uniqApacheHLL(11, \'HLL_8\', \'COMPOSITE\'), UInt64)')) AS r FROM (SELECT number AS x FROM numbers(3000) ORDER BY cityHash64(x))
 );
 
+SELECT 'the composite estimate for a UInt8 key does not depend on the size of the blocks';
+SELECT (SELECT arraySort(groupArray((k, r))) FROM (SELECT toUInt8(number % 7) AS k, uniqApacheHLL(11, 'HLL_8', 'COMPOSITE')(number) AS r FROM numbers(30000) GROUP BY k SETTINGS max_block_size = 1000)) = (SELECT arraySort(groupArray((k, r))) FROM (SELECT toUInt8(number % 7) AS k, uniqApacheHLL(11, 'HLL_8', 'COMPOSITE')(number) AS r FROM numbers(30000) GROUP BY k SETTINGS max_block_size = 65536));
+
 SELECT 'wrong parameters';
 SELECT uniqApacheHLL(11, 'HLL_8', 'HIP')(number) FROM numbers(1); -- { serverError BAD_ARGUMENTS }
 SELECT uniqApacheHLL(11, 'HLL_8', 1)(number) FROM numbers(1); -- { serverError BAD_ARGUMENTS }

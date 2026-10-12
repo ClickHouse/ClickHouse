@@ -10,4 +10,6 @@ the composite estimate of a sketch that is built by inserts does not depend on t
 the same for a state that is finalized, and for a state that is read
 1
 1
+the composite estimate for a UInt8 key does not depend on the size of the blocks
+1
 wrong parameters
