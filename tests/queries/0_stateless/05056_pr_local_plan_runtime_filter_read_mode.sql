@@ -1,3 +1,6 @@
+-- Tags: no-parallel, no-fasttest
+-- A fail point armed here fires for every query on the server, so this test must run alone.
+
 -- A join runtime filter is pushed into the initiator's local plan but can never reach the replicas:
 -- `__applyFilter` is non-deterministic, so `addFilters` drops it from the query shipped to them. The
 -- initiator must still announce the same coordination mode as the replicas, otherwise the read fails
