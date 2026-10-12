@@ -431,8 +431,13 @@ set (COMPILER_FLAGS "${COMPILER_FLAGS} -fno-math-errno")
 # only from the earlier `glibc-compatibility` archive and a later contrib reference can otherwise
 # bind to glibc's `@GLIBC_2.29` symbols above the floor. With llvm-libc on they are already pulled
 # from it, so the extra `-u` requests are harmless no-ops.
+#
+# `lgammaf` is pinned for the same reason, but it is never provided by llvm-libc: its only in-tree
+# implementation is `base/glibc-compatibility/musl/lgammaf.c`, and its only reference comes from a
+# contrib (xgboost), so without the `-u` request nothing pulls the archive member and the reference
+# binds to glibc's default version (`@GLIBC_2.23` and newer) above the floor.
 if (GLIBC_COMPATIBILITY)
-    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,logf -Wl,-u,powf -Wl,-u,expf -Wl,-u,exp2f -Wl,-u,log2f -Wl,-u,log -Wl,-u,pow -Wl,-u,exp -Wl,-u,exp2 -Wl,-u,log2")
+    set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -Wl,-u,logf -Wl,-u,powf -Wl,-u,expf -Wl,-u,exp2f -Wl,-u,log2f -Wl,-u,log -Wl,-u,pow -Wl,-u,exp -Wl,-u,exp2 -Wl,-u,log2 -Wl,-u,lgammaf")
 endif ()
 
 set (DEBUG_INFO_FLAGS "-g")
@@ -606,6 +611,41 @@ endif ()
 
 include(cmake/dbms_glob_sources.cmake)
 
+# Position independent code is enabled on every amd64 and aarch64 build:
+# 1. Position independent binaries and libraries have no limit for maximum size of relocation. It allows to avoid
+# multiple sophisticated problems like linking with sanitizers or linking of rust.
+# 2. -flto=thin leads to some other way of linkage. For example for rust libraries build
+# we don't see any relocation-related errors without -fPIC, but with enabled -flto=thin. While without
+# -flto=thin we have relocation errors like:
+# rust-lld: error: relocation R_X86_64_32S cannot be used against symbol 'SEED_encrypt'; recompile with -fPIC
+#
+# For some sophisticated platforms we have different issues with fPIC:
+# For example riscv toolchain itself compiled without fPIC
+#
+# This has to be configured before the first targets are created, in particular before
+# cmake/linux/default_libs.cmake adds the C++ runtime libraries from contrib: CMake copies the flags
+# into each subdirectory when add_subdirectory is called, so targets created earlier would silently
+# compile without -fPIC. That only breaks with compilers that do not default to PIE
+# (clang with CLANG_DEFAULT_PIE_ON_LINUX=OFF, as configured by some distributions), because then the
+# non-relocatable objects of those libraries cannot be linked into the PIE executable.
+if (ARCH_AMD64 OR ARCH_AARCH64)
+    set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
+
+    # -fPIC only makes the code relocatable; whether the executable itself is position independent is
+    # the compiler driver's default unless the linker is asked explicitly, so ask it.
+    # musl links statically, and -static-pie needs an rcrt1.o that contrib/musl-cmake does not build.
+    # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
+    if (OS_LINUX AND NOT USE_MUSL)
+        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
+    endif()
+endif()
+
+if (ENABLE_POSITION_INDEPENDENT_BINARY)
+    set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
+    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
+    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
+endif()
+
 add_library(global-group INTERFACE)
 if (OS_LINUX OR OS_ANDROID)
     include(cmake/linux/default_libs.cmake)
@@ -642,34 +682,6 @@ endif ()
 ######################################
 
 set (CMAKE_POSTFIX_VARIABLE "CMAKE_${CMAKE_BUILD_TYPE_UC}_POSTFIX")
-
-# Position independent code is enabled on every amd64 and aarch64 build:
-# 1. Position independent binaries and libraries have no limit for maximum size of relocation. It allows to avoid
-# multiple sophisticated problems like linking with sanitizers or linking of rust.
-# 2. -flto=thin leads to some other way of linkage. For example for rust libraries build
-# we don't see any relocation-related errors without -fPIC, but with enabled -flto=thin. While without
-# -flto=thin we have relocation errors like:
-# rust-lld: error: relocation R_X86_64_32S cannot be used against symbol 'SEED_encrypt'; recompile with -fPIC
-#
-# For some sophisticated platforms we have different issues with fPIC:
-# For example riscv toolchain itself compiled without fPIC
-if (ARCH_AMD64 OR ARCH_AARCH64)
-    set(ENABLE_POSITION_INDEPENDENT_BINARY 1)
-
-    # -fPIC only makes the code relocatable; whether the executable itself is position independent is
-    # the compiler driver's default unless the linker is asked explicitly, so ask it.
-    # musl links statically, and -static-pie needs an rcrt1.o that contrib/musl-cmake does not build.
-    # The FreeBSD and Darwin sysroots carry no PIC startup objects (Scrt1.o).
-    if (OS_LINUX AND NOT USE_MUSL)
-        set (CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -pie -Wl,-pie")
-    endif()
-endif()
-
-if (ENABLE_POSITION_INDEPENDENT_BINARY)
-    set (CMAKE_POSITION_INDEPENDENT_CODE OFF)
-    set (CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -fPIC")
-    set (CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -fPIC")
-endif()
 
 if (NOT OS_ANDROID AND OS_LINUX AND NOT ARCH_S390X AND NOT SANITIZE AND NOT ENABLE_POSITION_INDEPENDENT_BINARY)
     # Using '-no-pie' builds executables with fixed addresses, resulting in slightly more efficient code

@@ -3,6 +3,8 @@
 #include <Core/BaseSettingsFwdMacros.h>
 #include <Core/SettingsFields.h>
 
+#include <limits>
+
 
 namespace Poco
 {
@@ -48,6 +50,12 @@ struct DatabaseReplicatedSettings
     String toString() const;
 
     static bool hasBuiltin(std::string_view name);
+
+    /// Older replicas evaluate `entry_number + logs_to_keep < max_log_ptr` in 32-bit arithmetic,
+    /// so using `UInt32::max` would make `entry_number + logs_to_keep` overflow and the replica would
+    /// delete the whole DDL log and declare itself lost.
+    /// See https://github.com/ClickHouse/ClickHouse/issues/122377 for details.
+    static constexpr UInt64 MAX_LOGS_TO_KEEP = std::numeric_limits<Int32>::max();
 
 private:
     std::unique_ptr<DatabaseReplicatedSettingsImpl> impl;
