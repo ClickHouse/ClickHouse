@@ -213,6 +213,21 @@ Epoll & Epoll::operator=(Epoll && other) noexcept
 
 void Epoll::add(int fd, void * ptr, uint32_t events)
 {
+    /// A kqueue nested in this one stays readable here until it is scanned, even after its events are
+    /// gone, so nothing that only waits on it would ever see it go quiet. Scan it now; EBADF means `fd`
+    /// is not a kqueue. One event suffices: a live event makes readable the correct answer.
+    {
+        struct kevent scanned;
+        const struct timespec zero{};
+        while (kevent(fd, nullptr, 0, &scanned, 1, &zero) == -1)
+        {
+            if (errno == EBADF)
+                break;
+            if (errno != EINTR)
+                throw ErrnoException(ErrorCodes::EPOLL_ERROR, "Cannot scan descriptor {} before adding it to kqueue", fd);
+        }
+    }
+
     {
         std::lock_guard lock(registered_fds_mutex);
         if (!registered_fds.insert(fd).second)
