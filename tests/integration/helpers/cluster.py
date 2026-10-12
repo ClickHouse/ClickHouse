@@ -23,7 +23,7 @@ import uuid
 from contextlib import contextmanager
 from functools import cache
 from pathlib import Path
-from typing import Any, List, Sequence, Tuple, Union
+from typing import Any, List, Optional, Sequence, Tuple, Union
 
 import requests
 import urllib3
@@ -270,6 +270,14 @@ CLICKHOUSE_CI_MIN_TESTED_VERSION = "25.3"
 # of many aggregate functions from `Tuple(...)` to `Nullable(Tuple(...))`. This version can be used as baseline to do
 # compatibility checks for features that are affected by this experimental feature.
 CLICKHOUSE_CI_PRE_NULLABLE_TUPLE_VERSION = "25.12"
+
+# Since 26.10 `arrayCount` returns `UInt64` (`UInt32` before, see the
+# `array_count_legacy_uint32_result` compatibility setting). This pre-change
+# version is the baseline for compatibility checks of the `arrayCount` result
+# type (any released pre-`26.10` server works); unlike
+# `CLICKHOUSE_CI_MIN_TESTED_VERSION` it must not advance past the `26.10`
+# boundary, or the checks stop exercising the pre-change coordinator.
+CLICKHOUSE_CI_PRE_ARRAY_COUNT_UINT64_VERSION = "26.7"
 
 ZOOKEEPER_CONTAINERS = ("zoo1", "zoo2", "zoo3")
 
@@ -626,6 +634,31 @@ def get_instances_dir(name):
     return instances_dir_name
 
 
+_CLEARED_PREV_LOGS_DIRS = set()
+
+
+def preserve_docker_log(instances_dir: str, retention_dir: str) -> Optional[str]:
+    """Moves `<instances_dir>/docker.log` to `<retention_dir>/docker.<N>.log`.
+
+    The retained copy is the only record of the previous incarnation's container output
+    and exit codes; `N` increments, so no earlier incarnation is ever overwritten.
+    """
+    src = p.join(instances_dir, "docker.log")
+    if not p.exists(src) or os.path.getsize(src) == 0:
+        return None
+
+    os.makedirs(retention_dir, exist_ok=True)
+    kept = sum(
+        1
+        for f in os.listdir(retention_dir)
+        if f.startswith("docker.") and f.endswith(".log")
+    )
+    dst = p.join(retention_dir, f"docker.{kept + 1}.log")
+    shutil.move(src, dst)
+    logging.debug(f"Preserved {src} as {dst}")
+    return dst
+
+
 def extract_test_name(base_path):
     """Extracts the name of the test based to a path to its test*.py file
     Must be unique in each test directory (because it's used to make instances dir and to stop docker containers from previous run)
@@ -775,6 +808,9 @@ class ClickHouseCluster:
         self.docker_net_lock = None
 
         self.instances_dir = p.join(self.base_dir, self.instances_dir_name)
+        self.prev_logs_dir = p.join(
+            self.base_dir, self.instances_dir_name + "-prev-logs"
+        )
         self.docker_logs_path = p.join(self.instances_dir, "docker.log")
         self.env_file = p.join(self.instances_dir, DEFAULT_ENV_NAME)
         self.env_variables = {}
@@ -1119,6 +1155,13 @@ class ClickHouseCluster:
         self.is_up = False
         self.env = os.environ.copy()
         logging.debug(f"CLUSTER INIT base_config_dir:{self.base_config_dir}")
+        if self.prev_logs_dir not in _CLEARED_PREV_LOGS_DIRS:
+            # A leftover retention directory belongs to a previous process, so it is
+            # discarded here rather than filed as one of this session's incarnations.
+            _CLEARED_PREV_LOGS_DIRS.add(self.prev_logs_dir)
+            shutil.rmtree(self.prev_logs_dir, ignore_errors=True)
+        elif p.exists(self.instances_dir):
+            preserve_docker_log(self.instances_dir, self.prev_logs_dir)
         if p.exists(self.instances_dir):
             shutil.rmtree(self.instances_dir, ignore_errors=True)
             logging.debug(f"Removed :{self.instances_dir}")
@@ -3868,6 +3911,7 @@ class ClickHouseCluster:
             logging.warning(
                 "Instance directory already exists. Did you call cluster.start() for second time?"
             )
+            preserve_docker_log(self.instances_dir, self.prev_logs_dir)
             # Remove and recreate so that create_dir() gets a clean slate.
             # This happens when --dist=each causes module-scoped fixtures to be torn down
             # and re-set-up within the same pytest session (e.g. tests from different modules
@@ -4622,7 +4666,18 @@ class ClickHouseCluster:
                         "Kill command failed during shutdown. {}".format(repr(e))
                     )
                     logging.debug("Trying to kill forcefully")
-                    run_and_check(self.base_cmd + ["kill"])
+
+                    def logging_compose_kill(**kwargs):
+                        if "exception" in kwargs:
+                            logging.info(
+                                "Got exception in docker compose kill: %s", kwargs["exception"]
+                            )
+
+                    # `kill` fails on a container that exits after it is listed as running; a retry lists
+                    # only the containers that are still running.
+                    retry(log_function=logging_compose_kill, retries=3, delay=3, jitter=2)(
+                        run_and_check, self.base_cmd + ["kill"]
+                    )
 
             # Check server logs for Fatal messages and sanitizer failures.
             # NOTE: we cannot do this via docker since in case of Fatal message container may already die.
@@ -5402,6 +5457,8 @@ class ClickHouseInstance:
         self.ipv4_address = ipv4_address
         self.ipv6_address = ipv6_address
         self.with_installed_binary = with_installed_binary
+        # The value of `seccomp` stripped from the main config for the old version, see `create_dir`.
+        self.seccomp_config_for_latest_version = None
         self.is_up = False
         self.config_root_name = config_root_name
         self.docker_init_flag = use_docker_init_flag
@@ -6508,6 +6565,11 @@ class ClickHouseInstance:
             ],
             user="root",
         )
+        if self.seccomp_config_for_latest_version is not None:
+            # The old version does not know `seccomp`, see `create_dir`.
+            latest_version_seccomp_config_path = self.latest_version_seccomp_config_path()
+            if p.exists(latest_version_seccomp_config_path):
+                os.remove(latest_version_seccomp_config_path)
         self._start_after_binary_swap()
 
         # wait start
@@ -6520,6 +6582,9 @@ class ClickHouseInstance:
         # now, while this server is known healthy, exactly as `cluster.start()` does.
         self._is_slow_build = None
         self.probe_slow_build(timeout=SLOW_BUILD_PROBE_TIMEOUT_SECONDS)
+
+    def latest_version_seccomp_config_path(self):
+        return p.join(self.config_d_dir, "zz_seccomp_latest_version.xml")
 
     def restart_with_latest_version(
         self,
@@ -6535,6 +6600,11 @@ class ClickHouseInstance:
 
         if callback_onstop:
             callback_onstop(self)
+        if self.seccomp_config_for_latest_version is not None:
+            with open(self.latest_version_seccomp_config_path(), "w") as f:
+                f.write(
+                    f"<{self.config_root_name}><seccomp>{self.seccomp_config_for_latest_version}</seccomp></{self.config_root_name}>\n"
+                )
         self.exec_in_container(
             ["bash", "-c", "cp /usr/bin/clickhouse /usr/share/clickhouse_original"],
             user="root",
@@ -6835,6 +6905,28 @@ class ClickHouseInstance:
             p.join(self.base_config_dir, self.main_config_name),
             p.join(instance_config_dir, self.main_config_name),
         )
+        if self.with_installed_binary:
+            # The main config.xml comes from the current sources, and an older server version refuses
+            # to start on a top-level element it does not know yet, such as `seccomp`. Only the old
+            # version needs it removed: `restart_with_latest_version` puts it back into `config.d`.
+            main_config_path = p.join(instance_config_dir, self.main_config_name)
+            with open(main_config_path, "r") as f:
+                main_config = f.read()
+            if self.main_config_name.endswith(".xml"):
+                seccomp_pattern = r"\n[ \t]*<seccomp>([^<]*)</seccomp>"
+            elif self.main_config_name.endswith((".yaml", ".yml")):
+                # Only a top-level key, without indentation.
+                seccomp_pattern = r"\nseccomp:[ \t]*([^\s#]*)[^\n]*"
+            else:
+                raise Exception(
+                    f"with_installed_binary does not support the main config {self.main_config_name}"
+                )
+            seccomp_match = re.search(seccomp_pattern, main_config)
+            if seccomp_match:
+                self.seccomp_config_for_latest_version = seccomp_match.group(1).strip()
+            main_config = re.sub(seccomp_pattern, "", main_config)
+            with open(main_config_path, "w") as f:
+                f.write(main_config)
         shutil.copyfile(
             p.join(self.base_config_dir, self.users_config_name),
             p.join(instance_config_dir, self.users_config_name),

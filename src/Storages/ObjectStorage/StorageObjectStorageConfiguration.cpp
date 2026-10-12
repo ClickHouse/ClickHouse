@@ -10,7 +10,9 @@
 #include <Core/Settings.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/ObjectStorage/Common.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergPath.h>
 #include <Storages/StorageURL.h>
+#include <IO/CompressionMethod.h>
 
 #include <boost/algorithm/string/replace.hpp>
 
@@ -177,9 +179,22 @@ void StorageObjectStorageConfiguration::initialize(
             ? storage_settings[DataLakeStorageSetting::disk].value
             : "";
     }
+    if (engine_args.empty() && table_id)
+    {
+        if (!disk_name.empty())
+            throw Exception(
+                ErrorCodes::BAD_ARGUMENTS,
+                "Table engine arguments cannot be omitted when `disk` is set: the catalog assigns an absolute "
+                "table location, while `disk` requires a path relative to its own root. "
+                "Specify the path in the table engine arguments explicitly");
+
+        engine_args = configuration_to_initialize.completeEngineArgsFromCatalog(*table_id, local_context);
+    }
+
     if (!disk_name.empty())
         configuration_to_initialize.fromDisk(disk_name, engine_args, local_context, with_table_structure);
-    else if (auto named_collection = tryGetNamedCollectionWithOverrides(engine_args, local_context, true, nullptr, table_id))
+    else if (auto named_collection = tryGetNamedCollectionWithOverrides(
+                 engine_args, local_context, true, nullptr, table_id, /* settings= */ nullptr, configuration_to_initialize.is_replayed_definition))
     {
         configuration_to_initialize.fromNamedCollection(*named_collection, local_context);
 
@@ -191,7 +206,11 @@ void StorageObjectStorageConfiguration::initialize(
         /// out of the persisted arguments.
         if (!configuration_to_initialize.url_overridden_by_base_setting.empty())
             StorageURL::overrideURLInEngineArgs(
-                engine_args, configuration_to_initialize.url_overridden_by_base_setting, local_context, /*skip_userinfo=*/ true);
+                engine_args,
+                configuration_to_initialize.url_overridden_by_base_setting,
+                local_context,
+                /*skip_userinfo=*/ true,
+                configuration_to_initialize.is_replayed_definition);
     }
     else
         configuration_to_initialize.fromAST(engine_args, local_context, with_table_structure);
@@ -336,6 +355,13 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
             partition_columns_in_data_file = partition_strategy_type != PartitionStrategyFactory::StrategyType::HIVE;
     }
 
+    /// The `hive` strategy builds its read glob from the compression method (see
+    /// `HiveStylePartitionStrategy::getPathForRead`), and table reads set `throw_on_zero_files_match = false`,
+    /// so reject a misspelled codec on `CREATE` rather than let the table look empty. Only on `CREATE`:
+    /// loading existing metadata must not throw, since that would abort server startup.
+    if (is_create_query && partition_strategy_type == PartitionStrategyFactory::StrategyType::HIVE)
+        chooseCompressionMethod(/* path */ "", compression_method);
+
     partition_strategy = PartitionStrategyFactory::get(
         partition_strategy_type,
         partition_by,
@@ -344,7 +370,8 @@ void StorageObjectStorageConfiguration::initPartitionStrategy(ASTPtr partition_b
         format,
         getRawPath().hasGlobsIgnorePlaceholders(),
         getRawPath().hasPartitionWildcard(),
-        partition_columns_in_data_file);
+        partition_columns_in_data_file,
+        compression_method);
 
     if (partition_strategy)
     {
@@ -434,6 +461,11 @@ bool StorageObjectStorageConfiguration::isNamespaceWithGlobs() const
 bool StorageObjectStorageConfiguration::isPathInArchiveWithGlobs() const
 {
     return getPathInArchive().find_first_of("*?{") != std::string::npos;
+}
+
+std::string StorageObjectStorageConfiguration::getMetadataLocationURI() const
+{
+    return Iceberg::makeIcebergLocationURI(getTypeName(), getNamespace(), getRawPath().path);
 }
 
 std::string StorageObjectStorageConfiguration::getPathInArchive() const

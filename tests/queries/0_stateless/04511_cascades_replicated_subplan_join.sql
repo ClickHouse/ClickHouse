@@ -25,7 +25,6 @@ SET query_plan_optimize_join_order_algorithm = 'greedy';
 -- The test pins full EXPLAIN outputs, so the randomized settings that shape these plans
 -- are pinned to their defaults.
 SET optimize_move_to_prewhere = 1;
-SET query_plan_optimize_prewhere = 1;
 SET query_plan_merge_filters = 1;
 SET query_plan_merge_filter_into_join_condition = 1;
 SET query_plan_remove_unused_columns = 1;
@@ -61,7 +60,8 @@ SELECT count(), sum(f.v)
 FROM rsj_fact AS f
 JOIN (SELECT d1.k AS k, d2.name AS name FROM rsj_dim1 AS d1 JOIN rsj_dim2 AS d2 ON d1.g = d2.g) AS d
 ON f.k = d.k
-WHERE d.name != '';
+WHERE d.name != ''
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count(), sum(f.v)
 FROM rsj_fact AS f
@@ -85,7 +85,8 @@ SELECT '-- 4. Outer join kinds are eligible too: results match the baseline';
 SELECT count()
 FROM rsj_fact AS f
 JOIN (SELECT d1.k AS k, d2.name AS name FROM rsj_dim1 AS d1 RIGHT JOIN rsj_dim2 AS d2 ON d1.g = d2.g) AS d
-ON f.k = d.k;
+ON f.k = d.k
+SETTINGS distributed_plan_fallback_to_local_execution = 0;
 
 SELECT count()
 FROM rsj_fact AS f

@@ -54,6 +54,12 @@ class FuzzerLogParser:
     # checked, so a marker that follows the match (a real failure quoting a query)
     # keeps the match.
     QUERY_TEXT_MARKERS = ("(in query:", "(query:")
+    # What precedes and what follows the query quoted by the crash record of
+    # `SignalHandlers.cpp`, "... (query_id: {}) (query: {}) Received signal {} ({})".
+    CRASH_RECORD_QUERY_START = ") (query: "
+    CRASH_RECORD_QUERY_END = ") Received signal "
+    # How far back to look for the start of the log record a line belongs to.
+    QUERY_TEXT_LOOKBACK = 100
     SANITIZER_ERROR_PATTERN = (
         r"(SUMMARY|ERROR|WARNING): [a-zA-Z]+Sanitizer:.*|"
         r".*[a-zA-Z]+Sanitizer: CHECK failed:.*"
@@ -238,6 +244,11 @@ class FuzzerLogParser:
         match = re.search(r"\[ (\d+) \] \{", line)
         return match.group(1) if match else ""
 
+    @staticmethod
+    def is_log_record_start(line):
+        # The "[ <tid> ] {<qid>} <Level>" prefix every server log record starts with.
+        return "] {" in line and "} <" in line
+
     def find_format_string(self, match_position, matched_log_file):
         # Find the `Format string:` message belonging to the failure found at
         # `match_position` (a 1-based line number in the input).
@@ -363,12 +374,121 @@ class FuzzerLogParser:
                 ]
         return self.stack_trace_str.splitlines()[position : position + count]
 
+    def lines_before(self, position, file):
+        # Up to QUERY_TEXT_LOOKBACK lines preceding the line at `position` (1-based),
+        # nearest first.
+        if position <= 1:
+            return []
+        start = max(1, position - self.QUERY_TEXT_LOOKBACK)
+        if file:
+            # Through `_open_log`, as in `lines_after`, so a gzipped log is read too.
+            with self._open_log(file) as f:
+                lines = [
+                    line.rstrip("\n")
+                    for line in itertools.islice(f, start - 1, position - 1)
+                ]
+        else:
+            lines = self.stack_trace_str.splitlines()[start - 1 : position - 1]
+        lines.reverse()
+        return lines
+
+    @staticmethod
+    def scan_comments(query_text, depth):
+        # Scan a line of query text that starts inside `depth` nested block comments
+        # and return the nesting depth at its end, together with whether it ends in a
+        # line comment. Either way the line ends inside a comment, i.e. the query goes
+        # on in the next line. Comment starts within string literals and quoted
+        # identifiers do not count, e.g. "SELECT if(1, '--', 'x'))".
+        quote = None
+        i = 0
+        while i < len(query_text):
+            char = query_text[i]
+            pair = query_text[i : i + 2]
+            if depth:
+                if pair == "/*":
+                    depth += 1
+                    i += 1
+                elif pair == "*/":
+                    depth -= 1
+                    i += 1
+            elif quote:
+                if char == "\\":
+                    i += 1
+                elif char == quote:
+                    quote = None
+            elif char in "'\"`":
+                quote = char
+            elif pair in ("--", "//", "# ", "#!"):
+                return depth, True
+            elif pair == "/*":
+                depth = 1
+                i += 1
+            i += 1
+        return depth, False
+
+    def quoted_query_ends(self, query_lines, is_crash_record):
+        # Whether the query quoted by `query_lines` (its text in the marker line, then
+        # the following lines of the record, then the current line's text before the
+        # match) ends before their end: at a ")" closing the marker's parenthesis at
+        # the end of a line, or followed by " Received signal " - the crash record of
+        # `SignalHandlers.cpp` is "(query: {}) Received signal {} ({})". A block
+        # comment may span lines, so its state is carried from line to line, and a
+        # ")" that ends a line inside a comment belongs to the comment, e.g.
+        # "-- Selecting (e.g. x)".
+        # The crash record keeps the query's raw newlines, so a line of its query may
+        # end with ")" anywhere, e.g. "SELECT tuple(1)"; only " Received signal "
+        # ends it. It follows the query's raw text, which may end inside a comment.
+        if is_crash_record:
+            return any(
+                self.CRASH_RECORD_QUERY_END in query_text for query_text in query_lines
+            )
+        depth = 0
+        for query_text in query_lines:
+            depth, in_line_comment = self.scan_comments(query_text, depth)
+            if depth or in_line_comment:
+                continue
+            if (
+                query_text.rstrip().endswith(")")
+                or self.CRASH_RECORD_QUERY_END in query_text
+            ):
+                return True
+        return False
+
+    def inside_quoted_query(self, position, file, text_before_match):
+        # Whether the match at `position` (1-based line number), preceded in its line
+        # by `text_before_match`, is part of a query quoted by an earlier line of the
+        # same log record: `toOneLineQuery` keeps a newline after every SQL comment,
+        # and the crash record keeps the query's raw newlines, so only the record's
+        # first line carries a marker. The quoted query is the last field of the
+        # `executeQuery` messages, so it ends either at STACK_TRACE_MARKER or at the
+        # ")" closing the marker's parenthesis, which may precede the match in its
+        # own line, e.g. "UNION ALL SELECT 2) Received signal 11 (Segmentation fault)".
+        lines = self.lines_before(position, file)
+        for index, line in enumerate(lines):
+            if self.STACK_TRACE_MARKER in line:
+                return False
+            markers = [
+                line.find(marker) + len(marker)
+                for marker in self.QUERY_TEXT_MARKERS
+                if marker in line
+            ]
+            if markers:
+                query_lines = (
+                    [line[min(markers) :]] + lines[:index][::-1] + [text_before_match]
+                )
+                return not self.quoted_query_ends(
+                    query_lines, self.CRASH_RECORD_QUERY_START in line
+                )
+            if self.is_log_record_start(line):
+                return False
+        return False
+
     def find_failure(self, pattern, file, exclude_pattern=None):
         # Find the failure matching `pattern` and return its text - the match itself
         # followed by the rest of the window - together with the 1-based line number of
         # the match and whether only excluded matches were found; ("", None, False) when
         # the pattern does not match a failure.
-        # A match inside a query that the log line quotes is not a failure: the query
+        # A match inside a query that the log record quotes is not a failure: the query
         # text is data, and both a test comment and a fuzzed query may contain any
         # text, so it is skipped and the search continues with the next match.
         # A match on `exclude_pattern` is a line a healthy run produces too (see
@@ -383,6 +503,12 @@ class FuzzerLogParser:
                 marker in line[: match.start()] for marker in self.QUERY_TEXT_MARKERS
             ):
                 print(f"Skipping the match in the query text at line {position}")
+                continue
+            # A match on a record's own first line is the check above's business.
+            if not self.is_log_record_start(line) and self.inside_quoted_query(
+                position, file, line[: match.start()]
+            ):
+                print(f"Skipping the match in the quoted query text at line {position}")
                 continue
             output = "\n".join([match.group(0)] + self.lines_after(position, file))
             if exclude_pattern and re.search(exclude_pattern, line):
@@ -571,7 +697,7 @@ class FuzzerLogParser:
         # Skip the matched line itself: a pattern with a leading `.*` keeps the record's
         # own "] {id} <Level>" prefix, which this guard would otherwise match.
         for i, line in enumerate(error_lines[1:], start=1):
-            if "] {" in line and "} <" in line or line.startswith("    #"):
+            if self.is_log_record_start(line) or line.startswith("    #"):
                 # it's a new log line or sanitizer frame - break
                 error_lines = error_lines[:i]
                 break
@@ -774,7 +900,7 @@ class FuzzerLogParser:
                 # Stop at the next server log line so an unrelated later message is not
                 # folded into this one.
                 for i, following in enumerate(lines):
-                    if i > 0 and "] {" in following and "} <" in following:
+                    if i > 0 and self.is_log_record_start(following):
                         lines = lines[:i]
                         break
                 message = "\n".join(lines).strip()

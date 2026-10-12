@@ -49,6 +49,7 @@ public:
     static constexpr auto name = "generateRandom";
     std::string getName() const override { return name; }
     bool hasStaticStructure() const override { return structure != "auto"; }
+    bool isDeterministicInScopeOfQuery() const override { return false; }
 
     bool needStructureHint() const override { return structure == "auto"; }
     void setStructureHint(const ColumnsDescription & structure_hint_) override { structure_hint = structure_hint_; }
@@ -353,7 +354,7 @@ INSERT INTO t SELECT * FROM generateRandom() LIMIT 10;
 
 ## Related content {#related-content}
 - Blog: [Generating random data in ClickHouse](https://clickhouse.com/blog/generating-random-test-distribution-data-for-clickhouse)
-)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, {.allow_readonly = true});
+)DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{}, {.allow_readonly = true});
 }
 
 }
