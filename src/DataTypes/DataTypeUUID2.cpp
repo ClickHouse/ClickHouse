@@ -91,6 +91,8 @@ In the [Arrow](/interfaces/formats/Arrow), [Parquet](/interfaces/formats/Parquet
 
 Formats without a place for such metadata do not distinguish the two types. In [MsgPack](/interfaces/formats/MsgPack) (the UUID extension type) and [BSONEachRow](/interfaces/formats/BSONEachRow) (the binary subtype UUID), both types are written with the same standard representation and the same canonical value, so that other systems read them identically, and schema inference reads such a value back as `UUID`. The same applies to [AvroConfluent](/interfaces/formats/AvroConfluent), whose messages carry only the Avro schema registered in the schema registry and no file metadata, and to text formats, where a UUID is inferred from its textual form. To read these values as `UUID2`, specify the structure explicitly.
 
+The same holds for the [PostgreSQL wire protocol](/concepts/features/interfaces/postgresql): both types are sent to clients as the PostgreSQL `uuid` type. The [PostgreSQL](/reference/engines/table-engines/integrations/postgresql) table engine, the `PostgreSQL` database engine and the `postgresql` table function map a remote `uuid` column to `UUID` when they infer the table structure, including when the remote server is ClickHouse itself and the column there is `UUID2`. To read such a column as `UUID2`, specify the structure explicitly.
+
 ## Related content {#related-content}
 
 - [UUID](/reference/data-types/uuid)
