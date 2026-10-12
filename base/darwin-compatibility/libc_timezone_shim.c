@@ -1,8 +1,7 @@
-/// ClickHouse: macOS libc guards its time zone state with a private pthread_rwlock (`lcl_rwlock` in Libc
-/// `stdtime/FreeBSD/localtime.c`), taken by every function defined below. It is Darwin's psynch rwlock, which
-/// wedges with no holder when its waiters receive signals (FB24027930), and libsystem_c binds to it through the
-/// two-level namespace, out of reach of pthread_rwlock_shim.c. These definitions serialize every call from code
-/// linked into ClickHouse binaries, so none of those threads ever waits on that lock.
+/// macOS libc guards its time zone state with a private psynch pthread_rwlock (`lcl_rwlock`, Libc
+/// `stdtime/FreeBSD/localtime.c`), taken by every function below. It wedges with no holder when its waiters receive
+/// signals (FB24027930), and libsystem_c binds it through the two-level namespace, out of reach of
+/// pthread_rwlock_shim.c. These definitions serialize the calls made from the binary, so no thread waits on it.
 
 #if defined(__APPLE__)
 
@@ -17,7 +16,7 @@
 #include <wchar.h>
 #include <xlocale.h>
 
-/// Recursive, so that a signal handler calling one of these on a thread that is already inside one keeps working.
+/// Recursive: a call re-entered on the same thread (e.g. from a signal handler) must not self-deadlock here.
 static pthread_mutex_t time_zone_mutex = PTHREAD_RECURSIVE_MUTEX_INITIALIZER;
 
 static void * resolveNext(_Atomic(void *) * cache, const char * name)
