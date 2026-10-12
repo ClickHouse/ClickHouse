@@ -1,3 +1,5 @@
+#include "config.h"
+
 #include <Common/DateLUTImpl.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/CurrentThread.h>
@@ -53,6 +55,7 @@
 #include <Parsers/parseQuery.h>
 #include <Parsers/ASTFromJSON.h>
 #include <Parsers/ParserQuery.h>
+#include <Parsers/ParserSetQuery.h>
 #include <Parsers/queryNormalization.h>
 #include <Common/quoteString.h>
 #include <Parsers/toOneLineQuery.h>
@@ -66,6 +69,7 @@
 
 #include <Formats/FormatFactory.h>
 #include <Storages/StorageInput.h>
+#include <Storages/StorageInMemoryMetadata.h>
 
 #include <Access/ContextAccess.h>
 #include <Access/EnabledQuota.h>
@@ -110,6 +114,11 @@
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
+#if USE_RAPIDJSON
+#include <Parsers/Mongo/ParserMongoQuery.h>
+#include <Parsers/Mongo/ParserMongoUpdateQuery.h>
+#include <Parsers/Mongo/parseMongoQuery.h>
+#endif
 #include <Core/SettingsSecrets.h>
 
 #include <IO/CompressionMethod.h>
@@ -177,6 +186,7 @@ namespace Setting
 {
     extern const SettingsBool allow_experimental_analyzer;
     extern const SettingsBool enable_json_ast_dialect;
+    extern const SettingsBool allow_experimental_mongo_dialect;
     extern const SettingsBool allow_experimental_polyglot_dialect;
     extern const SettingsBool allow_experimental_kusto_dialect;
     extern const SettingsBool allow_experimental_prql_dialect;
@@ -2412,6 +2422,53 @@ static BlockIO executeQueryImpl(
                 settings[Setting::allow_experimental_polyglot_dialect]);
             out_ast = parseQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
         }
+        else if (settings[Setting::dialect] == Dialect::mongo && !internal)
+        {
+            /// A leading `SET` must bypass the experimental gate: it is how a session that
+            /// turned `allow_experimental_mongo_dialect` back off runs `SET dialect = 'clickhouse'`
+            /// to leave the dialect, the same way the `clickhouse_json` dialect escapes below.
+            /// The escape uses the very same `ParserSetQuery` probe as the Mongo parser, so a
+            /// statement is a `SET` for the gate exactly when the parser will also read it as
+            /// one - a first-token check would let a collection named `set`
+            /// (`set.users.find({})`) run with the gate turned off.
+            ASTPtr set_escape_ast
+                = tryParseLeadingSetQuery(begin, end, max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+            if (set_escape_ast)
+            {
+                out_ast = std::move(set_escape_ast);
+            }
+            else
+            {
+#if USE_RAPIDJSON
+                if (!settings[Setting::allow_experimental_mongo_dialect])
+                    throw Exception(
+                        ErrorCodes::SUPPORT_IS_DISABLED,
+                        "Support for the MongoDB dialect is disabled (turn on setting 'allow_experimental_mongo_dialect')");
+                Mongo::ParserMongoQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+                out_ast = parseMongoQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
+
+                /// `$unset` and `$rename` of a subdocument name only its path, and the parser does
+                /// not know the columns it is stored as, see `expandMongoSubtreeAssignments`. A
+                /// collection that does not exist is left to the interpreter to report.
+                if (const auto * alter = out_ast->as<ASTAlterQuery>())
+                {
+                    const String database = alter->getDatabase().empty() ? context->getCurrentDatabase() : alter->getDatabase();
+                    if (auto storage = DatabaseCatalog::instance().tryGetTable(StorageID(database, alter->getTable()), context))
+                    {
+                        auto metadata = storage->getInMemoryMetadataPtr(context, /* bypass_metadata_cache = */ false);
+                        std::vector<String> column_names;
+                        for (const auto & column : metadata->getColumns())
+                            column_names.push_back(column.name);
+                        Mongo::expandMongoSubtreeAssignments(out_ast, column_names);
+                    }
+                }
+#else
+                /// A build without rapidjson must not strand a session whose dialect was set to
+                /// `mongo` either: a `SET` is plain SQL and needs nothing of the Mongo parser.
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Support for the MongoDB dialect is disabled: ClickHouse is built without rapidjson");
+#endif
+            }
+        }
         else if (settings[Setting::dialect] == Dialect::trino && !internal)
         {
             /// Like `ParserPolyglotQuery`, `ParserTrinoQuery` handles SET queries and
@@ -2664,7 +2721,7 @@ static BlockIO executeQueryImpl(
         /// DDL parts (database, table, columns, storage, targets) while preserving placeholders
         /// in the SELECT body, which form the view's parameterizable interface.
         bool probably_has_params = find_first_symbols<'{'>(begin, end) != end;
-        if (out_ast && probably_has_params)
+        if (out_ast && probably_has_params && settings[Setting::dialect] != Dialect::mongo)
         {
             ReplaceQueryParameterVisitor visitor(context->getQueryParameters());
             visitor.visit(out_ast);

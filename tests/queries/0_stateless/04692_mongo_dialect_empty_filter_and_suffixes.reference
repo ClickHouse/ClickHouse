@@ -1,0 +1,15 @@
+1	alpha
+2	.limit(1)
+3	.sort({"id": -1})
+2	.limit(1)
+3	.sort({"id": -1})
+1	alpha
+2	.limit(1)
+3	.sort({"id": -1})
+1	alpha
+3	.sort({"id": -1})
+2	.limit(1)
+1	same
+2	same
+3	same
+0

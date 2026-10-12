@@ -21,6 +21,9 @@ public:
         GRPC,
         ARROW_FLIGHT,
         POSTGRESQL,
+        /// Before `MONGO`: `SYSTEM START LISTEN` takes the first type whose name prefixes the query.
+        MONGO_SECURE,
+        MONGO,
         PROMETHEUS,
         CUSTOM,
         INTERSERVER_HTTP,
