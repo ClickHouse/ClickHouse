@@ -59,6 +59,8 @@ static struct InitFiu
     REGULAR(stripe_log_sink_write_fallpoint) \
     REGULAR(file_checker_update_and_save_fail_reading_sizes) \
     REGULAR(file_checker_update_and_save_fail_persisting) \
+    ONCE(rocksdb_rename_throw_filesystem_error) \
+    REGULAR(rocksdb_rename_fail_reopen) \
     ONCE(smt_commit_merge_mutate_zk_fail_after_op) \
     ONCE(smt_commit_merge_mutate_zk_fail_before_op) \
     ONCE(smt_commit_write_zk_fail_after_op) \
@@ -91,6 +93,7 @@ static struct InitFiu
     ONCE(s3_send_request_throw_expired_token) \
     REGULAR(s3_read_inject_etag_mismatch) \
     REGULAR(file_read_inject_version_token_mismatch) \
+    REGULAR(file_top_k_query_condition_cache_inject_file_change) \
     ONCE(url_glob_defer_path_filter) \
     REGULAR(azure_inject_forbidden_response) \
     ONCE(azure_inject_forbidden_response_once) \
@@ -299,8 +302,12 @@ static struct InitFiu
     ONCE(backup_from_snapshot_fail_before_progress_cleanup) \
     ONCE(backup_fail_before_writing_metadata) \
     ONCE(backup_fail_after_writing_encryption_config) \
+    ONCE(backup_fail_lock_file_check_after_creation) \
     ONCE(backup_fail_lock_file_removal) \
+    ONCE(backup_fail_lock_file_write_after_commit) \
+    ONCE(backup_fail_lock_file_write_after_open) \
     PAUSEABLE_ONCE(backup_pause_before_lock_file_creation) \
+    PAUSEABLE_ONCE(backup_pause_after_lock_file_creation) \
     PAUSEABLE(backup_from_snapshot_pause_holding_admin_lock) \
     PAUSEABLE(backup_from_snapshot_pause_after_admin_lock_release) \
     PAUSEABLE(backup_from_snapshot_pause_before_holder_multi) \
@@ -334,6 +341,7 @@ static struct InitFiu
     REGULAR(mt_select_parts_to_mutate_max_part_size) \
     ONCE(mt_alter_throw_in_start_mutation) \
     ONCE(mt_alter_settings_throw_before_metadata_commit) \
+    ONCE(mt_throw_after_renaming_empty_parts) \
     PAUSEABLE_ONCE(mt_alter_settings_pause_before_metadata_commit) \
     PAUSEABLE_ONCE(mt_alter_readonly_pause_after_metadata_commit) \
     PAUSEABLE_ONCE(mt_move_partition_pause_before_commit) \
@@ -359,6 +367,7 @@ static struct InitFiu
     PAUSEABLE(after_snapshot_clean_pause) \
     ONCE(parallel_replicas_reading_response_timeout) \
     ONCE(prepared_sets_build_ordered_set_inplace_fail) \
+    ONCE(disk_set_builder_stop_before_finish) \
     REGULAR(parallel_replicas_force_local_replica_inactive) \
     REGULAR(parallel_replicas_skip_aggregate_projection_on_follower) \
     ONCE(parallel_replicas_insert_select_drop_active_replica) \
@@ -387,6 +396,8 @@ static struct InitFiu
     PAUSEABLE(atomic_populate_pause_after_view_publication) \
     PAUSEABLE(atomic_populate_pause_before_source_guard) \
     PAUSEABLE(atomic_populate_pause_before_population) \
+    PAUSEABLE_ONCE(attach_from_path_pause_before_relocation) \
+    PAUSEABLE_ONCE(rocksdb_rename_pause_before_rollback) \
     PAUSEABLE(database_catalog_drop_finally_before_id_erase) \
     REGULAR(storage_merge_tree_background_schedule_merge_fail) \
     ONCE(mt_skip_scheduling_merge_once) \
