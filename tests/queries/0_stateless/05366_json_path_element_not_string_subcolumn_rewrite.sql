@@ -37,5 +37,8 @@ SET optimize_functions_to_subcolumns = 1;
 SELECT countIf(explain ILIKE '%json.x.y.:`Array(JSON)`.o.w%') > 0, countIf(explain ILIKE '%json.@`a`.b.c%') > 0
 FROM (EXPLAIN QUERY TREE run_passes = 1
       SELECT tupleElement(tupleElement(json.x.y[2], 'o'), 'w'), json['a'][toNullable('b')]['c'] FROM t_json_path_element);
+SELECT countIf(explain ILIKE '%json.@`a`.b.c%') > 0
+FROM (EXPLAIN QUERY TREE run_passes = 1
+      SELECT json['a'][toLowCardinality('b')]['c'] FROM t_json_path_element);
 
 DROP TABLE t_json_path_element;
