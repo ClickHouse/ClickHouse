@@ -1,4 +1,4 @@
----- RIGHT ANTI HASH
+---- RIGHT ANTI SERIAL
 3	10	r3
 4	10	r4
 5	10	r5
@@ -8,7 +8,7 @@
 9	10	r9
 10	10	r10
 11	10	r11
----- RIGHT ANTI PARALLEL HASH
+---- RIGHT ANTI PARALLEL
 3	10	r3
 4	10	r4
 5	10	r5
@@ -18,7 +18,7 @@
 9	10	r9
 10	10	r10
 11	10	r11
----- RIGHT HASH
+---- RIGHT SERIAL
 0	0		3	10	r3
 0	0		4	10	r4
 0	0		5	10	r5
@@ -31,7 +31,7 @@
 0	0	l0	0	10	r0
 1	4	l1	1	10	r1
 2	8	l2	2	10	r2
----- RIGHT PARALLEL HASH
+---- RIGHT PARALLEL
 0	0		3	10	r3
 0	0		4	10	r4
 0	0		5	10	r5
@@ -44,7 +44,7 @@
 0	0	l0	0	10	r0
 1	4	l1	1	10	r1
 2	8	l2	2	10	r2
----- FULL HASH
+---- FULL SERIAL
 0	0		3	10	r3
 0	0		4	10	r4
 0	0		5	10	r5
@@ -60,7 +60,7 @@
 3	12	l3	0	0	
 4	16	l4	0	0	
 5	20	l5	0	0	
----- FULL PARALLEL HASH
+---- FULL PARALLEL
 0	0		3	10	r3
 0	0		4	10	r4
 0	0		5	10	r5
@@ -76,7 +76,7 @@
 3	12	l3	0	0	
 4	16	l4	0	0	
 5	20	l5	0	0	
----- UINT16 RIGHT ANTI HASH
+---- UINT16 RIGHT ANTI SERIAL
 3	10	r3
 4	10	r4
 5	10	r5
@@ -86,7 +86,7 @@
 9	10	r9
 10	10	r10
 11	10	r11
----- UINT16 RIGHT ANTI PARALLEL HASH
+---- UINT16 RIGHT ANTI PARALLEL
 3	10	r3
 4	10	r4
 5	10	r5
@@ -96,7 +96,7 @@
 9	10	r9
 10	10	r10
 11	10	r11
----- UINT16 RIGHT HASH
+---- UINT16 RIGHT SERIAL
 0	0		3	10	r3
 0	0		4	10	r4
 0	0		5	10	r5
@@ -109,7 +109,7 @@
 0	0	l0	0	10	r0
 1	4	l1	1	10	r1
 2	8	l2	2	10	r2
----- UINT16 RIGHT PARALLEL HASH
+---- UINT16 RIGHT PARALLEL
 0	0		3	10	r3
 0	0		4	10	r4
 0	0		5	10	r5
@@ -122,23 +122,7 @@
 0	0	l0	0	10	r0
 1	4	l1	1	10	r1
 2	8	l2	2	10	r2
----- UINT16 FULL HASH
-0	0		3	10	r3
-0	0		4	10	r4
-0	0		5	10	r5
-0	0		6	10	r6
-0	0		7	10	r7
-0	0		8	10	r8
-0	0		9	10	r9
-0	0		10	10	r10
-0	0		11	10	r11
-0	0	l0	0	10	r0
-1	4	l1	1	10	r1
-2	8	l2	2	10	r2
-3	12	l3	0	0	
-4	16	l4	0	0	
-5	20	l5	0	0	
----- UINT16 FULL PARALLEL HASH
+---- UINT16 FULL SERIAL
 0	0		3	10	r3
 0	0		4	10	r4
 0	0		5	10	r5
@@ -154,3 +138,31 @@
 3	12	l3	0	0	
 4	16	l4	0	0	
 5	20	l5	0	0	
+---- UINT16 FULL PARALLEL
+0	0		3	10	r3
+0	0		4	10	r4
+0	0		5	10	r5
+0	0		6	10	r6
+0	0		7	10	r7
+0	0		8	10	r8
+0	0		9	10	r9
+0	0		10	10	r10
+0	0		11	10	r11
+0	0	l0	0	10	r0
+1	4	l1	1	10	r1
+2	8	l2	2	10	r2
+3	12	l3	0	0	
+4	16	l4	0	0	
+5	20	l5	0	0	
+04508_right_anti_serial	1	0
+04508_right_anti_parallel	0	1
+04508_right_serial	1	0
+04508_right_parallel	0	1
+04508_full_serial	1	0
+04508_full_parallel	0	1
+04508_uint16_right_anti_serial	1	0
+04508_uint16_right_anti_parallel	0	1
+04508_uint16_right_serial	1	0
+04508_uint16_right_parallel	0	1
+04508_uint16_full_serial	1	0
+04508_uint16_full_parallel	0	1

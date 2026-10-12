@@ -2,7 +2,8 @@ SET explain_query_plan_default = 'legacy';
 SET query_plan_optimize_join_order_randomize = 0; -- Pinned because the test asserts on join plan/order
 SET join_use_nulls = 1;
 SET enable_analyzer = 1;
-SET join_algorithm = 'parallel_hash';
+SET join_algorithm = 'hash';
+SET parallel_hash_join_threshold = 0;
 SET query_plan_join_swap_table = 0;
 SET enable_join_runtime_filters = 0;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Disable automatic spilling for this test
@@ -21,7 +22,7 @@ FROM t_l_small AS l
 RIGHT JOIN t_r_small AS r ON l.id = r.id
 ORDER BY r.id, l.id;
 
--- Explain plan for a small RIGHT OUTER join (should use ConcurrentHashJoin / parallel_hash)
+-- Explain plan for a small RIGHT OUTER join (should use HashJoin)
 SELECT 'explain_right_all_small';
 EXPLAIN actions=1, keep_logical_steps=0
 SELECT l.id, l.value, r.description
@@ -143,23 +144,29 @@ CREATE TABLE r (k UInt8, v UInt8) ENGINE = Memory;
 INSERT INTO l SELECT toUInt8(number), toUInt8(number) FROM numbers(200);
 INSERT INTO r SELECT toUInt8(number), toUInt8(number) FROM numbers(200);
 
-SET max_threads = 8; SET join_algorithm = 'hash';
-SELECT 'hash' AS alg, count() AS cnt
+-- `parallel_hash_join_threshold = 1000000000` builds the serial layout and `0` the parallel one. The
+-- threshold needs an estimate of the right table size, and `query_plan_optimize_join_order_limit`
+-- gives the join one.
+SET max_threads = 8;
+SET query_plan_optimize_join_order_limit = 10;
+
+SET parallel_hash_join_threshold = 1000000000;
+SELECT 'serial' AS alg, count() AS cnt
 FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
 
-SET join_algorithm = 'parallel_hash';
-SELECT 'parallel_hash' AS alg, count() AS cnt
+SET parallel_hash_join_threshold = 0;
+SELECT 'parallel' AS alg, count() AS cnt
 FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
 
-SET join_algorithm = 'hash';
-SELECT 'hash right-only', countIf(l.k IS NULL) FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
-SET join_algorithm = 'parallel_hash';
+SET parallel_hash_join_threshold = 1000000000;
+SELECT 'serial right-only', countIf(l.k IS NULL) FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
+SET parallel_hash_join_threshold = 0;
 SELECT 'parallel right-only', countIf(l.k IS NULL) FROM l RIGHT JOIN r ON l.k = r.k AND l.v > r.v;
 
-SET join_algorithm = 'hash';
-SELECT 'hash', count() FROM l FULL OUTER JOIN r ON l.k = r.k AND l.v > r.v;
-SET join_algorithm = 'parallel_hash';
-SELECT 'parallel_hash', count() FROM l FULL OUTER JOIN r ON l.k = r.k AND l.v > r.v;
+SET parallel_hash_join_threshold = 1000000000;
+SELECT 'serial', count() FROM l FULL OUTER JOIN r ON l.k = r.k AND l.v > r.v;
+SET parallel_hash_join_threshold = 0;
+SELECT 'parallel', count() FROM l FULL OUTER JOIN r ON l.k = r.k AND l.v > r.v;
 
 DROP TABLE IF EXISTS l;
 DROP TABLE IF EXISTS r;

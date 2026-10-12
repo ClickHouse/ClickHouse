@@ -16,12 +16,6 @@ FROM
     EXPLAIN PLAN actions = 1 SELECT * FROM numbers(1) AS t1 JOIN numbers(1) AS t2 ON t1.number = t2.number SETTINGS join_algorithm = 'hash'
 )
 WHERE trim(explain) LIKE 'Algorithm%';
-SELECT trim(explain)
-FROM
-(
-    EXPLAIN PLAN actions = 1 SELECT * FROM numbers(1) AS t1 JOIN numbers(1) AS t2 ON t1.number = t2.number SETTINGS join_algorithm = 'parallel_hash'
-)
-WHERE trim(explain) LIKE 'Algorithm%';
 
 SET join_algorithm = 'hash';
 SET max_threads = 1;
@@ -112,58 +106,58 @@ ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_10';
 
 -- ====================================================================
--- Concurrent path: SpillingHashJoin wrapping ConcurrentHashJoin.
+-- Same joins with the parallel layout. `parallel_hash_join_threshold = 0` selects it.
 -- ====================================================================
 SET max_bytes_before_external_join = 1000000000;
-SET join_algorithm = 'parallel_hash';
 SET max_threads = 4;
+SET parallel_hash_join_threshold = 0;
 
--- Test 11: Small INNER JOIN that fits in memory (concurrent, no spill).
-SELECT 'concurrent inner join small';
+-- Test 11: Small INNER JOIN that fits in memory (parallel, no spill).
+SELECT 'parallel inner join small';
 SELECT count(), sum(t2.v)
 FROM (SELECT number AS k FROM numbers(100)) AS t1
 INNER JOIN (SELECT number AS k, number * 10 AS v FROM numbers(100)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_11';
 
--- Test 12: Small LEFT JOIN that fits in memory (concurrent, no spill).
-SELECT 'concurrent left join small';
+-- Test 12: Small LEFT JOIN that fits in memory (parallel, no spill).
+SELECT 'parallel left join small';
 SELECT count(), sum(if(t2.k = 0 AND t1.k != 0, 0, t2.v))
 FROM (SELECT number AS k FROM numbers(100)) AS t1
 LEFT JOIN (SELECT number + 50 AS k, number AS v FROM numbers(100)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_12';
 
--- Test 13: Small RIGHT JOIN that fits in memory (concurrent, no spill).
-SELECT 'concurrent right join small';
+-- Test 13: Small RIGHT JOIN that fits in memory (parallel, no spill).
+SELECT 'parallel right join small';
 SELECT count()
 FROM (SELECT number + 50 AS k FROM numbers(100)) AS t1
 RIGHT JOIN (SELECT number AS k FROM numbers(100)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_13', parallel_non_joined_rows_processing = 1;
 
--- Test 14: Small FULL JOIN that fits in memory (concurrent, no spill).
-SELECT 'concurrent full join small';
+-- Test 14: Small FULL JOIN that fits in memory (parallel, no spill).
+SELECT 'parallel full join small';
 SELECT count()
 FROM (SELECT number AS k FROM numbers(100)) AS t1
 FULL JOIN (SELECT number + 50 AS k FROM numbers(100)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_14', parallel_non_joined_rows_processing = 1;
 
--- Test 15: Concurrent RIGHT JOIN (in-memory) — verify non-joined rows from right table.
+-- Test 15: Parallel RIGHT JOIN (in-memory) — verify non-joined rows from right table.
 -- t1.k = [5000..14999], t2.k = [0..9999]
 -- Matched: 5000, Non-joined from right: 5000, Total: 10000
-SELECT 'concurrent right join non-joined';
+SELECT 'parallel right join non-joined';
 SELECT count(), countIf(t1.k != 0) AS matched, countIf(t1.k = 0) AS right_only
 FROM (SELECT number + 5000 AS k FROM numbers(10000)) AS t1
 RIGHT JOIN (SELECT number AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_15', parallel_non_joined_rows_processing = 1;
 
--- Test 16: Concurrent FULL JOIN (in-memory) — verify non-joined rows from both sides.
+-- Test 16: Parallel FULL JOIN (in-memory) — verify non-joined rows from both sides.
 -- t1.k = [1..10000], t2.k = [5001..15000]
 -- Matched: 5000, Left-only: 5000, Right-only: 5000, Total: 15000
-SELECT 'concurrent full join non-joined';
+SELECT 'parallel full join non-joined';
 SELECT count(), countIf(t1.k != 0 AND t2.k != 0 ) AS matched,
        countIf(t2.k = 0) AS left_only, countIf(t1.k = 0) AS right_only
 FROM (SELECT number + 1 AS k FROM numbers(10000)) AS t1
@@ -174,52 +168,52 @@ SETTINGS log_comment = 'query_03915_16', parallel_non_joined_rows_processing = 1
 SET max_bytes_before_external_join = 100000;
 -- Increase initial bucket size to ensure delayed blocks are handled
 SET grace_hash_join_initial_buckets = 2;
--- Test 17: INNER JOIN that exceeds max_bytes_before_external_join and must spill (concurrent).
-SELECT 'concurrent inner join spill';
+-- Test 17: INNER JOIN that exceeds max_bytes_before_external_join and must spill (parallel).
+SELECT 'parallel inner join spill';
 SELECT count(), sum(t2.v)
 FROM (SELECT number AS k FROM numbers(10000)) AS t1
 INNER JOIN (SELECT number AS k, number AS v FROM numbers(10000)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_17';
 
--- Test 18: LEFT JOIN that spills (concurrent).
-SELECT 'concurrent left join spill';
+-- Test 18: LEFT JOIN that spills (parallel).
+SELECT 'parallel left join spill';
 SELECT count()
 FROM (SELECT number AS k FROM numbers(10000)) AS t1
 LEFT JOIN (SELECT number + 5000 AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_18';
 
--- Test 19: RIGHT JOIN that spills (concurrent).
-SELECT 'concurrent right join spill';
+-- Test 19: RIGHT JOIN that spills (parallel).
+SELECT 'parallel right join spill';
 SELECT count()
 FROM (SELECT number + 5000 AS k FROM numbers(10000)) AS t1
 RIGHT JOIN (SELECT number AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_19';
 
--- Test 20: FULL JOIN that spills (concurrent).
-SELECT 'concurrent full join spill';
+-- Test 20: FULL JOIN that spills (parallel).
+SELECT 'parallel full join spill';
 SELECT count()
 FROM (SELECT number AS k FROM numbers(10000)) AS t1
 FULL JOIN (SELECT number + 5000 AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_20';
 
--- Test 21: Concurrent RIGHT JOIN that spills — verify non-joined rows from right table.
+-- Test 21: Parallel RIGHT JOIN that spills — verify non-joined rows from right table.
 -- t1.k = [5000..14999], t2.k = [0..9999]
 -- Matched: 5000, Non-joined from right: 5000, Total: 10000
-SELECT 'concurrent right join spill non-joined';
+SELECT 'parallel right join spill non-joined';
 SELECT count(), countIf(t1.k != 0) AS matched, countIf(t1.k = 0) AS right_only
 FROM (SELECT number + 5000 AS k FROM numbers(10000)) AS t1
 RIGHT JOIN (SELECT number AS k FROM numbers(10000)) AS t2
 ON t1.k = t2.k
 SETTINGS log_comment = 'query_03915_21';
 
--- Test 22: Concurrent FULL JOIN that spills — verify non-joined rows from both sides.
+-- Test 22: Parallel FULL JOIN that spills — verify non-joined rows from both sides.
 -- t1.k = [1..10000], t2.k = [5001..15000]
 -- Matched: 5000, Left-only: 5000, Right-only: 5000, Total: 15000
-SELECT 'concurrent full join spill non-joined';
+SELECT 'parallel full join spill non-joined';
 SELECT count(), countIf(t1.k != 0 AND t2.k != 0) AS matched,
        countIf(t2.k = 0) AS left_only, countIf(t1.k = 0) AS right_only
 FROM (SELECT number + 1 AS k FROM numbers(10000)) AS t1

@@ -9,21 +9,21 @@
         SELECT * FROM (SELECT toNullable(number) AS k FROM numbers_mt(5e8)) AS lhs
         LEFT JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs USING (k)
         FORMAT Null
-        SETTINGS max_threads=8, join_algorithm='hash'
+        SETTINGS max_threads=8, join_algorithm='hash', parallel_hash_join_threshold=18446744073709551615
     </query>
 
     <query>
         SELECT * FROM (SELECT if(number % 10 = 0, NULL, number) AS k FROM numbers_mt(5e8)) AS lhs
         LEFT JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs USING (k)
         FORMAT Null
-        SETTINGS max_threads=8, join_algorithm='hash'
+        SETTINGS max_threads=8, join_algorithm='hash', parallel_hash_join_threshold=18446744073709551615
     </query>
 
     <query>
         SELECT count() FROM (SELECT toNullable(number) AS k FROM numbers_mt(1e8)) AS lhs
         INNER JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs USING (k)
         FORMAT Null
-        SETTINGS max_threads=1, join_algorithm='hash'
+        SETTINGS max_threads=1, join_algorithm='hash', parallel_hash_join_threshold=18446744073709551615
     </query>
 
     <!-- Non-nullable keys with a join mask of kind `Unknown`: a left-side-only condition in the
@@ -33,7 +33,7 @@
         SELECT * FROM numbers_mt(5e8) AS lhs
         LEFT JOIN (SELECT number AS k FROM numbers_mt(1e3)) AS rhs ON lhs.number = rhs.k AND (lhs.number % 2 = 0)
         FORMAT Null
-        SETTINGS max_threads=8, join_algorithm='hash'
+        SETTINGS max_threads=8, join_algorithm='hash', parallel_hash_join_threshold=18446744073709551615
     </query>
 
     <!-- Nullable keys combined with an ON-section mask: both skip sources merged. -->
@@ -41,7 +41,7 @@
         SELECT * FROM (SELECT toNullable(number) AS k FROM numbers_mt(5e8)) AS lhs
         LEFT JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs ON lhs.k = rhs.k AND (lhs.k % 2 = 0)
         FORMAT Null
-        SETTINGS max_threads=8, join_algorithm='hash'
+        SETTINGS max_threads=8, join_algorithm='hash', parallel_hash_join_threshold=18446744073709551615
     </query>
 
     <!-- Multiple disjuncts (OR) with nullable keys: the multi-clause probe loop. -->
@@ -49,7 +49,7 @@
         SELECT count() FROM (SELECT toNullable(number) AS k FROM numbers_mt(2e8)) AS lhs
         LEFT JOIN (SELECT number*2 AS a, number*3 AS b FROM numbers_mt(1e3)) AS rhs ON lhs.k = rhs.a OR lhs.k = rhs.b
         FORMAT Null
-        SETTINGS max_threads=8, join_algorithm='hash'
+        SETTINGS max_threads=8, join_algorithm='hash', parallel_hash_join_threshold=18446744073709551615
     </query>
 
     <!-- The same nullable shape probed through scattered blocks (index selector). -->
@@ -57,7 +57,7 @@
         SELECT * FROM (SELECT toNullable(number) AS k FROM numbers_mt(5e8)) AS lhs
         LEFT JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs USING (k)
         FORMAT Null
-        SETTINGS max_threads=8, join_algorithm='parallel_hash'
+        SETTINGS max_threads=8, join_algorithm='parallel_hash', parallel_hash_join_threshold=0
     </query>
 
     <!-- Masked shapes through scattered blocks: each shard merges the skip bytes over the
@@ -66,14 +66,14 @@
         SELECT * FROM numbers_mt(5e8) AS lhs
         LEFT JOIN (SELECT number AS k FROM numbers_mt(1e3)) AS rhs ON lhs.number = rhs.k AND (lhs.number % 2 = 0)
         FORMAT Null
-        SETTINGS max_threads=8, join_algorithm='parallel_hash'
+        SETTINGS max_threads=8, join_algorithm='parallel_hash', parallel_hash_join_threshold=0
     </query>
 
     <query>
         SELECT * FROM (SELECT toNullable(number) AS k FROM numbers_mt(5e8)) AS lhs
         LEFT JOIN (SELECT toNullable(number) AS k FROM numbers_mt(1e3)) AS rhs ON lhs.k = rhs.k AND (lhs.k % 2 = 0)
         FORMAT Null
-        SETTINGS max_threads=8, join_algorithm='parallel_hash'
+        SETTINGS max_threads=8, join_algorithm='parallel_hash', parallel_hash_join_threshold=0
     </query>
 
     <!-- Continuation chunks: a probe stopped early by max_joined_block_size_rows re-prepares
@@ -84,6 +84,6 @@
         LEFT JOIN (SELECT toNullable(number % 25) AS a, toNullable(number % 30) AS b FROM numbers(2000)) AS rhs
             ON (lhs.k = rhs.a AND lhs.cond) OR (lhs.k = rhs.b)
         FORMAT Null
-        SETTINGS max_threads=8, join_algorithm='hash', join_use_nulls=1, max_joined_block_size_rows=1024
+        SETTINGS max_threads=8, join_algorithm='hash', parallel_hash_join_threshold=18446744073709551615, join_use_nulls=1, max_joined_block_size_rows=1024
     </query>
 </test>

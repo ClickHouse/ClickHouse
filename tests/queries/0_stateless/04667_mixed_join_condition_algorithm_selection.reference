@@ -3,7 +3,7 @@ oracle_left	3	20
 fsm,hash	3	20
 partial_merge,hash	3	20
 prefer_partial_merge,hash	3	20
-fsm,parallel_hash	3	20
+fsm,hash parallel layout	3	20
 fsm,grace_hash	3	20
 auto,hash max_rows_in_join=1	3	20
 -- every kind and strictness that builds a mixed condition --
@@ -16,7 +16,7 @@ LEFT SEMI partial_merge,hash	1
 ASOF plain keeps merge	1
 -- the hash family was already correct and must stay so --
 hash	3	20
-parallel_hash	3	20
+hash parallel layout	3	20
 grace_hash	3	20
 default list	3	20
 INNER ALL fsm,hash	1	20

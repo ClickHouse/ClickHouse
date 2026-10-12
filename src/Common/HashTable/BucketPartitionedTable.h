@@ -16,6 +16,44 @@ size_t getBucketOfKey(const typename Map::key_type & key, size_t hash_value)
         return Map::getBucketFromHash(hash_value);
 }
 
+/// A `PartitionedFixedHashTable` has one buffer, allocated when the table is created. Bucket 0 counts it.
+template <typename Map>
+size_t getBucketBufferSizeInBytes(const Map & map, size_t bucket)
+{
+    if constexpr (is_partitioned_fixed_table<Map>)
+        return bucket == 0 ? map.getBufferSizeInBytes() : 0;
+    else
+        return map.impls[bucket].getBufferSizeInBytes();
+}
+
+/// True when each bucket has its own buffer, so the buckets can be freed apart. A `PartitionedFixedHashTable`
+/// has one buffer for all its buckets, and a table with one bucket has nothing to split.
+template <typename Map>
+constexpr bool has_buffer_per_bucket = !is_partitioned_fixed_table<Map> && Map::NUM_BUCKETS > 1;
+
+/// Returns false when the table has nothing to reserve: a `PartitionedFixedHashTable` has all its cells from the start.
+template <typename Map>
+bool reserveBucket(Map & map, size_t bucket, size_t num_elements)
+{
+    if constexpr (is_partitioned_fixed_table<Map>)
+        return false;
+    else
+    {
+        map.impls[bucket].reserve(num_elements);
+        return true;
+    }
+}
+
+/// Call after the last insert of a fill by bucket, before the table is read. A `TwoLevelHashTable` computes
+/// the prefix sums that `offsetInternal` needs. A `PartitionedFixedHashTable` restores its min/max bounds.
+template <typename Map>
+void finishConcurrentFill(Map & map)
+{
+    map.computeBucketPrefix();
+    if constexpr (is_partitioned_fixed_table<Map>)
+        map.restoreMinMaxOptimization();
+}
+
 /** What a caller that fills a table bucket by bucket relies on, whether the table is a `TwoLevelHashTable`
   * or a `PartitionedFixedHashTable`.
   *

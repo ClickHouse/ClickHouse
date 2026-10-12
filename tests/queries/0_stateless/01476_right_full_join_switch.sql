@@ -1,6 +1,9 @@
 SET join_algorithm = 'auto';
 SET max_bytes_in_join = 100;
 SET max_bytes_before_external_join = 0, max_bytes_ratio_before_external_join = 0; -- Auto spilling hash join has to be disabled to test switching to merge join.
+-- Parallel fill can race with `switchJoin`; keep that path covered.
+SET parallel_hash_join_threshold = 1;
+SET max_threads = 8;
 
 DROP TABLE IF EXISTS t;
 DROP TABLE IF EXISTS nr;

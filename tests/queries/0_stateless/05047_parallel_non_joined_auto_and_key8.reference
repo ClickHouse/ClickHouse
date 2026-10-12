@@ -1,0 +1,10 @@
+auto_pipeline
+4
+auto_right
+50000	25000	50000
+auto_full
+75000	50000	50000
+key8_pipeline
+4
+key8_right
+256	128	256

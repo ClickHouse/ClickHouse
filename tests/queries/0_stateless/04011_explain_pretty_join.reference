@@ -2,7 +2,7 @@ Output: id, value, id, value
 
 Join (JOIN FillRightFirst)
 │  t1[no_stats~100] ⋈ t2[no_stats~100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Cost: estimated 100.00
 │  Selectivity: estimated (NDV) 0.01
 │  Output rows: estimated 100.00
@@ -23,7 +23,7 @@ Output: id, value, id, value, id, value
 
 Join (JOIN FillRightFirst)
 │  t1[no_stats~100] ⋈ t2[no_stats~100] ⋈ t3[no_stats~100]
-│  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  Type: inner | Strictness: all | Algorithm: HashJoin
 │  Cost: estimated 200.00
 │  Selectivity: estimated (NDV) 0.01
 │  Output rows: estimated 100.00
@@ -34,7 +34,7 @@ Join (JOIN FillRightFirst)
 │  Input (right): id, value
 ├──Join (JOIN FillRightFirst)
 │  │  t1[no_stats~100] ⋈ t2[no_stats~100]
-│  │  Type: inner | Strictness: all | Algorithm: ConcurrentHashJoin
+│  │  Type: inner | Strictness: all | Algorithm: HashJoin
 │  │  Cost: estimated 100.00
 │  │  Selectivity: estimated (NDV) 0.01
 │  │  Output rows: estimated 100.00

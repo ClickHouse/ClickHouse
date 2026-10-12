@@ -8,3 +8,7 @@
 4
 --- Sequential: NonJoinedBlocksTransform count ---
 0
+03765_full_serial	1	0
+03765_full_parallel	0	1
+03765_right_serial	1	0
+03765_right_parallel	0	1

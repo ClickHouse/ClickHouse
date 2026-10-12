@@ -200,6 +200,10 @@ public:
     /// Returns true if no data to join with.
     virtual bool alwaysReturnsEmptySet() const = 0;
 
+    /// For callers that must not block, especially `IProcessor::prepare`. Returns nullopt when
+    /// the answer would need a wait. The caller then skips whatever the answer was gating.
+    virtual std::optional<bool> tryAlwaysReturnsEmptySet() const { return alwaysReturnsEmptySet(); }
+
     /// StorageJoin/Dictionary is already filled. No need to call addBlockToJoin.
     /// Different query plan is used for such joins.
     virtual bool isFilled() const { return pipelineType() == JoinPipelineType::FilledRight; }
@@ -245,7 +249,6 @@ public:
     virtual bool preservesLeftBlockOrder() const { return false; }
 
     /// Notify the join that the query plan requires left-side read-in-order preservation.
-    /// SpillingHashJoin overrides this to forbid switching to GraceHashJoin at runtime.
     virtual void keepLeftPipelineInOrder() {}
 
     /// Spilling under memory pressure, driven by `MemorySpillScheduler`. Asked once while the pipeline is

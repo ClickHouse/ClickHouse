@@ -1,4 +1,4 @@
 single-thread hash
 3000000
-concurrent parallel_hash
+parallel layout
 3000000

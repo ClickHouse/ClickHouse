@@ -272,7 +272,7 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
 }
 
 /// `join_algorithm` is an ordered preference list, and these entries produce a join for any step that reaches
-/// them: their branch in `chooseJoinAlgorithm` ends in an unconditional `HashJoin` / `ConcurrentHashJoin` /
+/// them: their branch in `chooseJoinAlgorithm` ends in an unconditional `HashJoin` or
 /// `SpillingHashJoin` (`src/Planner/PlannerJoins.cpp`, `src/Interpreters/ExpressionAnalyzer.cpp`). Whatever follows
 /// such an entry in the list is never consulted, on this side or on an older peer, which walks the same list with
 /// the same order. Note that `prefer_partial_merge` stops the walk, but not always with a hash join: it tries
@@ -281,7 +281,6 @@ JoinSettings::JoinSettings(const QueryPlanSerializationSettings & settings, UInt
 static bool alwaysProducesJoin(JoinAlgorithm algorithm)
 {
     return algorithm == JoinAlgorithm::HASH
-        || algorithm == JoinAlgorithm::PARALLEL_HASH
         || algorithm == JoinAlgorithm::PREFER_PARTIAL_MERGE
         || algorithm == JoinAlgorithm::DEFAULT
         || algorithm == JoinAlgorithm::AUTO;

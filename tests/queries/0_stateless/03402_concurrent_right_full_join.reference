@@ -32,7 +32,7 @@ Positions: 4 0 1
         Join (JOIN FillRightFirst)
         Type: RIGHT
         Strictness: ALL
-        Algorithm: ConcurrentHashJoin
+        Algorithm: HashJoin
         Clauses: [(__table1.id) = (__table2.id)]
           Expression (Left Pre Join Actions)
           Actions: INPUT : 0 -> __table1.id UInt32 : 0
@@ -83,9 +83,9 @@ right_all_large
 full_all_large
 15500	500	0
 Consistency of results with HashJoin for multiple conditions
-hash	200
-parallel_hash	200
-hash right-only	200
+serial	200
+parallel	200
+serial right-only	200
 parallel right-only	200
-hash	400
-parallel_hash	400
+serial	400
+parallel	400

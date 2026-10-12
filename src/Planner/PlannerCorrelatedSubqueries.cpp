@@ -1574,13 +1574,9 @@ QueryPlan buildLogicalJoinForLateral(
     /// Reordering protection for the buffered case whose layout was pinned above.
     if (uses_in_memory_buffer)
     {
-        auto & join_algorithms = result_join->getJoinSettings().join_algorithms;
-        /// Remove algorithms that are not compatible with in-memory buffering
-        /// of correlated subquery input: the input stream must be fully evaluated
-        /// before the lateral subquery side is executed.
-        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
-        if (join_algorithms.empty())
-            join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
+        /// Only a hash join is compatible with in-memory buffering of correlated subquery input:
+        /// the input stream must be fully evaluated before the lateral subquery side is executed.
+        result_join->getJoinSettings().join_algorithms = {JoinAlgorithm::HASH};
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }
@@ -1686,17 +1682,10 @@ QueryPlan buildLogicalJoin(
     /// Reordering protection for the buffered case whose layout was forced to JoinKind::Right above.
     if (uses_in_memory_buffer)
     {
-        auto & join_algorithms = result_join->getJoinSettings().join_algorithms;
-        /// Remove algorithms that are not compatible with in-memory buffering
-        /// of correlated subquery input.
-        /// We must be sure that the input stream is fully evaluated
-        /// before the correlated subquery is executed.
-        std::erase_if(join_algorithms, [](auto join_algorithm) { return join_algorithm != JoinAlgorithm::HASH && join_algorithm != JoinAlgorithm::PARALLEL_HASH; });
-        /// This JOIN is an internal decorrelation detail, so the user-facing `join_algorithm` list must not
-        /// decide whether it can run at all: with `auto` or a merge-only list nothing would survive the filter
-        /// and `chooseJoinAlgorithm` would throw `NOT_IMPLEMENTED`. Force the compatible algorithms instead.
-        if (join_algorithms.empty())
-            join_algorithms = {JoinAlgorithm::HASH, JoinAlgorithm::PARALLEL_HASH};
+        /// Only a hash join is compatible with in-memory buffering of correlated subquery input: the input stream
+        /// must be fully evaluated before the correlated subquery is executed. This JOIN is an internal decorrelation
+        /// detail, so the user-facing `join_algorithm` list does not decide how it runs.
+        result_join->getJoinSettings().join_algorithms = {JoinAlgorithm::HASH};
         /// Forbid reordering of this JOIN step. Child subplans still can be reordered and optimized.
         result_join->setOptimized();
     }

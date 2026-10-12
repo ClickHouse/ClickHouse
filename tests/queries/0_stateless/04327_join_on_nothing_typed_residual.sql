@@ -18,7 +18,7 @@ SELECT 1 AS x FROM t1 tx ARRAY JOIN [] AS a0 LEFT JOIN t1 ON t1.c0 = a0 AND t1.c
 SELECT 1 AS x FROM t1 tx ARRAY JOIN [] AS a0 LEFT JOIN t1 ON t1.c0 = a0 AND t1.c0 <> a0 AND t1.c0 > 0;
 -- INNER join
 SELECT 1 AS x FROM t1 tx ARRAY JOIN [] AS a0 INNER JOIN t1 ON t1.c0 = a0 AND t1.c0 <> a0;
--- ConcurrentHashJoin path (issue #78761 stack trace)
+-- HashJoin path (issue #78761 stack trace)
 SELECT 1 AS x FROM t1 tx ARRAY JOIN [] AS a0 LEFT JOIN t1 ON t1.c0 = a0 AND t1.c0 <> a0 SETTINGS max_threads = 4;
 
 -- non-empty ARRAY JOIN keeps producing correct results

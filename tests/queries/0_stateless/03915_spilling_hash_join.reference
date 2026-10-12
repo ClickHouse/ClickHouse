@@ -1,5 +1,4 @@
 Algorithm: SpillingHashJoin(HashJoin)
-Algorithm: SpillingHashJoin(ConcurrentHashJoin)
 inner join small
 100	49500
 left join small
@@ -20,29 +19,29 @@ right join spill non-joined
 10000	5000	5000
 full join spill non-joined
 15000	5000	5000	5000
-concurrent inner join small
+parallel inner join small
 100	49500
-concurrent left join small
+parallel left join small
 100	1225
-concurrent right join small
+parallel right join small
 100
-concurrent full join small
+parallel full join small
 150
-concurrent right join non-joined
+parallel right join non-joined
 10000	5000	5000
-concurrent full join non-joined
+parallel full join non-joined
 15000	5000	5000	5000
-concurrent inner join spill
+parallel inner join spill
 10000	49995000
-concurrent left join spill
+parallel left join spill
 10000
-concurrent right join spill
+parallel right join spill
 10000
-concurrent full join spill
+parallel full join spill
 15000
-concurrent right join spill non-joined
+parallel right join spill non-joined
 10000	5000	5000
-concurrent full join spill non-joined
+parallel full join spill non-joined
 15000	5000	5000	5000
 profile events
 query_03915_01	0	0	0	0	0

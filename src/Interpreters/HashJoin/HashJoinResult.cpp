@@ -1,7 +1,14 @@
 #include <Interpreters/HashJoin/HashJoinResult.h>
 #include <Interpreters/castColumn.h>
 #include <Columns/ColumnReplicated.h>
+#include <Common/ElapsedTimeProfileEventIncrement.h>
+#include <Common/ProfileEvents.h>
 #include <Common/memcpySmall.h>
+
+namespace ProfileEvents
+{
+extern const Event HashJoinProbeMicroseconds;
+}
 
 namespace DB
 {
@@ -407,6 +414,8 @@ void HashJoinResult::setNextBlock(ScatteredBlock && block)
 
 IJoinResult::JoinResultBlock HashJoinResult::next()
 {
+    ProfileEventTimeIncrement<Microseconds> probe_watch(ProfileEvents::HashJoinProbeMicroseconds);
+
     ScatteredBlock * next_block_ptr = next_scattered_block ? &next_scattered_block.value() : nullptr;
     if (current_row_state)
     {

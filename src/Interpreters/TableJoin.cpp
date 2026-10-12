@@ -73,6 +73,7 @@ namespace Setting
     extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_rows_in_join;
+    extern const SettingsBool joined_block_split_single_row;
     extern const SettingsBool parallel_non_joined_rows_processing;
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
@@ -86,6 +87,7 @@ namespace Setting
     extern const SettingsBool enable_join_fixed_hash_table_conversion;
     extern const SettingsBool enable_join_key_only_hash_tables;
     extern const SettingsBool join_runtime_filter_from_fixed_hash_table;
+    extern const SettingsUInt64 parallel_hash_join_threshold;
 }
 
 namespace ErrorCodes
@@ -207,15 +209,17 @@ std::string TableJoin::formatClausesPretty(const TableJoin::Clauses & clauses, c
     return fmt::format("{}", fmt::join(res, " OR "));
 }
 
-TableJoin::TableJoin(
-    const Settings & settings, JoinAnalyzeMode analyze_mode_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
-    : size_limits(SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
+TableJoin::TableJoin(const Settings & settings, JoinAnalyzeMode analyze_mode_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
+    : size_limits(
+          SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
     , default_max_bytes(settings[Setting::default_max_bytes_in_join])
     , join_use_nulls(settings[Setting::join_use_nulls])
     , cross_join_min_rows_to_compress(settings[Setting::cross_join_min_rows_to_compress])
     , cross_join_min_bytes_to_compress(settings[Setting::cross_join_min_bytes_to_compress])
     , max_joined_block_rows(settings[Setting::max_joined_block_size_rows])
     , max_joined_block_bytes(settings[Setting::max_joined_block_size_bytes])
+    , joined_block_split_single_row(settings[Setting::joined_block_split_single_row])
+    , parallel_non_joined_rows_processing(settings[Setting::parallel_non_joined_rows_processing])
     , join_algorithms(settings[Setting::join_algorithm])
     , partial_merge_join_rows_in_right_blocks(settings[Setting::partial_merge_join_rows_in_right_blocks])
     , partial_merge_join_left_table_buffer_bytes(settings[Setting::partial_merge_join_left_table_buffer_bytes])
@@ -235,6 +239,7 @@ TableJoin::TableJoin(
     , enable_join_fixed_hash_table_conversion(settings[Setting::enable_join_fixed_hash_table_conversion])
     , enable_join_key_only_hash_tables(settings[Setting::enable_join_key_only_hash_tables])
     , join_runtime_filter_from_fixed_hash_table(settings[Setting::join_runtime_filter_from_fixed_hash_table])
+    , parallel_hash_join_threshold(settings[Setting::parallel_hash_join_threshold])
     , max_memory_usage(settings[Setting::max_memory_usage])
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -270,6 +275,7 @@ TableJoin::TableJoin(const JoinSettings & settings, bool join_use_nulls_, Volume
     , enable_join_fixed_hash_table_conversion(settings.enable_join_fixed_hash_table_conversion)
     , enable_join_key_only_hash_tables(settings.enable_join_key_only_hash_tables)
     , join_runtime_filter_from_fixed_hash_table(settings.join_runtime_filter_from_fixed_hash_table)
+    , parallel_hash_join_threshold(settings.parallel_hash_join_threshold)
     , max_memory_usage(settings.max_bytes_in_join)
     , tmp_volume(tmp_volume_)
     , tmp_data(tmp_data_)
@@ -1249,11 +1255,6 @@ void TableJoin::resetToCross()
     this->table_join.kind = JoinKind::Cross;
 }
 
-bool TableJoin::allowParallelHashJoin() const
-{
-    return ::DB::allowParallelHashJoin(join_algorithms, kind(), isSpecialStorage(), oneDisjunct());
-}
-
 ActionsDAG TableJoin::createJoinedBlockActions(ContextPtr context, PreparedSetsPtr prepared_sets) const
 {
     ASTPtr expression_list = rightKeysList();
@@ -1271,6 +1272,17 @@ bool TableJoin::isEnabledAlgorithm(const std::vector<JoinAlgorithm> & join_algor
     if (join_algorithm_is_default && std::ranges::find(default_algorithms, val) != default_algorithms.end())
         return true;
     return std::ranges::find(join_algorithms, val) != join_algorithms.end();
+}
+
+bool TableJoin::supportsMultipleDisjuncts(const std::vector<JoinAlgorithm> & join_algorithms)
+{
+    return isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH) || isEnabledAlgorithm(join_algorithms, JoinAlgorithm::AUTO);
+}
+
+void TableJoin::checkMultipleDisjunctsSupported() const
+{
+    if (!oneDisjunct() && !supportsMultipleDisjuncts(join_algorithms))
+        throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Only `hash` join supports multiple ORs for keys in JOIN ON section");
 }
 
 size_t TableJoin::getMaxMemoryUsage() const
@@ -1308,19 +1320,36 @@ TemporaryDataOnDiskScopePtr TableJoin::getTempDataOnDisk()
         .spilled_to_disk_operator = "join"}, temporary_files_buffer_size, temporary_files_codec);
 }
 
-bool allowParallelHashJoin(
+namespace
+{
+
+/// The kinds whose non-joined-rows handling can cope with keys spread over several buckets.
+/// Strictness is not a separate gate: SEMI / ANTI / ASOF use the same kind (LEFT / INNER / RIGHT / FULL).
+bool parallelLayoutKindSupported(JoinKind kind)
+{
+    return kind == JoinKind::Left || kind == JoinKind::Inner || kind == JoinKind::Right || kind == JoinKind::Full;
+}
+
+}
+
+bool allowHashJoinCacheKeys(
     const std::vector<JoinAlgorithm> & join_algorithms,
     JoinKind kind,
     bool is_special_storage,
     bool one_disjunct)
 {
-    if (std::ranges::none_of(join_algorithms, [](auto algo) { return algo == JoinAlgorithm::PARALLEL_HASH; }))
+    if (!TableJoin::isEnabledAlgorithm(join_algorithms, JoinAlgorithm::HASH))
         return false;
-    if (kind != JoinKind::Left && kind != JoinKind::Inner
-        && kind != JoinKind::Right && kind != JoinKind::Full)
+    if (!parallelLayoutKindSupported(kind))
         return false;
     if (is_special_storage || !one_disjunct)
         return false;
     return true;
+}
+
+bool TableJoin::preferParallelHashLayout(std::optional<UInt64> rhs_size_estimation) const
+{
+    return parallelLayoutKindSupported(kind())
+        && (!rhs_size_estimation || *rhs_size_estimation >= parallel_hash_join_threshold);
 }
 }

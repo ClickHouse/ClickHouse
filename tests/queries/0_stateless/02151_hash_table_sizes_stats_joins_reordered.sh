@@ -8,10 +8,10 @@
 # such as `t1 JOIN t2 JOIN t3 JOIN t4` with the optimizer reordering tables would skip
 # the per-join HashTablesStatistics lookup for any join whose right child was constructed
 # inside `chooseJoinOrder`, because the pre-walk cache_keys map only had entries for the
-# original tree's nodes. The result: even after a parallel_hash run populated the cache,
+# original tree's nodes. The result: even after an earlier run populated the cache,
 # subsequent runs could not preallocate the right-side hash table for those joins.
 #
-# The test forces parallel_hash, runs a 4-way join twice, and asserts that ALL right-side
+# The test runs a 4-way join twice with the parallel layout and asserts that ALL right-side
 # joins in the second run preallocate (i.e., HashJoinPreallocatedElementsInHashTables > 0).
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -20,6 +20,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 opts=(
     --enable_analyzer=1
+    # `parallel_hash` is an alias of `hash`. Each join builds the parallel layout because its right
+    # side is larger than the default `parallel_hash_join_threshold`.
     --join_algorithm='parallel_hash'
     # `query_plan_join_swap_table=true` forces every join to swap sides during reorder so the
     # right children are reorder-built sub-join nodes (rather than the left-deep originals).

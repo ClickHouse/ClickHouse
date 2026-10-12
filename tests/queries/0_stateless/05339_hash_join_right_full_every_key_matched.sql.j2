@@ -91,7 +91,9 @@ SETTINGS join_algorithm = 'hash';
 {% endfor %}
 
 -- How many passes over the hash table were skipped and done: none done when every right key matched, one done (by
--- the part that holds the unmatched key) otherwise, none of either with per-row flags.
+-- the part that holds the unmatched key) otherwise, none of either with per-row flags. With
+-- `parallel_hash_join_threshold = 0`, `hash` builds the parallel layout like `parallel_hash`. Its fixed-key map (`u8`,
+-- `u16`, and `u64` with the conversion) is one flat table, so when a key is unmatched each of the 4 streams walks it.
 SYSTEM FLUSH LOGS query_log;
 SELECT substring(log_comment, 8),
     ProfileEvents['JoinNonJoinedHashTableScansSkipped'] > 0,
