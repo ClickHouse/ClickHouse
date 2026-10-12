@@ -21,7 +21,7 @@ done
 $CLICKHOUSE_CLIENT --query "DROP TABLE ts"
 
 echo "metrics request"
-user_agent="metrics_request_${CLICKHOUSE_DATABASE}"
+user_agent="metrics_request_${CLICKHOUSE_DATABASE}_$(random_str 10)"
 $CLICKHOUSE_CURL -sS -A "$user_agent" "$CLICKHOUSE_URL_PROMETHEUS" > /dev/null
 # Retry, because the log entry may reach system.text_log only after the response.
 for _ in {1..60}; do
