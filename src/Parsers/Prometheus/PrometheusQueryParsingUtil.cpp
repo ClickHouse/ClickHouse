@@ -8,7 +8,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/readDecimalText.h>
 #include <IO/readIntText.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 
 namespace DB
