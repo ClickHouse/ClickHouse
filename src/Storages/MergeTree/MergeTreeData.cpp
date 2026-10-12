@@ -1139,6 +1139,19 @@ static std::exception_ptr tryEvaluateIndexExpression(const IndexDescription & in
     return {};
 }
 
+static std::exception_ptr tryCheckAliasesNotCapturedByLambda(const IndexDescription & index, const ColumnsDescription & columns)
+{
+    try
+    {
+        IndexDescription::checkAliasesNotCapturedByLambda(index.definition_ast, columns);
+    }
+    catch (...)
+    {
+        return std::current_exception();
+    }
+    return {};
+}
+
 void MergeTreeData::checkProperties(
     const StorageInMemoryMetadata & new_metadata,
     const StorageInMemoryMetadata & old_metadata,
@@ -6765,6 +6778,29 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
     checkTTLExpressions(new_metadata, old_metadata);
     if (!is_secondary_replay)
         checkColumnTTLsForKeyColumns(new_metadata, old_metadata);
+
+    /// An index already captured before the ALTER is accepted unless the ALTER redeclares it.
+    if (!is_secondary_replay)
+    {
+        for (const auto & index : new_metadata.secondary_indices)
+        {
+            /// A generated index never refuses the statement, see checkProperties.
+            if (index.isImplicitlyCreated())
+                continue;
+            auto failure = tryCheckAliasesNotCapturedByLambda(index, new_metadata.columns);
+            if (!failure)
+                continue;
+            const bool redeclared = std::ranges::any_of(commands, [&](const AlterCommand & command)
+            {
+                return command.type == AlterCommand::DROP_INDEX && !command.clear && !command.partition
+                    && command.index_name == index.name;
+            });
+            const bool inherited = !redeclared && old_metadata.secondary_indices.has(index.name)
+                && tryCheckAliasesNotCapturedByLambda(old_metadata.secondary_indices.getByName(index.name), old_metadata.columns);
+            if (!inherited)
+                std::rethrow_exception(failure);
+        }
+    }
 
     /// The TTL is analyzed while the table is loaded, when the table itself cannot be read yet.
     const bool modifies_ttl = std::ranges::any_of(commands, [](const AlterCommand & command) { return command.type == AlterCommand::MODIFY_TTL; });

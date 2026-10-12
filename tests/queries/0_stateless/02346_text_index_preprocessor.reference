@@ -231,8 +231,7 @@ Baz	3
 1
 1
 0
--- The same capture in a non-text index expression is still accepted
-0
+-- The same capture in a non-text index expression is rejected too
 -- Preprocessor referencing chained ALIAS columns (a -> b -> s)
 1
 1

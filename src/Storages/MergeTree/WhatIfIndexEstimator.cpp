@@ -3,6 +3,7 @@
 #include <Access/Common/AccessFlags.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/InterpreterHypotheticalObjectQuery.h>
 #include <Interpreters/InterpreterSelectQueryAnalyzer.h>
 #include <Interpreters/JoinedTables.h>
 #include <Parsers/ASTSelectQuery.h>
@@ -218,6 +219,7 @@ WhatIfCandidateResult evaluateIndex(
             /* is_implicitly_created = */ false,
             /* escape_filenames = */ true,
             context);
+        checkHypotheticalIndexAliasesNotCaptured(index_desc.definition_ast, metadata->getColumns(), context);
     }
     catch (const Exception &)
     {

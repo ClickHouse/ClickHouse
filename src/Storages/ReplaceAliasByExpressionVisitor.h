@@ -37,6 +37,8 @@ public:
         NameSet private_aliases;
         /// Reject an ALIAS whose expression would be captured by an enclosing lambda parameter
         bool reject_lambda_capture = false;
+        /// Reject an ALIAS whose compound name starts with an enclosing lambda parameter (`t.v` in `t -> t.v`)
+        bool reject_lambda_parameter_prefix = false;
     };
 
     static void visit(ASTPtr & ast, Data &);

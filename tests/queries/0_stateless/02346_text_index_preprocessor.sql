@@ -707,9 +707,8 @@ SELECT count() FROM tab WHERE hasToken(s, 'missing');
 
 DROP TABLE tab;
 
-SELECT '-- The same capture in a non-text index expression is still accepted';
--- The rejection above is scoped to the text index `preprocessor` / `postprocessor` arguments.
--- Index expressions accepted such definitions before, so `ATTACH` must keep working for them.
+SELECT '-- The same capture in a non-text index expression is rejected too';
+-- A stored table that has one still loads, see 05325_skip_index_alias_lambda_capture.
 
 CREATE TABLE tab
 (
@@ -718,13 +717,7 @@ CREATE TABLE tab
     a String ALIAS x,
     INDEX bf arrayMap(x -> lower(a), arr) TYPE bloom_filter(0.01) GRANULARITY 1
 )
-ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_suspicious_indices = 1;
-
-DETACH TABLE tab;
-ATTACH TABLE tab;
-SELECT count() FROM tab;
-
-DROP TABLE tab;
+ENGINE = MergeTree ORDER BY tuple() SETTINGS allow_suspicious_indices = 1; -- { serverError BAD_ARGUMENTS }
 
 SELECT '-- Preprocessor referencing chained ALIAS columns (a -> b -> s)';
 
