@@ -167,7 +167,7 @@ namespace Setting
     extern const SettingsUInt64 max_ast_depth;
     extern const SettingsUInt64 max_ast_elements;
     extern const SettingsString polyglot_dialect;
-    extern const SettingsBool allow_experimental_logsql_dialect;
+    extern const SettingsBool enable_logsql_dialect;
     extern const SettingsString logsql_database;
     extern const SettingsString logsql_table;
     extern const SettingsString logsql_time_column;
@@ -717,7 +717,7 @@ ASTPtr ClientBase::parseQuery(const char *& pos, const char * end, const Setting
             parser = std::make_unique<ParserLogsQLQuery>(
                 settings[Setting::logsql_database], settings[Setting::logsql_table],
                 settings[Setting::logsql_time_column], settings[Setting::logsql_message_column],
-                raw_query_begin ? raw_query_begin : pos, end, settings[Setting::allow_experimental_logsql_dialect], settings[Setting::max_parser_depth],
+                raw_query_begin ? raw_query_begin : pos, end, settings[Setting::enable_logsql_dialect], settings[Setting::max_parser_depth],
                 settings[Setting::max_query_size]);
         else if (dialect == Dialect::trino)
             parser = std::make_unique<ParserTrinoQuery>(max_length, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks], end, settings[Setting::enable_trino_dialect], settings[Setting::allow_settings_after_format_in_insert], settings[Setting::implicit_select]);
@@ -1653,7 +1653,7 @@ void ClientBase::pinOutboundDialect(const String & outbound_query)
     {
         /// The text is sent exactly as the client accepted it. A query-local `SETTINGS dialect = ...`
         /// (or `SETTINGS enable_json_ast_dialect = ...`, `SETTINGS enable_trino_dialect = ...`,
-        /// `SETTINGS allow_experimental_logsql_dialect = ...`) has already
+        /// `SETTINGS enable_logsql_dialect = ...`) has already
         /// been folded into the client context by `InterpreterSetQuery::applySettingsFromQuery`, but it must
         /// not change how this very query text is parsed on the other side - it only applies to the
         /// statements that follow it. Only a value the query itself changed is restored (the others are
@@ -1666,7 +1666,7 @@ void ClientBase::pinOutboundDialect(const String & outbound_query)
         if (current_query_parse_trino_gate)
             client_context->setSetting("enable_trino_dialect", *current_query_parse_trino_gate);
         if (current_query_parse_logsql_gate)
-            client_context->setSetting("allow_experimental_logsql_dialect", *current_query_parse_logsql_gate);
+            client_context->setSetting("enable_logsql_dialect", *current_query_parse_logsql_gate);
         return;
     }
 
@@ -2003,6 +2003,25 @@ void ClientBase::receiveResult(ASTPtr parsed_query, Int32 signals_before_stop, b
 
                         cancelQuery();
                     }
+                }
+            }
+
+            /// The output format may write in a background thread (squashing in `Pretty` formats). If that
+            /// write has failed (for example, the output pipe is broken), stop now: the query may have
+            /// produced all of its output already, and the next write would happen only at its end.
+            /// Handle it like any other local format error: cancel the query on the server and keep
+            /// receiving packets until the end, otherwise the query keeps running on the server.
+            if (output_format && !local_format_error)
+            {
+                try
+                {
+                    output_format->checkBackgroundError();
+                }
+                catch (...)
+                {
+                    local_format_error = std::make_exception_ptr(
+                        LocalFormatError(getCurrentExceptionMessageAndPattern(print_stack_trace), getCurrentExceptionCode()));
+                    sendCancel(local_format_error);
                 }
             }
 
@@ -3019,7 +3038,7 @@ void ClientBase::processParsedSingleQuery(
                 }
             }
             client_context->setSettings(old_settings);
-            connection->setFormatSettings(getFormatSettings(client_context));
+            connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         });
         /// Capture whether this query was parsed via the `clickhouse_json` dialect or a SQL `SET` escape *before* applying any
         /// in-query `SET` (which may change `dialect`/`enable_json_ast_dialect`). The outbound
@@ -3033,7 +3052,7 @@ void ClientBase::processParsedSingleQuery(
         const Field parse_dialect = client_context->getSettingsRef().get("dialect");
         const Field parse_json_ast_gate = client_context->getSettingsRef().get("enable_json_ast_dialect");
         const Field parse_trino_gate = client_context->getSettingsRef().get("enable_trino_dialect");
-        const Field parse_logsql_gate = client_context->getSettingsRef().get("allow_experimental_logsql_dialect");
+        const Field parse_logsql_gate = client_context->getSettingsRef().get("enable_logsql_dialect");
         InterpreterSetQuery::applySettingsFromQuery(parsed_query, client_context);
         /// Remember only the values this query's own `SETTINGS` clause changed: those are pinned back for
         /// the outbound query. A setting the query left alone is not pinned, so what
@@ -3047,8 +3066,7 @@ void ClientBase::processParsedSingleQuery(
         current_query_parse_dialect = changed_by_query("dialect", parse_dialect);
         current_query_parse_json_ast_gate = changed_by_query("enable_json_ast_dialect", parse_json_ast_gate);
         current_query_parse_trino_gate = changed_by_query("enable_trino_dialect", parse_trino_gate);
-        current_query_parse_logsql_gate = changed_by_query("allow_experimental_logsql_dialect", parse_logsql_gate);
-        connection->setFormatSettings(getFormatSettings(client_context));
+        current_query_parse_logsql_gate = changed_by_query("enable_logsql_dialect", parse_logsql_gate);
 
         /// Deliberately without a round trip: this runs before every query. The only case that needs
         /// the stronger check is a session that continues after a failed query - the protocol can be
@@ -3059,6 +3077,7 @@ void ClientBase::processParsedSingleQuery(
         else if (!connection->checkConnectedWithoutRoundTrip())
             connect();
 
+        connection->setFormatSettings(getNativeWireFormatSettings(client_context));
         applySettingsFromServerIfNeeded(); // after connect() and applySettingsFromQuery()
 
         /// With `use_client_time_zone`, DateTime string literals must be interpreted in the client time
