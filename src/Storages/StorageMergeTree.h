@@ -292,6 +292,9 @@ private:
     UInt64 getCurrentMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
     UInt64 getNextMutationVersion(UInt64 data_version, std::unique_lock<std::mutex> & /* currently_processing_in_background_mutex_lock */) const;
 
+    /// Whether none of `mutation_ids` was removed from `current_mutations_by_version`, e.g. by `KILL MUTATION`.
+    bool areMutationsRegistered(const Strings & mutation_ids) const;
+
     /// A merge writes its result with the column names of the current metadata, so it materializes
     /// every pending metadata mutation (`RENAME COLUMN`, `DROP COLUMN`) by itself. Returns the
     /// mutation version the result part has to carry so that those mutations are not applied to it a
