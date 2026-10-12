@@ -1920,6 +1920,10 @@ bool BackupImpl::tryRemoveAllFiles() noexcept
                 /// Their `data_file_name` is empty, which would otherwise resolve to the backup root.
                 if (!file_info.data_file_name.empty())
                     files_to_remove.push_back(file_info.data_file_name);
+                /// Copies are materialized next to the data file, so a failure after copying
+                /// (e.g. in a durability fsync) must not leave them behind.
+                for (const auto & data_file_copy : file_info.data_file_copies)
+                    files_to_remove.push_back(data_file_copy);
             });
         }
 
