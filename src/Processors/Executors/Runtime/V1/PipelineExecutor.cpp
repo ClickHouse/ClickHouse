@@ -401,6 +401,10 @@ void PipelineExecutor::executeStepImpl(size_t thread_num, WorkloadResources && r
                     cancel(IProcessor::CancelReason::Exception);
                 }
 
+                /// Release the buffers of `updateNode` now if they have grown too large,
+                /// because this thread may wait for the next task for a long time.
+                update_node_buffers.reset();
+
                 /// The queues are drained by `pushTasks` but keep their capacity; release it if they have grown too large.
                 bool release_queues = queue.size() + async_queue.size() > ExecutingGraph::UpdateNodeBuffers::max_kept_capacity;
 
