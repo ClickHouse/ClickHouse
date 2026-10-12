@@ -266,6 +266,27 @@ OPTIONS_TO_TEST_RUNNER_ARGUMENTS = {
     "targeted": "--flaky-check --no-self-parallel",
 }
 
+
+AUTOPR_ARGUMENT = "--autopr"
+
+
+def parallel_replicas_job_runs_autopr(sha):
+    """Whether this run of a `ParallelReplicas` job swaps in the automatic parallel replicas profile.
+
+    `automatic_parallel_replicas_mode` = 1 is the only mode that runs the cost model and replaces the
+    plan with the parallel-replicas one. The settings randomizer only ever picks 0 or 2, and mode 2
+    collects statistics without ever switching, so nothing else gives the plan rewrite broad
+    coverage. The `ParallelReplicas` jobs therefore take the automatic mode every second run instead
+    of it getting jobs of its own.
+
+    Keyed off the commit rather than the clock so that a run is reproducible: the same commit always
+    picks the same mode, and which mode ran is reported in the job's own result line.
+    """
+    if not sha:
+        return False
+    return int(sha[:8], 16) % 2 == 1
+
+
 def allow_oversubscription(options, test_options, is_flaky_check, is_targeted_check):
     """Whether this job may run more test workers than the runner has cores.
 
@@ -552,7 +573,7 @@ def main():
             is_database_replicated = True
         if "SharedCatalog" in to:
             is_shared_catalog = True
-        if "ParallelReplicas" in to:
+        if to == "ParallelReplicas":
             is_parallel_replicas = True
 
     is_no_stateful = "--no-stateful" in runner_options
@@ -664,6 +685,17 @@ def main():
         # per-query client settings (which broke tests that switch to readonly
         # mode mid-session). See tests/config/users.d/coverage_fault_injection_seeds.xml.
         config_installs_args += " --llvm-coverage"
+
+    # The automatic profile replaces the plain one rather than joining it: both set
+    # `enable_parallel_replicas`, `max_parallel_replicas`, `cluster_for_parallel_replicas` and
+    # `parallel_replicas_for_non_replicated_merge_tree`, so installing both would leave the values to
+    # whichever file `users.d` happens to load second.
+    autopr_mode_note = ""
+    if is_parallel_replicas and parallel_replicas_job_runs_autopr(info.sha):
+        config_installs_args = config_installs_args.replace(OPTIONS_TO_INSTALL_ARGUMENTS["ParallelReplicas"], AUTOPR_ARGUMENT)
+        runner_options += f" {AUTOPR_ARGUMENT}"
+        autopr_mode_note = "Ran with automatic parallel replicas (automatic_parallel_replicas_mode = 1)."
+        print(f"NOTE: {autopr_mode_note}")
 
     if is_shared_catalog or is_parallel_replicas:
         pass
@@ -1726,7 +1758,7 @@ def main():
         results=results,
         stopwatch=stop_watch,
         files=CH.logs + debug_files,
-        info=job_info,
+        info=" ".join(x for x in (autopr_mode_note, job_info) if x),
     )
 
     if bugfix_validation_no_repro:
