@@ -29,6 +29,7 @@
 #include <DataTypes/Serializations/ISerialization.h>
 #include <IO/WriteBufferFromString.h>
 #include <Processors/Formats/IOutputFormat.h>
+#include <Processors/Formats/Impl/ArrowBatchRowLimit.h>
 #include <Processors/Formats/Impl/ArrowBufferedStreams.h>
 #include <Processors/Formats/Impl/ArrowOpaqueColumn.h>
 #include <Processors/Port.h>
@@ -50,6 +51,7 @@
 #include <boost/iterator/zip_iterator.hpp>
 #include <boost/tuple/tuple.hpp>
 
+#include <algorithm>
 #include <limits>
 
 #define FOR_INTERNAL_NUMERIC_TYPES(M) \
@@ -92,6 +94,7 @@ namespace DB
         extern const int ILLEGAL_COLUMN;
         extern const int UNKNOWN_TYPE;
         extern const int VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE;
+        extern const int TOO_LARGE_ARRAY_SIZE;
     }
 
     class ArrowUUIDExtensionType : public arrow::ExtensionType
@@ -938,7 +941,9 @@ namespace DB
         const auto column_offsets = assert_cast<const ColumnArray::ColumnOffsets &>(column_array->getOffsetsColumn()).getPtr();
         size_t offsets_start = start > 0 ? start - 1 : 0;
         size_t offsets_view_start = start > 0 ? 1 : 0;
-        auto offsets = extractIndexes<int32_t>(column_offsets, offsets_start, end, false);
+        /// Keep the absolute offsets 64-bit: only the value rebased against `values_start` has to fit an
+        /// Arrow `List` offset, and for a range that does not start at row 0 the absolute one can be larger.
+        auto offsets = extractIndexes<Int64>(column_offsets, offsets_start, end, false);
         size_t values_start = start == 0 ? 0 : offsets[0];
         size_t values_end = offsets.empty() ? values_start : offsets.back();
 
@@ -952,7 +957,14 @@ namespace DB
         checkStatus(status, column_name, format_name);
         for (size_t i = offsets_view_start; i < offsets.size(); ++i)
         {
-            status = offsets_builder.Append(static_cast<int>(offsets[i] - values_start));
+            const Int64 rebased = offsets[i] - static_cast<Int64>(values_start);
+            if (static_cast<UInt64>(rebased) > MAX_ARROW_BUFFER_SIZE)
+                throw Exception(
+                    ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                    "Cannot write a row of {} elements of column '{}' to {}: `List` offsets are 32-bit, so a "
+                    "single row cannot hold more than {} elements",
+                    rebased, column_name, format_name, MAX_ARROW_BUFFER_SIZE);
+            status = offsets_builder.Append(static_cast<int>(rebased));
             checkStatus(status, column_name, format_name);
         }
 
@@ -1097,6 +1109,18 @@ namespace DB
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Cannot fill arrow array {} with {} data", value_type->name(), column_type->getName());
     }
 
+    /// Arrow's `Utf8`/`Binary` builders take an int32 length and their `Append` skips the copy when it is
+    /// negative, so a narrowed size would store an empty value instead of failing.
+    static void checkStringSizeFitsArrowOffsets(size_t size, const String & column_name, const String & format_name)
+    {
+        if (size > MAX_ARROW_BUFFER_SIZE)
+            throw Exception(
+                ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                "Cannot write a value of {} bytes of column {} to {}: `Utf8`/`Binary` offsets are 32-bit, so a single "
+                "value cannot be larger than {} bytes",
+                size, column_name, format_name, MAX_ARROW_BUFFER_SIZE);
+    }
+
     template <typename ColumnType, typename ArrowBuilder>
     static void fillArrowArrayWithStringColumnData(
         ColumnPtr write_column,
@@ -1121,6 +1145,7 @@ namespace DB
                 else
                 {
                     std::string_view string_ref = internal_column.getDataAt(string_i);
+                    checkStringSizeFitsArrowOffsets(string_ref.size(), write_column->getName(), format_name);
                     status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 }
                 checkStatus(status, write_column->getName(), format_name);
@@ -1131,6 +1156,7 @@ namespace DB
             for (size_t string_i = start; string_i < end; ++string_i)
             {
                 std::string_view string_ref = internal_column.getDataAt(string_i);
+                checkStringSizeFitsArrowOffsets(string_ref.size(), write_column->getName(), format_name);
                 status = builder.Append(string_ref.data(), static_cast<int>(string_ref.size()));
                 checkStatus(status, write_column->getName(), format_name);
             }
@@ -1986,47 +2012,82 @@ namespace DB
 
         for (const auto & chunk : chunks)
         {
-            /// For arrow::Table creation
+            /// Normalize once per chunk: `fillArrowArray` converts a constant or replicated column on every
+            /// call, which would otherwise repeat for each row range below.
+            Columns columns(columns_num);
+            DataTypes column_types(columns_num);
             for (size_t column_i = 0; column_i < columns_num; ++column_i)
             {
-                const ColumnWithTypeAndName & header_column = header_columns[column_i];
-                auto column_type = header_column.type;
-                auto column = chunk.getColumns()[column_i];
-
+                auto column = chunk.getColumns()[column_i]->convertToFullColumnIfConst()->convertToFullColumnIfReplicated();
+                auto column_type = header_columns[column_i].type;
                 if (!settings.low_cardinality_as_dictionary)
                 {
                     column = recursiveRemoveLowCardinality(column);
                     column_type = recursiveRemoveLowCardinality(column_type);
                 }
-
-                // Generate the unwrapped builder schema (safe for MakeBuilder)
-                bool is_column_nullable = false;
-                auto builder_type = getArrowType(
-                    column_type, column, header_column.name, format_name, settings, &is_column_nullable, true /* for_builder */);
-
-                std::unique_ptr<arrow::ArrayBuilder> array_builder;
-                arrow::Status status = MakeBuilder(ArrowMemoryPool::instance(), builder_type, &array_builder);
-                checkStatus(status, column->getName(), format_name);
-
-                std::shared_ptr<arrow::Array> arrow_array = fillArrowArray(
-                    header_column.name,
-                    column,
-                    column_type,
-                    nullptr,
-                    array_builder.get(),
-                    format_name,
-                    0,
-                    column->size(),
-                    settings,
-                    dictionary_values);
-
-                // Zero-copy cast to the extension-rich schema (handles infinite nesting)
-                auto target_type = schema->field(static_cast<int>(column_i))->type();
-                if (!arrow_array->type()->Equals(*target_type))
-                    arrow_array = checkResult(arrow_array->View(target_type), column->getName(), format_name);
-
-                table_data.at(column_i).emplace_back(std::move(arrow_array));
+                columns[column_i] = std::move(column);
+                column_types[column_i] = std::move(column_type);
             }
+
+            /// A chunk that exceeds the 32-bit Arrow offsets becomes several arrays of the ChunkedArray.
+            const size_t num_rows = chunk.getNumRows();
+            size_t offset = 0;
+            do
+            {
+                /// Two columns never share an Arrow buffer, so the smallest per-column limit applies.
+                size_t rows = num_rows - offset;
+                for (size_t column_i = 0; column_i < columns_num; ++column_i)
+                {
+                    rows = std::min(
+                        rows,
+                        maxRowsFittingOneArrowBatch(
+                            *columns[column_i],
+                            column_types[column_i],
+                            offset,
+                            offset + rows,
+                            settings.output_fixed_string_as_fixed_byte_array));
+                }
+                /// A row that does not fit on its own cannot be represented at all; the leaf encoders reject it.
+                rows = std::min(std::max<size_t>(rows, 1), num_rows - offset);
+
+                /// For arrow::Table creation
+                for (size_t column_i = 0; column_i < columns_num; ++column_i)
+                {
+                    const ColumnWithTypeAndName & header_column = header_columns[column_i];
+                    const ColumnPtr & column = columns[column_i];
+                    const DataTypePtr & column_type = column_types[column_i];
+
+                    // Generate the unwrapped builder schema (safe for MakeBuilder)
+                    bool is_column_nullable = false;
+                    auto builder_type = getArrowType(
+                        column_type, column, header_column.name, format_name, settings, &is_column_nullable, true /* for_builder */);
+
+                    std::unique_ptr<arrow::ArrayBuilder> array_builder;
+                    arrow::Status status = MakeBuilder(ArrowMemoryPool::instance(), builder_type, &array_builder);
+                    checkStatus(status, column->getName(), format_name);
+
+                    std::shared_ptr<arrow::Array> arrow_array = fillArrowArray(
+                        header_column.name,
+                        column,
+                        column_type,
+                        nullptr,
+                        array_builder.get(),
+                        format_name,
+                        offset,
+                        offset + rows,
+                        settings,
+                        dictionary_values);
+
+                    // Zero-copy cast to the extension-rich schema (handles infinite nesting)
+                    auto target_type = schema->field(static_cast<int>(column_i))->type();
+                    if (!arrow_array->type()->Equals(*target_type))
+                        arrow_array = checkResult(arrow_array->View(target_type), column->getName(), format_name);
+
+                    table_data.at(column_i).emplace_back(std::move(arrow_array));
+                }
+
+                offset += rows;
+            } while (offset < num_rows);
         }
 
         std::vector<std::shared_ptr<arrow::ChunkedArray>> columns;
