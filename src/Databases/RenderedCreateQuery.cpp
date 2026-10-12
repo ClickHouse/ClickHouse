@@ -66,13 +66,19 @@ RenderedCreateQueryPtr renderCreateQuery(const ASTPtr & ast, const RenderOptions
     if (fields.create_table_query)
         rendered->create_table_query = formatWithOptions(*ast, options);
 
-    if (fields.engine_full && ast_create && ast_create->storage)
+    if (fields.engine_full && ast_create)
     {
-        rendered->engine_full = formatWithOptions(*ast_create->storage, options);
+        /// The engine of the inner table of a materialized view is kept in `targets`, not in `storage`.
+        const ASTStorage * storage = ast_create->is_materialized_view ? ast_create->getTargetInnerEngine(ViewTarget::To) : ast_create->storage;
 
-        static const char * const extra_head = " ENGINE = ";
-        if (startsWith(rendered->engine_full, extra_head))
-            rendered->engine_full = rendered->engine_full.substr(strlen(extra_head));
+        if (storage)
+        {
+            rendered->engine_full = formatWithOptions(*storage, options);
+
+            static const char * const extra_head = " ENGINE = ";
+            if (startsWith(rendered->engine_full, extra_head))
+                rendered->engine_full = rendered->engine_full.substr(strlen(extra_head));
+        }
     }
 
     if (fields.as_select && ast_create && ast_create->select)
