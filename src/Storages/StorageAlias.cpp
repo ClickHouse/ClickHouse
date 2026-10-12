@@ -250,6 +250,16 @@ public:
         block_io = {};
     }
 
+    void onPipelineFinished() override
+    {
+        /// Stop the nested insert the same way, so that its sinks finalize their output.
+        if (isCancelled() && stage != Stage::Exception && executor)
+        {
+            executor->stopOnTimeout();
+            executor.reset();
+        }
+    }
+
     void onException(std::exception_ptr) override
     {
         if (executor)
