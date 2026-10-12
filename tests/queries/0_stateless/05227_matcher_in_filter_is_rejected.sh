@@ -130,6 +130,13 @@ SELECT 'view-qualified tuple matcher on a parameterized view', groupArray(id) FR
 SELECT 'database-qualified tuple matcher on a parameterized view', groupArray(id) FROM pv_05227(min_id = 0) SETTINGS additional_table_filters = {'pv_05227': 'greatest(${CLICKHOUSE_DATABASE}.pv_05227.tup.*) > 0'};
 SELECT count() FROM pv_05227(min_id = 0) SETTINGS additional_table_filters = {'pv_05227': 'not ignore(pv_05227.*)'}; -- { serverError BAD_ARGUMENTS }
 DROP VIEW pv_05227;
+
+-- The qualifier of a matcher inside a lambda can be a parameter of the lambda, which shadows the table.
+SELECT 'tuple matcher on a lambda parameter', groupArray(id) FROM tup_05227 SETTINGS additional_table_filters = {'tup_05227': 'arrayExists(x -> greatest(x.*) > 0, [tup])'};
+CREATE ROW POLICY OR REPLACE p_05227 ON tup_05227 USING arrayExists(x -> greatest(x.*) > 0, [tup]) TO ALL;
+SELECT 'tuple matcher on a lambda parameter in a row policy', groupArray(id) FROM tup_05227;
+DROP ROW POLICY p_05227 ON tup_05227;
+SELECT count() FROM tup_05227 SETTINGS additional_table_filters = {'tup_05227': 'arrayExists(x -> x > 0, [id]) AND NOT ignore(x.*)'}; -- { serverError BAD_ARGUMENTS }
 DROP TABLE tup_05227;
 
 -- A matcher-free filter keeps working.
@@ -140,6 +147,7 @@ SELECT a FROM t_05227 ORDER BY a LIMIT 3 SETTINGS additional_result_filter = 'a 
 -- A result column named dummy is not shadowed by the internal table of additional_result_filter.
 SELECT 'tuple matcher in a result filter';
 SELECT tuple(number, 0) AS dummy FROM numbers(3) SETTINGS additional_result_filter = 'greatest(dummy.*) > 0', analyzer_compatibility_prefer_alias_over_subcolumn = 1;
+SELECT tuple(number, 0) AS _additional_result_filter_0 FROM numbers(3) SETTINGS additional_result_filter = 'greatest(_additional_result_filter_0.*) > 0', analyzer_compatibility_prefer_alias_over_subcolumn = 1;
 
 DROP TABLE t_05227;
 DROP TABLE allowed_05227;
