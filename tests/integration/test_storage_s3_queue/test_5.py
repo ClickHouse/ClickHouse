@@ -2,6 +2,7 @@ import logging
 import time
 import uuid
 from datetime import datetime
+from multiprocessing.dummy import Pool
 
 import pytest
 from kazoo.exceptions import NoNodeError
@@ -18,6 +19,11 @@ from helpers.config_cluster import minio_secret_key
 from helpers.test_tools import assert_eq_with_retry
 
 AVAILABLE_MODES = ["unordered", "ordered", "exclusive"]
+
+# What a non-atomic metadata removal writes to its keeper_path, so a later CREATE can tell the
+# path it abandons from a node it never created. Mirrors `drop_marker` in
+# src/Storages/ObjectStorageQueue/ObjectStorageQueueMetadata.cpp.
+DROP_MARKER = b"ObjectStorageQueue: dropped"
 
 
 @pytest.fixture(autouse=True)
@@ -1512,6 +1518,546 @@ def test_select_racing_drop(started_cluster):
 
         assert node.query("SELECT 1") == "1\n"
         assert not node.contains_in_log(LOGICAL_ERROR_MARKER)
+
+
+def test_drop_when_registry_is_gone(started_cluster):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+
+    table_name = f"test_registry_gone_{uuid.uuid4().hex[:8]}"
+    db_name = f"db_{table_name}"
+    keeper_path = f"/clickhouse/test_{table_name}"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(f"CREATE DATABASE {db_name}")
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        f"{table_name}_data",
+        additional_settings={"keeper_path": keeper_path},
+        database_name=db_name,
+    )
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+    assert zk.exists(f"{keeper_path}/registry") is not None
+
+    # Another server sharing this keeper_path removes the whole subtree once it is the last one
+    # to unregister, so this is the state its drop leaves behind for a table still live here.
+    zk.delete(keeper_path, recursive=True)
+
+    node.query(f"DROP DATABASE {db_name} SYNC")
+
+    assert node.query("SELECT 1").strip() == "1"
+    assert (
+        node.query(
+            f"SELECT count() FROM system.tables WHERE database = '{db_name}'"
+        ).strip()
+        == "0"
+    )
+    assert node.contains_in_log(f"registry {keeper_path}/registry does not exist")
+
+
+def test_no_registration_while_metadata_is_removed(started_cluster):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    node2 = started_cluster.instances["instance2"]
+
+    suffix = uuid.uuid4().hex[:8]
+    db_name = f"db_drop_lock_{suffix}"
+    keeper_path = f"/clickhouse/test_drop_lock_{suffix}"
+    table_1 = f"t1_{suffix}"
+    table_2 = f"t2_{suffix}"
+
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    for instance in (node, node2):
+        instance.query(f"DROP DATABASE IF EXISTS {db_name}")
+        instance.query(f"CREATE DATABASE {db_name}")
+
+    create_table(
+        started_cluster,
+        node,
+        table_1,
+        "unordered",
+        f"data_{suffix}",
+        additional_settings={"keeper_path": keeper_path},
+        database_name=db_name,
+    )
+
+    failpoints = [
+        # The atomic removal is one version-checked request and cannot be interleaved, so the
+        # non-atomic path is what needs the lock and what this test drives.
+        "object_storage_queue_unregister_without_remove_recursive",
+        "object_storage_queue_unregister_after_drop_lock",
+        "object_storage_queue_unregister_before_final_multi",
+    ]
+    for failpoint in failpoints:
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    try:
+        drop = Pool(1).apply_async(
+            lambda: node.query(f"DROP TABLE {db_name}.{table_1} SYNC", timeout=180)
+        )
+
+        # The lock is taken and the subtree is still intact, so a registration coming from
+        # another server gets as far as the registry write and has to be refused there.
+        node.query(
+            "SYSTEM WAIT FAILPOINT object_storage_queue_unregister_after_drop_lock PAUSE",
+            timeout=60,
+        )
+        assert zk.exists(f"{keeper_path}/drop") is not None
+        assert zk.exists(f"{keeper_path}/metadata") is not None
+
+        # Registrations are stored in the data of this one node, so its bytes and version are
+        # what say whether one was added. They name tables by uuid, never by table name.
+        registry_before, stat_before = zk.get(f"{keeper_path}/registry")
+
+        error = create_table(
+            started_cluster,
+            node2,
+            table_2,
+            "unordered",
+            f"data_{suffix}",
+            additional_settings={"keeper_path": keeper_path},
+            database_name=db_name,
+            expect_error=True,
+        )
+        # A CREATE that died before it got to the registry would also return an error, so the
+        # error has to name the lock, and the registry has to be untouched.
+        assert "Coordination::Exception" in error, error
+        assert f"{keeper_path}/drop" in error, error
+        registry_after, stat_after = zk.get(f"{keeper_path}/registry")
+        assert registry_after == registry_before, (registry_before, registry_after)
+        assert stat_after.version == stat_before.version
+
+        # The registry is one of the children the sweep removes, and it removes them in
+        # unspecified batches, so "registry gone, metadata still there" is a state a real
+        # interrupted removal passes through. The live table has an ephemeral node under the
+        # registry, hence the recursive delete.
+        zk.delete(f"{keeper_path}/registry", recursive=True)
+        # A registration that has to create the registry from scratch takes the other branch of
+        # the write, and only reaches it while the metadata is still there.
+        assert zk.exists(f"{keeper_path}/metadata") is not None
+        assert zk.exists(f"{keeper_path}/registry") is None
+
+        error = create_table(
+            started_cluster,
+            node2,
+            f"{table_2}_absent",
+            "unordered",
+            f"data_{suffix}",
+            additional_settings={"keeper_path": keeper_path},
+            database_name=db_name,
+            expect_error=True,
+        )
+        message = error.split("Stack trace:")[0]
+        assert "Coordination::Exception" in error, error
+        assert f"{keeper_path}/drop" in error, error
+        # A CREATE refused for finding the path unusable never got as far as the lock, so that
+        # wording appearing here would mean this arm proves nothing about the fence.
+        assert "is not this table's" not in message, message
+        assert zk.exists(f"{keeper_path}/registry") is None
+
+        node.query(
+            "SYSTEM NOTIFY FAILPOINT object_storage_queue_unregister_after_drop_lock"
+        )
+        node.query(
+            "SYSTEM WAIT FAILPOINT object_storage_queue_unregister_before_final_multi PAUSE",
+            timeout=60,
+        )
+        # The children are gone by now and the lock is still held, so no registration can slip
+        # into a path whose contents have already been removed.
+        assert zk.exists(f"{keeper_path}/metadata") is None
+        assert zk.exists(f"{keeper_path}/drop") is not None
+
+        node.query(
+            "SYSTEM NOTIFY FAILPOINT object_storage_queue_unregister_before_final_multi"
+        )
+        drop.get(timeout=180)
+    finally:
+        for failpoint in failpoints:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    assert zk.exists(keeper_path) is None
+    # node2's refused registration must leave nothing behind in its metadata factory: the path is
+    # free now, so a table with different immutable metadata has to be able to take it.
+    create_table(
+        started_cluster,
+        node2,
+        f"{table_2}_after",
+        "ordered",
+        f"data_{suffix}",
+        additional_settings={"keeper_path": keeper_path},
+        database_name=db_name,
+    )
+    assert zk.exists(f"{keeper_path}/metadata") is not None
+    for instance in (node, node2):
+        assert instance.query("SELECT 1").strip() == "1"
+        instance.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_create_at_existing_keeper_path(started_cluster):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    suffix = uuid.uuid4().hex[:8]
+    table_name = f"t_existing_path_{suffix}"
+    dst_table_name = f"a_{table_name}_dst"
+    files_path = f"data_{suffix}"
+    keeper_path = f"/clickhouse/test_existing_path_{suffix}"
+
+    # The state an interrupted removal leaves: no children left, and the marker it wrote when it
+    # took the drop lock. `test_drop_finishes_interrupted_metadata_removal` asserts a real removal
+    # writes exactly this, so forging it here starts from a state the engine does reach.
+    zk.create(keeper_path, DROP_MARKER, makepath=True)
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={
+            "keeper_path": keeper_path,
+            "polling_min_timeout_ms": 100,
+            "polling_max_timeout_ms": 100,
+        },
+    )
+    for path in [
+        "metadata",
+        "processed",
+        "failed",
+        "processing",
+        "persistent_processing",
+    ]:
+        assert zk.exists(f"{keeper_path}/{path}") is not None, path
+
+    # A path that only got created is not proven usable, so let the table process a file.
+    create_mv(node, table_name, dst_table_name)
+    generate_random_files(started_cluster, files_path, 1, row_num=1)
+    assert_eq_with_retry(node, f"SELECT count() FROM {dst_table_name}", "1")
+
+    # An unmarked childless path carries no proof that this engine left it: `keeper_path` is taken
+    # verbatim, so it can be a barrier or placeholder node another application owns. The CREATE
+    # must refuse it and leave it exactly as it was, which is what it did before this recovery.
+    keeper_path_unmarked = f"/clickhouse/test_existing_path_unmarked_{suffix}"
+    zk.create(keeper_path_unmarked, makepath=True)
+    stat_unmarked = zk.exists(keeper_path_unmarked)
+
+    error = create_table(
+        started_cluster,
+        node,
+        f"{table_name}_unmarked",
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path_unmarked},
+        expect_error=True,
+    )
+    message = error.split("Stack trace:")[0]
+    assert "is not this table's" in message, message
+    assert keeper_path_unmarked in message, message
+    stat_after = zk.exists(keeper_path_unmarked)
+    assert stat_after is not None
+    assert stat_after.version == stat_unmarked.version
+    assert stat_after.czxid == stat_unmarked.czxid
+    assert zk.exists(f"{keeper_path_unmarked}/metadata") is None
+
+    # A path with children is not ours to touch: they can be another table's keeper_path
+    # nested under this one, or the leftovers of a drop interrupted mid-sweep.
+    keeper_path_2 = f"/clickhouse/test_existing_path_children_{suffix}"
+    zk.create(keeper_path_2, makepath=True)
+    zk.create(f"{keeper_path_2}/registry", b"")
+
+    error = create_table(
+        started_cluster,
+        node,
+        f"{table_name}_2",
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path_2},
+        expect_error=True,
+    )
+    # The stack trace names libcxx templates like `default_delete`, so the wording below is
+    # checked against the message alone.
+    message = error.split("Stack trace:")[0]
+    assert "is not this table's" in message, message
+    assert keeper_path_2 in message, message
+    # One of the states this covers is another table's live metadata, so the message must
+    # not send an operator to delete the path.
+    for advice in ["delete", "remove the path"]:
+        assert advice not in message.lower(), message
+    assert zk.exists(f"{keeper_path_2}/metadata") is None
+    assert zk.exists(f"{keeper_path_2}/registry") is not None
+
+    # A childless path holding data other than the marker was written by someone else, so the
+    # CREATE must be refused and the data must survive.
+    keeper_path_3 = f"/clickhouse/test_existing_path_data_{suffix}"
+    zk.create(keeper_path_3, b"payload")
+
+    error = create_table(
+        started_cluster,
+        node,
+        f"{table_name}_3",
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path_3},
+        expect_error=True,
+    )
+    message = error.split("Stack trace:")[0]
+    assert "is not this table's" in message, message
+    assert keeper_path_3 in message, message
+    assert zk.get(keeper_path_3)[0] == b"payload"
+    assert zk.exists(f"{keeper_path_3}/metadata") is None
+
+
+def test_drop_finishes_interrupted_metadata_removal(started_cluster):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    suffix = uuid.uuid4().hex[:8]
+    db_name = f"db_interrupted_drop_{suffix}"
+    table_name = f"t_{suffix}"
+    files_path = f"data_{suffix}"
+    keeper_path = f"/clickhouse/test_interrupted_drop_{suffix}"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(f"CREATE DATABASE {db_name}")
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        database_name=db_name,
+    )
+    assert zk.exists(f"{keeper_path}/metadata") is not None
+
+    failpoints = [
+        # The atomic removal is one request and has no window to be interrupted in, so the
+        # non-atomic path is what this test drives.
+        "object_storage_queue_unregister_without_remove_recursive",
+        "object_storage_queue_unregister_before_final_multi",
+    ]
+    for failpoint in failpoints:
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    try:
+        drop = Pool(1).apply_async(
+            lambda: node.query(f"DROP TABLE {db_name}.{table_name} SYNC", timeout=180)
+        )
+
+        node.query(
+            "SYSTEM WAIT FAILPOINT object_storage_queue_unregister_before_final_multi PAUSE",
+            timeout=60,
+        )
+        assert zk.exists(f"{keeper_path}/metadata") is None
+        assert zk.exists(keeper_path) is not None
+        assert zk.exists(f"{keeper_path}/drop") is not None
+        # Written with the lock, before anything was removed, and it is what a CREATE at this path
+        # looks for once the lock is gone.
+        assert zk.get(keeper_path)[0] == DROP_MARKER
+
+        # The removing session dies here, so its ephemeral lock is gone and the final multi
+        # cannot remove the root together with it.
+        zk.delete(f"{keeper_path}/drop")
+
+        node.query(
+            "SYSTEM NOTIFY FAILPOINT object_storage_queue_unregister_before_final_multi"
+        )
+        drop.get(timeout=180)
+    finally:
+        for failpoint in failpoints:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    # The drop finished its own removal instead of abandoning the root.
+    assert zk.exists(keeper_path) is None
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        database_name=db_name,
+    )
+    assert zk.exists(f"{keeper_path}/metadata") is not None
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+def test_drop_finishes_metadata_removal_after_retry(started_cluster):
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    suffix = uuid.uuid4().hex[:8]
+    db_name = f"db_retried_drop_{suffix}"
+    table_name = f"t_{suffix}"
+    files_path = f"data_{suffix}"
+    keeper_path = f"/clickhouse/test_retried_drop_{suffix}"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(f"CREATE DATABASE {db_name}")
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        database_name=db_name,
+    )
+    assert zk.exists(f"{keeper_path}/metadata") is not None
+
+    failpoints = [
+        "object_storage_queue_unregister_without_remove_recursive",
+        "object_storage_queue_unregister_before_final_multi",
+    ]
+    for failpoint in failpoints:
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    retries_before = int(node.count_in_log("Table is unregistered after retry"))
+
+    try:
+        drop = Pool(1).apply_async(
+            lambda: node.query(f"DROP TABLE {db_name}.{table_name} SYNC", timeout=180)
+        )
+
+        node.query(
+            "SYSTEM WAIT FAILPOINT object_storage_queue_unregister_before_final_multi PAUSE",
+            timeout=60,
+        )
+        assert zk.exists(f"{keeper_path}/metadata") is None
+        assert zk.exists(keeper_path) is not None
+        assert zk.get(keeper_path)[0] == DROP_MARKER
+
+        # The session the removal runs on dies here, so its final multi fails with a hardware
+        # error and the loop retries instead of reaching the `ZNONODE` exit. Keeper removes the
+        # ephemeral lock with the session, which is why the retry finds the root childless.
+        node.query("SYSTEM RECONNECT ZOOKEEPER")
+        for _ in range(120):
+            if zk.exists(f"{keeper_path}/drop") is None:
+                break
+            time.sleep(0.5)
+        assert zk.exists(f"{keeper_path}/drop") is None
+
+        node.query(
+            "SYSTEM NOTIFY FAILPOINT object_storage_queue_unregister_before_final_multi"
+        )
+        drop.get(timeout=180)
+    finally:
+        for failpoint in failpoints:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    # The retry saw the registry it had already swept and finished removing the root, instead of
+    # returning as if someone else had unregistered the table.
+    assert zk.exists(keeper_path) is None
+    # Without a retry the removal went through the `ZNONODE` exit, which the test above covers,
+    # and this arm would prove nothing about the branch it is here for.
+    assert int(node.count_in_log("Table is unregistered after retry")) > retries_before
+
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        database_name=db_name,
+    )
+    assert zk.exists(f"{keeper_path}/metadata") is not None
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
+
+
+@pytest.mark.parametrize("interruption", ["lost_lock", "lost_session"])
+def test_drop_keeps_a_path_it_no_longer_owns(started_cluster, interruption):
+    """Both exits that finish an interrupted removal must leave a path that is not the leftover
+    they marked: `keeper_path` is arbitrary, so by then it can hold someone else's node.
+    `lost_lock` drives the exit taken when the final multi reports the lock gone, `lost_session`
+    the one taken when the removal is retried on a new session."""
+    node = started_cluster.instances["instance_without_keeper_fault_injection"]
+    zk = started_cluster.get_kazoo_client("zoo1")
+
+    suffix = uuid.uuid4().hex[:8]
+    db_name = f"db_foreign_root_{suffix}"
+    table_name = f"t_{suffix}"
+    files_path = f"data_{suffix}"
+    keeper_path = f"/clickhouse/test_foreign_root_{interruption}_{suffix}"
+    # Anything a queue never wrote there. The removal must tell it from its own marker.
+    foreign_data = b"not ObjectStorageQueue"
+
+    node.query(f"DROP DATABASE IF EXISTS {db_name}")
+    node.query(f"CREATE DATABASE {db_name}")
+    create_table(
+        started_cluster,
+        node,
+        table_name,
+        "unordered",
+        files_path,
+        additional_settings={"keeper_path": keeper_path},
+        database_name=db_name,
+    )
+    assert zk.exists(f"{keeper_path}/metadata") is not None
+
+    failpoints = [
+        "object_storage_queue_unregister_without_remove_recursive",
+        "object_storage_queue_unregister_before_final_multi",
+    ]
+    for failpoint in failpoints:
+        node.query(f"SYSTEM ENABLE FAILPOINT {failpoint}")
+
+    retries_before = int(node.count_in_log("Table is unregistered after retry"))
+    kept_before = int(node.count_in_log(f"Did not remove {keeper_path}"))
+
+    try:
+        drop = Pool(1).apply_async(
+            lambda: node.query(f"DROP TABLE {db_name}.{table_name} SYNC", timeout=180)
+        )
+
+        node.query(
+            "SYSTEM WAIT FAILPOINT object_storage_queue_unregister_before_final_multi PAUSE",
+            timeout=60,
+        )
+        assert zk.exists(f"{keeper_path}/metadata") is None
+        assert zk.get(keeper_path)[0] == DROP_MARKER
+
+        if interruption == "lost_lock":
+            zk.delete(f"{keeper_path}/drop")
+        else:
+            # Keeper removes the ephemeral lock with the session, which is both what makes the
+            # final multi fail with a hardware error and the signal that it already has.
+            node.query("SYSTEM RECONNECT ZOOKEEPER")
+            for _ in range(120):
+                if zk.exists(f"{keeper_path}/drop") is None:
+                    break
+                time.sleep(0.5)
+            assert zk.exists(f"{keeper_path}/drop") is None
+
+        # The marked leftover is gone and an unrelated node holds the path, which is the state
+        # both exits reach for once they resume.
+        zk.delete(keeper_path)
+        zk.create(keeper_path, foreign_data)
+
+        node.query(
+            "SYSTEM NOTIFY FAILPOINT object_storage_queue_unregister_before_final_multi"
+        )
+        drop.get(timeout=180)
+    finally:
+        for failpoint in failpoints:
+            node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
+
+    # The node someone else put there is still there, with its data untouched.
+    assert zk.exists(keeper_path) is not None
+    assert zk.get(keeper_path)[0] == foreign_data
+    # Reached the exit and declined, rather than never getting there: without this the assertions
+    # above also hold when nothing tried to remove the path at all.
+    assert int(node.count_in_log(f"Did not remove {keeper_path}")) > kept_before
+    # Only a retry reports this, so it is what tells the two exits apart.
+    retries_after = int(node.count_in_log("Table is unregistered after retry"))
+    assert (retries_after > retries_before) == (interruption == "lost_session")
+
+    zk.delete(keeper_path)
+    node.query(f"DROP DATABASE IF EXISTS {db_name} SYNC")
 
 
 def test_create_or_replace_table(started_cluster):
