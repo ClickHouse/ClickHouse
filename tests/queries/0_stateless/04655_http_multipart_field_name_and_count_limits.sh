@@ -40,6 +40,11 @@ ${CLICKHOUSE_CURL} -sS -F "param_${PARAM_NAME}a=hello" \
     "${URL}&query=SELECT+%7B${PARAM_NAME}a%3AString%7D" 2>&1 | \
     grep -o 'Field name too long' | head -n1
 
+# The name of a file part (an external table) is bounded as well.
+echo 'hello' | ${CLICKHOUSE_CURL} -sS -F "${PARAM_NAME}aaaaaaa=@-;filename=data.tsv" \
+    "${URL}&query=SELECT+1" 2>&1 | \
+    grep -o 'Field name too long' | head -n1
+
 $CLICKHOUSE_CLIENT -q "DROP USER ${USER_NAME}"
 
 USER_NAME="test_multipart_fields_limit_user_${CLICKHOUSE_DATABASE}"

@@ -276,14 +276,15 @@ void HTMLForm::readMultipart(ReadBuffer & in_, PartHandler & handler)
         /// by the content size limit rather than by the structural HTTP limit.
         in.setReadingContent(true);
 
+        /// The form field name is checked for file parts as well: the name of an external table comes from here.
+        if (params.get("name", "").size() > max_field_name_size)
+            throw Poco::Net::HTMLFormException("Field name too long");
+
         if (params.has("filename"))
             handler.handlePart(header, in);
         else
         {
             std::string name = params["name"];
-            if (name.size() > max_field_name_size)
-                throw Poco::Net::HTMLFormException("Field name too long");
-
             std::string value;
             char ch = 0;
 
