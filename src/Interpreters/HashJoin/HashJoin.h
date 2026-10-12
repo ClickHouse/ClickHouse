@@ -307,6 +307,10 @@ public:
         M(two_level_keys256 __VA_OPT__(,) __VA_ARGS__)          \
         M(two_level_hashed __VA_OPT__(,) __VA_ARGS__)
 
+    /// The packed fixed-width maps, `keys32` to `keys256`, hold the keys of a clause if all of them are fixed-width
+    /// and take at most this many bytes together.
+    static constexpr size_t max_packed_keys_bytes = 32;
+
     enum class Type : uint8_t
     {
         #define M(NAME) NAME,
