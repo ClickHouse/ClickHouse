@@ -36,5 +36,8 @@ same files as right after expire
 [1,2,3,4]
 scale
 deleted_manifest_lists_count	99
+deleted_data_files_count	10
+expire_snapshots	1
+remove_orphan_files	1
 1
 100	5050
