@@ -1,0 +1,4 @@
+operational query settings keep the watermark: yes
+a row-affecting query setting invalidates the watermark: yes
+view hash ignores operational query settings: yes
+view hash moves on a row-affecting query setting: yes

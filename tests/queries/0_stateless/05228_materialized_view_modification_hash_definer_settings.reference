@@ -1,0 +1,7 @@
+6
+6
+TOO_MANY_ROWS
+hits	[0,1]
+hash is computed
+an operational setting in the definer profile does not change the hash
+a read limit in the definer profile changes the hash
