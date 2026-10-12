@@ -2447,8 +2447,9 @@ static BlockIO executeQueryImpl(
                 Mongo::ParserMongoQuery parser(max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
                 out_ast = parseMongoQuery(parser, begin, end, "", max_query_size, settings[Setting::max_parser_depth], settings[Setting::max_parser_backtracks]);
 
-                /// `$unset` and `$rename` of a subdocument name only its path, and the parser does
-                /// not know the columns it is stored as, see `expandMongoSubtreeAssignments`. A
+                /// `$unset` and `$rename` of a subdocument name only its path, `$set` of one resets
+                /// the leaves it does not name, and the parser does not know the columns it is
+                /// stored as, see `expandMongoSubtreeAssignments`. A
                 /// collection that does not exist is left to the interpreter to report.
                 if (const auto * alter = out_ast->as<ASTAlterQuery>())
                 {

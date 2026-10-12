@@ -25,7 +25,11 @@ ASTPtr parseMongoUpdateStatement(const rapidjson::Value & update);
   * that `$unset` or `$rename` made for a path that is not a column itself are rewritten into one
   * per leaf of `columns`: `{"$unset": {"profile": ""}}` unsets `profile.name` and `profile.age`,
   * and `{"$rename": {"profile": "user"}}` renames them to `user.name` and `user.age`. This is the
-  * same expansion the `update` command of the wire protocol makes. Any other query is left as is.
+  * same expansion the `update` command of the wire protocol makes.
+  *
+  * `$set` of a subdocument replaces the whole field in Mongo, so the leaves of the field that the
+  * assigned document does not name are reset to their defaults here as well:
+  * `{"$set": {"profile": {"name": "y"}}}` also resets `profile.age`. Any other query is left as is.
   */
 void expandMongoSubtreeAssignments(ASTPtr & ast, const std::vector<std::string> & columns);
 

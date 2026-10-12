@@ -179,6 +179,36 @@ std::optional<UInt32> decimalScaleOfNumberDecimal(std::string_view text)
     return static_cast<UInt32>(scale);
 }
 
+bool isInFieldSubtree(std::string_view column, std::string_view path)
+{
+    return column.starts_with(path) && (column.size() == path.size() || column[path.size()] == '.');
+}
+
+String makeFieldSubtreePattern(const std::vector<String> & paths)
+{
+    String pattern = "^(?:";
+    for (size_t i = 0; i < paths.size(); ++i)
+    {
+        if (i != 0)
+            pattern += '|';
+        /// Every ASCII character but a letter, a digit and `_` is escaped, so a field name is
+        /// matched literally, the same way as `RE2::QuoteMeta` quotes it.
+        for (const char symbol : paths[i])
+        {
+            if (symbol == '\0')
+            {
+                pattern += "\\x00";
+                continue;
+            }
+            if (!isAlphaNumericASCII(symbol) && symbol != '_' && static_cast<unsigned char>(symbol) < 0x80)
+                pattern += '\\';
+            pattern += symbol;
+        }
+    }
+    pattern += ")(?:\\.|$)";
+    return pattern;
+}
+
 std::optional<rapidjson::Value>
 findField(const rapidjson::Value & value, const std::string & key, rapidjson::Document::AllocatorType & allocator)
 {

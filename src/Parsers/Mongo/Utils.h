@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string_view>
+#include <vector>
 
 #include <rapidjson/document.h>
 
@@ -78,6 +79,20 @@ rapidjson::Value copyValue(const T & value, rapidjson::Document::AllocatorType &
     result.CopyFrom(value, allocator);
     return result;
 }
+
+/** A nested document is stored as one column per leaf, named by its dotted path, so a field path
+  * stands for the column of that name and for every column under it: `profile` is `profile`,
+  * `profile.name` and `profile.age`, but not `profiles`. Whether `column` is one of the columns
+  * `path` stands for.
+  */
+bool isInFieldSubtree(std::string_view column, std::string_view path);
+
+/** The regular expression of a `COLUMNS` matcher or an `EXCEPT` transformer that matches every
+  * column one of `paths` stands for, see `isInFieldSubtree`. A projection, an exclusion or a
+  * replacement of a parent path thus covers the whole subtree without knowing the columns of the
+  * collection, while a leaf path matches just its own column.
+  */
+String makeFieldSubtreePattern(const std::vector<String> & paths);
 
 std::optional<rapidjson::Value>
 findField(const rapidjson::Value & value, const std::string & key, rapidjson::Document::AllocatorType & allocator);

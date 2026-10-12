@@ -3,6 +3,7 @@
 #include <memory>
 
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTIdentifier.h>
@@ -43,8 +44,14 @@ bool ParserMongoProjection::parseImpl(ASTPtr & node)
         if (it->value.IsBool() || it->value.IsNumber())
         {
             const bool included = it->value.IsBool() ? it->value.GetBool() : it->value.GetDouble() != 0;
+            /// A nested document is stored as one column per leaf, so the field is kept together
+            /// with everything under it: `{"profile": 1}` keeps `profile.name` and `profile.age`.
             if (included)
-                result->children.push_back(make_intrusive<ASTIdentifier>(name));
+            {
+                auto matcher = make_intrusive<ASTColumnsRegexpMatcher>();
+                matcher->setPattern(makeFieldSubtreePattern({name}));
+                result->children.push_back(std::move(matcher));
+            }
             else
                 excluded.push_back(std::move(name));
             continue;
@@ -77,11 +84,11 @@ bool ParserMongoProjection::parseImpl(ASTPtr & node)
 
         auto asterisk = make_intrusive<ASTAsterisk>();
 
-        /// The transformer is not strict on purpose: excluding a field the collection does not
-        /// have is not an error in Mongo.
+        /// The transformer is a pattern rather than a list of names, so that excluding a parent
+        /// path removes every leaf under it, and excluding a field the collection does not have
+        /// is not an error, as in Mongo.
         auto except_transformer = make_intrusive<ASTColumnsExceptTransformer>();
-        for (const auto & name : excluded)
-            except_transformer->children.push_back(make_intrusive<ASTIdentifier>(name));
+        except_transformer->setPattern(makeFieldSubtreePattern(excluded));
 
         auto transformers = make_intrusive<ASTColumnsTransformerList>();
         transformers->children.push_back(std::move(except_transformer));

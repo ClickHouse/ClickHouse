@@ -2418,6 +2418,10 @@ def test_read_commands_apply_max_time_ms(started_cluster):
             {"update": "max_time_ms", "updates": [{"q": {"id": 1}, "u": {"$set": {"id": 3}}}], "maxTimeMS": 1}
         )
     assert collection.count_documents({}) == 2
+    # So is the DDL of `create`.
+    with pytest.raises(pymongo.errors.OperationFailure, match="maxTimeMS"):
+        database.command({"create": "max_time_ms_created", "maxTimeMS": 1})
+    assert "max_time_ms_created" not in database.list_collection_names()
 
     # A non-boolean `preserveNullAndEmptyArrays` is an error rather than an inner unwind.
     with pytest.raises(pymongo.errors.OperationFailure, match="preserveNullAndEmptyArrays"):
@@ -2449,3 +2453,82 @@ def test_insert_into_an_existing_collection_needs_no_ddl_grants(started_cluster)
 
     collection.drop()
     node.query("DROP USER mongo_writer", password="123")
+
+
+def test_parser_limits_come_from_the_user_profile(started_cluster):
+    """The text a command is translated through is bounded by the `max_query_size` of the
+    authenticated user, not by the one of the server."""
+    node = cluster.instances["node"]
+    node.query("DROP USER IF EXISTS mongo_small_queries", password="123")
+    node.query(
+        "CREATE USER mongo_small_queries IDENTIFIED WITH plaintext_password BY 'mongo_pass' SETTINGS max_query_size = 1000",
+        password="123",
+    )
+    node.query("GRANT SELECT, INSERT, CREATE TABLE, CREATE DATABASE ON db.* TO mongo_small_queries", password="123")
+
+    collection = make_client()["db"]["profile_limits"]
+    collection.drop()
+    collection.insert_many([{"id": 1}, {"id": 2}])
+
+    small = make_client(user="mongo_small_queries", password="mongo_pass", database="db")["db"]["profile_limits"]
+    assert small.count_documents({"id": 1}) == 1
+    with pytest.raises(pymongo.errors.OperationFailure, match="[Mm]ax query size"):
+        small.count_documents({"id": {"$in": list(range(1000))}})
+    assert collection.count_documents({"id": {"$in": list(range(1000))}}) == 2
+
+    collection.drop()
+    node.query("DROP USER mongo_small_queries", password="123")
+
+
+def test_list_collections_needs_a_database_grant_and_reports_views(started_cluster):
+    """`listCollections` needs a grant on the whole database, unless it asks only for the names of
+    the collections the user has a grant on. A view is listed as a read-only view."""
+    node = cluster.instances["node"]
+    database = make_client()["db_list_grants"]
+    database["visible"].drop()
+    database["hidden"].drop()
+    database["visible"].insert_one({"id": 1})
+    database["hidden"].insert_one({"id": 1})
+    node.query("CREATE OR REPLACE VIEW db_list_grants.visible_view AS SELECT * FROM db_list_grants.visible", password="123")
+
+    entries = {entry["name"]: entry for entry in database.command({"listCollections": 1})["cursor"]["firstBatch"]}
+    assert entries["visible"]["type"] == "collection"
+    assert entries["visible"]["info"]["readOnly"] is False
+    assert entries["visible_view"]["type"] == "view"
+    assert entries["visible_view"]["info"]["readOnly"] is True
+
+    node.query("DROP USER IF EXISTS mongo_lister", password="123")
+    node.query("CREATE USER mongo_lister IDENTIFIED WITH plaintext_password BY 'mongo_pass'", password="123")
+    node.query("GRANT SELECT ON db_list_grants.visible TO mongo_lister", password="123")
+    lister = make_client(user="mongo_lister", password="mongo_pass", database="db_list_grants")["db_list_grants"]
+
+    for options in [{}, {"nameOnly": True}, {"authorizedCollections": True}, {"authorizedCollections": False, "nameOnly": True}]:
+        with pytest.raises(pymongo.errors.OperationFailure, match="Not authorized"):
+            lister.command({"listCollections": 1, **options})
+    reply = lister.command({"listCollections": 1, "authorizedCollections": True, "nameOnly": True})
+    assert reply["cursor"]["firstBatch"] == [{"name": "visible", "type": "collection"}]
+
+    node.query("DROP USER mongo_lister", password="123")
+    node.query("DROP DATABASE db_list_grants", password="123")
+
+
+def test_parent_path_of_a_subdocument_over_the_wire(started_cluster):
+    """A subdocument is stored as one column per leaf, so a projection of its path keeps every
+    leaf, and `$set` of it replaces the whole subdocument, resetting the leaves it does not name."""
+    collection = make_client()["db"]["parent_path"]
+    collection.drop()
+    collection.insert_many(
+        [
+            {"id": 1, "profile": {"name": "alpha", "age": 30}, "profiles": 5},
+            {"id": 2, "profile": {"name": "beta", "age": 40}, "profiles": 6},
+        ]
+    )
+
+    assert list(collection.find({"id": 1}, {"profile": 1})) == [{"profile": {"name": "alpha", "age": 30}}]
+    assert list(collection.find({"id": 1}, {"profile": 0, "_id": 0})) == [{"id": 1, "profiles": 5}]
+
+    collection.update_many({"id": 1}, {"$set": {"profile": {"name": "gamma"}}})
+    assert wait_for(lambda: collection.find_one({"id": 1}, {"profile": 1}) == {"profile": {"name": "gamma", "age": 0}})
+    assert collection.find_one({"id": 2}, {"profile": 1}) == {"profile": {"name": "beta", "age": 40}}
+
+    collection.drop()

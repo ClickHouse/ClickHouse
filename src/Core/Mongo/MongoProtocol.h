@@ -184,8 +184,12 @@ public:
     /// successful `saslStart`.
     String getAuthenticatedUserName() const;
 
-    /// The context of the session, whose settings are the ones of the authenticated user.
-    ContextPtr getSessionContext() const;
+    /** A fresh query context of this session, whose settings are the ones of the authenticated
+      * user and its profile. The session itself has no context of its own (a Mongo client may
+      * authenticate again on the same connection, which a session context would forbid), so its
+      * `sessionOrGlobalContext` would carry the settings of the server rather than of the user.
+      */
+    ContextPtr getQueryContext() const;
 
 private:
     std::unique_ptr<Session> & session;

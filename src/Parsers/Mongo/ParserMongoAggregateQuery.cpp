@@ -7,6 +7,7 @@
 
 #include <Core/Field.h>
 #include <Parsers/ASTAsterisk.h>
+#include <Parsers/ASTColumnsMatcher.h>
 #include <Parsers/ASTColumnsTransformers.h>
 #include <Parsers/ASTExpressionList.h>
 #include <Parsers/ASTFunction.h>
@@ -66,7 +67,11 @@ ASTPtr makeCollectionSource(const std::string & database, const std::string & co
     return make_intrusive<ASTTableIdentifier>(database, collection);
 }
 
-/// `*`, or `* EXCEPT (a, b)` when some of the columns of the source are replaced or removed.
+/** `*`, or `* EXCEPT '<pattern>'` when some of the fields of the source are replaced or removed.
+  * A nested document is stored as one column per leaf, so a field is removed together with
+  * everything under it: replacing or removing `profile` drops `profile.name` and `profile.age`
+  * (see `makeFieldSubtreePattern`).
+  */
 ASTPtr makeAsterisk(const std::vector<std::string> & excluded)
 {
     auto asterisk = make_intrusive<ASTAsterisk>();
@@ -76,8 +81,7 @@ ASTPtr makeAsterisk(const std::vector<std::string> & excluded)
     /// The transformer is not strict on purpose: a `$set` that introduces a new field must not
     /// fail because the source has no column of that name yet.
     auto except_transformer = make_intrusive<ASTColumnsExceptTransformer>();
-    for (const auto & name : excluded)
-        except_transformer->children.push_back(make_intrusive<ASTIdentifier>(name));
+    except_transformer->setPattern(makeFieldSubtreePattern(excluded));
 
     auto transformers = make_intrusive<ASTColumnsTransformerList>();
     transformers->children.push_back(std::move(except_transformer));
@@ -94,7 +98,9 @@ bool exclusionPreservesOrderKeys(const MongoGroupOrder & order, const std::vecto
     for (const auto & [key, _] : order.keys)
     {
         const auto * identifier = key->as<ASTIdentifier>();
-        if (!identifier || std::find(excluded.begin(), excluded.end(), identifier->name()) != excluded.end())
+        if (!identifier
+            || std::any_of(
+                excluded.begin(), excluded.end(), [&](const std::string & path) { return isInFieldSubtree(identifier->name(), path); }))
             return false;
     }
     return true;
@@ -383,7 +389,19 @@ void translateProject(SelectChain & chain, const rapidjson::Value & stage)
     else
     {
         for (auto & field : fields)
-            select_list->children.push_back(withAlias(field.expression, field.name));
+        {
+            /// A field kept as itself is kept together with everything under it, the same way as
+            /// in the projection of a `find`: `{"profile": 1}` keeps `profile.name` and `profile.age`.
+            const auto * identifier = field.expression->as<ASTIdentifier>();
+            if (identifier && identifier->name() == field.name)
+            {
+                auto matcher = make_intrusive<ASTColumnsRegexpMatcher>();
+                matcher->setPattern(makeFieldSubtreePattern({field.name}));
+                select_list->children.push_back(std::move(matcher));
+            }
+            else
+                select_list->children.push_back(withAlias(field.expression, field.name));
+        }
     }
 
     /// A projection carries a sort key into the documents it builds when it keeps that field as
@@ -432,25 +450,30 @@ void translateSet(SelectChain & chain, const rapidjson::Value & stage)
     if (!stage.IsObject() || stage.MemberCount() == 0)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "The argument of '$set' must be a non empty document");
 
+    /// A field the stage assigns is replaced as a whole: `{"profile": {"name": "y"}}` produces the
+    /// column `profile.name` and drops every other column under `profile`, as Mongo replaces the
+    /// whole subdocument. So the fields dropped from `*` are the names of the stage, not the leaves
+    /// they expand into.
     std::vector<MongoProjectedField> fields;
+    std::vector<std::string> replaced;
     for (auto it = stage.MemberBegin(); it != stage.MemberEnd(); ++it)
-        expandMongoProjectedField(std::string(stringView(it->name)), it->value, fields);
+    {
+        replaced.emplace_back(stringView(it->name));
+        expandMongoProjectedField(replaced.back(), it->value, fields);
+    }
 
     /// `$set` keeps every field of the document and adds its own on top, so the select it produces
     /// starts from `*`; a field it replaces is dropped from that `*` first.
     if (chain.select_list || chain.group_by || chain.order_by || chain.limit || chain.offset)
         chain.wrap();
 
-    std::vector<std::string> replaced;
-    replaced.reserve(fields.size());
-    for (const auto & field : fields)
-        replaced.push_back(field.name);
-
     chain.select_list_preserves_order_keys = true;
     for (const auto & [key, _] : chain.order.keys)
     {
         const auto * identifier = key->as<ASTIdentifier>();
-        if (identifier && std::find(replaced.begin(), replaced.end(), identifier->name()) != replaced.end())
+        if (identifier
+            && std::any_of(
+                replaced.begin(), replaced.end(), [&](const std::string & path) { return isInFieldSubtree(identifier->name(), path); }))
         {
             chain.select_list_preserves_order_keys = false;
             break;

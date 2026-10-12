@@ -860,7 +860,9 @@ void rejectUnsupportedOptions(const rapidjson::Value & json, const char * comman
 
 ASTPtr parseMongoDialectCommand(const String & mongo_dialect_query, const CollectionRef & collection, const QueryExecutor & executor)
 {
-    const auto & settings = executor.getSessionContext()->getSettingsRef();
+    /// The limits of the authenticated user's profile, as for a query of the `clickhouse` dialect.
+    const auto query_context = executor.getQueryContext();
+    const auto & settings = query_context->getSettingsRef();
     const size_t max_query_size = settings[Setting::max_query_size];
     const size_t max_parser_depth = settings[Setting::max_parser_depth];
     const size_t max_parser_backtracks = settings[Setting::max_parser_backtracks];

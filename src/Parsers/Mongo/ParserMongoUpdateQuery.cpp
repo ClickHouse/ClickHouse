@@ -54,6 +54,26 @@ ASTPtr makeDefaultValue(const std::string & column)
     return makeASTFunction("defaultValueOfTypeName", makeASTFunction("toTypeName", make_intrusive<ASTIdentifier>(column)));
 }
 
+/** `$set` of a subdocument replaces the whole field, so the leaves of the field that the assigned
+  * document does not name must go back to their defaults. The parser does not know these leaves,
+  * so the assignment of the subdocument is followed by this marker, assigned to the path of the
+  * field itself, and `expandMongoSubtreeAssignments` replaces it by the defaults of the other
+  * leaves once the columns of the collection are known. The function does not exist, so a marker
+  * that was not expanded cannot be executed by mistake.
+  */
+constexpr auto SUBTREE_REPLACEMENT_MARKER = "__mongoReplacedSubtree";
+
+ASTPtr makeSubtreeReplacementMarker()
+{
+    return makeASTFunction(SUBTREE_REPLACEMENT_MARKER);
+}
+
+bool isSubtreeReplacementMarker(const ASTPtr & expression)
+{
+    const auto * function = expression->as<ASTFunction>();
+    return function && function->name == SUBTREE_REPLACEMENT_MARKER;
+}
+
 /** The value an update operator writes. An update statement is data, not an aggregation pipeline:
   * the value of `{"$set": {"name": "$other"}}` is the string `$other` rather than a reference to
   * the column `other`, and `{"$inc": {"n": 1}}` adds the number one. So the value is a constant -
@@ -129,7 +149,10 @@ void parseUpdateOperator(std::string_view name, const rapidjson::Value & argumen
             /// A document that is not an Extended JSON wrapper holds fields of its own, and every
             /// one of them names a column.
             if (it->value.IsObject() && !tryParseMongoConstant(it->value))
+            {
                 flattenAssignedDocument(column, it->value, assignments);
+                assignments.push_back(makeAssignment(column, makeSubtreeReplacementMarker()));
+            }
             else
                 assignments.push_back(makeAssignment(column, parseUpdateValue(it->value, name, /* documents_are_values = */ true)));
         }
@@ -350,10 +373,35 @@ void expandMongoSubtreeAssignments(ASTPtr & ast, const std::vector<std::string> 
 
         bool expanded_any = false;
         std::vector<ASTPtr> expanded;
+
+        /// The columns the statement writes explicitly, which `$set` of a subdocument assigns.
+        std::unordered_set<std::string> assigned;
+        for (const auto & child_assignment : command->update_assignments->children)
+        {
+            const auto & assignment = child_assignment->as<const ASTAssignment &>();
+            if (!isSubtreeReplacementMarker(assignment.children.at(0)))
+                assigned.insert(assignment.column_name);
+        }
+
         for (const auto & child_assignment : command->update_assignments->children)
         {
             const auto & assignment = child_assignment->as<const ASTAssignment &>();
             const auto & expression = assignment.children.at(0);
+
+            /// `$set` of a subdocument: the leaves the assigned document does not name are reset.
+            /// When the path is a column itself, the assigned leaves are not columns, and they are
+            /// left for the caller to reject.
+            if (isSubtreeReplacementMarker(expression))
+            {
+                for (const auto & suffix : leaves(assignment.column_name))
+                {
+                    const auto leaf = assignment.column_name + suffix;
+                    if (!assigned.contains(leaf))
+                        expanded.push_back(makeAssignment(leaf, makeDefaultValue(leaf)));
+                }
+                expanded_any = true;
+                continue;
+            }
 
             /// `$unset`, and the source of `$rename`, write the default of the field.
             if (isDefaultValueOf(expression, assignment.column_name))

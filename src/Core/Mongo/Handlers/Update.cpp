@@ -5,6 +5,7 @@
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/IdentifierQuotingStyle.h>
 #include <Parsers/Mongo/ParserMongoFilter.h>
+#include <Parsers/Mongo/ParserMongoUpdateQuery.h>
 #include <Parsers/Mongo/parseMongoQuery.h>
 
 #include <IO/WriteBufferFromString.h>
@@ -197,6 +198,11 @@ std::vector<Document> UpdateHandler::handle(const std::vector<OpMessageSection> 
     auto translate = [&](const String & mongo_dialect_query, const IAST::FormatSettings & format_settings)
     {
         auto ast = parseMongoDialectCommand(mongo_dialect_query, collection, *executor);
+
+        /// `$set` of a subdocument resets the leaves of the field it does not name, which only
+        /// the columns of the collection tell, see `expandMongoSubtreeAssignments`.
+        if (collection_exists)
+            Mongo::expandMongoSubtreeAssignments(ast, columns);
 
         /// A collection gets its columns from the first inserted document and an update does not
         /// add any, so `$set` or `$inc` of a field that is not a column, or `$rename` to one, is

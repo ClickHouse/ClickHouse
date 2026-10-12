@@ -41,6 +41,10 @@ std::vector<Document> CreateHandler::handle(const std::vector<OpMessageSection> 
             if (std::find(std::begin(generic_fields), std::end(generic_fields), name) == std::end(generic_fields))
                 throw Exception(ErrorCodes::NOT_IMPLEMENTED, "The option '{}' of the 'create' command is not supported", name);
         }
+
+        /// The command runs DDL, which `max_execution_time` does not bound end to end, so a
+        /// deadline could not be honoured: a request with one must not run without it.
+        rejectMaxTime(json, "create");
     }
 
     /// Creating a namespace that already exists is an error in Mongo, not a no-op: clients rely

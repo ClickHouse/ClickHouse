@@ -5,6 +5,9 @@
 
 #include <functional>
 
+#include <Access/Common/AccessType.h>
+#include <Access/ContextAccess.h>
+#include <Interpreters/Context.h>
 #include <fmt/format.h>
 #include <Common/Exception.h>
 #include <Common/quoteString.h>
@@ -14,12 +17,48 @@
 
 namespace DB::ErrorCodes
 {
+extern const int ACCESS_DENIED;
 extern const int BAD_ARGUMENTS;
 extern const int LIMIT_EXCEEDED;
 }
 
 namespace DB::MongoProtocol
 {
+
+namespace
+{
+
+struct CollectionEntry
+{
+    String name;
+    /// A view is listed as a view rather than as a collection: it cannot be written to.
+    bool is_view = false;
+};
+
+/// The tables of the database, as `system.tables` shows them to the user, i.e. filtered by the
+/// grants of the user the same way as `SHOW TABLES` does.
+std::vector<CollectionEntry> getCollections(const String & database, std::shared_ptr<QueryExecutor> executor)
+{
+    auto output = executor->execute(fmt::format(
+        "SELECT name, engine IN ('View', 'MaterializedView') FROM system.tables WHERE database = {} ORDER BY name "
+        "FORMAT JSONCompactEachRow",
+        quoteString(database)));
+
+    std::vector<CollectionEntry> entries;
+    for (const auto & line : splitByNewline(output))
+    {
+        if (line.empty())
+            continue;
+        rapidjson::Document row;
+        row.Parse(line.data(), line.size());
+        if (row.HasParseError() || !row.IsArray() || row.Size() != 2 || !row[0].IsString() || !row[1].IsUint())
+            throw Exception(ErrorCodes::BAD_ARGUMENTS, "Unexpected row in the list of the tables of the database '{}'", database);
+        entries.push_back({String(row[0].GetString(), row[0].GetStringLength()), row[1].GetUint() != 0});
+    }
+    return entries;
+}
+
+}
 
 std::vector<Document> ListCollectionsHandler::handle(
     const std::vector<OpMessageSection> & documents, std::shared_ptr<QueryExecutor> executor)
@@ -28,6 +67,7 @@ std::vector<Document> ListCollectionsHandler::handle(
     String database;
     std::function<bool(const String &)> name_filter;
     bool name_only = false;
+    bool authorized_collections = false;
     {
         auto json = documents[0].documents[0].getRapidJSONRepresentation();
         auto database_it = json.FindMember("$db");
@@ -37,13 +77,27 @@ std::vector<Document> ListCollectionsHandler::handle(
         validateMongoDatabaseName(database, "listCollections");
         name_filter = getNameFilter(json, "listCollections");
         name_only = getBoolOption(json, "nameOnly", "listCollections").value_or(false);
+        authorized_collections = getBoolOption(json, "authorizedCollections", "listCollections").value_or(false);
     }
+
+    /// Listing the collections of a database needs a grant on the whole database, as the
+    /// `listCollections` privilege of Mongo is a privilege on the database. Without it, Mongo
+    /// lists only the collections the user has some privilege on, and only when asked for exactly
+    /// that, with `authorizedCollections: true` and `nameOnly: true`; the listing of `system.tables`
+    /// below is filtered by the grants of the user the same way.
+    if (!(authorized_collections && name_only)
+        && !executor->getQueryContext()->getAccess()->isGranted(AccessType::SHOW_TABLES, database))
+        throw Exception(
+            ErrorCodes::ACCESS_DENIED,
+            "Not authorized to list the collections of the database '{}': it needs the 'SHOW TABLES' grant on the whole database, "
+            "or 'authorizedCollections: true' with 'nameOnly: true' to list only the collections the user has a grant on",
+            database);
 
     /// A database that does not exist has no collections, as in Mongo, where listing them
     /// returns an empty cursor rather than an error.
-    std::vector<std::string> names;
+    std::vector<CollectionEntry> collections;
     if (objectExists(executor, "DATABASE", backQuoteIfNeed(database)))
-        names = splitByNewline(executor->execute(fmt::format("SHOW TABLES FROM {}", backQuoteIfNeed(database))));
+        collections = getCollections(database, executor);
 
     /// The reply is `{"cursor": {"firstBatch": [...], "id": 0, "ns": "<db>.$cmd.listCollections"}, "ok": 1}`.
     bson_t cursor;
@@ -55,7 +109,7 @@ std::vector<Document> ListCollectionsHandler::handle(
         bson_append_array_begin(&cursor, key_identifier.data(), static_cast<int>(key_identifier.size()), &first_batch);
 
         size_t index = 0;
-        for (const auto & name : names)
+        for (const auto & [name, is_view] : collections)
         {
             if (name.empty() || !name_filter(name))
                 continue;
@@ -64,7 +118,7 @@ std::vector<Document> ListCollectionsHandler::handle(
             bson_init(&collection_doc);
 
             BSON_APPEND_UTF8(&collection_doc, "name", name.c_str());
-            BSON_APPEND_UTF8(&collection_doc, "type", "collection");
+            BSON_APPEND_UTF8(&collection_doc, "type", is_view ? "view" : "collection");
 
             /// With `nameOnly` a Mongo server answers with the name and the type alone.
             if (!name_only)
@@ -75,7 +129,7 @@ std::vector<Document> ListCollectionsHandler::handle(
                 bson_init(&id_index_doc);
                 bson_t info;
                 bson_init(&info);
-                BSON_APPEND_BOOL(&info, "readOnly", false);
+                BSON_APPEND_BOOL(&info, "readOnly", is_view);
 
                 BSON_APPEND_DOCUMENT(&collection_doc, "options", &options_doc);
                 BSON_APPEND_DOCUMENT(&collection_doc, "idIndex", &id_index_doc);
