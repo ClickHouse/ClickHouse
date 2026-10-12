@@ -130,6 +130,12 @@ void DDLLogEntry::setSettingsIfRequired(ContextPtr context)
     if (version >= SETTINGS_IN_ZK_VERSION)
     {
         settings.emplace(context->getSettingsRef().changes());
+        /// Rewrite rules are applied once, on the initiator, before the DDL is distributed. Do not
+        /// record `query_rules` in the DDL log entry: a worker of an older version does not know the
+        /// setting and would fail the replay with `UNKNOWN_SETTING` during a rolling upgrade. The
+        /// worker neither needs it nor applies rules to the replayed query (see `executeQuery` and
+        /// `DDLTaskBase::makeQueryContext`).
+        settings->removeSetting("query_rules");
 
         /// These settings are interpreted only at the initiator: they shape the final query
         /// (`select`, `order`, `sort`, `filter`, `limit`, `offset`, `page`, `additional_result_filter`),
@@ -394,6 +400,14 @@ ContextMutablePtr DDLTaskBase::makeQueryContext(ContextPtr from_context, const Z
                 query_context->setSetting("s3_allow_server_credentials_in_user_queries", *value);
         }
     }
+
+    /// Rewrite rules were applied once, on the initiator, before the DDL was distributed, and the entry
+    /// does not carry `query_rules` (see `DDLLogEntry::setSettingsIfRequired`). `executeQuery` already
+    /// skips rule application for the replayed query on the `isDDLOrOnClusterInternal` flag; also
+    /// clear this host's profile default, so nothing executed in this context sees a `query_rules`
+    /// value naming rules of this host. This mirrors the strip on the distributed read/write paths
+    /// (`MultiplexedConnections::sendQuery`, `HedgedConnections::sendQuery`, `RemoteInserter`).
+    query_context->setSetting("query_rules", Field(""));
 
     return query_context;
 }

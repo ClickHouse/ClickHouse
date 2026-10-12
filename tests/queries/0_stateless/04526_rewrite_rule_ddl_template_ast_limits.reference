@@ -1,0 +1,6 @@
+oversized submitted CREATE RULE template with a low max_ast_elements:
+TOO_BIG_AST
+oversized submitted ALTER RULE template with a low max_ast_elements:
+TOO_BIG_AST
+same CREATE RULE template with the default limit (accepted):
+1

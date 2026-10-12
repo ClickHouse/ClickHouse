@@ -1,4 +1,5 @@
 #include <Parsers/Access/ASTRowPolicyName.h>
+#include <Common/SipHash.h>
 #include <Common/quoteString.h>
 #include <IO/Operators.h>
 
@@ -33,6 +34,23 @@ void ASTRowPolicyName::replaceEmptyDatabase(const String & current_database)
 String ASTRowPolicyNames::tableOrAsterisk(const String & table_name) const
 {
     return table_name == RowPolicyName::ANY_TABLE_MARK ? "*" : backQuoteIfNeed(table_name);
+}
+
+
+void ASTRowPolicyNames::updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const
+{
+    IAST::updateTreeHashImpl(hash_state, ignore_aliases);
+    /// Fold the semantic fields kept outside `children`. See the header comment. Each field is
+    /// produced by the formatter, so it survives the format -> parse round-trip that the debug-build
+    /// AST consistency check requires.
+    hash_state.update(full_names.size());
+    for (const auto & full_name : full_names)
+    {
+        hash_state.update(full_name.short_name);
+        hash_state.update(full_name.database);
+        hash_state.update(full_name.table_name);
+    }
+    hash_state.update(cluster);
 }
 
 

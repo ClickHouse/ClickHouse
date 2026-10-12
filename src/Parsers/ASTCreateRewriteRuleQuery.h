@@ -1,0 +1,58 @@
+#pragma once
+
+#include <Parsers/IAST.h>
+#include <Parsers/ASTQueryWithOnCluster.h>
+
+
+namespace DB
+{
+
+class ASTCreateRewriteRuleQuery : public IAST, public ASTQueryWithOnCluster
+{
+public:
+    String rule_name;
+    String reject_message;
+    String whole_query;
+    ASTPtr source_query;
+    ASTPtr resulting_query;
+    /// True iff the rule was created with `REJECT WITH ...`. Tracked
+    /// independently of `reject_message` so that `REJECT WITH ''` is still
+    /// a rejecting rule (with an empty user-facing message) rather than a
+    /// silent no-op.
+    bool is_reject = false;
+
+    String getID(char) const override { return "CreateRewriteRuleQuery"; }
+
+    ASTPtr clone() const override;
+
+    ASTPtr getRewrittenASTWithoutOnCluster(const WithoutOnClusterASTRewriteParams &) const override { return removeOnCluster<ASTCreateRewriteRuleQuery>(clone()); }
+
+    QueryKind getQueryKind() const override { return QueryKind::Create; }
+
+    /// `source_query` and `resulting_query` can contain arbitrary nested queries
+    /// (e.g. table functions or settings holding secrets) and are not part of
+    /// `children`, so inspect them explicitly to keep AST secret masking working.
+    bool hasSecretParts() const override
+    {
+        return (source_query && source_query->hasSecretParts())
+            || (resulting_query && resulting_query->hasSecretParts());
+    }
+
+    bool rewrite() const { if (resulting_query) { return true; } return false; }
+    bool reject()  const { return is_reject; }
+
+    /// `rule_name`, `source_query` and `resulting_query` are the fields that
+    /// distinguish one rule from another, but none of them are part of `children`,
+    /// so the default hash (just `getID`) is identical for every `CREATE RULE`. The
+    /// rewrite-rule matcher compares tree hashes, so without this override a rule
+    /// whose source template is one `CREATE RULE` would match an unrelated one. Fold
+    /// the semantic fields into the hash to keep matching exact.
+    void updateTreeHashImpl(SipHash & hash_state, bool ignore_aliases) const override;
+
+protected:
+    void formatImpl(WriteBuffer & ostr, const FormatSettings & s, FormatState & state, FormatStateStacked frame) const override;
+};
+
+using ASTCreateRewriteRuleQueryPtr = std::shared_ptr<ASTCreateRewriteRuleQuery>;
+
+}

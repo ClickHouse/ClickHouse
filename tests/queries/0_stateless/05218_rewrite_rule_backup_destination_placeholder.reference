@@ -1,0 +1,10 @@
+matching destination:
+REWRITE_RULE_REJECTION
+other disk:
+not rejected
+int placeholder:
+not rejected
+deep destination, low max_ast_depth:
+TOO_DEEP_AST
+deep destination, default limits:
+created

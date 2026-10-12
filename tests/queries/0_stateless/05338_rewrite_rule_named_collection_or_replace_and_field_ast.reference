@@ -1,0 +1,4 @@
+create exact: rejected
+create or replace: not over-matched
+REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE
+REWRITE_RULE_UNSUPPORTED_QUERY_PARAMETER_TYPE
