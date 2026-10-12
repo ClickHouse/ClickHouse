@@ -109,14 +109,15 @@ remote_write:
 
 Prometheus sends samples to the `prometheus.metrics` table.
 
-To batch data from many concurrent remote-write requests into fewer parts, enable [asynchronous inserts](/reference/settings/session-settings/async-insert#async_insert) by adding the `async_insert` setting to the URL (or by enabling it in the user profile):
-
-```yaml
-remote_write:
-  - url: https://clickhouse.example.com:8443/prometheus/api/v1/write?database=prometheus&table=metrics&async_insert=1
-```
+To batch data from many concurrent remote-write requests into fewer parts, ClickHouse uses [asynchronous inserts](/reference/settings/session-settings/async-insert#async_insert). They are enabled by default, and the `async_insert` setting in the URL (or in the user profile) turns them on or off.
 
 ClickHouse acknowledges an asynchronous remote-write request only after the data is flushed to all inner tables of the `TimeSeries` table, regardless of the [`wait_for_async_insert`](/reference/settings/session-settings/wait-for#wait_for_async_insert) setting: the remote-write protocol treats an acknowledged write as durable. If the flush fails, the request returns an error and Prometheus retries it.
+
+Because each request waits for its flush, asynchronous inserts limit how fast one sender can write. Prometheus sends one request at a time per remote-write shard. When several shards send at the same time, the adaptive flush timeout grows to [`async_insert_busy_timeout_max_ms`](/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms), unless the pending requests reach [`async_insert_max_data_size`](/reference/settings/session-settings/async-insert#async_insert_max_data_size) first. A request waits until its batch is flushed, which happens up to that long after the batch is started, so under sustained load each shard writes roughly `samples per request / async_insert_busy_timeout_max_ms`, where Prometheus sends up to 2,000 samples per request by default. To raise it:
+
+- Raise `max_shards` (50 by default) or `max_samples_per_send` in the `queue_config` of [`remote_write`](https://prometheus.io/docs/prometheus/latest/configuration/configuration/#remote_write). Prometheus adds shards on its own when it falls behind, up to `max_shards`.
+- Lower `async_insert_busy_timeout_max_ms` in the URL or in the user profile, for example `&async_insert_busy_timeout_max_ms=50`. Flushes then happen more often, and each flush creates new parts in the inner tables.
+- Disable asynchronous inserts with `async_insert=0`. Each request then creates its own parts in the inner tables.
 
 ## Query with PromQL {#promql-query-support}
 
@@ -254,3 +255,35 @@ remote_read:
       username: default
       password: <password>
 ```
+
+## Recording rules {#recording-rules}
+
+ClickHouse doesn't evaluate Prometheus rule files. A [refreshable materialized view](/reference/statements/create/view#refreshable-materialized-view) can do the work of a [recording rule](https://prometheus.io/docs/prometheus/latest/configuration/recording_rules/): it evaluates a PromQL expression on a schedule and appends the result to a `TimeSeries` table. The following view records `sum by (job) (rate(http_requests_total[5m]))` as `job:http_requests:rate5m` every minute:
+
+```sql
+CREATE MATERIALIZED VIEW prometheus.job_http_requests_rate5m
+REFRESH EVERY 1 MINUTE APPEND TO prometheus.metrics (tags, samples) AS
+SELECT
+    mapUpdate(CAST(tags, 'Map(String, String)'), map('__name__', 'job:http_requests:rate5m')) AS tags,
+    [(timestamp, value)] AS samples
+FROM prometheusQuery(prometheus.metrics, 'sum by (job) (rate(http_requests_total[5m]))', toStartOfMinute(now()));
+```
+
+Each refresh evaluates the expression at the start of the current minute, sets the metric name with `mapUpdate`, and appends one sample for each series of the result. Extra labels can be added to the same map, for example `map('__name__', 'job:http_requests:rate5m', 'team', 'web')`. The recorded series is queried like any other metric:
+
+```bash
+curl --user default:<password> --get \
+  "https://clickhouse.example.com:8443/prometheus/api/v1/query" \
+  --data-urlencode "query=job:http_requests:rate5m" \
+  --data-urlencode "database=prometheus" \
+  --data-urlencode "table=metrics"
+```
+
+The time and the error of the last evaluation are shown in [`system.view_refreshes`](/reference/system-tables/view_refreshes).
+
+A view differs from a Prometheus recording rule in these ways:
+
+- The evaluation time is `now()` when the refresh runs. Besides the schedule, a view refreshes right after it's created (unless it's created with `EMPTY`), after a server restart if its refreshes are not coordinated (a view outside a Replicated or Shared database, or one with `all_replicas = 1`, doesn't remember its last refresh), and when `SYSTEM START VIEW` resumes it after it missed a scheduled refresh. Round `now()` down to the interval as the example does, so that these refreshes don't add samples between the scheduled ones. An extra refresh can still write a second sample at the same rounded timestamp. For a five-minute rule, use `toStartOfInterval(now(), INTERVAL 5 MINUTE)`.
+- Missed evaluations are not caught up. After the server was down or the view was stopped, the view evaluates only the current interval, and the intervals before it stay empty. The same happens when a refresh takes longer than the interval.
+- A series that drops out of the result gets no staleness marker, so queries keep returning its last recorded value for the lookback period, 5 minutes by default.
+- There is no rule file: each rule is a separate view. The rules are not listed by `/api/v1/rules`.

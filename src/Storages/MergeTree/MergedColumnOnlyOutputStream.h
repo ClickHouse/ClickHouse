@@ -27,7 +27,8 @@ public:
         size_t part_uncompressed_bytes,
         WrittenOffsetSubstreams * written_offset_substreams,
         bool try_adaptive_codec,
-        class PackedFilesWriter * external_packed_skip_indices_writer = nullptr,
+        class PackedFilesWriter * external_packed_skip_indices_writer,
+        StreamBaseManifestPtr stream_base_manifest,
         /// The context whose settings and write settings the per-column writer resolves (see the same
         /// parameter of MergedBlockOutputStream); an empty pointer means the table's live context.
         const ContextPtr & writer_context = nullptr);

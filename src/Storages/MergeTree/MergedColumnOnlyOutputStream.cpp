@@ -19,6 +19,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
     WrittenOffsetSubstreams * written_offset_substreams,
     bool try_adaptive_codec,
     PackedFilesWriter * external_packed_skip_indices_writer,
+    StreamBaseManifestPtr stream_base_manifest,
     const ContextPtr & writer_context)
     : IMergedBlockOutputStream(
           std::move(data_settings),
@@ -48,6 +49,7 @@ MergedColumnOnlyOutputStream::MergedColumnOnlyOutputStream(
         try_adaptive_codec);
 
     writer_settings.external_packed_skip_indices_writer = external_packed_skip_indices_writer;
+    writer_settings.stream_base_manifest = std::move(stream_base_manifest);
 
     writer = createMergeTreeDataPartWriter(
         data_part->getType(),
