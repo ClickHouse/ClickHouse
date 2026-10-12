@@ -2,7 +2,7 @@
 
 #include <Common/HiddenSecret.h>
 #include <Common/StringUtils.h>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 #include <array>
 #include <string>
