@@ -330,6 +330,8 @@ ColumnsDescription StorageMerge::getColumnsDescriptionFromSourceTablesImpl(
                 "Not enough privileges to access the table that {} points to",
                 storage_id.getNameForLogs());
 
+        /// Otherwise a data lake table reports the schema of the snapshot pinned by its last direct query.
+        t->updateExternalDynamicMetadataIfExists(query_context);
         auto table_metadata = t->getInMemoryMetadataPtr(query_context, false);
         const auto & structure = table_metadata->getColumns();
         String prev_column_name;
@@ -1207,6 +1209,8 @@ std::vector<ReadFromMerge::ChildPlan> ReadFromMerge::createChildrenPlans(SelectQ
 
             Aliases aliases;
             RowPolicyDataOpt row_policy_data_opt;
+            /// The analyzer refreshes only the outer storage, so a data lake child would keep the snapshot of its last direct query.
+            storage->updateExternalDynamicMetadataIfExists(modified_context);
             auto storage_metadata_snapshot = storage->getInMemoryMetadataPtr(context, false);
 
             if (storage_metadata_snapshot->getColumns().empty())
