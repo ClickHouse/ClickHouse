@@ -60,7 +60,6 @@ namespace ErrorCodes
 namespace Setting
 {
     extern const SettingsBool enable_materialized_cte;
-    extern const SettingsString log_comment;
     extern const SettingsBool promql_push_down_label_matchers;
 }
 
@@ -255,10 +254,6 @@ void PrometheusHTTPProtocolAPI::executePromQLQuery(
         query_context->setSetting("enable_materialized_cte", true);
 
     query_context->setSetting("empty_result_for_aggregation_by_empty_set", false);
-
-    /// Record the PromQL text in query_log unless the request has its own comment.
-    if (query_context->getSettingsRef()[Setting::log_comment].value.empty())
-        query_context->setSetting("log_comment", params.promql_query);
 
     auto [ast, io] = executeQuery(sql_query->formatWithSecretsOneLine(), query_context, {}, QueryProcessingStage::Complete);
 

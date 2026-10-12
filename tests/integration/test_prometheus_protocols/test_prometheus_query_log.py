@@ -321,3 +321,10 @@ def test_query_api_keeps_user_log_comment():
     query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
     run_instant_query("up", query_id, "&log_comment=my_dashboard")
     assert query_log_comment(query_id) == "my_dashboard\n"
+
+
+def test_query_api_keeps_empty_user_log_comment():
+    """An empty log_comment passed with the request is kept too."""
+    query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
+    run_instant_query("up", query_id, "&log_comment=")
+    assert query_log_comment(query_id) == "\n"

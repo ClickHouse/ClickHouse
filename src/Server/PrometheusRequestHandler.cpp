@@ -47,6 +47,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 http_response_buffer_size;
+    extern const SettingsString log_comment;
 }
 
 namespace ErrorCodes
@@ -525,6 +526,7 @@ public:
             if (uri_path.ends_with("/query_range"))
             {
                 String query = params->get("query", "");
+                setLogCommentToPromQL(query);
                 String start = params->get("start", "");
                 String end = params->get("end", "");
                 String step = params->get("step", "");
@@ -550,6 +552,7 @@ public:
             else if (uri_path.ends_with("/query"))
             {
                 String query = params->get("query", "");
+                setLogCommentToPromQL(query);
                 String time = params->get("time", "");
                 String lookback_delta = params->get("lookback_delta", "");
 
@@ -647,6 +650,13 @@ public:
     }
 
 private:
+    /// Records the PromQL text in query_log unless the request or the user's profile sets its own log_comment.
+    void setLogCommentToPromQL(const String & query)
+    {
+        if (!params->has("log_comment") && context->getSettingsRef()[Setting::log_comment].value.empty())
+            context->setSetting("log_comment", query);
+    }
+
     /// Handles the format_query endpoint: parses the PromQL expression given in the 'query' parameter
     /// and writes it back serialized from the parsed tree, i.e. with the whitespace normalized,
     /// the comments removed, and the redundant parentheses dropped.
