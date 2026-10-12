@@ -204,7 +204,7 @@ bool ReplicatedMergeTreeRestartingThread::tryStartup()
         /// starts (below), otherwise a recovering replica could fetch cross-region purely because region
         /// publication lagged behind queue startup. If publishing it failed, keep the table readonly and retry
         /// the whole startup instead of proceeding without region information.
-        if (!storage.geo_replication_controller.start())
+        if (!storage.geo_replication_controller.start(active_node_identifier))
         {
             storage.geo_replication_controller.stop();
             LOG_WARNING(log, "Failed to publish the region for geo replication control. Will try again.");

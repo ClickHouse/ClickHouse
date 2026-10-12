@@ -64,7 +64,10 @@ public:
     /// Publishes this replica's region membership and enters leader election. Returns whether the region node is
     /// published: the caller must not start the replication queue until it is, otherwise peers classify this
     /// replica as out-of-region and a recovering replica falls back to a cross-region fetch.
-    bool start();
+    /// `active_node_identifier_` is the content this server writes to `/replicas/<name>/is_active`: an existing
+    /// `region` node is replaced only when `is_active` is absent or owned by this server, so a startup that does
+    /// not own the replica name never touches the region metadata of a live replica.
+    bool start(const String & active_node_identifier_);
 
     void stop();
 
@@ -85,6 +88,7 @@ private:
     zkutil::LeaderElectionPtr leader_election TSA_GUARDED_BY(state_mutex);
     zkutil::EphemeralNodeHolderPtr leader_lease_holder TSA_GUARDED_BY(state_mutex);
     zkutil::EphemeralNodeHolderPtr region_holder TSA_GUARDED_BY(state_mutex);
+    String active_node_identifier TSA_GUARDED_BY(state_mutex);
     std::atomic_bool shutdown = false;
     /// Published from the controller / leader-election thread and read from the queue worker threads (`isLeader`).
     /// Exposing an atomic role flag - instead of letting worker threads read the `current_zookeeper` and

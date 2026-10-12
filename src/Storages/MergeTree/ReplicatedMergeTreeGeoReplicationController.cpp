@@ -155,6 +155,7 @@ namespace MergeTreeSetting
 namespace ErrorCodes
 {
     extern const int NO_ZOOKEEPER;
+    extern const int REPLICA_IS_ALREADY_ACTIVE;
 }
 
 ReplicatedMergeTreeGeoReplicationController::ReplicatedMergeTreeGeoReplicationController(StorageReplicatedMergeTree & storage_)
@@ -254,10 +255,15 @@ void ReplicatedMergeTreeGeoReplicationController::stop()
     resetPreviousTerm();
 }
 
-bool ReplicatedMergeTreeGeoReplicationController::start()
+bool ReplicatedMergeTreeGeoReplicationController::start(const String & active_node_identifier_)
 {
     if (!task)
         return true;
+
+    {
+        std::lock_guard lock(state_mutex);
+        active_node_identifier = active_node_identifier_;
+    }
 
     /// A failed synchronous start schedules a delayed retry. Cancel and join that retry before starting a new
     /// synchronous pass: otherwise it can execute after the new pass has published the region node, reset the
@@ -334,10 +340,48 @@ bool ReplicatedMergeTreeGeoReplicationController::isLeader() const
 
 void ReplicatedMergeTreeGeoReplicationController::createEphemeralRegionNode()
 {
-    auto region_path = fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName() / "region";
-    if (current_zookeeper->exists(region_path)) /// Old zookeeper is expired and new zookeeper has some delay removing the ephemeral node
-        current_zookeeper->remove(region_path);
-    region_holder = zkutil::EphemeralNodeHolder::create(region_path, *current_zookeeper, region);
+    auto replica_path = fs::path(storage.getZooKeeperPath()) / "replicas" / storage.getReplicaName();
+    auto region_path = replica_path / "region";
+    auto is_active_path = replica_path / "is_active";
+
+    /// An existing `region` node may be left over from an expired session that the new ZooKeeper has not removed
+    /// yet, but it may also belong to another live server that holds this replica name. Replace it only if this
+    /// startup owns the replica name: `is_active` is either absent (`activateReplica` will create it right after)
+    /// or created by this server. The ownership check and the replacement go into one `multi`, so `is_active`
+    /// cannot be taken by another server in between.
+    Coordination::Requests ops;
+    String is_active_content;
+    Coordination::Stat is_active_stat;
+    if (current_zookeeper->tryGet(is_active_path, is_active_content, &is_active_stat))
+    {
+        if (is_active_content != active_node_identifier)
+            throw Exception(
+                ErrorCodes::REPLICA_IS_ALREADY_ACTIVE,
+                "Replica {} appears to be already active, will not replace its region node",
+                replica_path.string());
+
+        if (is_active_stat.ephemeralOwner == current_zookeeper->getClientID())
+        {
+            /// Our own live node: it cannot be replaced while this session lives.
+            ops.emplace_back(zkutil::makeCheckRequest(is_active_path, is_active_stat.version));
+        }
+        else
+        {
+            /// Our own node from an expired session: `activateReplica` removes it anyway.
+            ops.emplace_back(zkutil::makeRemoveRequest(is_active_path, is_active_stat.version));
+        }
+    }
+    else
+    {
+        zkutil::addCheckNotExistsRequest(ops, *current_zookeeper, is_active_path);
+    }
+
+    if (current_zookeeper->exists(region_path))
+        ops.emplace_back(zkutil::makeRemoveRequest(region_path, -1));
+    ops.emplace_back(zkutil::makeCreateRequest(region_path, region, zkutil::CreateMode::Ephemeral));
+    current_zookeeper->multi(ops);
+
+    region_holder = zkutil::EphemeralNodeHolder::existing(region_path, *current_zookeeper);
 }
 
 }
