@@ -13,7 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 logs_dir=${USER_FILES_PATH}/${CLICKHOUSE_TEST_UNIQUE_NAME}
 rm -rf "${logs_dir}"
-mkdir -p "${logs_dir}"/{d1,d2,d3,d4}
+mkdir -p "${logs_dir}"/{d1,d2,d3,d4,d5}
 d1=${logs_dir}/d1
 held=${logs_dir}/held.log
 held2=${logs_dir}/held2.log
@@ -259,8 +259,20 @@ rm "${d4}/app.log"
 printf '3\n' >> "${d4}/app.log.1"
 read_until file_log_glob 3
 
+echo '-- with a glob, a symbolic link to a name that the glob excludes is read under its own name, also after ATTACH'
+d5=${logs_dir}/d5
+printf '1\n2\n' > "${d5}/hidden.txt"
+ln -s hidden.txt "${d5}/alias.log"
+${CLICKHOUSE_CLIENT} -q "CREATE TABLE file_log_glob_symlink (id UInt64) ENGINE = FileLog('${d5}/*.log', 'TSV') SETTINGS poll_timeout_ms = 100"
+read_log file_log_glob_symlink
+${CLICKHOUSE_CLIENT} -q "DETACH TABLE file_log_glob_symlink"
+printf '3\n' >> "${d5}/hidden.txt"
+${CLICKHOUSE_CLIENT} -q "ATTACH TABLE file_log_glob_symlink"
+read_until file_log_glob_symlink 3
+
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_create"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_symlink"
 ${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob"
+${CLICKHOUSE_CLIENT} -q "DROP TABLE file_log_glob_symlink"
 rm -rf "${logs_dir}"

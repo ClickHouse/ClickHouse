@@ -385,14 +385,25 @@ void StorageFileLog::loadFiles()
     for (auto & [file, inode] : rotated_files)
         add_found_file(std::move(file), inode, false);
 
-    /// A file with several names is read under one of them: a hard link, then a symbolic link that does not resolve through
-    /// another name in the directory; then the name it was read under (whether or not it matches the glob), then a matching
+    auto is_meta_name = [&](const FoundFile & file)
+    {
+        auto meta = file_infos.meta_by_inode.find(file.inode);
+        return meta != file_infos.meta_by_inode.end() && meta->second.file_name == file.name;
+    };
+    std::unordered_set<UInt64> inodes_with_meta_name;
+    for (const auto & file : found_files)
+        if (is_meta_name(file))
+            inodes_with_meta_name.insert(file.inode);
+
+    /// A file with several names is read under one of them: a hard link, then a symbolic link that does not resolve through another
+    /// name in the directory, but never a name the glob excludes over the name it was read under; then that name, then a matching
     /// name, then the smallest. A file renamed to a non-matching name while it was read (log rotation) keeps being read.
     auto read_key = [&](const FoundFile & file)
     {
-        auto meta = file_infos.meta_by_inode.find(file.inode);
-        const bool is_meta_name = meta != file_infos.meta_by_inode.end() && meta->second.file_name == file.name;
-        return std::tuple<bool, bool, bool, bool, const String &>(file.is_symlink, file.follows, !is_meta_name, !file.matches, file.name);
+        const bool meta_name = is_meta_name(file);
+        const bool excluded_other = !file.matches && !meta_name && inodes_with_meta_name.contains(file.inode);
+        return std::tuple<bool, bool, bool, bool, bool, const String &>(
+            excluded_other, file.is_symlink, file.follows, !meta_name, !file.matches, file.name);
     };
     std::unordered_map<UInt64, size_t> read_index_by_inode;
     for (size_t i = 0; i < found_files.size(); ++i)

@@ -82,3 +82,7 @@ f.log	51
 app.log	1
 app.log	2
 app.log.1	3
+-- with a glob, a symbolic link to a name that the glob excludes is read under its own name, also after ATTACH
+alias.log	1
+alias.log	2
+alias.log	3
