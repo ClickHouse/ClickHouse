@@ -1510,6 +1510,7 @@ ContextData::ContextData(const ContextData &o) :
     http_combined_filter(o.http_combined_filter),
     external_tables_mapping(o.external_tables_mapping),
     scalars(o.scalars),
+    client_supplied_scalars(o.client_supplied_scalars),
     special_scalars(o.special_scalars),
     next_task_callback(o.next_task_callback),
     merge_tree_read_task_callback(o.merge_tree_read_task_callback),
@@ -3090,6 +3091,19 @@ void Context::addScalar(const String & name, const Block & block)
 
     std::lock_guard lock(mutex);
     scalars[name] = block;
+    /// A server-computed value overrides any client-supplied one of the same name and is trusted.
+    client_supplied_scalars.erase(name);
+}
+
+
+void Context::addClientScalar(const String & name, const Block & block)
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
+    std::lock_guard lock(mutex);
+    scalars[name] = block;
+    client_supplied_scalars.insert(name);
 }
 
 
@@ -3110,6 +3124,15 @@ bool Context::hasScalar(const String & name) const
 
     std::lock_guard lock(mutex);
     return scalars.contains(name);
+}
+
+bool Context::hasComputedScalar(const String & name) const
+{
+    if (isGlobalContext())
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Global context cannot have scalars");
+
+    std::lock_guard lock(mutex);
+    return scalars.contains(name) && !client_supplied_scalars.contains(name);
 }
 
 void Context::addQueryAccessInfo(

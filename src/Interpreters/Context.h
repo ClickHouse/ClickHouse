@@ -449,6 +449,13 @@ protected:
     mutable std::shared_ptr<HypotheticalObjectStore> hypothetical_object_store;
     /// Query scalars
     Scalars scalars;
+    /// Names in `scalars` that were supplied by the client over the wire (the `Scalar` packet, i.e.
+    /// the `clickhouse-client --external ... --scalar` feature or an initiator shipping scalars to a
+    /// shard) rather than computed by the server itself. They are tracked so that the analyzer's
+    /// scalar-subquery cache never mistakes a client-supplied block for an already-computed subquery
+    /// result. Without this, a client could forge the result of a scalar subquery used in a row
+    /// policy (both live in this one map, keyed by the query-tree hash) and bypass the policy.
+    std::unordered_set<String> client_supplied_scalars;
     /// Used to store constant values which are different on each instance during distributed plan, such as _shard_num.
     Scalars special_scalars;
 
@@ -1134,6 +1141,16 @@ public:
     Block getScalar(const String & name) const;
     void addScalar(const String & name, const Block & block);
     bool hasScalar(const String & name) const;
+
+    /// Add a scalar received from the client over the wire (the `Scalar` packet). Unlike `addScalar`,
+    /// the entry is marked as client-supplied so that `hasComputedScalar` will not report it as a
+    /// server-computed subquery result. Explicit readers (`__getScalar`, `_shard_num`, forwarding to
+    /// shards) still see it through `getScalar` / `hasScalar` / `getScalars`.
+    void addClientScalar(const String & name, const Block & block);
+    /// Like `hasScalar`, but returns true only for scalars the server computed itself, never for
+    /// client-supplied ones. The analyzer's scalar-subquery cache must use this so that a forged
+    /// client scalar cannot stand in for the result of a (e.g. row-policy) scalar subquery.
+    bool hasComputedScalar(const String & name) const;
 
     std::optional<Block> tryGetSpecialScalar(const String & name) const;
     void addSpecialScalar(const String & name, const Block & block);
