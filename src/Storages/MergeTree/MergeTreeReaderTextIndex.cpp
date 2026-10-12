@@ -653,6 +653,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
     const auto & analyzer = granule->getAnalyzer();
     PostingList range_posting;
     range_posting.addRangeClosed(static_cast<UInt32>(effective_range->begin), static_cast<UInt32>(effective_range->end));
+    const bool granule_in_one_container = (mark_range->begin >> 16) == (mark_range->end >> 16);
 
     for (size_t i = 0; i < columns_to_read.size(); ++i)
     {
@@ -668,7 +669,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
         if (search_query->getSearchMode() == TextSearchMode::Phrase)
             continue;
 
-        result[i] = buildPostingsForQuery(i, *search_query, analyzer, *effective_range, range_posting);
+        result[i] = buildPostingsForQuery(i, *search_query, analyzer, *effective_range, range_posting, granule_in_one_container);
     }
 
     return result;
@@ -679,15 +680,16 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
     const TextSearchQuery & query,
     const TextIndexAnalyzer & analyzer,
     const RowsRange & range,
-    PostingList & range_posting)
+    PostingList & range_posting,
+    bool granule_in_one_container)
 {
     const auto & query_builder = analyzer.getQueryBuilder(query);
     if (query_builder.is_failed)
         return {};
 
     /// Consecutive granules inside one Roaring container (65536 rows) reuse the intersection of the posting lists.
-    if (query.getSearchMode() == TextSearchMode::All && query_builder.needReadPostings() && query_builder.tokens.size() > 1
-        && (range.begin >> 16) == (range.end >> 16))
+    if (granule_in_one_container && query.getSearchMode() == TextSearchMode::All && query_builder.needReadPostings()
+        && query_builder.tokens.size() > 1)
     {
         const PostingList * folded_postings = query_builder.postings ? &*query_builder.postings : nullptr;
         return intersectPostingsInContainer(column_idx, analyzer, query_builder.tokens, folded_postings, range, range_posting);

@@ -67,7 +67,13 @@ private:
     std::vector<PostingList> buildPostingsForMark(size_t mark, const RowsRange & slice_range);
     /// Returns combined posting list for a single query by taking the prebuilt
     /// postings from the analyzer and reading large postings blocks as needed.
-    PostingList buildPostingsForQuery(size_t column_idx, const TextSearchQuery & query, const TextIndexAnalyzer & analyzer, const RowsRange & range, PostingList & range_posting);
+    PostingList buildPostingsForQuery(
+        size_t column_idx,
+        const TextSearchQuery & query,
+        const TextIndexAnalyzer & analyzer,
+        const RowsRange & range,
+        PostingList & range_posting,
+        bool granule_in_one_container);
     /// Intersects `folded_postings` (all rows if null) with the large tokens in `range`, which lies in one Roaring container.
     PostingList intersectPostingsInContainer(
         size_t column_idx,

@@ -7,6 +7,7 @@ DROP TABLE IF EXISTS tab_parts;
 DROP TABLE IF EXISTS tab_wide;
 DROP TABLE IF EXISTS tab_mixed;
 DROP TABLE IF EXISTS tab_container;
+DROP TABLE IF EXISTS tab_multi;
 
 CREATE TABLE tab
 (
@@ -89,12 +90,28 @@ SETTINGS index_granularity = 65536, index_granularity_bytes = 0, min_bytes_for_w
 
 INSERT INTO tab_container SELECT * FROM tab;
 
+CREATE TABLE tab_multi
+(
+    id UInt64,
+    s String,
+    INDEX idx s TYPE text(tokenizer = splitByNonAlpha, posting_list_block_size = 4096, posting_list_codec = 'none')
+)
+ENGINE = MergeTree ORDER BY id
+SETTINGS index_granularity = 100000, index_granularity_bytes = 0, min_bytes_for_wide_part = 0;
+
+INSERT INTO tab_multi SELECT * FROM tab;
+
 -- A granule reuses the intersection of the posting lists kept for the previous granules in the same 65536 rows.
--- Granules of 65536 rows read whole never share them.
+-- Granules of 65536 rows read whole never share them. Granules spanning several containers, even when read
+-- in parts, and single-token searches never use them.
 SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasAllTokens(s, ['a', 'b'])
     SETTINGS max_threads = 1, use_query_condition_cache = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05275_reuse_tab';
 SELECT count(), sum(cityHash64(id)) FROM tab_container WHERE hasAllTokens(s, ['a', 'b'])
     SETTINGS max_threads = 1, max_block_size = 65536, use_query_condition_cache = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05275_reuse_tab_container';
+SELECT count(), sum(cityHash64(id)) FROM tab_multi WHERE hasAllTokens(s, ['a', 'b'])
+    SETTINGS max_threads = 1, max_block_size = 1024, use_query_condition_cache = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05275_reuse_tab_multi';
+SELECT count(), sum(cityHash64(id)) FROM tab WHERE hasAllTokens(s, ['a'])
+    SETTINGS max_threads = 1, use_query_condition_cache = 0, merge_tree_read_split_ranges_into_intersecting_and_non_intersecting_injection_probability = 0, log_comment = '05275_reuse_tab_single_token';
 
 SYSTEM FLUSH LOGS query_log;
 
@@ -121,3 +138,4 @@ DROP TABLE tab_parts;
 DROP TABLE tab_wide;
 DROP TABLE tab_mixed;
 DROP TABLE tab_container;
+DROP TABLE tab_multi;
