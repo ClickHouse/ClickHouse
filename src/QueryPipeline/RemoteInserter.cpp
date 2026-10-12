@@ -103,14 +103,17 @@ void RemoteInserter::initialize()
             /// Server could attach ColumnsDescription in front of stream for column defaults. There's no need to pass it through cause
             /// client's already got this information for remote table. Ignore.
         }
-        else if (Protocol::Server::Progress == packet.type || Protocol::Server::ProfileTraces == packet.type)
+        else if (Protocol::Server::Progress == packet.type || Protocol::Server::ProfileEvents == packet.type
+            || Protocol::Server::ProfileTraces == packet.type)
         {
-            /// Progress and trace packets are ignored.
+            /// A subquery executed while the remote server is still analysing the query reports progress and
+            /// profile events, so these can arrive before the header block. They are ignored, as are trace packets.
         }
         else
             throw NetException(
                 ErrorCodes::UNEXPECTED_PACKET_FROM_SERVER,
-                "Unexpected packet from server (expected Data or Exception, got {})",
+                "Unexpected packet from server (expected Data, Exception, Log, TableColumns, Progress "
+                "or ProfileEvents, got {})",
                 Protocol::Server::toString(packet.type));
     }
 }

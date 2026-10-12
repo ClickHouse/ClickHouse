@@ -31,6 +31,7 @@ class InternalProfileTracesQueue;
 
 class ThreadStatus;
 class ThreadGroup;
+class ResourceSchedulingContext;
 class MemoryPressureMonitor;
 using ThreadGroupPtr = std::shared_ptr<ThreadGroup>;
 using InternalProfileEventsQueue = ConcurrentBoundedQueue<Block>;
