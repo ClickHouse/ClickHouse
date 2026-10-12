@@ -178,9 +178,35 @@ bool SerializationTime::tryDeserializeTextJSON(IColumn & column, ReadBuffer & is
 
 void SerializationTime::serializeTextCSV(const IColumn & column, size_t row_num, WriteBuffer & ostr, const FormatSettings & settings) const
 {
-    writeChar('"', ostr);
+    const bool quote = textCSVNeedsQuotes(column, row_num, settings);
+
+    if (quote)
+        writeChar('"', ostr);
     serializeText(column, row_num, ostr, settings);
-    writeChar('"', ostr);
+    if (quote)
+        writeChar('"', ostr);
+}
+
+bool SerializationTime::textCSVMayNeedQuotes(const FormatSettings & settings) const
+{
+    const char delimiter = settings.csv.delimiter;
+    return settings.csv.quote_date_time_types
+        || settings.csv.force_quote_date_time_types
+        || delimiter == ':'
+        || delimiter == '-'
+        || isNumericASCII(delimiter);
+}
+
+bool SerializationTime::textCSVNeedsQuotes(
+    const IColumn & column, size_t row_num, const FormatSettings & settings) const
+{
+    const auto value = assert_cast<const ColumnType &>(column).getData()[row_num];
+    const char delimiter = settings.csv.delimiter;
+    return settings.csv.quote_date_time_types
+        || settings.csv.force_quote_date_time_types
+        || delimiter == ':'
+        || (value < 0 && delimiter == '-')
+        || isNumericASCII(delimiter);
 }
 
 void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -205,11 +231,11 @@ void SerializationTime::deserializeTextCSV(IColumn & column, ReadBuffer & istr, 
         ReadBufferFromString buf(time_str);
         readTimeText(x, buf);
         if (!buf.eof())
-                throw Exception(
-                    ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
-                    "Unexpected data '{}' after parsed Time value '{}'",
-                    String(buf.position(), buf.buffer().end()),
-                    String(buf.buffer().begin(), buf.position()));
+            throw Exception(
+                ErrorCodes::UNEXPECTED_DATA_AFTER_PARSED_VALUE,
+                "Unexpected data '{}' after parsed Time value '{}'",
+                String(buf.position(), buf.buffer().end()),
+                String(buf.buffer().begin(), buf.position()));
     }
 
     assert_cast<ColumnType &>(column).getData().push_back(static_cast<Int32>(x));

@@ -19,6 +19,16 @@ CustomSeparatedRowOutputFormat::CustomSeparatedRowOutputFormat(
     , with_names(with_names_)
     , with_types(with_types_)
     , format_settings(format_settings_)
+    , field_format_settings(
+        format_settings_.custom.escaping_rule == FormatSettings::EscapingRule::CSV
+            ? getFormatSettingsForCSVFieldDelimiter(
+                format_settings_, format_settings_.custom.field_delimiter, format_settings_.custom.field_delimiter)
+            : format_settings_)
+    , last_field_format_settings(
+        format_settings_.custom.escaping_rule == FormatSettings::EscapingRule::CSV
+            ? getFormatSettingsForCSVFieldDelimiter(
+                format_settings_, format_settings_.custom.row_after_delimiter, format_settings_.custom.field_delimiter)
+            : format_settings_)
     , escaping_rule(format_settings.custom.escaping_rule)
 {
 }
@@ -96,7 +106,23 @@ void CustomSeparatedRowOutputFormat::writeRowBetweenDelimiter()
 
 void CustomSeparatedRowOutputFormat::writeField(const IColumn & column, const ISerialization & serialization, size_t row_num)
 {
-    serializeFieldByEscapingRule(column, serialization, out, row_num, escaping_rule, format_settings);
+    serializeFieldByEscapingRule(column, serialization, out, row_num, escaping_rule, field_format_settings);
+}
+
+void CustomSeparatedRowOutputFormat::write(const Columns & columns, size_t row_num)
+{
+    writeRowStartDelimiter();
+
+    for (size_t i = 0; i < num_columns; ++i)
+    {
+        if (i != 0)
+            writeFieldDelimiter();
+
+        const auto & settings = i + 1 == num_columns ? last_field_format_settings : field_format_settings;
+        serializeFieldByEscapingRule(*columns[i], *serializations[i], out, row_num, escaping_rule, settings);
+    }
+
+    writeRowEndDelimiter();
 }
 
 void registerOutputFormatCustomSeparated(FormatFactory & factory);

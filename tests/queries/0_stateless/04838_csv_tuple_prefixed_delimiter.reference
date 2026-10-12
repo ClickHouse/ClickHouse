@@ -1,0 +1,45 @@
+Template
+('2024-01-17 08:30:00',1)	42
+CustomSeparated
+('2024-01-17 08:30:00',1)	42
+CustomSeparated replays a failed flattened tuple parse
+('value','2024-01-17 08:30:00',1)	42
+CustomSeparated preserves an ambiguous flattened tuple boundary
+('(\'y\',-5,\'2024-01-17 08:30:00\')',-5,'2024-01-17 08:30:00')	7
+CustomSeparated last tuple uses the row delimiter
+42	(1,'2024-01-17 08:30:00')
+43	(2,'2024-01-17 08:30:00')
+CustomSeparated last flattened tuple keeps a quoted first element
+42	('value0','2024-01-17 08:30:00')
+43	('value1','2024-01-17 08:30:00')
+CustomSeparated whole string tuple keeps prefixed row boundaries
+('left0','right0')
+('left1','right1')
+CustomSeparated last whole tuple uses a prefixed row delimiter
+42	(1,'2024-01-17 08:30:00')
+43	(2,'2024-01-17 08:30:00')
+CustomSeparated last whole tuple may end at EOF
+(1,'2024-01-17 08:30:00')
+Template whole tuple supports an empty following delimiter
+(1,'2024-01-17 08:30:00')	42
+CustomSeparated accepts an unquoted whole tuple
+('value',5)	42
+Variant preserves a whole tuple through a string buffer
+Tuple(UInt8, DateTime('UTC'))	(1,'2024-01-17 08:30:00')
+Variant forwards row-specific tuple quoting
+"(('2024-01-17 08:30:00',1),2)"|42
+7:2|42
+\N:2|42
+Tuple(DateTime('UTC'), UInt8)	(('2024-01-17 08:30:00',1),2)	42
+UInt8	(7,2)	42
+None	(NULL,2)	42
+Dynamic forwards row-specific tuple quoting
+"(('2024-01-17 08:30:00',1),2)"|42
+7:2|42
+\N:2|42
+Tuple(DateTime, Int64)	(('2024-01-17 08:30:00',1),2)	42
+Int64	(7,2)	42
+None	(NULL,2)	42
+Shared Dynamic forwards row-specific tuple quoting
+"(('2024-01-17 08:30:00',1),2)"|42
+Tuple(DateTime, Int64)	(('2024-01-17 08:30:00',1),2)	42

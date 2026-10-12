@@ -66,6 +66,32 @@ String escapingRuleToString(FormatSettings::EscapingRule escaping_rule)
     }
 }
 
+FormatSettings getFormatSettingsForCSVFieldDelimiter(
+    const FormatSettings & format_settings, const String & field_delimiter, const String & tuple_field_delimiter)
+{
+    FormatSettings result = format_settings;
+    result.csv.custom_delimiter.clear();
+    result.csv.force_quote_date_time_types = false;
+    result.csv.tuple_delimiter_matches_field_delimiter = tuple_field_delimiter.size() == 1
+        && tuple_field_delimiter.front() == result.csv.tuple_delimiter;
+
+    if (field_delimiter.empty())
+    {
+        result.csv.force_quote_date_time_types = true;
+        return result;
+    }
+
+    if (field_delimiter.size() == 1)
+        result.csv.delimiter = field_delimiter.front();
+    else
+    {
+        result.csv.custom_delimiter = field_delimiter;
+        result.csv.force_quote_date_time_types = true;
+    }
+
+    return result;
+}
+
 /// `NullOutput` discards everything and holds no state, so one shared instance is enough and is safe
 /// to share. A local one escapes into the readers, which puts a `-fstack-protector-strong` canary on
 /// this per-field function.

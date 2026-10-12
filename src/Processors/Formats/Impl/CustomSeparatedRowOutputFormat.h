@@ -20,6 +20,7 @@ public:
 private:
     using EscapingRule = FormatSettings::EscapingRule;
 
+    void write(const Columns & columns, size_t row_num) override;
     void writeField(const IColumn & column, const ISerialization & serialization, size_t row_num) override;
     void writeFieldDelimiter() override;
     void writeRowStartDelimiter() override;
@@ -32,6 +33,8 @@ private:
     bool with_names;
     bool with_types;
     const FormatSettings format_settings;
+    const FormatSettings field_format_settings;
+    const FormatSettings last_field_format_settings;
     EscapingRule escaping_rule;
 };
 

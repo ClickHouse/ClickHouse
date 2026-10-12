@@ -1,0 +1,88 @@
+default CSV output quotes date and time types
+"2024-01-15","2024-01-16","2024-01-17 08:30:00","2024-01-18 09:45:01.123","12:30:00","12:30:00.456",42,"value"
+disabled date/time CSV quoting keeps strings quoted
+2024-01-15,2024-01-16,2024-01-17 08:30:00,2024-01-18 09:45:01.123,12:30:00,12:30:00.456,42,"value"
+nullable values with disabled date/time CSV quoting
+2024-01-15,2024-01-17 08:30:00,"value"
+\N,\N,\N
+low cardinality date with disabled date/time CSV quoting
+2024-01-15
+CSVWithNames with disabled date/time CSV quoting
+"d","s"
+2024-01-15,"value"
+Time remains quoted with conflicting colon CSV delimiter
+"12:30:00":42
+Time64 remains quoted with conflicting colon CSV delimiter
+"12:30:00.456":42
+Nullable Time remains quoted with conflicting colon CSV delimiter
+"12:30:00":42
+Nullable Time64 remains quoted with conflicting colon CSV delimiter
+"12:30:00.456":42
+temporal values remain quoted with numeric CSV delimiter
+"2024-01-15"1"2024-01-16"1"1234567890"1"1234567890.123"1"12:30:00"1"12:30:00.456"142
+negative subsecond DateTime64 Unix timestamp is unquoted with safe delimiter
+1
+negative subsecond DateTime64 Unix timestamp is quoted with conflicting delimiter
+1
+positive DateTime64 Unix timestamp is unquoted with minus delimiter
+1
+positive Time values are unquoted with minus delimiter
+1	1
+positive temporal tuple remains flattened with minus delimiter
+1705571101.123-12:30:00-12:30:00.456-42
+DateTime64 dot quoting follows trimmed fractional output
+0	1
+CustomSeparated CSV escaping uses its field delimiter
+"2024-01-15"-42
+CustomSeparated CSV escaping uses its final row delimiter
+"2024-01-15"-
+CustomSeparated CSV escaping keeps a boundary without a field delimiter
+"12:30:00.456"42
+Template CSV escaping uses its following delimiter
+"2024-01-15"-42
+Template CSV escaping keeps a boundary without a delimiter
+"1234567890"42
+CustomSeparated keeps a divergent tuple delimiter in one CSV field
+"('2024-01-17 08:30:00','2024-01-18 09:45:01')"|42
+CustomSeparated temporal tuple fallback is auto-detected on input
+('2024-01-17 08:30:00','2024-01-18 09:45:01')	42
+CustomSeparated flattened tuple is not mistaken for whole tuple input
+('(value)','2024-01-18 09:45:01')	42
+Template keeps a divergent tuple delimiter in one CSV field
+"('2024-01-17 08:30:00','2024-01-18 09:45:01')"|42
+Template keeps non-temporal tuple columns separate
+1:2|42
+CustomSeparated last temporal tuple element uses outer delimiter
+1:2024-01-17 08:30:00|42
+CustomSeparated inverse delimiters round-trip a whole temporal tuple
+(1,'2024-01-17 08:30:00')	42
+Template last temporal tuple element uses outer delimiter
+1:2024-01-17 08:30:00|42
+CustomSeparated preserves a leading nested tuple boundary
+"(('2024-01-17 08:30:00',1),2)"|42
+Template preserves a leading nested tuple boundary
+"(('2024-01-17 08:30:00',1),2)"|42
+CustomSeparated trailing nested tuple fallback uses the whole field
+"(1,('2024-01-17 08:30:00',2))"|42
+Template trailing nested tuple fallback uses the whole field
+"(1,('2024-01-17 08:30:00',2))"|42
+CustomSeparated keeps a safe trailing nested tuple flattened
+1:2:2024-01-17 08:30:00|42
+Template keeps a safe trailing nested tuple flattened
+1:2:2024-01-17 08:30:00|42
+CustomSeparated trailing nested tuple fallback round-trips
+(1,('2024-01-17 08:30:00',2))	42
+CustomSeparated keeps Nullable Tuple as one flattened element
+"('2024-01-17 08:30:00',1)":2|42
+Template keeps Nullable Tuple as one flattened element
+"('2024-01-17 08:30:00',1)":2|42
+CustomSeparated Nullable Tuple element round-trips
+(('2024-01-17 08:30:00',1),2)	42
+Template final Nullable Tuple remains flattened
+2:"('2024-01-17 08:30:00',1)"|42
+CustomSeparated nested Nullable Tuple element round-trips
+((('2024-01-17 08:30:00',1),2),3)	42
+Template DateTime64 tuple follows trimmed whole-second output
+2024-01-18 09:45:01.42
+Template DateTime64 tuple keeps fractional delimiter safe
+"('2024-01-18 09:45:01.123',42)"
