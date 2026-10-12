@@ -286,3 +286,45 @@ def test_query_range_api_appears_in_query_log_with_read_rows():
     extract_data_from_http_api_response(response)
 
     assert_query_log_has_finish_for_query_id(query_id)
+
+
+def query_log_comment(query_id):
+    return node.query(
+        f"SELECT log_comment FROM system.query_log "
+        f"WHERE type = 'QueryFinish' AND query_id = '{query_id}'"
+    )
+
+
+def run_instant_query(promql, query_id, extra_params=""):
+    escaped_query = urllib.parse.quote_plus(promql, safe="")
+    url = (
+        f"http://{node.ip_address}:9093/api/v1/query"
+        f"?query={escaped_query}&time=1753176757.89{extra_params}"
+    )
+    response = get_response_to_http_api(
+        url, headers={"X-ClickHouse-Query-Id": query_id}
+    )
+    extract_data_from_http_api_response(response)
+    assert_query_log_has_finish_for_query_id(query_id)
+
+
+def test_query_api_records_promql_as_log_comment():
+    """The query_log row of a Query API request carries the PromQL text in log_comment."""
+    promql = 'sum by (job) (up{job="prometheus"})'
+    query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
+    run_instant_query(promql, query_id)
+    assert query_log_comment(query_id) == f"{promql}\n"
+
+
+def test_query_api_keeps_user_log_comment():
+    """A log_comment passed with the request is kept instead of the PromQL text."""
+    query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
+    run_instant_query("up", query_id, "&log_comment=my_dashboard")
+    assert query_log_comment(query_id) == "my_dashboard\n"
+
+
+def test_query_api_keeps_empty_user_log_comment():
+    """An empty log_comment passed with the request is kept too."""
+    query_id = f"prometheus-query-log-test-{uuid.uuid4()}"
+    run_instant_query("up", query_id, "&log_comment=")
+    assert query_log_comment(query_id) == "\n"
