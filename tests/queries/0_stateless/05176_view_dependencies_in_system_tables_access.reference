@@ -1,0 +1,3 @@
+default user: ['views_db.v']
+user without SHOW TABLES on the view: []
+the same user after the grant: ['views_db.v']
