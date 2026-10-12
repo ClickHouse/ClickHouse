@@ -27,6 +27,7 @@
 #include <Interpreters/InterpreterCreateQuery.h>
 #include <Interpreters/NormalizeSelectWithUnionQueryVisitor.h>
 #include <Interpreters/SelectIntersectExceptQueryVisitor.h>
+#include <Interpreters/TemporaryReplaceTableName.h>
 #include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSetQuery.h>
 #include <Parsers/ParserCreateQuery.h>
@@ -35,6 +36,7 @@
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageTableProxy.h>
 #include <Storages/TableZnodeInfo.h>
+#include <Storages/StorageProxy.h>
 #include <Common/CurrentMetrics.h>
 #include <Common/PoolId.h>
 #include <Common/escapeForFileName.h>
@@ -427,7 +429,60 @@ void DatabaseOrdinary::loadTablesMetadata(ContextPtr local_context, ParsedTables
         }
     };
 
-    iterateMetadataFiles(process_metadata);
+    /// The metadata files of the temporary tables of `CREATE OR REPLACE` are processed after all other files,
+    /// because they may duplicate the metadata of another table. On a disk without atomic renames (such as
+    /// `plain_rewritable` object storage), a rename copies the file and then removes the source, so if the
+    /// server is killed in between, both the temporary name and the final name refer to the same table
+    /// (with the same UUID).
+    std::mutex tmp_replace_files_mutex;
+    std::vector<String> tmp_replace_files;
+
+    iterateMetadataFiles([&](const String & file_name)
+    {
+        if (endsWith(file_name, ".sql")
+            && TemporaryReplaceTableName::fromString(unescapeForFileName(file_name.substr(0, file_name.size() - strlen(".sql")))))
+        {
+            std::lock_guard lock(tmp_replace_files_mutex);
+            tmp_replace_files.push_back(file_name);
+            return;
+        }
+        process_metadata(file_name);
+    });
+
+    for (const auto & file_name : tmp_replace_files)
+    {
+        String full_path = (fs::path(getMetadataPath()) / file_name).string();
+        auto ast = parseQueryFromMetadata(log, local_context, db_disk, full_path, /*throw_on_error*/ true, /*remove_empty*/ false);
+        const auto * create_query = ast ? ast->as<ASTCreateQuery>() : nullptr;
+
+        std::optional<String> duplicate_of_path;
+        if (create_query && create_query->uuid != UUIDHelpers::Nil)
+        {
+            std::lock_guard lock{metadata.mutex};
+            for (const auto & [name, parsed] : metadata.parsed_tables)
+            {
+                if (name.database == TSA_SUPPRESS_WARNING_FOR_READ(database_name)
+                    && parsed.ast->as<const ASTCreateQuery &>().uuid == create_query->uuid)
+                {
+                    duplicate_of_path = parsed.path;
+                    break;
+                }
+            }
+        }
+
+        if (!duplicate_of_path)
+        {
+            process_metadata(file_name);
+            continue;
+        }
+
+        /// The data of an `Atomic` table is addressed by its UUID, so only the metadata file is removed.
+        LOG_WARNING(log, "Metadata file {} refers to the same table (UUID {}) as {}, which is a leftover of an interrupted rename"
+            " of a temporary table of `CREATE OR REPLACE`. Removing it.",
+            full_path, create_query->uuid, *duplicate_of_path);
+        if (!db_disk->isReadOnly())
+            db_disk->removeFile(full_path);
+    }
 
     size_t objects_in_database = metadata.parsed_tables.size() - prev_tables_count;
     size_t dictionaries_in_database = metadata.total_dictionaries - prev_total_dictionaries;
@@ -508,6 +563,15 @@ static bool isPushSourceEngine(const String & engine_name)
     return push_source_engines.contains(engine_name);
 }
 
+/// Background work that deferring would cancel, or nothing to load, so these are never deferred.
+static bool isEagerEngine(const String & engine_name)
+{
+    static const std::unordered_set<std::string_view> eager_engines
+        = {"Distributed", "Buffer", "MaterializedPostgreSQL", "Merge", "Memory"};
+
+    return eager_engines.contains(engine_name);
+}
+
 bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const QualifiedTableName & name, LoadingStrictnessLevel mode) const
 {
     if (!database_metadata_disk_settings[DatabaseMetadataDiskSetting::lazy_load_tables])
@@ -525,6 +589,9 @@ bool DatabaseOrdinary::shouldLazyLoad(const ASTCreateQuery & query, const Qualif
     /// A lazy proxy would hide the `Alias` type from the target-table access checks, so the alias's
     /// metadata could be read without a grant on the target. Load it eagerly, as for views.
     if (query.storage && query.storage->engine && query.storage->engine->name == "Alias")
+        return false;
+
+    if (query.storage && query.storage->engine && isEagerEngine(query.storage->engine->name))
         return false;
 
     /// Already handled by `StorageTableFunctionProxy`.
@@ -624,7 +691,7 @@ LoadTaskPtr DatabaseOrdinary::loadTableFromMetadataAsync(
 
 void DatabaseOrdinary::restoreMetadataAfterConvertingToReplicated(StoragePtr table, const QualifiedTableName & name)
 {
-    auto * rmt = table->as<StorageReplicatedMergeTree>();
+    auto rmt = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Skip);
     if (!rmt)
         return;
 
@@ -1041,7 +1108,7 @@ void registerDatabaseOrdinary(DatabaseFactory & factory)
 
         return make_shared<DatabaseOrdinary>(args.database_name, args.metadata_path, args.context, database_metadata_disk_settings);
     };
-    factory.registerDatabase("Ordinary", create_fn, /*features=*/{.supports_settings = true, .has_builtin_setting_fn = DatabaseMetadataDiskSettings::hasBuiltin}, Documentation{
+    factory.registerDatabase("Ordinary", create_fn, SecretArgumentsSpec{}, /*features=*/{.supports_settings = true, .has_builtin_setting_fn = DatabaseMetadataDiskSettings::hasBuiltin}, Documentation{
         .description = R"DOCS_MD(
 The `Ordinary` database engine is the legacy database engine. It stores each table's metadata in a separate file and has been superseded by [`Atomic`](/reference/engines/database-engines/atomic).
 
