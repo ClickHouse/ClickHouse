@@ -3596,6 +3596,8 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
     /// the deadline/KILL check via checkTimeLimitSoft is unavailable; the shutdown metric still
     /// stops the loop in that case.
     QueryStatusPtr process_list_element = context->getProcessListElement();
+    /// Fuzzed queries run without the client's progress callback, which is where HTTP checks for a disconnected client.
+    auto client_connected = context->getClientConnectedCallback();
 
     ASTPtr base_ast = ast;
 
@@ -3611,6 +3613,12 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
         if (process_list_element && !process_list_element->checkTimeLimitSoft())
         {
             LOG_TRACE(logger, "Stopping AST fuzzer: outer query was killed or timed out");
+            break;
+        }
+
+        if (client_connected && !client_connected())
+        {
+            LOG_TRACE(logger, "Stopping AST fuzzer: the client has disconnected");
             break;
         }
 
@@ -3719,6 +3727,9 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context = Context::createCopy(fuzz_session_context);
             fuzz_context->makeQueryContext();
             fuzz_context->resetInputCallbacks();
+            /// The copy inherits the client's progress callbacks; fuzzed queries must not report into the seed's response.
+            fuzz_context->setProgressCallback({});
+            fuzz_context->setFileProgressCallback({});
             fuzz_context->clearTableFunctionResults();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
             fuzz_context->setSetting("allow_experimental_parallel_reading_from_replicas", Field(UInt64(0)));
@@ -3796,11 +3807,13 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
                         /// wall-clock deadline, and cancel the executor (it runs on a separate thread).
                         Stopwatch fuzzed_query_watch;
                         executor.setCancelCallback(
-                            [&fuzzed_query_watch, &process_list_element]()
+                            [&fuzzed_query_watch, &process_list_element, &client_connected]()
                             {
                                 if (CurrentMetrics::get(CurrentMetrics::IsServerShuttingDown))
                                     return true;
                                 if (process_list_element && !process_list_element->checkTimeLimitSoft())
+                                    return true;
+                                if (client_connected && !client_connected())
                                     return true;
                                 return fuzzed_query_watch.elapsedMilliseconds() > 30000;
                             },
