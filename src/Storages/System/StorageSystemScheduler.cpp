@@ -6,12 +6,12 @@
 #include <Columns/ColumnString.h>
 #include <Columns/ColumnsNumber.h>
 #include <Common/Scheduler/ISchedulerNode.h>
+#include <Common/Scheduler/ISchedulerQueue.h>
 #include <Common/Scheduler/IResourceManager.h>
 #include <Common/Scheduler/Nodes/TimeShared/FairPolicy.h>
 #include <Common/Scheduler/Nodes/TimeShared/PriorityPolicy.h>
 #include <Common/Scheduler/Nodes/TimeShared/SemaphoreConstraint.h>
 #include <Common/Scheduler/Nodes/TimeShared/ThrottlerConstraint.h>
-#include <Common/Scheduler/Nodes/TimeShared/FifoQueue.h>
 #include <Common/Scheduler/Nodes/SpaceShared/AllocationQueue.h>
 #include <Interpreters/Context.h>
 
@@ -62,17 +62,17 @@ ColumnsDescription StorageSystemScheduler::getColumnsDescription()
             "Used during child activation as the new value of `vruntime`."
         },
 
-        // FifoQueue and AllocationQueue
+        // RequestQueue and AllocationQueue
         {"queue_length", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeUInt64>()),
-            "For `fifo` nodes only. Current number of resource requests residing in the queue."
+            "For `request_queue` and `allocation_queue` nodes. Current number of resource requests residing in the queue."
         },
         {"queue_cost", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For fifo nodes only. Sum of costs (e.g. size in bytes) of all requests residing in the queue."
+            "For `request_queue` and `allocation_queue` nodes. Sum of costs (e.g. size in bytes) of all requests residing in the queue."
         },
 
-        // FifoQueue
+        // RequestQueue
         {"budget", std::make_shared<DataTypeNullable>(std::make_shared<DataTypeInt64>()),
-            "For fifo nodes only. The number of available 'cost units' for new resource requests. "
+            "For `request_queue` nodes. The number of available 'cost units' for new resource requests. "
             "Can appear in case of discrepancy of estimated and real costs of resource requests (e.g. after read/write failure)"
         },
 
@@ -217,7 +217,9 @@ void StorageSystemScheduler::fillData(MutableColumns & res_columns, ContextPtr c
         }
         if (auto * ptr = dynamic_cast<FairPolicy *>(node))
             system_vruntime = ptr->getSystemVRuntime();
-        if (auto * ptr = dynamic_cast<FifoQueue *>(node))
+        // Covers every time-shared leaf (RequestQueue) through the interface,
+        // so introspection does not depend on the concrete queue type.
+        if (auto * ptr = dynamic_cast<ISchedulerQueue *>(node))
             std::tie(queue_length, queue_cost) = ptr->getQueueLengthAndCost();
         if (auto * ptr = dynamic_cast<AllocationQueue *>(node))
             std::tie(queue_length, queue_cost) = ptr->getQueueLengthAndSize();
