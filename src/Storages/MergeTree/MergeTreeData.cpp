@@ -6546,7 +6546,10 @@ void MergeTreeData::checkAlterEligibility(const AlterCommands & commands, Contex
                                         it->second->getName(), command.data_type->getName());
                 }
 
-                if (old_metadata.getColumns().has(command.column_name))
+                /// A later command of this same statement may drop the column; then there is
+                /// nothing to convert and the final metadata no longer has it.
+                if (old_metadata.getColumns().has(command.column_name)
+                    && new_metadata.getColumns().hasPhysical(command.column_name))
                 {
                     columns_to_check_conversion.push_back(new_metadata.getColumns().getPhysical(command.column_name));
                 }
