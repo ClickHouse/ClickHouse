@@ -4,6 +4,8 @@
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
 #include <Formats/MarkInCompressedFile.h>
 
+#include <algorithm>
+
 namespace DB
 {
 
@@ -41,6 +43,7 @@ struct MergeTreeIndexSubstream
         TextIndexDictionary,
         TextIndexPostings,
         TextIndexPositions,
+        TextIndexDocLengths,
     };
 
     Type type;
@@ -53,7 +56,10 @@ struct MergeTreeIndexSubstream
     {
         /// Text index postings and positions are not compressed by write buffer,
         /// because the compression is implicitly applied during building them.
-        return type != Type::TextIndexPostings && type != Type::TextIndexPositions;
+        /// Document lengths are `SmallFloat` bytes, which generic codec expand rather than compress.
+        return type != Type::TextIndexPostings
+            && type != Type::TextIndexPositions
+            && type != Type::TextIndexDocLengths;
     }
 };
 
@@ -66,6 +72,11 @@ struct MergeTreeIndexFormat
     MergeTreeIndexSubstreams substreams;
 
     explicit operator bool() const { return version != 0; }
+
+    bool hasSubstream(MergeTreeIndexSubstream::Type type) const
+    {
+        return std::ranges::any_of(substreams, [type](const auto & substream) { return substream.type == type; });
+    }
 };
 
 using MergeTreeIndexWriterStream = MergeTreeWriterStream;

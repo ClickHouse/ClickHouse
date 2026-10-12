@@ -79,10 +79,13 @@ public:
         if (header->has("row_id"))
             row_id_pos = header->getPositionByName("row_id");
 
+        if (header->has("term_frequency"))
+            term_frequency_pos = header->getPositionByName("term_frequency");
+
         if (header->has("positions"))
             positions_pos = header->getPositionByName("positions");
 
-        read_postings = row_id_pos || positions_pos;
+        read_postings = row_id_pos || term_frequency_pos || positions_pos;
     }
 
     String getName() const override { return "MergeTreeTextIndex"; }
@@ -166,6 +169,10 @@ private:
                 {
                     assert_cast<ColumnUInt32 &>(*result_columns[pos]).getData().insert(row_ids.begin(), row_ids.end());
                 }
+                else if (pos == term_frequency_pos)
+                {
+                    assert_cast<ColumnUInt32 &>(*result_columns[pos]).getData().insert(term_frequencies.begin(), term_frequencies.end());
+                }
                 else if (pos == positions_pos)
                 {
                     auto & array_column = assert_cast<ColumnArray &>(*result_columns[pos]);
@@ -214,7 +221,7 @@ private:
             {
                 /// Filled together below: one decode per token serves both columns.
             }
-            else if (pos == row_id_pos || pos == positions_pos)
+            else if (pos == row_id_pos || pos == term_frequency_pos || pos == positions_pos)
             {
                 /// Filled from the posting lists.
             }
@@ -293,22 +300,33 @@ private:
         }
     }
 
-    /// Reads the segment `current_segment` of the posting list of the current token into `row_ids`,
-    /// and into `positions` if they are requested, then moves to the next segment.
+    /// Reads the segment `current_segment` of the posting list of the current token into `row_ids`, and into
+    /// `term_frequencies` and `positions` if they are requested, then moves to the next segment.
     void readPostingsSegment(const TokenPostingsInfo & token_info)
     {
         row_ids.clear();
+        term_frequencies.clear();
         position_offsets.clear();
         positions.clear();
 
         if (token_info.header & PostingsSerialization::Flags::EmbeddedPostings)
         {
             row_ids.insert(token_info.embedded_postings.begin(), token_info.embedded_postings.end());
+
+            if (term_frequency_pos)
+            {
+                /// Embedded postings without stored term frequencies imply `tf == 1` for every row.
+                if (token_info.embedded_term_frequencies.empty())
+                    term_frequencies.resize_fill(row_ids.size(), 1u);
+                else
+                    term_frequencies.insert(token_info.embedded_term_frequencies.begin(), token_info.embedded_term_frequencies.end());
+            }
         }
         else
         {
             postings_buf->seek(static_cast<off_t>(token_info.offsets[current_segment]), SEEK_SET);
-            postings_serialization->deserializeToArray(*postings_buf, token_info, current_segment, row_ids);
+            postings_serialization->deserializeToArray(
+                *postings_buf, token_info, current_segment, row_ids, term_frequency_pos ? &term_frequencies : nullptr);
         }
 
         if (positions_pos)
@@ -424,6 +442,14 @@ private:
     /// whose index must store the data of the requested columns.
     void openPostingsFiles(const IMergeTreeDataPart & part, const TextIndexHeader & index_header)
     {
+        if (term_frequency_pos && index_header.scoring == TextIndexScoringKind::None)
+        {
+            throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                "Cannot read the term frequencies: the text index '{}' in part '{}' was written without scoring data. "
+                "Run `ALTER TABLE ... MATERIALIZE INDEX {}` to rebuild it",
+                index_name, part.name, index_name);
+        }
+
         if (positions_pos && !index_header.has_positions)
         {
             throw Exception(ErrorCodes::BAD_ARGUMENTS,
@@ -549,6 +575,7 @@ private:
 
     /// Positions of the columns of the posting lists in the header, if requested.
     std::optional<size_t> row_id_pos;
+    std::optional<size_t> term_frequency_pos;
     std::optional<size_t> positions_pos;
     /// Whether any column of the posting lists is requested, so a row is returned per posting.
     bool read_postings = false;
@@ -580,6 +607,7 @@ private:
 
     /// Data of the last read segment of a posting list.
     PaddedPODArray<UInt32> row_ids;
+    PaddedPODArray<UInt32> term_frequencies;
     PaddedPODArray<UInt32> position_offsets;
     PaddedPODArray<UInt32> positions;
 
@@ -721,6 +749,10 @@ VirtualColumnsDescription StorageMergeTreeTextIndex::createVirtuals(const MergeT
 
     desc.addEphemeral("row_id", std::make_shared<DataTypeUInt32>(),
         "Number of the row in the data part from the posting list of the token", VirtualsMaterializationPlace::Reader);
+
+    if (text_index.params.hasScoring())
+        desc.addEphemeral("term_frequency", std::make_shared<DataTypeUInt32>(),
+            "Number of occurrences of the token in the row", VirtualsMaterializationPlace::Reader);
 
     if (text_index.params.enable_positions)
         desc.addEphemeral("positions", std::make_shared<DataTypeArray>(std::make_shared<DataTypeUInt32>()),

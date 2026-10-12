@@ -193,6 +193,13 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
 
     segment.doc_count = requireUInt32(seg_cardinality, "seg_cardinality");
     segment.first_row_id = requireUInt32(first_row_id, "first_row_id");
+    const bool has_term_frequencies = info->header & PostingsSerialization::Flags::HasTermFrequencies;
+
+    if (has_term_frequencies)
+    {
+        readBinaryLittleEndian(segment.min_dl_byte, *data_buffer);
+        readBinaryLittleEndian(segment.max_tf_minus_one, *data_buffer);
+    }
 
     const auto & segment_range = info->ranges[segment_idx];
 
@@ -229,8 +236,9 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
         block_codec = createPostingListBlockCodec(segment.codec_type);
 
     /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation.
+    /// When scoring is on, each block additionally carries a term-frequency sub-payload compressed with the same codec.
     const UInt64 max_blocks_count = (static_cast<UInt64>(segment.doc_count) + IPostingListBlockCodec::BLOCK_SIZE - 1) / IPostingListBlockCodec::BLOCK_SIZE;
-    const UInt64 per_block_cap = block_codec->maxBlockBytes();
+    const UInt64 per_block_cap = has_term_frequencies ? 2 * block_codec->maxBlockBytes() : block_codec->maxBlockBytes();
     const UInt64 max_payload_bytes = max_blocks_count * per_block_cap;
 
     if (payload_bytes > max_payload_bytes)
@@ -330,6 +338,16 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
 
     segment.block_count = num_blocks;
     segment.tail_size = segment.doc_count % IPostingListBlockCodec::BLOCK_SIZE;
+
+    if (has_term_frequencies)
+    {
+        segment.block_min_dl_byte.resize(num_blocks);
+        segment.block_max_tf_minus_one.resize(num_blocks);
+
+        data_buffer->readStrict(reinterpret_cast<char *>(segment.block_min_dl_byte.data()), num_blocks * sizeof(UInt8));
+        data_buffer->readStrict(reinterpret_cast<char *>(segment.block_max_tf_minus_one.data()), num_blocks * sizeof(UInt8));
+    }
+
     return segment;
 }
 
@@ -390,15 +408,20 @@ void PostingListCursor::decodeBlock(size_t block_idx)
     if (!block_codec || block_codec->type() != segment.codec_type)
         block_codec = createPostingListBlockCodec(segment.codec_type);
 
-    /// The block span comes from the Index Section offsets and must be consumed in full.
     const size_t expected_bytes = block_data.size();
     const size_t consumed_bytes = block_codec->decodeBlock(block_data, count, out_span);
 
-    if (consumed_bytes != expected_bytes)
+    /// Without scoring the deltas must consume the whole Index Section span;
+    /// with scoring a term-frequency sub-payload follows the deltas inside the same span.
+    const bool has_term_frequencies = info && (info->header & PostingsSerialization::Flags::HasTermFrequencies);
+
+    if (!has_term_frequencies && consumed_bytes != expected_bytes)
+    {
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupted data in lazy posting list cursor: block {} consumed {} bytes but its "
             "Index Section span is {} bytes",
             block_idx, consumed_bytes, expected_bytes);
+    }
 
     /// Restore absolute row ids from deltas directly in decoded_values.
     std::inclusive_scan(decoded_values, decoded_values + count, decoded_values, std::plus<uint32_t>{}, last_decoded_doc_id);

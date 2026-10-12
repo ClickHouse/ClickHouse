@@ -216,10 +216,11 @@ If the index uses the `keyValuePairs` tokenizer, each token is a `(key, value)` 
 
 The posting lists of the tokens are returned in the following virtual columns. They are not returned by `SELECT *` and must be selected explicitly.
 
-| Column      | Type            | Description                                                                                                   |
-|-------------|-----------------|---------------------------------------------------------------------------------------------------------------|
-| `row_id`    | `UInt32`        | The number of a row of the data part (see `_part_offset`) from the posting list of the token.                 |
-| `positions` | `Array(UInt32)` | The positions of the token in the row. Exists only if the index has the argument `support_phrase_search = 1`. |
+| Column           | Type            | Description                                                                                                      |
+|------------------|-----------------|------------------------------------------------------------------------------------------------------------------|
+| `row_id`         | `UInt32`        | The number of a row of the data part (see `_part_offset`) from the posting list of the token.                    |
+| `term_frequency` | `UInt32`        | The number of occurrences of the token in the row. Exists only if the index has the argument `scoring = 'bm25'`. |
+| `positions`      | `Array(UInt32)` | The positions of the token in the row. Exists only if the index has the argument `support_phrase_search = 1`.    |
 
 If any of these columns is selected, the result has a row for each row in the posting list of each token, like `ARRAY JOIN` of the posting list: the other columns of the token are repeated in each of them.
 
@@ -257,26 +258,26 @@ CREATE TABLE tab
 (
     id UInt64,
     s String,
-    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha, support_phrase_search = 1)
+    INDEX idx_s (s) TYPE text(tokenizer = splitByNonAlpha, posting_list_codec = 'bitpacking', scoring = 'bm25', support_phrase_search = 1)
 )
 ENGINE = MergeTree
 ORDER BY id
-SETTINGS allow_experimental_text_index_phrase_search = 1;
+SETTINGS allow_experimental_text_index_scoring = 1, allow_experimental_text_index_phrase_search = 1;
 
 INSERT INTO tab VALUES (0, 'apple banana apple'), (1, 'banana cherry'), (2, 'cherry apple');
 
-SELECT token, row_id, positions FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s) ORDER BY token, row_id;
+SELECT token, row_id, term_frequency, positions FROM mergeTreeTextIndex(currentDatabase(), tab, idx_s) ORDER BY token, row_id;
 ```
 
 ```text title="Response"
-   ┌─token──┬─row_id─┬─positions─┐
-1. │ apple  │      0 │ [0,2]     │
-2. │ apple  │      2 │ [1]       │
-3. │ banana │      0 │ [1]       │
-4. │ banana │      1 │ [0]       │
-5. │ cherry │      1 │ [1]       │
-6. │ cherry │      2 │ [0]       │
-   └────────┴────────┴───────────┘
+   ┌─token──┬─row_id─┬─term_frequency─┬─positions─┐
+1. │ apple  │      0 │              2 │ [0,2]     │
+2. │ apple  │      2 │              1 │ [1]       │
+3. │ banana │      0 │              1 │ [1]       │
+4. │ banana │      1 │              1 │ [0]       │
+5. │ cherry │      1 │              1 │ [1]       │
+6. │ cherry │      2 │              1 │ [0]       │
+   └────────┴────────┴────────────────┴───────────┘
 ```
 )DOCS_MD", .category = FunctionDocumentation::Category::TableFunction}, SecretArgumentsSpec{},
         {.allow_readonly = true}
