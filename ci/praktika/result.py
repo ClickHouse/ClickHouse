@@ -1077,6 +1077,10 @@ class Result(MetaClasses.Serializable):
     def do_not_cache(self):
         return self.ext.get("do_not_cache", False)
 
+    def is_completed_by_job(self):
+        """Whether `complete_job` published this result: setters can persist a status earlier."""
+        return self.ext.get("completed_by_job", False)
+
     def complete_job(
         self,
         with_job_summary_in_info=True,
@@ -1092,6 +1096,7 @@ class Result(MetaClasses.Serializable):
         # captures, so a later commit with the same digest must not reuse its success record.
         if do_not_cache:
             self.ext["do_not_cache"] = True
+        self.ext["completed_by_job"] = True
         if not disable_attached_files_sorting:
             try:
                 # Normalize to string and sort by filename case-insensitively
