@@ -1,0 +1,266 @@
+#include <gtest/gtest.h>
+
+#include <Functions/FunctionsRollingHash.h>
+
+#include <limits>
+#include <string>
+#include <vector>
+
+using namespace DB;
+
+TEST(Buzhash, Deterministic)
+{
+    const char data[] = "hello world";
+    UInt64 h1 = BuzhashImpl::computeInitialHash(reinterpret_cast<const UInt8 *>(data), 4);
+    UInt64 h2 = BuzhashImpl::computeInitialHash(reinterpret_cast<const UInt8 *>(data), 4);
+    EXPECT_EQ(h1, h2);
+}
+
+TEST(Buzhash, RollingConsistency)
+{
+    const char data[] = "abcdefgh";
+    size_t w = 4;
+
+    UInt64 h_initial = BuzhashImpl::computeInitialHash(reinterpret_cast<const UInt8 *>(data), w);
+    UInt64 h_rolled = h_initial;
+
+    for (size_t pos = w; pos < 8; ++pos)
+    {
+        h_rolled = BuzhashImpl::roll(
+            h_rolled,
+            static_cast<UInt8>(data[pos - w]),
+            static_cast<UInt8>(data[pos]),
+            w);
+    }
+
+    UInt64 h_direct = BuzhashImpl::computeInitialHash(reinterpret_cast<const UInt8 *>(data + 4), w);
+    EXPECT_EQ(h_rolled, h_direct);
+}
+
+TEST(Buzhash, SingleByteWindow)
+{
+    const char data[] = "x";
+    UInt64 h = BuzhashImpl::computeInitialHash(reinterpret_cast<const UInt8 *>(data), 1);
+    EXPECT_NE(0u, h);
+}
+
+namespace
+{
+
+std::string concatChunks(const std::vector<std::string> & chunks)
+{
+    std::string s;
+    s.reserve(256);
+    for (const auto & c : chunks)
+        s.append(c);
+    return s;
+}
+
+void runCdc(
+    const std::string & input,
+    size_t window_size,
+    UInt64 reverse_probability,
+    bool utf8_boundaries,
+    bool collect_offsets,
+    std::vector<std::string> & chunks,
+    std::vector<UInt64> & offsets)
+{
+    chunks.clear();
+    offsets.clear();
+    RollingHashCDC::forEachContentDefinedChunk(
+        reinterpret_cast<const UInt8 *>(input.data()),
+        input.size(),
+        window_size,
+        reverse_probability,
+        utf8_boundaries,
+        collect_offsets,
+        [&](const char * ptr, size_t len) { chunks.emplace_back(ptr, len); },
+        [&](UInt64 o) { offsets.push_back(o); });
+}
+
+}
+
+TEST(RollingHashCDC, EmptyInput)
+{
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+    runCdc("", 4, 1000, false, true, chunks, offsets);
+    EXPECT_TRUE(chunks.empty());
+    EXPECT_TRUE(offsets.empty());
+
+    runCdc("", 4, 1000, false, false, chunks, offsets);
+    EXPECT_TRUE(chunks.empty());
+}
+
+TEST(RollingHashCDC, ShorterThanWindowSingleChunk)
+{
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+
+    runCdc("ab", 4, 1000, false, true, chunks, offsets);
+    ASSERT_EQ(chunks.size(), 1u);
+    EXPECT_EQ(chunks[0], "ab");
+    ASSERT_EQ(offsets.size(), 1u);
+    EXPECT_EQ(offsets[0], 0u);
+}
+
+TEST(RollingHashCDC, ConcatEqualsOriginalByteMode)
+{
+    std::string input;
+    input.resize(5000);
+    for (size_t i = 0; i < input.size(); ++i)
+        input[i] = static_cast<char>('a' + static_cast<int>(i % 26));
+
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+    runCdc(input, 8, 997, false, false, chunks, offsets);
+    ASSERT_FALSE(chunks.empty());
+    EXPECT_EQ(concatChunks(chunks), input);
+}
+
+TEST(RollingHashCDC, ConcatEqualsOriginalUtf8Mode)
+{
+    const std::string input = "привет мир строка для cdc теста ";
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+    runCdc(input, 4, 1000, true, false, chunks, offsets);
+    ASSERT_FALSE(chunks.empty());
+    EXPECT_EQ(concatChunks(chunks), input);
+}
+
+TEST(RollingHashCDC, OffsetsAlignWithChunks)
+{
+    const std::string input = "abcdefghijklmnop";
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+    runCdc(input, 4, 1000, false, true, chunks, offsets);
+
+    ASSERT_EQ(offsets.size(), chunks.size());
+    for (size_t i = 0; i < chunks.size(); ++i)
+    {
+        EXPECT_EQ(offsets[i] + chunks[i].size(), (i + 1 < chunks.size() ? offsets[i + 1] : input.size()));
+        EXPECT_EQ(input.substr(offsets[i], chunks[i].size()), chunks[i]);
+    }
+}
+
+TEST(RollingHashCDC, Utf8ChunksStartOnCodePointBoundaries)
+{
+    const std::string input = "привет";
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+    runCdc(input, 2, 1000, true, true, chunks, offsets);
+
+    ASSERT_FALSE(chunks.empty());
+    for (UInt64 start : offsets)
+        EXPECT_TRUE(RollingHashCDC::isUtf8ChunkBoundary(
+            reinterpret_cast<const UInt8 *>(input.data()), static_cast<size_t>(start), input.size()));
+}
+
+/// Pin exact hash-defined boundaries: a degenerate implementation that never cuts
+/// before the safety cap (or cuts at fixed positions) must fail these.
+TEST(RollingHashCDC, DeterministicBoundariesByteMode)
+{
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+
+    runCdc("abcdefghijklmnop", 4, 5, false, true, chunks, offsets);
+    EXPECT_EQ(offsets, (std::vector<UInt64>{0, 5, 12}));
+    EXPECT_EQ(chunks, (std::vector<std::string>{"abcde", "fghijkl", "mnop"}));
+
+    runCdc("abcdefghijklmnop", 4, 2, false, true, chunks, offsets);
+    EXPECT_EQ(offsets, (std::vector<UInt64>{0, 9, 13}));
+    EXPECT_EQ(chunks, (std::vector<std::string>{"abcdefghi", "jklm", "nop"}));
+
+    runCdc("The quick brown fox jumps over the lazy dog", 4, 4, false, true, chunks, offsets);
+    EXPECT_EQ(offsets, (std::vector<UInt64>{0, 6, 13, 20, 24, 35}));
+    EXPECT_EQ(chunks, (std::vector<std::string>{"The qu", "ick bro", "wn fox ", "jump", "s over the ", "lazy dog"}));
+}
+
+TEST(RollingHashCDC, DeterministicBoundariesUtf8Mode)
+{
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+
+    runCdc("привет", 2, 2, true, true, chunks, offsets);
+    EXPECT_EQ(offsets, (std::vector<UInt64>{0, 2, 6, 8}));
+    EXPECT_EQ(chunks, (std::vector<std::string>{"п", "ри", "в", "ет"}));
+
+    runCdc("привет мир", 2, 2, true, true, chunks, offsets);
+    EXPECT_EQ(offsets, (std::vector<UInt64>{0, 2, 6, 8, 12, 15, 17}));
+    EXPECT_EQ(chunks, (std::vector<std::string>{"п", "ри", "в", "ет", " м", "и", "р"}));
+}
+
+TEST(RollingHashCDC, MaxChunkSizeFloor)
+{
+    EXPECT_GE(RollingHashCDC::maxChunkSizeForCdc(2), 262144u);
+}
+
+TEST(RollingHashCDC, MaxChunkSizeSaturatesBeforeMultiplyOverflow)
+{
+    constexpr size_t max_cap = 256 * 1024 * 1024;
+    EXPECT_EQ(RollingHashCDC::maxChunkSizeForCdc(std::numeric_limits<UInt64>::max()), max_cap);
+    EXPECT_EQ(RollingHashCDC::maxChunkSizeForCdc(max_cap / 64 + 1), max_cap);
+}
+
+TEST(RollingHashCDC, ForceCutUtf8WhenTentativeEqualsDataSize)
+{
+    const std::string input = "hello";
+    const UInt8 * data = reinterpret_cast<const UInt8 *>(input.data());
+    size_t cut = RollingHashCDC::forceCutPositionUtf8(data, input.size(), 0, 100);
+    EXPECT_EQ(cut, input.size());
+}
+
+/// Malformed UTF-8: lead ASCII byte then a long run of continuation bytes (invalid).
+/// Old force-cut logic could return cut_pos == chunk_start and loop forever in UTF-8 CDC.
+TEST(RollingHashCDC, ForceCutUtf8MalformedMakesProgress)
+{
+    const size_t n = 300000;
+    std::string input;
+    input.resize(n);
+    input[0] = '\x41';
+    for (size_t i = 1; i < n; ++i)
+        input[i] = static_cast<char>(0x80);
+
+    const UInt8 * data = reinterpret_cast<const UInt8 *>(input.data());
+    const size_t cut = RollingHashCDC::forceCutPositionUtf8(data, input.size(), 0, 262144);
+    EXPECT_GT(cut, 0u);
+    EXPECT_LE(cut, input.size());
+
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+    runCdc(input, 8, 1000, true, false, chunks, offsets);
+    EXPECT_EQ(concatChunks(chunks), input);
+    for (const auto & chunk : chunks)
+        EXPECT_FALSE(chunk.empty());
+}
+
+/// Malformed UTF-8 must not weaken the max chunk size cap: with 'A' followed by 300000
+/// continuation bytes and a trailing 'B', the forced cut used to jump forward to the next
+/// code point start (offset 300001), emitting a chunk larger than max_chunk_size.
+/// The cap is strict now: the forced cut falls at chunk_start + max_chunk_size.
+TEST(RollingHashCDC, ForceCutUtf8MalformedRespectsMaxChunkSize)
+{
+    const size_t run_length = 300000;
+    const size_t max_chunk_size = 262144;
+    std::string input;
+    input.resize(run_length + 2);
+    input[0] = 'A';
+    for (size_t i = 1; i <= run_length; ++i)
+        input[i] = static_cast<char>(0x80);
+    input[run_length + 1] = 'B';
+
+    const UInt8 * data = reinterpret_cast<const UInt8 *>(input.data());
+    const size_t cut = RollingHashCDC::forceCutPositionUtf8(data, input.size(), 0, max_chunk_size);
+    EXPECT_EQ(cut, max_chunk_size);
+
+    /// End-to-end: reverse_probability = 2 gives max chunk size exactly 262144 (the floor).
+    std::vector<std::string> chunks;
+    std::vector<UInt64> offsets;
+    runCdc(input, 8, 2, true, false, chunks, offsets);
+    EXPECT_EQ(concatChunks(chunks), input);
+    for (const auto & chunk : chunks)
+    {
+        EXPECT_FALSE(chunk.empty());
+        EXPECT_LE(chunk.size(), max_chunk_size);
+    }
+}
