@@ -6,7 +6,6 @@
 #include <Core/Settings.h>
 
 #include <Core/ParallelReplicasMode.h>
-#include <Common/MemoryTrackerUtils.h>
 #include <Common/quoteString.h>
 #include <Common/scope_guard_safe.h>
 
@@ -121,6 +120,7 @@
 #include <Common/logger_useful.h>
 #include <Planner/findQueryForParallelReplicas.h>
 #include <Interpreters/DirectJoinMergeTreeEntity.h>
+#include <Interpreters/getEffectiveMaxThreads.h>
 
 #include <ranges>
 
@@ -158,8 +158,6 @@ namespace Setting
     extern const SettingsUInt64 max_query_size;
     extern const SettingsNonZeroUInt64 max_parallel_replicas;
     extern const SettingsFloat max_streams_to_max_threads_ratio;
-    extern const SettingsMaxThreads max_threads;
-    extern const SettingsUInt64 max_threads_min_free_memory_per_thread;
     extern const SettingsBool optimize_sorting_by_input_stream_properties;
     extern const SettingsBool optimize_trivial_count_query;
     extern const SettingsBool optimize_trivial_count_with_sparsity_filter;
@@ -1950,10 +1948,9 @@ JoinTreeQueryPlan buildQueryPlanForTableExpression(TableExpressionNodePtr table_
             pushOrderByIntoView(storage, storage_snapshot, select_query_info, table_expression, is_single_table_expression, query_context, table_expression_query_info);
         }
 
-        const size_t memory_limited_max_threads = getMaxThreadsForAvailableMemory(
-            settings[Setting::max_threads], settings[Setting::max_threads_min_free_memory_per_thread]);
-        size_t max_streams = memory_limited_max_threads;
-        size_t max_threads_execute_query = memory_limited_max_threads;
+        const size_t effective_max_threads = getEffectiveMaxThreads(settings);
+        size_t max_streams = effective_max_threads;
+        size_t max_threads_execute_query = effective_max_threads;
 
         /**
          * To simultaneously query more remote servers when async_socket_for_remote is off
