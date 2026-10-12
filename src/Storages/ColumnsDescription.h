@@ -32,6 +32,8 @@ namespace ErrorCodes
     extern const int LOGICAL_ERROR;
 }
 
+struct CancellationBudget;
+
 enum class VirtualsKind : UInt8
 {
     None = 0,
@@ -149,7 +151,8 @@ public:
     void setAliases(NamesAndAliases aliases);
 
     /// `after_column` can be a Nested column name;
-    void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true);
+    /// `budget`, when given, makes the subcolumn enumeration observe the running query's limits.
+    void add(ColumnDescription column, const String & after_column = String(), bool first = false, bool add_subcolumns = true, CancellationBudget * budget = nullptr);
     /// Adds a column at the end if a column with the same name doesn't exist.
     void addIfNotExists(ColumnDescription column);
     /// `column_name` can be a Nested column name;
@@ -197,13 +200,13 @@ public:
     const ColumnDescription * tryGet(const String & column_name) const;
 
     template <typename F>
-    void modify(const String & column_name, F && f)
+    void modify(const String & column_name, F && f, CancellationBudget * budget = nullptr)
     {
-        modify(column_name, String(), false, std::forward<F>(f));
+        modify(column_name, String(), false, std::forward<F>(f), budget);
     }
 
     template <typename F>
-    void modify(const String & column_name, const String & after_column, bool first, F && f)
+    void modify(const String & column_name, const String & after_column, bool first, F && f, CancellationBudget * budget = nullptr)
     {
         auto it = columns.get<1>().find(column_name);
         if (it == columns.get<1>().end())
@@ -219,7 +222,7 @@ public:
         invalidateGetCache();
         /// Aliases don't have real subcolumns, they are derived from the expression.
         if (it->default_desc.kind != ColumnDefaultKind::Alias)
-            addSubcolumns(it->name, it->type);
+            addSubcolumns(it->name, it->type, budget);
         modifyColumnOrder(column_name, after_column, first);
     }
 
@@ -302,7 +305,7 @@ private:
     void modifyColumnOrder(const String & column_name, const String & after_column, bool first);
     void addSubcolumnsToList(NamesAndTypesList & source_list, const GetColumnsOptions & options) const;
 
-    void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage);
+    void addSubcolumns(const String & name_in_storage, const DataTypePtr & type_in_storage, CancellationBudget * budget = nullptr);
     void removeSubcolumns(const String & name_in_storage);
 
     std::optional<NameAndTypePair> tryGetDynamicSubcolumn(const String & column_name, const GetColumnsOptions & options) const;
