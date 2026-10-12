@@ -347,7 +347,9 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             /// into the QueryConditionCache. Skip attaching them when on-fly mutations run ahead of
             /// the filter, otherwise a mutation-filtered mark would poison the cache for a later
             /// apply_mutations_on_fly = 0 query.
-            if (!current_task.appliesMutationsBeforePrewhere())
+            if (!current_task.appliesMutationsBeforePrewhere()
+                && !current_task.readersEvaluatedNonDeterministicDefaults(
+                    /*prewhere_readers_only=*/ false, reader_settings.query_condition_cache_where_columns.get()))
             {
                 String part_name
                     = data_part_info->isProjectionPart() ? fmt::format("{}:{}", data_part_info->getParentPartName(), data_part_info->getPartName()) : data_part_info->getPartName();
@@ -366,6 +368,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
             if (prewhere_info && !res.unmatched_mark_ranges.empty()
                 && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
                 && !current_task.appliesMutationsBeforePrewhere()
+                && !current_task.readersEvaluatedNonDeterministicDefaults(/*prewhere_readers_only=*/ true)
                 && !row_level_filter)
                 current_task.addPrewhereUnmatchedMarks(res.unmatched_mark_ranges);
         }
@@ -387,6 +390,7 @@ MergeTreeSelectProcessor::readCurrentTask(MergeTreeReadTask & current_task, IMer
     if (reader_settings.use_query_condition_cache && prewhere_info
         && !current_task.readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
         && !current_task.appliesMutationsBeforePrewhere()
+        && !current_task.readersEvaluatedNonDeterministicDefaults(/*prewhere_readers_only=*/ true)
         && !row_level_filter)
         current_task.addPrewhereUnmatchedMarks(res.read_mark_ranges);
 
@@ -475,6 +479,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                 if (reader_settings.use_query_condition_cache && task && prewhere_info
                     && !task->readersChainCanSkipMarksBeforePrewhere(prewhere_filters_by_top_k_threshold)
                     && !task->appliesMutationsBeforePrewhere()
+                    && !task->readersEvaluatedNonDeterministicDefaults(/*prewhere_readers_only=*/ true)
                     && !row_level_filter
                     /// QueryConditionCache needs the concrete part's storage UUID; skip for borrowed parts.
                     && task->getInfo().data_part_info->getDataPart())
@@ -486,7 +491,7 @@ ChunkAndProgress MergeTreeSelectProcessor::read()
                             /// `size_t` (not `UInt64`) so `boost::hash_combine` binds on platforms where
                             /// they differ (e.g. Apple, where `size_t` is `unsigned long` but `UInt64` is
                             /// `unsigned long long`).
-                            size_t condition_hash = queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_settings_salt);
+                            size_t condition_hash = queryConditionCacheHash(output->getHash(), reader_settings.query_condition_cache_salt);
                             if (!VirtualColumnUtils::isDeterministic(output))
                             {
                                 /// A TopK read composes the dynamic `__topKFilter` into the PREWHERE, so the

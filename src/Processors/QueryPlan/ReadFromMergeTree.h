@@ -602,7 +602,8 @@ public:
     bool isSelectedForTopKFilterOptimization() const { return top_k_filter_info.has_value(); }
     const std::optional<TopKFilterInfo> & getTopKFilterInfo() const { return top_k_filter_info; }
     bool isTopKPrewhereQueryConditionCacheAllowed() const { return allow_top_k_prewhere_query_condition_cache; }
-    bool isQueryConditionCacheAllowed() const { return allow_query_condition_cache; }
+    /// Also false while a metadata mutation is pending, which projection analysis does not check on its own.
+    bool isQueryConditionCacheAllowed() const;
 
     bool hasPendingTopKDynamicFilter() const
     {
