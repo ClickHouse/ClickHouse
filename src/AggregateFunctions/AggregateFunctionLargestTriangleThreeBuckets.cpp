@@ -270,6 +270,51 @@ public:
         sample.read(buf, arena);
         if (sample.x.size() != sample.y.size())
             throw Exception(ErrorCodes::INCORRECT_DATA, "Sizes of x and y do not match in the state of {}", getName());
+        checkStateValues(sample.x, x_type, 0);
+        checkStateValues(sample.y, y_type, 1);
+    }
+
+    template <typename T>
+    static std::pair<Float64, Float64> getFloat64Range()
+    {
+        return {static_cast<Float64>(std::numeric_limits<T>::lowest()), static_cast<Float64>(std::numeric_limits<T>::max())};
+    }
+
+    /// A state read from outside can hold any Float64, but the result column of a date or time
+    /// argument can only take the values that `add` produces from that type.
+    template <typename Sample>
+    void checkStateValues(const Sample & values, TypeIndex type_index, size_t argument_index) const
+    {
+        std::pair<Float64, Float64> range;
+        switch (type_index)
+        {
+            case TypeIndex::Date:
+                range = getFloat64Range<UInt16>();
+                break;
+            case TypeIndex::Date32:
+                range = getFloat64Range<Int32>();
+                break;
+            case TypeIndex::DateTime:
+                range = getFloat64Range<UInt32>();
+                break;
+            case TypeIndex::DateTime64:
+                /// The upper bound is 2^63, to which the largest ticks round.
+                range = getFloat64Range<Int64>();
+                break;
+            default:
+                return;
+        }
+
+        for (Float64 value : values)
+        {
+            if (!(value >= range.first && value <= range.second))
+                throw Exception(
+                    ErrorCodes::INCORRECT_DATA,
+                    "Value {} is out of range of type {} in the state of {}",
+                    value,
+                    argument_types[argument_index]->getName(),
+                    getName());
+        }
     }
 
     void insertResultInto(AggregateDataPtr __restrict place, IColumn & to, Arena *) const override
