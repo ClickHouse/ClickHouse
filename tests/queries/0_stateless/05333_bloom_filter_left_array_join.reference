@@ -1,0 +1,14 @@
+-- the filter rejects the default element
+Name: idx_tags
+Granules: 1/10
+1
+Name: idx_tags
+Granules: 2/10
+2
+Name: idx_tags
+Granules: 1/10
+1
+-- the filter accepts the default element
+2
+3
+3
