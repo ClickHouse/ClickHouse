@@ -164,6 +164,18 @@ ENGINE = MergeTree ORDER BY a SETTINGS min_bytes_for_wide_part = 0, min_bytes_fo
 INSERT INTO t_stale_part_type_5 VALUES ('x', 'y');
 
 ALTER TABLE t_stale_part_type_5 DETACH PART 'all_1_1_0';
+
+-- `DETACH PART` leaves an empty part covering the detached range, and `old_parts_lifetime = 0` has to
+-- have removed it from disk by now: `StorageMergeTree::dropPart` ends with a synchronous
+-- `clearOldPartsFromFilesystem`, so this is settled within the statement above rather than by a
+-- background task. Pinned because the rest of this section passes either way: without the setting the
+-- count is 1, that part survives a restart, is loaded as active, and its mutation fails on the
+-- renamed-away `b` - the `UNKNOWN_IDENTIFIER` burst the upgrade check reported. Deliberately not
+-- filtered on `active`: the part is inactive, and the inactive-on-disk one is exactly what revives.
+SELECT 'empty parts left by DETACH';
+SELECT count() FROM system.parts
+WHERE database = currentDatabase() AND table = 't_stale_part_type_5' AND rows = 0;
+
 ALTER TABLE t_stale_part_type_5 MODIFY COLUMN b Nullable(String);
 ALTER TABLE t_stale_part_type_5 ATTACH PART 'all_1_1_0';
 ALTER TABLE t_stale_part_type_5 RENAME COLUMN b TO d SETTINGS mutations_sync = 1;
