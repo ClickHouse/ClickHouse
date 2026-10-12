@@ -3,6 +3,7 @@
 #if defined(OS_LINUX) || defined(OS_DARWIN)
 
 #include <Common/Exception.h>
+#include <Common/FailPoint.h>
 #include <algorithm>
 
 #include <IO/WriteBufferFromString.h>
@@ -14,6 +15,11 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
+}
+
+namespace FailPoints
+{
+    extern const char polling_queue_before_try_poll[];
 }
 
 namespace Runtime::V1
@@ -61,6 +67,7 @@ std::optional<PollingQueue::Key> PollingQueue::Deadlines::popExpired()
 PollingQueue::PollingQueue()
 {
     epoll.add(finish_signal.fd(), &finish_signal);
+    epoll.add(wakeup_signal.fd(), &wakeup_signal);
     epoll.add(timer_signal.getDescriptor(), &timer_signal);
 }
 
@@ -138,6 +145,14 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
 
         lock.unlock();
 
+        if (timeout == 0)
+        {
+            fiu_do_on(FailPoints::polling_queue_before_try_poll,
+            {
+                FailPointInjection::notifyPauseAndWaitForResume(FailPoints::polling_queue_before_try_poll);
+            });
+        }
+
         epoll_event event{};
         event.data.ptr = nullptr;
         size_t num_events = epoll.getManyReady(1, &event, timeout);
@@ -149,6 +164,12 @@ PollingQueue::TaskData PollingQueue::getTask(std::unique_lock<std::mutex> & lock
 
         if (event.data.ptr == &finish_signal)
             return {};
+
+        if (event.data.ptr == &wakeup_signal)
+        {
+            wakeup_signal.drain();
+            return {};
+        }
 
         if (event.data.ptr == &timer_signal)
         {
@@ -176,6 +197,11 @@ void PollingQueue::finish()
 {
     is_finished = true;
     finish_signal.notify();
+}
+
+void PollingQueue::wakeUp()
+{
+    wakeup_signal.notify();
 }
 
 }

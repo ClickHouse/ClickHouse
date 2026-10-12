@@ -235,6 +235,10 @@ MergeTreeSelectProcessor::MergeTreeSelectProcessor(
     , merge_tree_index_build_context(std::move(merge_tree_index_build_context_))
     , lazy_materializing_rows(std::move(lazy_materializing_rows_))
 {
+    for (const auto & step : prewhere_actions.steps)
+        if (step->actions)
+            set_spillables.add(step->actions->getActionsDAG());
+
     bool has_prewhere_actions_steps = !prewhere_actions.steps.empty();
     if (has_prewhere_actions_steps)
         LOG_TEST(log, "PREWHERE condition was split into {} steps", prewhere_actions.steps.size());

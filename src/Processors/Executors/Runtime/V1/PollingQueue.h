@@ -75,6 +75,8 @@ public:
 
     /// Interrupt waiting.
     void finish();
+    /// Return from polling without completing or removing an asynchronous processor task.
+    void wakeUp();
 
 private:
     Epoll epoll{EpollNesting::PipelinePoller};
@@ -87,6 +89,7 @@ private:
     /// Stop semantics
     std::atomic_bool is_finished = false;
     WakeupFd finish_signal;
+    WakeupFd wakeup_signal;
 };
 #else
 class PollingQueue
