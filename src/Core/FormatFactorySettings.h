@@ -226,9 +226,9 @@ When reading Parquet files (with reader v3), skip whole row groups based on the 
 )", 0, \
         {"26.8", 0, 1024 * 1024, "New setting enabling Parquet row-group pruning based on dictionary page contents (reader v3). The value is the maximum dictionary page size in bytes for which the optimization applies; 0 (the previous behavior) disables it."}) \
     DECLARE(UInt64, input_format_parquet_footer_read_size, 0, R"(
-Size (in bytes) of the initial tail read that fetches the Parquet footer (`FileMetaData`) when opening a file with reader v3. `0` (default) sizes the read adaptively to the file - 1% of the file size, clamped to `[128 KiB, 2 MiB]` - so it usually covers the whole footer in a single read even for wide files with hundreds of columns. Set a non-zero value to force a fixed initial read size instead of the adaptive one; this is useful for very high-latency object storage where reading a larger tail up front avoids a second round trip. The value is clamped to the file size.
+Size (in bytes) of the initial tail read that fetches the Parquet footer (`FileMetaData`) when opening a file with reader v3. `0` (default) reads a 64 KiB tail when the file is read directly from the local filesystem, and for other sources (object storage, URL, HDFS) sizes the read adaptively - 1% of the file size, clamped to `[128 KiB, 2 MiB]` - so it usually covers the whole footer in a single read even for wide files with hundreds of columns. Set a non-zero value to force a fixed initial read size instead of the adaptive one; this is useful for very high-latency object storage where reading a larger tail up front avoids a second round trip. The value is clamped to the file size.
 )", 0, \
-        {"26.10", 65536, 0, "New setting to override the adaptive Parquet footer initial read size with a fixed number of bytes; 0 keeps the adaptive behavior."}) \
+        {"26.10", 65536, 0, "New setting for the Parquet footer initial read size; 0 reads 64 KiB of a local file and sizes the read adaptively for other sources."}) \
     DECLARE(Bool, input_format_parquet_enable_json_parsing, true, R"(
 When reading Parquet files, parse JSON columns as ClickHouse JSON Column.
 )", 0, \
@@ -1571,7 +1571,7 @@ Suffix after result set (for CustomSeparated format)
 Regular expression (for Regexp format)
 )", 0) \
     DECLARE(EscapingRule, format_regexp_escaping_rule, "Raw", R"(
-Field escaping rule (for Regexp format)
+Specifies how each capture group produced by `format_regexp` is parsed into its target column type. Use `Raw` (default) for unescaped text, `Escaped` for TSV-style escaping, `Quoted` for Values-style quoted fields, `CSV` for CSV fields, or `JSON` for JSON values. This setting applies after the regular expression matches a row; it does not change the regular expression itself.
 )", 0, \
         {"20.10", "Escaped", "Raw", "Use Raw as default escaping rule for Regexp format to male the behaviour more like to what users expect"}) \
     DECLARE(Bool, format_regexp_skip_unmatched, false, R"(
@@ -1604,6 +1604,12 @@ Print a readable number tip on the right side of the table if the block consists
 If enabled and if output is a terminal, highlight trailing spaces with a gray color and underline.
 )", 0, \
         {"25.1", false, true, "A new setting."}) \
+    DECLARE(Bool, output_format_pretty_display_control_characters, true, R"(
+If enabled, non-printable control characters (NUL, SOH, CR, DEL, etc.) in the values and column names of the `Vertical` and `Pretty*` output formats are displayed as Unicode "Control Pictures" (such as ␀, ␁, ␍, ␡) instead of being printed as raw bytes that are usually swallowed by the terminal.
+
+`TAB`, the line feed and `ESC` are exceptions: they are always printed as is, because a terminal interprets them rather than swallowing them. A tab advances to the next tab stop, a multi-line value keeps being broken across lines so that it stays easy to read and copy-paste, and the ANSI escape sequences contained in the data keep being interpreted, which is needed for visualizations. A column name is the exception to that exception: it is rendered on a single line, so a line feed in a name is replaced like any other control character.
+)", 0, \
+        {"26.10", false, true, "New setting to display non-printable control characters as Unicode \"Control Pictures\" in the `Vertical` and `Pretty*` output formats."}) \
     DECLARE(Bool, output_format_pretty_multiline_fields, true, R"(
 If enabled, Pretty formats will render multi-line fields inside table cell, so the table's outline will be preserved.
 If not, they will be rendered as is, potentially deforming the table (one upside of keeping it off is that copy-pasting multi-line values will be easier).
@@ -1842,13 +1848,17 @@ Use the precise float parsing algorithm, which always returns the closest repres
 )", 0, \
         {"26.7", false, true, "Use the precise (closest-representable) float parsing algorithm by default, now that it is faster than the previous fast algorithm. Set to false to restore the pre-26.7 fast-but-less-accurate parsing in conversion functions."}) \
     DECLARE(DateTimeOverflowBehavior, date_time_overflow_behavior, "ignore", R"(
-Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64) or integers are converted into Date, Date32, DateTime or DateTime64 but the value cannot be represented in the result type. It also applies when a `Date` or `DateTime` is parsed from text, including by an input format.
+Defines the behavior when [Date](/reference/data-types/date), [Date32](/reference/data-types/date32), [DateTime](/reference/data-types/datetime), [DateTime64](/reference/data-types/datetime64), [Time](/reference/data-types/time), [Time64](/reference/data-types/time64) or numeric values (integers and floating-point numbers) are converted into `Date`, `Date32`, `DateTime`, `DateTime64`, `Time` or `Time64` but the value cannot be represented in the result type. `Decimal` values can be converted only into `DateTime64` and `Time64`, and those conversions follow this setting as well; a `Decimal` converted into `Date`, `Date32`, `DateTime` or `Time` is rejected regardless of the setting. It also applies when a `Date` or `DateTime` is parsed from text, including by an input format.
 
 Possible values:
 
-- `ignore` — Silently ignore overflows. Result are undefined.
+- `ignore` — Silently ignore overflows. For conversions between date and time types the result is undefined (the value may wrap around); a numeric value is saturated to the range boundaries of the result type.
 - `throw` — Throw an exception in case of overflow.
 - `saturate` — Saturate the result. If the value is smaller than the smallest value that can be represented by the target type, the result is chosen as the smallest representable value. If the value is bigger than the largest value that can be represented by the target type, the result is chosen as the largest representable value.
+
+The accurate casts (`accurateCast`, `accurateCastOrNull`, `accurateCastOrDefault`) do not depend on this setting: an unrepresentable value is always rejected, reported as `NULL` or replaced with the default value, respectively.
+
+The setting applies to conversions done by `CAST` and the conversion functions, including those an `INSERT ... VALUES` expression template or an `INSERT ... SELECT` performs. A constant expression that the `Values` format evaluates without a template (the fallback enabled by `input_format_values_interpret_expressions`) and the `values` table function follow it only for `DateTime64` and `Time64`: an out-of-range number put into a `Date`, `Date32`, `DateTime` or `Time` column there does not follow this setting. The `values` table function rejects it, and the `Values` format rejects it too, unless `input_format_null_as_default` is enabled, in which case it inserts the default value of the column.
 
 Default value: `ignore`.
 )", 0) \
@@ -1858,11 +1868,11 @@ Validate usage of experimental and suspicious types inside nested types like Arr
         {"24.2", false, true, "Validate usage of experimental and suspicious types inside nested types"}) \
     \
     DECLARE(IdentifierQuotingRule, show_create_query_identifier_quoting_rule, IdentifierQuotingRule::WhenNecessary, R"(
-Set the quoting rule for identifiers in SHOW CREATE query
+Controls when identifiers are quoted in `SHOW CREATE` output. `when_necessary` (default) quotes identifiers where required to produce valid, unambiguous SQL; `user_display` quotes identifiers that are SQL keywords; `always` quotes every identifier. This setting controls whether quoting is added; `show_create_query_identifier_quoting_style` controls the quote characters and escaping.
 )", 0, \
         {"24.10", "when_necessary", "when_necessary", "New setting."}) \
     DECLARE(IdentifierQuotingStyle, show_create_query_identifier_quoting_style, IdentifierQuotingStyle::Backticks, R"(
-Set the quoting style for identifiers in SHOW CREATE query
+Controls how quoted identifiers are written in `SHOW CREATE` output. `Backticks` (default) uses ClickHouse-style backticks, `DoubleQuotes` uses double quotes with ClickHouse escaping, and `BackticksMySQL` uses MySQL-compatible backticks where embedded backticks are doubled. This setting does not control which identifiers are quoted; use `show_create_query_identifier_quoting_rule` for that.
 )", 0, \
         {"24.10", "Backticks", "Backticks", "New setting."}) \
     DECLARE(UInt64, output_format_image_width, 1024, R"(
@@ -1968,6 +1978,10 @@ Indicate which field of protobuf oneof was found by means of setting enum value 
 Use geo column parser to convert Array(UInt8) into Point/MultiPoint/Linestring/Polygon/MultiLineString/MultiPolygon types
 )", 0, \
         {"25.5", false, true, "A new setting to use geo columns in parquet file"}) \
+    DECLARE(Bool, input_format_parquet_detect_variant_by_structure, true, R"(
+Read a Parquet group that has no `VARIANT` logical type, but has the layout of an unshredded variant (a `metadata` and a `value` field of type `BYTE_ARRAY`), as a variant, i.e. as `Dynamic`, instead of `Tuple`. Spark 4.0 writes variant columns this way. Groups annotated with the `VARIANT` logical type are always read as a variant.
+)", 0, \
+        {"26.10", false, true, "New setting to read Spark variant columns, which have no `VARIANT` logical type, as `Dynamic` instead of `Tuple`"}) \
     DECLARE(Bool, output_format_parquet_geometadata, true, R"(
 Allow to write information about geo columns in parquet metadata and encode columns in WKB format.
 )", 0, \

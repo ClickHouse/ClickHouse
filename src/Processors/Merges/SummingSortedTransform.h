@@ -26,6 +26,10 @@ public:
         size_t max_block_size_bytes,
         std::optional<size_t> max_dynamic_subcolumns_,
         bool allow_tuple_element_aggregation,
+        /// Whether to remove the rows in which all summed columns are zero after summing.
+        /// Merges do it, but `SELECT ... FINAL` does not: a query may read only a subset of
+        /// the summed columns, so it cannot decide whether a row is zero the way a merge does.
+        bool remove_zero_rows = true,
         UInt64 limit_ = 0
         )
         : IMergingTransform(
@@ -40,7 +44,7 @@ public:
             max_dynamic_subcolumns_,
             "sumWithOverflow",
             "sumMapWithOverflow",
-            true,
+            remove_zero_rows,
             false,
             allow_tuple_element_aggregation,
             limit_)

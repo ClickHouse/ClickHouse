@@ -763,12 +763,12 @@ public:
         }
     }
 
-private:
-
     bool isObjectLazy(const ObjectConfig & config) const
     {
-        return external_loader.isObjectLazy(*config.config, config.key_in_config).value_or(!always_load_everything);
+        return external_loader.getObjectLazyLoadOverride(*config.config, config.key_in_config).value_or(!always_load_everything);
     }
+
+private:
 
     struct Info
     {
@@ -1322,7 +1322,7 @@ private:
     std::condition_variable event;
     ObjectConfigsPtr configs;
     std::unordered_map<String, Info> infos;
-    bool always_load_everything = false;
+    std::atomic<bool> always_load_everything = false;
     std::atomic<bool> enable_async_loading = false;
     std::unordered_map<size_t, ThreadFromGlobalPool> loading_threads;
     std::vector<size_t> recently_finished_loadings;
@@ -1501,6 +1501,11 @@ template <typename ReturnType, typename>
 ReturnType ExternalLoader::getLoadResults(const FilterByNameFunction & filter) const
 {
     return loading_dispatcher->getLoadResults<ReturnType>(filter);
+}
+
+bool ExternalLoader::isObjectLazy(const ObjectConfig & config) const
+{
+    return loading_dispatcher->isObjectLazy(config);
 }
 
 ExternalLoader::Loadables ExternalLoader::getLoadedObjects() const
