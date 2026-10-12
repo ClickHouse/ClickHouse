@@ -88,9 +88,9 @@ bool isRetriableHTTPError(Poco::Net::HTTPResponse::HTTPStatus http_status) noexc
 std::istream * receiveResponse(
     Poco::Net::HTTPClientSession & session, const Poco::Net::HTTPRequest & request, Poco::Net::HTTPResponse & response, bool allow_redirects);
 
-/// Returns the credential strings carried by a request's `Authorization` header (the Basic user name
-/// and password, or the Bearer token), so a caller can scrub them from an error response body that
-/// reflects them back (e.g. an auth error echoing the user name). Empty when there is no such header.
+/// Returns the Bearer token carried by a request's `Authorization` header, so a caller can scrub it
+/// from an error response body that reflects it back. A `Basic` header is not decoded, so a password
+/// is not scrubbed. Empty when there is no bearer token.
 Strings requestCredentialSecrets(const Poco::Net::HTTPRequest & request);
 
 /// `body_secrets` are credential strings to scrub from the reflected response body (see
