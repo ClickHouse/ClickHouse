@@ -1046,9 +1046,10 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
     /// The threshold filter runs first and shrinks the block before the other steps, which then see
     /// a different set of rows. `tryOptimizeTopK` checks that the filters do not depend on that, but
     /// `optimizePrewhere` may have moved such a condition into PREWHERE after it.
-    const bool use_top_k_filter = top_k_filter
-        && !(query_info.row_level_filter && query_info.row_level_filter->actions.hasNonDeterministicOrStatefulFunctions())
-        && !(query_info.prewhere_info && query_info.prewhere_info->prewhere_actions.hasNonDeterministicOrStatefulFunctions());
+    const bool filters_depend_on_row_set
+        = (query_info.row_level_filter && query_info.row_level_filter->actions.hasNonDeterministicOrStatefulFunctions())
+        || (query_info.prewhere_info && query_info.prewhere_info->prewhere_actions.hasNonDeterministicOrStatefulFunctions());
+    const bool use_top_k_filter = top_k_filter && !filters_depend_on_row_set;
 
     auto result = std::make_shared<MemorySourceFilter>();
     ExpressionActionsSettings actions_settings(context);
@@ -1150,10 +1151,14 @@ MemorySourceFilterPtr ReadFromMemoryStorageStep::makeSourceFilter(const NamesAnd
             result->output_columns.push_back(*name_and_type);
 
     /// The query condition cache. A read for a global subquery takes the blocks of the storage when it
-    /// starts, not those of the snapshot, so their identity is unknown here.
+    /// starts, not those of the snapshot, so their identity is unknown here. The granules skipped by
+    /// the cache are removed before the steps, so it cannot be used if they depend on the set of rows
+    /// they see, like the top-K filter above (e.g. `PREWHERE rowNumberInBlock() = 1` would match
+    /// a different row).
     const auto & settings = context->getSettingsRef();
     const UUID table_uuid = storage->getStorageID().uuid;
     if (settings[Setting::use_query_condition_cache] && table_uuid != UUIDHelpers::Nil && !delay_read_for_global_sub_queries
+        && !filters_depend_on_row_set
         && (!use_top_k_filter || settings[Setting::use_query_condition_cache_for_top_k]))
     {
         if (query_info.prewhere_info)
