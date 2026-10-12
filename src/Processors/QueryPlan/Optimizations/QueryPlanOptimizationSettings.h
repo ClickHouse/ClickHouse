@@ -90,6 +90,7 @@ struct QueryPlanOptimizationSettings
     bool convert_any_join_to_semi_or_anti_join;
     bool try_use_top_k_optimization;
     bool top_k_through_join;
+    bool min_max_from_files;
     bool remove_unused_columns;
     bool enable_group_by_top_k_optimization;
     bool enable_group_by_top_k_dynamic_filtering;
@@ -263,6 +264,7 @@ struct QueryPlanOptimizationSettings
     size_t automatic_parallel_replicas_mode;
     size_t min_bytes_per_task_for_reading;
     size_t automatic_parallel_replicas_min_bytes_per_replica;
+    float automatic_parallel_replicas_max_duplicated_read_ratio;
 
     bool query_plan_optimize_primary_key = true;
 

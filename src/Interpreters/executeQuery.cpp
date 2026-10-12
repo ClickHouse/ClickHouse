@@ -20,6 +20,7 @@
 #include <Common/Stopwatch.h>
 #include <Common/scope_guard_safe.h>
 
+#include <Interpreters/normalizeDivision.h>
 #include <Interpreters/AsynchronousInsertQueue.h>
 #include <Interpreters/Cache/QueryResultCache.h>
 #include <Interpreters/Cache/QueryResultCacheOnDisk.h>
@@ -2897,6 +2898,12 @@ static BlockIO executeQueryImpl(
                 query_database = query_with_table_output->getDatabase();
                 query_table = query_with_table_output->getTable();
             }
+
+            /// Freeze the meaning of division before the AST can enter table metadata, a mutation
+            /// entry, a SQL UDF, or a distributed query. Replayed ASTs already carry that decision.
+            if (!internal && !flags.distributed_backup_restore && !context->isDDLOrOnClusterInternal()
+                && client_info.query_kind != ClientInfo::QueryKind::SECONDARY_QUERY)
+                normalizeDivision(*out_ast, context);
 
             /// Propagate WITH statement to children ASTSelect.
             if (settings[Setting::enable_global_with_statement])

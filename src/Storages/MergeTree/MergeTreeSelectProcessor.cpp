@@ -287,7 +287,7 @@ PrewhereExprInfo MergeTreeSelectProcessor::getPrewhereActions(
     {
         auto index_read_step = std::make_shared<PrewhereExprStep>();
         index_read_step->type = PrewhereExprStep::None;
-        index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(index_task.columns), actions_settings);
+        index_read_step->actions = std::make_shared<ExpressionActions>(ActionsDAG(index_task.getNamesAndTypesList()), actions_settings);
         prewhere_actions.steps.emplace_back(std::move(index_read_step));
     }
 
