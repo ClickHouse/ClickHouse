@@ -472,9 +472,14 @@
     M(ExternalDistinctUncompressedBytes, "Amount of data (uncompressed, before compression) written for DISTINCT in external memory.", ValueType::Bytes) \
     M(ExternalSetWritePart, "Number of times a temporary file was written to disk for an `IN` set in external memory.", ValueType::Number) \
     M(ExternalSetMerge, "Number of times temporary files were merged for an `IN` set in external memory.", ValueType::Number) \
+    M(ExternalSetTailSpilledKeys, "Number of keys in memory written to a temporary file before the final merge of an `IN` set in external memory, so that the merge fits within the spill threshold.", ValueType::Number) \
+    M(ExternalSetTailKeptKeys, "Number of keys kept in memory for the final merge of an `IN` set in external memory.", ValueType::Number) \
     M(ExternalSetCompressedBytes, "Number of compressed bytes written for `IN` sets in external memory.", ValueType::Bytes) \
     M(ExternalSetUncompressedBytes, "Amount of data (uncompressed, before compression) written for `IN` sets in external memory.", ValueType::Bytes) \
     M(ExternalSetReadBlocks, "Number of blocks read from the temporary files of `IN` sets in external memory to look up keys.", ValueType::Number) \
+    M(ExternalSetCacheHits, "Number of blocks that lookups in `IN` sets in external memory took from the cache of the set instead of reading them from the temporary file.", ValueType::Number) \
+    M(ExternalSetLookupKeys, "Number of keys that lookups searched for in `IN` sets in external memory.", ValueType::Number) \
+    M(ExternalSetBloomFilterSkippedKeys, "Number of keys that the Bloom filters of `IN` sets in external memory ruled out during lookups.", ValueType::Number) \
     \
     M(IcebergPartitionPrunedFiles, "Number of skipped files during Iceberg partition pruning", ValueType::Number) \
     M(IcebergPartitionPrunedManifestFiles, "Number of Iceberg manifest files skipped without being read, using the partition summaries of the manifest list", ValueType::Number) \
@@ -1081,7 +1086,7 @@ The server successfully detected this situation and will download merged part fr
     M(AggregationTopKHeapsFrozen, "How many top-K aggregation heaps were frozen, falling back to regular aggregation. Either the heap rejected almost nothing within its observation window (e.g. the number of distinct grouping keys does not exceed the LIMIT), or a tie-set at the heap's boundary - which can never be evicted - overgrew it (see `enable_group_by_top_k_optimization`).", ValueType::Number) \
     M(TopKGranulesSkippedByPrimaryKey, "Number of granules skipped while reading because the primary index shows that all their rows lie beyond the running top-K threshold, published by the aggregation (see `enable_group_by_top_k_dynamic_filtering`) or by the sorting (see `use_top_k_dynamic_filtering`).", ValueType::Number) \
     M(DistinctTransformsAbandonedDeduplication, "How many deduplication transforms dropped their hash table and stopped deduplicating because the observed input was almost entirely unique and a consumer downstream deduplicates anyway: the preliminary `DISTINCT` (see `allow_preliminary_distinct_abandoning`) and the per-stream pre-deduplication in front of an `IN`-subquery set fill.", ValueType::Number) \
-    M(DistinctTransformsSwitchedToPassThrough, "How many preliminary `DISTINCT` transforms freed their hash table and started passing every row through because query memory exceeded the external `DISTINCT` threshold, or projected hashing allocations would exceed the remaining threshold budget (see `max_bytes_before_external_distinct`): the final `DISTINCT`, which spills to disk, resolves the duplicates instead.", ValueType::Number) \
+    M(DistinctTransformsSwitchedToPassThrough, "How many preliminary `DISTINCT` transforms freed their hash table and started passing every row through because query memory exceeded the spill threshold of the operator that follows them, or projected hashing allocations would exceed the remaining threshold budget. Before a `DISTINCT`, the threshold is `max_bytes_before_external_distinct`, and the final `DISTINCT`, which spills to disk, resolves the duplicates instead. Before a set of `IN`, it is the spill threshold of the set (see `max_bytes_before_external_set`), and the set resolves them.", ValueType::Number) \
     M(HashJoinPreallocatedElementsInHashTables, "How many elements were preallocated in hash tables for hash join.", ValueType::Number) \
     \
     M(MetadataFromKeeperCacheHit, "Number of times an object storage metadata request was answered from cache without making request to Keeper", ValueType::Number) \
@@ -1741,7 +1746,7 @@ The server successfully detected this situation and will download merged part fr
     M(JemallocFailedDeallocationSampleTracking, "Total number of times tracking of jemalloc deallocation sample failed", ValueType::Number) \
     \
     M(SetsBuiltFromSubquery, "Number of `IN`/`JOIN` sets filled by running their subquery. A set taken from the prepared sets cache, or already built and reused, is not counted.", ValueType::Number) \
-    M(SetsSpilledToDisk, "Number of `IN` sets that spilled to disk while they were built from their subquery.", ValueType::Number) \
+    M(SetsSpilledToDisk, "Number of `IN` sets that spilled to disk, while they were built from their subquery or while the query used them.", ValueType::Number) \
     \
     M(LoadedStatisticsMicroseconds, "Elapsed time of loading statistics from parts", ValueType::Microseconds) \
     M(LoadedStatistics, "Number of data parts for which column statistics were loaded", ValueType::Number) \

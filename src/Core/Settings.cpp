@@ -3857,7 +3857,7 @@ smaller is used. Set both settings to `0` to disable spilling.
 See [IN in external memory](/reference/statements/in#in-in-external-memory).
 )", 0, \
         {"26.10", 0, 0, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given threshold in bytes. If 0, only `max_bytes_ratio_before_external_set` applies."}) \
-    DECLARE(Double, max_bytes_ratio_before_external_set, 0., R"(
+    DECLARE(Double, max_bytes_ratio_before_external_set, 0.5, R"(
 Fraction of available server or user memory used to calculate the threshold for spilling the set of `IN`
 with a subquery to disk, at the start of execution. For example, `0.5` uses half of the available memory.
 
@@ -3867,7 +3867,47 @@ server or user memory limit, the ratio has no effect.
 `max_memory_usage` does not affect this calculation. To configure spilling relative to that limit,
 use `max_bytes_before_external_set`, leaving room for additional memory usage.
 )", 0, \
-        {"26.10", 0., 0., "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
+        {"26.10", 0., 0.5, "New setting to enable spilling of the set of `IN` with a subquery to disk when memory usage exceeds the given ratio of available memory. If 0, only `max_bytes_before_external_set` applies."}) \
+    DECLARE(UInt64, max_bytes_for_external_set_bloom_filter, 128_MiB, R"(
+Memory budget, in bytes, for the Bloom filter that each set of `IN` written to disk keeps in memory. The
+filter lets lookups of values that are not in the set skip reading the disk. It does not speed up lookups
+of values that are in the set.
+
+A set takes about 1 byte per key for its filter, or the budget, whichever is smaller, where the keys of a
+set are its distinct values, or its distinct tuples for `IN` with several columns:
+
+- If the budget is at least 1 byte per key, the set gets the full filter, and about 97% of the lookups of
+  values that are not in the set skip the disk. For example, a set of 1 million keys takes about 1 MiB.
+- If the budget is smaller, the set gets a weaker filter that fits in the budget, and fewer lookups of
+  values that are not in the set skip the disk. For example, with a quarter of a byte per key, about 60% of
+  such lookups skip the disk instead of 97%.
+- If the budget is less than about 1/7 of a byte per key, the set gets no filter, because such a filter
+  would let too few lookups skip the disk to pay for building it.
+
+With the default budget of 128 MiB, sets of up to about 130 million keys get the full filter, and sets of
+more than about 950 million keys get none. Raise the budget for larger sets when most of the looked-up
+values are not in the set. Lower it when memory is short, or when most of the looked-up values are in the
+set, where the filter does not help. `0` disables the filter.
+
+The filter counts towards the memory usage of the query, such as `max_memory_usage`, but not towards
+`max_bytes_in_set`. The budget applies to each set, not to the query.
+
+See [IN in external memory](/reference/statements/in#in-in-external-memory).
+)", 0, \
+        {"26.10", 0, 128 * 1024 * 1024, "New setting to limit the memory of the Bloom filter that a set of `IN` on disk keeps to skip reading the disk for values that are not in the set."}) \
+    DECLARE(UInt64, max_bytes_for_external_set_cache, 128_MiB, R"(
+Memory budget, in bytes, for the cache of blocks that each set of `IN` written to disk keeps in memory. A
+lookup that needs a block already read by an earlier lookup gets it from the cache instead of reading it
+from disk again. The cache helps when lookups repeatedly need the same blocks, such as lookups of a few
+frequent values or many lookups into a set that fits in the cache. It helps little when lookups spread
+evenly over a set much larger than the cache. `0` disables the cache.
+
+The budget applies per set. The cache counts towards the memory usage of the query, such as
+`max_memory_usage`, but not towards `max_bytes_in_set`.
+
+See [IN in external memory](/reference/statements/in#in-in-external-memory).
+)", 0, \
+        {"26.10", 0, 128 * 1024 * 1024, "New setting to limit the memory of the cache of blocks that a set of `IN` on disk keeps, so that its lookups do not read the same blocks from the disk again."}) \
     \
     DECLARE(UInt64, max_result_rows, 0, R"(
 Limits the number of rows in the result. Also checked for subqueries, and on remote servers when running parts of a distributed query.
@@ -4462,6 +4502,9 @@ Compatibility ignore collation in create table
     \
     DECLARE(String, temporary_files_codec, "LZ4", R"(
 Sets compression codec for temporary files used in sorting and joining operations on disk.
+
+Sets of `IN` that spill to disk do not compress the files that their lookups read, whatever this setting is,
+because decompressing the blocks that each lookup reads costs more than reading the larger files.
 
 Possible values:
 

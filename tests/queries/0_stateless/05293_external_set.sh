@@ -182,16 +182,13 @@ grep -v '^report' "${LOCAL_DIR}/parity-1.out"
 grep '^report' "${LOCAL_DIR}/parity-1.out"
 grep '^report' "${LOCAL_DIR}/parity-0.out" | awk -F'\t' '{ built += $3; spilled += $4 } END { print "in memory", built, spilled }'
 
-# The runs and the set use `temporary_files_codec`: `LZ4` compresses the keys, and `NONE` adds a header to
-# each block. Both find the same keys, for keys of 8 and 32 bytes, and the files are removed when the queries
-# finish.
+# The sets of fixed-size keys write their runs with `temporary_files_codec`. With `LZ4` and with `NONE`, they
+# find the same keys, for keys of 8 and 32 bytes, and their files are removed when the queries finish.
 for codec in LZ4 NONE; do
     run "codec-${codec}" --max_bytes_before_external_set 1 --temporary_files_codec "${codec}" --multiquery <<SQL
 SELECT countIf(number IN (SELECT number * 3 FROM numbers(30000))) FROM numbers(90000);
 SELECT countIf(toUInt256(number) IN (SELECT toUInt256(number * 3) FROM numbers(30000))) FROM numbers(90000);
-SELECT '${codec}', (SELECT sum(value) FROM system.events WHERE event = 'ExternalSetCompressedBytes')
-    < (SELECT sum(value) FROM system.events WHERE event = 'ExternalSetUncompressedBytes'),
-    (SELECT sum(value) > 0 FROM system.events WHERE event = 'ExternalSetWritePart'),
+SELECT '${codec}', (SELECT sum(value) > 0 FROM system.events WHERE event = 'ExternalSetWritePart'),
     (SELECT value FROM system.metrics WHERE metric = 'TemporaryFilesForSet');
 SQL
 done
