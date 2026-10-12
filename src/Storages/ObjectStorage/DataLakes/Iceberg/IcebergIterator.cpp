@@ -42,6 +42,7 @@
 #include <Storages/ObjectStorage/DataLakes/Common/AvroForIcebergDeserializer.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Constant.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergIterator.h>
+#include <Storages/ObjectStorage/DataLakes/Iceberg/ParallelManifestDecode.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/IcebergMetadata.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFile.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/ManifestFilesPruning.h>
@@ -465,44 +466,23 @@ void IcebergIterator::decodeDeleteManifests()
     }
 
     /// Cap concurrency: each in-flight manifest holds its decoded contents.
-    const size_t max_in_flight = local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency];
-
-    auto decode_runner
-        = threadPoolCallbackRunnerUnsafe<ManifestEntryBatch>(getIOThreadPool().get(), DB::ThreadName::ICEBERG_DELETE_DECODE);
-
-    std::deque<std::future<ManifestEntryBatch>> in_flight;
-    /// The tasks capture `this`, so none of them may still be running when this function is left.
-    SCOPE_EXIT({
-        for (auto & future : in_flight)
+    Iceberg::decodeManifestsInOrder(
+        delete_manifests,
+        local_context->getSettingsRef()[Setting::iceberg_manifest_decode_concurrency],
+        getIOThreadPool().get(),
+        DB::ThreadName::ICEBERG_DELETE_DECODE,
+        [this](const ManifestFileCacheKey & manifest_list_entry) { return decodeManifest(manifest_list_entry, /* stop_flag */ nullptr); },
+        [this](ManifestEntryBatch delete_files)
         {
-            if (future.valid())
-                future.wait();
-        }
-    });
-
-    size_t next_to_decode = 0;
-    while (next_to_decode < delete_manifests.size() || !in_flight.empty())
-    {
-        while (in_flight.size() < max_in_flight && next_to_decode < delete_manifests.size())
-        {
-            auto decode = [this, manifest_list_entry = delete_manifests[next_to_decode++]]()
-            { return decodeManifest(manifest_list_entry, /* stop_flag */ nullptr); };
-            in_flight.push_back(decode_runner(std::move(decode), Priority{}));
-        }
-
-        auto pending = std::move(in_flight.front());
-        in_flight.pop_front();
-        /// Collected in manifest list order, so the failure reported is the first one in that order.
-        for (auto & delete_file : pending.get())
-        {
-            if (delete_file->parsed_entry->equality_ids.has_value())
-                equality_deletes_files.emplace_back(std::move(delete_file));
-            else
-                position_deletes_files.emplace_back(std::move(delete_file));
-        }
-    }
-    chassert(in_flight.empty());
-    chassert(next_to_decode == delete_manifests.size());
+            for (auto & delete_file : delete_files)
+            {
+                if (delete_file->parsed_entry->equality_ids.has_value())
+                    equality_deletes_files.emplace_back(std::move(delete_file));
+                else
+                    position_deletes_files.emplace_back(std::move(delete_file));
+            }
+            return true;
+        });
 
     /// Sort objects by common_partition_specification, partition_key_value and added_sequence_number.
     /// This is needed to efficiently match delete and data manifests in defineDeletesSpan().
