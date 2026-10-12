@@ -1,0 +1,10 @@
+x_index	UInt64					
+x_index_index	UInt64					
+v	Int32					
+x	Int32					
+0	0	10	7
+0	1	11	7
+0	2	12	7
+1	0	20	7
+1	1	21	7
+1	2	22	7

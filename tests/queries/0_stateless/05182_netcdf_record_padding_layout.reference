@@ -1,0 +1,7 @@
+--- the slab of the second record variable begins before the padded end of the first one
+1
+--- a gap between the slabs of the record variables
+1
+--- the packed layout reads every record back
+1	2
+3	4

@@ -1,0 +1,32 @@
+--- the sentinel is the next free one-byte string
+01
+02
+03
+04
+0	01
+0	02
+0	03
+1	\N
+--- a longer string of the candidate byte does not take the candidate
+01
+0101
+--- 254 one-byte strings and a NULL: the one left over is the sentinel
+C9
+1	254
+--- all of the 255 one-byte strings and a NULL: nothing is left
+1
+--- the same 255 strings without a NULL need no sentinel
+String	255
+--- a two-character _FillValue of a variable of characters is rejected
+1
+N	1
+A	2
+B	3
+--- a two-character missing_value of a variable of characters is two sentinels
+\N	1
+\N	2
+B	3
+--- a two-character _FillValue of a variable of strings is one string
+\N
+NB
+N
