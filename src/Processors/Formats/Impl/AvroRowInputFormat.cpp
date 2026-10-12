@@ -1048,6 +1048,7 @@ AvroDeserializer::SkipFn AvroDeserializer::createSkipFn(const avro::NodePtr & ro
             }
             return [&skip_fn = it->second](avro::Decoder & decoder)
             {
+                checkStackSize();
                 skip_fn(decoder);
             };
         }
@@ -1432,14 +1433,14 @@ NamesAndTypesList AvroSchemaReader::readSchema()
 
 DataTypePtr AvroSchemaReader::avroNodeToDataType(avro::NodePtr node, bool allow_nullable_tuple_type)
 {
-    checkStackSize();
-
     std::unordered_set<std::string> seen_names;
     return avroNodeToDataTypeImpl(node, seen_names, allow_nullable_tuple_type);
 }
 
 DataTypePtr AvroSchemaReader::avroNodeToDataTypeImpl(const avro::NodePtr & node, std::unordered_set<std::string> & seen_names, bool allow_nullable_tuple_type)
 {
+    checkStackSize();
+
     switch (node->type())
     {
         case avro::Type::AVRO_INT:
