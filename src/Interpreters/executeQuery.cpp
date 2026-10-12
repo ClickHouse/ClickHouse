@@ -3728,7 +3728,15 @@ static void executeASTFuzzerQueries(const ASTPtr & ast, const ContextMutablePtr 
             fuzz_context->makeQueryContext();
             fuzz_context->resetInputCallbacks();
             /// The copy inherits the client's progress callbacks; fuzzed queries must not report into the seed's response.
-            fuzz_context->setProgressCallback({});
+            /// The oracle's queries run on copies of this context, so they get the client check from here.
+            ProgressCallback stop_on_client_disconnect;
+            if (client_connected)
+                stop_on_client_disconnect = [client_connected](const Progress &)
+                {
+                    if (!client_connected())
+                        throw Exception(ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT, "The client has disconnected");
+                };
+            fuzz_context->setProgressCallback(std::move(stop_on_client_disconnect));
             fuzz_context->setFileProgressCallback({});
             fuzz_context->clearTableFunctionResults();
             fuzz_context->setSetting("ast_fuzzer_runs", Field(Float64(0)));
