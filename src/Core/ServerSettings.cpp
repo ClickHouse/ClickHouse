@@ -1339,6 +1339,9 @@ Defines behaviour on access to unknown WORKLOAD with query setting 'workload'.
 **See Also**
 - [Workload Scheduling](/concepts/features/configuration/server-config/workload-scheduling)
 )", 0) \
+    DECLARE(Bool, use_metadata_workload, false, R"(
+Controls how metadata statements participate in workload scheduling. When disabled (default), they are exempt from workload scheduling — query-slot and memory-reservation admission, CPU and IO — while still being subject to the server-wide `max_concurrent_queries`, `max_concurrent_queries_for_all_users` and `max_concurrent_queries_for_user` limits. When enabled, they are scheduled under the workload named by the `metadata_workload` query setting instead of `workload`. Metadata statements change only metadata and do not read or write table data: DROP, DETACH, TRUNCATE, UNDROP, RENAME, GRANT, REVOKE, MOVE of access entities, SYSTEM, CREATE and ATTACH without data (without `AS SELECT` into the new table, `POPULATE`, `CLONE AS` or `FROM` a path), and ALTER without commands that copy parts (MOVE, REPLACE, FETCH, FREEZE and UNFREEZE PARTITION, ATTACH PARTITION ... FROM). An ALTER that creates a mutation only enqueues it: the mutation runs under `mutation_workload`. Other statements, such as CREATE ... AS SELECT, OPTIMIZE, BACKUP, RESTORE and CHECK TABLE, are scheduled under `workload` like regular queries. A metadata statement wrapped by another statement (e.g. `EXECUTE AS <user> <stmt>` or `X PARALLEL WITH Y`) runs as an internal query: it skips query-slot and memory-reservation admission regardless of this setting, and its CPU and IO are scheduled under the `workload` of the wrapping statement.
+)", 0) \
     DECLARE(Bool, cpu_slot_preemption, true, R"(
 Defines how workload scheduling for CPU resources (MASTER THREAD and WORKER THREAD) is done.
 
@@ -3777,6 +3780,7 @@ ChangeableSettingsMap collectChangeableServerSettings(ContextPtr context)
             {"show_license_expiration_warnings", {std::to_string(context->getShowLicenseExpirationWarnings()), ChangeableWithoutRestart::Yes}},
             {"throw_on_unknown_workload", {std::to_string(context->getThrowOnUnknownWorkload()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_preemption", {std::to_string(context->getCPUSlotPreemption()), ChangeableWithoutRestart::Yes}},
+            {"use_metadata_workload", {std::to_string(context->getUseMetadataWorkload()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_quantum_ns", {std::to_string(context->getCPUSlotQuantum()), ChangeableWithoutRestart::Yes}},
             {"cpu_slot_preemption_timeout_ms", {std::to_string(context->getCPUSlotPreemptionTimeout()), ChangeableWithoutRestart::Yes}},
             {"config_reload_interval_ms", {std::to_string(context->getConfigReloaderInterval()), ChangeableWithoutRestart::Yes}},

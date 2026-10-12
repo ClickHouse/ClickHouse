@@ -3,6 +3,8 @@
 #include <Interpreters/CancellationChecker.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/DatabaseAndTableWithAlias.h>
+#include <Parsers/ASTAlterQuery.h>
+#include <Parsers/ASTCreateQuery.h>
 #include <Parsers/ASTSelectWithUnionQuery.h>
 #include <Parsers/ASTSelectQuery.h>
 #include <Parsers/ASTKillQueryQuery.h>
@@ -109,6 +111,62 @@ static bool isUnlimitedQuery(const IAST * ast)
     }
 
     return false;
+}
+
+bool isMetadataQuery(const IAST * ast)
+{
+    if (!ast)
+        return false;
+
+    switch (ast->getQueryKind())
+    {
+        case IAST::QueryKind::Drop: /// Also DETACH and TRUNCATE
+        case IAST::QueryKind::Undrop:
+        case IAST::QueryKind::Rename:
+        case IAST::QueryKind::Move: /// MOVE of access entities
+        case IAST::QueryKind::Grant:
+        case IAST::QueryKind::Revoke:
+        case IAST::QueryKind::System:
+            return true;
+        case IAST::QueryKind::Create: /// Also ATTACH
+        {
+            const auto * create = ast->as<ASTCreateQuery>();
+            if (!create)
+                return false;
+            /// The `SELECT` of a view or a dictionary is its definition, not data to insert.
+            bool inserts_select = create->select && !create->isView() && !create->is_dictionary && !create->is_create_empty;
+            return !inserts_select && !create->is_populate && !create->is_clone_as && create->attach_from_path.empty();
+        }
+        case IAST::QueryKind::Alter:
+        {
+            const auto * alter = ast->as<ASTAlterQuery>();
+            if (!alter || !alter->command_list)
+                return false;
+            for (const auto & child : alter->command_list->children)
+            {
+                const auto * command = child->as<ASTAlterCommand>();
+                if (!command)
+                    return false;
+                /// Commands that copy parts. A mutation only enqueues its work, which runs under `mutation_workload`.
+                switch (command->type)
+                {
+                    case ASTAlterCommand::MOVE_PARTITION:
+                    case ASTAlterCommand::REPLACE_PARTITION: /// Also ATTACH PARTITION ... FROM
+                    case ASTAlterCommand::FETCH_PARTITION:
+                    case ASTAlterCommand::FREEZE_PARTITION:
+                    case ASTAlterCommand::FREEZE_ALL:
+                    case ASTAlterCommand::UNFREEZE_PARTITION:
+                    case ASTAlterCommand::UNFREEZE_ALL:
+                        return false;
+                    default:
+                        break;
+                }
+            }
+            return true;
+        }
+        default:
+            return false;
+    }
 }
 
 ProcessList::EntryPtr ProcessList::insert(

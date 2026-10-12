@@ -8675,6 +8675,16 @@ SETTINGS additional_result_filter = 'x != 2'
     DECLARE(String, workload, "default", R"(
 Name of workload to be used to access resources
 )", 0) \
+    DECLARE(String, metadata_workload, "default", R"(
+Name of the workload used to schedule metadata statements when the server setting `use_metadata_workload` is enabled. Such statements are then scheduled under this workload instead of the `workload` setting for every resource (query-slot and memory-reservation admission, CPU and IO). Defaults to the `default` workload. Has no effect when `use_metadata_workload` is disabled: then metadata statements are exempt from workload scheduling, though still subject to the server-wide `max_concurrent_queries*` limits.
+
+Metadata statements change only metadata and do not read or write table data: DROP, DETACH, TRUNCATE, UNDROP, RENAME, GRANT, REVOKE, MOVE of access entities, SYSTEM, CREATE and ATTACH without data (without `AS SELECT` into the new table, `POPULATE`, `CLONE AS` or `FROM` a path), and ALTER without commands that copy parts (MOVE, REPLACE, FETCH, FREEZE and UNFREEZE PARTITION, ATTACH PARTITION ... FROM). An ALTER that creates a mutation only enqueues it: the mutation runs under `mutation_workload`. Other statements, such as CREATE ... AS SELECT, OPTIMIZE, BACKUP, RESTORE and CHECK TABLE, are scheduled under `workload` like regular queries.
+
+`metadata_workload` is an independent setting with its own constraints (which an administrator can configure in a user profile). It is intentionally NOT validated against the constraints placed on `workload`: to restrict which workloads metadata statements may use, constrain `metadata_workload` itself rather than relying on `workload`'s constraints.
+
+A metadata statement wrapped by another statement (e.g. `EXECUTE AS <user> <stmt>` or `X PARALLEL WITH Y`) runs as an internal query: it skips query-slot and memory-reservation admission regardless of this setting, and its CPU and IO are scheduled under the `workload` of the wrapping statement.
+)", 0, \
+        {"26.10", "default", "default", "New setting naming the workload used to schedule metadata statements when the server setting use_metadata_workload is enabled."}) \
     DECLARE(Double, weight, 1.0, R"(
 Base scheduling weight of the query within its workload, used by the `fair` workload scheduler (see the `scheduler` workload setting). Queries with a higher weight receive a proportionally larger share of a time-shared resource (CPU, IO) when they compete inside the same workload. Ignored by the default `fifo` scheduler. A non-positive value (`<= 0`) is meaningless for the fair share and is treated as the default `1.0`.
 )", 0, \
