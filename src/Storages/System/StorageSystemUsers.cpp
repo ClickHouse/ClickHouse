@@ -290,12 +290,18 @@ ColumnsDescription StorageSystemUsers::getColumnsDescription()
 }
 
 
-void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
+void StorageSystemUsers::checkAccessRights(ContextPtr context) const
 {
     /// If "select_from_system_db_requires_grant" is enabled the access rights were already checked in InterpreterSelectQuery.
     const auto & access_control = context->getAccessControl();
     if (!access_control.doesSelectFromSystemDatabaseRequireGrant())
         context->checkAccess(AccessType::SHOW_USERS);
+}
+
+
+void StorageSystemUsers::fillData(MutableColumns & res_columns, ContextPtr context, const ActionsDAG::Node * predicate, std::vector<UInt8>) const
+{
+    const auto & access_control = context->getAccessControl();
 
     size_t column_index = 0;
     auto & column_name = assert_cast<ColumnString &>(*res_columns[column_index++]);
