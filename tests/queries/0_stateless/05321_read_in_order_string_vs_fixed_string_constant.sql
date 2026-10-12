@@ -100,6 +100,20 @@ SELECT extract(explain, 'Prefix sort description: .*') FROM (EXPLAIN actions = 1
 SELECT extract(explain, 'Prefix sort description: .*') FROM (EXPLAIN actions = 1 SELECT k, s FROM t_rio_fixed WHERE s = CAST(toFixedString('V0', 3) AS Dynamic) ORDER BY k, s DESC) WHERE explain LIKE '%Prefix sort description%';
 DROP TABLE t_rio_fixed;
 
+-- A `Dynamic` value equal to the constant can have several types, which sort differently: `1` as `Float64`, `Int8` and `UInt8`.
+SELECT 'Dynamic column vs number';
+DROP TABLE IF EXISTS t_rio_dynamic;
+CREATE TABLE t_rio_dynamic (k UInt8, x UInt8, d Dynamic, j JSON) ENGINE = MergeTree ORDER BY (k, x);
+INSERT INTO t_rio_dynamic SELECT 1, 1, 1::Float64, '{"a" : 1.0}';
+INSERT INTO t_rio_dynamic SELECT 1, 2, 1::Int8, '{"a" : 1}';
+INSERT INTO t_rio_dynamic SELECT 1, 3, 1::UInt8, '{"a" : 1}';
+OPTIMIZE TABLE t_rio_dynamic FINAL;
+SELECT k, dynamicType(d) FROM t_rio_dynamic WHERE d = 1 ORDER BY k, d DESC SETTINGS allow_suspicious_types_in_order_by = 1;
+SELECT k, dynamicType(d) FROM t_rio_dynamic WHERE d = toInt8(1) ORDER BY k, d DESC SETTINGS allow_suspicious_types_in_order_by = 1;
+SELECT 'JSON path vs number';
+SELECT k, dynamicType(j.a) FROM t_rio_dynamic WHERE j.a = 1 ORDER BY k, j.a DESC, x SETTINGS allow_suspicious_types_in_order_by = 1;
+DROP TABLE t_rio_dynamic;
+
 DROP TABLE IF EXISTS t_rio_wrapped;
 CREATE TABLE t_rio_wrapped (k UInt8, s String, x UInt8, j JSON) ENGINE = MergeTree ORDER BY (k, s, x);
 INSERT INTO t_rio_wrapped VALUES (1, 'V0', 1, '{"a" : "V0"}'), (1, 'V0', 2, '{"a" : "V0"}'), (1, 'V0\0', 1, '{"a" : "V0\\u0000"}'), (1, 'V0\0', 2, '{"a" : "V0\\u0000"}');

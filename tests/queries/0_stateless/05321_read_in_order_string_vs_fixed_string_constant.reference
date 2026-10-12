@@ -77,6 +77,17 @@ FixedString
 1	563000
 Prefix sort description: k ASC, s DESC
 Prefix sort description: k ASC, s DESC
+Dynamic column vs number
+1	UInt8
+1	Int8
+1	Float64
+1	UInt8
+1	Int8
+1	Float64
+JSON path vs number
+1	Int64
+1	Int64
+1	Float64
 String key, Variant(FixedString) constant
 1	563000	1
 1	563000	2
