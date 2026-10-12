@@ -6512,8 +6512,9 @@ class ClickHouseInstance:
     def _start_after_binary_swap(self):
         """Start the replacement server of a version-swap helper.
 
-        This start daemonizes, so the exec is a launcher that exits 0 once forked. Its id
-        and the stop verdict both belong to the replaced server, and go with it.
+        This start daemonizes, so the exec is a launcher that exits once forked. It runs
+        synchronously so that a launcher failure raises here instead of as a `wait_start`
+        timeout. The exec id and the stop verdict belong to the replaced server, and go with it.
         """
         self.clickhouse_last_exit_code = None
         self.clickhouse_forced_stop = False
@@ -6521,8 +6522,6 @@ class ClickHouseInstance:
         self.exec_in_container(
             ["bash", "-c", self.clickhouse_start_command_in_daemon],
             user=str(os.getuid()),
-            detach=True,
-            use_cli=False,
         )
 
     def restart_with_original_version(
