@@ -17,6 +17,17 @@ macro(clickhouse_split_debug_symbols)
        message(FATAL_ERROR "Destination directory for stripped binary must be provided")
    endif()
 
+   set(GNU_DEBUGDATA_COMMANDS)
+   if (SYMBOL_SECTIONS STREQUAL "gnu_debugdata")
+       set(MINI_DEBUGINFO_PATH "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.mini_debuginfo")
+       list(APPEND GNU_DEBUGDATA_COMMANDS
+           COMMAND "${OBJCOPY_PATH}" --strip-debug "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug" "${MINI_DEBUGINFO_PATH}"
+           COMMAND "${XZ_PATH}" -9 -T1 -f "${MINI_DEBUGINFO_PATH}"
+           COMMAND "${OBJCOPY_PATH}" --add-section ".gnu_debugdata=${MINI_DEBUGINFO_PATH}.xz" --remove-section=.symtab --remove-section=.strtab "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
+           COMMAND "${CMAKE_COMMAND}" -E rm -f "${MINI_DEBUGINFO_PATH}" "${MINI_DEBUGINFO_PATH}.xz"
+       )
+   endif()
+
    add_custom_command(TARGET ${STRIP_TARGET} POST_BUILD
        COMMAND mkdir -p "${STRIP_DESTINATION_DIR}/lib/debug/bin"
        COMMAND mkdir -p "${STRIP_DESTINATION_DIR}/bin"
@@ -28,8 +39,12 @@ macro(clickhouse_split_debug_symbols)
        COMMAND "${STRIP_PATH}" --strip-debug --remove-section=.comment --remove-section=.note "${STRIP_BINARY_PATH}" -o "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
        # Associate stripped binary with debug symbols:
        COMMAND "${OBJCOPY_PATH}" --add-gnu-debuglink "${STRIP_DESTINATION_DIR}/lib/debug/bin/${STRIP_TARGET}.debug" "${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET}"
+       ${GNU_DEBUGDATA_COMMANDS}
        COMMENT "Stripping clickhouse binary" VERBATIM
    )
+
+   unset(GNU_DEBUGDATA_COMMANDS)
+   unset(MINI_DEBUGINFO_PATH)
 
    install(PROGRAMS ${STRIP_DESTINATION_DIR}/bin/${STRIP_TARGET} DESTINATION ${CMAKE_INSTALL_BINDIR} COMPONENT clickhouse)
    cmake_path(SET DEBUG_PATH NORMALIZE "${CMAKE_INSTALL_LIBDIR}/debug/${CMAKE_INSTALL_FULL_BINDIR}")
