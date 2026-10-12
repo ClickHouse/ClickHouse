@@ -658,6 +658,14 @@ elseif (OS_SUNOS)
 elseif (OS_WASM)
     include(cmake/wasm/default_libs.cmake)
 endif ()
+
+if (ENABLE_POSITION_INDEPENDENT_BINARY)
+    # The C++ runtime libraries are linked only into executables, so they are compiled as PIE (the last flag wins).
+    foreach (runtime_target cxx cxxabi unwind)
+        target_compile_options (${runtime_target} PRIVATE $<$<COMPILE_LANGUAGE:C,CXX>:-fPIE>)
+    endforeach ()
+endif ()
+
 link_libraries(global-group)
 target_link_libraries(global-group INTERFACE $<TARGET_PROPERTY:global-libs,INTERFACE_LINK_LIBRARIES>)
 
