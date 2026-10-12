@@ -9,6 +9,8 @@
 #include <Common/Exception.h>
 #include <Common/NamedCollections/NamedCollections.h>
 
+#include <algorithm>
+
 
 namespace DB
 {
@@ -69,28 +71,32 @@ void PostgreSQLSettings::loadFromQuery(ASTStorage & storage_def)
 
 void PostgreSQLSettings::loadFromQueryContext(const Context & context)
 {
-    loadFromQueryContextImpl(context, nullptr, nullptr);
+    loadFromQueryContextImpl(context, nullptr, false);
 }
 
-void PostgreSQLSettings::loadFromQueryContext(const Context & context, const Context & attach_context, ASTStorage & storage_def)
+void PostgreSQLSettings::loadFromQueryContext(const Context & context, ASTStorage & storage_def, bool store_values)
 {
-    loadFromQueryContextImpl(context, &attach_context, &storage_def);
+    loadFromQueryContextImpl(context, &storage_def, store_values);
 }
 
-void PostgreSQLSettings::loadFromQueryContextImpl(const Context & context, const Context * attach_context, ASTStorage * storage_def)
+void PostgreSQLSettings::loadFromQueryContextImpl(const Context & context, ASTStorage * storage_def, bool store_values)
 {
     const Settings & settings = context.getSettingsRef();
+    const auto * reset_settings = storage_def && storage_def->settings ? &storage_def->settings->default_settings : nullptr;
 
     for (const auto & setting : impl->all())
     {
         const auto & name = setting.getName();
-        if (setting.isValueChanged())
+        /// Set by a named collection or the SETTINGS clause, or reset there with `name = DEFAULT`.
+        if (setting.isValueChanged() || (reset_settings && std::ranges::contains(*reset_settings, name)))
             continue;
 
+        /// Not changed yet, so it holds the default of the engine.
+        const Field default_value = setting.getValue();
         Field value = settings.get(name);
         impl->set(name, value);
 
-        if (!storage_def || attach_context->getSettingsRef().get(name) == value)
+        if (!store_values || value == default_value)
             continue;
 
         if (!storage_def->settings)

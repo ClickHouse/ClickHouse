@@ -45,15 +45,18 @@ struct PostgreSQLSettings
     /// were taken from the query context, and a named collection or an explicit SETTINGS clause overrides them.
     void loadFromQueryContext(const Context & context);
 
-    /// The same for a new table, which also adds to the SETTINGS of `storage_def` each value taken from `context` that
-    /// differs from the one `attach_context` gives. When the table is attached again, e.g. on server startup, it is
-    /// attached in a context with other settings, and keeps these values only from its definition.
-    void loadFromQueryContext(const Context & context, const Context & attach_context, ASTStorage & storage_def);
+    /// The same for a table defined by `storage_def`. A setting that its SETTINGS clause resets with `name = DEFAULT` is not
+    /// taken from `context`: it keeps the default of the engine, or the value of a named collection. With `store_values`,
+    /// also adds to the SETTINGS of `storage_def` each value taken from `context` that differs from the default of the
+    /// engine: the table is attached again in another context, e.g. on server startup, and keeps these values only from its
+    /// definition. The default of the engine, unlike the server's settings, is the same on every replica of a `Replicated`
+    /// database, so all of them store the values that the session of the initiator sets.
+    void loadFromQueryContext(const Context & context, ASTStorage & storage_def, bool store_values);
 
     static bool hasBuiltin(std::string_view name);
 
 private:
-    void loadFromQueryContextImpl(const Context & context, const Context * attach_context, ASTStorage * storage_def);
+    void loadFromQueryContextImpl(const Context & context, ASTStorage * storage_def, bool store_values);
 
     std::unique_ptr<PostgreSQLSettingsImpl> impl;
 };

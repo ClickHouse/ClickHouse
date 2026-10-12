@@ -3,8 +3,8 @@
 # no-fasttest: depends on libpqxx (the PostgreSQL table engine), which is not built in fast test.
 #
 # A `PostgreSQL` table takes the connection pool settings its definition does not state from the session that creates
-# it. A new table adds those that differ from the server's to its `SETTINGS`, so that it keeps them when it is attached
-# again in another context, e.g. on server startup. The engine does not connect at `CREATE` or `ATTACH` when the
+# it. A new table adds those that differ from the defaults of the engine to its `SETTINGS`, so that it keeps them when it
+# is attached again in another context, e.g. on server startup. The engine does not connect at `CREATE` or `ATTACH` when the
 # columns are given, so the host does not need to be reachable.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -25,7 +25,7 @@ ${DDL_CLIENT} --postgresql_connection_pool_size 3 --postgresql_connection_pool_a
     --query "CREATE TABLE t_session (x Int32) ENGINE = ${ENGINE}"
 settings_of t_session
 
-echo "--- values equal to the server's are not stored"
+echo "--- values equal to the defaults of the engine are not stored"
 ${DDL_CLIENT} --query "CREATE TABLE t_server (x Int32) ENGINE = ${ENGINE}"
 settings_of t_server
 
@@ -33,6 +33,12 @@ echo "--- a stated value is kept as stated"
 ${DDL_CLIENT} --postgresql_connection_pool_size 3 \
     --query "CREATE TABLE t_stated (x Int32) ENGINE = ${ENGINE} SETTINGS postgresql_connection_pool_size = 5"
 settings_of t_stated
+
+echo "--- a value reset with DEFAULT keeps the default of the engine"
+${DDL_CLIENT} --send_logs_level trace --postgresql_connection_pool_size 3 \
+    --query "CREATE TABLE t_default (x Int32) ENGINE = ${ENGINE} SETTINGS postgresql_connection_pool_size = DEFAULT" 2>&1 \
+    | grep -o -m1 'PostgreSQL connection pool size: [0-9]*'
+settings_of t_default
 
 echo "--- an ATTACH with the full definition stores them too"
 # An `Atomic` or `Replicated` database attaches a table with a full definition only with its UUID; `Ordinary` has none.

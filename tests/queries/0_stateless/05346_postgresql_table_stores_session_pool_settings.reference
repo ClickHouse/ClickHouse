@@ -1,9 +1,12 @@
 --- values taken from the session are stored
 SETTINGS postgresql_connection_pool_size = 3, postgresql_connection_pool_auto_close_connection = true
---- values equal to the server's are not stored
+--- values equal to the defaults of the engine are not stored
 
 --- a stated value is kept as stated
 SETTINGS postgresql_connection_pool_size = 5
+--- a value reset with DEFAULT keeps the default of the engine
+PostgreSQL connection pool size: 16
+SETTINGS postgresql_connection_pool_size = DEFAULT
 --- an ATTACH with the full definition stores them too
 SETTINGS postgresql_connection_pool_size = 3
 --- the table keeps the stored value when attached in a session without it
