@@ -597,6 +597,19 @@ def main():
             is_coverage_replacement_with_ci_script_changes = info.job_name in [
                 j.name for j in JobConfigs.functional_tests_arm_binary_coverage_replacement_pr_jobs
             ]
+        if changed_files:
+            # A changed test data submodule is owned by the tests that read it:
+            # treat it as a change of their source files, so that a bump of the
+            # submodule runs only the batches containing these tests.
+            changed_files = [
+                expanded
+                for f in changed_files
+                for expanded in (
+                    Targeting.test_files_using_test_data_submodule(f)
+                    if Targeting.is_test_data_submodule(f)
+                    else [f]
+                )
+            ]
         if (
             changed_files
             and not is_coverage_replacement_with_ci_script_changes
