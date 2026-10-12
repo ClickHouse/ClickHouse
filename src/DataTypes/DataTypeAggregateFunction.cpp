@@ -436,9 +436,8 @@ static bool hasExplicitStateVersionZero(const DataTypePtr & type)
 
 void pinCurrentStateVersionToAggregateFunctions(DataTypePtr & type)
 {
-    /// A `SimpleAggregateFunction` parses its storage type back from the name of its value type, which does not print
-    /// version 0, so an explicit 0 survives only in the value type the name keeps. Pin that one and rebuild the type from
-    /// its name the way loading the table does, before the walk below reaches the storage.
+    /// A `SimpleAggregateFunction` parses its storage type from the name of its value type, which does not print version 0,
+    /// so an explicit 0 survives only in the value type. Pin it there and rebuild the node from its name, as loading does.
     auto pin_simple_aggregate_function = [](const DataTypePtr & node) -> DataTypePtr
     {
         const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(node->getCustomName());
