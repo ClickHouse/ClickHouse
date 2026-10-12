@@ -155,7 +155,7 @@ private:
 
     static void mergeWindowWithParentWindow(const QueryTreeNodePtr & window_node, const QueryTreeNodePtr & parent_window_node, IdentifierResolveScope & scope);
 
-    void copyNamedWindowSnapshots(const QueryTreeNodePtr & original_node, const QueryTreeNodePtr & cloned_node);
+    bool copyNamedWindowSnapshots(const QueryTreeNodePtr & original_node, const QueryTreeNodePtr & cloned_node);
 
     void replaceNodesWithPositionalArguments(QueryTreeNodePtr & node_list, const QueryTreeNodes & projection_nodes, IdentifierResolveScope & scope);
 

@@ -906,11 +906,16 @@ void QueryAnalyzer::mergeWindowWithParentWindow(const QueryTreeNodePtr & window_
 
 /** Give the window nodes of a clone of a projection item the snapshots of the named windows taken
   * for the corresponding window nodes of the original, see `expandMatchersInsideProjectionExpression`.
+  * Returns true if some snapshot was copied.
   */
-void QueryAnalyzer::copyNamedWindowSnapshots(const QueryTreeNodePtr & original_node, const QueryTreeNodePtr & cloned_node)
+bool QueryAnalyzer::copyNamedWindowSnapshots(const QueryTreeNodePtr & original_node, const QueryTreeNodePtr & cloned_node)
 {
+    bool copied = false;
     if (auto snapshot_it = named_window_snapshots.find(original_node); snapshot_it != named_window_snapshots.end())
+    {
         named_window_snapshots[cloned_node] = snapshot_it->second->clone();
+        copied = true;
+    }
 
     const auto & original_children = original_node->getChildren();
     const auto & cloned_children = cloned_node->getChildren();
@@ -919,8 +924,10 @@ void QueryAnalyzer::copyNamedWindowSnapshots(const QueryTreeNodePtr & original_n
     for (size_t i = 0; i < original_children.size(); ++i)
     {
         if (original_children[i] && cloned_children[i])
-            copyNamedWindowSnapshots(original_children[i], cloned_children[i]);
+            copied |= copyNamedWindowSnapshots(original_children[i], cloned_children[i]);
     }
+
+    return copied;
 }
 
 /** Replace nodes in node list with positional arguments.
@@ -1492,6 +1499,10 @@ IdentifierResolveResult QueryAnalyzer::tryResolveIdentifierFromAliases(const Ide
     {
         alias_node = alias_node->clone();
         scope_to_resolve_alias_expression->aliases.node_to_remove_aliases.push_back(alias_node);
+
+        /// The clone must resolve its named windows from the same definitions as the aliased expression, see `resolveQuery`.
+        if (!named_window_snapshots.empty())
+            copyNamedWindowSnapshots(*it, alias_node);
     }
 
     /* Do not use alias to resolve identifier when it's part of aliased expression. This is required to support queries like:
@@ -7949,6 +7960,39 @@ void QueryAnalyzer::resolveQuery(const QueryTreeNodePtr & query_node, Identifier
         queries_with_deferred_projection.erase(query_node_ptr);
         expandProjectionMatchers(query_node_typed, scope);
         queries_with_deferred_projection.insert(query_node_ptr);
+
+        /** The scope aliases hold copies of the projection expressions made before the first expansion, which resolve
+          * their named windows from the `WINDOW` clause as rewritten by the `REPLACE` transformers. Replace the copies
+          * of the expressions that carry snapshots of the named windows with copies of the restored projection items,
+          * so that an alias referred to from the following clauses (`QUALIFY`, `ORDER BY`, `LIMIT BY`) resolves to
+          * the same expression as the projection item. The other aliases are kept as they are.
+          */
+        std::unordered_set<std::string> visited_alias_names;
+        std::function<void(const QueryTreeNodePtr &)> rebind_projection_aliases = [&](const QueryTreeNodePtr & node)
+        {
+            if (node->hasAlias() && visited_alias_names.insert(node->getAlias()).second)
+            {
+                auto it = scope.aliases.alias_name_to_expression_node.find(node->getAlias());
+                if (it != scope.aliases.alias_name_to_expression_node.end())
+                {
+                    auto cloned_node = node->clone();
+                    if (copyNamedWindowSnapshots(node, cloned_node))
+                        it->second = std::move(cloned_node);
+                }
+            }
+
+            /// As `QueryExpressionsAliasVisitor`, do not go into lambdas and subqueries.
+            auto node_type = node->getNodeType();
+            if (node_type == QueryTreeNodeType::LAMBDA || node_type == QueryTreeNodeType::QUERY || node_type == QueryTreeNodeType::UNION)
+                return;
+
+            for (const auto & child : node->getChildren())
+                if (child)
+                    rebind_projection_aliases(child);
+        };
+
+        if (!named_window_snapshots.empty())
+            rebind_projection_aliases(query_node_typed.getProjectionNode());
     }
 
     if (query_node_typed.hasHaving())
