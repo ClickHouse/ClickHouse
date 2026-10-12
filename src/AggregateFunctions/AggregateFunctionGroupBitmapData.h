@@ -504,6 +504,33 @@ public:
     }
 
     /**
+     * Context for `rb_contains_bulk`. It caches the container found by the previous lookup in the same bitmap,
+     * so consecutive lookups of values that share the high 16 bits skip the container search.
+     * It is bound to one bitmap: a context must not be reused with another bitmap.
+     */
+    struct EmptyBulkContext {};
+    using BulkContext = std::conditional_t<use_roaring64, EmptyBulkContext, roaring::BulkContext>;
+
+    /**
+     * Same as `rb_contains`, but for a sequence of lookups in the same bitmap.
+     */
+    UInt8 rb_contains_bulk(UInt64 x, BulkContext & context) const /// NOLINT
+    {
+        if constexpr (use_roaring64)
+            return rb_contains(x);
+        else
+        {
+            if (x > static_cast<UInt64>(std::numeric_limits<UnsignedT>::max()))
+                return 0;
+
+            if (isSmall())
+                return small.find(static_cast<T>(x)) != small.end();
+
+            return roaring_bitmap->containsBulk(context, static_cast<Value>(static_cast<T>(x)));
+        }
+    }
+
+    /**
      * Convert elements to integer array, return number of elements
      */
     template <typename Element>
@@ -1003,7 +1030,8 @@ struct AggregateFunctionGroupBitmapData
 {
     // If false, all bitmap operations will be treated as merge to initialize the state
     bool init = false;
-    RoaringBitmapWithSmallSet<T, 32> roaring_bitmap_with_small_set;
+    using Bitmap = RoaringBitmapWithSmallSet<T, 32>;
+    Bitmap roaring_bitmap_with_small_set;
     static const char * name() { return "groupBitmap"; }
 };
 
