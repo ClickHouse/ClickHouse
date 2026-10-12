@@ -1,0 +1,38 @@
+-- IN: results are the same with and without the index
+in	200	200	200
+in, one element	100	100	100
+tuple in	200	200
+not in	3800	3800
+not (in)	3800	3800
+in, or	201	201
+-- IN: one virtual column per element, OR-ed and AND-ed with the original predicate
+virtual columns	2
+or	1
+original predicate	1
+tuple in	1
+not in	0
+-- IN: no direct read
+subquery	0
+subquery results	100	100
+empty element	0
+element without tokens	0
+element without tokens results	100	100
+above the limit	0
+above the limit results	300	300
+add_hint = 0	0
+-- hasAny
+hasAny	200	200	200
+not hasAny	3800	3800
+virtual columns	2
+original predicate	1
+-- the hint is used
+dread_in	200
+dread_hasAny	200
+dread_hasAny	1
+dread_in	1
+-- make_distributed_plan
+in	200	200
+hasAny	200	200
+-- a part without a materialized index
+results	110	110
+replaced	1

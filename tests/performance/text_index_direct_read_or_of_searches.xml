@@ -1,0 +1,43 @@
+<test>
+  <settings>
+    <use_query_condition_cache>0</use_query_condition_cache>
+    <max_threads>4</max_threads>
+  </settings>
+
+  <create_query>
+    CREATE TABLE tab
+    (
+        id      UInt64,
+        message String,
+        title   String,
+        INDEX   idx_message(message) TYPE text(tokenizer = 'splitByNonAlpha'),
+        INDEX   idx_title(title) TYPE text(tokenizer = 'splitByNonAlpha')
+    )
+    ENGINE = MergeTree
+    ORDER BY id
+  </create_query>
+
+  <!-- Every part holds the searched tokens, so only the posting lists can skip rows: the rare words in `message`,
+       and the numbers in `title`, each of which belongs to one title of 50 rows. A needle is enclosed in spaces,
+       because only its complete words are tokens that a matching row must hold. -->
+  <fill_query>
+    INSERT INTO tab
+    SELECT
+        number,
+        concat(
+            arrayStringConcat(arrayMap(i -> concat('w', toString(cityHash64(number, i) % 1000)), range(8)), ' '),
+            multiIf(number % 10007 = 0, ' foobar ', number % 10009 = 1, ' helloworld ', number % 10037 = 2, ' clickhouse ', ' '),
+            arrayStringConcat(arrayMap(i -> concat('w', toString(cityHash64(number, i + 8) % 1000)), range(8)), ' ')),
+        concat('event ', toString(number % 100000))
+    FROM numbers(5000000)
+  </fill_query>
+
+  <query>SELECT count() FROM tab WHERE match(message, ' foobar | helloworld ')</query>
+  <query>SELECT count() FROM tab WHERE match(message, ' foobar | helloworld | clickhouse | nothing1 | nothing2 | nothing3 | nothing4 | nothing5 ')</query>
+  <query>SELECT count() FROM tab WHERE multiSearchAny(message, [' foobar ', ' helloworld ', ' clickhouse ', ' nothing1 ', ' nothing2 ', ' nothing3 ', ' nothing4 ', ' nothing5 '])</query>
+  <query>SELECT count() FROM tab WHERE multiSearchAny(message, [' nothing0 ', ' nothing1 ', ' nothing2 ', ' nothing3 ', ' nothing4 ', ' nothing5 ', ' nothing6 ', ' nothing7 ', ' nothing8 ', ' nothing9 ', ' nothing10 ', ' nothing11 ', ' nothing12 ', ' foobar ', ' helloworld ', ' clickhouse '])</query>
+  <query>SELECT count() FROM tab WHERE title IN ('event 17', 'event 1234', 'event 99999', 'event 500', 'event 7', 'event 31337', 'event 42', 'event 65536')</query>
+  <query>SELECT count() FROM tab WHERE title IN ('event 1', 'event 2', 'event 3', 'event 4', 'event 5', 'event 6', 'event 7', 'event 8', 'event 9', 'event 10', 'event 11', 'event 12', 'event 13', 'event 14', 'event 15', 'event 16')</query>
+
+  <drop_query>DROP TABLE IF EXISTS tab</drop_query>
+</test>

@@ -10517,6 +10517,12 @@ Only takes effect when `query_plan_direct_read_from_text_index` is enabled.
 Allow to add hint (additional predicate) for filtering built from the inverted text index in query plan.
 )", 0, \
         {"25.12", true, true, "New setting"}) \
+    DECLARE(UInt64, query_plan_text_index_direct_read_max_branches, 16, R"(
+Maximal number of OR-ed text index searches of one predicate that are read directly from the inverted text index as a hint, each into its own virtual column.
+Such predicates are `match` with alternatives, `multiSearchAny`, `multiMatchAny`, as well as `IN` and `hasAny` on an index with a tokenizer that splits strings: one search per alternative, needle, pattern or element.
+A predicate with more searches uses the index only to skip granules. 0 means no limit.
+)", 0, \
+        {"26.10", 1, 16, "New setting. Before, a predicate of several OR-ed searches was not read directly"}) \
     DECLARE(Float, text_index_hint_max_selectivity, 0.2f, R"(
 Maximal selectivity of the filter to use the hint built from the inverted text index.
 )", 0, \

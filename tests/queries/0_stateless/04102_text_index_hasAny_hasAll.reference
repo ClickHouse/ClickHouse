@@ -29,6 +29,8 @@ Granules: 1/4
 4
 -- splitByNonAlpha: index is still used
 Granules: 2
+INPUT : 1 -> __text_index_arr_idx_hasAny_0fb2c52dc22e92a333d76bf4daaca949 UInt8 : 2
+INPUT : 2 -> __text_index_arr_idx_hasAny_8cd709902428f9236b7c291fbe120774 UInt8 : 3
 Granules: 4/4
 Name: arr_idx
 Granules: 2/4

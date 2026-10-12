@@ -4,6 +4,7 @@
 #include <Common/FieldVisitorToString.h>
 #include <Common/ZooKeeper/ZooKeeperCommon.h>
 #include <Common/assert_cast.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/DataTypesNumber.h>
 #include <Common/logger_useful.h>
@@ -50,6 +51,11 @@
 namespace DB::ErrorCodes
 {
     extern const int BAD_ARGUMENTS;
+}
+
+namespace DB::Setting
+{
+    extern const SettingsUInt64 query_plan_text_index_direct_read_max_branches;
 }
 
 namespace DB::QueryPlanOptimizations
@@ -549,8 +555,9 @@ private:
         const TextIndexReadInfo * info = nullptr;
         /// Whether this predicate participated in skip-index analysis (always true unless `require_index_analyzed_predicate`).
         bool is_index_analyzed = true;
-        /// The virtual column replacing the function. An empty name means the inject-only rewrite (no direct read).
-        IndexReadTask::Column virtual_column;
+        /// The virtual columns replacing the function, OR-ed: one per query of the predicate, e.g. per alternative
+        /// of `match` or per element of `IN`. Empty means the inject-only rewrite (no direct read).
+        std::vector<IndexReadTask::Column> virtual_columns;
     };
 
     ActionsDAG & actions_dag;
@@ -638,11 +645,12 @@ private:
             if (index_header.columns() != 1 || used_index_columns.contains(index_header.begin()->name))
                 continue;
 
-            auto search_query = text_index_condition.createTextSearchQuery(canonical_node);
-            if (!search_query)
+            /// Several queries are OR-ed, e.g. the alternatives of `match` or the elements of `IN`.
+            auto search_queries = text_index_condition.createTextSearchQueries(canonical_node);
+            if (search_queries.empty())
                 continue;
 
-            /// The search query is built from the canonicalized subtree, but the rewrites below apply to
+            /// The search queries are built from the canonicalized subtree, but the rewrites below apply to
             /// the original node, so check that node as well.
             if (!text_index_condition.canAnswerFunctionNode(function_node))
                 continue;
@@ -652,21 +660,34 @@ private:
                 .index_name = index_name,
                 .info = &info,
                 .is_index_analyzed = !require_index_analyzed_predicate || isIndexAnalyzedPredicate(index_name, info, canonical_node),
-                .virtual_column = {},
+                .virtual_columns = {},
             };
 
             /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`). Otherwise
             /// just inject the tokenizer/preprocessor/postprocessor (no virtual column), same as None mode.
+            /// The injection applies to a single query only.
             if (direct_read_from_text_index
                 && info.index
                 && !drops_nullable
-                && search_query->getDirectReadMode() != TextIndexDirectReadMode::None)
+                && canReadDirectly(search_queries, context))
             {
-                auto virtual_column_name = text_index_condition.tryGetVirtualColumnName(*search_query, index_name);
-                if (!virtual_column_name)
-                    continue;
+                for (const auto & search_query : search_queries)
+                {
+                    /// A query that cannot be read matches every row (e.g. a hint without tokens), so reading
+                    /// only the other queries of the OR would drop its rows.
+                    auto virtual_column_name = text_index_condition.tryGetVirtualColumnName(*search_query, index_name);
+                    if (!virtual_column_name)
+                        break;
 
-                condition.virtual_column = {*virtual_column_name, std::make_shared<DataTypeUInt8>(), search_query, nullptr};
+                    condition.virtual_columns.push_back({*virtual_column_name, std::make_shared<DataTypeUInt8>(), search_query, nullptr});
+                }
+
+                if (condition.virtual_columns.size() != search_queries.size())
+                    continue;
+            }
+            else if (search_queries.size() > 1)
+            {
+                continue;
             }
 
             selected_conditions.push_back(std::move(condition));
@@ -674,6 +695,23 @@ private:
         }
 
         return selected_conditions;
+    }
+
+    /// A single query is read in its own mode. An OR of queries is read only as hints, each in its own virtual
+    /// column, and only up to `query_plan_text_index_direct_read_max_branches` of them.
+    static bool canReadDirectly(const std::vector<TextSearchQueryPtr> & search_queries, const ContextPtr & context)
+    {
+        if (search_queries.size() == 1)
+            return search_queries.front()->getDirectReadMode() != TextIndexDirectReadMode::None;
+
+        const UInt64 max_branches = context->getSettingsRef()[Setting::query_plan_text_index_direct_read_max_branches];
+        if (max_branches != 0 && search_queries.size() > max_branches)
+            return false;
+
+        return std::ranges::all_of(search_queries, [](const auto & search_query)
+        {
+            return search_query->getDirectReadMode() == TextIndexDirectReadMode::Hint;
+        });
     }
 
     /// Returns the node replacing `function_node`, or `function_node` itself if it is not rewritten.
@@ -928,14 +966,14 @@ private:
         std::vector<SelectedCondition> selected_conditions,
         const ContextPtr & context)
     {
-        std::erase_if(selected_conditions, [](const auto & condition) { return condition.virtual_column.name.empty(); });
+        std::erase_if(selected_conditions, [](const auto & condition) { return condition.virtual_columns.empty(); });
         if (selected_conditions.empty())
             return &function_node;
 
         /// Sort conditions to produce stable output for EXPLAIN query.
         std::ranges::sort(selected_conditions, [](const auto & lhs, const auto & rhs)
         {
-            return lhs.virtual_column.name < rhs.virtual_column.name;
+            return lhs.virtual_columns.front().name < rhs.virtual_columns.front().name;
         });
 
         bool has_exact_search = false;
@@ -944,7 +982,8 @@ private:
         for (const auto & condition : selected_conditions)
         {
             has_materialized_index |= condition.info->is_materialized;
-            has_exact_search |= condition.virtual_column.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact;
+            for (const auto & column : condition.virtual_columns)
+                has_exact_search |= column.search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact;
         }
 
         /// It doesn't make sense to optimize if index is not materialized in any data part.
@@ -966,9 +1005,8 @@ private:
             }
         }
 
-        auto add_condition_to_input = [&](SelectedCondition & condition)
+        auto add_column_to_input = [&](const SelectedCondition & condition, IndexReadTask::Column & column)
         {
-            auto & column = condition.virtual_column;
             auto [it, inserted] = virtual_column_inputs.try_emplace(column.name);
 
             if (inserted)
@@ -992,6 +1030,19 @@ private:
             }
 
             return it->second;
+        };
+
+        /// The virtual columns of a condition are OR-ed: each answers one query of the predicate.
+        auto add_condition_to_input = [&](SelectedCondition & condition)
+        {
+            ActionsDAG::NodeRawConstPtrs columns;
+            for (auto & column : condition.virtual_columns)
+                columns.push_back(add_column_to_input(condition, column));
+
+            if (columns.size() == 1)
+                return columns.front();
+
+            return &actions_dag.addFunction(FunctionFactory::instance().get("or", context), columns, "");
         };
 
         const ActionsDAG::Node * result_node = nullptr;
