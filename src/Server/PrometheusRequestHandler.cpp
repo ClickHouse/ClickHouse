@@ -14,6 +14,7 @@
 #include <Poco/URI.h>
 #include <Common/logger_useful.h>
 #include <Common/maskSensitiveQueryParameters.h>
+#include <Common/quoteString.h>
 #include <Common/setThreadName.h>
 #include "config.h"
 
@@ -695,6 +696,20 @@ private:
             String type = Poco::toLower(params->get("type", ""));
             if (!type.empty() && type != "alert" && type != "record")
                 throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the 'type' parameter: '{}', expected 'alert' or 'record'", type);
+
+            static const NameSet bool_values{"", "1", "t", "true", "0", "f", "false"};
+            String exclude_alerts = params->get("exclude_alerts", "");
+            if (!bool_values.contains(Poco::toLower(exclude_alerts)))
+                throw Exception(ErrorCodes::BAD_ARGUMENTS, "Invalid value of the 'exclude_alerts' parameter: '{}', expected a boolean", exclude_alerts);
+
+            for (const auto & match : params->getAll("match[]"))
+            {
+                PrometheusQueryTree selector;
+                selector.parse(match);
+                const auto * root = selector.getRoot();
+                if (!root || (root->node_type != PrometheusQueryTree::NodeType::InstantSelector))
+                    throw Exception(ErrorCodes::BAD_ARGUMENTS, "The value {} of the 'match[]' parameter is not an instant selector", quoteString(match));
+            }
 
             String group_limit = params->get("group_limit", "");
             String group_next_token = params->get("group_next_token", "");
