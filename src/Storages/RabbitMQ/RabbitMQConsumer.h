@@ -96,7 +96,8 @@ public:
     void abandonChannelClose() { if (close_state) close_state->abandoned = true; }
 
 private:
-    void subscribe();
+    void subscribe(UInt64 generation);
+    bool isCurrentChannel(UInt64 generation) const { return generation == channel_generation; }
     bool isChannelUsable();
     void updateCommitInfo(CommitInfo record);
 
@@ -121,6 +122,9 @@ private:
 
     String channel_id;
     UInt64 channel_id_counter = 0;
+    /// Incremented on every channel update and captured by value in the channel callbacks.
+    /// AMQP-CPP can dispatch callbacks of a replaced channel later, they must not touch the consumer state.
+    std::atomic<UInt64> channel_generation = 0;
 
     enum class State : uint8_t
     {

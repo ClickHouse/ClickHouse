@@ -76,19 +76,25 @@ void RabbitMQConsumer::closeConnections()
     });
 }
 
-void RabbitMQConsumer::subscribe()
+void RabbitMQConsumer::subscribe(UInt64 generation)
 {
     for (const auto & queue_name : queues)
     {
         consumer_channel->consume(queue_name)
-        .onSuccess([&](const std::string & /* consumer_tag */)
+        .onSuccess([this, generation, &queue_name](const std::string & /* consumer_tag */)
         {
+            if (!isCurrentChannel(generation))
+                return;
             LOG_TRACE(
                 log, "Consumer on channel {} ({}/{}) is subscribed to queue {}",
                 channel_id, subscriptions_num, queues.size(), queue_name);
         })
-        .onReceived([&](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
+        .onReceived([this, generation](const AMQP::Message & message, uint64_t delivery_tag, bool redelivered)
         {
+            /// A late delivery of a replaced channel can no longer be acked, the broker redelivers it.
+            if (!isCurrentChannel(generation))
+                return;
+
             if (message.bodySize())
             {
                 String message_received = std::string(message.body(), message.body() + message.bodySize());
@@ -107,8 +113,11 @@ void RabbitMQConsumer::subscribe()
                 cv.notify_one();
             }
         })
-        .onError([&](const char * message)
+        .onError([this, generation](const char * message)
         {
+            if (!isCurrentChannel(generation))
+                return;
+
             /* End up here either if channel ends up in an error state (then there will be resubscription)
              * or consume call error, which arises from queue settings mismatch or queue level error,
              * which should not happen as no one else is supposed to touch them
@@ -234,13 +243,18 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
 {
     state = State::INITIALIZING;
     last_commited_delivery_tag = 0;
+    /// Abandon the callbacks of the old channel first, so that a late delivery cannot refill the queue after it is cleared.
+    const UInt64 generation = ++channel_generation;
     /// Deliveries of the old channel can no longer be acked and the broker redelivers them.
     /// Keeping them would insert duplicates and mix delivery tags of two channels in one commit.
     received.clear();
 
     consumer_channel = connection.createChannel();
-    consumer_channel->onReady([&]()
+    consumer_channel->onReady([this, generation]()
     {
+        if (!isCurrentChannel(generation))
+            return;
+
         try
         {
             /// 1. channel_id_base - indicates current consumer buffer.
@@ -252,7 +266,7 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
             LOG_TRACE(log, "Channel {} is successfully created", channel_id);
 
             subscriptions_num = 0;
-            subscribe();
+            subscribe(generation);
 
             state = State::OK;
         }
@@ -263,8 +277,11 @@ void RabbitMQConsumer::updateChannel(RabbitMQConnection & connection)
         }
     });
 
-    consumer_channel->onError([&](const char * message)
+    consumer_channel->onError([this, generation](const char * message)
     {
+        if (!isCurrentChannel(generation))
+            return;
+
         LOG_ERROR(
             log, "Channel {} received an error: {} (usable: {}, connected: {})",
             channel_id, message, consumer_channel->usable(), consumer_channel->connected());
