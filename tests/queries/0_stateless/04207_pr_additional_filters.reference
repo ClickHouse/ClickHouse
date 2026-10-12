@@ -52,3 +52,10 @@ Positions: 0
                        FUNCTION lessOrEquals(x : 0, 2_UInt8 :: 1) -> lessOrEquals(x, 2_UInt8) UInt8 : 2
               Positions: 2 0
                 ReadFromTable
+3
+3
+3
+3
+04207_atf_alias_local_plan	1
+04207_atf_alias_plan_based	1
+04207_atf_qualified_key	1
