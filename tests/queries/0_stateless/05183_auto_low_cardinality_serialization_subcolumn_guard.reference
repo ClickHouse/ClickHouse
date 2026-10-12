@@ -1,0 +1,12 @@
+empty table, rewrite of a String column is skipped
+0
+empty table, rewrite of an Array column still fires
+1
+encoded part, correctness
+6000	2000	4000
+feature disabled but the part is still encoded, rewrite is skipped
+0
+6000	2000
+feature never enabled, rewrite fires
+1
+6000	2000

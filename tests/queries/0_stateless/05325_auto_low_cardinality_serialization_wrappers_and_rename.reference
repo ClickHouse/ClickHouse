@@ -1,0 +1,15 @@
+source kind
+LowCardinality
+buffer
+6000	2000	0
+0
+materialized view: rewrite is skipped
+0
+300	100
+direct read of the target: rewrite fires
+1
+before rename
+Compact	lc	LowCardinality
+after rename
+Compact	lc2	LowCardinality
+6000	2000	10
