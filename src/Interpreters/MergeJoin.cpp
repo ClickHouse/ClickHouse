@@ -1301,8 +1301,8 @@ void MergeJoin::emitInOrder(Block & block, const std::shared_ptr<OrderedProbeSta
 
             /// Resolve the source of the right rows first: its average row width feeds the byte
             /// cap. The matched rows gathered at match time need no block load.
-            const Columns * source_columns;
-            size_t right_row_bytes;
+            const Columns * source_columns = nullptr;
+            size_t right_row_bytes = 0;
             if (range.right_block == OrderedProbeState::gathered_block)
             {
                 if (!gathered_row_bytes)
