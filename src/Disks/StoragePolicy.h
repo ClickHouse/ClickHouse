@@ -102,6 +102,7 @@ private:
     double move_factor = 0.1; /// by default move factor is 10%
 
     void buildVolumeIndices();
+    void validateDisksHaveDistinctStorageNamespaces() const;
 
     LoggerPtr log;
 };

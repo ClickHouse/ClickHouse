@@ -54,6 +54,13 @@ bool DataSourceDescription::sameKind(const DataSourceDescription & other) const
         == std::tie(other.type, other.object_storage_type, other_description);
 }
 
+bool DataSourceDescription::isPathLocal() const
+{
+    return type == DataSourceType::Local
+        || metadata_type == MetadataStorageType::Local
+        || object_storage_type == ObjectStorageType::Local;
+}
+
 String DataSourceDescription::name() const
 {
     switch (type)

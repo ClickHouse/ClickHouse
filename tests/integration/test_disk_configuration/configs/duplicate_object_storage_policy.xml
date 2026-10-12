@@ -1,0 +1,16 @@
+<clickhouse>
+    <storage_configuration>
+        <policies>
+            <object_storage_same_bucket>
+                <volumes>
+                    <original>
+                        <disk>s3_plain_bucket_root</disk>
+                    </original>
+                    <alias>
+                        <disk>s3_plain_bucket_root_alias</disk>
+                    </alias>
+                </volumes>
+            </object_storage_same_bucket>
+        </policies>
+    </storage_configuration>
+</clickhouse>
