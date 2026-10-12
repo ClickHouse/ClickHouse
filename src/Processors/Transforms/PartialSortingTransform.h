@@ -14,11 +14,13 @@ class PartialSortingTransform final : public ISimpleTransform
 {
 public:
     /// limit - if not 0, then you can sort each block not completely, but only `limit` first rows by order.
+    /// sorted_prefix_size - the input is already sorted by this many leading columns of the description.
     PartialSortingTransform(
         SharedHeader header_,
         const SortDescription & description_,
         UInt64 limit_ = 0,
-        TopKThresholdTrackerPtr threshold_tracker_ = nullptr);
+        TopKThresholdTrackerPtr threshold_tracker_ = nullptr,
+        size_t sorted_prefix_size_ = 0);
 
     String getName() const override { return "PartialSortingTransform"; }
 
@@ -31,6 +33,7 @@ private:
     const SortDescription description;
     SortDescriptionWithPositions description_with_positions;
     const UInt64 limit;
+    const size_t sorted_prefix_size;
     RowsBeforeStepCounterPtr read_rows;
 
     Columns sort_description_threshold_columns;
