@@ -218,7 +218,7 @@ void Poller::run()
             continue;
 
         metrics.fired += fired;
-        pool.global_tasks.pushManyFront(std::span(fired_buffer).first(fired));
+        pool.async_ready_tasks.pushMany(std::span(fired_buffer).first(fired));
         pending_count.fetch_sub(fired);
         switch (pool.wakeWorker())
         {

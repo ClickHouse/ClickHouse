@@ -8,6 +8,7 @@ namespace Runtime::V2
 
 void addCounters(PoolMetrics & pool, const WorkerMetrics & worker)
 {
+    pool.workers.async_picks += worker.async_picks;
     pool.workers.local_picks += worker.local_picks;
     pool.workers.global_picks += worker.global_picks;
     pool.workers.steal_picks += worker.steal_picks;

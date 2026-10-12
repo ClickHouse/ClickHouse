@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Executors/Runtime/V2/Pipeline/ExecutingProcessor.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Enabled.h>
 #include <base/types.h>
@@ -13,8 +14,6 @@ namespace DB
 
 namespace Runtime::V2
 {
-
-struct ExecutingProcessor;
 
 /// Bounded Chase-Lev ring: the owner pushes and pops LIFO at head, thieves steal batches of the oldest entries.
 /// https://dl.acm.org/doi/epdf/10.1145/1073970.1073974

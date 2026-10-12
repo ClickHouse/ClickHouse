@@ -26,16 +26,6 @@ void GlobalQueue::pushManyFifo(std::span<ExecutingProcessor * const> many)
     count.store(entries.size());
 }
 
-void GlobalQueue::pushManyFront(std::span<ExecutingProcessor * const> many)
-{
-    if (many.empty())
-        return;
-
-    std::lock_guard lock(mutex);
-    entries.insert(entries.begin(), many.begin(), many.end());
-    count.store(entries.size());
-}
-
 size_t GlobalQueue::popManyFifo(std::span<ExecutingProcessor *> out, size_t sharers)
 {
     if (count.load() == 0)

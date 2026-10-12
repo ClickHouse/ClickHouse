@@ -26,7 +26,7 @@ WorkersCoordinator::WorkersCoordinator(WorkerPool & pool_, size_t max_workers)
 
 bool WorkersCoordinator::isFinished() const
 {
-    return sleepers_count.load() == registered_workers.load() && pool.poller.pending() == 0 && pool.global_tasks.size() == 0;
+    return sleepers_count.load() == registered_workers.load() && pool.poller.pending() == 0 && pool.async_ready_tasks.size() == 0 && pool.global_tasks.size() == 0;
 }
 
 std::optional<size_t> WorkersCoordinator::takeAnySleepingWorker()

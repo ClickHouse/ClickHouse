@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Processors/Executors/Runtime/V2/Pipeline/ExecutingProcessor.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Atomic.h>
 #include <Processors/Executors/Runtime/Wyrd/Facade/Mutex.h>
 #include <Common/DevectorWithMemoryTracking.h>
@@ -12,15 +13,12 @@ namespace DB
 namespace Runtime::V2
 {
 
-struct ExecutingProcessor;
-
 class GlobalQueue
 {
 public:
     explicit GlobalQueue(size_t capacity);
 
     void pushManyFifo(std::span<ExecutingProcessor * const> many);
-    void pushManyFront(std::span<ExecutingProcessor * const> many);
     size_t popManyFifo(std::span<ExecutingProcessor *> out, size_t sharers);
     size_t size() const;
 

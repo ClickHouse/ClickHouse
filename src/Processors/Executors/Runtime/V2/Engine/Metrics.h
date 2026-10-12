@@ -10,6 +10,7 @@ namespace Runtime::V2
 
 struct WorkerMetrics
 {
+    UInt64 async_picks = 0;
     UInt64 local_picks = 0;
     UInt64 global_picks = 0;
     UInt64 steal_picks = 0;

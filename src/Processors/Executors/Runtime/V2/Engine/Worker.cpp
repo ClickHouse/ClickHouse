@@ -24,6 +24,7 @@ namespace
 
 constexpr size_t steal_rounds = 4;
 constexpr size_t max_take_from_global = LocalQueue::capacity / 2;
+constexpr size_t max_take_from_async_ready = LocalQueue::capacity / 2;
 constexpr double shuffle_probability = 0.125;
 constexpr double early_offload_probability = 0.125;
 
@@ -115,6 +116,12 @@ ExecutingProcessor * Worker::pick(WorkerSlot & slot, std::atomic_bool * yield_fl
 
 ExecutingProcessor * Worker::tryPick()
 {
+    if (const size_t count = pool.async_ready_tasks.popManyLifo(std::span(tmp_buffer).first(max_take_from_async_ready), pool.coordinator.registeredWorkers()))
+    {
+        metrics.async_picks += 1;
+        return pickFromBatch(std::span(tmp_buffer).first(count), pool.async_ready_tasks.size() > 0);
+    }
+
     if (auto * picked = local_tasks.popLifo())
     {
         metrics.local_picks += 1;
@@ -174,7 +181,7 @@ size_t Worker::trySteal(size_t rounds)
 
 bool Worker::anyWorkHasAppeared() const
 {
-    if (pool.global_tasks.size() > 0)
+    if (pool.async_ready_tasks.size() > 0 || pool.global_tasks.size() > 0)
         return true;
 
     for (const Worker & other : pool.workers)

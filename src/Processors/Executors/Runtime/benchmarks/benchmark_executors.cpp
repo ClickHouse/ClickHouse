@@ -56,6 +56,7 @@ void addMetrics(Runtime::V2::PoolMetrics & total, const IExecutor & executor)
 void reportMetrics(benchmark::State & state, const Runtime::V2::PoolMetrics & total)
 {
     const auto average = [&](UInt64 value) { return benchmark::Counter(double(value), benchmark::Counter::kAvgIterations); };
+    state.counters["async_picks"] = average(total.workers.async_picks);
     state.counters["local_picks"] = average(total.workers.local_picks);
     state.counters["global_picks"] = average(total.workers.global_picks);
     state.counters["steal_picks"] = average(total.workers.steal_picks);

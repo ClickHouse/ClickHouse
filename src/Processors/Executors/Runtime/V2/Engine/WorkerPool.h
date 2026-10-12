@@ -3,6 +3,7 @@
 #include <Processors/Executors/Runtime/V2/ExecutionOptions.h>
 #include <Processors/Executors/Runtime/V2/Engine/Metrics.h>
 #include <Processors/Executors/Runtime/V2/Engine/Poller.h>
+#include <Processors/Executors/Runtime/V2/Engine/Queues/AsyncReadyQueue.h>
 #include <Processors/Executors/Runtime/V2/Engine/Queues/GlobalQueue.h>
 #include <Processors/Executors/Runtime/V2/Engine/Worker.h>
 #include <Processors/Executors/Runtime/V2/Engine/WorkersCoordinator.h>
@@ -72,6 +73,7 @@ private:
     DequeWithMemoryTracking<Worker> workers;
     WorkersCoordinator coordinator;
     GlobalQueue global_tasks;
+    AsyncReadyQueue async_ready_tasks;
     Poller poller;
 
     /// CPU slots
