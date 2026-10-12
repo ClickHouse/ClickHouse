@@ -346,8 +346,10 @@ def test_replace_running_query_with_admission_queue(started_cluster):
 
     pool.apply_async(run_replacement)
 
-    # Wait until the replacement has entered the queue
-    wait_for_queue_length(node, 1)
+    # Wait until the replacement has reached the server: the `replace_running_query` stage runs
+    # before the admission queue and cancels the victim, whose slot the replacement then takes,
+    # so the replacement may never be observable in the admission queue.
+    wait_for_query_cancelled(node, victim_id)
 
     # Kill the blocker to free a slot — this should admit the replacement
     node.query(f"KILL QUERY WHERE query_id = '{blocker_id}' SYNC")
