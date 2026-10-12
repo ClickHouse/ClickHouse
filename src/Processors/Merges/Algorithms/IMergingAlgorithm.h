@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Chunk.h>
 #include <Common/PODArray_fwd.h>
 #include <Core/Block.h>
@@ -50,7 +51,7 @@ public:
         }
     };
 
-    using Inputs = std::vector<Input>;
+    using Inputs = VectorWithMemoryTracking<Input>;
 
     static void removeConstAndSparse(Input & input)
     {

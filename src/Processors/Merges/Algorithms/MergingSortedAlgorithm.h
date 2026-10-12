@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Merges/Algorithms/IMergingAlgorithm.h>
 #include <Processors/Merges/Algorithms/MergedData.h>
 #include <Processors/Merges/Algorithms/RowFilterInfo.h>
@@ -64,7 +65,7 @@ private:
     /// Per source, the rows to keep in the chunk above, or nullptr when that chunk is not
     /// filtered. Valid for exactly as long as the chunk, so it is refreshed whenever one arrives
     /// and dropped when one is passed through whole.
-    std::vector<const IColumnFilter *> source_row_filter_masks;
+    VectorWithMemoryTracking<const IColumnFilter *> source_row_filter_masks;
 
     SortingQueueStrategy sorting_queue_strategy;
 
@@ -87,7 +88,7 @@ private:
     void insertChunk(size_t source_num);
 
     /// Per-input pending virtual-row boundary (empty when none), used for debug checks to ensure virtual rows are placed correctly.
-    std::vector<Columns> virtual_row_boundary;
+    VectorWithMemoryTracking<Columns> virtual_row_boundary;
 };
 
 }
