@@ -1,3 +1,6 @@
+-- The JIT-compiled `if` keeps the null map, check the interpreted implementation.
+SET compile_expressions = 0;
+
 -- `if` over `Nullable` branches does not create a null map if the NULLs of the branches are not selected.
 SELECT DISTINCT dumpColumnStructure(if(number < 100, toNullable(number), nullIf(number, 1))) FROM numbers(3);
 SELECT DISTINCT dumpColumnStructure(if(number < 2, nullIf(number, 3), nullIf(number, 1))) FROM numbers(4);
