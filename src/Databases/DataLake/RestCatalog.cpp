@@ -2282,12 +2282,12 @@ bool RestCatalog::updateSchema(
     return true;
 }
 
-void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool /*delete_data*/) const
+void RestCatalog::dropTable(const String & namespace_name, const String & table_name, bool delete_data) const
 {
     const auto state_snapshot = state.get();
     const std::string endpoint
         = (base_url / state_snapshot->config.prefix / NAMESPACES_ENDPOINT / encodeNamespaceForURI(namespace_name) / "tables" / table_name).generic_string()
-        + "?purgeRequested=False";
+        + (delete_data ? "?purgeRequested=true" : "?purgeRequested=false");
 
     Poco::JSON::Object::Ptr request_body = nullptr;
     try
