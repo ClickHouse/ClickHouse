@@ -381,7 +381,7 @@ template <typename KeyGetter, typename HashMap, typename Selector>
 BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertSlotRows(
     HashJoin & join,
     HashMap & map,
-    KeyGetter & key_getter,
+    KeyGetter & slot_key_getter,
     bool keys_are_dense,
     const ColumnRawPtrs & key_columns,
     UInt32 stored_block_no,
@@ -393,6 +393,9 @@ BuildResult HashJoinMethods<KIND, STRICTNESS, MapsTemplate>::insertSlotRows(
     [[maybe_unused]] constexpr bool mapped_one = std::is_same_v<typename MapsTemplate::MappedType, RowRef>;
     constexpr bool is_set = SetJoinMaps<MapsTemplate>;
     constexpr bool is_asof_join = STRICTNESS == JoinStrictness::Asof;
+
+    /// Copy the getter when that is cheap: the loop reloads a getter behind a reference after every out-of-line `RowRefList::insert`.
+    std::conditional_t<std::is_trivially_copyable_v<KeyGetter>, KeyGetter, KeyGetter &> key_getter = slot_key_getter;
 
     const IColumn * asof_column [[maybe_unused]] = nullptr;
     [[maybe_unused]] TypeIndex asof_type{};
