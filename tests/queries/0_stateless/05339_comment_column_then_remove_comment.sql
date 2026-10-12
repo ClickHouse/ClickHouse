@@ -1,5 +1,8 @@
+-- Tags: no-replicated-database
 -- `COMMENT COLUMN` advances the `validate()` snapshot so a later
 -- `MODIFY COLUMN ... REMOVE COMMENT` in the same ALTER sees the comment.
+-- no-replicated-database: the statement mixes a comment command with a replicated alter,
+-- which Replicated databases prohibit.
 
 DROP TABLE IF EXISTS comment_then_remove;
 CREATE TABLE comment_then_remove (k UInt64, x UInt64) ENGINE = MergeTree ORDER BY k;

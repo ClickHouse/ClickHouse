@@ -2143,28 +2143,14 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     auto all_columns = metadata->columns;
     /// Default expression for all added/modified columns
     ASTPtr default_expr_list = make_intrusive<ASTExpressionList>();
-    /// Tmp alias of the default entry an earlier command of this ALTER installed, so a later
-    /// type restatement replaces it instead of stacking a second entry for the same column.
-    std::unordered_map<String, String> installed_default_aliases;
-    /// Drop the default an earlier command staged, together with its map entry.
-    /// Returns true if a staged default was present.
-    auto drop_staged_default = [&](const String & name) -> bool
-    {
-        auto it = installed_default_aliases.find(name);
-        if (it == installed_default_aliases.end())
-            return false;
-        const auto & previous_tmp = it->second;
-        auto & children = default_expr_list->children;
-        children.erase(
-            std::remove_if(children.begin(), children.end(), [&](const ASTPtr & child)
-            {
-                const auto alias = child->tryGetAlias();
-                return alias == name || alias == previous_tmp;
-            }),
-            children.end());
-        installed_default_aliases.erase(it);
-        return true;
-    };
+    /// Tmp aliases of the default entries earlier commands of this ALTER staged, so a later
+    /// command can replace or tear them down. Restatements of a table default stack, hence
+    /// more than one tmp alias per column.
+    std::unordered_map<String, std::vector<String>> installed_default_aliases;
+    /// Staged pairs that mirror a default the table already had: a later type restatement must
+    /// stack another entry rather than replace (preserving the pre-existing collision behavior),
+    /// so only an explicit REMOVE/DROP of the column's default tears these down.
+    NameSet restated_table_defaults;
     /// Columns whose default is evaluated at insert time (DEFAULT, MATERIALIZED); their expressions
     /// must not reference virtual columns. An external-target (`TO`) materialized view forwards inserts
     /// to its target using the target metadata and never evaluates its own column defaults, so a default
@@ -2173,17 +2159,45 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
     bool defaults_evaluated_at_insert_time = true;
     if (const auto * mv = dynamic_cast<const StorageMaterializedView *>(table.get()))
         defaults_evaluated_at_insert_time = mv->hasInnerTable();
-    /// Stage the (converted, raw) default pair of `name` for the final validation, replacing
-    /// any pair an earlier command staged for it. `track` records the tmp alias so later
-    /// commands can drop or rename the staged pair; a default the table already had stays
-    /// untracked, so two type restatements over it still collide as before.
+    /// Drop the default an earlier command staged, together with its map entry.
+    /// With `force` a restated table default is torn down too; otherwise it survives.
+    /// Returns true if a staged default was present.
+    auto drop_staged_default = [&](const String & name, bool force = false) -> bool
+    {
+        if (!force && restated_table_defaults.contains(name))
+            return false;
+        auto it = installed_default_aliases.find(name);
+        if (it == installed_default_aliases.end())
+            return false;
+        const auto & previous_tmps = it->second;
+        auto & children = default_expr_list->children;
+        children.erase(
+            std::remove_if(children.begin(), children.end(), [&](const ASTPtr & child)
+            {
+                const auto alias = child->tryGetAlias();
+                return alias == name || std::find(previous_tmps.begin(), previous_tmps.end(), alias) != previous_tmps.end();
+            }),
+            children.end());
+        installed_default_aliases.erase(it);
+        restated_table_defaults.erase(name);
+        insert_time_default_columns.erase(name);
+        return true;
+    };
+    /// Stage the (converted, raw) default pair of `name` for the final validation. An explicit
+    /// (`track = true`) default replaces any pair staged before; a restatement of a default the
+    /// table already had stacks over another restatement, so two restatements still collide.
     auto stage_default = [&](const String & name, const ASTPtr & expression, const DataTypePtr & data_type,
                              ColumnDefaultKind kind, bool track)
     {
         const auto tmp_column_name = name + "_tmp_alter" + toString(randomSeed());
-        drop_staged_default(name);
+        /// An explicit default replaces even a restated table default; a restatement only
+        /// replaces a tracked pair and stacks over another restatement.
+        drop_staged_default(name, /* force = */ track);
+        installed_default_aliases[name].push_back(tmp_column_name);
         if (track)
-            installed_default_aliases[name] = tmp_column_name;
+            restated_table_defaults.erase(name);
+        else
+            restated_table_defaults.insert(name);
 
         /// The conversion holds its own copy of the default expression rather than referring to the
         /// alias of the expression below, for the reason explained in `getDefaultExpressionInfoInto`:
@@ -2469,10 +2483,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                     /// staged for any column in the removed range (`getNested` returns the
                     /// column itself for an exact match).
                     for (const auto & removed_column : all_columns.getNested(command.column_name))
-                    {
-                        drop_staged_default(removed_column.name);
-                        insert_time_default_columns.erase(removed_column.name);
-                    }
+                        drop_staged_default(removed_column.name, /* force = */ true);
                     all_columns.remove(command.column_name);
                 }
             }
@@ -2621,14 +2632,16 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
             if (auto staged_it = installed_default_aliases.find(command.column_name);
                 staged_it != installed_default_aliases.end())
             {
-                const auto staged_tmp_name = staged_it->second;
+                const auto staged_tmp_names = std::move(staged_it->second);
                 installed_default_aliases.erase(staged_it);
-                installed_default_aliases[command.rename_to] = staged_tmp_name;
+                installed_default_aliases[command.rename_to] = staged_tmp_names;
                 for (auto & staged_default : default_expr_list->children)
                 {
                     if (staged_default->tryGetAlias() == command.column_name)
                         staged_default->setAlias(command.rename_to);
                 }
+                if (restated_table_defaults.erase(command.column_name))
+                    restated_table_defaults.insert(command.rename_to);
                 if (insert_time_default_columns.erase(command.column_name))
                     insert_time_default_columns.insert(command.rename_to);
             }
@@ -2651,7 +2664,7 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 && (command.to_remove == AlterCommand::RemoveProperty::DEFAULT
                     || command.to_remove == AlterCommand::RemoveProperty::MATERIALIZED
                     || command.to_remove == AlterCommand::RemoveProperty::ALIAS))
-                drop_staged_default(column_name);
+                drop_staged_default(column_name, /* force = */ true);
 
             if (command.default_expression)
             {
@@ -2676,7 +2689,9 @@ void AlterCommands::validate(const StoragePtr & table, ContextPtr context) const
                 /// type it will finally have; a default the table already had keeps its entry, so two
                 /// type restatements over it still collide.
                 stage_default(column_name, column_in_table.default_desc.expression, command.data_type,
-                              column_in_table.default_desc.kind, /* track = */ installed_default_aliases.contains(column_name));
+                              column_in_table.default_desc.kind,
+                              /* track = */ installed_default_aliases.contains(column_name)
+                                  && !restated_table_defaults.contains(column_name));
             }
         }
     }

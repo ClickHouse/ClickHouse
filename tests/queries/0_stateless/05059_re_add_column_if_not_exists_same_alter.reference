@@ -115,3 +115,5 @@ rename staged default ref	z
 rename staged default self	k		
 rename staged default self	z	DEFAULT	1
 rename stored default ref	x	UInt16	z
+restate remove then retype	x	UInt8	
+restate then drop	k

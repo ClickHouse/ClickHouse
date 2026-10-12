@@ -1,5 +1,8 @@
+-- Tags: no-replicated-database
 -- Same-statement DROP + ADD IF NOT EXISTS must re-add. prepare() advances the schema per
 -- command; the mutation path drops files under the name the part stores.
+-- no-replicated-database: some sections mix mutation and comment commands in one ALTER,
+-- which Replicated databases prohibit.
 
 DROP TABLE IF EXISTS re_add_ine;
 CREATE TABLE re_add_ine (a Int64, x Int64, pad Int64) ENGINE = MergeTree ORDER BY tuple();
@@ -532,3 +535,27 @@ ALTER TABLE rename_stored_default_ref
 SELECT 'rename stored default ref', name, type, default_expression FROM system.columns
     WHERE database = currentDatabase() AND table = 'rename_stored_default_ref' AND name = 'x';
 DROP TABLE rename_stored_default_ref;
+
+-- A restatement of a default the table already had stacks its own staged entry; a later
+-- REMOVE DEFAULT in the same ALTER must tear it down, so the trailing type change
+-- validates the final schema (which has no default).
+DROP TABLE IF EXISTS restate_remove_retype;
+CREATE TABLE restate_remove_retype (x String DEFAULT 'a') ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE restate_remove_retype
+    (MODIFY COLUMN x Int8),
+    (MODIFY COLUMN x REMOVE DEFAULT),
+    (MODIFY COLUMN x UInt8);
+SELECT 'restate remove then retype', name, type, default_expression FROM system.columns
+    WHERE database = currentDatabase() AND table = 'restate_remove_retype' AND name = 'x';
+DROP TABLE restate_remove_retype;
+
+-- The same teardown applies when the column itself is dropped after its stored default
+-- was restated.
+DROP TABLE IF EXISTS restate_then_drop;
+CREATE TABLE restate_then_drop (k UInt8, x String DEFAULT '7') ENGINE = MergeTree ORDER BY tuple();
+ALTER TABLE restate_then_drop
+    (MODIFY COLUMN x Int8),
+    (DROP COLUMN x);
+SELECT 'restate then drop', name FROM system.columns
+    WHERE database = currentDatabase() AND table = 'restate_then_drop';
+DROP TABLE restate_then_drop;
