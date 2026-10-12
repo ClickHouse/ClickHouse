@@ -21,8 +21,8 @@ namespace
 {
 
 /// Membership table for the optional second argument of trim* functions.
-/// Unlike `find_first_symbols` (a SIMD primitive with a compile-time set of at most
-/// 16 symbols), it supports a trim character set of any length and looks up each byte in O(1).
+/// Unlike `SearchSymbols` (a SIMD primitive capped at 16 symbols), it supports
+/// a trim character set of any length and looks up each byte in O(1).
 using TrimCharsTable = std::array<bool, 256>;
 
 class FunctionTrim final : public IFunction
@@ -339,9 +339,9 @@ By default, removes common whitespace (ASCII) characters.
         "Usage example",
         "SELECT trimLeft('ClickHouse', 'Click');",
         R"(
-┌─trimLeft('ClickHouse', 'Click')─┐
-│ House                           │
-└─────────────────────────────────┘
+┌─trimLeft('Cl⋯', 'Click')─┐
+│ House                    │
+└──────────────────────────┘
         )"
     }
     };
@@ -364,9 +364,9 @@ By default, removes common whitespace (ASCII) characters.
         "Usage example",
         "SELECT trimRight('ClickHouse','House');",
         R"(
-┌─trimRight('ClickHouse', 'House')─┐
-│ Click                            │
-└──────────────────────────────────┘
+┌─trimRight('C⋯', 'House')─┐
+│ Click                    │
+└──────────────────────────┘
         )"
     }
     };
@@ -387,9 +387,9 @@ By default, removes common whitespace (ASCII) characters.
         "Usage example",
         "SELECT trimBoth('$$ClickHouse$$', '$')",
         R"(
-┌─trimBoth('$$ClickHouse$$', '$')─┐
-│ ClickHouse                      │
-└─────────────────────────────────┘
+┌─trimBoth('$$⋯se$$', '$')─┐
+│ ClickHouse               │
+└──────────────────────────┘
         )"
     }
     };

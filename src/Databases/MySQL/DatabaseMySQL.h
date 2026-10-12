@@ -84,8 +84,6 @@ public:
     StoragePtr detachTable(ContextPtr context, const String & table_name) override;
 
     void detachTablePermanently(ContextPtr context, const String & table_name) override;
-    DatabaseDetachedTablesSnapshotIteratorPtr getDetachedTablesIterator(
-        ContextPtr context, const FilterByNameFunction & filter_by_table_name, bool skip_not_loaded) const override;
 
     void dropTable(ContextPtr context, const String & table_name, bool sync) override;
 
@@ -113,7 +111,7 @@ private:
     mutable std::vector<StoragePtr> outdated_tables;
     mutable std::map<String, ModifyTimeAndStorage> local_tables_cache;
 
-    mutable std::unordered_set<String> remove_or_detach_tables;
+    std::unordered_set<String> remove_or_detach_tables;
 
     void cleanOutdatedTables();
 
