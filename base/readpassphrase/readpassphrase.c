@@ -69,7 +69,7 @@ convert_char(char ch, int flags)
 }
 
 /*
- * ClickHouse extension: with `RPP_ECHO_MASK`, every typed character is echoed as a mask,
+ * ClickHouse extension: with `readpassphrase_masked`, every typed character is echoed as a mask,
  * so the user can see how many characters were typed and notice stray control characters.
  * The terminal is switched to the non-canonical mode to receive the characters as they are typed,
  * so the line editing of the canonical mode is done here.
@@ -78,6 +78,7 @@ convert_char(char ch, int flags)
 struct masked_input {
     int output;
     const char *prompt;
+    size_t prompt_width;           /* The columns taken by the prompt. */
     const struct termios *term;    /* The original terminal settings. */
     const char *mask;
     size_t mask_len;
@@ -98,19 +99,17 @@ is_utf8_continuation(char ch, int utf8)
     return utf8 && ((unsigned char)ch & 0xC0) == 0x80;
 }
 
-/* The number of characters in the line after the last newline, each is assumed to take one column. */
+/* The number of characters, each is masked once. */
 static size_t
-count_columns(const char *begin, const char *end, int utf8)
+count_chars(const char *begin, const char *end, int utf8)
 {
-    size_t columns = 0;
+    size_t chars = 0;
 
     for (; begin < end; begin++) {
-        if (*begin == '\n')
-            columns = 0;
-        else if (!is_utf8_continuation(*begin, utf8))
-            columns++;
+        if (!is_utf8_continuation(*begin, utf8))
+            chars++;
     }
-    return columns;
+    return chars;
 }
 
 static void
@@ -189,11 +188,11 @@ erase_word(struct masked_input *m, char *buf, char **p)
 static void
 reprint(struct masked_input *m, const char *buf, const char *p)
 {
-    size_t masks = count_columns(buf, p, m->utf8), i;
+    size_t masks = count_chars(buf, p, m->utf8), i;
 
     write_string(m->output, "\r\n");
     write_string(m->output, m->prompt);
-    m->columns = count_columns(m->prompt, m->prompt + strlen(m->prompt), 1);
+    m->columns = m->prompt_width;
     m->below_last_mask = 0;
     for (i = 0; i < masks; i++)
         show_mask(m);
@@ -246,8 +245,8 @@ read_masked(int input, struct masked_input *m, char *buf, char **p, char *end, i
     return nr;
 }
 
-char *
-readpassphrase(const char *prompt, char *buf, size_t bufsiz, int flags)
+static char *
+readpassphrase_impl(const char *prompt, size_t prompt_width, int echo_mask, char *buf, size_t bufsiz, int flags)
 {
     ssize_t nr;
     int input, output, save_errno, i, need_restart, mask;
@@ -293,7 +292,7 @@ restart:
         memcpy(&term, &oterm, sizeof(term));
         if (!(flags & RPP_ECHO_ON)) {
             term.c_lflag &= ~((unsigned int) (ECHO | ECHONL));
-            if (flags & RPP_ECHO_MASK) {
+            if (echo_mask) {
                 /* Receive the characters as they are typed to echo the masks. */
                 term.c_lflag &= ~((unsigned int) ICANON);
                 term.c_cc[VMIN] = 1;
@@ -338,6 +337,7 @@ restart:
     if (mask) {
         masked.output = output;
         masked.prompt = prompt;
+        masked.prompt_width = prompt_width;
         masked.term = &oterm;
         if (flags & RPP_MASK_BULLET) {
             masked.mask = "\xE2\x97\x8F"; /* U+25CF BLACK CIRCLE */
@@ -351,7 +351,7 @@ restart:
         masked.utf8 = (oterm.c_iflag & IUTF8) != 0;
 #endif
         /* The prompt is assumed to start at the beginning of the line. */
-        masked.columns = count_columns(prompt, prompt + strlen(prompt), 1);
+        masked.columns = prompt_width;
         masked.below_last_mask = 0;
         nr = read_masked(input, &masked, buf, &p, end, flags);
     } else {
@@ -410,6 +410,18 @@ restart:
     return(nr == -1 ? NULL : buf);
 }
 //DEF_WEAK(readpassphrase);
+
+char *
+readpassphrase(const char *prompt, char *buf, size_t bufsiz, int flags)
+{
+    return readpassphrase_impl(prompt, 0, 0, buf, bufsiz, flags);
+}
+
+char *
+readpassphrase_masked(const char *prompt, size_t prompt_width, char *buf, size_t bufsiz, int flags)
+{
+    return readpassphrase_impl(prompt, prompt_width, 1, buf, bufsiz, flags);
+}
 
 static void handler(int s)
 {

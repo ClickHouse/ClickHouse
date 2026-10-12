@@ -10,6 +10,7 @@
 #include <Common/Exception.h>
 #include <Common/SSHAgent.h>
 #include <Common/TerminalSize.h>
+#include <Common/UTF8Helpers.h>
 #include <Common/isLocalAddress.h>
 #include <Common/DNSResolver.h>
 #include <Client/ClientBaseHelpers.h>
@@ -54,9 +55,11 @@ bool enableSecureConnection(const Poco::Util::AbstractConfiguration & config, co
 }
 
 /// Echo every typed character as a mask, so the user can notice a stray character.
-int maskedPromptFlags()
+char * readMaskedPassphrase(const std::string & prompt, char * buf, size_t size)
 {
-    return RPP_ECHO_MASK | (terminalDisplaysBulletInOneColumn() ? RPP_MASK_BULLET : 0);
+    const size_t prompt_width = UTF8::computeWidth(reinterpret_cast<const UInt8 *>(prompt.data()), prompt.size());
+    return readpassphrase_masked(
+        prompt.c_str(), prompt_width, buf, size, terminalDisplaysBulletInOneColumn() ? RPP_MASK_BULLET : 0);
 }
 
 #if USE_SSH
@@ -118,7 +121,7 @@ String askPassphrase(const String & key_name)
 {
     String prompt = fmt::format("Enter the passphrase for the SSH key {}: ", key_name);
     char buf[1000] = {};
-    if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), maskedPromptFlags()))
+    if (auto * result = readMaskedPassphrase(prompt, buf, sizeof(buf)))
         return result;
     return {};
 }
@@ -366,7 +369,7 @@ ConnectionParameters::ConnectionParameters(const Poco::Util::AbstractConfigurati
         {
             std::string prompt{"Password for user (" + user + "): "};
             char buf[1000] = {};
-            if (auto * result = readpassphrase(prompt.c_str(), buf, sizeof(buf), maskedPromptFlags()))
+            if (auto * result = readMaskedPassphrase(prompt, buf, sizeof(buf)))
                 password = result;
         }
 
