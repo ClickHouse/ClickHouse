@@ -52,7 +52,8 @@ echo "pruning never changes a result"
 for table in unpartitioned identity day hour bucket; do
     for predicate in "${PREDICATES[@]}"; do
         # Bucket pruning for pre-1970 values is not spec-conformant yet: `icebergBucket` truncates
-        # nanoseconds to microseconds toward zero instead of flooring (bucket 12 instead of 8 for -1 ns).
+        # nanoseconds to microseconds toward zero instead of flooring (bucket 12 instead of 8 for -1 ns),
+        # https://github.com/ClickHouse/ClickHouse/issues/125330
         if [ "${table}" = bucket ] && [[ "${predicate}" == *"1969-12-31"* ]]; then
             continue
         fi
