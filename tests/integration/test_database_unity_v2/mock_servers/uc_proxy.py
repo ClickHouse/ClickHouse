@@ -12,10 +12,10 @@ It also emulates Databricks authentication:
   requires `scope=all-apis` as Databricks service principals do;
 - every proxied route requires `Authorization: Bearer <token>`, where the token
   is either `PAT_TOKEN` or a minted OAuth token, and replies 401 otherwise;
-- `/control/*` endpoints let the test expire tokens and break the vended credentials.
+- `/control/*` endpoints let the test expire tokens and change the vended credentials.
 
-It vends the MinIO credentials from the command line on
-`POST temporary-table-credentials`, and records the requested `operation`.
+It vends the MinIO credentials from the command line, or the ones set by
+`/control/vend`, on `POST temporary-table-credentials`, and records the requested `operation`.
 """
 import json
 import re
@@ -55,7 +55,6 @@ TEMPORARY_CREDENTIALS_PATH = "/api/2.1/unity-catalog/temporary-table-credentials
 STORAGE_ACCESS_KEY = ""
 STORAGE_SECRET_KEY = ""
 CREDENTIAL_OPERATIONS = []
-VEND_INVALID_CREDENTIALS = False
 
 
 def is_authorized(header):
@@ -137,21 +136,24 @@ class Handler(BaseHTTPRequestHandler):
             return
         request = json.loads(self._read_body())
         CREDENTIAL_OPERATIONS.append(request["operation"])
-        access_key, secret_key = STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY
-        if VEND_INVALID_CREDENTIALS:
-            access_key, secret_key = "invalid-key", "invalid-secret"
         body = {
             "aws_temp_credentials": {
-                "access_key_id": access_key,
-                "secret_access_key": secret_key,
+                "access_key_id": STORAGE_ACCESS_KEY,
+                "secret_access_key": STORAGE_SECRET_KEY,
                 "session_token": "",
             }
         }
         self._reply(200, json.dumps(body).encode())
 
     def _handle_control(self):
-        global PAT_VALID, ICEBERG_REST_DENIED, VEND_INVALID_CREDENTIALS
-        if self.path == "/control/expire":
+        global PAT_VALID, ICEBERG_REST_DENIED, STORAGE_ACCESS_KEY, STORAGE_SECRET_KEY
+        url = urllib.parse.urlsplit(self.path)
+        if url.path == "/control/vend":
+            params = urllib.parse.parse_qs(url.query)
+            STORAGE_ACCESS_KEY = params["access_key"][0]
+            STORAGE_SECRET_KEY = params["secret_key"][0]
+            self._reply(200, b"OK")
+        elif self.path == "/control/expire":
             VALID_TOKENS.clear()
             self._reply(200, b"OK")
         elif self.path == "/control/revoke_pat":
@@ -165,12 +167,6 @@ class Handler(BaseHTTPRequestHandler):
             self._reply(200, b"OK")
         elif self.path == "/control/allow_iceberg_rest":
             ICEBERG_REST_DENIED = False
-            self._reply(200, b"OK")
-        elif self.path == "/control/vend_invalid_credentials":
-            VEND_INVALID_CREDENTIALS = True
-            self._reply(200, b"OK")
-        elif self.path == "/control/vend_valid_credentials":
-            VEND_INVALID_CREDENTIALS = False
             self._reply(200, b"OK")
         elif self.path == "/control/credential_operations":
             self._reply(200, json.dumps(CREDENTIAL_OPERATIONS).encode())

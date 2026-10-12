@@ -9,13 +9,17 @@ the format per table.
 import json
 import os
 import shlex
+import urllib.parse
 import uuid
 from contextlib import contextmanager
 
 import pytest
+from minio import Minio
+from minio.error import S3Error
 
 from helpers.cluster import ClickHouseCluster
 from helpers.config_cluster import minio_access_key, minio_secret_key
+from helpers.s3_tools import minio_admin, minio_user
 
 CATALOG = "unity"
 
@@ -225,6 +229,12 @@ def proxy_control(node, route):
     return node.exec_in_container(
         ["curl", "-s", f"http://localhost:{PROXY_PORT}/control/{route}"]
     )
+
+
+def vend_credentials(node, access_key=minio_access_key, secret_key=minio_secret_key):
+    """Without arguments, restores the MinIO root credentials."""
+    query = urllib.parse.urlencode({"access_key": access_key, "secret_key": secret_key})
+    proxy_control(node, f"vend?{query}")
 
 
 def show_tables(node, db_name, pattern):
@@ -609,15 +619,81 @@ def test_database_recovers_after_catalog_vends_bad_credentials(started_cluster, 
     with vended_s3_delta_table(started_cluster, use_v2) as table:
         node.query(f"INSERT INTO {table} VALUES (1, 'a'), (2, 'b')", settings=DELTA_WRITE_SETTINGS)
 
-        proxy_control(node, "vend_invalid_credentials")
+        vend_credentials(node, "invalid-key", "invalid-secret")
         try:
             error = node.query_and_get_error(f"SELECT count() FROM {table}")
         finally:
-            proxy_control(node, "vend_valid_credentials")
+            vend_credentials(node)
         assert "invalid-key" in error or "Access Key" in error, error
         assert "invalid-secret" not in error
 
         assert node.query(f"SELECT * FROM {table} ORDER BY id") == "1\ta\n2\tb\n"
+
+
+@pytest.mark.parametrize("use_v2", [0, 1])
+def test_vended_credentials_rotated_between_queries(started_cluster, use_v2):
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    with (
+        minio_user(started_cluster, ["s3:*"]) as (old_key, old_secret),
+        minio_user(started_cluster, ["s3:*"]) as (new_key, new_secret),
+        vended_s3_delta_table(started_cluster, use_v2) as table,
+    ):
+        try:
+            vend_credentials(node, old_key, old_secret)
+            node.query(f"INSERT INTO {table} VALUES (1, 'a')", settings=DELTA_WRITE_SETTINGS)
+            assert node.query(f"SELECT * FROM {table}") == "1\ta\n"
+
+            vend_credentials(node, new_key, new_secret)
+            minio_admin(started_cluster).user_disable(old_key)
+            old_client = Minio(
+                f"{started_cluster.minio_ip}:{started_cluster.minio_port}",
+                access_key=old_key,
+                secret_key=old_secret,
+                secure=False,
+            )
+            with pytest.raises(S3Error):
+                old_client.bucket_exists(started_cluster.minio_bucket)
+
+            # The same database keeps working: every query fetches fresh credentials.
+            proxy_control(node, "reset_credential_operations")
+            node.query(f"INSERT INTO {table} VALUES (2, 'b')", settings=DELTA_WRITE_SETTINGS)
+            assert node.query(f"SELECT * FROM {table} ORDER BY id") == "1\ta\n2\tb\n"
+            assert "READ_WRITE" in json.loads(proxy_control(node, "credential_operations"))
+        finally:
+            vend_credentials(node)
+
+
+@pytest.mark.parametrize("use_v2", [0, 1])
+def test_insert_with_read_only_vended_credentials_commits_nothing(started_cluster, use_v2):
+    node = started_cluster.instances["node1"]
+    skip_if_no_delta_kernel(node)
+    read_only = minio_user(started_cluster, ["s3:GetBucketLocation", "s3:ListBucket", "s3:GetObject"])
+    with read_only as (read_only_key, read_only_secret), vended_s3_delta_table(started_cluster, use_v2) as table:
+        table_key = table.split("`")[1].replace(".", "/")
+        node.query(f"INSERT INTO {table} VALUES (1, 'a')", settings=DELTA_WRITE_SETTINGS)
+
+        def delta_log():
+            objects = started_cluster.minio_client.list_objects(
+                started_cluster.minio_bucket, prefix=f"{table_key}/_delta_log/", recursive=True
+            )
+            return sorted(obj.object_name for obj in objects)
+
+        commits = delta_log()
+
+        vend_credentials(node, read_only_key, read_only_secret)
+        try:
+            assert node.query(f"SELECT count() FROM {table}") == "1\n"
+            error = node.query_and_get_error(
+                f"INSERT INTO {table} VALUES (2, 'b')", settings=DELTA_WRITE_SETTINGS
+            )
+        finally:
+            vend_credentials(node)
+        assert "Access Denied" in error or "AccessDenied" in error, error
+        assert read_only_secret not in error
+
+        assert node.query(f"SELECT * FROM {table}") == "1\ta\n"
+        assert delta_log() == commits
 
 
 def test_pat_token_authentication(started_cluster):

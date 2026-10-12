@@ -10,7 +10,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Reading format version 3 metadata logs a spurious "violates Iceberg specification" warning.
+# Reading format version 3 metadata logs a spurious "violates Iceberg specification" warning,
+# https://github.com/ClickHouse/ClickHouse/issues/125333
 CH="${CLICKHOUSE_CLIENT} --send_logs_level=error --session_timezone=UTC --allow_insert_into_iceberg=1 --allow_iceberg_remove_orphan_files=1"
 
 # Prints only non-zero metrics, so the reference shows what was (or would be) deleted.

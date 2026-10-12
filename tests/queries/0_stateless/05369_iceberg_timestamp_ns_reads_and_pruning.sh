@@ -11,7 +11,8 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
 . "$CUR_DIR"/../shell_config.sh
 
-# Reading format version 3 metadata logs a spurious "violates Iceberg specification" warning.
+# Reading format version 3 metadata logs a spurious "violates Iceberg specification" warning,
+# https://github.com/ClickHouse/ClickHouse/issues/125333
 CH="${CLICKHOUSE_CLIENT} --send_logs_level=error --session_timezone=UTC --allow_insert_into_iceberg=1"
 NO_PRUNING="use_iceberg_partition_pruning = 0, use_iceberg_manifest_list_partition_pruning = 0, input_format_parquet_filter_push_down = 0, optimize_min_max_from_files = 0, optimize_count_from_files = 0"
 
