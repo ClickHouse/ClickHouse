@@ -1625,6 +1625,11 @@ Example:
 <tcp_ssh_port>9022</tcp_ssh_port>
 ```
 
+## tcp_with_proxy_allow_interserver_mode {#tcp_with_proxy_allow_interserver_mode}
+
+<SettingsInfoBlock type="Bool" default_value="1" changeable_without_restart="No" />
+Allows clients connected through `tcp_with_proxy_port` to use the native protocol's interserver mode. Disable this setting when `tcp_with_proxy_port` is exposed to untrusted clients through a proxy. Connections to `tcp_port` and `tcp_port_secure` are not affected.
+
 ## text_log {#text_log}
 
 Settings for the [text_log](/reference/system-tables/text_log) system table for logging text messages.
