@@ -1,0 +1,123 @@
+-- decimal(10,2): every committed value must carry exactly 2 fractional digits.
+-- Before the fix 1.50 was committed as "1.5", 10.00 as "10", -1.50 as "-1.5" and
+-- -0.50 as "-0.5". -0.05 and 1.05 are the controls that already had a full-width
+-- fraction, so they must be committed unchanged.
+1	1.5
+2	10
+3	-1.5
+4	-0.05
+5	1.05
+6	-0.5
+committed partitionValues:
+"partitionValues":{"p":"-0.05"}
+"partitionValues":{"p":"-0.50"}
+"partitionValues":{"p":"-1.50"}
+"partitionValues":{"p":"1.05"}
+"partitionValues":{"p":"1.50"}
+"partitionValues":{"p":"10.00"}
+committed paths:
+p=-0.05/<uuid>.parquet
+p=-0.50/<uuid>.parquet
+p=-1.50/<uuid>.parquet
+p=1.05/<uuid>.parquet
+p=1.50/<uuid>.parquet
+p=10.00/<uuid>.parquet
+-- decimal(38,10) (Decimal128 width): the fraction is padded to the full scale, and the
+-- value must read back unchanged. The unscaled magnitude of the third value exceeds 2^64,
+-- so it is the row that pins the high half of the decode; the negative one pins both signs.
+1	1.5
+2	-1.5
+3	1234567890123456789.0123456789
+committed partitionValues:
+"partitionValues":{"p":"-1.5000000000"}
+"partitionValues":{"p":"1.5000000000"}
+"partitionValues":{"p":"1234567890123456789.0123456789"}
+-- decimal(10,0) already conformed and must stay unchanged: no decimal point is added
+1	5
+committed partitionValues: "partitionValues":{"p":"5"}
+committed paths: p=5/<uuid>.parquet
+-- a NULL decimal partition value still uses the placeholder directory and a JSON null,
+-- alongside a scale-exact non-null value in the same table
+1	\N
+2	1.5
+committed partitionValues:
+"partitionValues":{"p":"1.50"}
+"partitionValues":{"p":null}
+committed paths:
+p=1.50/<uuid>.parquet
+p=__HIVE_DEFAULT_PARTITION__/<uuid>.parquet
+-- a decimal partition column composes with a non-decimal one (which is unaffected);
+-- decimal(9,2) is also the Decimal32 decode arm, which must stay correct
+1	1.5	x
+committed partitionValues: "partitionValues":{"p":"1.50","s":"x"}
+committed paths: p=1.50/s=x/<uuid>.parquet
+-- the plain (non-accurate) write cast produces the same protocol form
+1	1.5
+committed partitionValues: "partitionValues":{"p":"1.50"}
+-- precision 19 is the first width that maps to Decimal128, and at scale 0 the committed
+-- string carries no fraction, so this table is byte-identical to what Spark writes and to
+-- what ClickHouse wrote before the write fix: only the decode can get it wrong
+1	5
+committed partitionValues: "partitionValues":{"p":"5"}
+-- the boundary shapes of the Delta decimal range: scale equal to the precision (no integer
+-- digit at all), the maximum precision with no fraction (a magnitude that needs the full
+-- Decimal128 width, so it also pins the decode of both 64-bit halves), and the two
+-- narrowest widths. Each committed value must still carry exactly <scale> fractional digits.
+-- decimal(38,38)
+1	0.5
+2	-0.5
+3	0.12345678901234567890123456789012345678
+committed partitionValues:
+"partitionValues":{"p":"-0.50000000000000000000000000000000000000"}
+"partitionValues":{"p":"0.12345678901234567890123456789012345678"}
+"partitionValues":{"p":"0.50000000000000000000000000000000000000"}
+-- decimal(38,0)
+1	99999999999999999999999999999999999999
+2	-99999999999999999999999999999999999999
+committed partitionValues:
+"partitionValues":{"p":"-99999999999999999999999999999999999999"}
+"partitionValues":{"p":"99999999999999999999999999999999999999"}
+-- decimal(1,0)
+1	9
+2	-9
+committed partitionValues:
+"partitionValues":{"p":"-9"}
+"partitionValues":{"p":"9"}
+-- decimal(1,1)
+1	0.9
+2	-0.9
+3	0
+committed partitionValues:
+"partitionValues":{"p":"-0.9"}
+"partitionValues":{"p":"0.0"}
+"partitionValues":{"p":"0.9"}
+-- a Delta timestamp is adjusted to UTC, and for it the protocol asks writers for the ISO8601
+-- Z form, which is also what delta-kernel-rs itself commits (format_timestamp). The write
+-- schema type is DateTime64(6) with no explicit time zone, so a plain toString renders the
+-- session zone in the space-separated form, which the protocol defines as the writer's local
+-- time. p (partitioned) and d (a plain column) are given the same instant under a non-UTC
+-- session zone: before the fix p was committed as the Tokyo wall clock and came back 9 hours
+-- off d, with no error.
+2026-09-18 03:34:56.123456	2026-09-18 03:34:56.123456	1
+committed partitionValues: "partitionValues":{"p":"2026-09-18T03:34:56.123456Z"}
+committed paths: p=2026-09-18T03%253A34%253A56.123456Z/<uuid>.parquet
+-- timestamp_ntz has no time zone, so it keeps the space-separated form, and it was shifted
+-- the same way before the fix
+2026-09-18 03:34:56.123456	2026-09-18 03:34:56.123456	1
+committed partitionValues: "partitionValues":{"p":"2026-09-18 03:34:56.123456"}
+-- the remaining Delta primitive types need no per-type conversion under default settings, and
+-- this pins that: each is written both as a partition column and as a plain column, and the
+-- two must agree.
+1	1	1	1	1	1
+committed partitionValues: "partitionValues":{"pb":"true","pd":"2026-09-18","pl":"-9223372036854775808","pf":"0.1","ps":"a b","pn":"ab"}
+-- a boolean partition value does not follow bool_true_representation: before the fix a session
+-- using yes/no committed yes, and the table then failed to read at all with a kernel ParseError
+1	yes	yes	1	0
+2	no	no	1	0
+3	\N	\N	\N	1
+committed partitionValues: "partitionValues":{"p":"false"}
+"partitionValues":{"p":"true"}
+"partitionValues":{"p":null}
+committed paths: p=__HIVE_DEFAULT_PARTITION__/<uuid>.parquet
+p=false/<uuid>.parquet
+p=true/<uuid>.parquet
