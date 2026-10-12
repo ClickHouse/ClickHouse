@@ -1,0 +1,37 @@
+--- a predicate
+110	100090
+110	100090
+1000999
+1000998
+1000997
+--- a TopN read does not write entries
+1000999
+1000997
+1000995
+100000
+--- a file is rewritten
+100	1000900
+100	1000900
+--- a row policy
+0	0
+10	1000960
+--- a recently modified file
+100	1000900
+100	1000900
+--- the url table function
+11100
+11100
+--- query condition cache lookups
+where_1	1	0
+where_2	1	1
+where_top_k	1	1
+top_k_1	1	0
+top_k_plain	1	0
+rewritten_1	1	0
+rewritten_2	1	1
+policy	0	0
+after_policy	1	0
+recent_1	0	0
+recent_2	0	0
+function_1	0	0
+function_2	0	0

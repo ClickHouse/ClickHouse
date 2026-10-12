@@ -28,6 +28,8 @@
 #include <IO/WriteBufferFromHTTP.h>
 
 #include <Formats/FormatFactory.h>
+#include <Interpreters/Cache/QueryConditionCache.h>
+#include <Storages/MergeTree/MarkRange.h>
 #include <Formats/ReadSchemaUtils.h>
 #include <Formats/FormatParserSharedResources.h>
 #include <Processors/Formats/IInputFormat.h>
@@ -99,6 +101,7 @@ namespace FailPoints
 namespace Setting
 {
     extern const SettingsBool allow_url_wildcard_from_index_pages;
+    extern const SettingsBool use_query_condition_cache_for_top_k;
     extern const SettingsBool enable_url_encoding;
     extern const SettingsBool engine_url_skip_empty_files;
     extern const SettingsUInt64 glob_expansion_max_elements;
@@ -603,6 +606,7 @@ StorageURLSource::StorageURLSource(
     , need_only_count(need_only_count_)
     , storage_id(std::move(storage_id_))
     , hive_partition_columns_to_read_from_file_path(info.hive_partition_columns_to_read_from_file_path)
+    , allow_query_condition_cache((http_method.empty() || http_method == Poco::Net::HTTPRequest::HTTP_GET) && !callback && params.empty())
 {
     /// Lazy initialization. We should not perform requests in constructor, because we need to do it in query pipeline.
     initialize = [=, this]()
@@ -626,65 +630,110 @@ StorageURLSource::StorageURLSource(
 
             return cancellation->isCancelled();
         };
-        do
+        /// Files which the query condition cache excludes entirely are skipped.
+        FileBucketInfoPtr buckets_to_read;
+        while (true)
         {
-            current_uri_options = (*uri_iterator)();
-            if (current_uri_options.empty())
-                return false;
+            do
+            {
+                current_uri_options = (*uri_iterator)();
+                if (current_uri_options.empty())
+                    return false;
 
-            auto first_option = current_uri_options.cbegin();
-            uri_and_buf = getFirstAvailableURIAndReadBuffer(
-                first_option,
-                current_uri_options.end(),
-                getContext(),
-                params,
-                http_method,
-                callback,
-                timeouts,
-                credentials,
-                headers,
-                glob_url,
-                current_uri_options.size() == 1,
-                cancellation);
+                auto first_option = current_uri_options.cbegin();
+                uri_and_buf = getFirstAvailableURIAndReadBuffer(
+                    first_option,
+                    current_uri_options.end(),
+                    getContext(),
+                    params,
+                    http_method,
+                    callback,
+                    timeouts,
+                    credentials,
+                    headers,
+                    glob_url,
+                    current_uri_options.size() == 1,
+                    cancellation);
 
-            /// A hard teardown of the pipeline noticed between the failover options returns no
-            /// buffer instead of an error, see getFirstAvailableURIAndReadBuffer. No one needs the
-            /// data anymore: end the stream.
-            if (!uri_and_buf.second)
-                return false;
+                /// A hard teardown of the pipeline noticed between the failover options returns no
+                /// buffer instead of an error, see getFirstAvailableURIAndReadBuffer. No one needs the
+                /// data anymore: end the stream.
+                if (!uri_and_buf.second)
+                    return false;
 
-            /// `ReadBuffer::eof` may start the first HTTP GET. Do not let a cancellation that
-            /// arrived after choosing the buffer start that request.
-            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_empty_file_probe);
+                /// `ReadBuffer::eof` may start the first HTTP GET. Do not let a cancellation that
+                /// arrived after choosing the buffer start that request.
+                FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_before_empty_file_probe);
+                if (stop_if_query_cancelled())
+                    return false;
+
+                /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
+            }
+            while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
+
+            /// A cancellation which has arrived while the URI was being chosen - after the loop above
+            /// passed its checks, see getFirstAvailableURIAndReadBuffer - must not start the requests
+            /// below for the metadata of a file no one is left to read: end the stream. Both kinds of
+            /// the cancellation converge here: after a soft one the query succeeds with what it has
+            /// already read, and after a hard teardown the failure or the kill is reported elsewhere.
             if (stop_if_query_cancelled())
                 return false;
 
-            /// If file is empty and engine_url_skip_empty_files=1, skip it and go to the next file.
+            curr_uri = uri_and_buf.first;
+            current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
+            read_buf = std::move(uri_and_buf.second);
+
+            FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_between_metadata_probes);
+
+            /// The two probes above and below share the metadata of one HEAD request, but when that
+            /// request has failed with a network error, the probe of the modification time has nothing
+            /// to remember, and the probe of the file size would send a fresh HEAD - which a cancellation
+            /// that has arrived in between must prevent the same way the check above prevents the first one.
+            if (stop_if_query_cancelled())
+                return false;
+
+            current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
+
+            current_query_condition_cache_file_key = makeQueryConditionCacheFileKey();
+
+            /// A TopN read consults the cache only while `use_query_condition_cache_for_top_k` is on: the
+            /// setting is documented to make TopK reads neither consult nor populate the cache. Entries are
+            /// only written by reads without TopN dynamic filtering (see `generate`), so they apply to a
+            /// TopN read as well.
+            if (!current_query_condition_cache_file_key
+                || (format_filter_info->top_k_filter && !getContext()->getSettingsRef()[Setting::use_query_condition_cache_for_top_k]))
+                break;
+
+            auto query_condition_cache = getContext()->getQueryConditionCache();
+            auto matching_marks = query_condition_cache
+                ? query_condition_cache->read(storage_id.uuid, *current_query_condition_cache_file_key, *format_filter_info->condition_hash)
+                : std::nullopt;
+            if (!matching_marks)
+                break;
+
+            std::vector<size_t> matching_row_groups;
+            for (size_t i = 0; i < matching_marks->size(); ++i)
+                if ((*matching_marks)[i])
+                    matching_row_groups.push_back(i);
+
+            LOG_DEBUG(getLogger("StorageURLSource"),
+                "Query condition cache has dropped {}/{} row groups for condition {} in file {}.",
+                matching_marks->size() - matching_row_groups.size(),
+                matching_marks->size(),
+                format_filter_info->filter_actions_dag->dumpNames(),
+                curr_uri.toString());
+
+            if (!matching_row_groups.empty())
+            {
+                /// Without buckets for the format, the file is read whole.
+                if (auto file_bucket_info = FormatFactory::instance().getFileBucketInfo(format))
+                    buckets_to_read = file_bucket_info->filterByMatchingRowGroups(matching_row_groups);
+                break;
+            }
+
+            /// No row group of the file matches: go to the next one.
+            read_buf.reset();
         }
-        while (getContext()->getSettingsRef()[Setting::engine_url_skip_empty_files] && uri_and_buf.second->eof());
-
-        /// A cancellation which has arrived while the URI was being chosen - after the loop above
-        /// passed its checks, see getFirstAvailableURIAndReadBuffer - must not start the requests
-        /// below for the metadata of a file no one is left to read: end the stream. Both kinds of
-        /// the cancellation converge here: after a soft one the query succeeds with what it has
-        /// already read, and after a hard teardown the failure or the kill is reported elsewhere.
-        if (stop_if_query_cancelled())
-            return false;
-
-        curr_uri = uri_and_buf.first;
-        current_file_last_modified = uri_and_buf.second->tryGetLastModificationTime();
-        read_buf = std::move(uri_and_buf.second);
-
-        FailPointInjection::pauseFailPoint(FailPoints::storage_url_pause_between_metadata_probes);
-
-        /// The two probes above and below share the metadata of one HEAD request, but when that
-        /// request has failed with a network error, the probe of the modification time has nothing
-        /// to remember, and the probe of the file size would send a fresh HEAD - which a cancellation
-        /// that has arrived in between must prevent the same way the check above prevents the first one.
-        if (stop_if_query_cancelled())
-            return false;
-
-        current_file_size = tryGetFileSizeFromReadBuffer(*read_buf);
 
         if (auto file_progress_callback = getContext()->getFileProgressCallback())
             file_progress_callback(FileProgress(0, current_file_size.value_or(0)));
@@ -727,6 +776,7 @@ StorageURLSource::StorageURLSource(
                 need_only_count);
 
             input_format->setSerializationHints(info.serialization_hints);
+            input_format->setBucketsToRead(buckets_to_read);
 
             if (need_only_count)
                 input_format->needOnlyCount();
@@ -975,11 +1025,83 @@ Chunk StorageURLSource::generate()
             && (!format_filter_info || !format_filter_info->hasFilter()))
             addNumRowsToCache(curr_uri.toString(), total_rows_in_file);
 
+        /// With TopN dynamic filtering a row group can end up without a returned row only because the
+        /// running threshold had excluded it, so such a read must not record it as having no match for
+        /// the predicate. A cancelled read may stop before it has seen every row group, and the ones it
+        /// has not read report no matching rows either.
+        if (read_whole_file && input_format && current_query_condition_cache_file_key && !input_format->isTopKFilterApplied())
+            writeQueryConditionCacheEntry();
+
         releaseReader();
     }
 
     releaseReader();
     return {};
+}
+
+std::optional<String> StorageURLSource::makeQueryConditionCacheFileKey() const
+{
+    /// Only a table with a UUID has cache entries. A row policy pushed into the read is not part of
+    /// `condition_hash`, so with it a row group could be recorded as not matching only because the
+    /// policy rejected its rows, and a later query of another user with the same filter would skip them.
+    if (!allow_query_condition_cache || !format_filter_info || !format_filter_info->condition_hash
+        || format_filter_info->row_level_filter || storage_id.uuid == UUIDHelpers::Nil)
+        return {};
+
+    /// A web server reports no `ETag` here, so the version of a file is its modification time and size.
+    /// `Last-Modified` has a precision of a second, so a rewrite that keeps the size and lands in the same
+    /// second as the previous write produces the same version. Once the last modification is comfortably
+    /// in the past, any further write is guaranteed to change it. The window is wider than for local files
+    /// (see `StorageFileSource`), as the time comes from the clock of the server. Without the modification
+    /// time or the size, the cache is not used.
+    static constexpr Int64 version_settle_seconds = 60;
+    if (!current_file_last_modified || !current_file_size
+        || static_cast<Int64>(*current_file_last_modified) + version_settle_seconds > static_cast<Int64>(time(nullptr)))
+        return {};
+
+    return QueryConditionCache::makeFilePartName(
+        curr_uri.toString(), fmt::format("{}_{}", *current_file_last_modified, *current_file_size));
+}
+
+void StorageURLSource::writeQueryConditionCacheEntry() const
+{
+    try
+    {
+        auto buckets = input_format->getMatchedBuckets();
+        if (!buckets)
+            return;
+
+        const auto & [matched_row_groups, total_row_groups] = *buckets;
+        std::unordered_set<size_t> matched_set(matched_row_groups.begin(), matched_row_groups.end());
+        MarkRanges unmatched_ranges;
+        for (size_t i = 0; i < total_row_groups; ++i)
+        {
+            if (!matched_set.contains(i))
+            {
+                if (!unmatched_ranges.empty() && unmatched_ranges.back().end == i)
+                    unmatched_ranges.back().end++;
+                else
+                    unmatched_ranges.push_back({UInt64(i), UInt64(i + 1)});
+            }
+        }
+
+        if (unmatched_ranges.empty())
+            return;
+
+        if (auto query_condition_cache = getContext()->getQueryConditionCache())
+            query_condition_cache->write(
+                storage_id.uuid,
+                *current_query_condition_cache_file_key,
+                *format_filter_info->condition_hash,
+                format_filter_info->filter_actions_dag->dumpNames(),
+                unmatched_ranges,
+                total_row_groups,
+                /*has_final_mark=*/false);
+    }
+    catch (...)
+    {
+        tryLogCurrentException(getLogger("StorageURLSource"), "Failed to write to query condition cache");
+    }
 }
 
 void StorageURLSource::onFinish() { parser_shared_resources->finishStream(); }
@@ -1783,6 +1905,11 @@ public:
     void updatePrewhereInfo(const PrewhereInfoPtr & prewhere_info_value) override;
     bool canUpdatePrewhereInfoMultipleTimes() const override { return false; }
 
+    /// TopN dynamic filtering: only the Parquet reader consumes `FormatFilterInfo::top_k_filter`,
+    /// and only for a sort column it physically reads from the file.
+    bool supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const override;
+    void setTopKFilter(std::shared_ptr<const FormatTopKFilterInfo> info_) override { top_k_filter = std::move(info_); }
+
     ReadFromURL(
         const Names & column_names_,
         const SelectQueryInfo & query_info_,
@@ -1826,9 +1953,34 @@ private:
     std::shared_ptr<StorageURLSource::IteratorWrapper> iterator_wrapper;
     bool is_url_with_globs = false;
     bool is_empty_glob = false;
+    std::shared_ptr<const FormatTopKFilterInfo> top_k_filter;
 
     void createIterator(const ActionsDAG::Node * predicate);
 };
+
+bool ReadFromURL::supportsTopKDynamicFilter(const ColumnWithTypeAndName & sort_column) const
+{
+    if (!boost::iequals(storage->format_name, "Parquet"))
+        return false;
+
+    /// With a structure of only Hive partition columns the format reads them from the file, while the
+    /// query takes their values from the path, so the reader would compare other values than the
+    /// ones the threshold is made from.
+    if (info.formatReadsHivePartitionColumns())
+        return false;
+
+    /// The output header is broader than what the format reads: Hive partition columns (from the
+    /// path) and virtual columns (`_path`, `_file`, ...) are added after the format has produced its
+    /// chunk, so the reader could never compare them against the threshold.
+    const auto * format_column = info.format_header.findByName(sort_column.name);
+    if (!format_column || !format_column->type->equals(*sort_column.type))
+        return false;
+
+    /// A column with a `DEFAULT` / `MATERIALIZED` / `ALIAS` expression is recomputed above the format
+    /// by `AddingDefaultsTransform` for the values the reader reported as missing, so the threshold
+    /// would come from other values than the ones the reader compares against it.
+    return !info.columns_description.hasDefault(sort_column.name);
+}
 
 void ReadFromURL::applyFilters(ActionDAGNodes added_filter_nodes)
 {
@@ -1988,6 +2140,7 @@ void ReadFromURL::initializePipeline(QueryPipelineBuilder & pipeline, const Buil
     auto parser_shared_resources = std::make_shared<FormatParserSharedResources>(settings, num_streams);
     auto format_filter_info = std::make_shared<FormatFilterInfo>(
         info.getFormatFilter(filter_actions_dag), context, nullptr, query_info.row_level_filter, query_info.prewhere_info);
+    format_filter_info->top_k_filter = top_k_filter;
 
     for (size_t i = 0; i < num_streams; ++i)
     {
