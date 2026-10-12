@@ -115,12 +115,17 @@ QueryPlanCache::QueryPlanCache(size_t max_size_in_bytes, size_t max_entries)
 
 void QueryPlanCache::updateConfiguration(size_t max_size_in_bytes, size_t max_entries)
 {
+    /// Shrinking the cache evicts entries through `onEntryRemoval`, which must not run between a
+    /// same-key `set` releasing the old resident's charge and overwriting that resident: the old
+    /// entry would be evicted and its bytes subtracted a second time. See `admission_mutex`.
+    std::lock_guard admission_lock(admission_mutex);
+
     setMaxSizeInBytes(max_size_in_bytes);
     setMaxCount(max_entries);
     /// max_count=0 means "unlimited" in LRUCachePolicy, but for the query plan cache
     /// we treat 0 as "disabled" - clear all existing entries.
     if (max_size_in_bytes == 0 || max_entries == 0)
-        clear();
+        clearUnlocked();
 }
 
 QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
@@ -149,6 +154,14 @@ QueryPlanCache::MappedPtr QueryPlanCache::get(const QueryPlanCacheKey & key)
 
 bool QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entry, size_t max_size_in_bytes_for_user)
 {
+    /// Admission, charging and insertion must be one atomic step with respect to `clear`,
+    /// `updateConfiguration` and other `set` calls. Otherwise a `SYSTEM DROP QUERY PLAN CACHE` running
+    /// between charging and insertion wipes this entry's accounting while the entry itself goes on to
+    /// become resident, and two concurrent misses of one user could both pass the quota check against
+    /// the same per-user byte count, so `query_plan_cache_size_in_bytes_quota` would not be a hard cap.
+    /// See `admission_mutex`.
+    std::lock_guard admission_lock(admission_mutex);
+
     /// CacheBase treats max_count=0 as "unlimited", but for the query plan cache
     /// we treat 0 as "disabled". Guard against inserting into a disabled cache.
     if (maxSizeInBytes() == 0 || maxCount() == 0)
@@ -171,11 +184,6 @@ bool QueryPlanCache::set(const QueryPlanCacheKey & key, QueryPlanCacheEntry entr
 
     /// Build the mapped value before charging, so a failed allocation here leaves no accounting behind.
     auto entry_ptr = std::make_shared<QueryPlanCacheEntry>(std::move(entry));
-
-    /// Charging and insertion must be one atomic step with respect to `clear`, otherwise a
-    /// `SYSTEM DROP QUERY PLAN CACHE` running between them wipes this entry's accounting while the
-    /// entry itself goes on to become resident. See `admission_mutex`.
-    std::lock_guard admission_lock(admission_mutex);
 
     {
         std::lock_guard lock(per_user_mutex);
@@ -279,7 +287,11 @@ void QueryPlanCache::clear()
     /// Excludes a concurrent `set` from the whole drop, so that no entry can be inserted after its
     /// accounting was erased here. See `admission_mutex`.
     std::lock_guard admission_lock(admission_mutex);
+    clearUnlocked();
+}
 
+void QueryPlanCache::clearUnlocked()
+{
     Base::clear();
     std::lock_guard lock(per_user_mutex);
     per_user_bytes.clear();
@@ -313,8 +325,9 @@ bool QueryPlanCache::canStoreForUser(const QueryPlanCacheKey & key, const QueryP
         return false;
 
     /// O(1) admission: read the cached per-user byte count maintained by `set` and
-    /// `onEntryRemoval`. The check is best-effort - concurrent inserts may race past
-    /// it, just like in `QueryResultCache`.
+    /// `onEntryRemoval`. The caller holds `admission_mutex`, so no other insertion can charge the
+    /// user between this check and the charge in `set`: the quota is a hard cap. Concurrent
+    /// removals only lower the count, which keeps the check conservative.
     std::lock_guard lock(per_user_mutex);
     auto it = per_user_bytes.find(*key.user_id);
     size_t current_size_for_user = it == per_user_bytes.end() ? 0 : it->second;

@@ -207,15 +207,20 @@ protected:
     void onEntryRemoval(size_t weight_loss, const MappedPtr & mapped_ptr) override;
 
 private:
-    /// Best-effort admission check against the current query's quota.
+    /// Admission check against the current query's quota. The caller must hold `admission_mutex`.
     /// O(1): reads the cached per-user byte count rather than scanning the cache.
-    bool canStoreForUser(const QueryPlanCacheKey & key, const QueryPlanCacheEntry & entry, size_t max_size_in_bytes_for_user) const;
+    bool canStoreForUser(const QueryPlanCacheKey & key, const QueryPlanCacheEntry & entry, size_t max_size_in_bytes_for_user) const
+        TSA_REQUIRES(admission_mutex);
+
+    /// Drops all entries and their accounting. The caller must hold `admission_mutex`.
+    void clearUnlocked() TSA_REQUIRES(admission_mutex);
 
     /// Subtracts `weight` from a user's tracked bytes, erasing the record when it reaches zero.
     /// The caller must hold `per_user_mutex`.
     void decrementUserBytes(const std::optional<UUID> & user_id, size_t weight) TSA_REQUIRES(per_user_mutex);
 
-    /// Serializes `set` against `clear`, so that admission accounting and residency always agree.
+    /// Serializes `set` against `clear`, `updateConfiguration` and other `set` calls, so that admission
+    /// accounting and residency always agree and the per-user quota check is not raced past.
     /// `set` charges `per_user_bytes`/`entry_weights` before `Base::set` (the entry can be evicted
     /// synchronously inside that call, and the eviction hook must find the charge already present),
     /// while `clear` drops residency in `Base::clear` before wiping the accounting maps. Without an
@@ -228,6 +233,10 @@ private:
     /// calls `onEntryRemoval` (which takes `per_user_mutex`) while `CacheBase` holds its own mutex.
     /// Nothing acquires `admission_mutex` while holding `CacheBase`'s mutex or `per_user_mutex`, so
     /// the order stays `admission_mutex` -> `CacheBase::mutex` -> `per_user_mutex`.
+    ///
+    /// `updateConfiguration` takes it too: shrinking the cache evicts entries through `onEntryRemoval`,
+    /// and such an eviction must not land between a same-key `set` releasing the old resident's charge
+    /// and `Base::set` overwriting that resident, or the old entry's bytes would be subtracted twice.
     std::mutex admission_mutex;
 
     mutable std::mutex per_user_mutex;
