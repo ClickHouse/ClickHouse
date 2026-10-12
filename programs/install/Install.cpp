@@ -3,6 +3,7 @@
 #include <boost/program_options.hpp>
 #include <Common/filesystemHelpers.h>
 
+#include <cerrno>
 #include <csignal>
 #include <sys/stat.h>
 
@@ -19,6 +20,7 @@
 #include <Common/ErrnoException.h>
 #include <Common/ShellCommand.h>
 #include <Common/formatReadable.h>
+#include <Common/TerminalSize.h>
 #include <Common/shellQuote.h>
 #include <Common/Config/ConfigProcessor.h>
 #include <Common/OpenSSLHelpers.h>
@@ -834,10 +836,38 @@ int mainEntryClickHouseInstall(int argc, char ** argv)
             /// NOTE: When installing debian package with dpkg -i, stdin is not a terminal but we are still being able to enter password.
             /// More sophisticated method with /dev/tty is used inside the `readpassphrase` function.
 
-            char buf[1000] = {};
+            /// Echo every typed character as a mask, so the user can notice a stray character.
+            const int prompt_flags = RPP_ECHO_MASK | (terminalDisplaysBulletInOneColumn() ? RPP_MASK_BULLET : 0);
+
+            /// The password typed in the terminal is asked twice, so that a typo does not lock the user out.
             std::string password;
-            if (auto * result = readpassphrase("Set up the password for the default user: ", buf, sizeof(buf), 0))
-                password = result;
+            while (true)
+            {
+                char buf[1000] = {};
+                if (auto * result = readpassphrase("Set up the password for the default user: ", buf, sizeof(buf), prompt_flags))
+                    password = result;
+                if (password.empty())
+                    break;
+
+                char confirmation_buf[1000] = {};
+                auto * confirmation = readpassphrase(
+                    "Repeat the password: ", confirmation_buf, sizeof(confirmation_buf), prompt_flags | RPP_REQUIRE_TTY);
+                /// Without a terminal, the password is read from stdin, and there is nothing to repeat.
+                if (!confirmation && errno == ENOTTY)
+                    break;
+                /// An empty confirmation (as on Ctrl+D) cancels setting up the password.
+                if (!confirmation || !*confirmation)
+                {
+                    password.clear();
+                    fmt::print("The password is not confirmed.\n");
+                    break;
+                }
+                if (password == confirmation)
+                    break;
+
+                password.clear();
+                fmt::print("Passwords do not match, try again.\n");
+            }
 
             if (!password.empty())
             {

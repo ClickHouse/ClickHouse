@@ -36,6 +36,8 @@ extern "C" {
 #define RPP_FORCEUPPER 0x08 /* Force input to upper case. */
 #define RPP_SEVENBIT 0x10 /* Strip the high bit from input. */
 #define RPP_STDIN 0x20 /* Read from stdin, not /dev/tty */
+#define RPP_ECHO_MASK 0x40 /* Echo every typed character as "*". ClickHouse extension. */
+#define RPP_MASK_BULLET 0x80 /* With `RPP_ECHO_MASK`, echo "●" instead of "*". ClickHouse extension. */
 
 char * readpassphrase(const char *, char *, size_t, int);
 
