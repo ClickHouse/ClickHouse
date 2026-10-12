@@ -135,6 +135,11 @@ public:
     /// Done by getOrSetStoragePolicyForSingleDisk.
     void add(StoragePolicyPtr storage_policy);
 
+    /// Insert a temporary storage policy, replacing an existing one under the same name.
+    /// Throws unless the name carries TMP_STORAGE_POLICY_PREFIX, the same predicate
+    /// updateFromConfig and checkCompatibleWith use to mean "temporary, not from config".
+    void addOrReplaceTemporary(StoragePolicyPtr storage_policy);
+
 private:
     StoragePoliciesMap policies;
 };
