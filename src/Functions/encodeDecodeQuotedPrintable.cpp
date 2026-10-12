@@ -197,7 +197,7 @@ Encodes a string using [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-p
 Printable ASCII characters except `=` are kept as is, other bytes are written as `=XX` with uppercase hex digits.
 A `\r\n` line break is kept, a lone `\r` or `\n` is encoded. A space or tab is encoded when it would end a line.
 Lines are kept to at most 76 characters with soft line breaks (`=\r\n`).
-`decodeQuotedPrintable` returns the original string for any input.
+`decodeQuotedPrintable(encodeQuotedPrintable(s))` returns the original string `s` for any `s`.
     )";
     FunctionDocumentation::Syntax syntax_encode = "encodeQuotedPrintable(s)";
     FunctionDocumentation::Arguments arguments_encode = {{"s", "String to encode.", {"String"}}};
@@ -223,7 +223,8 @@ Lines are kept to at most 76 characters with soft line breaks (`=\r\n`).
 Decodes a [Quoted-Printable](https://en.wikipedia.org/wiki/Quoted-printable) encoded string, according to [RFC 2045](https://www.rfc-editor.org/rfc/rfc2045#section-6.7).
 
 `=XX` (hex digits in either case) is replaced by the byte it encodes and soft line breaks (`=` at the end of a line) are removed.
-Malformed escape sequences are kept as is. The behavior matches Python's `quopri.decodestring`.
+Other malformed escape sequences (such as `=ZZ` or a `=` followed by a single character) are kept as is, except that a bare `=` at the very end of the string is dropped.
+The behavior matches Python's `quopri.decodestring`.
     )";
     FunctionDocumentation::Syntax syntax_decode = "decodeQuotedPrintable(s)";
     FunctionDocumentation::Arguments arguments_decode = {{"s", "Quoted-Printable encoded string.", {"String"}}};
