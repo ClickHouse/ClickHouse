@@ -476,8 +476,10 @@ FROM VALUES('g UInt8, level Float64, bucket_upper_bound Float64, cumulative_buck
 GROUP BY g ORDER BY g;
         )",
         R"(
-1	0.25
-2	0.9166666666666667
+┌─g─┬─timeSeriesQuantilePrometheusHistogram(bucket_upper_bound, cumulative_bucket_value, level)─┐
+│ 1 │                                                                                      0.25 │
+│ 2 │                                                                        0.9166666666666667 │
+└───┴───────────────────────────────────────────────────────────────────────────────────────────┘
         )"
     }
     };
