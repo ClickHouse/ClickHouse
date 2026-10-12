@@ -211,7 +211,7 @@ private:
 
     void loadFiles();
 
-    void loadMetaFiles(bool attach);
+    void loadMetaFiles(bool attach, bool legacy_layout);
 
     /// The directory watcher reports when the file is removed, renamed or replaced (not a change of a symlink's target).
     bool isTrackedByDirectoryEvents(const String & file_name) const;
@@ -251,7 +251,7 @@ private:
     String writeTemporaryMeta(UInt64 inode, const FileMeta & file_meta) const;
     String getTemporaryMetaPath(const String & file_name) const { return std::filesystem::path(tmp_metadata_path) / file_name; }
 
-    void deserialize();
+    void deserialize(bool legacy_layout);
     void checkOffsetIsValid(const String & filename, UInt64 offset) const;
 
     struct ReadMetadataResult
@@ -259,7 +259,7 @@ private:
         FileMeta metadata;
         UInt64 inode = 0;
     };
-    ReadMetadataResult readMetadata(const String & filename) const;
+    ReadMetadataResult readMetadata(const String & filename, bool remove_if_malformed = false) const;
 
     static VirtualColumnsDescription createVirtuals(StreamingHandleErrorMode handle_error_mode);
 };

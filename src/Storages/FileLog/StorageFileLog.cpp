@@ -232,14 +232,17 @@ StorageFileLog::StorageFileLog(
             created_metadata_directory = true;
         }
 
-        if (disk->existsDirectory(tmp_metadata_path) && !disk->isDirectoryEmpty(tmp_metadata_path))
+        /// `tmp_metadata/` first appears once the meta files are loaded: without it, they were written by an older version.
+        const bool legacy_layout = !disk->existsDirectory(tmp_metadata_path);
+        if (!legacy_layout && !disk->isDirectoryEmpty(tmp_metadata_path))
         {
             LOG_INFO(log, "Removing leftover temporary meta files in {}", tmp_metadata_path);
             disk->removeRecursive(tmp_metadata_path);
+            disk->createDirectories(tmp_metadata_path);
         }
-        disk->createDirectories(tmp_metadata_path);
 
-        loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode);
+        loadMetaFiles(LoadingStrictnessLevel::ATTACH <= mode, legacy_layout);
+        disk->createDirectories(tmp_metadata_path);
         loadFiles();
 
         chassert(file_infos.file_names.size() == file_infos.meta_by_inode.size());
@@ -290,7 +293,7 @@ VirtualColumnsDescription StorageFileLog::createVirtuals(StreamingHandleErrorMod
     return desc;
 }
 
-void StorageFileLog::loadMetaFiles(bool attach)
+void StorageFileLog::loadMetaFiles(bool attach, bool legacy_layout)
 {
     /// Attach table
     if (attach)
@@ -302,7 +305,7 @@ void StorageFileLog::loadMetaFiles(bool attach)
             LOG_ERROR(log, "Metadata files of table {} are lost.", getStorageID().getTableName());
         }
         /// Load all meta info to file_infos;
-        deserialize();
+        deserialize(legacy_layout);
     }
 }
 
@@ -485,7 +488,7 @@ String StorageFileLog::writeTemporaryMeta(UInt64 inode, const FileMeta & file_me
     return tmp_path;
 }
 
-void StorageFileLog::deserialize()
+void StorageFileLog::deserialize(bool legacy_layout)
 {
     if (!disk->existsDirectory(metadata_base_path))
         return;
@@ -497,7 +500,8 @@ void StorageFileLog::deserialize()
     for (const auto dir_iter = disk->iterateDirectory(metadata_base_path); dir_iter->isValid(); dir_iter->next())
     {
         const auto & filename = dir_iter->name();
-        auto [metadata, inode] = readMetadata(filename);
+        /// Older versions wrote temporary meta files `<name>.tmp` here, and a crash can leave one malformed.
+        auto [metadata, inode] = readMetadata(filename, /* remove_if_malformed = */ legacy_layout && filename.ends_with(".tmp"));
         if (!metadata)
             continue;
 
@@ -743,7 +747,7 @@ void StorageFileLog::checkOffsetIsValid(const String & filename, UInt64 offset) 
     }
 }
 
-StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & filename) const
+StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & filename, bool remove_if_malformed) const
 {
     auto full_path = getFullMetaPath(filename);
     if (!disk->existsFile(full_path))
@@ -767,14 +771,14 @@ StorageFileLog::ReadMetadataResult StorageFileLog::readMetadata(const String & f
         return {};
     }
 
-    if (!tryReadIntText(inode, *in))
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed (1)", full_path);
-
-    if (!checkChar('\n', *in))
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed (2)", full_path);
-
-    if (!tryReadIntText(last_written_pos, *in))
-        throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed (3)", full_path);
+    if (!tryReadIntText(inode, *in) || !checkChar('\n', *in) || !tryReadIntText(last_written_pos, *in))
+    {
+        if (!remove_if_malformed)
+            throw Exception(ErrorCodes::CANNOT_READ_ALL_DATA, "Read meta file {} failed", full_path);
+        LOG_INFO(log, "Removing malformed meta file {}", full_path);
+        disk->removeFile(full_path);
+        return {};
+    }
 
     metadata.file_name = filename;
     metadata.last_writen_position = last_written_pos;
