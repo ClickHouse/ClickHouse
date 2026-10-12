@@ -1,0 +1,148 @@
+1. part of the key is computed by the filter below the join
+1
+13	11095062192786294623
+13	11095062192786294623
+1
+857	6543035502953108982
+857	6543035502953108982
+2. the whole key is computed by the filter below the join
+1
+20	17372015593207768731
+20	17372015593207768731
+3. the key on the right side of the join
+1
+857	6543035502953108982
+857	6543035502953108982
+4. outer joins
+1
+857	6543035502953108982
+857	6543035502953108982
+1
+857	6543035502953108982
+857	6543035502953108982
+1
+857	15711539519624605262
+857	15711539519624605262
+1
+857	6543035502953108982
+857	6543035502953108982
+5. the expression is computed by a subquery below the join
+1
+1000	7637087209905520829
+1000	7637087209905520829
+6. not reused: the subquery computes the expression only for some rows
+2
+1000	3281222883483365920
+1000	3281222883483365920
+7. not reused: the expression contains a function that must be computed for each use
+2
+857	6543035502953108982
+857	6543035502953108982
+8. not reused: the subquery computes the expression with different settings
+2
+20	16501190078960941588
+20	16501190078960941588
+9. the filter is also pushed to the other side of the join
+1
+2
+857	14578075202655822743
+857	14578075202655822743
+10. a join over the rewritten join
+2
+2
+1
+2
+9	18102620224379099303
+9	18102620224379099303
+11. not reused: the function depends on the name of its argument
+2
+20	1808935586982350207
+20	1808935586982350207
+12. not reused: a function that does not declare that it ignores argument names
+2
+20	13659861633907926911
+20	13659861633907926911
+13. without a join: the same function over an alias of the same column is computed once
+1
+857	6164250910400155273
+857	6164250910400155273
+1
+14. not reused: a column in WHERE guards the expression
+2
+2	10463181535871660128
+2	10463181535871660128
+15. not reused: single-step PREWHERE guards the expression
+2
+2	10463181535871660128
+2	10463181535871660128
+16. reused: guard-free AND chain
+1
+2	10463181535871660128
+2	10463181535871660128
+17. null-safe key over a Nullable expression
+1
+100	11660208301545935911
+100	11660208301545935911
+18. not reused: an existing PREWHERE guards the expression in a one-step PREWHERE
+2
+2	10463181535871660128
+2	10463181535871660128
+19. with join runtime filters
+1
+1
+13	11095062192786294623
+13	11095062192786294623
+20. not reused: a subquery turns multi-step PREWHERE off for its own read
+2
+2	10463181535871660128
+2	10463181535871660128
+21. not reused: with query_plan_merge_filters = 0 a later merge can put another filter in front
+2
+2	10463181535871660128
+2	10463181535871660128
+22. not reused: a filter over a read that is not MergeTree
+2
+2	10463181535871660128
+2	10463181535871660128
+23. not reused: a subquery enables short-circuit evaluation for its own read
+2
+2	10463181535871660128
+24. the key is computed after a filter pushed below the join later
+1
+2	6038924472886174464
+2	6038924472886174464
+25. the same with a stateful function in the key
+1
+1	14236524368291714261
+1	14236524368291714261
+26. a key with arrayJoin over the reused expression
+143	17074455165340950747
+143	17074455165340950747
+27. a key used by two conditions is computed once
+1
+857	10186658685546113365
+857	10186658685546113365
+1
+2
+3
+28. not reused: the subquery computes arithmetic with different settings
+2
+2
+2
+2	1
+2	1
+29. not reused: a function that must run once is shared with an ASOF inequality
+1
+1000	5369050530052646273
+1000	5369050530052646273
+30. not reused: a constant that compares equal but is a different value
+2
+1
+1	-0	0
+2	0	0
+3	1.5	1.5
+1	-0	0
+2	0	0
+3	1.5	1.5
+31. not reused: a function that does not hash a setting it captured, computed with a different setting
+2
