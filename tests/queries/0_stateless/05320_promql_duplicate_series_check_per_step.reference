@@ -1,0 +1,31 @@
+-- dropping the metric name merges series with values at different steps
+[('dc','x'),('host','2')]	[('1970-01-01 00:01:40.000',20),('1970-01-01 00:03:20.000',2)]
+-- dropping the metric name still reports series with values at the same step
+-- a series which `and` keeps only at steps where it has no value is not a duplicate
+[('dc','x'),('host','2')]	[('1970-01-01 00:01:40.000',20)]
+-- label_replace merges series with values at different steps
+[('__name__','a'),('dc','x'),('host','all')]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:03:20.000',2)]
+-- label_replace still reports series with values at the same step
+-- one-to-one matching merges series with values at different steps
+[('dc','x')]	[('1970-01-01 00:01:40.000',101),('1970-01-01 00:03:20.000',202)]
+-- one-to-one matching still reports series with values at the same step
+-- a comparison keeps the metric name of its left side, series which get the same tags at different steps are still merged
+[('__name__','a'),('dc','x')]	[('1970-01-01 00:01:40.000',1),('1970-01-01 00:03:20.000',2)]
+-- series with different metric names give different result series
+[('__name__','a'),('dc','x')]	[('1970-01-01 00:03:20.000',2)]
+[('__name__','b'),('dc','x')]	[('1970-01-01 00:01:40.000',20)]
+-- a comparison still reports series of its left side with values at the same step
+-- a series without values on the left side of a comparison is skipped
+[('__name__','a'),('dc','x')]	[('1970-01-01 00:01:40.000',1)]
+-- group_left copies labels from the series of the side "one" matched at each step
+[('dc','x'),('host','1')]	[('1970-01-01 00:01:40.000',100)]
+[('dc','x'),('host','2')]	[('1970-01-01 00:03:20.000',400)]
+-- group_right copies labels from the series of the side "one" matched at each step
+[('dc','x'),('host','1')]	[('1970-01-01 00:01:40.000',100)]
+[('dc','x'),('host','2')]	[('1970-01-01 00:03:20.000',400)]
+-- series of the side "one" matched at different steps give one result series if the copied labels are the same
+[('dc','x'),('team','t')]	[('1970-01-01 00:01:40.000',700),('1970-01-01 00:03:20.000',1600)]
+-- series of the side "one" with the same copied labels still report values at the same step
+-- group_left merges series of the side "many" which get the same tags at different steps
+[('dc','x'),('host','2')]	[('1970-01-01 00:01:40.000',2000),('1970-01-01 00:03:20.000',400)]
+-- group_left still reports series of the side "many" which get the same tags at the same step
