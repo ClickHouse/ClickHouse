@@ -282,7 +282,7 @@ The time and the error of the last evaluation are shown in [`system.view_refresh
 
 A view differs from a Prometheus recording rule in these ways:
 
-- The evaluation time is `now()` when the refresh runs. Besides the schedule, a view refreshes when it's created, when the server starts, and when `SYSTEM START VIEW` resumes it after a missed refresh. Round `now()` down to the interval as the example does, so that these refreshes don't add samples between the scheduled ones. An extra refresh can still write a second sample at the same rounded timestamp. For a five-minute rule, use `toStartOfInterval(now(), INTERVAL 5 MINUTE)`.
+- The evaluation time is `now()` when the refresh runs. Besides the schedule, a view refreshes right after it's created (unless it's created with `EMPTY`), after a server restart if it's not in a Replicated database (such a view doesn't remember its last refresh), and when `SYSTEM START VIEW` resumes it after it missed a scheduled refresh. Round `now()` down to the interval as the example does, so that these refreshes don't add samples between the scheduled ones. An extra refresh can still write a second sample at the same rounded timestamp. For a five-minute rule, use `toStartOfInterval(now(), INTERVAL 5 MINUTE)`.
 - Missed evaluations are not caught up. After the server was down or the view was stopped, the view evaluates only the current interval, and the intervals before it stay empty. The same happens when a refresh takes longer than the interval.
 - A series that drops out of the result gets no staleness marker, so queries keep returning its last recorded value for the lookback period, 5 minutes by default.
 - There is no rule file: each rule is a separate view. The rules are not listed by `/api/v1/rules`.
