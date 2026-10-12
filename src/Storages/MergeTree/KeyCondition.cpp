@@ -52,6 +52,7 @@
 #include <Interpreters/Set.h>
 #include <Parsers/ASTLiteral.h>
 #include <Parsers/ASTSelectQuery.h>
+#include <IO/ReadHelpers.h>
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 
@@ -3026,7 +3027,33 @@ static bool constantMayHoldFloatZero(const Field & field, const DataTypePtr & ty
 
     const DataTypePtr type = removeNullable(removeLowCardinality(type_with_wrappers));
 
-    if (!typeContainsFloat(type))
+    /// A `Dynamic` or `JSON` value has no static float element, but it can still be a float.
+    if (WhichDataType which(type); which.isDynamic() || which.isObject())
+    {
+        switch (field.getType())
+        {
+            case Field::Types::String:
+            {
+                /// The comparison parses a `String` constant into the type of each stored variant, so `d = '0'`
+                /// matches both zeros too. Checking the parsed value is not enough: `'1e-50'` is not a zero as a
+                /// `Float64`, but it is as a `Float32` or a `BFloat16`. So any string that parses as a number is
+                /// treated as a possible zero. A string that does not parse as a number cannot equal a float zero.
+                Float64 value = 0;
+                return tryParse(value, field.safeGet<String>());
+            }
+            case Field::Types::UUID:
+            case Field::Types::IPv4:
+            case Field::Types::IPv6:
+                /// Neither a float nor a container of one.
+                return false;
+            default:
+                /// A number is a zero or not. Anything else, such as an `Array`, a `Tuple` or a `Map`, which a `Dynamic`
+                /// value can hold with float elements, is conservatively treated as holding a zero.
+                return isNumericallyZeroConstant(field).value_or(true);
+        }
+    }
+
+    if (!typeContainsFloat(type) && !type->hasDynamicStructure())
         return false;
 
     if (isFloat(type))

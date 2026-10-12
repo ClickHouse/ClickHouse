@@ -1,0 +1,15 @@
+d = 0.0	2	2
+d = -0.0	2	2
+d = 0	2	2
+d = \'0\'	2	2
+d = 2.0	1	1
+k = (0.0, 1)	2	2
+Float32: d = \'1e-50\'	2	2
+BFloat16: d = \'1e-42\'	2	2
+d = \'042\'	1	1
+pruned for \'s42\'	1
+pruned for 42.0	1
+pruned for a UUID	1
+pruned for an IPv4	1
+pruned for an IPv6	1
+d = [0.0]	2	2
