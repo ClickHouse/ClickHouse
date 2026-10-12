@@ -1,0 +1,33 @@
+INTERSECT ALL	2
+INTERSECT DISTINCT	2
+EXCEPT ALL	2
+EXCEPT DISTINCT	2
+no top filter EXCEPT ALL	0
+top filter EXCEPT ALL off	1
+nondeterministic top filter	1
+granules on	2
+granules off	2
+res INTERSECT ALL	5
+res INTERSECT ALL	5
+res INTERSECT DISTINCT	5
+res EXCEPT ALL	5
+count except	1
+count intersect	1
+count except mt	1
+count intersect mt	1
+dup input on	1	1
+dup input off	1	1
+reuse on	3
+reuse off	3
+block mismatch	0
+block mismatch off	0
+block mismatch filters on	2
+block mismatch filters off	1
+const branch except	0
+const branch except off	0
+const branch intersect	0
+const branch intersect off	0
+totals except	0
+totals except off	0
+totals intersect	0
+totals intersect off	0
