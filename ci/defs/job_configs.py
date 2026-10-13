@@ -151,11 +151,11 @@ fast_test_digest_config = Job.CacheDigestConfig(
     ],
 )
 
-# The Darwin fast test additionally consumes its wrapper script, so changes to it
-# must schedule the job (the shared digest above does not cover it).
+# The Darwin fast test additionally consumes its wrapper and budget scripts, so changes to them
+# must schedule the job (the shared digest above does not cover them).
 darwin_fast_test_digest_config = Job.CacheDigestConfig(
     include_paths=fast_test_digest_config.include_paths
-    + ["./ci/jobs/scripts/fast_test_darwin.sh"],
+    + ["./ci/jobs/scripts/fast_test_darwin.sh", "./ci/jobs/scripts/darwin_test_budget.py"],
 )
 
 TIDY_SHARDS = 4

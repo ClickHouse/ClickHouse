@@ -11,6 +11,7 @@ sys.path.append(str(repo_path / "ci"))
 
 from ci.defs.defs import ToolSet
 from ci.jobs.scripts.clickhouse_proc import ClickHouseProc
+from ci.jobs.scripts.darwin_test_budget import tests_to_skip
 from ci.jobs.scripts.functional_tests_results import FTResultsProcessor
 from ci.praktika.info import Info
 from ci.praktika.result import Result
@@ -380,6 +381,8 @@ def main():
         nproc_fast = max(1, int(Utils.cpu_count() * 3 / 4))
 
         fast_test_command = f"cd {temp_dir} && clickhouse-test --hung-check --trace --capture-client-stacktrace --no-random-settings --no-random-merge-tree-settings --no-long --testname --shard --check-zookeeper-session --order random --report-logs-stats --fast-tests-only --no-stateful --timeout 60 --jobs {nproc_fast}"
+        if platform.system() == "Darwin" and not args.test and not info.is_local_run:
+            args.skip += tests_to_skip()
         if args.skip:
             skip_args = " ".join(args.skip)
             fast_test_command += f" --skip {skip_args}"
