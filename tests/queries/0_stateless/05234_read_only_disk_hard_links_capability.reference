@@ -1,0 +1,8 @@
+-- the read-only reader sees the data
+1	Hello
+-- without enable_hard_links the read-only attachment reports the capability of the disk it wraps
+Hypothetical indexes are not supported on immutable disk
+-- the writer of the same disk answers the same way
+Hypothetical indexes are not supported on immutable disk
+-- with enable_hard_links the read-only attachment accepts it
+h	reader_hard_links

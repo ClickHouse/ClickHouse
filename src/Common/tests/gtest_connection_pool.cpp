@@ -943,6 +943,39 @@ TEST_F(ConnectionPoolTest, HardLimit)
     ASSERT_EQ(1, CurrentMetrics::get(metrics.stored_count));
 }
 
+/// The soft limit counts the connections in use and the idle ones stored for reuse together.
+TEST_F(ConnectionPoolTest, SoftLimitReached)
+{
+    DB::HTTPConnectionPools::Limits limits {2, 1000, 10, 0};
+    DB::HTTPConnectionPools::instance().setLimits(limits, limits, limits);
+
+    auto pool = getPool();
+    ASSERT_FALSE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::HTTP));
+
+    {
+        auto connection1 = pool->getConnection(timeouts, nullptr);
+        ASSERT_FALSE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::HTTP));
+
+        auto connection2 = pool->getConnection(timeouts, nullptr);
+        ASSERT_TRUE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::HTTP));
+
+        /// Other groups are not affected.
+        ASSERT_FALSE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::DISK));
+
+        echoRequest("Hello", *connection1);
+        echoRequest("Hello", *connection2);
+    }
+
+    /// Both connections are stored for reuse and still count.
+    ASSERT_EQ(2, CurrentMetrics::get(pool->getMetrics().stored_count));
+    ASSERT_TRUE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::HTTP));
+
+    /// Dropping the endpoint pool with its stored connections frees the group.
+    pool.reset();
+    DB::HTTPConnectionPools::instance().dropCache();
+    ASSERT_FALSE(DB::HTTPConnectionPools::instance().isSoftLimitReached(DB::HTTPConnectionGroupType::HTTP));
+}
+
 TEST_F(ConnectionPoolTest, NoReceiveCall)
 {
     auto pool = getPool();

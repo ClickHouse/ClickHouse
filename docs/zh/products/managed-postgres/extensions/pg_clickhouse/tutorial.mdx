@@ -7,9 +7,7 @@ doc_type: 'guide'
 keywords: ['PostgreSQL', 'Postgres', 'FDW', '外部数据包装器', 'pg_clickhouse', '扩展', '教程', '出租车']
 ---
 
-<div id="overview">
-  ## 概述
-</div>
+## 概述 {#overview}
 
 本教程基于 [ClickHouse 教程]，但其中所有查询均通过
 pg&#95;clickhouse 运行。
@@ -19,9 +17,7 @@ pg&#95;clickhouse 运行。
 * 如果您使用 ClickHouse Managed Postgres，请[从控制台](#from-console)进行配置。
 * 如果您自行安装和配置扩展，请[从 PSQL](#from-psql)进行配置。
 
-<div id="start-clickhouse">
-  ## 启动 ClickHouse
-</div>
+## 启动 ClickHouse {#start-clickhouse}
 
 首先，如果你还没有 ClickHouse 数据库，请先创建一个。快速开始的一种方式
 是使用 Docker image：
@@ -31,9 +27,7 @@ docker run -d --network host --name clickhouse -p 8123:8123 -p9000:9000 --ulimit
 docker exec -it clickhouse clickhouse-client
 ```
 
-<div id="create-a-table">
-  ## 创建表
-</div>
+## 创建表 {#create-a-table}
 
 让我们参考[ClickHouse 教程]，使用 The New York
 City taxi 数据集创建一个简单的数据库：
@@ -98,9 +92,7 @@ PARTITION BY toYYYYMM(pickup_date)
 ORDER BY pickup_datetime;
 ```
 
-<div id="add-the-data-set">
-  ## 添加数据集
-</div>
+## 添加数据集 {#add-the-data-set}
 
 然后导入数据：
 
@@ -169,9 +161,7 @@ SELECT count() FROM taxi.trips;
 quit
 ```
 
-<div id="from-console">
-  ## 在控制台中
-</div>
+## 在控制台中 {#from-console}
 
 如果您使用 ClickHouse Managed Postgres，可以通过 ClickHouse Cloud
 控制台配置 `pg_clickhouse` 并连接到 ClickHouse 服务。打开您的 Managed Postgres 服务，选择 **设置**，然后找到
@@ -200,13 +190,9 @@ SELECT * FROM <schema>.<table>;
 要按照本教程中的出租车示例操作，请选择 `taxi` ClickHouse
 数据库，并将其导入 `taxi` 目标端 schema。
 
-<div id="from-psql">
-  ## 从 PSQL 连接
-</div>
+## 从 PSQL 连接 {#from-psql}
 
-<div id="install-pg_clickhouse">
-  ### 安装 pg_clickhouse
-</div>
+### 安装 pg_clickhouse {#install-pg_clickhouse}
 
 从 [PGXN] 或 [GitHub] 构建并安装 pg&#95;clickhouse。或者使用 [pg&#95;clickhouse image] 启动一个
 Docker 容器；该镜像只是在 Docker [Postgres image] 中加入了
@@ -217,9 +203,7 @@ docker run -d --network host --name pg_clickhouse -e POSTGRES_PASSWORD=my_pass \
        -d ghcr.io/clickhouse/pg_clickhouse:18
 ```
 
-<div id="connect-pg_clickhouse">
-  ### 连接 pg_clickhouse
-</div>
+### 连接 pg_clickhouse {#connect-pg_clickhouse}
 
 现在连接到 Postgres：
 
@@ -363,9 +347,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
 请注意，&quot;Foreign Scan&quot; 出现在执行计划的根节点，这意味着
 整个查询都已下推到 ClickHouse。
 
-<div id="analyze-the-data">
-  ## 分析数据
-</div>
+## 分析数据 {#analyze-the-data}
 
 运行一些查询来分析数据。参考以下示例，或尝试
 自行编写 SQL 查询。
@@ -522,9 +504,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
   Time: 17.450 ms
   ```
 
-<div id="create-a-dictionary">
-  ## 创建字典
-</div>
+## 创建字典 {#create-a-dictionary}
 
 在你的 ClickHouse 服务中创建一个与表关联的字典。该表和字典基于一个 CSV file，其中包含纽约市每个社区的一行数据。
 
@@ -614,9 +594,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
    该查询汇总了终点为 LaGuardia 或 JFK 机场的出租车行程，按各行政区统计数量。请注意，其中有不少行程的
    上车区域未知。
 
-<div id="perform-a-join">
-  ## 执行 JOIN
-</div>
+## 执行 JOIN {#perform-a-join}
 
 编写一些查询，将 `taxi_zone_dictionary` 与 `trips`
 表进行 JOIN。
@@ -692,7 +670,7 @@ FDW options: (database 'taxi', table_name 'trips', engine 'MergeTree')
   应仅检索实际需要的列。
 </Note>
 
-[ClickHouse tutorial]: /zh/get-started/sample-datasets/nyc-taxi "ClickHouse 教程"
+[ClickHouse tutorial]: /get-started/sample-datasets/nyc-taxi "纽约出租车数据"
 
 [psql]: https://www.postgresql.org/docs/current/app-psql.html "PostgreSQL 客户端应用程序：psql"
 

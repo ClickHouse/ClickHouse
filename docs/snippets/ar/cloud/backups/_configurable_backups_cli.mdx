@@ -1,0 +1,188 @@
+---
+title: النسخ الاحتياطية القابلة للتهيئة عبر سطر الأوامر
+---
+
+تتناول هذه الصفحة قراءة جدول النسخ الاحتياطي لخدمة ClickHouse Cloud وتغييره من سطر الأوامر باستخدام [ClickHouse CLI](/ar/products/cloud/features/cli) (`clickhousectl`). الأوامر غير تفاعلية، ويُخرج `clickhousectl` نتائج بصيغة JSON عند استخدام `--json`.
+
+تتوفر النسخ الاحتياطية القابلة للتهيئة في خطتَي Scale وEnterprise.
+
+## المتطلبات المسبقة {#prerequisites}
+
+ثبّت ClickHouse CLI:
+
+```bash
+curl https://clickhouse.com/cli | sh
+```
+
+تحتاج أيضًا إلى `jq`.
+
+يُعد تغيير تكوين النسخ الاحتياطي عملية كتابة ويتطلب [المصادقة باستخدام مفتاح واجهة برمجة تطبيقات](/ar/products/cloud/features/admin-features/api/openapi)؛ أما تسجيل الدخول عبر OAuth فهو للقراءة فقط:
+
+```bash
+clickhousectl cloud auth login --api-key <YOUR_KEY> --api-secret <YOUR_SECRET>
+```
+
+بدلاً من ذلك، عيّن متغيّري البيئة `CLICKHOUSE_CLOUD_API_KEY` و`CLICKHOUSE_CLOUD_API_SECRET`. تحقّق من ذلك باستخدام `clickhousectl cloud auth status`: تأكّد من أن بيانات الاعتماد **النشطة** هي التي تملك النطاق `read/write`. تتقدّم بيانات الاعتماد المحفوظة من عملية `auth login` سابقة على متغيّرات البيئة؛ وفي هذه الحالة قد يظل الصف `Env vars` يعرض النطاق `read/write` لكنه يُوسم بأنه غير نشط (`Configured (inactive, outranked by credentials file)`)، وتُنفَّذ أوامر الكتابة الواردة أدناه باستخدام بيانات الاعتماد المحفوظة عوضًا عنها. نفّذ `clickhousectl cloud auth logout` أولاً إذا كنت ترغب في استخدام متغيّرات البيئة.
+
+## العثور على معرّف الخدمة {#find-the-service-id}
+
+يُضبط تكوين النسخ الاحتياطي لكل خدمة على حدة. ابحث عن معرّف الخدمة باستخدام اسمها:
+
+```bash
+CH_ID=$(clickhousectl cloud service list --json \
+  | jq -r '.[] | select(.name=="<service-name>") | .id')
+```
+
+إذا كنت تنتمي إلى أكثر من organization، فلن يتمكن الأمر من اكتشاف الـ organization تلقائيًا وسيفشل مع ظهور الرسالة `Multiple organizations found. Specify --org-id to choose one.`. اعرض قائمة الـ organizations الخاصة بك باستخدام `clickhousectl cloud org list`، ثم مرّر `--org-id <org-id>` إلى هذا الأمر وإلى كل أمر `backup-config` وارد أدناه.
+
+## قراءة تكوين النسخ الاحتياطي الحالي {#read-the-current-backup-configuration}
+
+```bash
+clickhousectl cloud service backup-config get "$CH_ID" --json
+```
+
+الخدمة التي لا تزال تستخدم الجدولة الافتراضية يُبلّغ عن:
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 24.0
+}
+```
+
+لا يظهر `backupStartTime` في المخرجات إلا بعد تعيين وقت بدء (start time).
+
+## تغيير مدة الاحتفاظ والتكرار {#change-retention-and-frequency}
+
+يقبل الأمر `backup-config update` الإعدادات نفسها الموجودة في نموذج الـ Console — مدة الاحتفاظ (`--backup-retention-period-hours`)، والتكرار (`--backup-period-hours`)، ووقت البدء (`--backup-start-time`) — ثم يطبع الـ configuration الناتج. أما الـ flags التي لا تحددها فتبقى بقيمها الحالية:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --backup-period-hours 12 \
+  --backup-retention-period-hours 48 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+يسري التغيير على الفور؛ أعد قراءة الـ configuration للتأكد من ذلك:
+
+```bash
+clickhousectl cloud service backup-config get "$CH_ID" --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+## تعيين وقت بدء النسخ الاحتياطي {#set-a-backup-start-time}
+
+يأخذ `--backup-start-time` وقت بدء يوميًا بتوقيت UTC، عند رأس الساعة (`HH:00`). ويقيّد وقت البدء التكرار: إذ يجب أن تكون فترة النسخ الاحتياطي `24` أو `48` ساعة، سواء مُرِّرت في الأمر نفسه أو كانت مخزَّنة مسبقًا على الخدمة. ومنذ `clickhousectl 0.4.2`، يجري التحقق من التنسيق ومن قاعدة الفترة كليهما على جانب العميل، قبل أي استدعاء لواجهة برمجة التطبيقات. أما الوقت الذي لا يقع عند رأس الساعة — أو غير المكمَّل بالأصفار، مثل `2:00` — فيرفضه مُحلِّل المعاملات مع رمز الخروج `2`:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 02:30 --json
+```
+
+```text
+error: invalid value '02:30' for '--backup-start-time <BACKUP_START_TIME>': invalid backup start time '02:30': expected HH:00 with HH from 00 to 23
+```
+
+كذلك يُرفض تمرير `--backup-start-time` مع قيمة لـ `--backup-period-hours` غير `24` أو `48`، وذلك قبل إرسال الطلب، مع رمز الخروج `1`:
+
+```text
+Error: --backup-period-hours must be 24 or 48 when --backup-start-time is set
+```
+
+يمكن حذف `--backup-period-hours`، وفي هذه الحالة تحتفظ الخدمة بالفترة المضبوطة لديها بالفعل — لكن يجب أن تكون تلك الفترة المخزَّنة نفسها `24` أو `48`. ففي خدمة لا تزال تستخدم الجدولة الافتراضية تكون الفترة `24`، ولذلك يكفي تحديد وقت البدء وحده. أما الخدمة أعلاه فقد ضُبطت على `12` في الخطوة السابقة، ولهذا يفشل حذف الفترة: إذ يقرأ `clickhousectl` الإعدادات المخزَّنة أولًا ثم يرفض العملية برمز خروج `1`، ومن دون استدعاء واجهة برمجة التطبيقات أيضًا:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-start-time 03:00 --json
+```
+
+```text
+Error: the stored backup period is 12 hours, but --backup-start-time requires 24 or 48. Pass --backup-period-hours 24 or --backup-period-hours 48 in the same call.
+```
+
+تمرير الفترة (period) بشكل صريح هو التركيبة الصحيحة:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --backup-start-time 02:00 \
+  --backup-period-hours 24 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 48.0,
+  "backupStartTime": "02:00"
+}
+```
+
+أما الحالة العكسية فلا يجري اكتشافها على جانب العميل: فمع وجود وقت بدء مخزَّن بالفعل، يصل إلى واجهة برمجة التطبيقات أي تحديث يغيّر `--backup-period-hours` وحده إلى قيمة غير `24` أو `48`، ويفشل هناك مع رمز الخروج `1`:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" --backup-period-hours 12 --json
+```
+
+```text
+Error: BAD_REQUEST: customBackupPeriod must be 24 or 48 hours when customBackupStartTime is set
+```
+
+يؤدي مسح وقت البدء ضمن الأمر نفسه إلى تفادي ذلك، كما هو موضّح فيما يلي.
+
+## مسح وقت بدء النسخة الاحتياطية {#clear-the-backup-start-time}
+
+يزيل الخيار `--clear-backup-start-time` وقت البدء المخزَّن ويرفع قيد الـ `24`/`48` ساعة المفروض على الفترة:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --clear-backup-start-time \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 24.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+يختفي `backupStartTime` من المخرجات بدلًا من أن يُعرض بالقيمة `null`، ولم يعد `backup-config get` يُرجعه. أما مسح وقت بدء لم يُضبط من الأصل فهو عملية لا تأثير لها، ومع ذلك تنتهي بالرمز `0`.
+
+اجمعه مع `--backup-period-hours` لمسح وقت البدء وضبط أي فترة في أمر واحد — وهذه هي طريقة الخروج من خطأ واجهة برمجة التطبيقات المذكور أعلاه:
+
+```bash
+clickhousectl cloud service backup-config update "$CH_ID" \
+  --clear-backup-start-time \
+  --backup-period-hours 12 \
+  --json
+```
+
+```json
+{
+  "backupPeriodInHours": 12.0,
+  "backupRetentionPeriodInHours": 48.0
+}
+```
+
+لا يمكن الجمع بين `--clear-backup-start-time` و`--backup-start-time`؛ إذ يرفض المحلّل هذا الاقتران برمز الخروج `2`:
+
+```text
+error: the argument '--clear-backup-start-time' cannot be used with '--backup-start-time <BACKUP_START_TIME>'
+```
+
+لنقل وقت البدء بدلًا من إزالته، مرّر القيمة الجديدة لـ `--backup-start-time` بمفردها؛ فهي تحلّ محل القيمة المخزّنة.
+
+<Note>
+  قد يؤدي تغيير جدول النسخ الاحتياطي إلى ارتفاع الرسوم الشهرية للتخزين، إذ قد لا تكون بعض النسخ الاحتياطية مشمولة ضمن النسخ الاحتياطية الافتراضية للخدمة. راجع [&quot;فهم تكلفة النسخ الاحتياطي&quot;](/ar/products/cloud/guides/backups/review-and-restore-backups#understanding-backup-cost).
+</Note>
