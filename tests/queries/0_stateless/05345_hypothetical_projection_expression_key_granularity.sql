@@ -16,9 +16,10 @@ INSERT INTO t_est SELECT number, number % 100, number FROM numbers(3000);
 INSERT INTO t_real SELECT number, number % 100, number FROM numbers(3000);
 
 CREATE HYPOTHETICAL PROJECTION p_k ON t_est (SELECT a, b, v ORDER BY intDiv(b, 10));
-SELECT trim(explain) FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_est WHERE intDiv(b, 10) = 4)
-WHERE match(trim(explain), '^(marks|status|verdict):');
-SELECT 'real', trim(explain) FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, v FROM t_real WHERE intDiv(b, 10) = 4)
+SELECT replaceRegexpAll(trim(explain), '\\s+', ' ') AS line FROM (EXPLAIN WHATIF SELECT a, b, v FROM t_est WHERE intDiv(b, 10) = 4)
+WHERE match(line, '^(Baseline|With |marks:|status:|verdict:)');
+SELECT 'real: ' || replaceRegexpAll(trim(explain), '\\s+', ' ') AS line
+FROM (EXPLAIN indexes = 1, projections = 1 SELECT a, b, v FROM t_real WHERE intDiv(b, 10) = 4)
 WHERE match(trim(explain), '^(ReadFromMergeTree|Granules:)');
 
 DROP TABLE t_est;
