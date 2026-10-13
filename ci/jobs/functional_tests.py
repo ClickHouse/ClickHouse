@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import random
+import re
 import subprocess
 import traceback
 import zlib
@@ -1008,11 +1009,45 @@ def main():
             else:
                 print("skip log export config for local run")
 
+        def job_may_run_test_file(test_file):
+            # Whether this job can select the stateless test `test_file` (the file name with
+            # extension): the same filters as `clickhouse-test` applies to the test list.
+            if tests and not any(re.search(t, test_file) for t in tests):
+                return False
+            is_sequential_test = Targeting.is_sequential_functional_test(test_file)
+            if "--no-sequential" in runner_options and is_sequential_test:
+                return False
+            if "--no-parallel" in runner_options and not is_sequential_test:
+                return False
+            if (
+                batch_num
+                and total_batches
+                and not is_flaky_check
+                and not is_targeted_check
+                and zlib.crc32(test_file.encode("utf-8")) % total_batches
+                != batch_num - 1
+            ):
+                return False
+            return True
+
         def checkout_test_data_submodules():
-            # Tests read the Parquet test corpus from this submodule. The job runs as `root`
+            # Check out a test data submodule only if this job can run a test reading it,
+            # so that the other jobs do not depend on fetching it. The job runs as `root`
             # in docker on a checkout owned by another user, hence `safe.directory`.
+            submodules = [
+                submodule
+                for submodule in Targeting.TEST_DATA_SUBMODULES
+                if any(
+                    job_may_run_test_file(Path(f).name)
+                    for f in Targeting.test_files_using_test_data_submodule(submodule)
+                )
+            ]
+            if not submodules:
+                print("No test of this job reads test data submodules")
+                return True
             return Shell.check(
-                "git -c safe.directory='*' submodule update --init --depth 1 --single-branch -- contrib/parquet-testing",
+                "git -c safe.directory='*' submodule update --init --depth 1 --single-branch -- "
+                + " ".join(submodules),
                 retries=3,
                 verbose=True,
             )

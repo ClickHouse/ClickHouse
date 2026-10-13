@@ -210,11 +210,11 @@ class Targeting:
         return sorted(referencing) if referencing else sorted(candidates)
 
     # Submodules with test data, the same as `test_data_submodules` in `ci/defs/job_configs.py`.
-    _TEST_DATA_SUBMODULES = ("contrib/parquet-testing",)
+    TEST_DATA_SUBMODULES = ("contrib/parquet-testing",)
 
     @classmethod
     def is_test_data_submodule(cls, fpath: str) -> bool:
-        return fpath.removeprefix("./") in cls._TEST_DATA_SUBMODULES
+        return fpath.removeprefix("./") in cls.TEST_DATA_SUBMODULES
 
     @classmethod
     def test_files_using_test_data_submodule(cls, fpath: str):
