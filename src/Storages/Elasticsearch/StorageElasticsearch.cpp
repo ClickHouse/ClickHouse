@@ -5,13 +5,14 @@
 #include <Columns/IColumn.h>
 #include <Columns/IColumn_fwd.h>
 #include <Core/NamesAndTypes.h>
+#include <Core/Settings.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeObject.h>
 #include <DataTypes/DataTypeString.h>
 #include <DataTypes/IDataType.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatSettings.h>
-#include <Interpreters/Context_fwd.h>
+#include <Interpreters/Context.h>
 #include <Columns/ColumnString.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Elasticsearch/ElasticsearchConfiguration.h>
@@ -39,12 +40,18 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool enable_elasticsearch;
+}
+
 namespace ErrorCodes
 {
     extern const int LOGICAL_ERROR;
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int NOT_IMPLEMENTED;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 class ElasticsearchSource : public ISource
@@ -270,6 +277,10 @@ void registerStorageElasticsearch(StorageFactory & factory)
         "Elasticsearch",
         [](const StorageFactory::Arguments & args)
         {
+            if (args.mode <= LoadingStrictnessLevel::CREATE && !args.getLocalContext()->getSettingsRef()[Setting::enable_elasticsearch])
+                throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+                    "The Elasticsearch table engine is experimental. Set `enable_elasticsearch` setting to enable it");
+
             StorageElasticsearch::checkColumns(args.columns);
 
             auto settings = std::make_unique<ElasticsearchSettings>();
@@ -288,6 +299,10 @@ void registerStorageElasticsearch(StorageFactory & factory)
         },
         Documentation{
             .description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge/>
+
 The `Elasticsearch` engine allows reading documents from an index in [Elasticsearch](https://www.elastic.co/elasticsearch). Each document is returned as one row: its `_source` is exposed as a single column of the [JSON](/reference/data-types/newjson) type, and the document id and index name are available as virtual columns.
 
 The engine is read-only. Documents are fetched with the `_search` API in pages, using a [point in time](https://www.elastic.co/docs/reference/elasticsearch/rest-apis/paginate-search-results#search-after) so that a query sees a consistent snapshot of the index even while it is being modified.
@@ -302,6 +317,14 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name
 ENGINE = Elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...])
 [SETTINGS keep_alive = 60, page_size = 10000]
 ```
+
+<Note>
+The Elasticsearch integration is experimental. Enable it with the [`enable_elasticsearch`](/reference/settings/session-settings/enable#enable_elasticsearch) setting:
+
+```sql
+SET enable_elasticsearch = 1;
+```
+</Note>
 
 The column list is optional. When omitted, the table has a single column `document` of type `JSON`. When specified, it must contain exactly one column, and its type must be `JSON`, optionally with type hints and skip paths. `MATERIALIZED`, `ALIAS` and `EPHEMERAL` columns are not supported, and the names `_id` and `_index` are reserved for the virtual columns.
 

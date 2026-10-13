@@ -1,3 +1,5 @@
+#include <Core/Settings.h>
+#include <Interpreters/Context.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Storages/ColumnsDescription.h>
 #include <Storages/Elasticsearch/ElasticsearchConfiguration.h>
@@ -14,9 +16,15 @@
 namespace DB
 {
 
+namespace Setting
+{
+    extern const SettingsBool enable_elasticsearch;
+}
+
 namespace ErrorCodes
 {
     extern const int NUMBER_OF_ARGUMENTS_DOESNT_MATCH;
+    extern const int SUPPORT_IS_DISABLED;
 }
 
 namespace
@@ -78,6 +86,10 @@ ColumnsDescription TableFunctionElasticsearch::getActualTableStructure(ContextPt
 
 void TableFunctionElasticsearch::parseArguments(const ASTPtr & ast_function, ContextPtr context)
 {
+    if (!context->getSettingsRef()[Setting::enable_elasticsearch])
+        throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
+            "The elasticsearch table function is experimental. Set `enable_elasticsearch` setting to enable it");
+
     const auto & func_args = ast_function->as<ASTFunction &>();
     if (!func_args.arguments)
         throw Exception(ErrorCodes::NUMBER_OF_ARGUMENTS_DOESNT_MATCH, "Table function '{}' must have arguments", getName());
@@ -122,6 +134,10 @@ void registerTableFunctionElasticsearch(TableFunctionFactory & factory)
     factory.registerFunction<TableFunctionElasticsearch>(
         {
             .description = R"DOCS_MD(
+import { ExperimentalBadge } from "/snippets/components/ExperimentalBadge/ExperimentalBadge.jsx";
+
+<ExperimentalBadge/>
+
 Allows `SELECT` queries on documents of an index in [Elasticsearch](https://www.elastic.co/elasticsearch). Each document is returned as one row: its `_source` is exposed as a single column of the [JSON](/reference/data-types/newjson) type, and the document id and index name are available as virtual columns. The function is read-only.
 
 ## Syntax {#syntax}
@@ -130,6 +146,14 @@ Allows `SELECT` queries on documents of an index in [Elasticsearch](https://www.
 elasticsearch('url', 'index'[, 'user', 'password'][, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
 elasticsearch(named_collection[, key = value, ...][, structure = 'document JSON'][, SETTINGS ...])
 ```
+
+<Note>
+The Elasticsearch integration is experimental. Enable it with the [`enable_elasticsearch`](/reference/settings/session-settings/enable#enable_elasticsearch) setting:
+
+```sql
+SET enable_elasticsearch = 1;
+```
+</Note>
 
 ## Arguments {#arguments}
 

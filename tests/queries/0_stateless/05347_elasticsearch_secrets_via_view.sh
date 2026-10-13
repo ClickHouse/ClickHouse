@@ -14,14 +14,14 @@ reader="reader_${CLICKHOUSE_TEST_UNIQUE_NAME}"
 
 $CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $reader"
 $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS v_es"
-$CLICKHOUSE_CLIENT -q "CREATE VIEW v_es DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT * FROM elasticsearch('http://localhost:1', 'idx', 'u', '$secret')"
+$CLICKHOUSE_CLIENT --enable_elasticsearch 1 -q "CREATE VIEW v_es DEFINER = CURRENT_USER SQL SECURITY DEFINER AS SELECT * FROM elasticsearch('http://localhost:1', 'idx', 'u', '$secret')"
 $CLICKHOUSE_CLIENT -q "CREATE USER $reader IDENTIFIED WITH plaintext_password BY 'reader_password'"
 $CLICKHOUSE_CLIENT -q "GRANT SELECT ON ${CLICKHOUSE_DATABASE}.v_es TO $reader"
 trap '$CLICKHOUSE_CLIENT -q "DROP USER IF EXISTS $reader"; $CLICKHOUSE_CLIENT -q "DROP TABLE IF EXISTS v_es"' EXIT
 
 function as_reader()
 {
-    $CLICKHOUSE_CLIENT --user "$reader" --password reader_password --max_threads 1 -q "$1" 2>&1 || true
+    $CLICKHOUSE_CLIENT --user "$reader" --password reader_password --max_threads 1 --enable_elasticsearch 1 -q "$1" 2>&1 || true
 }
 
 function report()

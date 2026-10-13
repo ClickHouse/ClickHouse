@@ -1,4 +1,9 @@
 <clickhouse>
+    <profiles>
+        <default>
+            <enable_elasticsearch>1</enable_elasticsearch>
+        </default>
+    </profiles>
     <users>
         <default>
             <password></password>

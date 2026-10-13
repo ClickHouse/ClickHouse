@@ -1,5 +1,7 @@
 -- The storage opens no connection at creation time, so every check below runs without an Elasticsearch server.
 
+SET enable_elasticsearch = 1;
+
 SELECT * FROM elasticsearch('ftp://localhost:1', 'idx'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM elasticsearch('http://user:pw@localhost:1', 'idx'); -- { serverError BAD_ARGUMENTS }
 SELECT * FROM elasticsearch('http://localhost:1/?x=1', 'idx'); -- { serverError BAD_ARGUMENTS }

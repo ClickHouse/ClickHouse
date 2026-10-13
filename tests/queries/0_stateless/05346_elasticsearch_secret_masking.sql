@@ -1,4 +1,5 @@
 -- The storage opens no connection at creation time, so the masking is checked without an Elasticsearch server.
+SET enable_elasticsearch = 1;
 SET max_threads = 1;
 SET explain_query_plan_default = 'legacy';
 
