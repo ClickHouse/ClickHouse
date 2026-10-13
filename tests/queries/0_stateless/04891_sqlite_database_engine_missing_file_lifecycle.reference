@@ -1,0 +1,16 @@
+The missing file was not created by ATTACH:
+does not exist
+Direct table access fails closed:
+Cannot access sqlite database
+DETACH DATABASE succeeds while the file is still missing:
+0
+DROP DATABASE succeeds while the file is still missing:
+0
+The SQLite file was never created:
+does not exist
+A database over an existing file still reports its tables:
+t
+1
+DROP DATABASE removes the proxy and keeps the SQLite file:
+0
+the SQLite file is kept

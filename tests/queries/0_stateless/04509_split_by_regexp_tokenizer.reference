@@ -3,6 +3,14 @@ Negative tests
 -- Simple literal separator
 SELECT tokens('a,b,c', 'splitByRegexp', ',');
 ['a','b','c']
+-- A capture group in the separator is inert in the default mode (captures are tracked internally
+-- regardless of mode, but only read when match_tokens = true)
+SELECT tokens('a,b,c', 'splitByRegexp', '(,)');
+['a','b','c']
+-- The default mode keeps RE2's leftmost-first semantics: the first-listed alternative wins even if a
+-- later one would match more, so 'a' is the separator here, not 'ab'
+SELECT tokens('ab', 'splitByRegexp', 'a|ab');
+['b']
 -- Leading, trailing and consecutive separators do not produce empty tokens
 SELECT tokens(',a,,b,', 'splitByRegexp', ',');
 ['a','b']
@@ -75,7 +83,64 @@ SELECT tokens('Built with C# and React', 'splitByRegexp', '[^\\p{L}\\p{N}#+]+');
 -- Result type and constness
 SELECT tokens('a,b,c', 'splitByRegexp', ',') AS tokenized, toTypeName(tokenized), isConstant(tokenized);
 ['a','b','c']	Array(String)	1
+-- match_tokens = 1: capture group 1 becomes the token; the surrounding context ('tag:') is discarded
+SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', 1);
+['hello','world']
+-- true is equivalent to 1, and is the recommended, self-documenting form
+SELECT tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', true) = tokens('tag:hello tag:world', 'splitByRegexp', 'tag:(\\w+)', 1);
+1
+-- Any nonzero integer is truthy, like other Bool-documented arguments that accept 0/1
+SELECT tokens('a', 'splitByRegexp', 'a', 2);
+['a']
+-- No capture groups: falls back to the whole RE2 match
+SELECT tokens('a1b22c333', 'splitByRegexp', '[0-9]+', 1);
+['1','22','333']
+-- Contrast with match_tokens = 0 (separator mode) on the same pattern: the text *between* matches
+SELECT tokens('a1b22c333', 'splitByRegexp', '[0-9]+', 0);
+['a','b','c']
+-- A match whose capture group did not participate is skipped: only the 'foo' branch has a group,
+-- so 'bar' matches contribute no token
+SELECT tokens('foo bar foo bar', 'splitByRegexp', '(foo)|bar', 1);
+['foo','foo']
+-- A match whose capture group matched the empty string is skipped the same way
+SELECT tokens('ac abc adc', 'splitByRegexp', 'a(b*)c', 1);
+['b']
+-- Scanning resumes after the *whole* match, not just after the captured span: if it resumed right
+-- after the group, the pattern would find a second, overlapping match starting inside the first one
+SELECT tokens('ababa', 'splitByRegexp', '(ab)a', 1);
+['ab']
+-- Only the first capture group is used; further groups merely constrain what matches
+SELECT tokens('k=v k2=v2', 'splitByRegexp', '(\\w+)=(\\w+)', 1);
+['k','k2']
+-- A trivial literal pattern (no groups, served by a plain substring search rather than RE2) yields
+-- the matches themselves
+SELECT tokens('xabcyabcz', 'splitByRegexp', 'abc', 1);
+['abc','abc']
+-- A pattern with a capture group is never "trivial", so the substring-search fast path never applies
+SELECT tokens('abc', 'splitByRegexp', 'a(b)c', 1);
+['b']
+-- Ordered alternatives keep ordinary RE2 (leftmost-first) semantics, same as separator mode: 'a' wins
+-- over the longer 'ab', it is not the other way around
+SELECT tokens('ab', 'splitByRegexp', '(a|ab)', true);
+['a']
+-- Same as above, but each alternative has its own capture group: group 1 ('a') still wins, since the
+-- first alternative that matches at a position is taken regardless of what a later one could capture
+SELECT tokens('ab', 'splitByRegexp', '(a)|(ab)', true);
+['a']
+-- Multi-byte UTF-8 is preserved inside the capture group (byte offsets must not slice a character)
+SELECT tokens('k:héllo k:wörld', 'splitByRegexp', 'k:(\\p{L}+)', 1);
+['héllo','wörld']
+-- `\w` is ASCII-only in RE2, so it stops at the first multi-byte character
+SELECT tokens('k:héllo', 'splitByRegexp', 'k:(\\w+)', 1);
+['h']
+-- Result type and constness with match_tokens = 1
+SELECT tokens('tag:hello', 'splitByRegexp', 'tag:(\\w+)', 1) AS tokenized, toTypeName(tokenized), isConstant(tokenized);
+['hello']	Array(String)	1
 Column values: tokens should be non-constant
 1	['a','b','c']	0
 2	['foo','bar']	0
 3	['x','y','z']	0
+Column values with match_tokens = 1: tokens should be non-constant
+1	['red','green']	0
+2	['blue']	0
+3	[]	0

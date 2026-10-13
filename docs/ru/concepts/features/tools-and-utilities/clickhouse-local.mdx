@@ -6,9 +6,7 @@ title: 'clickhouse-local'
 doc_type: 'reference'
 ---
 
-<div id="when-to-use-clickhouse-local-vs-clickhouse">
-  ## Когда использовать clickhouse-local, а когда ClickHouse
-</div>
+## Когда использовать clickhouse-local, а когда ClickHouse {#when-to-use-clickhouse-local-vs-clickhouse}
 
 `clickhouse-local` — это простая в использовании версия ClickHouse, которая идеально подходит разработчикам, которым нужно быстро обрабатывать локальные и удалённые файлы с помощью SQL без установки полноценного сервера базы данных. С `clickhouse-local` разработчики могут выполнять SQL-команды (напрямую используя [ClickHouse SQL](/ru/reference/home)) из командной строки, что даёт простой и эффективный способ получить доступ к возможностям ClickHouse без полной установки ClickHouse. Одно из главных преимуществ `clickhouse-local` в том, что он уже входит в состав [clickhouse-client](/ru/concepts/features/tools-and-utilities/clickhouse-local). Это означает, что разработчики могут быстро начать работу с `clickhouse-local` без сложной установки.
 
@@ -16,9 +14,7 @@ doc_type: 'reference'
 
 Ознакомьтесь с документацией ниже, где приведены примеры использования `clickhouse-local`, например [запросы к локальному файлу](#query_data_in_file) или [чтение файла Parquet в S3](#query-data-in-a-parquet-file-in-aws-s3).
 
-<div id="download-clickhouse-local">
-  ## Скачайте clickhouse-local
-</div>
+## Скачайте clickhouse-local {#download-clickhouse-local}
 
 `clickhouse-local` использует тот же бинарный файл `clickhouse`, что и сервер ClickHouse и `clickhouse-client`. Проще всего скачать последнюю версию с помощью следующей команды:
 
@@ -30,9 +26,7 @@ curl https://clickhouse.com/ | sh
   Загруженный вами бинарный файл может запускать самые разные инструменты и утилиты ClickHouse. Если вы хотите использовать ClickHouse как сервер базы данных, ознакомьтесь с руководством [Быстрый старт](/ru/get-started/setup/install).
 </Note>
 
-<div id="query_data_in_file">
-  ## Выполнение SQL-запросов к данным в файле
-</div>
+## Выполнение SQL-запросов к данным в файле {#query_data_in_file}
 
 `clickhouse-local` часто используют для выполнения разовых запросов к файлам, когда данные не нужно вставлять в таблицу. `clickhouse-local` может считывать данные из файла во временную таблицу и выполнять ваши SQL-запросы.
 
@@ -110,9 +104,7 @@ FROM file('reviews.tsv')"
 Monopoly Junior Board Game    5
 ```
 
-<div id="query-data-in-a-parquet-file-in-aws-s3">
-  ## Запрос данных из файла Parquet в AWS S3
-</div>
+## Запрос данных из файла Parquet в AWS S3 {#query-data-in-a-parquet-file-in-aws-s3}
 
 Если у вас есть файл в S3, используйте `clickhouse-local` и табличную функцию `s3`, чтобы выполнить запрос к файлу напрямую (без вставки данных в таблицу ClickHouse). У нас есть файл `house_0.parquet` в публичном бакете, содержащий цены на дома, проданные в Соединённом Королевстве. Давайте посмотрим, сколько в нём строк:
 
@@ -187,9 +179,7 @@ NORTHWOOD    THREE RIVERS    184    731609    ███████████�
   Когда будете готовы загрузить свои файлы в ClickHouse, запустите сервер ClickHouse и вставьте результаты табличных функций `file` и `s3` в таблицу `MergeTree`. Подробнее см. в разделе [Быстрый старт](/ru/get-started/setup/install).
 </Tip>
 
-<div id="format-conversions">
-  ## Преобразование форматов
-</div>
+## Преобразование форматов {#format-conversions}
 
 Для преобразования данных из одного формата в другой можно использовать `clickhouse-local`. Пример:
 
@@ -209,9 +199,7 @@ $ clickhouse-local --query "SELECT * FROM table" < data.json > data.csv
 $ clickhouse-local --copy < data.json > data.csv
 ```
 
-<div id="usage">
-  ## Использование
-</div>
+## Использование {#usage}
 
 По умолчанию `clickhouse-local` имеет доступ к данным сервер ClickHouse на том же хосте и не зависит от конфигурации сервера. Он также поддерживает загрузку конфигурации сервера с помощью аргумента `--config-file`. Для временных данных по умолчанию создается уникальный временный каталог.
 
@@ -261,13 +249,44 @@ $ ./clickhouse local --structure "table_structure" --input-format "format_of_inc
 
 Кроме того, для каждой переменной конфигурации ClickHouse есть аргументы, которые чаще используются вместо `--config-file`.
 
-<div id="commands">
-  ## Команды
-</div>
+### Конфигурационные файлы {#configuration-files}
 
-<div id="ls-command">
-  ### Команда LS
-</div>
+`clickhouse-local` не использует конфигурацию сервера ClickHouse, установленного на том же
+хосте, — он ищет собственный основной файл конфигурации и использует первый из найденных:
+
+1. путь, переданный через `--config-file`;
+2. `./config.xml`;
+3. `./clickhouse-local.xml`, `./clickhouse-local.yaml` или `./clickhouse-local.yml`;
+4. `~/.clickhouse-local/config.xml`, `~/.clickhouse-local/config.yaml` или `~/.clickhouse-local/config.yml`;
+5. `/etc/clickhouse-local/config.xml`, `/etc/clickhouse-local/config.yaml` или `/etc/clickhouse-local/config.yml`.
+
+Как и в случае с `clickhouse-server`, файлы `.xml`, `.yaml`, `.yml` и `.conf` из каталогов слияния,
+расположенных рядом с основным файлом конфигурации, сливаются с ним: `config.d` и `conf.d` для
+`config.xml`, `clickhouse-local.d` и `conf.d` для `clickhouse-local.yaml` и так далее.
+
+Каталоги слияния текущего каталога применяются даже при отсутствии основного файла конфигурации:
+`./config.d` и `./conf.d` сливаются с минимальной конфигурацией, встроенной в бинарный файл. Благодаря этому
+каталог становится самоописывающимся — например, при наличии
+
+```yaml title="config.d/datasets.yaml"
+storage_configuration:
+  disks:
+    datasets:
+      type: object_storage
+      object_storage_type: s3
+      metadata_type: plain_rewritable
+      endpoint: https://data.clickhouse.com/public-datasets/db/
+      no_sign_request: true
+      readonly: true
+      skip_access_check: true
+```
+
+каждый `clickhouse-local`, запущенный в этом каталоге, получит диск `datasets`, и создавать для него `config.xml`
+не потребуется.
+
+## Команды {#commands}
+
+### Команда LS {#ls-command}
 
 Выводит список всех файлов в текущем рабочем каталоге, доступных для clickhouse-local.
 
@@ -303,9 +322,7 @@ file2.json
 file3.xml
 ```
 
-<div id="clear-command">
-  ### Команда CLEAR
-</div>
+### Команда CLEAR {#clear-command}
 
 Очищает экран терминала (аналогично команде `clear` в Linux или Ctrl+L во многих терминалах). Это действие выполняется на стороне клиента: оно не отправляется в SQL-движок.
 
@@ -321,9 +338,7 @@ file3.xml
 ./clickhouse-local -q clear
 ```
 
-<div id="examples">
-  ## Примеры
-</div>
+## Примеры {#examples}
 
 ```bash title="Query"
 $ echo -e "1,2\n3,4" | clickhouse-local --structure "a Int64, b Int64" \
@@ -381,9 +396,7 @@ Read 186 rows, 4.15 KiB in 0.035 sec., 5302 rows/sec., 118.34 KiB/sec.
 ...
 ```
 
-<div id="starting-listeners">
-  ## Запуск TCP- и HTTP-слушателей
-</div>
+## Запуск TCP- и HTTP-слушателей {#starting-listeners}
 
 `clickhouse-local` можно превратить в легковесный сервер, принимающий TCP-соединения (собственный протокол) и HTTP-соединения. Это полезно, если вы хотите предоставить другим инструментам или приложениям ClickHouse доступ к базам данных и таблицам запущенного экземпляра `clickhouse-local`. Обратите внимание: для каждого входящего соединения создается собственный сеанс, поэтому временные таблицы и настройки уровня сеанса интерактивного сеанса `clickhouse-local` не видны внешним соединениям.
 
@@ -415,9 +428,7 @@ HTTP-слушатель отвечает на CORS preflight-запросы те
   Обратите внимание, что loopback-адрес по-прежнему доступен из браузера: пока HTTP-слушатель открыт, любая посещенная вами веб-страница может выполнять запросы к локальному экземпляру и благодаря заголовкам CORS по умолчанию читать результаты.
 </Warning>
 
-<div id="related-content-1">
-  ## Материалы по теме
-</div>
+## Материалы по теме {#related-content-1}
 
 * [Извлечение, преобразование и запрос данных в локальных файлах с помощью clickhouse-local](https://clickhouse.com/blog/extracting-converting-querying-local-files-with-sql-clickhouse-local)
 * [Загрузка данных в ClickHouse — часть 1](https://clickhouse.com/blog/getting-data-into-clickhouse-part-1)

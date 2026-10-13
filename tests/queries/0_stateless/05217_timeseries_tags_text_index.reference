@@ -1,0 +1,36 @@
+default index
+tags_idx	text(tokenizer = \'keyValuePairs\')	tags	100000000
+direct read from the tags index
+1
+PromQL selector uses the index
+2
+2
+1
+exact PromQL match with and without the index
+1
+3
+1
+3
+multiple labels
+1
+missing and empty labels
+4
+5
+0
+2
+4
+5
+1
+2
+3
+copy and reattach
+tags_idx	text(tokenizer = \'keyValuePairs\')
+custom index
+custom_tags	text(tokenizer = \'keyValuePairs\')	100000000
+previous schema version
+0
+1
+non-MergeTree tags target
+5
+external tags target
+1

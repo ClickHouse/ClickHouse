@@ -1,3 +1,4 @@
+import fcntl
 import glob
 import io
 import os
@@ -46,18 +47,27 @@ class ClickHouseProc:
     # Total wall-clock cap for symbolizing the jemalloc profiles of a job (seconds),
     # for the same reason.
     JEMALLOC_SYMBOLIZATION_BUDGET = 1200
+    # Lock wait after SIGTRAP. Must exceed the fault-signal handler's pre-core
+    # prologue (up to 300x1s for the reporting thread, then 3s to flush logs)
+    # plus core writing, or the escalation below truncates the core it asks for.
+    STOP_LOCK_WAIT_TIMEOUT_TRAP = 600
+    # Lock wait after SIGKILL. The kernel drops the flock with the open file
+    # description as the process dies, so this only absorbs scheduling delay.
+    STOP_LOCK_WAIT_TIMEOUT_KILL = 5
 
     def __init__(
         self,
         is_db_replicated=False,
         is_shared_catalog=False,
         is_per_test_coverage=False,
+        is_llvm_coverage=False,
         ch_config_dir="/etc/clickhouse-server",
         ch_var_lib_dir="/var/lib/clickhouse",
     ):
         self.is_db_replicated = is_db_replicated
         self.is_shared_catalog = is_shared_catalog
         self.is_per_test_coverage = is_per_test_coverage
+        self.is_llvm_coverage = is_llvm_coverage
         self.ch_config_dir = ch_config_dir
         self.ch_var_lib_dir = ch_var_lib_dir
         self.run_path0 = f"{temp_dir}/run_r0"
@@ -103,7 +113,6 @@ class ClickHouseProc:
         self.proc_2 = None
         self.pid = 0
         int(Utils.cpu_count() / 2)
-        self.seaweedfs_proc = None
         self.azurite_proc = None
         self.kafka_proc = None
         # The failing sub-command + its ClickHouse error tail from
@@ -150,52 +159,11 @@ class ClickHouseProc:
 """)
 
     def start_seaweedfs(self, test_type):
-        os.environ["TEMP_DIR"] = f"{Utils.cwd()}/ci/tmp"
-        command = [
-            "./ci/jobs/scripts/functional_tests/setup_seaweedfs.sh",
-            test_type,
-            "./tests",
-        ]
-        with open(self.SEAWEEDFS_LOG, "w") as log_file:
-            self.seaweedfs_proc = subprocess.Popen(
-                command, stdout=log_file, stderr=subprocess.STDOUT
-            )
-        print(
-            f"Started setup_seaweedfs.sh asynchronously with PID {self.seaweedfs_proc.pid}"
+        from ci.jobs.scripts import seaweedfs_service
+
+        return seaweedfs_service.start(
+            test_type, self.SEAWEEDFS_LOG, f"{Utils.cwd()}/ci/tmp"
         )
-
-        # Wait for setup_seaweedfs.sh to fully exit, not just for the bucket to
-        # be listable: the server's S3 disks authenticate at startup and need
-        # the whole identity/bucket setup in place. The seaweedfs server is
-        # nohup'd and outlives the script, so waiting on the script is safe.
-        # Its internal waits are bounded (60s each), so pad the timeout.
-        try:
-            returncode = self.seaweedfs_proc.wait(timeout=240)
-        except subprocess.TimeoutExpired:
-            print(
-                "Failed to start seaweedfs: setup_seaweedfs.sh did not finish in time"
-            )
-            self.seaweedfs_proc.kill()
-            return False
-        if returncode != 0:
-            print(f"setup_seaweedfs.sh exited with code {returncode}")
-            return False
-
-        # pass the credentials explicitly: the setup script no longer writes
-        # ~/.aws, and without them the aws cli would sign with the runner's
-        # instance-role credentials, which SeaweedFS does not know
-        access_key = os.environ.get("SEAWEEDFS_ACCESS_KEY", "clickhouse")
-        secret_key = os.environ.get("SEAWEEDFS_SECRET_KEY", "clickhouse")
-        if not Shell.check(
-            f"AWS_ACCESS_KEY_ID={access_key} AWS_SECRET_ACCESS_KEY={secret_key} "
-            "AWS_DEFAULT_REGION=us-east-1 "
-            "aws --endpoint-url http://localhost:11111 s3 ls s3://test",
-            verbose=False,
-            retries=3,
-        ):
-            print("Failed to start seaweedfs: bucket test not reachable")
-            return False
-        return True
 
     def start_azurite(self):
         # Raise the open files limit before launching azurite-rs.
@@ -321,6 +289,30 @@ class ClickHouseProc:
                 f"Removed {file_path}; server default max_server_memory_usage_to_ram_ratio applies"
             )
 
+    def install_build_type_configs(self):
+        """Re-decide the test configs that `install.sh` selects by probing the
+        installed binary's build flavour. Needed when the same installed config
+        tree is reused to launch a different build type (the bugfix-validation
+        loop swaps binaries without reinstalling configs): one left from the
+        previous build type makes the server reject its own settings."""
+        # `install.sh` shifts away its first two positionals, so the client config
+        # dir has to be passed as well or the flag is consumed in its place.
+        client_config_dir = Path(self.ch_config_dir).parent / "clickhouse-client"
+        # A server is started from each replica tree as well, so each tree needs its
+        # own decision. They hold a populated `config.d` only in `DBReplicated` runs,
+        # so probing for them selects exactly the installed ones.
+        config_dirs = [self.ch_config_dir] + [
+            d
+            for d in (self.ch_config_dir_replica_1, self.ch_config_dir_replica_2)
+            if Path(d, "config.d").is_dir()
+        ]
+        for config_dir in config_dirs:
+            Shell.run(
+                f"./tests/config/install.sh {config_dir} {client_config_dir} --build-type-configs-only",
+                verbose=True,
+                strict=True,
+            )
+
     def create_log_export_config(self, config_dir=None):
         # Write into the config dir the server actually reads. Callers that run
         # the server from a non-default location (e.g. `ClickHouseService` under
@@ -345,6 +337,16 @@ class ClickHouseProc:
     def stop_log_exports():
         return log_export.stop()
 
+    def _set_pid(self, replica_num, pid):
+        if replica_num == 1:
+            self.pid_1 = pid
+        elif replica_num == 2:
+            self.pid_2 = pid
+        elif replica_num == 0:
+            self.pid_0 = pid
+        else:
+            assert False
+
     def start(self, replica_num=0):
         if replica_num == 0:
             # Clear dmesg to avoid false OOM detection from previous CI jobs on the same host
@@ -368,6 +370,9 @@ class ClickHouseProc:
 
         print(f"Starting ClickHouse server replica {replica_num}, command: {command}")
 
+        # The cached pid mirrors this file and must not outlive it: `stop_server`
+        # keys its pid-less kill path off the cached value.
+        self._set_pid(replica_num, 0)
         Path(pid_file).unlink(missing_ok=True)
         Utils.clean_dir(Path(run_path))
         Utils.clean_dir(p_temp_dir / "jemalloc_profiles")
@@ -420,14 +425,7 @@ class ClickHouseProc:
                     continue
                 started = True
                 print(f"Got pid from fs [{pid}]")
-                if replica_num == 1:
-                    self.pid_1 = int(pid)
-                elif replica_num == 2:
-                    self.pid_2 = int(pid)
-                elif replica_num == 0:
-                    self.pid_0 = int(pid)
-                else:
-                    assert False
+                self._set_pid(replica_num, int(pid))
                 break
         except Exception:
             pass
@@ -587,7 +585,13 @@ class ClickHouseProc:
         )
 
     def prepare_stateful_data(
-        self, with_s3_storage, is_db_replicated, build_type=None, step_timeout=None
+        self,
+        with_s3_storage,
+        is_db_replicated,
+        no_stateful=False,
+        build_type=None,
+        step_timeout=None,
+        stop_thread_fuzzer=False,
     ):
         """`step_timeout` bounds each statement, in seconds; None means unbounded."""
         self.stateful_setup_error = None
@@ -621,17 +625,23 @@ trap 'rc=$?; echo "prepare_stateful_data: command [$BASH_COMMAND] at line $LINEN
 
 MAX_EXECUTION_TIME=1800
 
+if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
+    $PREP_TIMEOUT clickhouse-client --query "SYSTEM STOP THREAD FUZZER"
+fi
+
 $PREP_TIMEOUT clickhouse-client --query "SHOW DATABASES"
-$PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE datasets"
-$PREP_TIMEOUT clickhouse-client < ./tests/docker_scripts/create.sql
 $PREP_TIMEOUT bash ./tests/docker_scripts/create_tpcds.sh
 $PREP_TIMEOUT bash ./tests/docker_scripts/create_tpch.sh
-$PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM datasets"
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM tpcds"
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM tpch"
 
 $PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE test"
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM test"
+# Only `stateful`-tagged tests read `datasets` and the `test` tables below.
+if [[ "$NO_STATEFUL" != "1" ]]; then
+$PREP_TIMEOUT clickhouse-client --query "CREATE DATABASE datasets"
+$PREP_TIMEOUT clickhouse-client < ./tests/docker_scripts/create.sql
+$PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM datasets"
 if [[ -n "$USE_S3_STORAGE_FOR_MERGE_TREE" ]] && [[ "$USE_S3_STORAGE_FOR_MERGE_TREE" -eq 1 ]]; then
     $PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits (WatchID UInt64,  JavaEnable UInt8,  Title String,  GoodEvent Int16, EventTime DateTime,  EventDate Date,  CounterID UInt32,  ClientIP UInt32,  ClientIP6 FixedString(16),  RegionID UInt32, UserID UInt64,  CounterClass Int8,  OS UInt8,  UserAgent UInt8,  URL String,  Referer String,  URLDomain String, RefererDomain String,  Refresh UInt8,  IsRobot UInt8,  RefererCategories Array(UInt16),  URLCategories Array(UInt16), URLRegions Array(UInt32),  RefererRegions Array(UInt32),  ResolutionWidth UInt16,  ResolutionHeight UInt16,  ResolutionDepth UInt8, FlashMajor UInt8, FlashMinor UInt8,  FlashMinor2 String,  NetMajor UInt8,  NetMinor UInt8, UserAgentMajor UInt16, UserAgentMinor FixedString(2),  CookieEnable UInt8, JavascriptEnable UInt8,  IsMobile UInt8,  MobilePhone UInt8, MobilePhoneModel String,  Params String,  IPNetworkID UInt32,  TraficSourceID Int8, SearchEngineID UInt16, SearchPhrase String,  AdvEngineID UInt8,  IsArtifical UInt8,  WindowClientWidth UInt16,  WindowClientHeight UInt16, ClientTimeZone Int16,  ClientEventTime DateTime,  SilverlightVersion1 UInt8, SilverlightVersion2 UInt8,  SilverlightVersion3 UInt32, SilverlightVersion4 UInt16,  PageCharset String,  CodeVersion UInt32,  IsLink UInt8,  IsDownload UInt8,  IsNotBounce UInt8, FUniqID UInt64,  HID UInt32,  IsOldCounter UInt8, IsEvent UInt8,  IsParameter UInt8,  DontCountHits UInt8,  WithHash UInt8, HitColor FixedString(1),  UTCEventTime DateTime,  Age UInt8,  Sex UInt8,  Income UInt8,  Interests UInt16,  Robotness UInt8, GeneralInterests Array(UInt16), RemoteIP UInt32,  RemoteIP6 FixedString(16),  WindowName Int32,  OpenerName Int32, HistoryLength Int16,  BrowserLanguage FixedString(2),  BrowserCountry FixedString(2),  SocialNetwork String,  SocialAction String, HTTPError UInt16, SendTiming Int32,  DNSTiming Int32,  ConnectTiming Int32,  ResponseStartTiming Int32,  ResponseEndTiming Int32, FetchTiming Int32,  RedirectTiming Int32, DOMInteractiveTiming Int32,  DOMContentLoadedTiming Int32,  DOMCompleteTiming Int32, LoadEventStartTiming Int32,  LoadEventEndTiming Int32, NSToDOMContentLoadedTiming Int32,  FirstPaintTiming Int32, RedirectCount Int8, SocialSourceNetworkID UInt8,  SocialSourcePage String,  ParamPrice Int64, ParamOrderID String, ParamCurrency FixedString(3),  ParamCurrencyID UInt16, GoalsReached Array(UInt32),  OpenstatServiceName String, OpenstatCampaignID String,  OpenstatAdID String,  OpenstatSourceID String,  UTMSource String, UTMMedium String, UTMCampaign String,  UTMContent String,  UTMTerm String, FromTag String,  HasGCLID UInt8,  RefererHash UInt64, URLHash UInt64,  CLID UInt32,  YCLID UInt64,  ShareService String,  ShareURL String,  ShareTitle String, ParsedParams Nested(Key1 String,  Key2 String, Key3 String, Key4 String, Key5 String,  ValueDouble Float64), IslandID FixedString(16),  RequestNum UInt32,  RequestTry UInt8)
         ENGINE = MergeTree() PARTITION BY toYYYYMM(EventDate)
@@ -658,10 +668,17 @@ $PREP_TIMEOUT clickhouse-client --query "CREATE TABLE test.hits_parquet (Title S
 $PREP_TIMEOUT clickhouse-client --query "SHOW TABLES FROM test"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.hits"
 $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
+fi
+
+if [[ "$STOP_THREAD_FUZZER" == "1" ]]; then
+    $PREP_TIMEOUT clickhouse-client --query "SYSTEM START THREAD FUZZER"
+fi
 """
         command = (
             f"PREP_TIMEOUT={shlex.quote(self.prep_timeout_prefix(step_timeout))}\n"
             f"MAX_INSERT_THREADS={max_insert_threads}\n"
+            f"STOP_THREAD_FUZZER={1 if stop_thread_fuzzer else 0}\n"
+            f"NO_STATEFUL={1 if no_stateful else 0}\n"
         ) + command
         if with_s3_storage:
             command = "USE_S3_STORAGE_FOR_MERGE_TREE=1\n" + command
@@ -772,6 +789,80 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
 
         return self
 
+    @staticmethod
+    def _status_lock_free(run_path):
+        """Whether `clickhouse local --path run_path` could lock `status`.
+
+        Takes the same `flock(LOCK_EX|LOCK_NB)` as `StatusFile`, so this is that
+        predicate rather than a proxy for it. A missing file, or a stale one whose
+        holder is dead, is free; only a live holder is not.
+        """
+        try:
+            fd = os.open(f"{run_path}/status", os.O_RDONLY)
+        except OSError as ex:
+            return isinstance(ex, FileNotFoundError)
+        try:
+            fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            fcntl.flock(fd, fcntl.LOCK_UN)
+            return True
+        except OSError:
+            return False
+        finally:
+            os.close(fd)
+
+    @classmethod
+    def _wait_status_lock_free(cls, run_path, timeout):
+        deadline = time.monotonic() + timeout
+        while not cls._status_lock_free(run_path):
+            if time.monotonic() >= deadline:
+                return False
+            Utils.sleep(1)
+        return True
+
+    @classmethod
+    def _kill(cls, pid, sig, run_path, timeout):
+        try:
+            os.kill(pid, sig)
+        except OSError as ex:
+            print(f"WARNING: Cannot send signal {sig} to {pid}: {ex}")
+        return cls._wait_status_lock_free(run_path, timeout)
+
+    @classmethod
+    def _force_release_status_lock(cls, pid, run_path):
+        """Make `run_path/status` lockable again, so its tables can still be dumped.
+
+        `pid` must be the one from the pid file, never a `Popen.pid`: with
+        `shell=True` that is a `sh -c` wrapper, and the server forks a watchdog
+        under it, so signalling it leaves the lock holder running.
+        """
+        if cls._status_lock_free(run_path):
+            return
+        # Fail closed: signal only a pid the lock holder itself vouches for, so a
+        # reused pid belonging to an unrelated process is never touched.
+        first_line = Shell.get_output(f"head -1 {run_path}/status").strip()
+        if first_line != f"PID: {pid}":
+            print(f"WARNING: {run_path}/status disowns pid {pid}: {first_line!r}")
+        else:
+            print(
+                f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
+            )
+            if cls._kill(
+                pid, signal.SIGTRAP, run_path, cls.STOP_LOCK_WAIT_TIMEOUT_TRAP
+            ):
+                return
+            print(f"WARNING: Process {pid} survived SIGTRAP - sending SIGKILL")
+            if cls._kill(
+                pid, signal.SIGKILL, run_path, cls.STOP_LOCK_WAIT_TIMEOUT_KILL
+            ):
+                return
+        if cls._status_lock_free(run_path):
+            return
+        print(f"WARNING: {run_path}/status is still locked")
+        Info().add_workflow_warning(
+            f"Failed to release the status file lock in {run_path},"
+            " system tables of that replica are lost, see job.log"
+        )
+
     def stop_server(self, force=False):
         """Gracefully stop only the ClickHouse server processes.
 
@@ -797,18 +888,34 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
                     proc.terminate()
                     try:
                         proc.wait(timeout=10)
-                        continue
                     except subprocess.TimeoutExpired:
-                        pass
+                        # Callers of this path dump their logs before stopping, so
+                        # no `clickhouse local` waits on this lock afterwards.
+                        print(
+                            f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
+                        )
+                        proc.send_signal(signal.SIGTRAP)
+                        try:
+                            proc.wait(timeout=10)
+                        except subprocess.TimeoutExpired:
+                            proc.kill()
+                    continue
                 elif Shell.check(
                     f"cd {run_path} && clickhouse stop --pid-path {Path(pid_file).parent} --max-tries 300 --do-not-kill >/dev/null",
                     verbose=True,
                 ):
                     continue
-                print(
-                    f"Failed to stop ClickHouse process {pid} gracefully - send TRAP signal to generate core file"
-                )
-                proc.send_signal(signal.SIGTRAP)
+                self._force_release_status_lock(pid, run_path)
+                # The wrapper exits with the server it forked, so waiting for it
+                # here is what keeps this object from accumulating zombies.
+                try:
+                    proc.wait(timeout=10)
+                except subprocess.TimeoutExpired:
+                    pass
+            elif proc:
+                # `proc` is the `sh -c` wrapper, not the server, so kill by the
+                # unique `--pid-file` token, then reap the wrapper.
+                Shell.check(f"pkill -9 -f -- '--pid-file {pid_file}'", verbose=True)
                 try:
                     proc.wait(timeout=10)
                 except subprocess.TimeoutExpired:
@@ -834,11 +941,15 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
             except Exception as ex:
                 print(f"WARNING: Failed to chmod {file}: {ex}")
 
-    def prepare_logs(self, info, all=False):
+    def prepare_logs(self, info, all=False, job_failed=None):
+        # `all` attaches the full debug bundle; `job_failed` decides whether the jemalloc
+        # profiles are rendered. Callers that attach the bundle exactly on failure can omit it.
+        if job_failed is None:
+            job_failed = all
         res = []
         try:
             res = self._get_logs_archives_server()
-            res += self._get_jemalloc_profiles()
+            res += self._get_jemalloc_profiles(job_failed=job_failed)
             if all:
                 res += self.debug_artifacts
                 res += self.dump_system_tables()
@@ -941,8 +1052,15 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
             print("WARNING: Coordination logs not found")
             return []
 
-    @classmethod
-    def _get_jemalloc_profiles(cls):
+    def _total_memory_limit_exceeded(self):
+        # Written by `MemoryTracker` when the server-wide limit is hit: it flushes a jemalloc
+        # profile and logs this line, or the query fails with the `(total)` exception text.
+        return Shell.check(
+            f"cd {self.log_dir} && grep -a -q -F -e 'after total memory exceeded' -e '(total) memory limit exceeded' clickhouse-server*.log",
+            verbose=True,
+        )
+
+    def _get_jemalloc_profiles(self, job_failed):
         profiles = Shell.get_output(f"ls {temp_dir}/jemalloc_profiles")
         if not profiles:
             return []
@@ -970,42 +1088,64 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
             file_with_max_third_number = max(files_in_group, key=lambda x: x[0])[1]
             latest_profiles[pid] = file_with_max_third_number
 
-        # Symbolizing a heap profile is unbounded work: it scales with the number of distinct
-        # addresses in the profile, and on a coverage build a single jeprof run has taken over an
-        # hour, timing the whole job out here, long after every test had finished (the sibling
-        # shard of the same build symbolized six profiles in 13 minutes). The flamegraphs are an
-        # artifact of the job, not its result, so give them up rather than the job.
-        deadline = time.time() + cls.JEMALLOC_SYMBOLIZATION_BUDGET
+        # Rendering is skipped, not the archiving below, so the raw .heap profiles still ship
+        # and can be rendered offline with `jeprof` and the build's binary. Symbolizing costs
+        # about two minutes per job on a debug build even when nobody looks at the result, so
+        # it is done only when the profiles are likely to be needed: the job failed, or the
+        # server hit its total memory limit (the reason the profiles are collected at all).
+        if self.is_llvm_coverage:
+            print(
+                f"NOTE: skipping jeprof rendering of {len(latest_profiles)} jemalloc profile(s) on an LLVM-coverage build"
+            )
+        elif not job_failed and not self._total_memory_limit_exceeded():
+            print(
+                f"NOTE: skipping jeprof rendering of {len(latest_profiles)} jemalloc profile(s): the job did not fail and the server did not exceed its total memory limit"
+            )
+        else:
+            # Symbolizing a heap profile is unbounded work: it scales with the number of distinct
+            # addresses in the profile, and on a coverage build a single jeprof run has taken over an
+            # hour, timing the whole job out here, long after every test had finished (the sibling
+            # shard of the same build symbolized six profiles in 13 minutes). The flamegraphs are an
+            # artifact of the job, not its result, so give them up rather than the job.
+            deadline = time.time() + self.JEMALLOC_SYMBOLIZATION_BUDGET
 
-        chbinary = Shell.get_output("readlink -f $(which clickhouse)")
-        for pid, profile in latest_profiles.items():
-            budget = int(deadline - time.time())
-            if budget <= 0:
-                print(f"WARNING: Out of time to symbolize the profile of process {pid}")
-                continue
+            chbinary = Shell.get_output("readlink -f $(which clickhouse)")
+            for pid, profile in latest_profiles.items():
+                budget = int(deadline - time.time())
+                if budget <= 0:
+                    print(
+                        f"WARNING: Out of time to symbolize the profile of process {pid}"
+                    )
+                    continue
 
-            text_report = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt"
-            if not Shell.check(
-                f"timeout --verbose --signal=TERM --kill-after=60 {budget} jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {text_report} 2>/dev/null",
-                verbose=True,
-            ):
-                print(f"WARNING: Failed to symbolize {profile}, dropping {text_report}")
-                Path(text_report).unlink(missing_ok=True)
+                text_report = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.txt"
+                if not Shell.check(
+                    f"timeout --verbose --signal=TERM --kill-after=60 {budget} jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --text > {text_report} 2>/dev/null",
+                    verbose=True,
+                ):
+                    print(
+                        f"WARNING: Failed to symbolize {profile}, dropping {text_report}"
+                    )
+                    Path(text_report).unlink(missing_ok=True)
 
-            budget = int(deadline - time.time())
-            if budget <= 0:
-                print(f"WARNING: Out of time to build the flamegraph of process {pid}")
-                continue
+                budget = int(deadline - time.time())
+                if budget <= 0:
+                    print(
+                        f"WARNING: Out of time to build the flamegraph of process {pid}"
+                    )
+                    continue
 
-            flamegraph = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg"
-            # The whole pipeline is under the timeout: killing jeprof alone would leave
-            # flamegraph.pl to write a truncated graph out of what it had received.
-            if not Shell.check(
-                f"timeout --verbose --signal=TERM --kill-after=60 {budget} bash -c 'jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {flamegraph}'",
-                verbose=True,
-            ):
-                print(f"WARNING: Failed to symbolize {profile}, dropping {flamegraph}")
-                Path(flamegraph).unlink(missing_ok=True)
+                flamegraph = f"{temp_dir}/jemalloc_profiles/jemalloc.{pid}.svg"
+                # The whole pipeline is under the timeout: killing jeprof alone would leave
+                # flamegraph.pl to write a truncated graph out of what it had received.
+                if not Shell.check(
+                    f"timeout --verbose --signal=TERM --kill-after=60 {budget} bash -c 'jeprof {chbinary} {temp_dir}/jemalloc_profiles/{profile} --collapsed 2>/dev/null | flamegraph.pl --color mem --width 2560 > {flamegraph}'",
+                    verbose=True,
+                ):
+                    print(
+                        f"WARNING: Failed to symbolize {profile}, dropping {flamegraph}"
+                    )
+                    Path(flamegraph).unlink(missing_ok=True)
 
         Shell.check(
             f"cd {temp_dir} && tar -czf jemalloc.tar.zst --files-from <(find . -type d -name jemalloc_profiles)",
@@ -1157,10 +1297,20 @@ $PREP_TIMEOUT clickhouse-client --query "SELECT count() FROM test.visits"
                 "caller id: None:DistribCache",
             )
         )
+        # The matches go through a file rather than a pipe into `grep -q .`: `grep -q` exits at
+        # its first line, so `tee` takes SIGPIPE and the tail is lost, and the appended
+        # lifecycle IS that tail.
+        no_such_key_matches = f"{temp_dir}/no_such_key_errors.txt"
         no_such_key_command = (
-            f"cd {self.log_dir} && ! grep -a 'Code: 499.*The specified key does not exist' "
+            f"cd {self.log_dir} && grep -a 'Code: 499.*The specified key does not exist' "
             f"clickhouse-server*.log | grep -v {no_such_key_ignores} "
-            "| head -n100 | tee /dev/stderr | grep -q ."
+            f"| head -n100 > {no_such_key_matches}; "
+            f"python3 {repo_dir}/ci/jobs/scripts/s3_key_lifecycle.py {no_such_key_matches} {self.log_dir} "
+            f">> {no_such_key_matches} "
+            f"|| echo '--- lifecycle collection FAILED, see the job log for the traceback ---' "
+            f">> {no_such_key_matches}; "
+            f"cat {no_such_key_matches} >&2; "
+            f"[ -f {no_such_key_matches} ] && ! [ -s {no_such_key_matches} ]"
         )
         results.append(
             Result.from_commands_run(
@@ -1488,6 +1638,12 @@ if __name__ == "__main__":
             if not Info().is_local_run:
                 # Disable log export for local runs - ideally this command wouldn't be triggered,
                 # but conditional disabling is complex in legacy bash scripts (run_fuzzer.sh, stress_runner.sh)
+                # This command runs in a process of its own, so it holds none of the
+                # credentials `logs_export_config` fetched, and `setup_log_cluster.sh`
+                # creates no `_sender` table without them.
+                ch.log_export_host, ch.log_export_password = (
+                    log_export.get_credentials()
+                )
                 res = ch.start_log_exports(check_start_time=Utils.timestamp())
             else:
                 res = True

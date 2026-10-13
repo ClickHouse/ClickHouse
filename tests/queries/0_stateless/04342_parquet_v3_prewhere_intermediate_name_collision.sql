@@ -27,4 +27,4 @@ FROM file(currentDatabase() || '_04342.parquet', Parquet,
     'a String, b Int64, c Int64, `equals(length(a), 3_UInt8)` UInt8')
 PREWHERE (length(a) = 3 AND b > 0) AND (length(a) = 3 AND c > 0)
 SETTINGS input_format_parquet_use_native_reader_v3 = 1, enable_analyzer = 1,
-    query_plan_optimize_prewhere = 1, optimize_move_to_prewhere = 1;
+    optimize_move_to_prewhere = 1;

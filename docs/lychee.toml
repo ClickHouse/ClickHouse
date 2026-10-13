@@ -80,10 +80,6 @@ exclude = [
   # The base-aware homepage MCP routes are computed at runtime in JSX. Lychee
   # reads the identifier in `href={href}` as a literal `{href}` path.
   "(?:%7B|\\{)href(?:%7D|\\})$",
-  # The install banner computes its origin-relative route with withDocsBase.
-  # The quickstart checker validates the actual English and localized targets;
-  # exclude only Lychee's encoded rendering of that JSX expression here.
-  "(?:%7B|\\{)withDocsBase\\(.*/get-started/setup/cloud.*\\)(?:%7D|\\})$",
   # Local and placeholder hosts used in setup instructions and connection
   # examples. They are not expected to resolve from the link checker.
   "^https?://localhost(?::[0-9]+)?(?:/|$)",

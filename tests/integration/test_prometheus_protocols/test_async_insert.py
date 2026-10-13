@@ -46,6 +46,40 @@ def get_async_insert_query_count():
     )
 
 
+def get_profile_event(event):
+    return int(
+        node.query(
+            f"SELECT sum(value) FROM system.events WHERE event = '{event}'"
+        )
+    )
+
+
+def test_async_insert_metric_families_deduplication_cache():
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+
+    metadata = [("cached_metric", "GAUGE", "Test metric", "seconds")]
+    protobuf = convert_metrics_metadata_to_protobuf(metadata)
+    hits_before = get_profile_event(
+        "TimeSeriesMetricFamiliesDeduplicationCacheHits"
+    )
+
+    # Every remote write is acknowledged after its data is flushed,
+    # so the second one finds the metric family in the deduplication cache.
+    for _ in range(2):
+        send_protobuf_to_remote_write(
+            node.ip_address, 9093, "/write?async_insert=1", protobuf
+        )
+
+    assert (
+        node.query("SELECT count() FROM timeSeriesMetricFamilies(prometheus)")
+        == "1\n"
+    )
+    assert (
+        get_profile_event("TimeSeriesMetricFamiliesDeduplicationCacheHits")
+        == hits_before + 1
+    )
+
+
 def test_async_insert_acknowledged_after_flush():
     node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
 
@@ -82,8 +116,8 @@ def test_async_insert_acknowledged_after_flush():
     )
     assert (
         node.query(
-            "SELECT type, help, unit FROM timeSeriesMetrics(prometheus) "
-            "WHERE metric_family_name = 'async_metric'"
+            "SELECT type, help, unit FROM timeSeriesMetricFamilies(prometheus) "
+            "WHERE metric_family = 'async_metric'"
         )
         == "gauge\tTest metric\tseconds\n"
     )
@@ -141,4 +175,43 @@ def test_async_insert_flush_timeout_returns_503():
     ) == (
         '{"resultType": "vector", "result": '
         '[{"metric": {"__name__": "timeout_metric"}, "value": [1724112000, "1.5"]}]}'
+    )
+
+
+def test_async_insert_flush_timeout_is_clamped():
+    node.query("CREATE TABLE prometheus ENGINE=TimeSeries")
+
+    def remote_write(metric_name, wait_for_async_insert_timeout):
+        # A 3-second flush deadline: a wait shorter than that times out, a longer one does not.
+        return get_response_to_remote_write(
+            node.ip_address,
+            9093,
+            f"/write?async_insert=1&wait_for_async_insert_timeout={wait_for_async_insert_timeout}"
+            "&async_insert_use_adaptive_busy_timeout=0&async_insert_busy_timeout_max_ms=3000",
+            convert_time_series_to_protobuf(
+                [({"__name__": metric_name}, {1724112000: 1.5})]
+            ),
+        )
+
+    # 1e10 seconds is accepted by the setting but overflows the millisecond-to-nanosecond
+    # conversion that `wait_for` performs; capped at one year it outlasts the flush.
+    response = remote_write("clamped_pos_metric", 10000000000)
+    assert response.status_code == 204
+    # No retry here: the acknowledgement means the wait outlasted the flush.
+    assert node.query("SELECT count() FROM timeSeriesSamples(prometheus)") == "1\n"
+
+    # -1e10 seconds overflows the same conversion in the other direction. A negative timeout
+    # means "already expired", so the wait returns immediately.
+    response = remote_write("clamped_neg_metric", -10000000000)
+    assert response.status_code == 503
+    assert "Wait for asynchronous insert timeout (0 ms) exceeded" in response.text
+
+    # An in-range timeout is used as given, so the reported number is the one that applied.
+    response = remote_write("in_range_metric", 0.001)
+    assert response.status_code == 503
+    assert "Wait for asynchronous insert timeout (1 ms) exceeded" in response.text
+
+    # A timed-out wait keeps the data in the queue, so every sample arrives after the flush.
+    assert_eq_with_retry(
+        node, "SELECT count() FROM timeSeriesSamples(prometheus)", "3", retry_count=60
     )

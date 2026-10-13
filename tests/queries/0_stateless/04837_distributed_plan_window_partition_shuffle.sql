@@ -1,6 +1,3 @@
--- Tags: no-old-analyzer
--- no-old-analyzer: make_distributed_plan requires the analyzer.
-
 -- A PARTITION BY window under make_distributed_plan=1 is parallelized: the "any" scatter feeding the
 -- window's sort is retargeted to hash by the partition columns and the window runs per bucket below a
 -- sorted gather (`tryPushWindowBelowSortedGather`). The reference pins the full distributed EXPLAIN,
@@ -53,7 +50,7 @@ SELECT sum(cityHash64(a, v, s, roll, rn)) FROM
         sum(v) OVER (PARTITION BY a ORDER BY v ROWS BETWEEN 1 PRECEDING AND CURRENT ROW) AS roll,
         row_number() OVER (PARTITION BY a ORDER BY v) AS rn
     FROM t_window_shuffle
-);
+) SETTINGS distributed_plan_fallback_to_local_execution = 0;
 SELECT sum(cityHash64(a, v, s, roll, rn)) FROM
 (
     SELECT a, v,

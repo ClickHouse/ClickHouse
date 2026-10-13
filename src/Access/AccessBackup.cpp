@@ -7,6 +7,7 @@
 #include <Access/SettingsProfile.h>
 #include <Access/RowPolicy.h>
 #include <Access/Quota.h>
+#include <Access/MaskingPolicy.h>
 #include <Backups/BackupEntriesCollector.h>
 #include <Backups/BackupEntryFromMemory.h>
 #include <Backups/IBackup.h>
@@ -409,6 +410,16 @@ AccessRightsElements AccessRestorerFromBackup::getRequiredAccess() const
                 res.emplace_back(AccessType::CREATE_QUOTA);
                 break;
             }
+
+#if CLICKHOUSE_CLOUD
+            case MaskingPolicy::TYPE:
+            {
+                /// `CREATE MASKING POLICY` is a GLOBAL-scope privilege, so the element carries no database or
+                /// table argument even though the policy itself names a table.
+                res.emplace_back(AccessType::CREATE_MASKING_POLICY);
+                break;
+            }
+#endif
 
             default:
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Unknown type: {}", toString(entity_type));
