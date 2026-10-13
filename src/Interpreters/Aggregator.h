@@ -167,6 +167,8 @@ public:
         UInt64 adaptive_aggregator_freeze_threshold = 0;
         UInt64 adaptive_aggregator_freeze_threshold_bytes = 0;
 
+        bool use_aggregation_memory_tracker = true;
+
         /// Bucket-local Top-K of the final conversion, set by the `aggregation_bucket_top_k`
         /// plan optimization (never by users) when the plan proves this aggregation feeds
         /// `ORDER BY <the lone count() output> LIMIT n`: each two-level bucket materializes
@@ -337,7 +339,8 @@ public:
             bool enable_packed_string_keys_,
             bool enable_adaptive_aggregator_,
             UInt64 adaptive_aggregator_freeze_threshold_,
-            UInt64 adaptive_aggregator_freeze_threshold_bytes_);
+            UInt64 adaptive_aggregator_freeze_threshold_bytes_,
+            bool use_aggregation_memory_tracker_);
 
         /// Only parameters that matter during merge.
         Params(
@@ -769,6 +772,9 @@ private:
       */
     void destroyAllAggregateStates(AggregatedDataVariants & result) const;
 
+    /// `for_sub_range`: the rows are one run of a block aggregated run by run (`executeOnBlockSmall`), so the
+    /// hashing state is a `ColumnsHashing::SubRangeState` built over those rows only.
+    template <bool for_sub_range = false>
     void executeImpl(
         AggregatedDataVariants & result,
         size_t row_begin,
@@ -780,7 +786,7 @@ private:
         AggregateDataPtr overflow_row = nullptr) const;
 
     /// Process one data block, aggregate the data into a hash table.
-    template <typename Method>
+    template <bool for_sub_range, typename Method>
     void executeImpl(
         Method & method,
         Arena * aggregates_pool,
@@ -1366,7 +1372,8 @@ private:
         std::atomic<bool> & is_cancelled,
         Arena * arena_for_keys = nullptr) const;
 
-    template <typename Method, typename Table>
+    /// `for_sub_range` as in `executeImpl`, for `mergeOnBlockSmall`.
+    template <bool for_sub_range, typename Method, typename Table>
     void mergeStreamsImpl(
         Arena * aggregates_pool,
         Method & method,

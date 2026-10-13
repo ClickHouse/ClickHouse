@@ -610,6 +610,14 @@ public:
 private:
     NodeRawConstPtrs getParents(const Node * target) const;
 
+    /// See `restrictFilterDAGToInputs`; `walk_or` also weakens an `AND` under an `OR`, and `substitutes` receives
+    /// the constants that replace a conjunct.
+    ActionsDAG restrictFilterDAGToInputsImpl(
+        const Node * filter_node,
+        const NameSet & available_inputs,
+        bool walk_or,
+        std::unordered_set<const Node *> * substitutes = nullptr) const;
+
     Node & addNode(Node node);
 
     const Node & addFunctionImpl(
