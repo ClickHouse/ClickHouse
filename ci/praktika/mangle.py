@@ -341,6 +341,8 @@ def _update_workflow_with_native_jobs(workflow):
         for job in workflow.jobs:
             if not job.runs_on:
                 continue
+            if job.name == "Code Review":  # TEMPORARY: Loom reachability test on a trusted pool
+                continue
             job.runs_on = [
                 label if label == "self-hosted" else f"{prefix}{label}"
                 for label in job.runs_on
