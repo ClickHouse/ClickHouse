@@ -1,0 +1,3 @@
+autopr_min_bytes_skipped_early	1	0	0	0	0	0	1	1
+autopr_min_bytes_collect	0	1	1	0	0	0	0	1
+autopr_min_bytes_rejected	0	1	0	1	1	0	1	1
