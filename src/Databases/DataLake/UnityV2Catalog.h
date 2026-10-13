@@ -82,6 +82,9 @@ public:
     ICatalog::CredentialsRefreshCallback getWriteCredentialsConfigurationCallback(
         const DB::StorageID & table_id, StorageType storage_type) override;
 
+    /// Applies to the embedded Iceberg REST catalog.
+    void setVendedCredentialsCacheTTL(std::chrono::seconds ttl) override;
+
     /// Iceberg tables go through the Iceberg REST endpoint, which commits atomically.
     /// Without this, a write would leave metadata files in the table location before failing.
     bool isTransactional() const override { return true; }
@@ -127,6 +130,7 @@ private:
     /// Lazy-initialized RestCatalog for Iceberg table metadata,
     /// pointing to {base_url}/iceberg-rest.
     mutable std::shared_ptr<RestCatalog> iceberg_rest_catalog TSA_GUARDED_BY(token_mutex);
+    std::chrono::seconds vended_credentials_cache_ttl TSA_GUARDED_BY(token_mutex){std::chrono::seconds::zero()};
 
     /// Retries `make_request` once with a fresh token when the catalog rejects the cached one.
     template <typename Func>

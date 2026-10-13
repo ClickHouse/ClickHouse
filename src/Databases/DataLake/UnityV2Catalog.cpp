@@ -763,6 +763,14 @@ ICatalog::CredentialsRefreshCallback UnityV2Catalog::getDeltaCredentialsCallback
     };
 }
 
+void UnityV2Catalog::setVendedCredentialsCacheTTL(std::chrono::seconds ttl)
+{
+    std::lock_guard lock(token_mutex);
+    vended_credentials_cache_ttl = ttl;
+    if (iceberg_rest_catalog)
+        iceberg_rest_catalog->setVendedCredentialsCacheTTL(ttl);
+}
+
 std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_refresh) const
 {
     std::string token;
@@ -805,6 +813,7 @@ std::shared_ptr<RestCatalog> UnityV2Catalog::getIcebergRestCatalog(bool force_re
         getContext());
 
     std::lock_guard lock(token_mutex);
+    catalog->setVendedCredentialsCacheTTL(vended_credentials_cache_ttl);
     /// A concurrent refresh may have replaced the token meanwhile; a catalog built on the old one must not be cached.
     if (auth_header || (access_token && access_token->token == token))
         iceberg_rest_catalog = catalog;
