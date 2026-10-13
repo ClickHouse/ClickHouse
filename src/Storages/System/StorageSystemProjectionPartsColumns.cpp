@@ -1,7 +1,4 @@
 #include <Storages/System/StorageSystemProjectionPartsColumns.h>
-#include <Interpreters/Context.h>
-#include <Interpreters/ProcessList.h>
-#include <Storages/System/SystemTableSourceRegistry.h>
 
 #include <Common/escapeForFileName.h>
 #include <Columns/ColumnString.h>
@@ -71,14 +68,13 @@ StorageSystemProjectionPartsColumns::StorageSystemProjectionPartsColumns(const S
         {"column_data_uncompressed_bytes",             std::make_shared<DataTypeUInt64>(), "Total size of the decompressed data in the column, in bytes."},
         {"column_marks_bytes",                         std::make_shared<DataTypeUInt64>(), "The size of the column with marks, in bytes."},
         {"column_modification_time",                   std::make_shared<DataTypeNullable>(std::make_shared<DataTypeDateTime>()), "The last time the column was modified."},
-        /// TODO: make adaptive codec selection inside projections observable, e.g. by extending the `mergeTreeCodecBlockCounts` table function.
     }
     )
 {
 }
 
 void StorageSystemProjectionPartsColumns::processNextStorage(
-    ContextPtr context, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
+    ContextPtr, MutableColumns & columns, std::vector<UInt8> & columns_mask, const StoragesInfo & info, bool has_state_column)
 {
     /// Prepare information about columns in storage.
     struct ColumnInfo
@@ -87,23 +83,13 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
         String default_expression;
     };
 
-    QueryStatusPtr query_status = context->getProcessListElement();
-
-    auto storage_metadata = info.storage->getInMemoryMetadataPtr(context, false);
+    auto storage_metadata = info.storage->getInMemoryMetadataPtr();
     std::unordered_map<String, std::unordered_map<String, ColumnInfo>> projection_columns_info;
-    size_t metadata_column_number = 0;
     for (const auto & projection : storage_metadata->getProjections())
     {
         auto & columns_info = projection_columns_info[projection.name];
         for (const auto & column : projection.metadata->getColumns())
         {
-            /// The prepass alone can take a long time on a table with many projections or many columns.
-            /// A partially filled `projection_columns_info` would report wrong defaults, so give up the whole storage instead.
-            ++metadata_column_number;
-            slowDownSystemPartsMetadataEnumeration(info.table, metadata_column_number);
-            if (query_status && metadata_column_number % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
-                return;
-
             ColumnInfo column_info;
             if (column.default_desc.expression)
             {
@@ -117,19 +103,11 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
 
     /// Go through the list of projection parts.
     MergeTreeData::DataPartStateVector all_parts_state;
-
-    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column, query_status);
-
+    MergeTreeData::ProjectionPartsVector all_parts = info.getProjectionParts(all_parts_state, has_state_column);
     for (size_t part_number = 0; part_number < all_parts.projection_parts.size(); ++part_number)
     {
-        if (query_status && !query_status->checkTimeLimit())
-            break;
-
-        slowDownSystemPartsEnumeration(info.table);
-
         const auto & part = all_parts.projection_parts[part_number];
         const auto * parent_part = part->getParentPart();
-        const auto part_metadata_snapshot = part->getMetadataSnapshot();
         chassert(parent_part);
 
         auto part_state = all_parts_state[part_number];
@@ -147,23 +125,15 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
 
         using State = MergeTreeDataPartState;
 
-        bool time_limit_exceeded = false;
         size_t column_position = 0;
         auto & columns_info = projection_columns_info[part->name];
         for (const auto & column : part->getColumns())
         {
             ++column_position;
-            slowDownSystemPartsColumnsEnumeration(info.table, column_position);
-            if (query_status && column_position % COLUMNS_CANCELLATION_CHECK_PERIOD == 0 && !query_status->checkTimeLimit())
-            {
-                time_limit_exceeded = true;
-                break;
-            }
-
             size_t src_index = 0;
             size_t res_index = 0;
             if (columns_mask[src_index++])
-                columns[res_index++]->insert(part->partition.serializeToString(part_metadata_snapshot));
+                columns[res_index++]->insert(part->partition.serializeToString(part->getMetadataSnapshot()));
             if (columns_mask[src_index++])
                 columns[res_index++]->insert(part->name);
             if (columns_mask[src_index++])
@@ -286,13 +256,7 @@ void StorageSystemProjectionPartsColumns::processNextStorage(
             if (has_state_column)
                 columns[res_index++]->insert(part->stateString());
         }
-
-        if (time_limit_exceeded)
-            break;
     }
 }
 
 }
-
-/// Register the source file of this system table for `system.documentation`.
-namespace DB { REGISTER_SYSTEM_TABLE_SOURCE(StorageSystemProjectionPartsColumns) }

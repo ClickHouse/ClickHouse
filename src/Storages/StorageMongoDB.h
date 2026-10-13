@@ -10,15 +10,11 @@
 #include <Analyzer/ConstantNode.h>
 #include <Common/NamedCollections/NamedCollections_fwd.h>
 #include <Interpreters/Context_fwd.h>
-#include <Storages/StorageWithCommonVirtualColumns.h>
+#include <Storages/IStorage.h>
 #include <Storages/SelectQueryInfo.h>
-
-#include <optional>
 
 #include <mongocxx/instance.hpp>
 #include <mongocxx/client.hpp>
-
-extern "C" void mongoc_cleanup(void);
 
 namespace DB
 {
@@ -34,32 +30,22 @@ public:
     MongoDBInstanceHolder(MongoDBInstanceHolder const &) = delete;
     void operator=(MongoDBInstanceHolder const &) = delete;
 
-    /// Defined out of line: a static local in a header-defined function gives every shared
-    /// object its own copy.
-    static MongoDBInstanceHolder & instance();
-
-    ~MongoDBInstanceHolder()
+    static MongoDBInstanceHolder & instance()
     {
-        /// Destroy the `mongocxx::instance` first so that its internal `~impl` runs
-        /// (nullifies the log handler, etc.) while the C driver globals are still alive.
-        inst.reset();
-
-        /// The mongocxx driver deliberately skips calling `mongoc_cleanup` under ASan
-        /// to avoid issues with dynamically loaded libraries becoming unloaded.
-        /// In ClickHouse all libraries (including OpenSSL) are statically linked,
-        /// so that concern does not apply. Calling `mongoc_cleanup` explicitly prevents
-        /// LeakSanitizer from reporting global allocations (handshake data, etc.)
-        /// made by libmongoc as memory leaks.
-        /// This is safe because `mongoc_cleanup` is idempotent (`bson_once`-guarded).
-        mongoc_cleanup();
+        static MongoDBInstanceHolder instance;
+        return instance;
     }
 private:
     MongoDBInstanceHolder() = default;
-    std::optional<mongocxx::instance> inst{std::in_place};
+    mongocxx::instance inst;
 };
 
 struct MongoDBConfiguration
 {
+    /// Declared first: the driver requires the instance to exist before any other driver object is created,
+    /// and a URI parsed on another thread while the instance installs its log handler races in `mongoc_log`.
+    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
+
     std::unique_ptr<mongocxx::uri> uri;
     String collection;
     std::unordered_set<String> oid_fields = {"_id"};
@@ -79,7 +65,7 @@ struct MongoDBConfiguration
  *  Read only.
  *  One stream only.
  */
-class StorageMongoDB final : public StorageWithCommonVirtualColumns
+class StorageMongoDB final : public IStorage
 {
 public:
     static MongoDBConfiguration getConfiguration(ASTs engine_args, ContextPtr context);
@@ -96,10 +82,6 @@ public:
     bool isRemote() const override { return true; }
     bool isExternalDatabase() const override { return true; }
 
-    static VirtualColumnsDescription createVirtuals();
-
-    using StorageWithCommonVirtualColumns::read;
-
     Pipe read(
         const Names & column_names,
         const StorageSnapshotPtr & storage_snapshot,
@@ -110,8 +92,6 @@ public:
         size_t num_streams) override;
 
 private:
-    MongoDBInstanceHolder & instance_holder = MongoDBInstanceHolder::instance();
-
     std::optional<bsoncxx::document::value> visitWhereConstant(
         const ContextPtr & context,
         const ConstantNode * const_node,

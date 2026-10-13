@@ -2,6 +2,7 @@
 
 #include <Formats/FormatSettings.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Formats/FormatParserSharedResources.h>
 #include <IO/CompressionMethod.h>
 #include <IO/HTTPHeaderEntries.h>
 #include <IO/ReadWriteBufferFromHTTP.h>
@@ -14,8 +15,6 @@
 #include <Storages/StorageFactory.h>
 #include <Storages/prepareReadingFromFormat.h>
 #include <Poco/URI.h>
-
-#include <string_view>
 
 
 namespace DB
@@ -30,11 +29,6 @@ class NamedCollection;
 struct StorageID;
 class PullingPipelineExecutor;
 
-bool urlPathHasListableGlobs(std::string_view uri);
-
-struct FormatParserSharedResources;
-using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResources>;
-
 /**
  * This class represents table engine for external urls.
  * It sends HTTP GET to server when select is called and
@@ -44,8 +38,6 @@ using FormatParserSharedResourcesPtr = std::shared_ptr<FormatParserSharedResourc
 class IStorageURLBase : public IStorage
 {
 public:
-    size_t getMaxReadStreams(size_t num_streams, ContextPtr context) override;
-
     void read(
         QueryPlan & query_plan,
         const Names & column_names,
@@ -166,41 +158,7 @@ bool urlWithGlobs(const String & uri);
 
 String getSampleURI(String uri, ContextPtr context);
 
-/// The `URL` engine and the `url` table function act as a unified wrapper on top of the
-/// File and object-storage engines: they dispatch to the right backend based on the URL scheme.
-enum class URLSchemeTarget : uint8_t
-{
-    URL,    /// http, https, ftp, ... and anything without a recognized scheme — handled by StorageURL itself.
-    File,   /// file://
-    S3,     /// s3, gs, gcs, oss
-    Azure,  /// az, azure, abfss, abfs
-    HDFS,   /// hdfs
-};
-
-/// Classify a (already `url_base`-resolved) URL by its scheme to choose the dispatch target.
-URLSchemeTarget classifyURLScheme(const String & url);
-
-/// Storage engine name registered in StorageFactory for a dispatch target ("File", "S3", ...).
-const char * storageEngineNameForURLScheme(URLSchemeTarget target);
-
-/// Table function name for a dispatch target ("file", "s3", ...).
-const char * tableFunctionNameForURLScheme(URLSchemeTarget target);
-
-/// Extract the local path from a `file://` URL (e.g. `file:///a/b` -> `/a/b`, `file://a.csv` -> `a.csv`).
-String getLocalPathFromFileURL(const String & url);
-
-/// Decomposition of an Azure URL into the arguments the `azureBlobStorage` engine expects.
-struct AzureURLParts
-{
-    String account_url;
-    String container;
-    String blob_path;
-};
-
-/// Decompose an `az://`, `azure://` or `abfss://`/`abfs://` URL into (account_url, container, blob_path).
-AzureURLParts parseAzureURL(const String & url);
-
-class StorageURLSource final : public ISource, WithContext
+class StorageURLSource : public ISource, WithContext
 {
     using URIParams = std::vector<std::pair<String, String>>;
 
@@ -208,7 +166,7 @@ public:
     class DisclosedGlobIterator
     {
     public:
-        DisclosedGlobIterator(const String & uri_, bool split_uris_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
+        DisclosedGlobIterator(const String & uri_, size_t max_addresses, const ActionsDAG::Node * predicate, const NamesAndTypesList & virtual_columns, const NamesAndTypesList & hive_columns, const ContextPtr & context);
 
         String next();
         size_t size();
@@ -238,25 +196,18 @@ public:
         const HTTPHeaderEntries & headers_ = {},
         const URIParams & params = {},
         bool glob_url = false,
-        bool need_only_count_ = false,
-        StorageID storage_id_ = StorageID::createEmpty());
+        bool need_only_count_ = false);
 
     ~StorageURLSource() override;
 
     String getName() const override { return name; }
 
-    Status prepare() override;
-
     Chunk generate() override;
 
-    void onFinish() override;
-
-    void cancel(CancelReason reason) noexcept override;
+    void onFinish() override { parser_shared_resources->finishStream(); }
 
     static void setCredentials(Poco::Net::HTTPBasicCredentials & credentials, const Poco::URI & request_uri);
 
-    /// Returns no buffer when a hard teardown of the pipeline is noticed between the options while
-    /// nothing else reports the interruption - the caller must end the stream then, see initialize.
     static std::pair<Poco::URI, std::unique_ptr<ReadWriteBufferFromHTTP>> getFirstAvailableURIAndReadBuffer(
         std::vector<String>::const_iterator & option,
         const std::vector<String>::const_iterator & end,
@@ -268,13 +219,9 @@ public:
         Poco::Net::HTTPBasicCredentials & credentials,
         const HTTPHeaderEntries & headers,
         bool glob_url,
-        bool delay_initialization,
-        ReadWriteBufferFromHTTP::CancellationPtr cancellation = nullptr);
+        bool delay_initialization);
 
 private:
-    /// Release the reader, the format and the HTTP buffer - see the definition.
-    void releaseReader();
-
     void addNumRowsToCache(const String & uri, size_t num_rows);
     std::optional<size_t> tryGetNumRowsFromCache(const String & uri, std::optional<time_t> last_mod_time);
 
@@ -290,24 +237,16 @@ private:
     std::shared_ptr<IteratorWrapper> uri_iterator;
     Poco::URI curr_uri;
     std::optional<size_t> current_file_size;
-    std::optional<time_t> current_file_last_modified;
     String format;
     const std::optional<FormatSettings> & format_settings;
     FormatParserSharedResourcesPtr parser_shared_resources;
     FormatFilterInfoPtr format_filter_info;
     HTTPHeaderEntries headers;
     bool need_only_count;
-    StorageID storage_id;
     size_t total_rows_in_file = 0;
     NamesAndTypesList hive_partition_columns_to_read_from_file_path;
 
     Poco::Net::HTTPBasicCredentials credentials;
-
-    /// Tells the buffers created by this source to stop retrying HTTP requests, see cancel. Also
-    /// remembers whether the cancellation is one after which the query must still succeed - a soft
-    /// `max_execution_time` with the `break` overflow mode, or a consumer that has enough data - so
-    /// that generate then discards the failure of the interrupted read instead of failing the query.
-    ReadWriteBufferFromHTTP::CancellationPtr cancellation = std::make_shared<ReadWriteBufferFromHTTP::Cancellation>();
 
     Map http_response_headers;
     bool http_response_headers_initialized = false;
@@ -318,7 +257,7 @@ private:
     std::unique_ptr<PullingPipelineExecutor> reader;
 };
 
-class StorageURLSink final : public SinkToStorage
+class StorageURLSink : public SinkToStorage
 {
 public:
     StorageURLSink(
@@ -387,13 +326,8 @@ public:
 
     bool supportsSubcolumns() const override { return true; }
     bool supportsOptimizationToSubcolumns() const override { return false; }
-    /// Unlike `.null`/`.size0`, a tuple element is a real leaf in the file, so the format can serve
-    /// `t.x` on its own and prune on it.
-    bool supportsOptimizationToTupleElementSubcolumns() const override { return true; }
 
     bool supportsColumnsWithDynamicStructure() const override { return true; }
-
-    bool supportsTruncate() const override { return false; }
 
     void addInferredEngineArgsToCreateQuery(ASTs & args, const ContextPtr & context) const override;
 
@@ -415,25 +349,6 @@ public:
     static size_t evalArgsAndCollectHeaders(ASTs & url_function_args, HTTPHeaderEntries & header_entries, const ContextPtr & context, bool evaluate_arguments = true);
 
     static void processNamedCollectionResult(Configuration & configuration, const NamedCollection & collection);
-
-    /// Resolve a possibly relative URL against a base URL per RFC 3986.
-    /// If the URL already contains a scheme, it is returned as-is.
-    /// Otherwise, it is resolved relative to the base:
-    /// - `//host/path` → scheme-relative (uses scheme from base)
-    /// - `/path` → host-relative (uses scheme and host from base)
-    /// - `path` → path-relative (merged with base URL path: replaces everything
-    ///   after the last `/` in the base path, then normalizes dot segments)
-    /// - `?query` → replaces base query/fragment, preserves base path
-    /// - `#frag` → replaces base fragment, preserves base path and query
-    /// The resolution is done by string manipulation to allow malformed URLs.
-    /// `base_setting_name` is the name of the setting the base came from, used in error messages.
-    static String resolveURLBase(const String & url, const String & base, const String & base_setting_name = "url_base");
-
-    /// Rewrite engine args so that the URL literal (positional) or `url='...'`
-    /// override (named-collection) matches the URL resolved via `url_base`.
-    /// `skip_userinfo` skips the rewrite when the resolved URL embeds credentials,
-    /// to avoid leaking them through the persisted CREATE TABLE AST.
-    static void overrideURLInEngineArgs(ASTs & args, const String & resolved_url, const ContextPtr & context, bool skip_userinfo);
 };
 
 

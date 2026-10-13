@@ -7,7 +7,6 @@
 #include <Poco/AutoPtr.h>
 
 #include <Columns/ColumnsNumber.h>
-#include <DataTypes/DataTypeString.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/randomSeed.h>
 
@@ -15,7 +14,7 @@
 
 #include <Interpreters/TableJoin.h>
 
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/Executors/PullingPipelineExecutor.h>
 #include <Processors/Sinks/NullSink.h>
 #include <Processors/Sources/SourceFromChunks.h>

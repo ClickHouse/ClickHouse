@@ -6,10 +6,8 @@ t1	MergeTree
 v1	View
 t2	TableProxy
 0
-al	Alias
 mv	MaterializedView
 src	TableProxy
 dict
-t3_renamed
 t3_renamed	MergeTree
 value	String

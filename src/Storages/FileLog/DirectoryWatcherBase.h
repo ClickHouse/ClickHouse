@@ -1,7 +1,7 @@
 #pragma once
 
+#include <Core/BackgroundSchedulePoolTaskHolder.h>
 #include <Common/PipeFDs.h>
-#include <Common/ThreadPool_fwd.h>
 #include <Interpreters/Context_fwd.h>
 
 #include <atomic>
@@ -90,9 +90,8 @@ public:
 private:
     FileLogDirectoryWatcher & owner;
 
-    /// Dedicated thread, not a BackgroundSchedulePool slot: `watchFunc` blocks for the watcher's
-    /// whole lifetime, and that pool caps concurrent tasks of one type.
-    std::unique_ptr<ThreadFromGlobalPool> watch_thread;
+    using TaskThread = BackgroundSchedulePoolTaskHolder;
+    TaskThread watch_task;
 
     std::atomic<bool> stopped{false};
 
@@ -101,9 +100,7 @@ private:
     int event_mask;
     uint64_t milliseconds_to_wait;
 
-#if defined(OS_LINUX)
     int inotify_fd;
-#endif
     PipeFDs event_pipe;
 
     void start();

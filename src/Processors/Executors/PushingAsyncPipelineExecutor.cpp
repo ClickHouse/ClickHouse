@@ -1,5 +1,5 @@
 #include <Processors/Executors/PushingAsyncPipelineExecutor.h>
-#include <Processors/Executors/Runtime/PipelineExecutor.h>
+#include <Processors/Executors/PipelineExecutor.h>
 #include <Processors/ISource.h>
 #include <QueryPipeline/QueryPipeline.h>
 #include <QueryPipeline/ReadProgressCallback.h>
@@ -7,7 +7,6 @@
 #include <Common/setThreadName.h>
 #include <Common/scope_guard_safe.h>
 #include <Common/CurrentThread.h>
-#include <Common/ThreadGroupSwitcher.h>
 #include <Poco/Event.h>
 
 namespace DB
@@ -22,8 +21,8 @@ namespace ErrorCodes
 class PushingAsyncSource : public ISource
 {
 public:
-    explicit PushingAsyncSource(SharedHeader header, bool enable_auto_progress)
-        : ISource(header, enable_auto_progress)
+    explicit PushingAsyncSource(SharedHeader header)
+        : ISource(header)
     {}
 
     String getName() const override { return "PushingAsyncSource"; }
@@ -120,12 +119,12 @@ static void threadFunction(
 }
 
 
-PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(QueryPipeline & pipeline_, bool report_read_progress) : pipeline(pipeline_)
+PushingAsyncPipelineExecutor::PushingAsyncPipelineExecutor(QueryPipeline & pipeline_) : pipeline(pipeline_)
 {
     if (!pipeline.pushing())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline for PushingPipelineExecutor must be pushing");
 
-    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getSharedHeader(), report_read_progress);
+    pushing_source = std::make_shared<PushingAsyncSource>(pipeline.input->getSharedHeader());
     connect(pushing_source->getPort(), *pipeline.input);
     pipeline.processors->emplace_back(pushing_source);
 }
@@ -160,7 +159,6 @@ void PushingAsyncPipelineExecutor::start()
     data = std::make_unique<Data>();
     data->executor = std::make_shared<PipelineExecutor>(pipeline.processors, pipeline.process_list_element);
     data->executor->setReadProgressCallback(pipeline.getReadProgressCallback());
-    data->executor->setStepProfiler(pipeline.getStepProfiler());
     data->source = pushing_source.get();
 
     auto func = [&, thread_group = CurrentThread::getGroup()]()
@@ -171,9 +169,10 @@ void PushingAsyncPipelineExecutor::start()
     data->thread = ThreadFromGlobalPool(std::move(func));
 }
 
-[[noreturn]] static void throwOnUnexpectedPipelineFinish(const IProcessor & pushing_source)
+[[noreturn]] static void throwOnExecutionStatus(PipelineExecutor::ExecutionStatus status)
 {
-    if (pushing_source.isCancelled())
+    if (status == PipelineExecutor::ExecutionStatus::CancelledByTimeout
+        || status == PipelineExecutor::ExecutionStatus::CancelledByUser)
         throw Exception(ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
     throw Exception(ErrorCodes::LOGICAL_ERROR,
@@ -189,7 +188,7 @@ void PushingAsyncPipelineExecutor::push(Chunk chunk)
     data->rethrowExceptionIfHas();
 
     if (!is_pushed)
-        throwOnUnexpectedPipelineFinish(*pushing_source);
+        throwOnExecutionStatus(data->executor->getExecutionStatus());
 }
 
 void PushingAsyncPipelineExecutor::push(Block block)

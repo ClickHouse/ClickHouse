@@ -18,7 +18,6 @@
 #include <Common/Exception.h>
 #include <Common/ErrnoException.h>
 #include <Common/ProfileEvents.h>
-#include <Common/logger_useful.h>
 #include <Disks/IDisk.h>
 
 namespace fs = std::filesystem;
@@ -46,7 +45,7 @@ namespace ErrorCodes
 
 struct statvfs getStatVFS(String path)
 {
-    struct statvfs fs{};
+    struct statvfs fs;
     while (statvfs(path.c_str(), &fs) != 0)
     {
         if (errno == EINTR)
@@ -88,7 +87,7 @@ std::unique_ptr<Poco::TemporaryFile> createTemporaryFile(const std::string & fol
 String getBlockDeviceId([[maybe_unused]] const String & path)
 {
 #if defined(OS_LINUX)
-    struct stat sb{};
+    struct stat sb;
     if (lstat(path.c_str(), &sb))
         DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot lstat {}", path);
     WriteBufferFromOwnString ss;
@@ -103,7 +102,7 @@ String getBlockDeviceId([[maybe_unused]] const String & path)
 std::optional<String> tryGetBlockDeviceId([[maybe_unused]] const String & path)
 {
 #if defined(OS_LINUX)
-    struct stat sb{};
+    struct stat sb;
     if (lstat(path.c_str(), &sb))
         return {};
     WriteBufferFromOwnString ss;
@@ -127,7 +126,7 @@ BlockDeviceType getBlockDeviceType([[maybe_unused]] const String & device_id)
         if (!std::filesystem::exists(path))
             return BlockDeviceType::UNKNOWN;
         ReadBufferFromFile in(path);
-        int rotational = 0;
+        int rotational;
         readText(rotational, in);
         return rotational ? BlockDeviceType::ROT : BlockDeviceType::NONROT;
     }
@@ -150,7 +149,7 @@ UInt64 getBlockDeviceReadAheadBytes([[maybe_unused]] const String & device_id)
     {
         const auto path{std::filesystem::path("/sys/dev/block/") / device_id / "queue/read_ahead_kb"};
         ReadBufferFromFile in(path);
-        int read_ahead_kb = 0;
+        int read_ahead_kb;
         readText(read_ahead_kb, in);
         return read_ahead_kb * 1024;
     }
@@ -173,7 +172,7 @@ std::filesystem::path getMountPoint(std::filesystem::path absolute_path)
 
     const auto get_device_id = [](const std::filesystem::path & p)
     {
-        struct stat st{};
+        struct stat st;
         if (stat(p.c_str(), &st))   /// NOTE: man stat does not list EINTR as possible error
             DB::ErrnoException::throwFromPath(DB::ErrorCodes::SYSTEM_ERROR, p.string(), "Cannot stat {}", p.string());
         return st.st_dev;
@@ -204,7 +203,7 @@ String getFilesystemName([[maybe_unused]] const String & mount_point)
     FILE * mounted_filesystems = setmntent("/etc/mtab", "r");
     if (!mounted_filesystems)
         throw DB::Exception(ErrorCodes::SYSTEM_ERROR, "Cannot open /etc/mtab to get name of filesystem");
-    mntent fs_info{};
+    mntent fs_info;
     constexpr size_t buf_size = 4096;     /// The same as buffer used for getmntent in glibc. It can happen that it's not enough
     std::vector<char> buf(buf_size);
     while (getmntent_r(mounted_filesystems, &fs_info, buf.data(), buf_size) && fs_info.mnt_dir != mount_point)
@@ -291,7 +290,7 @@ bool fileOrSymlinkPathStartsWith(const String & path, const String & prefix_path
 
 size_t getSizeFromFileDescriptor(int fd, const String & file_name)
 {
-    struct stat buf{};
+    struct stat buf;
     int res = fstat(fd, &buf);
     if (-1 == res)
     {
@@ -303,7 +302,7 @@ size_t getSizeFromFileDescriptor(int fd, const String & file_name)
 
 Int64 getINodeNumberFromPath(const String & path)
 {
-    struct stat file_stat{};
+    struct stat file_stat;
     if (stat(path.data(), &file_stat))
     {
         DB::ErrnoException::throwFromPath(DB::ErrorCodes::CANNOT_STAT, path, "Cannot execute stat for file {}", path);
@@ -350,54 +349,39 @@ bool exists(const std::string & path)
     return faccessat(AT_FDCWD, path.c_str(), F_OK, AT_EACCESS) == 0;
 }
 
-bool canRead(const std::string & path, bool allow_throw)
+bool canRead(const std::string & path)
 {
     int err = faccessat(AT_FDCWD, path.c_str(), R_OK, AT_EACCESS);
     if (err == 0)
         return true;
-
     if (errno == EACCES)
         return false;
-
-    if (!allow_throw)
-        return false;
-
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check read access to file: {}", path);
 }
 
-bool canWrite(const std::string & path, bool allow_throw)
+bool canWrite(const std::string & path)
 {
     int err = faccessat(AT_FDCWD, path.c_str(), W_OK, AT_EACCESS);
     if (err == 0)
         return true;
-
     if (errno == EACCES)
         return false;
-
-    if (!allow_throw)
-        return false;
-
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check write access to file: {}", path);
 }
 
-bool canExecute(const std::string & path, bool allow_throw)
+bool canExecute(const std::string & path)
 {
     int err = faccessat(AT_FDCWD, path.c_str(), X_OK, AT_EACCESS);
     if (err == 0)
         return true;
-
     if (errno == EACCES)
         return false;
-
-    if (!allow_throw)
-        return false;
-
     DB::ErrnoException::throwFromPath(DB::ErrorCodes::PATH_ACCESS_DENIED, path, "Cannot check execute access to file: {}", path);
 }
 
 time_t getModificationTime(const std::string & path)
 {
-    struct stat st{};
+    struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_mtime;
     std::error_code m_ec(errno, std::generic_category());
@@ -406,7 +390,7 @@ time_t getModificationTime(const std::string & path)
 
 time_t getChangeTime(const std::string & path)
 {
-    struct stat st{};
+    struct stat st;
     if (stat(path.c_str(), &st) == 0)
         return st.st_ctime;
     std::error_code m_ec(errno, std::generic_category());
@@ -420,7 +404,7 @@ Poco::Timestamp getModificationTimestamp(const std::string & path)
 
 void setModificationTime(const std::string & path, time_t time)
 {
-    struct utimbuf tb{};
+    struct utimbuf tb;
     tb.actime  = time;
     tb.modtime = time;
     if (utime(path.c_str(), &tb) != 0)
@@ -452,15 +436,6 @@ fs::path readSymlink(const fs::path & path)
     if (path.filename().empty())
         return fs::read_symlink(path.parent_path());        /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
     return fs::read_symlink(path);      /// STYLE_CHECK_ALLOW_STD_FS_SYMLINK
-}
-
-bool tryDelete(const fs::path & path, LoggerPtr log)
-{
-    std::error_code ec;
-    bool removed = fs::remove(path, ec);
-    if (ec)
-        LOG_WARNING(log, "Cannot remove {}: {}", path.string(), ec.message());
-    return removed;
 }
 
 }

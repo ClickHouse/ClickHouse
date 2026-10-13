@@ -19,7 +19,7 @@ namespace ErrorCodes
 
 
 template <typename Impl>
-class FunctionNumericPredicate final : public IFunction
+class FunctionNumericPredicate : public IFunction
 {
 public:
     static constexpr auto name = Impl::name;
@@ -45,7 +45,7 @@ public:
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
     {
-        if (!(isNativeNumber(arguments.front()) || WhichDataType(arguments.front()).isBFloat16()))
+        if (!isNativeNumber(arguments.front()))
             throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT, "Argument for function {} must be a number", getName());
 
         return std::make_shared<DataTypeUInt8>();
@@ -72,8 +72,7 @@ public:
             || (res = execute<Int32>(in, input_rows_count))
             || (res = execute<Int64>(in, input_rows_count))
             || (res = execute<Float32>(in, input_rows_count))
-            || (res = execute<Float64>(in, input_rows_count))
-            || (res = execute<BFloat16>(in, input_rows_count))))
+            || (res = execute<Float64>(in, input_rows_count))))
             throw Exception(ErrorCodes::ILLEGAL_COLUMN, "Illegal column {} of first argument of function {}", in->getName(), getName());
 
         return res;

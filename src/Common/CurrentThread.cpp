@@ -2,7 +2,6 @@
 
 #include <Common/CurrentThread.h>
 #include <Common/logger_useful.h>
-#include <Common/MemoryPressureMonitor.h>
 #include <Common/ThreadStatus.h>
 #include <Interpreters/ProcessList.h>
 #include <Interpreters/Context.h>
@@ -12,8 +11,6 @@
 
 namespace DB
 {
-
-constinit FiberLocal<ThreadStatus *, FiberLocalSlot::CURRENT_THREAD> current_thread;
 
 namespace ErrorCodes
 {
@@ -50,13 +47,6 @@ ThreadStatus & CurrentThread::get()
 ProfileEvents::Counters & CurrentThread::getProfileEvents()
 {
     return current_thread ? *current_thread->current_performance_counters : ProfileEvents::global_counters;
-}
-
-MemoryTracker * CurrentThread::getMemoryTracker()
-{
-    if (!current_thread) [[unlikely]]
-        return nullptr;
-    return &current_thread->memory_tracker;
 }
 
 void CurrentThread::updateProgressIn(const Progress & value)
@@ -113,21 +103,6 @@ ContextPtr CurrentThread::tryGetQueryContext()
         return {};
 
     return current_thread->tryGetQueryContext();
-}
-
-MemoryPressureMonitor & CurrentThread::getMemoryPressureMonitor()
-{
-    if (auto group = getGroup())
-        return group->memory_pressure_monitor;
-    return getGlobalMemoryPressureMonitor();
-}
-
-void CurrentThread::checkIfNotCancelled()
-{
-    if (unlikely(!current_thread))
-        return;
-
-    current_thread->throwIfQueryCanceled();
 }
 
 std::string_view CurrentThread::getQueryId()

@@ -5,9 +5,6 @@
 #include <IO/WriteHelpers.h>
 #include <Core/ProtocolDefines.h>
 
-#include <algorithm>
-#include <vector>
-
 namespace DB
 {
 namespace ErrorCodes
@@ -52,37 +49,13 @@ void TablesStatusRequest::write(WriteBuffer & out, UInt64 server_protocol_revisi
     }
 }
 
-std::string TablesStatusRequest::getAuthDigest() const
-{
-    /// Order-independent, collision-free digest of the requested tables, folded into the interserver
-    /// authentication hash so a relayed hash cannot be reused for a different table set. `tables` is
-    /// unordered, so sort the per-table encodings before concatenating. Each `database`/`table`
-    /// component is length-prefixed (names may contain arbitrary bytes, including NUL, so a plain
-    /// separator would not be injective).
-    auto append_sized = [](std::string & buf, const std::string & s)
-    {
-        buf += std::to_string(s.size());
-        buf += ':';
-        buf += s;
-    };
-
-    std::vector<std::string> entries;
-    entries.reserve(tables.size());
-    for (const auto & table_name : tables)
-    {
-        std::string entry;
-        append_sized(entry, table_name.database);
-        append_sized(entry, table_name.table);
-        entries.push_back(std::move(entry));
-    }
-    std::sort(entries.begin(), entries.end());
-
-    std::string data;
-    append_sized(data, std::to_string(entries.size()));
-    for (const auto & entry : entries)
-        append_sized(data, entry);
-    return data;
-}
+/** The number of tables comes from the peer and each of them is inserted into a collection before
+  * the names that follow are read, so bound it: a request or a response about a hundred thousand
+  * tables is already far beyond what a query touches. A database or a table name is an identifier
+  * and is resized to its declared size before its value arrives, so bound it as well.
+  */
+static constexpr size_t MAX_TABLES_IN_TABLES_STATUS = 100000;
+static constexpr size_t MAX_TABLE_NAME_SIZE_IN_TABLES_STATUS = 64 * 1024;
 
 void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
 {
@@ -92,14 +65,15 @@ void TablesStatusRequest::read(ReadBuffer & in, UInt64 client_protocol_revision)
     size_t size = 0;
     readVarUInt(size, in);
 
-    if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
+    if (size > MAX_TABLES_IN_TABLES_STATUS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too large collection size: {} (maximum: {})", size, MAX_TABLES_IN_TABLES_STATUS);
 
     for (size_t i = 0; i < size; ++i)
     {
         QualifiedTableName table_name;
-        readBinary(table_name.database, in);
-        readBinary(table_name.table, in);
+        readStringBinary(table_name.database, in, MAX_TABLE_NAME_SIZE_IN_TABLES_STATUS);
+        readStringBinary(table_name.table, in, MAX_TABLE_NAME_SIZE_IN_TABLES_STATUS);
         tables.emplace(std::move(table_name));
     }
 }
@@ -129,14 +103,15 @@ void TablesStatusResponse::read(ReadBuffer & in, UInt64 server_protocol_revision
     size_t size = 0;
     readVarUInt(size, in);
 
-    if (size > DEFAULT_MAX_STRING_SIZE)
-        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE, "Too large collection size.");
+    if (size > MAX_TABLES_IN_TABLES_STATUS)
+        throw Exception(ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too large collection size: {} (maximum: {})", size, MAX_TABLES_IN_TABLES_STATUS);
 
     for (size_t i = 0; i < size; ++i)
     {
         QualifiedTableName table_name;
-        readBinary(table_name.database, in);
-        readBinary(table_name.table, in);
+        readStringBinary(table_name.database, in, MAX_TABLE_NAME_SIZE_IN_TABLES_STATUS);
+        readStringBinary(table_name.table, in, MAX_TABLE_NAME_SIZE_IN_TABLES_STATUS);
 
         TableStatus status;
         status.read(in, server_protocol_revision);
