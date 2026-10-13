@@ -194,13 +194,13 @@ DiskCacheReader::DiskCacheReader(
     size_t object_file_offset_,
     ThrottlerPtr local_throttler_,
     ReaderAnchorCache * anchors_,
-    bool count_hit_)
+    bool counts_hits_)
     : segment_holder(std::move(segment_holder_))
     , hit_range(range_in_file)
     , object_file_offset(object_file_offset_)
     , local_throttler(std::move(local_throttler_))
     , anchors(anchors_)
-    , count_hit(count_hit_)
+    , counts_hits(counts_hits_)
 {
     chassert(segment_holder && segment_holder->size() == 1);
     /// The hit range (file-space) must fall inside this segment's file-space span.
@@ -333,9 +333,9 @@ size_t DiskCacheWriter::write(ChainedBuffers data, const FillRole & role)
     if (!written_ok)
         return 0;
 
-    if (cache_settings.cache_temporarily && !wrote && write_offset == seg_range.left)
+    if (cache_settings.cache_temporarily && !modified && write_offset == seg_range.left)
         filled_from_start = true;
-    wrote = true;
+    modified = true;
     LOG_TRACE(log, "DiskCacheWriter::write: wrote {} bytes to [{}, {}] at offset {}",
         contiguous, seg_range.left, seg_range.right, write_offset);
     return contiguous;
@@ -351,8 +351,8 @@ ChainedBuffers DiskCacheWriter::read(ByteRange subrange)
     /// unthrottled, unanchored).
     readSegmentInto(result, segment(), sub_in_object, object_file_offset,
         /*local_throttler=*/nullptr, /*anchors=*/nullptr);
-    if (!wrote && !result.empty())
-        served_others = true;
+    if (!modified && !result.empty())
+        read_data_from_concurrent_writers = true;
     return result;
 }
 
@@ -376,7 +376,7 @@ std::function<void()> DiskCacheWriter::takeDropAfterPass()
 
 DiskCacheWriter::~DiskCacheWriter()
 {
-    if (!served_others || !segment_holder)
+    if (!read_data_from_concurrent_writers || !segment_holder)
         return;
     try
     {
@@ -531,7 +531,7 @@ DiskCacheReader::~DiskCacheReader()
     /// Deferred priority bump: if we served any bytes, raise the segment's priority so a hit next to
     /// fresh inserts isn't aged below them. It also counts the hit while the segment still downloads.
     /// The `segment_holder` member then completes the segment as it is destroyed.
-    if (!served || !segment_holder || !count_hit)
+    if (!served || !segment_holder || !counts_hits)
         return;
     try
     {

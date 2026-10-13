@@ -29,7 +29,7 @@ public:
         size_t object_file_offset_,
         ThrottlerPtr local_throttler_,
         ReaderAnchorCache * anchors_,
-        bool count_hit_ = true);
+        bool counts_hits_ = true);
     ~DiskCacheReader() override;
 
     ByteRange range() const override { return hit_range; }
@@ -47,7 +47,7 @@ private:
     ReaderAnchorCache * anchors = nullptr;
     /// Whether this reader served any bytes; the destructor then bumps the segment's cache priority.
     bool served = false;
-    bool count_hit = true;
+    bool counts_hits = true;
     LoggerPtr log = getLogger("DiskCacheReader");
 };
 
@@ -87,9 +87,9 @@ private:
     ByteRange aligned_range;
     /// One state per writer: it owns a single append-only segment.
     FileCacheReserveAhead reserve_ahead;
-    bool wrote = false;
-    /// Whether this writer served bytes that another reader wrote; the destructor then counts a hit.
-    bool served_others = false;
+    bool modified = false;
+    /// Whether this writer served data that a concurrent writer appended; the destructor then counts a hit.
+    bool read_data_from_concurrent_writers = false;
     /// In the temporary-cache mode: whether this writer filled the segment from its start.
     bool filled_from_start = false;
     LoggerPtr log = getLogger("DiskCacheWriter");
