@@ -151,6 +151,7 @@ add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes/SpaceShared)
 add_headers_and_sources(clickhouse_common_io Common/Scheduler/Nodes/TimeShared)
 add_headers_and_sources(clickhouse_common_io IO)
 add_headers_and_sources(clickhouse_common_io IO/Archives)
+add_headers_and_sources(clickhouse_common_io IO/HTTP)
 add_headers_and_sources(clickhouse_common_io IO/Protobuf)
 add_headers_and_sources(clickhouse_common_io IO/S3)
 add_headers_and_sources(clickhouse_common_io IO/AzureBlobStorage)
@@ -557,6 +558,7 @@ set_property(SOURCE
     Processors/Transforms/Window/SlidingBlocks.cpp  # window functions
     Processors/Transforms/Window/SlidingIndexes.cpp  # window functions
     Processors/Transforms/Window/Partition.cpp  # window functions
+    Processors/Transforms/Window/Frame.cpp  # window functions
     Processors/Transforms/Window/WindowTransformParams.cpp  # window functions
     WindowFunctions/WindowFunctionRank.cpp                   # window functions
     WindowFunctions/WindowFunctionDenseRank.cpp              # window functions
