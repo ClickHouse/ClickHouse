@@ -73,6 +73,7 @@ FragmentGraph makeGraph(std::initializer_list<UInt32> ids)
     return graph;
 }
 
+#ifndef DEBUG_OR_SANITIZER_BUILD
 /// Expects `computeLevels` to throw an exception whose message contains `expected_message`.
 void expectLevelsThrow(FragmentGraph & graph, const String & expected_message)
 {
@@ -86,6 +87,7 @@ void expectLevelsThrow(FragmentGraph & graph, const String & expected_message)
         EXPECT_NE(e.message().find(expected_message), String::npos) << e.message();
     }
 }
+#endif
 
 }
 
@@ -130,6 +132,8 @@ TEST(FragmentGraph, LevelsOfUnevenBranches)
     EXPECT_EQ(graph.levels, (std::vector<std::vector<UInt32>>{{1, 3}, {2}, {0}}));
 }
 
+/// `LOGICAL_ERROR` aborts instead of throwing in debug and sanitizer builds.
+#ifndef DEBUG_OR_SANITIZER_BUILD
 TEST(FragmentGraph, CycleThrows)
 {
     auto graph = makeGraph({0, 1, 2});
@@ -155,6 +159,7 @@ TEST(FragmentGraph, WorkerRootThrows)
     connect(graph, 0, 1, Blocking::Streaming);
     expectLevelsThrow(graph, "The root fragment F1 must have the initiator role");
 }
+#endif
 
 TEST(FragmentGraph, LevelsWithSetFragment)
 {
@@ -190,12 +195,14 @@ TEST(FragmentGraph, LevelsWithSetFragment)
         "levels: [F0] [F1] [F2] [F3]\n");
 }
 
+#ifndef DEBUG_OR_SANITIZER_BUILD
 TEST(FragmentGraph, UnknownProducerThrows)
 {
     auto graph = makeGraph({0});
     graph.fragments[0].depends_on.push_back(FragmentDependency{.producer = 7, .exchange = 7, .type = Blocking::Streaming, .reason = {}});
     EXPECT_THROW(computeLevels(graph), Exception);
 }
+#endif
 
 TEST(FragmentGraph, ClassifyDependency)
 {
@@ -243,6 +250,21 @@ TEST(FragmentGraph, ClassifyDependency)
         String reason = "stale";
         EXPECT_EQ(classifyDependency(consumer, FragmentExchange::Kind::Gather, c.mode, reason), c.expected) << "case " << i;
         EXPECT_EQ(reason, c.expected_reason) << "case " << i;
+    }
+
+    /// A `MergingAggregated` that merges bucket by bucket streams, unless the exchange is materialised.
+    for (Mode mode : {Mode::Pipelined, Mode::Materialised})
+    {
+        ConsumerStepInfo consumer;
+        consumer.kind = Kind::MergingAggregated;
+        consumer.step_name = "MergingAggregated";
+        consumer.merges_bucket_by_bucket = true;
+
+        String reason = "stale";
+        const bool materialised = mode == Mode::Materialised;
+        EXPECT_EQ(classifyDependency(consumer, FragmentExchange::Kind::Gather, mode, reason),
+            materialised ? Blocking::Blocking : Blocking::Streaming);
+        EXPECT_EQ(reason, materialised ? "materialised exchange" : "");
     }
 
     /// A `SetValues` exchange is blocking regardless of the mode and of a streaming consumer.
@@ -426,7 +448,9 @@ TEST(FragmentGraph, BuildFromDistributedPlan)
     distributed_plan.exchange_descriptions["exchange_7"] = description;
     distributed_plan.exchange_descriptions["exchange_7"].name = "exchange_7";
     distributed_plan.exchange_descriptions["exchange_7"].id = 7;
+#ifndef DEBUG_OR_SANITIZER_BUILD
     EXPECT_THROW(buildFragmentGraph(distributed_plan), Exception);
+#endif
 }
 
 TEST(FragmentGraph, BuildSingleFragment)

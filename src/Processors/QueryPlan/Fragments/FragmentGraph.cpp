@@ -162,9 +162,10 @@ ConsumerStepInfo findConsumerStep(const QueryPlan & plan, const String & stage_n
             const size_t build_side_index = join->swap_streams ? 0 : 1;
             info.receive_feeds_build_side = child_index == build_side_index;
         }
-        else if (typeid_cast<const MergingAggregatedStep *>(&step))
+        else if (const auto * merging = typeid_cast<const MergingAggregatedStep *>(&step))
         {
             info.kind = ConsumerStepInfo::Kind::MergingAggregated;
+            info.merges_bucket_by_bucket = merging->isMemoryEfficientAggregation() || merging->memoryBoundMergingWillBeUsed();
         }
         else if (const auto * sorting = typeid_cast<const SortingStep *>(&step))
         {
@@ -278,6 +279,8 @@ FragmentDependency::Type classifyDependency(
             }
             return FragmentDependency::Type::Streaming;
         case ConsumerStepInfo::Kind::MergingAggregated:
+            if (consumer.merges_bucket_by_bucket)
+                return FragmentDependency::Type::Streaming;
             reason = "merge of aggregation states";
             return FragmentDependency::Type::Blocking;
         case ConsumerStepInfo::Kind::Sorting:

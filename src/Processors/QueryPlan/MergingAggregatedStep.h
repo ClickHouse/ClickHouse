@@ -38,6 +38,7 @@ public:
     const SortDescription & getGroupBySortDescription() const { return group_by_sort_description; }
 
     bool memoryBoundMergingWillBeUsed() const;
+    bool isMemoryEfficientAggregation() const { return memory_efficient_aggregation; }
 
     bool isGroupingSets() const { return !grouping_sets_params.empty(); }
     const auto & getGroupingSetsParamsList() const { return grouping_sets_params; }

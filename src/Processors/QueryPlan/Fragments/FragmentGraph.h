@@ -170,6 +170,9 @@ struct ConsumerStepInfo
     bool receive_feeds_build_side = false;
     /// `Sorting` only.
     SortingStep::Type sorting_type = SortingStep::Type::Full;
+    /// `MergingAggregated` only: the step merges bucket by bucket (memory-efficient or memory-bound merging)
+    /// and emits a bucket once every input has sent it, instead of merging all the input into one table first.
+    bool merges_bucket_by_bucket = false;
 };
 
 /// Pure classification of one dependency; `reason` is set for a blocking dependency and cleared otherwise.
