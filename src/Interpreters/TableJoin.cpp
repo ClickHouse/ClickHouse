@@ -73,7 +73,6 @@ namespace Setting
     extern const SettingsUInt64 max_joined_block_size_bytes;
     extern const SettingsUInt64 max_memory_usage;
     extern const SettingsUInt64 max_rows_in_join;
-    extern const SettingsBool joined_block_split_single_row;
     extern const SettingsBool parallel_non_joined_rows_processing;
     extern const SettingsUInt64 partial_merge_join_left_table_buffer_bytes;
     extern const SettingsUInt64 partial_merge_join_rows_in_right_blocks;
@@ -209,17 +208,15 @@ std::string TableJoin::formatClausesPretty(const TableJoin::Clauses & clauses, c
     return fmt::format("{}", fmt::join(res, " OR "));
 }
 
-TableJoin::TableJoin(const Settings & settings, JoinAnalyzeMode analyze_mode_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
-    : size_limits(
-          SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
+TableJoin::TableJoin(
+    const Settings & settings, JoinAnalyzeMode analyze_mode_, VolumePtr tmp_volume_, TemporaryDataOnDiskScopePtr tmp_data_)
+    : size_limits(SizeLimits{settings[Setting::max_rows_in_join], settings[Setting::max_bytes_in_join], settings[Setting::join_overflow_mode]})
     , default_max_bytes(settings[Setting::default_max_bytes_in_join])
     , join_use_nulls(settings[Setting::join_use_nulls])
     , cross_join_min_rows_to_compress(settings[Setting::cross_join_min_rows_to_compress])
     , cross_join_min_bytes_to_compress(settings[Setting::cross_join_min_bytes_to_compress])
     , max_joined_block_rows(settings[Setting::max_joined_block_size_rows])
     , max_joined_block_bytes(settings[Setting::max_joined_block_size_bytes])
-    , joined_block_split_single_row(settings[Setting::joined_block_split_single_row])
-    , parallel_non_joined_rows_processing(settings[Setting::parallel_non_joined_rows_processing])
     , join_algorithms(settings[Setting::join_algorithm])
     , partial_merge_join_rows_in_right_blocks(settings[Setting::partial_merge_join_rows_in_right_blocks])
     , partial_merge_join_left_table_buffer_bytes(settings[Setting::partial_merge_join_left_table_buffer_bytes])
