@@ -228,10 +228,10 @@ private:
 
     /// The csn of every version <= `snapshot_csn`, oldest first. A version is a delta, so the read
     /// owes the union of all of them and not just the newest.
-    std::vector<CSN> versionsUpTo(const MergeTreePartInfo & part, CSN snapshot_csn) const;
+    std::vector<CSN> versionsUpTo(PartEntry & entry, CSN snapshot_csn) const;
 
     /// Grab the parts holding the specified versions.
-    std::vector<Version> pinVersions(const MergeTreePartInfo & part, const std::vector<CSN> & csns) const;
+    std::vector<Version> pinVersions(const MergeTreePartInfo & part, PartEntry & entry, const std::vector<CSN> & csns) const;
 
     /// Read one version's bytes, from whichever of the two names its writer filed it under.
     DeleteBitmapPtr readVersion(const IMergeTreeDataPart & part, const Version & version) const;

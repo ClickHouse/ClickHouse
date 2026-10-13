@@ -70,7 +70,12 @@ DeleteBitmapStore::readBitmap(const MergeTreePartInfo & part_info, CSN snapshot_
     /// We might need to consult the keeper for authoritative CSN later
     auto component_guard = Coordination::setCurrentComponent("DeleteBitmapStore::readBitmap");
 
-    const auto csns = versionsUpTo(part_info, snapshot_csn);
+    /// Held for the whole read: a force-detach of the part can erase its entry meanwhile.
+    const auto entry = findEntry(part_info);
+    if (!entry)
+        return {std::make_shared<DeleteBitmap>(), 0};
+
+    const auto csns = versionsUpTo(*entry, snapshot_csn);
     if (csns.empty())
         return {std::make_shared<DeleteBitmap>(), 0};
 
@@ -86,7 +91,7 @@ DeleteBitmapStore::readBitmap(const MergeTreePartInfo & part_info, CSN snapshot_
 
     auto load = [&]
     {
-        const auto versions = pinVersions(part_info, csns);
+        const auto versions = pinVersions(part_info, *entry, csns);
         auto united = std::make_shared<DeleteBitmap>();
 
         if (cache && versions.size() > 1)
@@ -300,19 +305,15 @@ DeleteBitmapStore::resolveOwnVersion(const DataPartPtr & holder)
     return Version{csn, holder, /*carried=*/false};
 }
 
-std::vector<CSN> DeleteBitmapStore::versionsUpTo(const MergeTreePartInfo & part, CSN snapshot_csn) const
+std::vector<CSN> DeleteBitmapStore::versionsUpTo(PartEntry & entry, CSN snapshot_csn) const
 {
-    const auto entry = findEntry(part);
-    if (!entry)
-        return {};
-
-    resolveUnknownVersions(*entry);
+    resolveUnknownVersions(entry);
 
     std::vector<CSN> csns;
     {
-        std::lock_guard lock(entry->mutex);
-        const auto end = std::upper_bound(entry->inward.begin(), entry->inward.end(), snapshot_csn, ByCsn{});
-        for (auto it = entry->inward.begin(); it != end; ++it)
+        std::lock_guard lock(entry.mutex);
+        const auto end = std::upper_bound(entry.inward.begin(), entry.inward.end(), snapshot_csn, ByCsn{});
+        for (auto it = entry.inward.begin(); it != end; ++it)
             if (csns.empty() || csns.back() != it->csn)
                 csns.push_back(it->csn);
     }
@@ -321,19 +322,16 @@ std::vector<CSN> DeleteBitmapStore::versionsUpTo(const MergeTreePartInfo & part,
 }
 
 std::vector<DeleteBitmapStore::Version>
-DeleteBitmapStore::pinVersions(const MergeTreePartInfo & part, const std::vector<CSN> & csns) const
+DeleteBitmapStore::pinVersions(const MergeTreePartInfo & part, PartEntry & entry, const std::vector<CSN> & csns) const
 {
-    const auto entry = findEntry(part);
-    chassert(entry, fmt::format("pinning the bitmap holders of {}, which has no index entry", part.getPartNameV1()));
-
     /// The links and the parts under one lock
     const auto parts_lock = data.readLockParts();
-    std::lock_guard lock(entry->mutex);
+    std::lock_guard lock(entry.mutex);
     std::vector<Version> versions;
     for (const CSN csn : csns)
     {
         Version version{csn, nullptr, /*carried=*/false};
-        const auto [first, last] = std::equal_range(entry->inward.begin(), entry->inward.end(), csn, ByCsn{});
+        const auto [first, last] = std::equal_range(entry.inward.begin(), entry.inward.end(), csn, ByCsn{});
         for (auto it = first; it != last && !version.held_in; ++it)
         {
             version.held_in = data.getPartIfExistsUnlocked(it->holder, RESOLVABLE_STATES, parts_lock);
