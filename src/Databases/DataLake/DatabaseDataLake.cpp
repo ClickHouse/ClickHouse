@@ -40,6 +40,7 @@
 #include <Storages/ObjectStorage/S3/Configuration.h>
 #include <Storages/ObjectStorage/S3/S3SecretArguments.h>
 #include <Storages/ConstraintsDescription.h>
+#include <Storages/StorageFactory.h>
 #include <Storages/StorageNull.h>
 #include <Storages/ObjectStorage/DataLakes/DataLakeConfiguration.h>
 #include <Storages/ObjectStorage/DataLakes/Iceberg/Utils.h>
@@ -1068,6 +1069,10 @@ StoragePtr DatabaseDataLake::maybeCreateTableInExternalCatalog(ContextPtr contex
     if (!catalog->writesInitialMetadata())
         return nullptr;
 
+    /// The storage factory does not create this table, so run its engine checks here. Otherwise the catalog request
+    /// would silently drop clauses such as `TTL` that the engine does not support.
+    StorageFactory::instance().checkEngineFeatures(create, columns, LoadingStrictnessLevel::CREATE, context_);
+
     const auto & name = create.getTable();
 
     /// A new table has no data files to infer the schema from.
@@ -1104,6 +1109,14 @@ StoragePtr DatabaseDataLake::maybeCreateTableInExternalCatalog(ContextPtr contex
                     change.name, backQuoteIfNeed(getDatabaseName()), name);
         storage_settings->loadFromQuery(*create.storage->settings);
     }
+
+    /// The create request carries only `PARTITION BY` and `ORDER BY`.
+    if (create.storage->primary_key || create.storage->sample_by)
+        throw Exception(
+            ErrorCodes::BAD_ARGUMENTS,
+            "PRIMARY KEY and SAMPLE BY clauses are not supported when the catalog of database {} creates table {}. "
+            "Specify the location in the table engine arguments to use them",
+            backQuoteIfNeed(getDatabaseName()), name);
 
     ASTPtr partition_by;
     if (create.storage->partition_by)
