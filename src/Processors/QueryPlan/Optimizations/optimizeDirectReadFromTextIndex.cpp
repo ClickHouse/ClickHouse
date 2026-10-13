@@ -655,18 +655,15 @@ private:
                 .virtual_column = {},
             };
 
-            /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`). Otherwise
-            /// just inject the tokenizer/preprocessor/postprocessor (no virtual column), same as None mode.
+            /// Use direct read only when enabled and the entry is direct-read-eligible (has `index`). Otherwise, or if
+            /// the query has no virtual column, just inject the tokenizer/preprocessor/postprocessor, same as None mode.
             if (direct_read_from_text_index
                 && info.index
                 && !drops_nullable
                 && search_query->getDirectReadMode() != TextIndexDirectReadMode::None)
             {
-                auto virtual_column_name = text_index_condition.tryGetVirtualColumnName(*search_query, index_name);
-                if (!virtual_column_name)
-                    continue;
-
-                condition.virtual_column = {*virtual_column_name, std::make_shared<DataTypeUInt8>(), search_query, nullptr};
+                if (auto virtual_column_name = text_index_condition.tryGetVirtualColumnName(*search_query, index_name))
+                    condition.virtual_column = {*virtual_column_name, std::make_shared<DataTypeUInt8>(), search_query, nullptr};
             }
 
             selected_conditions.push_back(std::move(condition));
