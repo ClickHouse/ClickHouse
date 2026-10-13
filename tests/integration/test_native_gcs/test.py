@@ -52,6 +52,7 @@ def started_cluster():
                 "configs/filesystem_caches.xml",
                 "configs/custom_local_disks.xml",
                 "configs/allowed_disks_for_table_engines.xml",
+                "configs/url_only_collection_endpoint.xml",
             ],
             with_gcs=True,
             stay_alive=True,
@@ -59,6 +60,7 @@ def started_cluster():
                 "NATIVE_GCS_DYNAMIC_DISK_TYPE": "gcs",
                 "NATIVE_GCS_DYNAMIC_DISK_HEADER": "X-ClickHouse-Native-GCS-Env-Header: 1",
                 "GOOGLE_APPLICATION_CREDENTIALS": ADC_CREDENTIALS_PATH,
+                "NATIVE_GCS_URL_ONLY_COLLECTION_ENDPOINT": f"http://{cluster.gcs_host}:{cluster.gcs_port}/{cluster.gcs_bucket}/url_only_collection/",
             },
         )
         cluster.start()
@@ -339,6 +341,10 @@ def test_url_only_named_collection_reads_anonymously(started_cluster):
     Application Default Credentials -- or, under the default
     `s3_allow_server_credentials_in_user_queries = 0`, was refused outright. Here the read has to
     succeed, which it can only do unsigned: the emulator is reached with no credential at all.
+
+    The server configuration carries a `google_adc_*` triple for this very prefix
+    (`configs/url_only_collection_endpoint.xml`). The collection does not specify one, so it must not
+    inherit the server's refresh-token identity either: exchanging that token would fail here.
     """
     node = started_cluster.instances["node"]
     url = gcs_url("url_only_collection/data.tsv")
