@@ -13,7 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Reading format version 3 metadata logs a spurious "violates Iceberg specification" warning,
 # https://github.com/ClickHouse/ClickHouse/issues/125333
-CH="${CLICKHOUSE_CLIENT} --send_logs_level=error --allow_insert_into_iceberg=1 --allow_iceberg_remove_orphan_files=1 --allow_experimental_expire_snapshots=1 --mutations_sync=2"
+CH="${CLICKHOUSE_CLIENT} --send_logs_level=error --allow_insert_into_iceberg=1 --allow_iceberg_remove_orphan_files=1 --iceberg_orphan_files_min_retention_seconds=0 --allow_experimental_expire_snapshots=1 --mutations_sync=2"
 
 # A fixed generator rather than $RANDOM, whose sequence depends on the bash version.
 next_random()

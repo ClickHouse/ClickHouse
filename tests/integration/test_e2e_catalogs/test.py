@@ -1287,7 +1287,11 @@ def test_expire_snapshots_and_remove_orphan_files(node, catalog_manager):
         select_all = f"SELECT id, value FROM {tbl} ORDER BY id FORMAT TSV"
         rows_before = node.query(select_all)
         assert rows_before == "1\ta\n2\tb\n3\tc\n4\td\n5\te\n6\tf\n"
-        settings = {"allow_experimental_expire_snapshots": 1, "allow_iceberg_remove_orphan_files": 1}
+        settings = {
+            "allow_experimental_expire_snapshots": 1,
+            "allow_iceberg_remove_orphan_files": 1,
+            "iceberg_orphan_files_min_retention_seconds": 0,
+        }
 
         expired = _nonzero_metrics(
             node.query(
@@ -1367,7 +1371,11 @@ def test_gcs_expire_snapshots_and_remove_orphan_files(node, catalog_manager):
         select_all = f"SELECT id, value FROM {tbl} ORDER BY id FORMAT TSV"
         rows_before = node.query(select_all)
         assert rows_before == "1\ta\n2\tb\n3\tc\n"
-        settings = {"allow_experimental_expire_snapshots": 1, "allow_iceberg_remove_orphan_files": 1}
+        settings = {
+            "allow_experimental_expire_snapshots": 1,
+            "allow_iceberg_remove_orphan_files": 1,
+            "iceberg_orphan_files_min_retention_seconds": 0,
+        }
 
         expired = _nonzero_metrics(
             node.query(

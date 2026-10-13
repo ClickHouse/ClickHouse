@@ -13,7 +13,7 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # Reading format version 3 metadata logs a spurious "violates Iceberg specification" warning,
 # https://github.com/ClickHouse/ClickHouse/issues/125333
-CH="${CLICKHOUSE_CLIENT} --send_logs_level=error --session_timezone=UTC --allow_insert_into_iceberg=1 --allow_experimental_expire_snapshots=1 --allow_iceberg_remove_orphan_files=1"
+CH="${CLICKHOUSE_CLIENT} --send_logs_level=error --session_timezone=UTC --allow_insert_into_iceberg=1 --allow_experimental_expire_snapshots=1 --allow_iceberg_remove_orphan_files=1 --iceberg_orphan_files_min_retention_seconds=0"
 
 # Format version 3 has no DELETE or DROP PARTITION, so there it covers only the expire commit itself.
 for format_version in 2 3; do

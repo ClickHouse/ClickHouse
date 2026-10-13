@@ -862,6 +862,7 @@ def test_engine_recent_metadata_by_last_updated_ms(node, manager, sales_table):
 _MAINTENANCE_SETTINGS = {
     "allow_experimental_expire_snapshots": 1,
     "allow_iceberg_remove_orphan_files": 1,
+    "iceberg_orphan_files_min_retention_seconds": 0,
 }
 
 def _nonzero_metrics(result: str) -> dict:

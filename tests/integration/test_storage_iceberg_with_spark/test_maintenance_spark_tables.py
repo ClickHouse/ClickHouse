@@ -17,6 +17,7 @@ SETTINGS = {
     "allow_insert_into_iceberg": 1,
     "allow_iceberg_remove_orphan_files": 1,
     "allow_experimental_expire_snapshots": 1,
+    "iceberg_orphan_files_min_retention_seconds": 0,
 }
 
 

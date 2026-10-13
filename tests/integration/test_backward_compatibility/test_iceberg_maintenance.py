@@ -26,7 +26,11 @@ ENGINE = f"IcebergS3('http://minio1:9001/root/{TABLE_PATH}/', 'minio', '{minio_s
 
 WRITE_SETTINGS = {"allow_insert_into_iceberg": 1, "mutations_sync": 2}
 EXPIRE_SETTINGS = {"allow_insert_into_iceberg": 1, "allow_experimental_expire_snapshots": 1}
-ORPHAN_SETTINGS = {"allow_insert_into_iceberg": 1, "allow_iceberg_remove_orphan_files": 1}
+ORPHAN_SETTINGS = {
+    "allow_insert_into_iceberg": 1,
+    "allow_iceberg_remove_orphan_files": 1,
+    "iceberg_orphan_files_min_retention_seconds": 0,
+}
 
 SELECT_ALL = "SELECT id, v FROM t ORDER BY id FORMAT TSV"
 SNAPSHOT_COUNT = "SELECT count() FROM system.iceberg_history WHERE database = 'default' AND table = 't'"
