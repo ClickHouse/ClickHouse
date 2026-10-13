@@ -2321,7 +2321,6 @@ void ClientBase::onProfileEvents(Block & block)
 /// Flush all buffers.
 void ClientBase::resetOutput()
 {
-    /// A failed step must not skip the rest: each buffer below has to be finalized or canceled.
     auto handle_exception = [this]
     {
         if (!have_error)
