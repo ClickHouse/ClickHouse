@@ -35,6 +35,7 @@ namespace DB
 namespace Setting
 {
     extern const SettingsUInt64 backup_restore_s3_retry_attempts;
+    extern const SettingsUInt64 backup_s3_expired_token_retry_timeout_ms;
     extern const SettingsUInt64 backup_restore_s3_retry_initial_backoff_ms;
     extern const SettingsUInt64 backup_restore_s3_retry_max_backoff_ms;
     extern const SettingsFloat backup_restore_s3_retry_jitter_factor;
@@ -100,6 +101,7 @@ public:
             .max_delay_ms = static_cast<unsigned>(local_settings[Setting::backup_restore_s3_retry_max_backoff_ms]),
             .jitter_factor = static_cast<double>(local_settings[Setting::backup_restore_s3_retry_jitter_factor])};
         slow_all_threads_after_retryable_error = local_settings[Setting::backup_slow_all_threads_after_retryable_s3_error];
+        expired_token_retry_timeout_ms = local_settings[Setting::backup_s3_expired_token_retry_timeout_ms];
     }
 
     S3BackupDiskClientFactory::Entry operator()(DiskPtr disk) const
@@ -109,6 +111,7 @@ public:
         auto config = disk_client->getClientConfiguration();
         config.retry_strategy = retry_strategy;
         config.s3_slow_all_threads_after_retryable_error = slow_all_threads_after_retryable_error;
+        config.expired_token_retry_timeout_ms = expired_token_retry_timeout_ms;
 
         return {disk_client->cloneWithConfigurationOverride(config), disk_client};
     }
@@ -116,6 +119,7 @@ public:
 private:
     S3::PocoHTTPClientConfiguration::RetryStrategy retry_strategy;
     bool slow_all_threads_after_retryable_error = false;
+    UInt64 expired_token_retry_timeout_ms = 0;
 };
 
     std::shared_ptr<S3::Client> makeS3Client(
@@ -219,6 +223,7 @@ private:
             s3_uri.uri.getScheme());
 
         client_configuration.endpointOverride = s3_uri.endpoint;
+        client_configuration.expired_token_retry_timeout_ms = local_settings[Setting::backup_s3_expired_token_retry_timeout_ms];
         /// Increase connect timeout
         client_configuration.connectTimeoutMs = 10 * 1000;
         /// Requests in backups can be extremely long, set to one hour
