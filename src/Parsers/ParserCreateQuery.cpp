@@ -923,6 +923,7 @@ bool ParserCreateTableQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expe
         partial->set(partial->columns_list, columns_list);
         partial->set(partial->storage, storage);
         partial->set(partial->as_table_function, as_table_function);
+        partial->set(partial->select, select);
         if (comment_so_far && *comment_so_far)
             partial->set(partial->comment, *comment_so_far);
         if (sql_security)
@@ -1987,7 +1988,15 @@ bool ParserCreateViewQuery::parseImpl(Pos & pos, ASTPtr & node, Expected & expec
         return false;
     }
 
+#if defined(CLICKHOUSE_PARSER_PARTIAL_AST)
+    const char * max_before_select_comment = expected.max_parsed_pos;
+#endif
     auto select_comment = parseComment(pos, expected);
+    /// Optional; not where a comment before `AS SELECT` parsed, which the success path rejects.
+    PARTIAL_AST_SNAPSHOT(
+        expected,
+        !comment && !select_comment && expected.max_parsed_pos > std::max(max_before_select_comment, pos->begin) ? tree_so_far() : nullptr,
+        pos, "comment");
     if (comment && select_comment)
         throw Exception(
             ErrorCodes::SYNTAX_ERROR,

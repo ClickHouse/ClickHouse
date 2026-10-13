@@ -469,6 +469,7 @@ if (hasAstJson) {
         [`${T} COMMENT`, 'CreateQuery', 'comment', 32, 32],
         [`${T} SQL SECURITY`, 'CreateQuery', 'sql_security', 37, 37],
         ['CREATE TABLE t AS other COMMENT', 'CreateQuery', 'comment', 31, 31],
+        ['CREATE TABLE t AS SELECT 1 AS x COMMENT', 'CreateQuery', 'comment', 39, 39],
         [`${T} COMMENT 'x' ENGINE =`, null],
         [`${T} ENGINE = MergeTree ORDER BY a,`, null],
         [`${T} ENGINE = MergeTree ORDER BY a >`, null],
@@ -513,6 +514,10 @@ if (hasAstJson) {
         ['CREATE MATERIALIZED VIEW v ENGINE = Memory POPULATE', 'CreateQuery', 'select', 51, 51],
         /// Optional parts, captured when their parser got past its first token.
         ['CREATE VIEW v COMMENT', 'CreateQuery', 'comment', 21, 21],
+        ['CREATE VIEW v AS SELECT 1 AS x COMMENT', 'CreateQuery', 'comment', 38, 38],
+        ['CREATE MATERIALIZED VIEW v AS SELECT 1 AS x COMMENT', 'CreateQuery', 'comment', 51, 51],
+        /// A comment before `AS SELECT` is rejected by the success path, so there is nothing to capture after it.
+        ["CREATE VIEW v COMMENT 'x' AS SELECT 1 AS x COMMENT", null],
         ['CREATE VIEW v (a) DEFINER =', 'CreateQuery', 'sql_security', 27, 27],
         ['CREATE VIEW v (a) SQL SECURITY', 'CreateQuery', 'sql_security', 30, 30],
 
@@ -597,6 +602,8 @@ if (hasAstJson) {
             ["CREATE TABLE t UUID '123e4567-e89b-12d3-a456-426614174000' (a UInt8) ENGINE =", ' MergeTree ORDER BY a',
                 ['uuid', 'has_uuid', 'has_uuid_clause']],
             ["CREATE TABLE t (a UInt8) ENGINE = MergeTree ORDER BY a COMMENT 'x' AS", ' SELECT 1', ['comment']],
+            ['CREATE TABLE t AS SELECT 1 AS x COMMENT', " 'c'", ['select']],
+            ['CREATE VIEW v AS SELECT 1 AS x COMMENT', " 'c'", ['select', 'is_ordinary_view']],
             ['SELECT DISTINCT ON (a) b FROM', ' t', ['limit_by', 'limit_by_length']],
             ['CREATE MATERIALIZED VIEW v TO db.t', ' AS SELECT 1', ['table_ast', 'targets', 'is_materialized_view']],
             ['CREATE MATERIALIZED VIEW v ENGINE = Memory POPULATE', ' AS SELECT 1', ['targets', 'is_populate']],
