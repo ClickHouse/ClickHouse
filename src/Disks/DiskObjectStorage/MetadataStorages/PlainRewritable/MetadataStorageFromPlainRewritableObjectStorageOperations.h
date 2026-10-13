@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Disks/DiskObjectStorage/MetadataStorages/IMetadataOperation.h>
+#include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsMetadata.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/Metadata/FsSnapshot.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/Plain/MetadataStorageFromPlainObjectStorage.h>
 #include <Disks/DiskObjectStorage/MetadataStorages/PlainRewritable/PlainRewritableLayout.h>
@@ -36,6 +37,32 @@ public:
         std::shared_ptr<FsSnapshot> fs_tree_);
 
     void execute() override;
+};
+
+/// Publishes the changes recorded by the transaction snapshot as the latest state of the metadata.
+/// It is the last operation of a transaction: if it fails, the preceding operations are rolled back as usual.
+class MetadataStorageFromPlainObjectStoragePublishOperation final : public IMetadataOperation
+{
+private:
+    const std::shared_ptr<FsSnapshot> fs_tree;
+    FsMetadata & fs;
+    const std::shared_ptr<IObjectStorage> object_storage;
+    const std::shared_ptr<PlainRewritableLayout> layout;
+    StoredObjects & removed_objects;
+
+    /// The blobs that lost their last link only when the changes were published, see `FsMetadata::applyJournal`.
+    StoredObjects unlinked_blobs;
+
+public:
+    MetadataStorageFromPlainObjectStoragePublishOperation(
+        std::shared_ptr<FsSnapshot> fs_tree_,
+        FsMetadata & fs_,
+        std::shared_ptr<IObjectStorage> object_storage_,
+        std::shared_ptr<PlainRewritableLayout> layout_,
+        StoredObjects & removed_objects_);
+
+    void execute() override;
+    void finalize() override;
 };
 
 class MetadataStorageFromPlainObjectStorageCreateDirectoryOperation final : public IMetadataOperation
@@ -172,6 +199,7 @@ private:
     /// otherwise the blob would be discovered as a file again when the metadata is loaded. To be able to undo the removal,
     /// the blob is first copied to a temporary location.
     std::filesystem::path remote_source_path;
+    std::string tmp_name;
     std::filesystem::path remote_tmp_path;
     /// Set right before their steps; see `source_copy_attempted` of the move operation.
     bool copy_attempted = false;
@@ -300,9 +328,13 @@ private:
 
     std::filesystem::path remote_path_from;
     std::filesystem::path remote_path_to;
+    std::string tmp_name_from;
+    std::string tmp_name_to;
     std::filesystem::path tmp_remote_path_from;
     std::filesystem::path tmp_remote_path_to;
     std::optional<FileRemoteInfo> file_from_remote_info;
+    /// What the marker of the backup of an existing target says until the replacement is in place.
+    std::optional<PlainRewritableLayout::PendingReplace> pending_replace;
     /// Each flag is set right before its step: a step can land even when it throws, so a set flag says that the step
     /// may have changed object storage and that the steps before it completed. `undo` asks object storage for the rest.
     bool source_copy_attempted{false};
@@ -357,11 +389,15 @@ private:
 
     const LoggerPtr log;
 
+    std::string tmp_name;
     std::filesystem::path tmp_path;
     std::unique_ptr<MetadataStorageFromPlainObjectStorageMoveDirectoryOperation> move_to_tmp_op;
-    /// The metadata objects of the removed directories and the blobs whose last links were inside the removed subtree.
-    StoredObjects objects_to_remove;
+    /// The blobs whose last links were inside the removed subtree, and the metadata objects of the removed directories.
+    /// They are removed in this order, see `finalize`.
+    StoredObjects data_objects_to_remove;
+    StoredObjects metadata_objects_to_remove;
     bool move_tried = false;
+    bool marker_written = false;
 
 public:
     MetadataStorageFromPlainObjectStorageRemoveRecursiveOperation(
