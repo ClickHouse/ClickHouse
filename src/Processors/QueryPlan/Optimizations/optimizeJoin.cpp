@@ -35,6 +35,7 @@
 #include <Processors/Transforms/JoiningTransform.h>
 
 #include <algorithm>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <ranges>
@@ -957,7 +958,10 @@ void buildQueryGraph(QueryGraphBuilder & query_graph, QueryPlan::Node & node, Qu
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Residual filter is not supported in join reorder");
 }
 
-static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr root)
+/// The entries of the tree, each after its inputs. The subtree of an entry `is_built` accepts is left out, that entry
+/// takes the place of a leaf.
+static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(
+    const DPJoinEntryPtr & root, const std::function<bool(const DPJoinEntry *)> & is_built = {})
 {
     std::vector<DPJoinEntry *> result;
     result.reserve(root->relations.count() * 2);
@@ -970,7 +974,7 @@ static std::vector<DPJoinEntry *> getJoinTreePostOrderSequence(DPJoinEntryPtr ro
         auto * node = stack.back();
         stack.pop_back();
 
-        if (!node->isLeaf())
+        if (!node->isLeaf() && !(is_built && is_built(node)))
         {
             if (!node->left || !node->right)
                 throw Exception(ErrorCodes::LOGICAL_ERROR, "Join node should have both left and right children");
@@ -1058,21 +1062,32 @@ struct JoinOrderPlanBuilder : public JoinGraphStep::OrderBuilder
     JoinStrictness join_strictness = JoinStrictness::All;
     UInt64 cluster_id = 0;
     bool disjunctions_optimization_applied = false;
+    /// The orders share the entries of their common subtrees; `built_joins` refers to the entries, which these keep.
+    DPJoinEntryPtr chosen_order;
     std::vector<DPJoinEntryPtr> other_orders;
 
-    /// Builds the plan of the join tree `optimized` over `input_nodes`, in `nodes`, and returns its root.
-    /// Moves the join operators out of the tree's entries, so a tree can be built once.
+    /// Builds the plan of the join tree `optimized` over `input_nodes`, in `nodes`, and returns its root. The plan of
+    /// a subtree that an order built before is not built again: the node of that plan is used.
     QueryPlan::Node * build(const DPJoinEntryPtr & optimized, const std::vector<QueryPlan::Node *> & input_nodes, QueryPlan::Nodes & nodes);
 
     size_t otherOrdersCount() const override { return other_orders.size(); }
 
     QueryPlan::Node * buildOtherOrder(size_t index, const std::vector<QueryPlan::Node *> & inputs, QueryPlan::Nodes & nodes) override
     {
-        if (index >= other_orders.size() || !other_orders[index])
+        if (index >= other_orders.size())
             throw Exception(ErrorCodes::LOGICAL_ERROR, "Join order {} is not available", index);
-        auto order = std::move(other_orders[index]);
-        return build(order, inputs, nodes);
+        return build(other_orders[index], inputs, nodes);
     }
+
+private:
+    /// The plan of a join entry, and the columns of its relations after it, see `current_input_nodes` in `build`.
+    struct BuiltJoin
+    {
+        QueryPlan::Node * node = nullptr;
+        std::vector<std::pair<size_t, const ActionsDAG::Node *>> input_nodes;
+        RelationEstimateInfo relation_info;
+    };
+    std::unordered_map<const DPJoinEntry *, BuiltJoin> built_joins;
 };
 
 QueryPlan::Node * JoinOrderPlanBuilder::build(
@@ -1081,10 +1096,13 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
     const auto & optimization_settings = query_graph_builder.context->optimization_settings;
     auto current_input_nodes = initial_input_nodes;
     auto relation_infos = leaf_relation_infos;
-    auto sequence = getJoinTreePostOrderSequence(optimized);
+    auto is_built = [&](const DPJoinEntry * entry) { return built_joins.contains(entry); };
+    auto sequence = getJoinTreePostOrderSequence(optimized, is_built);
 
     if (sequence.empty())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Join tree is empty");
+    if (const auto it = built_joins.find(sequence.back()); it != built_joins.end())
+        return it->second.node;
 
     /// Mapping from node to maximal step position where it is used
     /// It's used to drop unused expressions
@@ -1096,6 +1114,8 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
         for (size_t i = 0; i < sequence.size(); ++i)
         {
             const auto & entry = sequence[i];
+            if (is_built(entry))
+                continue;
             for (const auto & action : entry->join_operator.expression)
                 stack.emplace_back(action.getNode(), i);
             for (const auto & action : entry->join_operator.residual_filter)
@@ -1131,7 +1151,7 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
     /// onto the reconstructed joins (e.g. an ANY/SEMI/ANTI join that was only swapped, or the whole
     /// graph under the default greedy algorithm, which never populates per-entry strictness).
     bool graph_has_mixed_strictness = false;
-    for (const auto * seq_entry : sequence)
+    for (const auto * seq_entry : getJoinTreePostOrderSequence(optimized))
         if (!seq_entry->isLeaf() && seq_entry->join_operator.strictness != JoinStrictness::All)
             graph_has_mixed_strictness = true;
 
@@ -1153,6 +1173,14 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
                 .max_rows = leaf_info.max_rows ? std::optional<Float64>(Float64(*leaf_info.max_rows)) : std::nullopt};
             node_stack.push(input_nodes[relation_id]);
         }
+        else if (const auto built = built_joins.find(entry); built != built_joins.end())
+        {
+            for (size_t input_pos = 0; input_pos < current_input_nodes.size(); ++input_pos)
+                if (entry->relations.test(current_input_nodes[input_pos].first))
+                    current_input_nodes[input_pos].second = built->second.input_nodes[input_pos].second;
+            relation_infos[entry->relations] = built->second.relation_info;
+            node_stack.push(built->second.node);
+        }
         else
         {
             /// Combine two nodes from the stack into a single join operation
@@ -1161,7 +1189,7 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
             auto * right_child_node = node_stack.top();
             node_stack.pop();
 
-            auto join_operator = std::move(entry->join_operator);
+            auto join_operator = entry->join_operator;
             /// See `graph_has_mixed_strictness` above: keep each entry's own strictness in a mixed
             /// graph, otherwise stamp the graph's single strictness.
             if (!graph_has_mixed_strictness)
@@ -1415,6 +1443,7 @@ QueryPlan::Node * JoinOrderPlanBuilder::build(
                 .max_rows = entry->max_rows ? std::optional<Float64>(Float64(*entry->max_rows)) : std::nullopt,
                 .estimate_from_defaults = entry->estimate_from_defaults};
             node_stack.push(&new_node);
+            built_joins.emplace(entry, BuiltJoin{&new_node, current_input_nodes, relation_infos[entry->relations]});
         }
     }
 
@@ -1541,6 +1570,7 @@ static QueryPlan::Node chooseJoinOrder(QueryGraphBuilder query_graph_builder, Qu
     builder->disjunctions_optimization_applied = disjunctions_optimization_applied;
 
     const auto & leaf_input_nodes = builder->query_graph_builder.inputs;
+    builder->chosen_order = join_order.best;
     QueryPlan::Node * best_root = builder->build(join_order.best, leaf_input_nodes, nodes);
 
     /// Cascades chooses between the orders: the graph becomes one step over its inputs, and the plans of the other

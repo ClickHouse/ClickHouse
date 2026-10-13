@@ -22,7 +22,8 @@ public:
     public:
         virtual ~OrderBuilder() = default;
         virtual size_t otherOrdersCount() const = 0;
-        /// Builds other order `index` in `nodes` and returns its root; every order can be built once.
+        /// Builds other order `index` in `nodes` and returns its root. The orders share the plans of their common
+        /// subtrees: a subtree some order has already is not built again.
         virtual QueryPlan::Node * buildOtherOrder(size_t index, const std::vector<QueryPlan::Node *> & inputs, QueryPlan::Nodes & nodes) = 0;
     };
 

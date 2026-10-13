@@ -204,8 +204,8 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinGraph(QueryPl
 {
     const std::vector<QueryPlan::Node *> inputs = node.children;
 
-    /// The plans of the other orders are built before the inputs are imported: building reads the input headers,
-    /// and importing moves the steps out of the input nodes.
+    /// The plans of the other orders are built before anything is imported: building reads the headers of the inputs
+    /// and of the joins the orders share, and importing moves the steps out of the nodes.
     std::vector<QueryPlan::Node *> roots{graph_step.getChosenOrderRoot()};
     auto & order_builder = graph_step.getOrderBuilder();
     for (size_t i = 0; i < order_builder.otherOrdersCount(); ++i)
@@ -219,11 +219,12 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinGraph(QueryPl
         std::vector<size_t> inputs_below;
     };
 
-    std::unordered_map<const QueryPlan::Node *, Imported> imported_inputs;
+    /// Every node is imported once: the orders share the inputs and the plans of their common subtrees.
+    std::unordered_map<const QueryPlan::Node *, Imported> imported_nodes;
     for (size_t i = 0; i < inputs.size(); ++i)
     {
         auto [group_id, pending_props] = addGroup(*inputs[i]);
-        imported_inputs.emplace(inputs[i], Imported{group_id, std::move(pending_props), {i}});
+        imported_nodes.emplace(inputs[i], Imported{group_id, std::move(pending_props), {i}});
     }
 
     /// The joins over the same inputs give the same rows; their expressions share a group when their output headers
@@ -237,7 +238,7 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinGraph(QueryPl
 
     std::function<Imported(QueryPlan::Node &)> import_join = [&](QueryPlan::Node & join_node) -> Imported
     {
-        if (auto it = imported_inputs.find(&join_node); it != imported_inputs.end())
+        if (auto it = imported_nodes.find(&join_node); it != imported_nodes.end())
             return it->second;
 
         std::vector<Imported> children;
@@ -255,17 +256,24 @@ std::pair<GroupId, ExpressionProperties> CascadesOptimizer::addJoinGraph(QueryPl
             expression->inputs.push_back({child.group_id, std::move(child.pending_props)});
 
         auto & candidates = groups_by_inputs[inputs_below];
+        std::optional<GroupId> group_id;
         for (const auto & candidate : candidates)
         {
             if (blocksHaveEqualStructure(*candidate.header, *header))
             {
                 memo.getGroup(candidate.group_id)->addLogicalExpression(expression);
-                return {candidate.group_id, {}, std::move(inputs_below)};
+                group_id = candidate.group_id;
+                break;
             }
         }
-        auto group_id = memo.addGroup(expression);
-        candidates.push_back({group_id, header});
-        return {group_id, {}, std::move(inputs_below)};
+        if (!group_id)
+        {
+            group_id = memo.addGroup(expression);
+            candidates.push_back({*group_id, header});
+        }
+        Imported imported{*group_id, {}, std::move(inputs_below)};
+        imported_nodes.emplace(&join_node, imported);
+        return imported;
     };
 
     const auto chosen = import_join(*roots.front());

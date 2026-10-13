@@ -161,7 +161,8 @@ struct QueryPlanOptimizationSettings;
 struct JoinOrderResult
 {
     DPJoinEntryPtr best;
-    /// Other complete orders by cost, see `QueryGraph::max_join_order_alternatives`.
+    /// Other complete orders by cost, see `QueryGraph::max_join_order_alternatives`. They share the entries of their
+    /// common subtrees with `best` and with each other.
     std::vector<DPJoinEntryPtr> alternatives;
 };
 

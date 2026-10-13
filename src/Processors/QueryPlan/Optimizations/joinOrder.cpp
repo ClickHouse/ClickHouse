@@ -214,12 +214,17 @@ bool QueryGraph::areTransitivelyConnected(const BitSet & left, const BitSet & ri
 ///      and right subtrees that the remaining predicates do not connect. If predicates remain,
 ///      only for classes whose members have one type up to Nullable and LowCardinality
 ///      (equality across types is not transitive), and not when a side is a prepared storage.
+using JoinEquivalenceClasses = EquivalenceClasses<JoinActionRef>;
+
+/// The join orders of one search share the entries of their common subtrees; each entry is cleaned once, and
+/// `cleaned` keeps the equivalence classes of the entries already cleaned.
 static void cleanupJoinPredicates(
     const DPJoinEntryPtr & root,
     const EquivalenceClasses<JoinActionRef> & column_equivalences,
-    const BitSet & prepared_storage_relations)
+    const BitSet & prepared_storage_relations,
+    std::unordered_map<const DPJoinEntry *, JoinEquivalenceClasses> & cleaned)
 {
-    using EquivClasses = EquivalenceClasses<JoinActionRef>;
+    using EquivClasses = JoinEquivalenceClasses;
 
     auto is_prepared_storage = [&](const DPJoinEntryPtr & side)
     {
@@ -241,6 +246,8 @@ static void cleanupJoinPredicates(
     {
         if (entry->isLeaf())
             return {};
+        if (auto it = cleaned.find(entry.get()); it != cleaned.end())
+            return it->second;
 
         /// Merge equivalence classes from both children.
         auto equiv = process(entry->left);
@@ -345,6 +352,7 @@ static void cleanupJoinPredicates(
             }
         }
 
+        cleaned.emplace(entry.get(), equiv);
         return equiv;
     };
 
@@ -430,24 +438,6 @@ std::shared_ptr<DPJoinEntry> JoinOrderOptimizer::solve()
     return best_plan;
 }
 
-namespace
-{
-
-/// A copy of the tree that shares no entry with `entry`: `cleanupJoinPredicates` changes the join
-/// operators of the tree it gets, and two trees from one search share entries.
-DPJoinEntryPtr deepCopyJoinTree(const DPJoinEntryPtr & entry)
-{
-    auto copy = std::make_shared<DPJoinEntry>(*entry);
-    if (!entry->isLeaf())
-    {
-        copy->left = deepCopyJoinTree(entry->left);
-        copy->right = deepCopyJoinTree(entry->right);
-    }
-    return copy;
-}
-
-}
-
 JoinOrderResult optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimizationSettings & optimization_settings)
 {
     if (query_graph.relation_stats.size() <= 1)
@@ -480,17 +470,16 @@ JoinOrderResult optimizeJoinOrder(QueryGraph query_graph, const QueryPlanOptimiz
             break;
         if (found->left->relations == best_plan->left->relations || found->left->relations == best_plan->right->relations)
             continue;
-        alternatives.push_back(deepCopyJoinTree(found));
+        alternatives.push_back(found);
         LOG_TRACE(getJoinOrderOptimizerLogger(), "Other join order '{}', cost: {}", alternatives.back()->dump(), alternatives.back()->cost);
     }
-    if (!alternatives.empty())
-        best_plan = deepCopyJoinTree(best_plan);
 
     if (optimization_settings.enable_join_transitive_predicates)
     {
-        cleanupJoinPredicates(best_plan, column_equivalences, prepared_storage_relations);
+        std::unordered_map<const DPJoinEntry *, JoinEquivalenceClasses> cleaned;
+        cleanupJoinPredicates(best_plan, column_equivalences, prepared_storage_relations, cleaned);
         for (auto & alternative : alternatives)
-            cleanupJoinPredicates(alternative, column_equivalences, prepared_storage_relations);
+            cleanupJoinPredicates(alternative, column_equivalences, prepared_storage_relations, cleaned);
     }
     return {.best = best_plan, .alternatives = std::move(alternatives)};
 }
