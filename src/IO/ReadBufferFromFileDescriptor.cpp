@@ -127,6 +127,44 @@ bool pollConsoleInput(HANDLE handle, int timeout_milliseconds, const std::string
     }
 }
 
+/// A pipe handle is not a readiness signal: it is signaled when an I/O operation on it completes,
+/// not when unread bytes arrive, and anonymous pipes cannot be waited on for readability at all.
+/// So probe the pipe with `PeekNamedPipe` until it has data or the timeout expires. Between probes
+/// the thread waits a short, growing interval: this is the polling period, there is no event to wait for.
+bool pollPipeInput(HANDLE handle, int timeout_milliseconds, const std::string & file_name)
+{
+    Stopwatch watch;
+    DWORD interval_milliseconds = 1;
+    for (;;)
+    {
+        DWORD available = 0;
+        if (!PeekNamedPipe(handle, nullptr, 0, nullptr, &available, nullptr))
+        {
+            const DWORD error = GetLastError();
+            /// The writer has closed its end: the next read returns EOF without blocking, as with `POLLHUP`.
+            if (error == ERROR_BROKEN_PIPE)
+                return true;
+
+            ProfileEvents::increment(ProfileEvents::ReadBufferFromFileDescriptorReadFailed);
+            throw Exception(
+                ErrorCodes::CANNOT_READ_FROM_FILE_DESCRIPTOR,
+                "Cannot poll file {} (PeekNamedPipe), error code: {}",
+                file_name,
+                error);
+        }
+        if (available > 0)
+            return true;
+
+        const auto elapsed = watch.elapsedMilliseconds();
+        if (elapsed >= static_cast<UInt64>(timeout_milliseconds))
+            return false;
+
+        const auto remaining = static_cast<UInt64>(timeout_milliseconds) - elapsed;
+        Sleep(static_cast<DWORD>(std::min<UInt64>(interval_milliseconds, remaining)));
+        interval_milliseconds = std::min<DWORD>(interval_milliseconds * 2, 50);
+    }
+}
+
 /// A console input handle, as opposed to any other character device (`NUL`, a serial port).
 bool isConsoleInput(HANDLE handle)
 {
@@ -292,8 +330,8 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
         std::min<size_t>((timeout_microseconds + 999) / 1000, static_cast<size_t>(std::numeric_limits<int>::max())));
 
 #if defined(OS_WINDOWS)
-    /// Windows has no `poll` for file descriptors - `WSAPoll` takes sockets only. The waitable
-    /// objects here are the console and pipes, which `WaitForSingleObject` handles; a disk file
+    /// Windows has no `poll` for file descriptors - `WSAPoll` takes sockets only. The console is
+    /// waitable with `WaitForSingleObject`, pipes are probed with `PeekNamedPipe`; a disk file
     /// is not waitable but is also always ready to read, which is what `poll` reports for one.
     auto * handle = reinterpret_cast<HANDLE>(_get_osfhandle(fd));
     if (handle == INVALID_HANDLE_VALUE)
@@ -308,6 +346,9 @@ bool ReadBufferFromFileDescriptor::poll(size_t timeout_microseconds)
 
     if (isConsoleInput(handle))
         return pollConsoleInput(handle, timeout_milliseconds, getFileName());
+
+    if (GetFileType(handle) == FILE_TYPE_PIPE)
+        return pollPipeInput(handle, timeout_milliseconds, getFileName());
 
     const DWORD waited = WaitForSingleObject(handle, static_cast<DWORD>(timeout_milliseconds));
     if (waited == WAIT_FAILED)
