@@ -126,7 +126,7 @@ tests/performance/scripts/perf.py --long --host localhost localhost --port 9001 
 python3 ci/jobs/performance_tests.py --test-options "arm_release, master_head, nightly, 1/1" --reference-path <older clickhouse> --test tpch_sf100
 ```
 
-With the `nightly` test option the harness sorts the test list, prepends `calibration.xml` to every batch, runs all queries with `perf.py --long`, keeps the current tests for `release_base` as well (no checkout of the reference tests), and skips the performance dashboard and delta gates.
+With the `nightly` test option the harness sorts the test list, prepends `calibration.xml` to every batch, runs all queries with `perf.py --long`, and skips the performance dashboard and delta gates.
 
 Red and green (only with `--long`). A timeout is `TIMEOUT_EXCEEDED` (for a shell query, its time limit); anything else is an error. The tested side is the new server, the reference side the old one.
 
@@ -139,7 +139,7 @@ Red and green (only with `--long`). A timeout is `TIMEOUT_EXCEEDED` (for a shell
 
 A censored row records the time of the completed statements plus the budget; the job result shows `double timeouts: <n>`. The censored rows of a double timeout are excluded from the query metrics and the history. Regressions, `partial` queries and double timeouts are visible but do not turn the job red. Also:
 
-* A settings or setup failure on the reference side (a feature the older binary lacks) runs the test on the tested side only, reported as `partial`, without `do_not_check_in_pr`. In the `release_base` comparison this is how tests using a setting, DDL or fill feature newer than the release appear. A setup failure on the tested side is red.
+* A settings or setup failure on the reference side (a feature the older binary lacks) runs the test on the tested side only, reported as `partial`, without `do_not_check_in_pr`. A setup failure on the tested side is red.
 * Every test runs under `timeout -k 60` with a 3-hour budget. A non-zero exit always leaves an error record (`124`: budget expired, `137`: killed), so the job is red. A failed upload of the required results (raw runs, query metrics, test times) is red too.
 * Teardown: on exit, including `SIGTERM`, `perf.py` runs the drop queries on every server that ran setup and prints `teardown-complete` only if all of them succeeded (a missing table is accepted on a reference whose setup failed). Without that line the harness records `teardown incomplete, stopping the batch` and runs no further tests on that host; what was measured is still reported.
 * Changes reported by the nightly are unconfirmed: `confirm_changes` is skipped, and the repetition from night to night is the confirmation.

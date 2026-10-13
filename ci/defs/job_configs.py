@@ -1910,11 +1910,7 @@ class JobConfigs:
         timeout=16 * 3600,
         result_name_for_cidb="Tests",
     ).parametrize(
-        *[
-            Job.ParamSet(parameter=f"arm_release, {mode}, nightly, {batch}/4")
-            for mode in ("master_head", "release_base")
-            for batch in range(1, 5)
-        ]
+        *[Job.ParamSet(parameter=f"arm_release, master_head, nightly, {batch}/4") for batch in range(1, 5)]
     )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,

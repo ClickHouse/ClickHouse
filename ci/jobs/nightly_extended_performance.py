@@ -6,7 +6,6 @@ import argparse
 import os
 
 from ci.jobs.scripts.cidb_cluster import CIDBCluster
-from ci.jobs.scripts.clickhouse_version import CHVersion
 from ci.jobs.scripts.workflow_hooks.store_data import MASTER_TRACK_COMMITS, get_master_first_parent_commits
 from ci.praktika._environment import _Environment
 from ci.praktika.info import Info
@@ -50,35 +49,48 @@ def resolve():
             raise RuntimeError(f"No merge base with master for {info.sha}")
     print(f"tests anchor: {anchor}")
     chain = get_master_first_parent_commits(anchor, MASTER_TRACK_COMMITS + 1)
-    predecessors = Shell.get_output_or_raise(f"git rev-list --max-count=20 '{CHVersion.get_release_version().githash}'").split()
     tested = first_published(chain, "tested binary")
     print(f"tested binary: {tested}")
 
-    # Runs from other branches (`gh workflow run --ref`) write rows too; only master runs are the nightly history.
-    previous = CIDBCluster().do_select_query(
+    # Reference: the candidate of the last master nightly of the past three nights, so consecutive runs cover
+    # consecutive commits; else the newest master build at least 24 h older than the candidate. Runs from other
+    # branches (`gh workflow run --ref`) write rows too; only master runs are the nightly history.
+    start = f"toDateTime({int(info.workflow_start_time)})"
+    cidb = CIDBCluster()
+    previous = cidb.do_select_query(
         f"""SELECT new_sha FROM perf_test_times_v1
 WHERE workflow_name = '{info.workflow_name}' AND baseline_kind = 'master_head' AND pr_number = 0
-  AND report_url LIKE '%?REF=master&%' AND check_start_time < toDateTime({int(info.workflow_start_time)})
+  AND report_url LIKE '%?REF=master&%' AND check_start_time >= {start} - INTERVAL 78 HOUR AND check_start_time < {start}
 ORDER BY check_start_time DESC LIMIT 1""",
         timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
     )
     if previous is None:
         raise RuntimeError("Previous nightly lookup in CIDB failed")
-    master_head = previous.strip()
-    if not master_head:
-        master_head = first_published(chain[chain.index(tested) + 1 :], "bootstrap reference")
-        print("bootstrap: no previous nightly run found; reference = previous published master build")
-    elif master_head == tested:
+    reference = previous.strip()
+    if not reference:
+        # Build time = first start of the build job; `minOrNull`: an unknown candidate matches nothing.
+        builds = cidb.do_select_query(
+            f"""SELECT commit_sha FROM default.checks
+WHERE check_name = 'Build (arm_release)' AND head_ref = 'master' AND pull_request_number = 0
+  AND report_url LIKE '%name_0=MasterCI&%' AND check_status = 'success' AND check_start_time >= {start} - INTERVAL 30 DAY
+GROUP BY commit_sha
+HAVING min(check_start_time) <= (SELECT minOrNull(check_start_time) FROM default.checks
+    WHERE check_name = 'Build (arm_release)' AND commit_sha = '{tested}' AND check_start_time >= {start} - INTERVAL 30 DAY)
+  - INTERVAL 24 HOUR
+ORDER BY min(check_start_time) DESC LIMIT 20""",
+            timeout=Settings.CI_DB_QUERY_TIMEOUT_SEC,
+        )
+        if builds is None:
+            raise RuntimeError("Master build lookup in CIDB failed")
+        reference = first_published(builds.split(), "reference")
+        print("no master nightly in the last three nights: reference = newest build at least 24 h older than the candidate")
+    elif reference == tested:
         print("A/A: tested == reference")
-    print(f"master_head reference: {master_head}")
-
-    release_base = first_published(predecessors, "release base")
-    print(f"release_base reference: {release_base}")
+    print(f"reference: {reference}")
 
     info.store_kv_data("nightly_tests_anchor_sha", anchor)
     info.store_kv_data("nightly_tested_sha", tested)
-    info.store_kv_data("nightly_reference_sha_master_head", master_head)
-    info.store_kv_data("nightly_reference_sha_release_base", release_base)
+    info.store_kv_data("nightly_reference_sha", reference)
 
 
 def download(sha, path):
@@ -113,8 +125,7 @@ def run_job(args, rest):
     files = Shell.get_output_or_raise(f"{delta} --name-only").split()
     print(f"tests: {tested} + {len(files)} branch file(s) from {anchor}..HEAD")
 
-    (mode,) = {o.strip() for o in args.test_options.split(",")} & {"master_head", "release_base"}
-    download(kv[f"nightly_reference_sha_{mode}"], REFERENCE_PATH)
+    download(kv["nightly_reference_sha"], REFERENCE_PATH)
     os.execvp("python3", ["python3", "./ci/jobs/performance_tests.py", "--test-options", args.test_options,
                           "--reference-path", REFERENCE_PATH, *rest])
 

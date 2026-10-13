@@ -1265,7 +1265,7 @@ def match_reference_debug_info():
 
 
 class CHServer:
-    # `tpcds_sf100`: 2.7 h on `master_head`, hit 3 h on `release_base`.
+    # `tpcds_sf100`: 2.7–3 h.
     NIGHTLY_TEST_TIMEOUT_SEC = 4 * 3600
     # upstream/master
     LEFT_SERVER_PORT = 9001
@@ -2428,8 +2428,7 @@ def main():
     else:
         reference_warning = stale_reference_warning(reference_chain)
 
-    # The nightly wrapper pins the tests to the tested commit; both references run them.
-    if compare_against_release and not nightly:
+    if compare_against_release:
         print("It's a comparison against latest release baseline")
         print(
             "Unshallow and Checkout on baseline sha to drop new queries that might be not supported by old version"
