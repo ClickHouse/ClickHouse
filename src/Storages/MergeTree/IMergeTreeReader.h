@@ -106,6 +106,11 @@ public:
     /// whether `read_mark_ranges` with `row_count == 0` can be attributed to the PREWHERE predicate.
     virtual bool canSkipAnyMark() const { return false; }
 
+    /// Like `canSkipAnyMark`, but leaving out the marks skipped only because every row of the mark lies beyond a
+    /// running top-K threshold (by the primary key). The `__topKFilter` in PREWHERE drops the rows of such a mark
+    /// anyway, so the mark can still be attributed to a PREWHERE that holds this filter.
+    virtual bool canSkipAnyMarkBesidesTopKPrimaryKey() const { return canSkipAnyMark(); }
+
     virtual void updateAllMarkRanges(const MarkRanges & ranges);
 
     /// The mark ranges the reader reads until the next call; null = the whole part.
@@ -275,11 +280,11 @@ MergeTreeReaderPtr createMergeTreeReader(
     const ValueSizeMap & avg_value_size_hints,
     const ReadBufferFromFileBase::ProfileCallback & profile_callback);
 
-struct MergeTreeIndexWithCondition;
+struct IndexReadTask;
 
 MergeTreeReaderPtr createMergeTreeReaderIndex(
     const IMergeTreeReader * main_reader,
-    const MergeTreeIndexWithCondition & index,
+    const IndexReadTask & index_read_task,
     const NamesAndTypesList & columns_to_read,
     const IndexGranulesMap & index_granules);
 }
