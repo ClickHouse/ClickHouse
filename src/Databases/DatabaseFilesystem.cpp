@@ -7,6 +7,7 @@
 #include <Common/logger_useful.h>
 #include <Common/quoteString.h>
 #include <Core/Settings.h>
+#include <Disks/DiskType.h>
 #include <Disks/IVolume.h>
 #include <IO/Archives/ArchiveUtils.h>
 #include <IO/Operators.h>
@@ -429,18 +430,19 @@ StoragePtr DatabaseFilesystem::getTableImpl(const String & name, ContextPtr cont
         return {};
 
     /// Choose the path passed to the `file` table function so that
-    /// `getPathsListOnDisk` resolves it unambiguously. For local disks `table_path`
+    /// `getPathsListOnDisk` resolves it unambiguously. For plain local disks `table_path`
     /// is host-absolute and is recognized by its disk-root prefix. For object-storage
     /// disks (e.g. `s3_plain`) the disk root is a relative object-key prefix, so a
     /// qualified path is itself relative and indistinguishable from raw user input;
     /// `file()` no longer strips a relative prefix (that would mis-target a different
-    /// object). Pass the disk-relative path explicitly, which `file()` resolves
-    /// against the disk root.
+    /// object). Wrapper disks (`DiskEncrypted`, cached) have a root naming the backing
+    /// store. Pass the disk-relative path explicitly for every disk that is not plain
+    /// local, which `file()` resolves against the disk root.
     String file_path = table_path;
     if (auto user_files_volume = context_->getUserFilesVolume())
     {
         auto [disk, relative] = splitUserFilesAbsolutePath(table_path, user_files_volume->getDisks());
-        if (disk && !fs::path(disk->getPath()).is_absolute())
+        if (disk && !isPlainLocalDisk(*disk))
             file_path = relative;
     }
 
@@ -521,13 +523,15 @@ ASTPtr DatabaseFilesystem::getCreateDatabaseQueryImpl() const
     /// root is an object-key prefix), and the constructor always resolves a relative path
     /// against the disk root. Serialize the disk-relative form so that replaying this
     /// query (e.g. on RESTORE) prepends the root exactly once instead of doubling it.
-    /// A qualified path on a local disk is host-absolute and is re-normalized by the
+    /// The same applies to wrapper disks (`DiskEncrypted`, cached): their root names the
+    /// backing store, which may differ on the node that replays the query.
+    /// A qualified path on a plain local disk is host-absolute and is re-normalized by the
     /// absolute branch of the constructor, so it is serialized as is.
     String serialized_path = path;
     if (auto user_files_volume = getContext()->getUserFilesVolume())
     {
         auto [disk, disk_relative_path] = splitUserFilesAbsolutePath(path, user_files_volume->getDisks());
-        if (disk && !fs::path(disk->getPath()).is_absolute())
+        if (disk && !isPlainLocalDisk(*disk))
             serialized_path = disk_relative_path;
     }
 

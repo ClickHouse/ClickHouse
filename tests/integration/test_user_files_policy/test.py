@@ -1067,6 +1067,40 @@ def test_encrypted_disk_read_through_idisk_and_reject_local_consumers():
     assert "not a plain local filesystem disk" in err, err
 
 
+
+def test_encrypted_disk_path_virtual_column_and_show_create_database():
+    """On a `DiskEncrypted` the disk root is host-absolute but names the backing store, not
+    the logical `user_files` namespace. `_path`, the `_path` prefilter and
+    `SHOW CREATE DATABASE` must use the disk-relative path, like on `s3_plain`."""
+    node_encrypted.query(
+        "INSERT INTO FUNCTION file('enc_path/a.csv', 'CSV', 'x UInt64') SELECT 1"
+    )
+    node_encrypted.query(
+        "INSERT INTO FUNCTION file('enc_path/b.csv', 'CSV', 'x UInt64') SELECT 2"
+    )
+    assert (
+        node_encrypted.query(
+            "SELECT _path FROM file('enc_path/a.csv', 'CSV', 'x UInt64')"
+        ).strip()
+        == "enc_path/a.csv"
+    )
+    assert (
+        node_encrypted.query(
+            "SELECT x FROM file('enc_path/*.csv', 'CSV', 'x UInt64') "
+            "WHERE _path = 'enc_path/b.csv'"
+        ).strip()
+        == "2"
+    )
+
+    node_encrypted.query("DROP DATABASE IF EXISTS test_fs_db_enc")
+    node_encrypted.query("CREATE DATABASE test_fs_db_enc ENGINE = Filesystem('enc_path')")
+    assert node_encrypted.query("SELECT * FROM test_fs_db_enc.`a.csv`").strip() == "1"
+    show_create = node_encrypted.query("SHOW CREATE DATABASE test_fs_db_enc").replace(
+        "\\'", "'"
+    )
+    assert "Filesystem('enc_path')" in show_create, show_create
+    node_encrypted.query("DROP DATABASE test_fs_db_enc")
+
 def test_local_literal_partition_id_filename():
     """A literal file name that merely contains the `{_partition_id}` substring, read without
     `INSERT ... PARTITION BY`, must resolve to a real disk-qualified path.
