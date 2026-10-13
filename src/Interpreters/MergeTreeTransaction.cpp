@@ -48,6 +48,7 @@ namespace ErrorCodes
 namespace FailPoints
 {
     extern const char transaction_after_commit_pause[];
+    extern const char transaction_pause_before_mutation_csn_store[];
     extern const char transaction_rollback_pause_after_mark[];
     extern const char transaction_rollback_reset_removal_tid_fail[];
 }
@@ -511,6 +512,9 @@ void MergeTreeTransaction::afterCommit(CSN assigned_csn) noexcept
         /// the committed CSN onto the part.
         removed.part->version->setAndStoreRemovalCSN(assigned_csn);
     }
+
+    /// Test-only pause point: lets `KILL MUTATION` erase a committed mutation before its CSN is stored.
+    FailPointInjection::pauseFailPoint(FailPoints::transaction_pause_before_mutation_csn_store);
 
     for (const auto & storage_and_mutation : committed_mutations)
         storage_and_mutation.first->setMutationCSN(storage_and_mutation.second, assigned_csn);
