@@ -88,6 +88,8 @@ void serializeCostEstimation(const std::optional<CostEstimationInfo> & estimatio
     if (estimation->cost)
         writeBinary(*estimation->cost, out);
 
+    /// The reader rejects a source it does not know, so a new source needs a new plan version and must be
+    /// written as a known one for an older reader.
     writeBinary(static_cast<UInt8>(estimation->source), out);
 }
 
