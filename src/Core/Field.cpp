@@ -1,4 +1,3 @@
-#include <base/defines.h>
 #include <Common/Exception.h>
 #include <Common/FieldVisitorDump.h>
 #include <Common/FieldVisitorToString.h>
@@ -439,7 +438,7 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::String:
         {
             std::string value;
-            readStringBinary(value, buf);
+            readStringBinaryGrowing(value, buf);
             return value;
         }
         case Field::Types::Array:
@@ -469,8 +468,8 @@ static Field getBinaryValue(UInt8 type, ReadBuffer & buf)
         case Field::Types::AggregateFunctionState:
         {
             AggregateFunctionStateData value;
-            readStringBinary(value.name, buf);
-            readStringBinary(value.data, buf);
+            readStringBinaryGrowing(value.name, buf);
+            readStringBinaryGrowing(value.data, buf);
             return value;
         }
         case Field::Types::Bool:
@@ -597,7 +596,7 @@ void readBinary(Object & x, ReadBuffer & buf)
         UInt8 type = 0;
         String key;
         readBinary(type, buf);
-        readBinary(key, buf);
+        readStringBinaryGrowing(key, buf);
         x[key] = getBinaryValue(type, buf);
     }
 }
@@ -1076,8 +1075,8 @@ template NearestFieldType<std::decay_t<Map>> & Field::safeGet<Map>() &;
 template NearestFieldType<std::decay_t<Object>> & Field::safeGet<Object>() &;
 template NearestFieldType<std::decay_t<Tuple>> & Field::safeGet<Tuple>() &;
 template NearestFieldType<std::decay_t<CustomType>> & Field::safeGet<CustomType>() &;
-/// `unsigned long` is not covered by the list above where it is a type of its own.
-#if defined(LONG_IS_A_DISTINCT_TYPE)
+/// In Darwin unsigned long does not match any of the UInt* types
+#ifdef OS_DARWIN
 template NearestFieldType<std::decay_t<unsigned long>> & Field::safeGet<unsigned long>() &;
 #endif
 }

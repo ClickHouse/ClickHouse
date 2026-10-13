@@ -1,19 +1,26 @@
 #include <gtest/gtest.h>
 
+#include <Common/CurrentMemoryTracker.h>
+#include <Common/CurrentThread.h>
 #include <Common/Exception.h>
+#include <Common/MemoryTracker.h>
+#include <Common/ThreadStatus.h>
 #include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Core/SettingsFields.h>
 #include <Core/SettingsEnums.h>
 #include <Core/Field.h>
 #include <IO/ReadBufferFromString.h>
+#include <IO/VarInt.h>
 #include <IO/WriteBufferFromString.h>
 
-#include <limits>
+#include <functional>
+#include <vector>
 
 namespace DB::ErrorCodes
 {
-    extern const int INCORRECT_DATA;
+    extern const int ATTEMPT_TO_READ_AFTER_EOF;
+    extern const int TOO_LARGE_STRING_SIZE;
 }
 
 namespace
@@ -184,106 +191,151 @@ GTEST_TEST(QueryParameters, DuplicateNameOnTheWireLastOccurrenceWins)
     ASSERT_EQ(parameters.at("x"), "2");
 }
 
-GTEST_TEST(Settings, KnownSettingFlaggedCustomOnTheWireIsReadIntoItsTypedField)
+namespace
 {
-    /// A client older than a setting has no typed field for it, so it holds the setting as a custom
-    /// field and sends it with the CUSTOM flag. The receiver knows the setting, so it must end up in
-    /// the typed field and be seen as changed.
-    Settings sent;
-    sent.setCustom("log_comment", Field(String("hello")));
-    sent.setCustom("max_block_size", Field(UInt64(1234)));
-    sent.setCustom("custom_unknown_here", Field(String("kept")));
 
-    WriteBufferFromOwnString out;
-    sent.write(out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
-
-    Settings settings;
-    ReadBufferFromString in(out.str());
-    settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS);
-
-    ASSERT_TRUE(settings.isChanged("log_comment"));
-    ASSERT_EQ(settings.get("log_comment"), Field(String("hello")));
-    ASSERT_TRUE(settings.isChanged("max_block_size"));
-    ASSERT_EQ(settings.get("max_block_size"), Field(UInt64(1234)));
-
-    /// A name that is not a setting here stays a custom setting.
-    ASSERT_TRUE(settings.isChanged("custom_unknown_here"));
-    ASSERT_EQ(settings.get("custom_unknown_here"), Field(String("kept")));
-}
-
-GTEST_TEST(SettingFieldTimespan, ValueAlwaysFitsInt64Microseconds)
+/// Restores the global hard limit and the operator-new throw threshold on scope exit.
+struct MemoryLimitGuard
 {
-    constexpr Int64 max_ms = std::numeric_limits<Int64>::max() / 1000;
-    constexpr Int64 max_s = std::numeric_limits<Int64>::max() / 1000000;
-
-    /// Values whose microseconds fit Int64 are stored exactly.
-    ASSERT_EQ(SettingFieldMilliseconds(UInt64(0)).totalMicroseconds(), 0);
-    ASSERT_EQ(SettingFieldMilliseconds(UInt64(5000)).totalMicroseconds(), 5000000);
-    ASSERT_EQ(SettingFieldSeconds(UInt64(300)).totalMicroseconds(), 300000000);
-    ASSERT_EQ(SettingFieldMilliseconds(UInt64(max_ms)).totalMilliseconds(), max_ms);
-    ASSERT_EQ(SettingFieldSeconds(UInt64(max_s)).totalSeconds(), max_s);
-
-    /// Larger values are rejected instead of wrapping mod 2^64. Before the check, UInt64 max
-    /// wrapped to -1 ms, 2^61 to exactly 0 ms and 2^61 + 1 to exactly 1 ms.
-    ASSERT_THROW(SettingFieldMilliseconds(UInt64(max_ms) + 1), DB::Exception);
-    ASSERT_THROW(SettingFieldMilliseconds{std::numeric_limits<UInt64>::max()}, DB::Exception);
-    ASSERT_THROW(SettingFieldMilliseconds(UInt64(1) << 61), DB::Exception);
-    ASSERT_THROW(SettingFieldMilliseconds((UInt64(1) << 61) + 1), DB::Exception);
-    ASSERT_THROW(SettingFieldSeconds{std::numeric_limits<UInt64>::max()}, DB::Exception);
-
-    /// Every integer producer funnels into the same check: Field (SET and profiles) and the
-    /// native-protocol binary form.
-    SettingFieldMilliseconds assigned;
-    ASSERT_THROW(assigned = std::numeric_limits<UInt64>::max(), DB::Exception);
-    ASSERT_THROW(SettingFieldMilliseconds(Field(UInt64(1) << 61)), DB::Exception);
-
-    /// The largest accepted value survives a string round-trip exactly.
-    SettingFieldMilliseconds largest{UInt64(max_ms)};
-    SettingFieldMilliseconds reparsed;
-    reparsed.parseFromString(largest.toString());
-    ASSERT_EQ(reparsed.totalMicroseconds(), largest.totalMicroseconds());
-}
-
-GTEST_TEST(SettingFieldTimespan, SecondsParseFromStringChecksTheRange)
-{
-    SettingFieldSeconds seconds;
-    seconds.parseFromString("300");
-    ASSERT_EQ(seconds.totalSeconds(), 300);
-
-    /// A value that does not fit Int64 microseconds is rejected, the same as through Field.
-    ASSERT_THROW(seconds.parseFromString("1e30"), DB::Exception);
-}
-
-GTEST_TEST(SettingsTier, GetTierDecodesEveryEncoding)
-{
-    using Flags = BaseSettingsHelpers::Flags;
-
-    /// Every tier encoding survives the Flags::TIER mask. PRIVATE_PREVIEW needs the third bit:
-    /// with a two-bit mask it reads as PRODUCTION, which leaves such a setting ungated at every
-    /// allow_feature_tier level.
-    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::PRODUCTION), SettingsTierType::PRODUCTION);
-    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::OBSOLETE), SettingsTierType::OBSOLETE);
-    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::EXPERIMENTAL), SettingsTierType::EXPERIMENTAL);
-    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::BETA), SettingsTierType::BETA);
-    EXPECT_EQ(BaseSettingsHelpers::getTier(SettingsTierType::PRIVATE_PREVIEW), SettingsTierType::PRIVATE_PREVIEW);
-
-    /// 20, 24 and 28 are the only masked values the three tier bits can hold that name no tier.
-    for (UInt64 unknown_tier : {20, 24, 28})
+    Int64 prev_hard_limit;
+    MemoryLimitGuard() : prev_hard_limit(total_memory_tracker.getHardLimit()) {}
+    ~MemoryLimitGuard()
     {
+        CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(0);
+        total_memory_tracker.setHardLimit(prev_hard_limit);
+    }
+};
+
+/// Makes the next allocation of a megabyte or more overshoot the global limit, while smaller
+/// allocations (the exception being built, the settings object's own bookkeeping) still succeed.
+void armMemoryLimitOnAllocationsOfAtLeastAMegabyte()
+{
+    MainThreadStatus::getInstance();
+    CurrentThread::flushUntrackedMemory();
+    CurrentMemoryTracker::setMinAllocationSizeBytesToThrow(1ULL << 20);
+    total_memory_tracker.setHardLimit(total_memory_tracker.get() + 1024);
+}
+
+}
+
+GTEST_TEST(Settings, ADeclaredLengthOnTheSettingsWireIsNotAnAllocation)
+{
+    /// Each entry declares a large string length on the settings wire and then sends no payload, so
+    /// a read that grows with the bytes that actually arrive runs out of buffer immediately, while
+    /// one that sizes its destination from the declared length allocates before it can fail.
+    constexpr size_t declared_size = 64 * 1024 * 1024;
+
+    /// `writeBinary(const Map &)` writes a fixed width element count, then one tagged field per
+    /// element, and puts no type constraint on an element.
+    const auto write_map_element_tag = [](WriteBuffer & out, Field::Types::Which field_type)
+    {
+        BaseSettingsHelpers::writeString("additional_table_filters", out);
+        writeBinary(static_cast<size_t>(1), out);
+        writeBinary(static_cast<UInt8>(field_type), out);
+    };
+
+    struct Case
+    {
+        std::string_view covers;
+        SettingsWriteFormat format;
+        std::function<void(WriteBuffer &)> write_wire;
+        /// A setting name is an identifier, so a name declared longer than `MAX_SETTING_NAME_SIZE` is
+        /// refused before it is read at all, instead of running out of buffer.
+        int expected_code = DB::ErrorCodes::ATTEMPT_TO_READ_AFTER_EOF;
+    };
+
+    const std::vector<Case> cases = {
+        {"the setting name, i.e. every BaseSettingsHelpers::readString carrier",
+         SettingsWriteFormat::STRINGS_WITH_FLAGS,
+         [&](WriteBuffer & out) { writeVarUInt(declared_size, out); },
+         DB::ErrorCodes::TOO_LARGE_STRING_SIZE},
+        {"SettingFieldString::readBinary",
+         SettingsWriteFormat::BINARY,
+         [&](WriteBuffer & out)
+         {
+             BaseSettingsHelpers::writeString("log_comment", out);
+             writeVarUInt(declared_size, out);
+         }},
+        {"SettingFieldNumber<Float64>::readBinary",
+         SettingsWriteFormat::BINARY,
+         [&](WriteBuffer & out)
+         {
+             BaseSettingsHelpers::writeString("totals_auto_threshold", out);
+             writeVarUInt(declared_size, out);
+         }},
+        {"a String inside a Map setting",
+         SettingsWriteFormat::BINARY,
+         [&](WriteBuffer & out)
+         {
+             write_map_element_tag(out, Field::Types::String);
+             writeVarUInt(declared_size, out);
+         }},
+        {"an AggregateFunctionState name inside a Map setting",
+         SettingsWriteFormat::BINARY,
+         [&](WriteBuffer & out)
+         {
+             write_map_element_tag(out, Field::Types::AggregateFunctionState);
+             writeVarUInt(declared_size, out);
+         }},
+        {"an Object key inside a Map setting",
+         SettingsWriteFormat::BINARY,
+         [&](WriteBuffer & out)
+         {
+             write_map_element_tag(out, Field::Types::Object);
+             writeBinary(static_cast<size_t>(1), out);
+             writeBinary(static_cast<UInt8>(Field::Types::String), out);
+             writeVarUInt(declared_size, out);
+         }},
+    };
+
+    for (const auto & test_case : cases)
+    {
+        SCOPED_TRACE(test_case.covers);
+
+        /// Build the wire and the settings object before clamping, so only the read runs clamped.
+        WriteBufferFromOwnString out;
+        test_case.write_wire(out);
+        const std::string wire = out.str();
+        Settings settings;
+        ReadBufferFromString in(wire);
+
         try
         {
-            BaseSettingsHelpers::getTier(unknown_tier);
-            FAIL() << "getTier accepted the unknown tier encoding " << unknown_tier;
+            MemoryLimitGuard guard;
+            armMemoryLimitOnAllocationsOfAtLeastAMegabyte();
+            settings.read(in, test_case.format);
+            ADD_FAILURE() << "reading a declared length of " << declared_size << " did not throw";
         }
         catch (const DB::Exception & e)
         {
-            EXPECT_EQ(e.code(), DB::ErrorCodes::INCORRECT_DATA);
+            EXPECT_EQ(e.code(), test_case.expected_code) << e.displayText();
         }
     }
+}
 
-    /// Flags::TIER is disjoint from every other flag bit, so neighbours do not disturb the read.
-    constexpr UInt64 private_preview = static_cast<UInt64>(SettingsTierType::PRIVATE_PREVIEW);
-    EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::IMPORTANT), SettingsTierType::PRIVATE_PREVIEW);
-    EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::CUSTOM), SettingsTierType::PRIVATE_PREVIEW);
-    EXPECT_EQ(BaseSettingsHelpers::getTier(private_preview | Flags::HOT_RELOAD), SettingsTierType::PRIVATE_PREVIEW);
+GTEST_TEST(Settings, WellFormedSettingsStillReadUnderAClampedMemoryLimit)
+{
+    /// The in-range control: the clamp itself does not make a read fail, and the empty string end
+    /// marker still terminates the loop.
+    Settings sent;
+    sent.set("log_comment", "hello");
+    sent.set("max_block_size", UInt64(4096));
+    sent.set("totals_auto_threshold", 0.25);
+
+    WriteBufferFromOwnString out;
+    sent.write(out, SettingsWriteFormat::STRINGS_WITH_FLAGS);
+    const std::string wire = out.str();
+
+    Settings settings;
+    ReadBufferFromString in(wire);
+    {
+        MemoryLimitGuard guard;
+        armMemoryLimitOnAllocationsOfAtLeastAMegabyte();
+        ASSERT_NO_THROW(settings.read(in, SettingsWriteFormat::STRINGS_WITH_FLAGS));
+    }
+
+    ASSERT_EQ(settings.get("log_comment"), Field(String("hello")));
+    ASSERT_EQ(settings.get("max_block_size"), Field(UInt64(4096)));
+    ASSERT_EQ(settings.get("totals_auto_threshold"), Field(0.25));
+    ASSERT_TRUE(in.eof());
 }

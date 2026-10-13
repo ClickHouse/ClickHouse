@@ -476,7 +476,7 @@ Cluster::Cluster(const Poco::Util::AbstractConfiguration & config,
         if (!shard_with_replicas && !shard_without_replicas)
             throw Exception(ErrorCodes::UNKNOWN_ELEMENT_IN_CONFIG, "Unknown element in config: {}", key);
 
-        const auto & prefix = config_prefix + key + (shard_with_replicas ? ".":  "");
+        const auto & prefix = config_prefix + key + ((shard_with_replicas) ? ".":  "");
         const auto weight = config.getInt(prefix + ".weight", default_weight);
         auto shard_name = use_shards_names ? config.getString(prefix + ".name") : "";
         if (use_shards_names)
@@ -954,7 +954,15 @@ const std::string & Cluster::ShardInfo::insertPathForInternalReplication(bool pr
 
     const auto & paths = insert_path_for_internal_replication;
     if (!use_compact_format)
-        return prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
+    {
+        const auto & path = prefer_localhost_replica ? paths.prefer_localhost_replica : paths.no_prefer_localhost_replica;
+        if (path.size() > NAME_MAX)
+        {
+            throw Exception(ErrorCodes::LOGICAL_ERROR,
+                "Path '{}' for async distributed INSERT is too long (exceed {} limit)", path, NAME_MAX);
+        }
+        return path;
+    }
 
     return paths.compact;
 }

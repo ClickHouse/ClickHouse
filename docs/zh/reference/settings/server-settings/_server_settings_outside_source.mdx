@@ -12,7 +12,7 @@ title: 源代码之外的服务器设置
 
 **启用**
 
-要手动启用 `system.asynchronous_metric_log` 的异步指标日志历史收集，请参阅[系统表参考](/zh/reference/system-tables/asynchronous_metric_log)，并使用以下内容创建 `/etc/clickhouse-server/config.d/asynchronous_metric_log.xml`：
+要手动启用异步指标日志历史收集 [`system.asynchronous_metric_log`](/zh/reference/system-tables/asynchronous_metric_log)，请使用以下内容创建 `/etc/clickhouse-server/config.d/asynchronous_metric_log.xml`：
 
 ```xml
 <clickhouse>
@@ -44,8 +44,6 @@ title: 源代码之外的服务器设置
 </div>
 
 对通过代理连接的客户端，使用原始地址进行身份验证。
-
-* **默认值：** `false`
 
 <Note>
   由于转发地址很容易被伪造，因此使用此设置时应格外谨慎——接受此类身份验证的服务器不应允许直接访问，而应仅通过受信任的代理访问。
@@ -137,15 +135,13 @@ title: 源代码之外的服务器设置
 用于 `bcrypt_password` 身份验证类型的工作因子，该类型使用 [Bcrypt algorithm](https://wildlyinaccurate.com/bcrypt-choosing-a-work-factor/)。
 工作因子决定了计算哈希值和验证密码所需的计算量与时间。
 
-* **默认值：** `12`
-
 ```xml
 <bcrypt_workfactor>12</bcrypt_workfactor>
 ```
 
 <Warning>
   对于需要高频身份验证的应用程序，
-  考虑到 bcrypt 在较高 工作因子 下
+  考虑到 bcrypt 在较高 work factor 下
   计算开销较大，请考虑改用其他身份验证方式。
 </Warning>
 
@@ -153,11 +149,7 @@ title: 源代码之外的服务器设置
   ## table_engines_require_grant
 </div>
 
-<CloudNotSupportedBadge />
-
 如果设置为 true，用户使用特定引擎创建表时需要相应的授权，例如 `GRANT TABLE ENGINE ON TinyLog to user`。
-
-* **默认值：** `false`
 
 <Note>
   默认情况下，出于向后兼容的考虑，使用特定表引擎创建表时会忽略授权；不过，你可以将此项设置为 true 来更改这一行为。
@@ -187,7 +179,7 @@ ClickHouse 每隔 x 秒会重新加载一次内置字典。因此，无需重启
   如果你刚开始使用 ClickHouse，建议不要更改此项。
 </Note>
 
-**配置模板**：
+**配置模板**:
 
 ```xml
 <compression>
@@ -206,7 +198,7 @@ ClickHouse 每隔 x 秒会重新加载一次内置字典。因此，无需重启
 * `min_part_size` – 数据分区片段的最小大小。
 * `min_part_size_ratio` – 数据分区片段大小与表大小的比率。
 * `method` – 压缩方法。可选值：`lz4`, `lz4hc`, `zstd`,`deflate_qpl`。
-* `level` – 压缩级别。参见 [Codecs](/zh/reference/statements/create/table/codec#general-purpose-codecs)。
+* `level` – 压缩级别。参见 [Codecs](/zh/reference/statements/create/table#general-purpose-codecs)。
 
 <Note>
   你可以配置多个 `<case>` 段。
@@ -238,7 +230,7 @@ ClickHouse 每隔 x 秒会重新加载一次内置字典。因此，无需重启
   ## encryption
 </div>
 
-配置用于获取密钥的命令，供[加密编解码器](/zh/reference/statements/create/table/codec#encryption-codecs)使用。密钥 (或多个密钥) 应写入环境变量，或在配置文件中设置。
+配置用于获取密钥的命令，供[加密编解码器](/zh/reference/statements/create/table#encryption-codecs)使用。密钥 (或多个密钥) 应写入环境变量，或在配置文件中设置。
 
 密钥可以是十六进制值，也可以是长度为 16 字节的字符串。
 
@@ -268,7 +260,7 @@ ClickHouse 每隔 x 秒会重新加载一次内置字典。因此，无需重启
 </encryption_codecs>
 ```
 
-从环境变量中加载密钥：
+从环境变量中加载私钥：
 
 ```xml
 <encryption_codecs>
@@ -395,8 +387,6 @@ ClickHouse 每隔 x 秒会重新加载一次内置字典。因此，无需重启
 </div>
 
 默认设置 profile。profile 位于由设置 `user_config` 指定的文件中。
-
-* **默认值：** `default`
 
 **示例**
 
@@ -586,8 +576,6 @@ ClickHouse 每隔 x 秒会重新加载一次内置字典。因此，无需重启
 访问 ClickHouse HTTP(s) 服务器时默认显示的页面。
 默认值为 &quot;Ok.&quot; (末尾带有换行符)
 
-* **默认值：** `"Ok.\n"`
-
 **示例**
 
 访问 `http://localhost: http_port` 时，将打开 `https://tabix.io/`。
@@ -652,8 +640,6 @@ HSTS 的过期时长 (以秒为单位) 。
 
 限制可在 ClickHouse 服务器之间交换数据的主机。
 如果使用 Keeper，同样的限制也适用于不同 Keeper 实例之间的通信。
-
-* **默认值：** `listen_host`
 
 <Note>
   默认情况下，该值等于 [`listen_host`](#listen_host) 设置。
@@ -1165,7 +1151,7 @@ Replicated 数据库的副本组名称。
 Replicated 数据库创建的集群将由同一组中的副本构成。
 DDL 查询只会等待同一组中的副本。
 
-* **默认值：** `""`
+默认为空。
 
 **示例**
 
@@ -1406,11 +1392,10 @@ SSL 支持由 `libpoco` 库提供。可用的配置选项请参见 [SSLManager.h
 * `events` – 暴露来自 [system.events](/zh/reference/system-tables/events) 表的指标。
 * `asynchronous_metrics` – 暴露来自 [system.asynchronous&#95;metrics](/zh/reference/system-tables/asynchronous_metrics) 表的当前指标值。
 * `errors` - 暴露自上次 server 重启以来按错误代码统计的错误数量。也可以从 [system.errors](/zh/reference/system-tables/errors) 中获取这些信息。
-* `labels` – 添加到每个暴露指标的固定标记。每个子元素定义一个标记：元素名称是标记名称 (必须匹配 `[a-zA-Z_][a-zA-Z0-9_]*`) ，元素值是标记值。标记值支持标准配置替换，例如 `from_env` 属性。如果标记名称以 `__` 开头 (由 Prometheus 保留) ，或者会与此端点在其某个已启用部分中写入的标记冲突，则该标记名称会被拒绝——否则一个样本会携带两个同名标记。因此，保留标记集合取决于端点当前启用的导出内容：启用 `histograms` 时为 `le`；启用 `info` 时为 `ClickHouse_Info` 标记 (`name`、`version`、`version_describe`、`version_major`、`version_minor`、`version_patch`) ；以及启用 `histograms`/`dimensional_metrics` 时，任何由暴露的直方图或维度指标族使用的标记 (例如 `group`、`direction` 或 `operation_type`) 。由于这取决于端点实际暴露的内容，一个名称可能在某个端点有效，但在另一个端点被拒绝——例如，Keeper `keeper_metrics_only` 端点只暴露 `keeper_*` 指标族，因此仅由 server 指标族使用的标记可在此处使用。
 
 **示例**
 
-```xml highlight={5-16}
+```xml highlight={5-12}
 <clickhouse>
     <listen_host>0.0.0.0</listen_host>
     <http_port>8123</http_port>
@@ -1422,10 +1407,6 @@ SSL 支持由 `libpoco` 库提供。可用的配置选项请参见 [SSLManager.h
         <events>true</events>
         <asynchronous_metrics>true</asynchronous_metrics>
         <errors>true</errors>
-        <labels>
-            <environment>production</environment>
-            <shard from_env="SHARD_NAME"></shard>
-        </labels>
     </prometheus>
 </clickhouse>
 ```
@@ -1440,13 +1421,11 @@ curl 127.0.0.1:9363/metrics
   ## query_log
 </div>
 
-用于记录在启用 [log&#95;queries=1](/zh/reference/settings/session-settings/log-queries#log_queries) 设置时接收到的查询的设置。
+用于记录在启用 [log&#95;queries=1](/zh/reference/settings/session-settings) 设置时接收到的查询的设置。
 
 查询会记录到 [system.query&#95;log](/zh/reference/system-tables/query_log) 表中，而不是单独的文件中。你可以通过 `table` 参数更改该表的名称 (见下文) 。
 
 <SystemLogParameters />
-
-`enable_user_query_log` 参数 (默认启用) 会创建 [`system.user_query_log`](/zh/reference/system-tables/user_query_log)，让每位用户无需访问该表本身即可查看已配置的查询日志表中属于自己的记录。这仅在查询日志存储于本地时有效：如果 `engine` 将查询委托给另一台服务器 (例如 `Distributed`) ，请禁用 `enable_user_query_log`，因为 `system.user_query_log` 无法跨越 ClickHouse 协议服务器边界执行按用户的访问检查，并会拒绝从此类后端读取数据。
 
 如果该表不存在，ClickHouse 会创建它。如果在更新 ClickHouse 服务器后，查询日志的结构发生了变化，则旧结构的表会被重命名，并自动创建一个新表。
 
@@ -1462,7 +1441,6 @@ curl 127.0.0.1:9363/metrics
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <enable_user_query_log>true</enable_user_query_log>
 </query_log>
 ```
 
@@ -1538,13 +1516,13 @@ curl 127.0.0.1:9363/metrics
   ## query_thread_log
 </div>
 
-用于记录在启用 [log&#95;query&#95;threads=1](/zh/reference/settings/session-settings/log-query#log_query_threads) 设置时接收到的查询线程的配置。
+用于记录在启用 [log&#95;query&#95;threads=1](/zh/reference/settings/session-settings#log_query_threads) 设置时接收到的查询线程的配置。
 
 查询会记录到 [system.query&#95;thread&#95;log](/zh/reference/system-tables/query_thread_log) 表中，而不是单独的文件中。您可以通过 `table` 参数更改表名 (见下文) 。
 
 <SystemLogParameters />
 
-如果该表不存在，ClickHouse 会创建它。如果更新 ClickHouse 服务器 后查询线程日志的结构发生变化，旧结构的表会被重命名，并自动创建新表。
+如果该表不存在，ClickHouse 会创建它。如果更新 ClickHouse server 后查询线程日志的结构发生变化，旧结构的表会被重命名，并自动创建新表。
 
 **示例**
 
@@ -1565,13 +1543,13 @@ curl 127.0.0.1:9363/metrics
   ## query_views_log
 </div>
 
-用于记录视图 (live、materialized 等) 的设置，依赖于接收到的查询是否启用了 [log&#95;query&#95;views=1](/zh/reference/settings/session-settings/log-query#log_query_views) 设置。
+用于记录视图 (live、materialized 等) 的设置，依赖于接收到的查询是否启用了 [log&#95;query&#95;views=1](/zh/reference/settings/session-settings#log_query_views) 设置。
 
 查询会记录到 [system.query&#95;views&#95;log](/zh/reference/system-tables/query_views_log) 表中，而不是单独的文件中。你可以通过 `table` 参数更改该表的名称 (见下文) 。
 
 <SystemLogParameters />
 
-如果该表不存在，ClickHouse 会创建它。如果在升级 ClickHouse 服务器 后，查询视图日志的结构发生了变化，则旧结构的表会被重命名，并自动创建一个新表。
+如果该表不存在，ClickHouse 会创建它。如果在升级 ClickHouse server 后，查询视图日志的结构发生了变化，则旧结构的表会被重命名，并自动创建一个新表。
 
 **示例**
 
@@ -1641,7 +1619,7 @@ curl 127.0.0.1:9363/metrics
     <reserved_size_rows>8192</reserved_size_rows>
     <buffer_size_rows_flush_threshold>524288</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
-    <symbolize>true</symbolize>
+    <symbolize>false</symbolize>
 </trace_log>
 ```
 
@@ -1708,36 +1686,6 @@ curl 127.0.0.1:9363/metrics
     <buffer_size_rows_flush_threshold>512</buffer_size_rows_flush_threshold>
     <flush_on_crash>false</flush_on_crash>
 </crash_log>
-```
-
-<div id="create_union_system_log_tables">
-  ## create_union_system_log_tables
-</div>
-
-用于在系统日志表旁创建 `all_...` 表 (例如，`system.query_log` 对应 `system.all_query_log`，`system.text_log` 对应 `system.all_text_log`，依此类推) 。此类表联合了相应的日志表、其轮转版本 (`query_log_0`、`query_log_1`、...) 和/或集群中所有副本上的同名表，使您无需记住 `clusterAllReplicas(default, merge(system, '^query_log'))` 这类写法，即可一次查询所有这些表。
-
-本节为可选项。如果配置了本节，则必须至少指定以下一项设置：
-
-| 设置                     | 描述                                                                                                                     |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------- |
-| `merge_rotated_tables` | 如果为 `true`，`all_...` 表会使用 `merge` 表函数查询日志表及其轮转版本。                                                                      |
-| `cluster`              | 如果指定，`all_...` 表会使用 `clusterAllReplicas` 表函数查询该集群中的所有副本 (使用 `SETTINGS skip_unavailable_shards = 1`，因此不可用的副本不会导致查询失败) 。 |
-
-如果同时指定了这两项设置，该表将联合查询集群中所有副本上的轮转表。
-
-此选项适用于所有系统日志表，不能为不同的系统日志设置不同的配置。这些表会在每个日志首次 flush 时创建在与系统日志表相同的数据库中；日志表结构发生变化时 (即轮转时) ，会自动重新创建。它们不保存状态，因此可以随时安全地 drop。仅 `Atomic`、`Replicated` 和 `Shared` 数据库引擎支持创建这些表。
-
-<Note>
-  使用 `cluster` 设置时，表定义会引用该集群，因此该集群必须存在才能加载该表。如果从配置中移除了该集群，也应 drop `all_...` 表 (下次 flush 时会根据新配置重新创建) 。
-</Note>
-
-**示例**
-
-```xml
-<create_union_system_log_tables>
-    <merge_rotated_tables>true</merge_rotated_tables>
-    <cluster>default</cluster>
-</create_union_system_log_tables>
 ```
 
 <div id="custom_cached_disks_base_directory">
@@ -1858,7 +1806,7 @@ curl 127.0.0.1:9363/metrics
 
 **另请参阅**
 
-* [skip&#95;unavailable&#95;shards](/zh/reference/settings/session-settings/skip-unavailable-shards#skip_unavailable_shards)
+* [skip&#95;unavailable&#95;shards](/zh/reference/settings/session-settings#skip_unavailable_shards)
 * [集群发现](/zh/guides/oss/deployment-and-scaling/cluster-discovery)
 * [Replicated 数据库引擎](/zh/reference/engines/database-engines/replicated)
 
@@ -1902,7 +1850,7 @@ curl 127.0.0.1:9363/metrics
 
 **另请参阅**
 
-* [session&#95;timezone](/zh/reference/settings/session-settings/other#session_timezone)
+* [session&#95;timezone](/zh/reference/settings/session-settings#session_timezone)
 
 <div id="tcp_port">
   ## tcp_port
@@ -1920,9 +1868,9 @@ curl 127.0.0.1:9363/metrics
   ## tcp_port_secure
 </div>
 
-用于与客户端安全通信的 TCP 端口。请配合 [OpenSSL](#openSSL) 设置使用。
+用于与客户端安全通信的 TCP 端口。请配合 [OpenSSL](#openssl) 设置使用。
 
-* **默认值：** `9440`
+**默认值**
 
 ```xml
 <tcp_port_secure>9440</tcp_port_secure>
@@ -2026,7 +1974,7 @@ curl 127.0.0.1:9363/metrics
 | `select_from_information_schema_requires_grant` | 设置 `SELECT * FROM information_schema.<table>` 是否需要授权，或者任意用户都可执行。如果设为 true，则该查询需要 `GRANT SELECT ON information_schema.<table>`，与普通表相同。                                                                                                                                   | `true`  |
 | `select_from_system_db_requires_grant`          | 设置 `SELECT * FROM system.<table>` 是否需要授权，或者任意用户都可执行。如果设为 true，则该查询需要 `GRANT SELECT ON system.<table>`，与非系统表相同。例外情况：少数系统表 (`tables`、`columns`、`databases`，以及一些常量表，如 `one`、`contributors`) 仍对所有人开放；此外，如果已授予 `SHOW` 权限 (例如 `SHOW USERS`) ，则对应的系统表 (即 `system.users`) 也可访问。 | `true`  |
 | `settings_constraints_replace_previous`         | 设置 settings profile 中某个设置的约束，是否会覆盖该设置之前的约束 (定义于其他 profile 中) 的作用，包括新约束未设置的字段。它还会启用 `changeable_in_readonly` 约束类型。                                                                                                                                                       | `true`  |
-| `table_engines_require_grant`                   | 设置使用特定表引擎创建表时是否需要授权。ClickHouse Cloud 不支持此功能。                                                                                                                                                                                                                            | `false` |
+| `table_engines_require_grant`                   | 设置使用特定表引擎创建表时是否需要授权。                                                                                                                                                                                                                                                    | `false` |
 | `throw_on_unmatched_row_policies`               | 设置当表存在行策略，但当前用户没有任何匹配的行策略时，从该表读取是否应抛出异常。                                                                                                                                                                                                                                | `false` |
 | `users_without_row_policies_can_read_rows`      | 设置没有允许型行策略的用户是否仍可通过 `SELECT` 查询读取行。例如，如果有两个用户 A 和 B，且仅为 A 定义了行策略，那么当此设置为 true 时，用户 B 将看到所有行；当此设置为 false 时，用户 B 将看不到任何行。                                                                                                                                                 | `true`  |
 
@@ -2180,43 +2128,43 @@ ClickHouse 会将此设置应用于服务器上的所有表。你可以随时更
 </div>
 
 管理在集群中执行[分布式 DDL 查询](/zh/reference/statements/distributed-ddl) (`CREATE`、`DROP`、`ALTER`、`RENAME`) 。
-仅在启用 [ZooKeeper](/zh/reference/settings/server-settings/settings/zookeeper#zookeeper) 时有效。
+仅在启用 [ZooKeeper](/zh/reference/settings/server-settings/settings#zookeeper) 时有效。
 
 `<distributed_ddl>` 中可配置的设置包括：
 
-| Setting                | Description                                          | Default Value                 |
-| ---------------------- | ---------------------------------------------------- | ----------------------------- |
-| `cleanup_delay_period` | 如果距离上次清理已超过 `cleanup_delay_period` 秒，则在收到新节点事件后开始清理。 | `60` 秒                        |
-| `max_tasks_in_queue`   | 队列中可包含的任务最大数量。                                       | `1,000`                       |
-| `path`                 | Keeper 中用于 DDL 查询的 `task_queue` 路径                   |                               |
-| `pool_size`            | 可同时运行的 `ON CLUSTER` 查询数量                             |                               |
-| `profile`              | 用于执行 DDL 查询的 profile                                 |                               |
-| `task_max_lifetime`    | 如果节点存活时间超过此值，则删除该节点。                                 | `7 * 24 * 60 * 60` (一周，以秒为单位) |
+| Setting                | Description                                          | Default Value                  |
+| ---------------------- | ---------------------------------------------------- | ------------------------------ |
+| `cleanup_delay_period` | 如果距离上次清理已超过 `cleanup_delay_period` 秒，则在收到新节点事件后开始清理。 | `60` 秒                         |
+| `max_tasks_in_queue`   | 队列中可包含的任务最大数量。                                       | `1,000`                        |
+| `path`                 | Keeper 中用于 DDL 查询的 `task_queue` 路径                   |                                |
+| `pool_size`            | 可同时运行的 `ON CLUSTER` 查询数量                             |                                |
+| `profile`              | 用于执行 DDL 查询的 profile                                 |                                |
+| `task_max_lifetime`    | 如果节点存活时间超过此值，则删除该节点。                                 | `7 * 24 * 60 * 60` (一周，以秒为单位)  |
 
 **示例**
 
 ```xml
 <distributed_ddl>
-    <!-- Path in ZooKeeper to queue with DDL queries -->
+    <!-- ZooKeeper 中 DDL 查询队列的路径 -->
     <path>/clickhouse/task_queue/ddl</path>
 
-    <!-- Settings from this profile will be used to execute DDL queries -->
+    <!-- 将使用此 profile 中的设置来执行 DDL 查询 -->
     <profile>default</profile>
 
-    <!-- Controls how much ON CLUSTER queries can be run simultaneously. -->
+    <!-- 控制可同时运行的 ON CLUSTER 查询数量。 -->
     <pool_size>1</pool_size>
 
     <!--
-         Cleanup settings (active tasks will not be removed)
+         清理设置（活跃任务不会被移除）
     -->
 
-    <!-- Controls task TTL (default 1 week) -->
+    <!-- 控制任务的生存时间 (TTL)（默认 1 周） -->
     <task_max_lifetime>604800</task_max_lifetime>
 
-    <!-- Controls how often cleanup should be performed (in seconds) -->
+    <!-- 控制清理操作的执行频率（单位：秒） -->
     <cleanup_delay_period>60</cleanup_delay_period>
 
-    <!-- Controls how many tasks could be in the queue -->
+    <!-- 控制队列中可容纳的最大任务数 -->
     <max_tasks_in_queue>1000</max_tasks_in_queue>
 </distributed_ddl>
 ```
@@ -2237,8 +2185,6 @@ ClickHouse 会将此设置应用于服务器上的所有表。你可以随时更
 
 设置是否允许使用明文密码类型 (不安全) 。
 
-* **默认值：** `true`
-
 ```xml
 <allow_plaintext_password>1</allow_plaintext_password>
 ```
@@ -2248,8 +2194,6 @@ ClickHouse 会将此设置应用于服务器上的所有表。你可以随时更
 </div>
 
 设置是否允许使用不安全的 no&#95;password 密码类型。
-
-* **默认值：** `true`
 
 ```xml
 <allow_no_password>1</allow_no_password>
@@ -2261,8 +2205,6 @@ ClickHouse 会将此设置应用于服务器上的所有表。你可以随时更
 
 禁止创建未设置密码的用户，除非显式指定 &#39;IDENTIFIED WITH no&#95;password&#39;。
 
-* **默认值：** `true`
-
 ```xml
 <allow_implicit_no_password>1</allow_implicit_no_password>
 ```
@@ -2272,8 +2214,6 @@ ClickHouse 会将此设置应用于服务器上的所有表。你可以随时更
 </div>
 
 默认会话超时时长 (以秒为单位) 。
-
-* **默认值：** `60`
 
 ```xml
 <default_session_timeout>60</default_session_timeout>
@@ -2288,14 +2228,9 @@ ClickHouse 会将此设置应用于服务器上的所有表。你可以随时更
 可接受的值包括：
 
 * `plaintext_password`
-
 * `sha256_password`
-
 * `double_sha1_password`
-
 * `bcrypt_password`
-
-* **默认值：** `sha256_password`
 
 ```xml
 <default_password_type>sha256_password</default_password_type>
@@ -2311,7 +2246,7 @@ ClickHouse 会将此设置应用于服务器上的所有表。你可以随时更
 * 存储通过 SQL 命令创建的用户的文件夹路径。
 * 存储并复制通过 SQL 命令创建的用户的 ZooKeeper 节点路径。
 
-如果指定了此部分，则不会使用 [users&#95;config](/zh/reference/settings/server-settings/settings/users#users_config) 和 [access&#95;control&#95;path](/zh/reference/settings/server-settings/settings/access-control#access_control_path) 中的路径。
+如果指定了此部分，则不会使用 [users&#95;config](/zh/reference/settings/server-settings/settings#users_config) 和 [access&#95;control&#95;path](/zh/reference/settings/server-settings/settings#access_control_path) 中的路径。
 
 `user_directories` 部分可以包含任意数量的条目，条目的顺序表示其优先级 (越靠前的条目，优先级越高) 。
 
@@ -2521,8 +2456,6 @@ ClickHouse 会检查与请求协议对应的最高优先级解析器类型。如
 
 默认情况下，通过 `HTTP` 代理发起 `HTTPS` 请求时，会使用隧道 (即 `HTTP CONNECT`) 。可使用此设置禁用该行为。
 
-* **默认值：** `false`
-
 **no&#95;proxy**
 
 默认情况下，所有请求都会通过代理。若要让特定主机不经过代理，必须设置 `no_proxy` 变量。
@@ -2552,8 +2485,6 @@ GitLab 也是如此，即使它带有前导点。`gitlab.com` 和 `about.gitlab.
 </div>
 
 用于存储所有 `CREATE WORKLOAD` 和 `CREATE RESOURCE` 查询的目录。默认使用 server 工作目录下的 `/workload/` 文件夹。
-
-* **默认值：** `<path>/workload/`
 
 **示例**
 

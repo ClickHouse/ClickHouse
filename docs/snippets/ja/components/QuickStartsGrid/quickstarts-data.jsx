@@ -114,7 +114,7 @@ export const quickStartsData = [
   {
     "id": "tutorial",
     "title": "高度なチュートリアル",
-    "description": "ニューヨーク市のタクシーのサンプルデータセットを使用して、ClickHouse へのデータの取り込みとクエリの実行方法を学びます。",
+    "description": "ニューヨーク市のタクシーのサンプルデータセットを使って、ClickHouse でデータを取り込み、クエリする方法を学びます。",
     "href": "/ja/get-started/quickstarts/tutorial",
     "useCases": [
       "real-time-analytics",

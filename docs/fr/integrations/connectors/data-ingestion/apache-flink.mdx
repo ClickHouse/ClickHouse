@@ -10,7 +10,7 @@ integration:
   - category: 'data_ingestion'
 ---
 
-import { ClickHouseSupportedBadge } from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/fr/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -147,7 +147,7 @@ Supposons que vous vouliez insérer des données CSV brutes dans ClickHouse :
     ```java
     public static void main(String[] args) {
         // Configurer ClickHouseClient
-        ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
+        ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(url, username, password, database, tableName);
 
         // Créer un ElementConverter
         ElementConverter<String, ClickHousePayload> convertorString = new ClickHouseConvertor<>(String.class);
@@ -161,7 +161,7 @@ Supposons que vous vouliez insérer des données CSV brutes dans ClickHouse :
                 MAX_BATCH_SIZE_IN_BYTES,
                 MAX_TIME_IN_BUFFER_MS,
                 MAX_RECORD_SIZE_IN_BYTES,
-                clientConfig
+                clickHouseClientConfig
         );
 
         csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
@@ -243,7 +243,7 @@ Par exemple :
         "insert_deduplicate", "1"
     );
 
-    ClickHouseClientConfig clientConfig = new ClickHouseClientConfig(
+    ClickHouseClientConfig clickHouseClientConfig = new ClickHouseClientConfig(
         url,
         username,
         password,
@@ -351,7 +351,7 @@ ClickHouseAsyncSink<String> csvSink = new ClickHouseAsyncSink<>(
         MAX_BATCH_SIZE_IN_BYTES,
         MAX_TIME_IN_BUFFER_MS,
         MAX_RECORD_SIZE_IN_BYTES,
-        clientConfig
+        clickHouseClientConfig
 );
 csvSink.setClickHouseFormat(ClickHouseFormat.CSV);
 ```
@@ -443,19 +443,19 @@ Il se peut que le débit du connecteur n&#39;augmente pas avec le parallélisme 
 
 [//]: #
 
-[//]: # "**Cause** : si un ou plusieurs enregistrements d'un lot Flink ne parviennent pas à être insérés dans ClickHouse en raison d'un échec pouvant donner lieu à un réessai, le connecteur réessaiera le **lot entier**. Si l'[insert deduplication](https://clickhouse.com/docs/guides/developer/deduplicating-inserts-on-retries#query-level-insert-deduplication) est désactivée, cela peut entraîner l'insertion d'enregistrements en double dans votre table ClickHouse. Sinon, il est possible que la fenêtre de déduplication ou sa durée soit trop courte et que des blocks expirent avant que le connecteur ne les réessaie."
+[//]: # "**Cause** : si un ou plusieurs enregistrements d'un lot Flink ne parviennent pas à être insérés dans ClickHouse en raison d'un échec pouvant faire l'objet d'un retry, le connecteur réessaiera le **lot entier**. Si la [insert deduplication](https://clickhouse.com/docs/guides/developer/deduplicating-inserts-on-retries#query-level-insert-deduplication) est désactivée, cela peut entraîner l'insertion d'enregistrements en double dans votre table ClickHouse. Sinon, il est possible que la fenêtre de déduplication ou sa durée soit trop courte et que des blocks expirent avant que le connecteur ne les réessaie."
 
 [//]: #
 
-[//]: # "**Solution**:"
+[//]: # "**Solution** :"
 
 [//]: # "- Si votre table utilise un table engine `Replicated*MergeTree` :"
 
 [//]: # "  1. assurez-vous que le setting de session du server `insert_deduplicate=1` est activé (voir l'[example](#client-options) ci-dessus pour savoir comment le définir, si nécessaire). Notez que `insert_deduplicate` est activé par défaut pour les tables replicated."
 
-[//]: # "  2. si nécessaire, augmentez l'un ou les deux table settings `MergeTree` [`replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window) ou [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/replicated-deduplication-window#replicated_deduplication_window_seconds)."
+[//]: # "  2. si nécessaire, augmentez l'un ou les deux table settings `MergeTree` [`replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window) ou [`replicated_deduplication_window_seconds`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#replicated_deduplication_window_seconds)."
 
-[//]: # "- Si votre table utilise un table engine `*MergeTree` non replicated, augmentez le table setting `MergeTree` [`non_replicated_deduplication_window`](https://clickhouse.com/docs/reference/settings/merge-tree-settings/other#non_replicated_deduplication_window)."
+[//]: # "- Si votre table utilise un table engine `*MergeTree` non replicated, augmentez le table setting `MergeTree` [`non_replicated_deduplication_window`](https://clickhouse.com/docs/operations/settings/merge-tree-settings#non_replicated_deduplication_window)."
 
 [//]: #
 

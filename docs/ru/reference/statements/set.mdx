@@ -43,13 +43,13 @@ SET TIME ZONE 'UTC';
 SET TIME ZONE 'Europe/Amsterdam';
 SET TIME ZONE 'America/New_York';
 
--- Verify the current session time zone
+-- Проверить текущий часовой пояс сеанса
 SELECT getSetting('session_timezone');
 ```
 
 Значение часового пояса должно быть корректным именем из [базы данных часовых поясов IANA](https://www.iana.org/time-zones). Некорректное имя часового пояса приведёт к ошибке.
 
-Дополнительные сведения о настройке `session_timezone` см. в разделе [session&#95;timezone](/ru/reference/settings/session-settings/other#session_timezone).
+Дополнительные сведения о настройке `session_timezone` см. в разделе [session&#95;timezone](/ru/reference/settings/session-settings#session_timezone).
 
 <div id="setting-query-parameters">
   ## Настройка параметров запроса

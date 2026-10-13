@@ -8,7 +8,6 @@
 #include <base/types.h>
 #include <Interpreters/JoinOperator.h>
 #include <Interpreters/JoinExpressionActions.h>
-#include <Processors/QueryPlan/RelationEstimateInfo.h>
 #include <Storages/Statistics/ConditionSelectivityEstimator.h>
 
 namespace DB
@@ -67,16 +66,9 @@ struct DPJoinEntry
 struct RelationStats
 {
     std::optional<UInt64> estimated_rows = {};
-    std::optional<Float64> avg_row_bytes = {};
     std::unordered_map<String, ColumnStats> column_stats = {};
 
     String table_name;
-
-    bool imprecise_estimate = false;
-
-    /// Diagnostic annotation of where `estimated_rows` came from; see `RowEstimateSource`.
-    /// `NoSource` means the producer of the estimate did not track it; set it wherever it is known.
-    RowEstimateSource source = RowEstimateSource::NoSource;
 };
 
 struct QueryGraph

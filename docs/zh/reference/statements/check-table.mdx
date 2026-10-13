@@ -31,7 +31,7 @@ CHECK TABLE table_name [PARTITION partition_expression | PART part_name] [FORMAT
 * `part_name`： (可选) 如果要检查表中的特定分片，可以添加字符串字面量来指定其名称。
 * `FORMAT format`： (可选) 用于指定结果的输出格式。
 * `SETTINGS`： (可选) 用于添加其他设置。
-  * (可选) ：[check&#95;query&#95;single&#95;value&#95;result](/zh/reference/settings/session-settings/check#check_query_single_value_result)：此设置控制输出是详细模式 (`0`) 还是汇总模式 (`1`) 。
+  * (可选) ：[check&#95;query&#95;single&#95;value&#95;result](/zh/reference/settings/session-settings#check_query_single_value_result)：此设置控制输出是详细模式 (`0`) 还是汇总模式 (`1`) 。
   * 也可以应用其他设置。如果不要求结果顺序是确定性的，可以将 max&#95;threads 设置为大于 1 的值，以加快查询速度。
 
 查询响应取决于 `check_query_single_value_result` 设置的值。
@@ -162,8 +162,6 @@ SETTINGS check_query_single_value_result = 0
 │ default  │ t1       │ all_7_38_2  │         1 │         │
 └──────────┴──────────┴─────────────┴───────────┴─────────┘
 ```
-
-要检查整个数据库的健康状况，而非单个表的完整性，请使用 [`CHECK DATABASE`](/zh/reference/statements/check-database) 查询。它主要用于采用 [`DataLakeCatalog`](/zh/reference/engines/database-engines/datalake) 引擎的数据库，以验证外部 catalog 是否可访问。
 
 <div id="if-the-data-is-corrupted">
   ## 如果数据已损坏

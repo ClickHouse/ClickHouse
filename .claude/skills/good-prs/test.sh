@@ -12,9 +12,6 @@ set -uo pipefail
 HERE=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 REPORT="$HERE/report.sh"
 
-# Keep the retry wrapper's timing out of the tests: same code path, no sleeping.
-export GH_RETRIES=3 GH_RETRY_DELAY=0
-
 RC=0
 ok()  { printf '  ok   - %s\n' "$*"; }
 bad() { printf '  FAIL - %s\n' "$*"; RC=1; }
@@ -47,15 +44,6 @@ case "$sub" in
     ;;
   "pr checks")
     n="$3"
-    # <n>.flaky holds a count of leading attempts that fail transiently, so a test
-    # can assert that gh_retry keeps going and eventually returns the real answer.
-    if [ -f "$GH_STUB_DIR/checks/$n.flaky" ]; then
-      cnt=$(cat "$GH_STUB_DIR/checks/$n.count" 2>/dev/null || echo 0)
-      cnt=$(( cnt + 1 )); printf '%s\n' "$cnt" > "$GH_STUB_DIR/checks/$n.count"
-      if [ "$cnt" -le "$(cat "$GH_STUB_DIR/checks/$n.flaky")" ]; then
-        echo "HTTP 503: 503 Service Unavailable (https://api.github.com/graphql)" >&2; exit 1
-      fi
-    fi
     if [ -f "$GH_STUB_DIR/checks/$n.err" ]; then cat "$GH_STUB_DIR/checks/$n.err" >&2; exit 1; fi
     if [ -f "$GH_STUB_DIR/checks/$n.nochecks" ]; then echo "no checks reported on the 'br-$n' branch" >&2; exit 1; fi
     cat "$GH_STUB_DIR/checks/$n.json"
@@ -201,39 +189,6 @@ run_report "$E"
 not_present 501 "$OUT" "#501 with no checks -> excluded"
 row_has "$OUT" 502 GREEN "#502 green PR still rendered alongside excluded one"
 rm -rf "$E"
-
-################## Test F: a transient error is retried, not fatal ##############
-echo "Test F: transient 503s are retried and the run still succeeds"
-F=$(mktemp -d); write_stub "$F"; mkdir -p "$F/fix/list" "$F/fix/checks" "$F/fix/view"
-printf 'testuser\n' > "$F/fix/me"
-printf '601\ttestuser\tFlaky then green\n' > "$F/fix/list/author_testuser.tsv"
-printf '2\n' > "$F/fix/checks/601.flaky"   # fail twice, succeed on the third call
-printf '%s\n' '[{"name":"CH Inc sync","state":"SUCCESS","bucket":"pass"}]' > "$F/fix/checks/601.json"
-printf 'OPEN\ttrue\n' > "$F/fix/view/601.tsv"
-run_report "$F"
-[ "$EXIT" = 0 ] && ok "exit code 0 after retried 503s" || { bad "exit code 0 after retried 503s (got $EXIT)"; cat "$ERRF"; }
-row_has "$OUT" 601 GREEN "#601 rendered after the transient failures"
-if [ "$(grep -c '^pr checks 601 ' "$F/calls.log")" = 3 ]; then
-  ok "gh pr checks retried exactly until it succeeded"
-else
-  bad "gh pr checks retried exactly until it succeeded (got $(grep -c '^pr checks 601 ' "$F/calls.log") calls)"
-fi
-rm -rf "$F"
-
-############## Test G: a permanent error is not retried, still fatal ############
-echo "Test G: a permanent error fails on the first attempt"
-G=$(mktemp -d); write_stub "$G"; mkdir -p "$G/fix/list" "$G/fix/checks" "$G/fix/view"
-printf 'testuser\n' > "$G/fix/me"
-printf '701\ttestuser\tPermanently broken\n' > "$G/fix/list/author_testuser.tsv"
-printf 'GraphQL: Could not resolve to a PullRequest with the number of 701.\n' > "$G/fix/checks/701.err"
-run_report "$G"
-[ "$EXIT" != 0 ] && ok "non-zero exit on permanent failure" || bad "non-zero exit on permanent failure (got $EXIT)"
-if [ "$(grep -c '^pr checks 701 ' "$G/calls.log")" = 1 ]; then
-  ok "permanent error not retried"
-else
-  bad "permanent error not retried (got $(grep -c '^pr checks 701 ' "$G/calls.log") calls)"
-fi
-rm -rf "$G"
 
 echo
 if [ "$RC" = 0 ]; then echo "ALL TESTS PASSED"; else echo "SOME TESTS FAILED"; fi

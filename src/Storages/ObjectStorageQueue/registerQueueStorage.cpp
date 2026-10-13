@@ -1,7 +1,6 @@
 #include "config.h"
 
 #include <Core/FormatFactorySettings.h>
-#include <Core/BaseSettings.h>
 #include <Core/Settings.h>
 #include <Core/UUID.h>
 #include <Common/Macros.h>
@@ -64,7 +63,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
 
     if (!is_attach && args.storage_def->settings)
     {
-        if (auto * path_setting = args.storage_def->settings->changes.tryGetChange("keeper_path"))
+        if (auto * path_setting = args.storage_def->settings->changes.tryGet("keeper_path"))
         {
             auto database = DatabaseCatalog::instance().tryGetDatabase(args.table_id.database_name);
             const String database_engine = database ? database->getEngineName() : "";
@@ -77,13 +76,7 @@ StoragePtr createQueueStorage(const StorageFactory::Arguments & args)
             /// and if UUID was explicitly passed in CREATE TABLE (like for ATTACH)
             bool allow_uuid_macro = is_on_cluster || is_replicated_database || args.query.attach || args.query.has_uuid;
 
-            /// This value is read before the settings are applied to `ObjectStorageQueueSettings`, so the
-            /// value-less form `SETTINGS keeper_path` has not been rejected yet, and `safeGet` would report
-            /// it as a `Bool` where a `String` was requested.
-            if (path_setting->shorthand)
-                BaseSettingsHelpers::throwValuelessSettingIsNotBool(path_setting->name);
-
-            String path = path_setting->value.safeGet<String>();
+            String path = path_setting->safeGet<String>();
 
             Macros::MacroExpansionInfo info;
             info.table_id = args.table_id;
@@ -175,7 +168,7 @@ import ScalePlanFeatureBadge from '@theme/badges/ScalePlanFeatureBadge'
 
 # S3Queue table engine
 
-This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](/reference/engines/table-engines/integrations/kafka), [RabbitMQ](/reference/engines/table-engines/integrations/rabbitmq) engines, but provides S3-specific features.
+This engine provides integration with [Amazon S3](https://aws.amazon.com/s3/) ecosystem and allows streaming import. This engine is similar to the [Kafka](../../../engines/table-engines/integrations/kafka.md), [RabbitMQ](../../../engines/table-engines/integrations/rabbitmq.md) engines, but provides S3-specific features.
 
 It is important to understand this note from the [original PR for S3Queue implementation](https://github.com/ClickHouse/ClickHouse/pull/49086/files#diff-e1106769c9c8fbe48dd84f18310ef1a250f2c248800fde97586b3104e9cd6af8R183): when the `MATERIALIZED VIEW` joins the engine, the S3Queue Table Engine starts collecting data in the background.
 
@@ -215,7 +208,7 @@ Before `24.7`, it is required to use `s3queue_` prefix for all settings apart fr
 
 **Engine parameters**
 
-`S3Queue` parameters are the same as `S3` table engine supports. See parameters section [here](/reference/engines/table-engines/integrations/s3#parameters).
+`S3Queue` parameters are the same as `S3` table engine supports. See parameters section [here](../../../engines/table-engines/integrations/s3.md#parameters).
 
 **Example**
 
@@ -300,7 +293,7 @@ SETTINGS
     after_processing_move_secret_access_key = 'test';
 ```
 
-Move from an Azure container to another Azure container requires the Blob Storage connection string as `after_processing_move_connection_string` and the container name as `after_processing_move_container`. See [the AzureQueue settings](/reference/engines/table-engines/integrations/azure-queue#settings).
+Move from an Azure container to another Azure container requires the Blob Storage connection string as `after_processing_move_connection_string` and the container name as `after_processing_move_container`. See [the AzureQueue settings](../../../engines/table-engines/integrations/azure-queue.md#settings).
 
 Tagging requires tag key and value provided as `after_processing_tag_key` and `after_processing_tag_value`.
 
@@ -498,26 +491,24 @@ For 'Ordered' mode. Available since `24.6`. If there are several replicas of S3Q
 
 ### `use_persistent_processing_nodes` {#use_persistent_processing_nodes}
 
-Persistent processing nodes eliminate the possibility of duplicates when a keeper session expires after processing has started but before S3Queue commits the processed file. Earlier versions used ephemeral processing nodes, which could produce duplicates in that case.
-
-This setting is deprecated and its value is ignored: persistent processing nodes are always used. A table created with `use_persistent_processing_nodes = 0` still uses them, and settings introspection, including `SHOW CREATE TABLE`, reports `1` regardless of the value supplied.
+By default S3Queue table has always used ephemeral processing nodes, which could lead to duplicates in data in case zookeeper session expires before S3Queue commits processed files in zookeeper, but after it has started processing. This setting forces the server to eliminate possibility of duplicates in case of expired keeper session.
 
 ### `persistent_processing_node_ttl_seconds` {#persistent_processing_node_ttl_seconds}
 
-In case of non-graceful server termination, it is possible that we can have not removed processing nodes. This setting defines a period of time when these processing nodes can safely be cleaned up. The same TTL is also used for the bucket lock in `Ordered` mode, which can be held for a longer time than a single processing node, so the value should account for that as well.
+In case of non-graceful server termination, it is possible that if `use_persistent_processing_nodes` is enabled, we can have not removed processing nodes. This setting defines a period of time when these processing nodes can safely be cleaned up. The same TTL is also used for the bucket lock in `Ordered` mode, which can be held for a longer time than a single processing node, so the value should account for that as well.
 
 Default value: `21600` (6 hours).
 
 ## S3-related settings {#s3-settings}
 
-Engine supports all s3 related settings. For more information about S3 settings see [here](/reference/engines/table-engines/integrations/s3).
+Engine supports all s3 related settings. For more information about S3 settings see [here](../../../engines/table-engines/integrations/s3.md).
 
 ## S3 role-based access {#s3-role-based-access}
 
 <ScalePlanFeatureBadge feature="S3 Role-Based Access" />
 
 The s3Queue table engine supports role-based access.
-Refer to the documentation [here](/products/cloud/guides/data-sources/accessing-s3-data-securely) for steps to configure a role to access your bucket.
+Refer to the documentation [here](/cloud/data-sources/secure-s3) for steps to configure a role to access your bucket.
 
 Once the role is configured, a `roleARN` can be passed via an `extra_credentials` parameter as shown below:
 ```sql
@@ -554,7 +545,7 @@ The S3Queue engine has a special setting for SELECT queries: `commit_on_select`.
 
 ## Description {#description}
 
-`SELECT` is not particularly useful for streaming import (except for debugging), because each file can be imported only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
+`SELECT` is not particularly useful for streaming import (except for debugging), because each file can be imported only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
 1.  Use the engine to create a table for consuming from specified path in S3 and consider it a data stream.
 2.  Create a table with the desired structure.
@@ -586,7 +577,7 @@ CREATE MATERIALIZED VIEW consumer TO stats
 - `_size` — Size of the file.
 - `_time` — Time of the file creation.
 
-For more information about virtual columns see [here](/reference/engines/table-engines/index#table_engines-virtual_columns).
+For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 
 ## Wildcards in path {#wildcards-in-path}
 
@@ -598,7 +589,7 @@ For more information about virtual columns see [here](/reference/engines/table-e
 - `{some_string,another_string,yet_another_one}` — Substitutes any of strings `'some_string', 'another_string', 'yet_another_one'`.
 - `{N..M}` — Substitutes any number in range from N to M including both borders. N and M can have leading zeroes e.g. `000..078`.
 
-Constructions with `{}` are similar to the [remote](/reference/functions/table-functions/remote) table function.
+Constructions with `{}` are similar to the [remote](../../../sql-reference/table-functions/remote.md) table function.
 
 ## Limitations {#limitations}
 
@@ -606,21 +597,15 @@ Constructions with `{}` are similar to the [remote](/reference/functions/table-f
 
 - an exception happens during parsing in the middle of file processing and retries are enabled via `s3queue_loading_retries`;
 
-- `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server; However, this is prevented by persistent processing nodes, which have been available since version 25.8 and are now always used (see [`use_persistent_processing_nodes`](#use_persistent_processing_nodes)).
+- `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and keeper session expires before one server managed to commit processed file, which could lead to another server taking processing of the file, which could be partially or fully processed by the first server; However, this is not true since version 25.8 if `use_persistent_processing_nodes = 1`.
 
 - abnormal server termination.
 
 2. `S3Queue` is configured on multiple servers pointing to the same path in zookeeper and `Ordered` mode is used, then `s3queue_loading_retries` will not work. This will be fixed soon.
 
-3. Lost rows on a device-level power loss of the ClickHouse node. A consumed file is recorded as processed in Keeper (and its source object removed when `after_processing = 'delete'`) as soon as the insert finishes, but the inserted rows are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). Keeper is force-synced and usually runs on a separate node, so it survives this node's power loss. If the node loses power after the file is committed as processed but before the target part is fsynced, the file is not re-read on restart and its rows are lost (unrecoverable with `after_processing = 'delete'`). A plain process kill does not expose this, because the page cache survives it. For the recommended materialized-view consumption path (the file is committed only after the whole insert pipeline finishes), setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` table makes the inserted part durable before the file is committed as processed, which narrows this window substantially. This does not apply to direct `INSERT ... SELECT` with `commit_on_select = 1`, where the file is committed at the end of the read before the destination sink finalizes its last part.
-
 ## Introspection {#introspection}
 
-For introspection use the `system.s3queue_metadata_cache` and `system.s3_queue_metadata` stateless tables and the `system.s3queue_log` persistent table.
-
-- Use `system.s3queue_metadata_cache` to inspect the in-memory cache of per-file processing state (which files are currently being processed, processed or failed) on the local server.
-- Use `system.s3_queue_metadata` to inspect the state stored in keeper directly: the number of `processed`, `processing` and `failed` nodes per metadata object, and, on demand, their contents. This is useful when the in-memory cache does not (yet) reflect keeper, or to look at the shared state across the cluster.
-- Use `system.s3queue_log` for the persistent history of `processed` and `failed` files.
+For introspection use `system.s3queue_metadata_cache` stateless table and `system.s3queue_log` persistent table.
 
 1. `system.s3queue_metadata_cache`. This table is not persistent and shows in-memory state of `S3Queue`: which files are currently being processed, which files are processed or failed.
 
@@ -662,25 +647,7 @@ ProfileEvents:         {'ZooKeeperTransactions':3,'ZooKeeperGet':2,'ZooKeeperMul
 exception:
 ```
 
-2. `system.s3_queue_metadata`. This table is not persistent and reads the state directly from keeper: the number of `processed`, `processing` and `failed` nodes per metadata object, and, on demand, their contents.
-
-The `processed_nodes`, `processing_nodes`, `failed_nodes` and `processed_path` columns issue keeper requests and are fetched only when the corresponding column is selected, so selecting just the `*_nodes_count` counters avoids the extra keeper traffic.
-
-```sql
-SELECT zookeeper_path, processed_nodes_count, processing_nodes_count, failed_nodes_count
-FROM system.s3_queue_metadata
-
-Row 1:
-──────
-zookeeper_path:         /clickhouse/s3queue/25ea5621-ae8c-40c7-96d0-cec959c5ab88/3b3f66a1-9866-4c2e-ba78-b6bfa154207e
-processed_nodes_count:  128
-processing_nodes_count: 2
-failed_nodes_count:     0
-```
-
-For the full list of columns see the `system.s3_queue_metadata` reference page.
-
-3. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue_metadata_cache`, but for `processed` and `failed` files.
+2. `system.s3queue_log`. Persistent table. Has the same information as `system.s3queue_metadata_cache`, but for `processed` and `failed` files.
 
 The table has the following structure:
 
@@ -777,9 +744,9 @@ CREATE TABLE test (name String, value UInt32)
 
 **Engine parameters**
 
-`AzureQueue` parameters are the same as `AzureBlobStorage` table engine supports. See parameters section [here](/reference/engines/table-engines/integrations/azureBlobStorage).
+`AzureQueue` parameters are the same as `AzureBlobStorage` table engine supports. See parameters section [here](../../../engines/table-engines/integrations/azureBlobStorage.md).
 
-Similar to the [AzureBlobStorage](/reference/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage).
+Similar to the [AzureBlobStorage](/engines/table-engines/integrations/azureBlobStorage) table engine, users can use Azurite emulator for local Azure Storage development. Further details [here](https://learn.microsoft.com/en-us/azure/storage/common/storage-use-azurite?tabs=docker-hub%2Cblob-storage).
 
 **Example**
 
@@ -795,7 +762,7 @@ SETTINGS mode = 'unordered'
 
 ## Settings {#settings}
 
-The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings settings](/reference/engines/table-engines/integrations/s3queue#settings).
+The set of supported settings is mostly the same as for `S3Queue` table engine, but without `s3queue_` prefix. See [full list of settings settings](../../../engines/table-engines/integrations/s3queue.md#settings).
 To get a list of settings, configured for the table, use `system.azure_queue_settings` table. Available from `24.10`.
 
 Below are the settings only compatible with AzureQueue and not applicable for S3Queue.
@@ -844,7 +811,7 @@ The AzureQueue engine has a special setting for SELECT queries: `commit_on_selec
 
 ## Description {#description}
 
-`SELECT` is not particularly useful for streaming import (except for debugging), because each file can be imported only once. It is more practical to create real-time threads using [materialized views](/reference/statements/create/view). To do this:
+`SELECT` is not particularly useful for streaming import (except for debugging), because each file can be imported only once. It is more practical to create real-time threads using [materialized views](../../../sql-reference/statements/create/view.md). To do this:
 
 1.  Use the engine to create a table for consuming from the specified path in Azure Blob Storage and consider it a data stream.
 2.  Create a table with the desired structure.
@@ -876,17 +843,16 @@ SELECT * FROM stats ORDER BY key;
 - `_path` — Path to the file.
 - `_file` — Name of the file.
 
-For more information about virtual columns see [here](/reference/engines/table-engines/index#table_engines-virtual_columns).
+For more information about virtual columns see [here](../../../engines/table-engines/index.md#table_engines-virtual_columns).
 
 ## Introspection {#introspection}
 
 Enable logging for the table via the table setting `enable_logging_to_queue_log=1`.
 
-Introspection capabilities are the same as the [S3Queue table engine](/reference/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
+Introspection capabilities are the same as the [S3Queue table engine](/engines/table-engines/integrations/s3queue#introspection) with several distinct differences:
 
 1. Use the `system.azure_queue_metadata_cache` for the in-memory state of the queue for server versions >= 25.1. For older versions use the `system.s3queue_metadata_cache` (it would contain information for `azure` tables as well).
-2. Use the `system.azure_queue_metadata` table to inspect the state stored in keeper directly: the number of `processed`, `processing` and `failed` nodes per metadata object, and, on demand, their contents. This is the `AzureQueue` counterpart of `system.s3_queue_metadata`.
-3. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
+2. Enable the `system.azure_queue_log` via the main ClickHouse configuration e.g.
 
 ```xml
 <azure_queue_log>
@@ -949,10 +915,6 @@ exception:
 1 row in set. Elapsed: 0.002 sec.
 
 ```
-
-## Limitations {#limitations}
-
-`AzureQueue` shares the same implementation as `S3Queue` and has the same [limitations](/reference/engines/table-engines/integrations/s3queue#limitations). In particular, a device-level power loss of the ClickHouse node can silently lose consumed rows: a file is recorded as processed in Keeper (and, with `after_processing = 'delete'`, its source blob removed) as soon as the insert finishes, but the inserted rows are only durable once the target part is fsynced, which does not happen synchronously by default (`fsync_after_insert = 0`). For the recommended materialized-view consumption path, setting `fsync_after_insert = 1` (and `fsync_part_directory = 1`) on the target `MergeTree` table narrows this window substantially.
 )DOCS_MD",
             .syntax = "ENGINE = AzureQueue(connection_string | storage_account_url, container_name, blobpath, [account_name, account_key,] format [, compression]) SETTINGS mode = '...', ...",
             .related = {"S3Queue", "AzureBlobStorage"}});

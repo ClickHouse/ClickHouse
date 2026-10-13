@@ -6,7 +6,7 @@ title: 'LIMIT BY 절'
 doc_type: 'reference'
 ---
 
-`LIMIT n BY expressions` 절이 있는 쿼리는 `expressions`의 각 고유 값마다 처음 `n`개의 행을 선택합니다. `LIMIT BY`의 키에는 개수 제한 없이 [표현식](/ko/reference/syntax#expressions)을 얼마든지 포함할 수 있습니다.
+`LIMIT n BY expressions` 절이 있는 쿼리는 `expressions`의 각 고유 값마다 처음 `n`개의 행을 선택합니다. `LIMIT BY`의 키에는 개수 제한 없이 [expressions](/ko/reference/syntax#expressions)을 얼마든지 포함할 수 있습니다.
 
 ClickHouse는 다음 구문 변형을 지원합니다.
 
@@ -19,7 +19,7 @@ ClickHouse는 다음 구문 변형을 지원합니다.
   `LIMIT BY`는 [LIMIT](/ko/reference/statements/select/limit)와 관련이 없습니다. 두 절은 같은 쿼리에서 함께 사용할 수 있습니다.
 </Note>
 
-`LIMIT BY` 절에서 컬럼 이름 대신 컬럼 번호를 사용하려면 [enable&#95;positional&#95;arguments](/ko/reference/settings/session-settings/enable-positional-arguments#enable_positional_arguments) 설정을 활성화하세요.
+`LIMIT BY` 절에서 컬럼 이름 대신 컬럼 번호를 사용하려면 [enable&#95;positional&#95;arguments](/ko/reference/settings/session-settings#enable_positional_arguments) 설정을 활성화하세요.
 
 <div id="examples">
   ## 예시

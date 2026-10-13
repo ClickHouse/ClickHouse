@@ -8,10 +8,7 @@
 #include <Storages/MergeTree/MergedPartOffsets.h>
 #include <Storages/MergeTree/TextIndexSegment.h>
 #include <Core/SortCursor.h>
-#include <Columns/ColumnString.h>
 #include <Processors/ISimpleTransform.h>
-
-#include <span>
 
 namespace DB
 {
@@ -29,8 +26,7 @@ public:
         MutableDataPartStoragePtr temporary_storage_,
         MergeTreeWriterSettings writer_settings_,
         CompressionCodecPtr default_codec_,
-        String marks_file_extension_,
-        const MergeTreeSettings & storage_settings);
+        String marks_file_extension_);
 
     String getName() const override { return "BuildTextIndexTransform"; }
 
@@ -63,10 +59,6 @@ private:
     size_t num_processed_rows = 0;
     /// Number of flushed segments for each index.
     std::vector<size_t> segment_numbers;
-    /// Estimated memory retained by each index builder.
-    std::vector<size_t> estimated_allocated_bytes;
-    size_t max_processed_tokens;
-    size_t max_allocated_bytes;
 };
 
 /// Task that merges text indexes from data parts,
@@ -87,8 +79,7 @@ public:
         MergeTreeIndexPtr index_ptr_,
         std::shared_ptr<MergedPartOffsets> merged_part_offsets_,
         const MergeTreeReaderSettings & reader_settings_,
-        const MergeTreeWriterSettings & writer_settings_,
-        bool need_fsync_);
+        const MergeTreeWriterSettings & writer_settings_);
 
     ~MergeTextIndexesTask() noexcept override;
 
@@ -104,24 +95,14 @@ private:
     Block getHeader() const;
     void initializeQueue();
 
-    /// Cursor over the single String sort column with statically dispatched comparisons.
-    using TokenSortCursor = SpecializedSingleColumnSortCursor<ColumnString>;
-
     /// Returns true if the given cursor points to a new token.
-    bool isNewToken(const TokenSortCursor & cursor) const;
+    bool isNewToken(const SortCursor & cursor) const;
     /// Reads the next dictionary block for the given source index.
     void readDictionaryBlock(size_t source_num);
-    /// Adjusts the part offset of the given row id according to merged part offsets.
-    UInt32 adjustPartOffset(size_t part_index, UInt32 row_id) const;
-
-    /// Unions the given row ids into output_postings_bitmap.
-    void appendPostingsToBitmap(std::span<UInt32> row_ids);
-    /// Appends the already adjusted row ids of one source to output_postings_array or output_postings_bitmap.
-    void appendPostings(size_t source_num, std::span<UInt32> row_ids);
-    /// Reads the postings of one source and appends them to output_postings_bitmap or output_postings_array.
-    void readAndAppendPostings(size_t source_num, TokenPostingsInfo & token_info);
-    /// Reads the positions of one source and appends them to output_positions.
-    void readAndAppendPositions(size_t source_num, TokenPostingsInfo & token_info);
+    /// Reads the next posting lists for the next token in the given source index.
+    std::vector<PostingListPtr> readPostingLists(size_t source_num);
+    /// Adjusts row numbers in the postings list according to merged part offsets.
+    PostingListPtr adjustPartOffsets(size_t source_num, PostingListPtr posting_list);
 
     void flushPostingList();
     void flushDictionaryBlock();
@@ -135,10 +116,6 @@ private:
     /// If not null, posting list values must be recalculated using merged offsets.
     std::shared_ptr<MergedPartOffsets> merged_part_offsets;
     MergeTreeWriterSettings writer_settings;
-
-    /// Whether to fsync the produced index files in finalize
-    bool need_fsync;
-
     size_t step_time_ms;
 
     std::vector<MergeTreeIndexInputStreams> input_streams;
@@ -149,22 +126,16 @@ private:
 
     SortCursorImpls cursors;
     std::vector<DictionaryBlock> inputs;
-    SortingQueueBatch<TokenSortCursor> queue;
+    SortingQueue<SortCursor> queue;
 
     /// Tokens accumulated for the current dictionary block.
     MutableColumnPtr output_tokens;
     /// Tokens infos accumulated for the current dictionary block.
     std::vector<TokenPostingsInfo> output_infos;
-    /// Postings accumulated for the current token when they don't fit into output_postings_array.
-    PostingList output_postings_bitmap;
-    /// Buffer of at most MAX_CARDINALITY_FOR_RAW_POSTINGS postings of the current token.
-    PaddedPODArray<UInt32> output_postings_array;
-    /// Reusable buffer for row ids of one posting list block read from a source.
-    PaddedPODArray<UInt32> row_ids_buffer;
-    /// Reusable buffer for position entries of one token read from a source.
-    PODArray<RoaringishEntry> position_entries_buffer;
+    /// Postings accumulated for the current token.
+    PostingList output_postings;
     /// Positions accumulated for the current token (phrase query support).
-    PaddedPODArray<RoaringishEntry> output_positions;
+    PODArray<RoaringishEntry> output_positions;
     /// Sparse index accumulated for the task. Flushed only once in the end of the task.
     MutableColumnPtr sparse_index_tokens;
     MutableColumnPtr sparse_index_offsets;

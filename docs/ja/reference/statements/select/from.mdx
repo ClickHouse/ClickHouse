@@ -33,21 +33,6 @@ FROM table
 SELECT *
 ```
 
-`FROM` で始まるクエリでは、`SELECT`句は任意です。省略した場合、`SELECT *` が記述されているかのように動作します。
-
-```sql
-FROM table
-WHERE x > 1
-```
-
-この形式は主に、[パイプ演算子](/ja/reference/statements/select/pipe-operators)を使用するクエリで使用されます：
-
-```sql
-FROM table
-|> WHERE x > 1
-|> AGGREGATE count() AS c GROUP BY y
-```
-
 <div id="final-modifier">
   ## FINAL 修飾子
 </div>
@@ -62,7 +47,7 @@ FROM table
 * `CollapsingMergeTree`
 * `VersionedCollapsingMergeTree`
 
-`FINAL` を使用する `SELECT` クエリは並列で実行されます。[max&#95;final&#95;threads](/ja/reference/settings/session-settings/max#max_final_threads) 設定は、使用するスレッド数を制限します。
+`FINAL` を使用する `SELECT` クエリは並列で実行されます。[max&#95;final&#95;threads](/ja/reference/settings/session-settings#max_final_threads) 設定は、使用するスレッド数を制限します。
 
 <div id="drawbacks">
   ### 欠点
@@ -77,7 +62,7 @@ FROM table
 
 `FINAL` の代わりに、`MergeTree` エンジンのバックグラウンド処理がまだ完了していないことを前提にした別のクエリを使用し、集計 を適用して対応できる場合もあります (たとえば、重複を除外する場合など) 。必要な結果を得るためにクエリで `FINAL` を使用する必要があるなら、使用して問題ありませんが、追加の処理が必要になる点には注意してください。
 
-`FINAL` は、セッションまたはユーザープロファイルを使用して、クエリ内のすべてのテーブルに対し [FINAL](/ja/reference/settings/session-settings/other#final) 設定で自動的に適用できます。
+`FINAL` は、セッションまたはユーザープロファイルを使用して、クエリ内のすべてのテーブルに対し [FINAL](/ja/reference/settings/session-settings#final) 設定で自動的に適用できます。
 
 <div id="example-usage">
   ### 使用例

@@ -720,23 +720,3 @@ clickhousectl update --check
 ```
 
 The CLI also checks for updates in the background (at most once per 24 hours) and displays a notice when a newer version is available.
-
-## Telemetry {#telemetry}
-
-`clickhousectl` collects anonymous usage telemetry to help us understand how the CLI is used. It is enabled by default, but nothing is ever sent before you have been notified: on the first run, the CLI prints a notice explaining what is collected and how to turn it off, and sends nothing. Collection only starts on subsequent runs, so you always have the opportunity to opt out before anything is collected.
-
-Each event contains only:
-
-- The command that was run (e.g. `local start`) and the names of the flags that were used — never flag values, positional arguments, or any other user-supplied input, so queries, table names, credentials, and file paths are never collected
-- The exit code (e.g. `0`, `1`, `2`, `4`) and the outcome (e.g. `ok`, `error`, `cancelled`)
-- For mistyped commands, the "did you mean" suggestion the CLI showed — recorded only when it exactly matches a real command or flag name, so it can never contain what you typed
-- The `clickhousectl` version, OS, architecture, and whether the CLI was invoked by an AI agent (and which agent) or in CI
-
-Telemetry is fully anonymous: no personal data is collected, and there are no device or installation identifiers.
-
-To turn telemetry off, either:
-
-- Run `clickhousectl telemetry disable` (re-enable with `enable`, check with `status`)
-- Set the `DO_NOT_TRACK=1` environment variable
-
-Set `CHCTL_TELEMETRY_DEBUG=1` to print the exact payload to stderr without sending anything.

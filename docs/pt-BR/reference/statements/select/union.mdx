@@ -31,7 +31,7 @@ A conversão de tipos é realizada para unions. Por exemplo, se duas consultas c
 
 As consultas que fazem parte de `UNION` podem ser colocadas entre `()`. [ORDER BY](/pt-BR/reference/statements/select/order-by) e [LIMIT](/pt-BR/reference/statements/select/limit) são aplicados a consultas separadas, não ao resultado final. Se você precisar aplicar uma conversão ao resultado final, poderá colocar todas as consultas com `UNION` em uma subconsulta na cláusula [FROM](/pt-BR/reference/statements/select/from).
 
-Se você usar `UNION` sem especificar explicitamente `UNION ALL` ou `UNION DISTINCT`, poderá definir o modo de união usando a configuração [union&#95;default&#95;mode](/pt-BR/reference/settings/session-settings/other#union_default_mode). Os valores da configuração podem ser `ALL`, `DISTINCT` ou uma string vazia. No entanto, se você usar `UNION` com a configuração `union_default_mode` definida como string vazia, será gerada uma exceção. Os exemplos a seguir demonstram os resultados de consultas com diferentes valores dessa configuração.
+Se você usar `UNION` sem especificar explicitamente `UNION ALL` ou `UNION DISTINCT`, poderá definir o modo de união usando a configuração [union&#95;default&#95;mode](/pt-BR/reference/settings/session-settings#union_default_mode). Os valores da configuração podem ser `ALL`, `DISTINCT` ou uma string vazia. No entanto, se você usar `UNION` com a configuração `union_default_mode` definida como string vazia, será gerada uma exceção. Os exemplos a seguir demonstram os resultados de consultas com diferentes valores dessa configuração.
 
 ```sql title="Query"
 SET union_default_mode = 'DISTINCT';
@@ -74,5 +74,5 @@ Consultas que fazem parte de `UNION/UNION ALL/UNION DISTINCT` podem ser executad
 
 **Veja também**
 
-* configuração [insert&#95;null&#95;as&#95;default](/pt-BR/reference/settings/session-settings/insert#insert_null_as_default).
-* configuração [union&#95;default&#95;mode](/pt-BR/reference/settings/session-settings/other#union_default_mode).
+* configuração [insert&#95;null&#95;as&#95;default](/pt-BR/reference/settings/session-settings#insert_null_as_default).
+* configuração [union&#95;default&#95;mode](/pt-BR/reference/settings/session-settings#union_default_mode).

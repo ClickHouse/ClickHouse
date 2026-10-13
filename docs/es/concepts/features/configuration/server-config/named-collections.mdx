@@ -6,7 +6,7 @@ title: 'Colecciones con nombre'
 doc_type: 'reference'
 ---
 
-import { CloudNotSupportedBadge } from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
+import CloudNotSupportedBadge from "/snippets/es/components/CloudNotSupportedBadge/CloudNotSupportedBadge.jsx";
 
 <CloudNotSupportedBadge />
 
@@ -103,16 +103,6 @@ sección `named_collections_storage` del archivo de configuración. El siguiente
 ```
 
 De forma predeterminada, el parámetro de configuración opcional `update_timeout_ms` es igual a `5000`.
-
-Puede inspeccionar el tipo de almacenamiento activo mediante `system.server_settings` y `getServerSetting`:
-
-```sql
-SELECT value, getServerSetting('named_collections_storage_type')
-FROM system.server_settings
-WHERE name = 'named_collections_storage.type';
-```
-
-Cambiar el tipo de almacenamiento requiere reiniciar el servidor; `SYSTEM RELOAD CONFIG` no cambia el backend activo.
 
 <div id="storing-named-collections-in-configuration-files">
   ## Guardar colecciones con nombre en archivos de configuración
@@ -384,8 +374,6 @@ La descripción de los parámetros puede consultarse en [postgresql](/es/referen
 
 * `username` para `user`
 * `db` para `database`.
-
-La configuración del grupo de conexiones del [motor de tabla PostgreSQL](/es/reference/engines/table-engines/integrations/postgresql) (`postgresql_connection_pool_size` y los demás ajustes `postgresql_*`) también puede almacenarse en la colección o pasarse como sobrescrituras `key = value`. Se aplican al motor de tabla `PostgreSQL`, a la función de tabla `postgresql` y al motor de base de datos `PostgreSQL`; una cláusula `SETTINGS` explícita en una tabla tiene prioridad sobre los valores de la colección.
 
 El parámetro `addresses_expr` se usa en una colección en lugar de `host:port`. Este parámetro es opcional, ya que hay otros parámetros opcionales: `host`, `hostname`, `port`. El siguiente pseudocódigo explica la prioridad:
 

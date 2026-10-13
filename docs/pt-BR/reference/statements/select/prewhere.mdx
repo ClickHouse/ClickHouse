@@ -6,97 +6,25 @@ title: 'Cláusula PREWHERE'
 doc_type: 'reference'
 ---
 
-`PREWHERE` pode tornar a filtragem mais eficiente ao reduzir a quantidade de dados lidos. Por padrão, o ClickHouse aplica essa otimização mesmo quando uma consulta não especifica `PREWHERE` explicitamente, movendo condições qualificadas de [`WHERE`](/pt-BR/reference/statements/select/where) para `PREWHERE`. Você pode especificar `PREWHERE` explicitamente para controlar quais condições são aplicadas nessa etapa.
+Prewhere é uma otimização para aplicar a filtragem com mais eficiência. Ela é habilitada por padrão, mesmo que a cláusula `PREWHERE` não seja especificada explicitamente. Ela funciona movendo automaticamente parte da condição [WHERE](/pt-BR/reference/statements/select/where) para a etapa de prewhere. O papel da cláusula `PREWHERE` é apenas controlar essa otimização se você considerar que sabe como fazer isso melhor do que o comportamento padrão.
 
-Com `PREWHERE`, o ClickHouse primeiro lê apenas as colunas necessárias para avaliar a condição. Em seguida, lê as demais colunas exigidas pela consulta apenas nos blocos que contêm pelo menos uma linha correspondente. Isso pode reduzir a quantidade de dados lidos quando a condição usa menos colunas do que o restante da consulta e elimina muitos blocos.
+Com a otimização de prewhere, primeiro são lidas apenas as colunas necessárias para executar a expressão prewhere. Em seguida, são lidas as outras colunas necessárias para executar o restante da consulta, mas somente os blocos em que a expressão prewhere é `true` para pelo menos algumas linhas. Se houver muitos blocos em que a expressão prewhere é `false` para todas as linhas e o prewhere precisar de menos colunas do que outras partes da consulta, isso frequentemente permite ler muito menos dados do disco para executar a consulta.
 
 <div id="controlling-prewhere-manually">
-  ## Controle manual de `PREWHERE`
+  ## Controlando o PREWHERE manualmente
 </div>
 
-Especifique `PREWHERE` manualmente quando uma condição fizer referência a poucas colunas e filtrar muitas linhas. Isso pode reduzir a quantidade de dados lidos das colunas restantes.
+A cláusula tem o mesmo significado da cláusula `WHERE`. A diferença está em quais dados são lidos da tabela. Ao controlar manualmente o `PREWHERE` para condições de filtragem usadas por uma minoria das colunas na consulta, mas que proporcionam uma filtragem de dados significativa, reduz-se o volume de dados lidos.
 
-Uma consulta pode conter tanto `PREWHERE` quanto `WHERE`. Nesse caso, `PREWHERE` é avaliado primeiro.
+Uma consulta pode especificar `PREWHERE` e `WHERE` simultaneamente. Nesse caso, `PREWHERE` vem antes de `WHERE`.
 
-Defina [`optimize_move_to_prewhere`](/pt-BR/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) como `0` para impedir que o ClickHouse mova condições automaticamente de `WHERE` para `PREWHERE`.
+Se a configuração [optimize&#95;move&#95;to&#95;prewhere](/pt-BR/reference/settings/session-settings#optimize_move_to_prewhere) estiver definida como 0, as heurísticas para mover automaticamente partes de expressões de `WHERE` para `PREWHERE` serão desabilitadas.
 
-Para consultas com o modificador [`FINAL`](/pt-BR/reference/statements/select/from#final-modifier), o ClickHouse move condições de `WHERE` para `PREWHERE` somente quando [`optimize_move_to_prewhere`](/pt-BR/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere) e [`optimize_move_to_prewhere_if_final`](/pt-BR/reference/settings/session-settings/optimize-move-to-prewhere#optimize_move_to_prewhere_if_final) estão habilitados.
+Se a consulta tiver o modificador [FINAL](/pt-BR/reference/statements/select/from#final-modifier), a otimização de `PREWHERE` nem sempre será correta. Ela é ativada apenas se as duas configurações [optimize&#95;move&#95;to&#95;prewhere](/pt-BR/reference/settings/session-settings#optimize_move_to_prewhere) e [optimize&#95;move&#95;to&#95;prewhere&#95;if&#95;final](/pt-BR/reference/settings/session-settings#optimize_move_to_prewhere_if_final) estiverem ativadas.
 
 <Note>
-  Por padrão, `PREWHERE` é avaliado antes de `FINAL`; portanto, consultas `FROM ... FINAL` podem produzir resultados inesperados quando `PREWHERE` faz referência a colunas fora da chave `ORDER BY` da tabela.
+  A seção `PREWHERE` é executada antes de `FINAL`, portanto os resultados das consultas `FROM ... FINAL` podem ser distorcidos ao usar `PREWHERE` com campos que não estão na seção `ORDER BY` de uma tabela.
 </Note>
-
-<div id="prewhere-with-join">
-  ## `PREWHERE` com `JOIN`
-</div>
-
-Uma condição `PREWHERE` em uma consulta com um [`JOIN`](/pt-BR/reference/statements/select/join) pode referenciar diretamente colunas de, no máximo, uma tabela. O ClickHouse aplica a condição às linhas dessa tabela antes que elas sejam incluídas na junção.
-
-Por outro lado, uma condição `WHERE` filtra logicamente o resultado da junção, embora o otimizador possa aplicá-la antes da junção quando isso não altera o resultado. Portanto, usar a mesma condição em `PREWHERE` e `WHERE` pode produzir resultados diferentes, especialmente com junções externas.
-
-O exemplo a seguir cria duas tabelas para demonstrar essa diferença:
-
-```sql
-CREATE TABLE table_1
-(
-    `id` UInt32,
-    `value` String
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-CREATE TABLE table_2
-(
-    `id` UInt32,
-    `value` String
-)
-ENGINE = MergeTree
-ORDER BY id;
-
-INSERT INTO table_1 VALUES (1, 'a'), (2, 'b'), (3, 'c');
-INSERT INTO table_2 VALUES (1, 'x'), (2, 'y'), (3, 'z');
-```
-
-Na primeira consulta, `PREWHERE` filtra `table_2` antes do `LEFT JOIN`, de modo que a linha de `table_1` com `id = 1` fica sem correspondência:
-
-```sql
-SELECT
-    table_1.id,
-    table_1.value,
-    table_2.value
-FROM table_1
-LEFT JOIN table_2 ON table_1.id = table_2.id
-PREWHERE table_2.id >= 2
-ORDER BY table_1.id;
-```
-
-```text
-   ┌─id─┬─value─┬─table_2.value─┐
-1. │  1 │ a     │               │
-2. │  2 │ b     │ y             │
-3. │  3 │ c     │ z             │
-   └────┴───────┴───────────────┘
-```
-
-Usar a mesma condição em `WHERE` filtra o resultado do `JOIN`, removendo a linha com `id = 1`:
-
-```sql
-SELECT
-    table_1.id,
-    table_1.value,
-    table_2.value
-FROM table_1
-LEFT JOIN table_2 ON table_1.id = table_2.id
-WHERE table_2.id >= 2
-ORDER BY table_1.id;
-```
-
-```text
-   ┌─id─┬─value─┬─table_2.value─┐
-1. │  2 │ b     │ y             │
-2. │  3 │ c     │ z             │
-   └────┴───────┴───────────────┘
-```
 
 <div id="limitations">
   ## Limitações
@@ -129,13 +57,13 @@ WHERE (B = 0) AND (C = 'x');
 
 1 row in set. Elapsed: 0.074 sec. Processed 10.00 million rows, 168.89 MB (134.98 million rows/s., 2.28 GB/s.)
 
--- Enable tracing to see which predicates are moved to PREWHERE.
+-- vamos habilitar o tracing para ver quais predicados são movidos para PREWHERE
 set send_logs_level='debug';
 
 MergeTreeWhereOptimizer: condition "B = 0" moved to PREWHERE  
--- ClickHouse automatically moves B = 0 to PREWHERE, but this condition does not filter any rows because B is always 0.
+-- O ClickHouse move automaticamente `B = 0` para PREWHERE, mas não faz sentido pois B é sempre 0.
 
--- Move the more selective C = 'x' predicate to PREWHERE.
+-- Vamos mover o outro predicado `C = 'x'` 
 
 SELECT count()
 FROM mydata
@@ -144,5 +72,5 @@ WHERE B = 0;
 
 1 row in set. Elapsed: 0.069 sec. Processed 10.00 million rows, 158.89 MB (144.90 million rows/s., 2.30 GB/s.)
 
--- The query with manually specified PREWHERE processes slightly less data: 158.89 MB instead of 168.89 MB.
+-- Esta consulta com `PREWHERE` manual processa um pouco menos de dados: 158.89 MB VS 168.89 MB
 ```

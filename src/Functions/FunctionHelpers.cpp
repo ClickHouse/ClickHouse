@@ -100,28 +100,17 @@ namespace
 
 String withOrdinalEnding(size_t i)
 {
-    /// `i` is a zero-based argument index; produce the ordinal for the human-facing position `n = i + 1`
-    /// (1st, 2nd, 3rd, 4th, ...). The teens 11, 12, 13 use "th" despite ending in 1, 2, 3.
-    const size_t n = i + 1;
-    const char * suffix = "th";
-    if (n % 100 < 11 || n % 100 > 13)
+    switch (i)
     {
-        switch (n % 10)
-        {
-            case 1:
-                suffix = "st";
-                break;
-            case 2:
-                suffix = "nd";
-                break;
-            case 3:
-                suffix = "rd";
-                break;
-            default:
-                break;
-        }
+        case 0:
+            return "1st";
+        case 1:
+            return "2nd";
+        case 2:
+            return "3rd";
+        default:
+            return std::to_string(i) + "th";
     }
-    return std::to_string(n) + suffix;
 }
 
 void validateArgumentsImpl(
@@ -163,7 +152,7 @@ void validateVariadicArgumentsImpl(
             throw Exception(
                 error_code,
                 "A value of illegal type was provided as {} argument '{}' to function '{}'. Expected: {}, got: {}",
-                withOrdinalEnding(i),
+                withOrdinalEnding(argument_offset + i),
                 variadic_descriptor.name,
                 function_name,
                 variadic_descriptor.type_name,

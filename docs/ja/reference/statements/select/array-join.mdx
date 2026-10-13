@@ -394,7 +394,7 @@ ARRAY JOIN nest AS n, arrayEnumerate(`nest.x`) AS num;
   ### 短絡関数評価との非互換性
 </div>
 
-[短絡関数評価](/ja/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) は、`if`、`multiIf`、`and`、`or` などの特定の関数における複雑な式の実行を最適化する機能です。これにより、これらの関数の実行中に、0 による除算のような例外が発生するのを防げます。
+[短絡関数評価](/ja/reference/settings/session-settings#short_circuit_function_evaluation) は、`if`、`multiIf`、`and`、`or` などの特定の関数における複雑な式の実行を最適化する機能です。これにより、これらの関数の実行中に、0 による除算のような例外が発生するのを防げます。
 
 `arrayJoin` は常に実行されるため、短絡関数評価には対応していません。これは、`arrayJoin` がクエリ分析および実行時に、ほかの関数とは別に処理される特殊な関数であり、短絡関数評価では機能しない追加ロジックを必要とするためです。結果の行数は `arrayJoin` の結果に依存するため、`arrayJoin` の遅延実行を実装するのは複雑すぎるうえ、コストも高くなります。
 

@@ -195,12 +195,6 @@ public:
     void setSelectFromSystemDatabaseRequiresGrant(bool enable) { select_from_system_db_requires_grant = enable; }
     bool doesSelectFromSystemDatabaseRequireGrant() const { return select_from_system_db_requires_grant; }
 
-    /// Whether `system.user_query_log` is enabled (attached as `StorageSystemUserQueryLog`). Only then is it safe
-    /// to grant SELECT on it implicitly to everyone: the storage filters the rows to the current user. When the
-    /// feature is disabled the name can back a regular table, which must not become world-readable.
-    void setUserQueryLogEnabled(bool enable) { user_query_log_enabled = enable; }
-    bool isUserQueryLogEnabled() const { return user_query_log_enabled; }
-
     void setSelectFromInformationSchemaRequiresGrant(bool enable) { select_from_information_schema_requires_grant = enable; }
     bool doesSelectFromInformationSchemaRequireGrant() const { return select_from_information_schema_requires_grant; }
 
@@ -216,6 +210,10 @@ public:
 
     void setThrowOnInvalidReplicatedAccessEntities(bool enable) { throw_on_invalid_replicated_access_entities = enable; }
     bool shouldThrowOnInvalidReplicatedAccessEntities() const { return throw_on_invalid_replicated_access_entities; }
+
+    /// Sets whether `SET ROLE` is refused when the session or the query is readonly.
+    void setReadonlyRestrictsSetRole(bool enable) { readonly_restricts_set_role = enable; }
+    bool doesReadonlyRestrictSetRole() const { return readonly_restricts_set_role; }
 
     std::shared_ptr<const ContextAccess> getContextAccess(const ContextAccessParams & params) const;
 
@@ -273,7 +271,6 @@ public:
     void setAllowTierSettings(UInt32 value);
     UInt32 getAllowTierSettings() const;
     bool getAllowExperimentalTierSettings() const;
-    bool getAllowPrivatePreviewTierSettings() const;
     bool getAllowBetaTierSettings() const;
 
 private:
@@ -301,7 +298,6 @@ private:
     std::atomic_bool users_without_row_policies_can_read_rows = false;
     std::atomic_bool on_cluster_queries_require_cluster_grant = false;
     std::atomic_bool select_from_system_db_requires_grant = false;
-    std::atomic_bool user_query_log_enabled = false;
     std::atomic_bool select_from_information_schema_requires_grant = false;
     std::atomic_bool settings_constraints_replace_previous = false;
     std::atomic_bool table_engines_require_grant = false;
@@ -309,11 +305,11 @@ private:
     std::atomic_int bcrypt_workfactor = 12;
     std::atomic<AuthenticationType> default_password_type = AuthenticationType::SHA256_PASSWORD;
     std::atomic_bool allow_experimental_tier_settings = true;
-    std::atomic_bool allow_private_preview_tier_settings = true;
     std::atomic_bool allow_beta_tier_settings = true;
     std::atomic_bool enable_user_name_access_type = true;
     std::atomic_bool enable_read_write_grants = false;
     std::atomic_bool allow_impersonate_user = false;
+    std::atomic_bool readonly_restricts_set_role = false;
 };
 
 }

@@ -32,7 +32,9 @@ import { Image } from "/snippets/ru/components/Image.jsx";
 <br />
 
 <Steps>
-  <Step title="Развертывание с помощью Docker" id="deploy-with-docker">
+  <Step>
+    ### Развертывание с помощью Docker
+
     Следующая команда запустит OpenTelemetry Collector (на портах 4317 и 4318) и интерфейс HyperDX (на порту 8080).
 
     ```shell
@@ -46,7 +48,9 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     </Info>
   </Step>
 
-  <Step title="Перейдите в интерфейс HyperDX" id="navigate-to-hyperdx-ui">
+  <Step>
+    ### Перейдите в интерфейс HyperDX
+
     Перейдите по адресу [http://localhost:8080](http://localhost:8080), чтобы открыть интерфейс HyperDX.
 
     Создайте пользователя, указав имя пользователя и пароль, соответствующие требованиям.
@@ -58,7 +62,9 @@ import { Image } from "/snippets/ru/components/Image.jsx";
     Пример использования другого экземпляра ClickHouse см. в разделе [&quot;Использование ClickHouse Cloud&quot;](#using-clickhouse-cloud).
   </Step>
 
-  <Step title="Приём данных" id="ingest-data">
+  <Step>
+    ### Приём данных
+
     Инструкции по приёму данных см. в разделе [&quot;Ингестия данных&quot;](/ru/clickstack/ingesting-data/index).
   </Step>
 </Steps>

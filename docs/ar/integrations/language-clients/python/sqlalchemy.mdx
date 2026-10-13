@@ -1,25 +1,19 @@
 ---
 sidebarTitle: 'SQLAlchemy'
-keywords: ['clickhouse', 'python', 'sqlalchemy', 'alembic', 'integrate']
-description: 'دعم SQLAlchemy وAlembic في ClickHouse'
+keywords: ['clickhouse', 'python', 'sqlalchemy', 'integrate']
+description: 'دعم SQLAlchemy في ClickHouse'
 slug: /integrations/language-clients/python/sqlalchemy
 title: 'دعم SQLAlchemy'
 doc_type: 'reference'
 ---
 
-يوفّر ClickHouse Connect لهجة SQLAlchemy `clickhousedb` المبنية على المشغّل الأساسي. وهي تدعم SQLAlchemy 1.4.40 والإصدارات الأحدث، بما في ذلك SQLAlchemy 2.x، مع التركيز على استعلامات Core، وClickHouse DDL، واستكشاف البنية، وعمليات insert البسيطة في ORM.
-
-ثبّت تبعيات SQLAlchemy باستخدام الـ extra الخاصة بالحزمة:
-
-```bash
-pip install "clickhouse-connect[sqlalchemy]"
-```
+يوفّر ClickHouse Connect لهجة SQLAlchemy (`clickhousedb`) مبنية على المشغّل الأساسي. وهي مخصّصة لواجهات SQLAlchemy Core وتدعم SQLAlchemy 1.4.40+ و2.0.x.
 
 <div id="sqlalchemy-connect">
-  ## الاتصال عبر SQLAlchemy
+  ## الاتصال باستخدام SQLAlchemy
 </div>
 
-أنشئ محركًا باستخدام صيغة URL ‏`clickhousedb://` أو `clickhousedb+connect://`:
+أنشئ محركًا باستخدام عناوين URL من النوع `clickhousedb://` أو `clickhousedb+connect://`. وترتبط معلمات الاستعلام بإعدادات ClickHouse وخيارات العميل وخيارات النقل عبر HTTP/TLS.
 
 ```python
 from sqlalchemy import create_engine, text
@@ -28,69 +22,24 @@ engine = create_engine(
     "clickhousedb://user:password@host:8123/mydb?compression=zstd"
 )
 
-with engine.connect() as conn:
-    version = conn.execute(text("SELECT version()")).scalar_one()
-    print(version)
+with engine.begin() as conn:
+    rows = conn.execute(text("SELECT version()"))
+    print(rows.scalar())
 ```
 
-يمكن أن تتضمن معلمات استعلام URL إعدادات ClickHouse، أو خيارات عميل ClickHouse Connect مثل `compression` و`query_limit` ومهل الانتظار، أو خيارات HTTP/TLS مثل `ca_cert`. أضِف البادئة `ch_` إلى إعداد ClickHouse لفرض التعامل معه كإعداد على مستوى الخادم عند الحاجة، على سبيل المثال `ch_http_max_field_name_size=99999`.
+ملاحظات حول URL/معلمات الاستعلام:
 
-راجع [وسيطات الاتصال والإعدادات](/ar/integrations/language-clients/python/driver-api#connection-arguments) للاطلاع على خيارات العميل المتاحة.
+* إعدادات ClickHouse: مرّرها كمعلمات استعلام (على سبيل المثال، `use_skip_indexes=0`).
+* خيارات العميل: `compression` (اسمًا بديلًا لـ `compress`) و`query_limit` والمهلات الزمنية وغير ذلك.
+* خيارات HTTP/TLS: خيارات خاصة بمجمّع HTTP وTLS (على سبيل المثال، `ch_http_max_field_name_size=99999` و`ca_cert=certifi`).
 
-<div id="sqlalchemy-per-query-settings">
-  ### إعدادات خاصة بكل استعلام
-</div>
-
-مرِّر إعدادات ClickHouse عبر خيارات التنفيذ في SQLAlchemy. يمكن تعيين الإعدادات على المحرك أو الاتصال أو التعليمة. وتكون قيمة التعليمة لها الأسبقية على قيمة الاتصال أو المحرك عند استخدام المفتاح نفسه.
-
-```python
-from sqlalchemy import text
-
-stmt = text("SELECT getSetting('max_threads')").execution_options(
-    settings={"max_threads": 2}
-)
-
-with engine.connect() as conn:
-    value = conn.execute(stmt).scalar_one()
-```
-
-<div id="sqlalchemy-per-query-read-formats">
-  ### تنسيقات القراءة لكل استعلام
-</div>
-
-عيّن تنسيقات قراءة ClickHouse على مستوى المحرك أو الاتصال أو التعليمة عبر خيارات تنفيذ SQLAlchemy باستخدام `query_formats`. تُطبَّق تنسيقات التعليمة أولًا، لذا تتجاوز المفاتيح وأحرف البدل المطابقة على مستوى الاتصال أو المحرك.
-
-```python
-from sqlalchemy import text
-
-stmt = text("SELECT user_uuid FROM users").execution_options(
-    query_formats={"UUID": "string"}
-)
-
-with engine.connect() as conn:
-    rows = conn.execute(stmt).all()
-```
-
-<div id="sqlalchemy-server-side-parameters">
-  ### معلمات من جهة الخادم
-</div>
-
-يعرض SQLAlchemy المعلمات عادةً من جهة العميل. فعِّل معلمات ClickHouse من جهة الخادم عند إنشاء المحرّك:
-
-```python
-engine = create_engine(
-    "clickhousedb://user:password@host:8123/mydb",
-    server_side_params=True,
-)
-```
-
-في هذا الوضع، يجب أن تكون كل قيمة مربوطة من نوع SQLAlchemy متوافق مع ClickHouse. وتتحول قوائم `IN` المدعومة إلى معلمات ClickHouse من النوع `Array`. ويرفع المصرّف `CompileError` عندما يتعذر عليه استنتاج نوع متوافق أو معالجة قيمة مربوطة بأمان.
+راجع [وسائط الاتصال والإعدادات](/ar/integrations/language-clients/python/driver-api#connection-arguments) في الأقسام أدناه للاطلاع على القائمة الكاملة للخيارات المدعومة. ويمكن أيضًا تمرير هذه الخيارات عبر SQLAlchemy DSN.
 
 <div id="sqlalchemy-core-queries">
   ## استعلامات Core
 </div>
 
-تدعم هذه اللهجة استعلامات `SELECT` في SQLAlchemy Core مع عمليات الربط، وعوامل التصفية، والترتيب، والحدود والإزاحات، و`DISTINCT`.
+تدعم هذه اللهجة استعلامات `SELECT` في SQLAlchemy Core مع عمليات الربط، وعوامل التصفية، والترتيب، والحدود/الإزاحات، و`DISTINCT`.
 
 ```python
 from sqlalchemy import MetaData, Table, select
@@ -98,204 +47,49 @@ from sqlalchemy import MetaData, Table, select
 metadata = MetaData(schema="mydb")
 users = Table("users", metadata, autoload_with=engine)
 orders = Table("orders", metadata, autoload_with=engine)
-events = Table("events", metadata, autoload_with=engine)
 
-stmt = (
-    select(users.c.name, orders.c.product)
-    .select_from(users.join(orders, users.c.id == orders.c.user_id))
-    .order_by(users.c.name)
-    .limit(10)
-)
+# Basic SELECT
+with engine.begin() as conn:
+    rows = conn.execute(select(users.c.id, users.c.name).order_by(users.c.id).limit(10)).fetchall()
 
-with engine.connect() as conn:
-    rows = conn.execute(stmt).all()
+# JOINs (INNER/LEFT OUTER/FULL OUTER/CROSS)
+with engine.begin() as conn:
+    stmt = (
+        select(users.c.name, orders.c.product)
+        .select_from(users.join(orders, users.c.id == orders.c.user_id))
+    )
+    rows = conn.execute(stmt).fetchall()
 ```
 
-يُدعَم `DELETE` الخفيف ويتطلب عبارة `WHERE` صريحة:
+يُدعَم عبارة `DELETE` خفيفة مع عبارة `WHERE` إلزامية:
 
 ```python
 from sqlalchemy import delete
 
-stmt = delete(users).where(users.c.name.like("%temporary%"))
-with engine.connect() as conn:
-    conn.execute(stmt)
+with engine.begin() as conn:
+    conn.execute(delete(users).where(users.c.name.like("%temp%")))
 ```
-
-<div id="sqlalchemy-json-subcolumns">
-  ### الأعمدة الفرعية لـ JSON
-</div>
-
-بالنسبة إلى عمود مُعرَّف أو ممثَّل في ClickHouse بصفته `JSON`، استخدم الأقواس المربعة لاختيار مقطع واحد في كل مرة من مسار عمود فرعي مدعوم بالتخزين:
-
-```python
-from sqlalchemy import Column, MetaData, Table, select
-
-from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import JSON, UInt32
-
-events = Table(
-    "events",
-    MetaData(),
-    Column("payload", JSON),
-)
-
-request_id = events.c.payload["context"]["request"].subcolumn(
-    "id",
-    type_=UInt32,
-)
-
-stmt = select(
-    events.c.payload["severity"].label("severity"),
-    request_id.label("request_id"),
-)
-```
-
-يُحوَّل `payload["severity"]` إلى صياغة المعرّف المنقّط في ClickHouse. يُقتبس كل جزء على حدة، على سبيل المثال `` `events`.`payload`.`severity` ``. يقرأ العمود الفرعي JSON المخزّن في ClickHouse ولا يستدعي `getSubcolumn`. استخدم `[]` أو `.subcolumn()` بشكل متسلسل، مرة واحدة لكل مقطع من المسار. يجب أن يكون كل مقطع سلسلة غير فارغة.
-
-يؤدي تمرير `type_` إلى `.subcolumn()` إلى تغليف المسار المنقّط بعملية `CAST` في SQL وإسناد هذا النوع إلى تعبير SQLAlchemy. من دون `type_`، تتصرف `.subcolumn("segment")` مثل `["segment"]`.
-
-يكون نوع المسار غير المحدد `Dynamic` في ClickHouse. لا يسمح ClickHouse باستخدام قيم `Dynamic` مباشرةً في `ORDER BY` أو `GROUP BY`. مرّر `type_` عند استخدام عمود فرعي في هذه المواضع.
-
-بالنسبة إلى الشيفرة ذات الأنواع الثابتة، استورد `json_subcolumn` من `clickhouse_connect.cc_sqlalchemy`. تقبل الدالة المساعدة أيضًا مقطعًا واحدًا في كل مرة وتحافظ على نوع نتيجة بايثون المحدد بواسطة `type_`:
-
-```python
-from clickhouse_connect.cc_sqlalchemy import json_subcolumn
-
-context = json_subcolumn(events.c.payload, "context")
-request = json_subcolumn(context, "request")
-request_id = json_subcolumn(request, "id", type_=UInt32)
-```
-
-في هذا المثال، تتعامل أدوات التحقق من الأنواع مع `request_id` على أنه `ColumnElement[int]`.
-
-يُقتبس كل مقطع بشكل مستقل، بما في ذلك الأسماء التي تحتوي على مسافات أو علامات اقتباس خلفية. لا تجعل علامات الاقتباس الخلفية النقطة قيمة حرفية في معالجة مسارات JSON في ClickHouse. عند تمكين `json_type_escape_dots_in_keys`، استخدم ترميز ClickHouse `%2E` للنقاط الحرفية في المفاتيح. للوصول إلى مفتاح باسم `a.b`، استخدم `payload["a%2Eb"]`، وليس `payload["a.b"]`.
-
-<div id="sqlalchemy-query-extensions">
-  ### امتدادات استعلام ClickHouse
-</div>
-
-استورد `select` من `clickhouse_connect.cc_sqlalchemy` لتمكين أدوات التحقق الساكنة من الأنواع من التعرّف على طرائق ClickHouse المعرّفة الأنواع. كما تتوفر هذه الطرائق أيضًا في `sqlalchemy.select` القياسي وقت التشغيل.
-
-```python
-from clickhouse_connect.cc_sqlalchemy import select
-
-stmt = (
-    select(events.c.user_id, events.c.event_type)
-    .final()
-    .prewhere(events.c.event_date >= "2026-01-01")
-    .sample(0.1)
-    .limit_by([events.c.user_id], 3)
-)
-```
-
-طرق `Select` في ClickHouse هي:
-
-| الطريقة                                  | ميزة SQL                                                                             |
-| ---------------------------------------- | ------------------------------------------------------------------------------------ |
-| `.final()`                               | `FINAL` لجدول                                                                        |
-| `.sample(value)`                         | `SAMPLE`، باستخدام نسبة أو عدد صفوف أو تعبير                                         |
-| `.prewhere(expression)`                  | `PREWHERE`؛ تُجمَع الاستدعاءات المتكررة باستخدام `AND`                               |
-| `.limit_by(columns, limit, offset=None)` | `LIMIT ... BY`                                                                       |
-| `.array_join(...)`                       | `ARRAY JOIN`                                                                         |
-| `.left_array_join(...)`                  | `LEFT ARRAY JOIN`                                                                    |
-| `.ch_join(...)`                          | عمليات `JOIN` في ClickHouse مع خيارات `strictness` و`distribution` و`using` و`cross` |
-| `.cte(name, materialized=True)`          | `WITH name AS MATERIALIZED (...)`                                                    |
-
-على سبيل المثال، يمكن ربط `GLOBAL ANY LEFT JOIN` في ClickHouse دون الحاجة إلى تداخل `FromClause` مخصّص:
-
-```python
-stmt = (
-    select(events.c.id, users.c.name)
-    .select_from(events)
-    .ch_join(
-        users,
-        events.c.user_id == users.c.id,
-        isouter=True,
-        strictness="ANY",
-        distribution="GLOBAL",
-    )
-)
-```
-
-استخدم الصيغة الصريحة `Lambda` مع الدوال عالية الرتبة في ClickHouse:
-
-```python
-from sqlalchemy import column, func
-
-from clickhouse_connect.cc_sqlalchemy import Lambda, select
-
-stmt = select(
-    func.arrayMap(
-        Lambda("x", column("x") * 2),
-        events.c.metrics,
-    ).label("doubled")
-)
-```
-
-تُحوَّل بنية SQLAlchemy القياسية `values()` عند الترجمة إلى صياغة دالة الجدول `VALUES` في ClickHouse، بما في ذلك عند استخدامها في تعبير الجدول الشائع. يتطلب شكل CTE استخدام SQLAlchemy 2.0.42 أو إصدار أحدث، إذ أُضيفت `Values.cte()`.
-
-<div id="sqlalchemy-materialized-ctes">
-  ### تعبيرات الجدول الشائعة المُجسَّدة
-</div>
-
-يُضمّن ClickHouse تعبير الجدول الشائع تلقائيًا، لذا إذا أُشير إلى CTE أكثر من مرة، يُنفَّذ محتواه مرةً لكل مرجع. مرّر `materialized=True` إلى `.cte()` لإنتاج `WITH <name> AS MATERIALIZED (...)`، بحيث يُحسب المحتوى مرةً واحدة:
-
-```python
-from sqlalchemy import func
-
-from clickhouse_connect.cc_sqlalchemy import select
-
-ranked = (
-    select(book.c.book_id, func.row_number().over(order_by=book.c.score.desc()).label("result_rank"))
-    .where(book.c.genre == "sci-fi")
-    .order_by(book.c.score.desc())
-    .limit(100)
-    .cte("ranked", materialized=True)
-)
-
-stmt = (
-    select(book.c.book_id, ranked.c.result_rank)
-    .select_from(book)
-    .ch_join(ranked, book.c.book_id == ranked.c.book_id, strictness="ANY")
-    .where(book.c.book_id.in_(select(ranked.c.book_id)))
-    .execution_options(settings={"enable_materialized_cte": 1, "enable_analyzer": 1})
-)
-```
-
-لا يُجسِّد الخادم تعبير الجدول الشائع إلا عند وجود الكلمة المفتاحية وتعيين `enable_materialized_cte=1` وتمكين المحلِّل. عيّن `enable_materialized_cte` على التعليمة أو الاتصال أو المحرك كما هو موضح في [إعدادات خاصة بكل استعلام](#sqlalchemy-per-query-settings). يكون المحلِّل مُمكّنًا افتراضيًا على كل خادم يدعم هذه الميزة، لذا يُعد تعيين `enable_analyzer=1` صراحةً إجراءً احترازيًا. يُعد `enable_materialized_cte` إعدادًا تجريبيًا في ClickHouse. عند استخدام `enable_materialized_cte=0` أو `enable_analyzer=0`، ينجح الاستعلام ويُرجع الصفوف نفسها. يتجاهل ClickHouse قيمة `MATERIALIZED` بصمت ويضمّن تعبير الجدول الشائع مجددًا، لذا فإن نسيان الإعداد يؤثر في الأداء دون ظهور أي تنبيه. تتطلب تعبيرات الجدول الشائع المُجسَّدة ClickHouse 26.3 أو إصدارًا أحدث. ترفض الخوادم الأقدم الكلمة المفتاحية باعتبارها خطأً نحويًا.
-
-بالنسبة إلى تعليمة مُنشأة باستخدام `sqlalchemy.select` القياسي، استخدم `cte()` على مستوى الوحدة بدلًا من ذلك. تأخذ التعليمة كوسيط أول، وتكافئ `Select.cte()` فيما عدا ذلك:
-
-```python
-from sqlalchemy import select as sa_select
-
-from clickhouse_connect.cc_sqlalchemy import cte
-
-ranked = cte(sa_select(book.c.book_id), "ranked", materialized=True)
-```
-
-لا تظهر الكلمة المحجوزة إلا في لهجة ClickHouse، لذا يُترجم التعليمة المشتركة مع backend آخر فيها دون تغيير.
-
-لا يدعم ClickHouse تعبيرات الجدول الشائع المادية التعاودية. تثير helpers الخاصة بـ SQLAlchemy الخطأ `ValueError` عند تعيين كلٍّ من `recursive=True` و`materialized=True`.
 
 <div id="sqlalchemy-ddl-reflection">
   ## DDL واستكشاف البنية
 </div>
 
-يوفّر ClickHouse Connect أنواع بيانات ClickHouse، ومحركات الجداول، وبُنى القواميس، وDDL لقواعد البيانات، واستكشاف بنية الجداول.
+يمكنك إنشاء قواعد البيانات والجداول باستخدام مساعدات DDL المتوفرة وبُنى النوع/المحرك. كما تتوفر إمكانية استكشاف بنية الجداول (بما في ذلك أنواع الأعمدة والمحرك).
 
 ```python
 import sqlalchemy as db
 from sqlalchemy import MetaData
-
-from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import DateTime64, String, UInt32
-from clickhouse_connect.cc_sqlalchemy.ddl.custom import CreateDatabase
+from clickhouse_connect.cc_sqlalchemy.ddl.custom import CreateDatabase, DropDatabase
 from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
+from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import UInt32, String, DateTime64
 
-with engine.connect() as conn:
+with engine.begin() as conn:
+    # Databases
     conn.execute(CreateDatabase("example_db", exists_ok=True))
 
+    # Tables
     metadata = MetaData(schema="example_db")
-    events = db.Table(
+    table = db.Table(
         "events",
         metadata,
         db.Column("id", UInt32, primary_key=True),
@@ -303,90 +97,53 @@ with engine.connect() as conn:
         db.Column("created_at", DateTime64(3)),
         MergeTree(order_by="id"),
     )
-    events.create(conn)
+    table.create(conn)
 
-    reflected = db.Table("events", MetaData(schema="example_db"), autoload_with=conn)
+    # Reflection
+    reflected = db.Table("events", metadata, autoload_with=engine)
     assert reflected.engine is not None
 ```
 
-تحمل الأعمدة المسترجعة `server_default` لتعبيرات `DEFAULT`، وسمات خاصة بكل dialect مثل `clickhouse_codec` و`clickhouse_ttl` و`clickhouse_materialized` و`clickhouse_alias` إن وُجدت.
-
-تقبل وسائط مفاتيح MergeTree مثل `order_by` و`partition_by` و`primary_key` و`sample_by` و`ttl` أعمدة SQLAlchemy وتعبيرات SQL، بالإضافة إلى السلاسل النصية العادية.
+تتضمن الأعمدة المكتشفة سمات خاصة باللهجة، مثل `clickhousedb_default_type` و`clickhousedb_codec_expression` و`clickhousedb_ttl_expression`، عند وجودها على الخادم.
 
 <div id="sqlalchemy-inserts">
-  ## عمليات الإدراج واستخدام ORM الأساسي
+  ## عمليات الإدراج (Core وORM البسيط)
 </div>
 
-عمليات إدراج Core ونماذج ORM البسيطة مدعومة. يُفضَّل استخدام عمليات إدراج Core لمسارات البيانات المجمّعة.
+يمكن إجراء عمليات الإدراج باستخدام SQLAlchemy Core، وكذلك عبر نماذج ORM البسيطة لسهولة الاستخدام.
 
 ```python
-with engine.connect() as conn:
-    conn.execute(
-        events.insert(),
-        [
-            {"id": 13, "user": "user_1"},
-            {"id": 79, "user": "user_2"},
-        ],
-    )
-```
+# Core insert
+with engine.begin() as conn:
+    conn.execute(table.insert().values(id=1, user="joe"))
 
-```python
-import sqlalchemy as db
-from sqlalchemy import MetaData
-from sqlalchemy.orm import Session, declarative_base
-
-from clickhouse_connect.cc_sqlalchemy.datatypes.sqltypes import String, UInt32
-from clickhouse_connect.cc_sqlalchemy.ddl.tableengine import MergeTree
+# Basic ORM insert
+from sqlalchemy.orm import declarative_base, Session
 
 Base = declarative_base(metadata=MetaData(schema="example_db"))
-
 
 class User(Base):
     __tablename__ = "users"
     __table_args__ = (MergeTree(order_by=["id"]),)
-
     id = db.Column(UInt32, primary_key=True)
     name = db.Column(String)
-
 
 Base.metadata.create_all(engine)
 
 with Session(engine) as session:
-    session.add(User(id=13, name="user_1"))
-    session.bulk_save_objects([User(id=79, name="user_2")])
+    session.add(User(id=1, name="Alice"))
+    session.bulk_save_objects([User(id=2, name="Bob")])
     session.commit()
 ```
-
-<div id="sqlalchemy-alembic">
-  ## ترحيلات Alembic
-</div>
-
-يتضمن ClickHouse Connect تكاملًا مع Alembic لإجراء ترحيلات مخطط ClickHouse. ثبّته باستخدام:
-
-```bash
-pip install "clickhouse-connect[alembic]"
-```
-
-استورد `clickhouse_connect.cc_sqlalchemy.alembic` في ملف `env.py` الخاص بـ Alembic لتسجيل تكامل اللهجة. يدعم التوليد التلقائي تغييرات الجداول الشائعة، بما في ذلك إنشاء الجداول وإزالتها، وإضافة الأعمدة وتعديلها وحذفها، والقيم الافتراضية، والتعليقات. استخدم العمليات اليدوية لإعادة تسمية الجداول والأعمدة. راجع كل عملية ترحيل مولَّدة قبل تطبيقها.
-
-تشمل أدوات `op.*` المساعدة الخاصة بـ ClickHouse ما يلي:
-
-* فهارس تخطي البيانات، بما في ذلك عمليات الإضافة وmaterialize والحذف.
-* الإسقاطات، بما في ذلك عمليات الإضافة وmaterialize والحذف.
-* تعديل إعدادات جدول MergeTree وإعادة ضبطها.
-* إنشاء materialized view وإزالتها.
-* إنشاء القواميس وإزالتها وإعادة تحميلها.
-
-فهارس تخطي البيانات في ClickHouse ليست فهارس SQLAlchemy. يتم رفض `Index` و`Column(index=True)` و`op.create_index` و`op.drop_index` لتجنّب عبارات DDL الجزئية أو غير الصحيحة. استخدم `op.add_clickhouse_index` و`op.drop_clickhouse_index`.
-
-راجع [المثال العملي الكامل لـ Alembic](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/alembic/WORKED_EXAMPLE.md). كما ينبغي للمستخدمين الذين يرحّلون من `clickhouse-sqlalchemy` قراءة [دليل الترحيل](https://github.com/ClickHouse/clickhouse-connect/blob/main/clickhouse_connect/cc_sqlalchemy/MIGRATING_FROM_CLICKHOUSE_SQLALCHEMY.md).
 
 <div id="scope-and-limitations">
   ## النطاق والقيود
 </div>
 
-* لا يوفّر ClickHouse المعاملات التقليدية عبر لهجة HTTP هذه. ينظّم `engine.begin()` و`Session.commit()` العمل على جانب بايثون، لكن commit و التراجع لا يُحدثان أي تأثير على الخادوم.
-* لا تدعم هذه اللهجة `UPDATE`، والمعاملات ثنائية الطور، والتسلسلات، و`RETURNING`، ومستويات العزل المتقدمة. استخدم ClickHouse SQL الصريح لتنفيذ تعديلات الخادوم عند الحاجة.
-* يوفّر `Column(..., primary_key=True)` هوية الكائن في SQLAlchemy، لكنه لا ينشئ قيد تفرد على جانب الخادوم. حدِّد تعبيرات الفرز وتعبيرات المفتاح الأساسي الاختيارية من خلال محرك الجدول.
-* لا تتوفر البيانات الوصفية التقليدية للمفاتيح الخارجية وقيود التفرد والفهارس القياسية، لأن ClickHouse لا يفرض هذه القيود.
-* تخرج إدارة العلاقات في ORM، وتحديثات وحدة العمل، والتتابعات، والتحميل الفوري أو المؤجل للعلاقات، عن نطاق ORM المدعوم.
+* التركيز الأساسي: تمكين ميزات SQLAlchemy Core مثل `SELECT` مع `JOIN` (`INNER`, `LEFT OUTER`, `FULL OUTER`, `CROSS`)، و`WHERE`، و`ORDER BY`، و`LIMIT`/`OFFSET`، و`DISTINCT`.
+* `DELETE` مع `WHERE` فقط: تدعم اللهجة عبارة `DELETE` خفيفة، لكنها تتطلب عبارة `WHERE` صريحة لتجنب حذف الجدول بالكامل عن طريق الخطأ. ولإفراغ جدول، استخدم `TRUNCATE TABLE`.
+* لا يوجد `UPDATE`: ClickHouse مُحسّنة لعمليات الإلحاق. لا تطبّق اللهجة `UPDATE`. إذا كنت بحاجة إلى تغيير البيانات، فطبّق التحويلات في المصدر ثم أعد الإدراج، أو استخدم SQL نصيًا صريحًا (على سبيل المثال، `ALTER TABLE ... UPDATE`) على مسؤوليتك الخاصة.
+* DDL واستكشاف البنية: إنشاء قواعد البيانات والجداول مدعوم، وتُرجع عملية استكشاف البنية أنواع الأعمدة والبيانات الوصفية لمحرك الجدول. ولا تتوفر البيانات الوصفية التقليدية للمفتاح الأساسي/المفتاح الخارجي/الفهرس لأن ClickHouse لا يفرض هذه القيود.
+* نطاق ORM: تعمل النماذج التصريحية وعمليات الإدراج عبر `Session.add(...)`/`bulk_save_objects(...)` للتيسير. أما ميزات ORM المتقدمة (إدارة العلاقات، وتحديثات unit-of-work، والتسلسل، ودلالات التحميل eager/lazy) فغير مدعومة.
+* دلالات المفتاح الأساسي: يُستخدم `Column(..., primary_key=True)` في SQLAlchemy لهوية الكائن فقط. وهو لا ينشئ قيدًا على مستوى الخادم في ClickHouse. حدِّد `ORDER BY` (و`PRIMARY KEY` اختياريًا) عبر محركات الجداول (على سبيل المثال، `MergeTree(order_by=...)`).
+* المعاملات وميزات الخادم: المعاملات ثنائية الطور، وsequences، و`RETURNING`، ومستويات العزل المتقدمة غير مدعومة. يوفّر `engine.begin()` مدير سياق في بايثون لتجميع العبارات، لكنه لا ينفّذ أي تحكم فعلي في المعاملات (`commit`/`rollback` عمليتا no-op).

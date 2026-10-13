@@ -16,7 +16,7 @@ doc_type: 'reference'
 دالة تجميع تأخذ بيانات السلاسل الزمنية على هيئة أزواج من الطوابع الزمنية والقيم، وتحسب [irate على غرار PromQL](https://prometheus.io/docs/prometheus/latest/querying/functions/#irate) من هذه البيانات على شبكة زمنية منتظمة يحددها الطابع الزمني للبداية والطابع الزمني للنهاية و`step`. ولكل نقطة على الشبكة، تُؤخذ العينات المستخدمة في حساب `irate` ضمن النافذة الزمنية المحددة.
 
 <Warning>
-  هذه الدالة تجريبية، ويمكنك تفعيلها بضبط `allow_experimental_time_series_aggregate_functions=true`.
+  هذه الدالة تجريبية، ويمكنك تفعيلها بضبط `allow_experimental_ts_to_grid_aggregate_function=true`.
 </Warning>
 
 **الصياغة**
@@ -27,10 +27,10 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
 
 **المعلمات**
 
-* `start_timestamp` — يحدّد بداية الشبكة. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضاً رقماً كسرياً أو سلسلة تحتوي على رقم أو نص تاريخ ووقت. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
-* `end_timestamp` — يحدّد نهاية الشبكة. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضاً رقماً كسرياً أو سلسلة تحتوي على رقم أو نص تاريخ ووقت. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime) أو [`DateTime64`](/ar/reference/data-types/datetime64) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
-* `grid_step` — يحدّد خطوة الشبكة بالثواني. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضاً رقماً كسرياً أو سلسلة تحتوي على رقم أو مدة مثل &#39;15s&#39; أو &#39;1m&#39;. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
-* `staleness` — يحدّد الحد الأقصى للتقادم، بالثواني، للعينات التي تؤخذ في الاعتبار. نافذة التقادم هي فترة مفتوحة من اليسار ومغلقة من اليمين. مع وسيطة طابع زمني من نوع `DateTime64`، يمكن أن يكون أيضاً رقماً كسرياً أو سلسلة تحتوي على رقم أو مدة مثل &#39;15s&#39; أو &#39;1m&#39;. [`UInt32`](/ar/reference/data-types/int-uint) أو [`Float*`](/ar/reference/data-types/float) أو [`Decimal*`](/ar/reference/data-types/decimal) أو [`String`](/ar/reference/data-types/string)
+* `start_timestamp` — يحدّد بداية الشبكة. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime)
+* `end_timestamp` — يحدّد نهاية الشبكة. [`UInt32`](/ar/reference/data-types/int-uint) أو [`DateTime`](/ar/reference/data-types/datetime)
+* `grid_step` — يحدّد خطوة الشبكة بالثواني. [`UInt32`](/ar/reference/data-types/int-uint)
+* `staleness` — يحدّد الحد الأقصى للتقادم، بالثواني، للعينات التي تؤخذ في الاعتبار. نافذة التقادم هي فترة مفتوحة من اليسار ومغلقة من اليمين. [`UInt32`](/ar/reference/data-types/int-uint)
 
 **الوسائط**
 
@@ -46,7 +46,6 @@ timeSeriesInstantRateToGrid(start_timestamp, end_timestamp, grid_step, staleness
 **الاستخدام الأساسي مع أزواج مفردة من الطابع الزمني والقيمة**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
 WITH
     -- NOTE: the gap between 140 and 190 is to show how values are filled for ts = 150, 165, 180 according to window parameter
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -68,14 +67,13 @@ FROM
 
 ```response title=Response
 ┌─timeSeriesInstantRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamp, value)─┐
-│ [NULL,NULL,0,0.2,0.1,0.1,NULL,NULL,0.3]                                                       │
-└───────────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,0.2,0.1,0.1,NULL,NULL,0.3]                                                      │
+└──────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 **استخدام وسائط من نوع Array**
 
 ```sql title=Query
-SET allow_experimental_time_series_aggregate_functions = 1;
 -- it is possible to pass multiple samples of timestamps and values as Arrays of equal size
 WITH
     [110, 120, 130, 140, 190, 200, 210, 220, 230]::Array(DateTime) AS timestamps,
@@ -89,8 +87,8 @@ SELECT timeSeriesInstantRateToGrid(start_ts, end_ts, step_seconds, window_second
 
 ```response title=Response
 ┌─timeSeriesInstantRateToGrid(start_ts, end_ts, step_seconds, window_seconds)(timestamps, values)─┐
-│ [NULL,NULL,0,0.2,0.1,0.1,NULL,NULL,0.3]                                                         │
-└─────────────────────────────────────────────────────────────────────────────────────────────────┘
+│ [NULL,NULL,0,0.2,0.1,0.1,NULL,NULL,0.3]                                                        │
+└────────────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 {/*AUTOGENERATED_END*/}

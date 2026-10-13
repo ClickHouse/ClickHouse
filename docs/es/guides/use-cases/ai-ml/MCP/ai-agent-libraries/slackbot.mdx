@@ -27,19 +27,25 @@ Este bot te permite hacer preguntas sobre tus datos de ClickHouse directamente d
 * Necesitarás una clave de API de Anthropic o una clave de API de otro proveedor de LLM
 
 <Steps>
-  <Step title="Crear una aplicación de Slack" id="create-a-slack-app">
+  <Step>
+    ## Crear una aplicación de Slack
+
     1. Ve a [slack.com/apps](https://slack.com/apps) y haz clic en `Create New App`.
     2. Elige la opción `From scratch` y asígnale un nombre a tu aplicación.
     3. Selecciona tu espacio de trabajo de Slack.
   </Step>
 
-  <Step title="Instala la aplicación en tu espacio de trabajo" id="install-the-app-to-your-workspace">
+  <Step>
+    ## Instala la aplicación en tu espacio de trabajo
+
     A continuación, tendrás que añadir a tu espacio de trabajo la aplicación que creaste en el paso anterior.
     Puedes seguir las instrucciones de [&quot;Add apps to your Slack workspace&quot;](https://slack.com/intl/en-gb/help/articles/202035138-Add-apps-to-your-Slack-workspace)
     en la documentación de Slack.
   </Step>
 
-  <Step title="Configura los ajustes de la aplicación de Slack" id="configure-slack-app-settings">
+  <Step>
+    ## Configura los ajustes de la aplicación de Slack
+
     * Ve a `App Home`
       * En `Show Tabs` → `Messages Tab`: habilita `Allow users to send Slash commands and messages from the messages tab`
       * Ve a `Socket Mode`
@@ -64,8 +70,10 @@ Este bot te permite hacer preguntas sobre tus datos de ClickHouse directamente d
         * Save Changes
   </Step>
 
-  <Step title={<>Añade variables de entorno (<code>.env</code>)</>} id="add-env-vars">
-    Crea un archivo `.env` en la raíz del proyecto con las siguientes variables de entorno
+  <Step>
+    ## Añade variables de entorno (`.env`)
+
+    Crea un archivo `.env` en la raíz del proyecto con las siguientes variables de entorno,
     que permitirán que tu aplicación se conecte al [Playground de SQL de ClickHouse](https://sql.clickhouse.com/).
 
     ```env
@@ -83,7 +91,9 @@ Este bot te permite hacer preguntas sobre tus datos de ClickHouse directamente d
     o una instancia de Cloud, si lo prefieres.
   </Step>
 
-  <Step title="Uso del bot" id="using-the-bot">
+  <Step>
+    ## Uso del bot
+
     1. **Inicia el bot:**
 
        ```sh

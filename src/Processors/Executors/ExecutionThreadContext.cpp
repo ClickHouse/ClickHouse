@@ -4,7 +4,6 @@
 #include <Processors/StepWallClock.h>
 #include <QueryPipeline/ReadProgressCallback.h>
 #include <base/defines.h>
-#include <Common/MemorySpillScheduler.h>
 #include <Common/CurrentThread.h>
 #include <Common/ThreadStatus.h>
 #include <Common/Stopwatch.h>

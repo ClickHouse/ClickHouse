@@ -57,7 +57,6 @@ namespace Setting
 {
 extern const SettingsUInt64 allow_experimental_parallel_reading_from_replicas;
 extern const SettingsUInt64 automatic_parallel_replicas_mode;
-extern const SettingsBool inject_random_order_for_select_without_order_by;
 extern const SettingsParallelReplicasMode parallel_replicas_mode;
 extern const SettingsBool use_concurrency_control;
 extern const SettingsBool parallel_replicas_local_plan;
@@ -155,18 +154,6 @@ ContextMutablePtr buildContext(const ContextPtr & context, const SelectQueryOpti
             result_context->setSetting("automatic_parallel_replicas_mode", Field(0));
         }
     }
-
-    /// Injecting `ORDER BY rand()` (the setting `inject_random_order_for_select_without_order_by`) is only valid
-    /// for a query processed up to the stage `Complete`: the injection wraps the query into
-    /// `SELECT * FROM (...) ORDER BY rand()`, and if the query is planned only up to an intermediate stage
-    /// (e.g. a child plan of a `Merge` table processed to `WithMergeableState` because a sibling child is
-    /// `Distributed`), the plan would be cut at the level of the wrapper. Then such a child would return
-    /// fully aggregated blocks without `AggregatedChunkInfo` where partially aggregated blocks are expected,
-    /// failing with a logical error in `MergingAggregatedTransform`.
-    if (settings[Setting::inject_random_order_for_select_without_order_by]
-        && select_query_options.to_stage != QueryProcessingStage::Complete)
-        result_context->setSetting("inject_random_order_for_select_without_order_by", false);
-
     return result_context;
 }
 
@@ -219,9 +206,44 @@ QueryPlanPtr buildQueryPlanForAutomaticParallelReplicas(
 }
 }
 
+/// Like `extractAllTableReferences`, but does not descend into the inner queries of views inlined
+/// by the analyzer (`analyzer_inline_views`) into a query that is not itself inside a view:
+/// they read their own tables, just like a view that is not inlined.
+static bool isViewInnerQueryNode(const QueryTreeNodePtr & node)
+{
+    if (const auto * query_node = node->as<QueryNode>())
+        return query_node->getContext()->isViewInnerQuery();
+    if (const auto * union_node = node->as<UnionNode>())
+        return union_node->getContext()->isViewInnerQuery();
+    return false;
+}
+
+static void extractTableReferencesOutsideViews(const QueryTreeNodePtr & node, bool outer_is_view_inner, QueryTreeNodes & result)
+{
+    bool is_view_inner = isViewInnerQueryNode(node);
+    if (is_view_inner && !outer_is_view_inner)
+        return;
+
+    if (node->getNodeType() == QueryTreeNodeType::TABLE)
+    {
+        result.push_back(node);
+    }
+    else if (const auto * query_node = node->as<QueryNode>())
+    {
+        for (const auto & table_expression : extractTableExpressions(query_node->getJoinTree(), /*add_array_join=*/ false, /*recursive=*/ false))
+            extractTableReferencesOutsideViews(table_expression, is_view_inner, result);
+    }
+    else if (const auto * union_node = node->as<UnionNode>())
+    {
+        for (const auto & query : union_node->getQueries().getNodes())
+            extractTableReferencesOutsideViews(query, is_view_inner, result);
+    }
+}
+
 void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr & context, const StoragePtr & storage)
 {
-    auto nodes = extractAllTableReferences(query_tree);
+    QueryTreeNodes nodes;
+    extractTableReferencesOutsideViews(query_tree, isViewInnerQueryNode(query_tree), nodes);
     IQueryTreeNode::ReplacementMap replacement_map;
 
     for (auto & node : nodes)
@@ -238,7 +260,7 @@ void replaceStorageInQueryTree(QueryTreeNodePtr & query_tree, const ContextPtr &
         if (auto table_expression_modifiers = table_node.getTableExpressionModifiers())
             replacement_table_expression->setTableExpressionModifiers(*table_expression_modifiers);
 
-        replacement_map.emplace(&table_node, std::move(replacement_table_expression));
+        replacement_map.emplace(node.get(), std::move(replacement_table_expression));
     }
     query_tree = query_tree->cloneAndReplace(replacement_map);
 }

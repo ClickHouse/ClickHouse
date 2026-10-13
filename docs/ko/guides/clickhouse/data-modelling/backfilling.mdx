@@ -528,10 +528,10 @@ Peak memory usage: 639.47 MiB.
 
 위 시나리오에서 성능과 리소스 사용량은 여러 요인에 의해 결정됩니다. 튜닝을 시도하기 전에, [S3 삽입 및 읽기 성능 최적화 가이드](/ko/integrations/connectors/data-ingestion/AWS/performance)의 [읽기에 스레드 사용](/ko/integrations/connectors/data-ingestion/AWS/performance#using-threads-for-reads) 섹션에 자세히 설명된 삽입 메커니즘을 먼저 이해하시기 바랍니다. 요약하면 다음과 같습니다:
 
-* **읽기 병렬성** - 읽기에 사용하는 스레드 수입니다. [`max_threads`](/ko/reference/settings/session-settings/max-threads#max_threads)로 제어됩니다. ClickHouse Cloud에서는 인스턴스 크기에 따라 결정되며, 기본값은 vCPU 수입니다. 이 값을 늘리면 메모리 사용량이 증가하는 대신 읽기 성능이 향상될 수 있습니다.
-* **삽입 병렬성** - 삽입 작업에 사용되는 삽입 스레드 수입니다. [`max_insert_threads`](/ko/reference/settings/session-settings/max-insert#max_insert_threads)로 제어됩니다. **참고**: 이 값은 `max_threads`를 초과할 수 없으므로, 실제 삽입 병렬성은 `min(max_insert_threads, max_threads)`입니다. ClickHouse Cloud에서는 인스턴스 크기(2~4)에 따라 결정되며, OSS에서는 1로 설정됩니다. 이 값을 늘리면 메모리 사용량이 증가하는 대신 성능이 향상될 수 있습니다.
-* **삽입 블록 크기** - 데이터는 [파티셔닝 키](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)를 기준으로 가져와 파싱한 뒤, 메모리 내 삽입 블록으로 구성하는 루프에서 처리됩니다. 이렇게 구성된 블록은 정렬, 최적화, 압축을 거친 뒤 새로운 [데이터 파트](/ko/concepts/core-concepts/parts)로 저장소에 기록됩니다. 설정 [`min_insert_block_size_rows`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_rows) 및 [`min_insert_block_size_bytes`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)(비압축)로 제어되는 삽입 블록의 크기는 메모리 사용량과 디스크 I/O에 영향을 줍니다. 블록이 클수록 더 많은 메모리를 사용하지만 생성되는 파트 수는 줄어들어 I/O와 백그라운드 머지가 감소합니다. 이 설정은 최소 임계값을 의미하며(먼저 도달하는 값이 플러시를 트리거합니다).
-* **materialized view 블록 크기** - 기본 삽입에 적용되는 위 메커니즘과 마찬가지로, materialized view에 삽입하기 전에도 더 효율적으로 처리할 수 있도록 블록을 더 큰 단위로 병합합니다. 이러한 블록의 크기는 설정 [`min_insert_block_size_bytes_for_materialized_views`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_bytes_for_materialized_views) 및 [`min_insert_block_size_rows_for_materialized_views`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_rows_for_materialized_views)에 따라 결정됩니다. 블록이 클수록 처리 효율은 높아지지만, 그만큼 메모리 사용량도 증가합니다. 기본적으로 이러한 설정은 각각 소스 테이블 설정 [`min_insert_block_size_rows`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_rows) 및 [`min_insert_block_size_bytes`](/ko/reference/settings/session-settings/min-insert#min_insert_block_size_bytes)의 값을 따릅니다.
+* **읽기 병렬성** - 읽기에 사용하는 스레드 수입니다. [`max_threads`](/ko/reference/settings/session-settings#max_threads)로 제어됩니다. ClickHouse Cloud에서는 인스턴스 크기에 따라 결정되며, 기본값은 vCPU 수입니다. 이 값을 늘리면 메모리 사용량이 증가하는 대신 읽기 성능이 향상될 수 있습니다.
+* **삽입 병렬성** - 삽입 작업에 사용되는 삽입 스레드 수입니다. [`max_insert_threads`](/ko/reference/settings/session-settings#max_insert_threads)로 제어됩니다. **참고**: 이 값은 `max_threads`를 초과할 수 없으므로, 실제 삽입 병렬성은 `min(max_insert_threads, max_threads)`입니다. ClickHouse Cloud에서는 인스턴스 크기(2~4)에 따라 결정되며, OSS에서는 1로 설정됩니다. 이 값을 늘리면 메모리 사용량이 증가하는 대신 성능이 향상될 수 있습니다.
+* **삽입 블록 크기** - 데이터는 [파티셔닝 키](/ko/reference/engines/table-engines/mergetree-family/custom-partitioning-key)를 기준으로 가져오고 파싱하여 메모리상의 삽입 블록으로 구성하는 루프에서 처리됩니다. 이렇게 구성된 블록은 정렬, 최적화, 압축을 거친 뒤 새로운 [데이터 파트](/ko/concepts/core-concepts/parts)로 저장소에 기록됩니다. 설정 [`min_insert_block_size_rows`](/ko/reference/settings/session-settings#min_insert_block_size_rows) 및 [`min_insert_block_size_bytes`](/ko/reference/settings/session-settings#min_insert_block_size_bytes)(비압축)로 제어되는 삽입 블록의 크기는 메모리 사용량과 디스크 I/O에 영향을 줍니다. 블록이 클수록 더 많은 메모리를 사용하지만 생성되는 파트 수는 줄어들어 I/O와 백그라운드 머지가 감소합니다. 이 설정은 최소 임계값을 의미하며(먼저 도달하는 값이 플러시를 트리거합니다).
+* **materialized view 블록 크기** - 기본 삽입에 적용되는 위 메커니즘과 마찬가지로, materialized view에 삽입하기 전에도 더 효율적으로 처리할 수 있도록 블록을 더 큰 단위로 병합합니다. 이러한 블록의 크기는 설정 [`min_insert_block_size_bytes_for_materialized_views`](/ko/reference/settings/session-settings#min_insert_block_size_bytes_for_materialized_views) 및 [`min_insert_block_size_rows_for_materialized_views`](/ko/reference/settings/session-settings#min_insert_block_size_rows_for_materialized_views)에 따라 결정됩니다. 블록이 클수록 처리 효율은 높아지지만, 그만큼 메모리 사용량도 증가합니다. 기본적으로 이러한 설정은 각각 소스 테이블 설정 [`min_insert_block_size_rows`](/ko/reference/settings/session-settings#min_insert_block_size_rows) 및 [`min_insert_block_size_bytes`](/ko/reference/settings/session-settings#min_insert_block_size_bytes)의 값을 따릅니다.
 
 <Note>
   **단순한 INSERT SELECT 쿼리 팁**: 복잡한 변환 없이 `INSERT INTO t1 SELECT * FROM t2` 형태의 단순한 쿼리라면 `optimize_trivial_insert_select=1` 활성화를 고려하세요. 이 설정은(버전 24.7부터 기본적으로 비활성화됨) SELECT 병렬성을 `max_insert_threads`에 맞게 자동으로 조정하여 리소스 사용량과 생성되는 파트 수를 줄입니다. 이는 특히 테이블 간 대량 데이터 마이그레이션에 유용합니다.
@@ -539,7 +539,7 @@ Peak memory usage: 639.47 MiB.
 
 성능을 향상시키려면 [S3 삽입 및 읽기 성능 최적화 가이드](/ko/integrations/connectors/data-ingestion/AWS/performance)의 [삽입을 위한 스레드 및 블록 크기 조정](/ko/integrations/connectors/data-ingestion/AWS/performance#tuning-threads-and-block-size-for-inserts) 섹션에 설명된 지침을 따르십시오. 대부분의 경우 성능 향상을 위해 `min_insert_block_size_bytes_for_materialized_views` 및 `min_insert_block_size_rows_for_materialized_views`를 별도로 수정할 필요는 없습니다. 이 값들을 수정하는 경우, `min_insert_block_size_rows` 및 `min_insert_block_size_bytes`에 대해 설명된 모범 사례를 동일하게 적용하십시오.
 
-메모리 사용량을 최소화하려면 이러한 설정을 조정해 보십시오. 다만, 성능은 필연적으로 저하됩니다. 앞서 사용한 쿼리를 기준으로 아래에 예시를 제시합니다.
+메모리 사용량을 최소화하려면 이러한 설정을 실험해 보십시오. 단, 성능이 저하될 수 있습니다. 앞서 사용한 쿼리를 기반으로 아래에 예시를 제시합니다.
 
 `max_insert_threads`를 1로 낮추면 메모리 오버헤드가 감소합니다.
 
@@ -558,7 +558,7 @@ SETTINGS max_insert_threads = 1
 Peak memory usage: 506.78 MiB.
 ```
 
-`max_threads` 설정을 1로 줄이면 메모리 사용량을 더 줄일 수 있습니다.
+`max_threads` 설정을 1로 줄이면 메모리 사용량을 더욱 낮출 수 있습니다.
 
 ```sql
 INSERT INTO pypi_v2

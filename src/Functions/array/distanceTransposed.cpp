@@ -451,10 +451,7 @@ public:
         const size_t used_dims = parsed->used_dims;
         const size_t num_planes = parsed->num_planes;
 
-        /// Check that the reference vector has at least as many elements as the reconstructed dimension.
-        /// A larger reference vector is allowed: only its first `used_dims` elements are used and the rest are truncated.
-        /// This lets a full-size query vector be reused for Matryoshka-style partial-dimension search (a smaller `used_dims`)
-        /// without having to slice it first.
+        /// First, check that the reference vector sizes match the reconstructed dimension
         const ColumnArray & reference_vector = *assert_cast<const ColumnArray *>(extractFromConst(arguments.back().column).get());
         const auto & offsets = reference_vector.getOffsets();
 
@@ -463,10 +460,10 @@ public:
         {
             for (size_t i = 0; i < reference_vector.size(); ++i)
             {
-                if (offsets[i] - offsets[i - 1] < used_dims)
+                if (offsets[i] - offsets[i - 1] != used_dims)
                     throw Exception(
                         ErrorCodes::BAD_ARGUMENTS,
-                        "The reference vector in the last argument of function {} is too small. Got: {}, expected at least: {}",
+                        "The reference vector in the last argument of function {} has wrong size. Got: {}, expected: {}",
                         getName(),
                         offsets[i] - offsets[i - 1],
                         used_dims);

@@ -1,0 +1,9 @@
+<clickhouse>
+    <!-- A second PostgreSQL endpoint, which the server serves through its own listener. -->
+    <protocols>
+        <postgres_alt>
+            <type>postgres</type>
+            <port>5435</port>
+        </postgres_alt>
+    </protocols>
+</clickhouse>

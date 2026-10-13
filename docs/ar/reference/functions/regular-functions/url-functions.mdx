@@ -585,8 +585,7 @@ SELECT
 
 أُضيف في: v1.1.0
 
-يزيل أول ظهور لـ `name=value` لكل معلَمة مطلوبة من URL.
-لا تتطابق إلا المعلَمات المكتوبة بالشكل `name=`، لذا تبقى معلَمة العلَم الخالية من القيمة كما هي؛ على سبيل المثال، تُرجع `cutURLParameter('http://bigmir.net/?a&c=d', 'a')` عنوان URL دون تغيير.
+يزيل المعلَمة `name` من URL، إذا كانت موجودة.
 لا تُشفِّر هذه الدالة الأحرف في أسماء المعلَمات ولا تفك ترميزها. على سبيل المثال، يُعامَل `Client ID` و`Client%20ID` على أنهما اسما معلَمتين مختلفين.
 
 **البنية**
@@ -602,7 +601,7 @@ cutURLParameter(url, name)
 
 **القيمة المُعادة**
 
-URL بعد إزالة أول ظهور لـ `name=value` لكل معلَمة مطلوبة. [`String`](/ar/reference/data-types/string)
+URL بعد إزالة معلَمة URL `name` منه. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
@@ -1099,6 +1098,9 @@ firstSignificantSubdomain(url)
 SELECT firstSignificantSubdomain('https://news.clickhouse.com/')
 ```
 
+```response title=Response
+```
+
 <div id="firstSignificantSubdomainCustomRFC">
   ## firstSignificantSubdomainCustom
 </div>
@@ -1218,7 +1220,7 @@ fragment(url)
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT fragment('https://clickhouse.com/docs/get-started/setup/cloud#1-create-a-clickhouse-service');
+SELECT fragment('https://clickhouse.com/docs/getting-started/quick-start/cloud#1-create-a-clickhouse-service');
 ```
 
 ```response title=Response
@@ -1290,7 +1292,7 @@ path(url)
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value');
+SELECT path('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value');
 ```
 
 ```response title=Response
@@ -1305,7 +1307,7 @@ SELECT path('https://clickhouse.com/docs/reference/functions/regular-functions/u
 
 قُدِّم في: v1.1.0
 
-مماثل لـ [`path`](#path)، لكنه يتضمن سلسلة الاستعلام والجزء من URL.
+مماثل لـ [`path`](#path)، لكنه يتضمن سلسلة الاستعلام والمقطع من URL.
 
 **الصيغة**
 
@@ -1319,14 +1321,14 @@ pathFull(url)
 
 **القيمة المُعادة**
 
-تعيد مسار URL، بما في ذلك سلسلة الاستعلام والجزء. [`String`](/ar/reference/data-types/string)
+تعيد مسار URL، بما في ذلك سلسلة الاستعلام والجزء التعريفي. [`String`](/ar/reference/data-types/string)
 
 **أمثلة**
 
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT pathFull('https://clickhouse.com/docs/reference/functions/regular-functions/url-functions?query=value#section');
+SELECT pathFull('https://clickhouse.com/docs/sql-reference/functions/url-functions/?query=value#section');
 ```
 
 ```response title=Response

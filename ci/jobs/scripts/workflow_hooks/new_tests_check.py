@@ -84,6 +84,10 @@ def has_new_integration_test_docker_images(changed_files):
     return False
 
 
+def has_ci_report_link(pr_body):
+    return "s3.amazonaws.com/clickhouse-test-reports" in pr_body
+
+
 # Per-arch Bugfix Validation job names that this post-hook OR's together.
 # Each per-arch job runs the new/modified test on master HEAD and on the PR;
 # the per-arch runner inverts the test status (XFAIL): the job reports OK
@@ -169,7 +173,13 @@ def unit_bugfix_validation_refuted():
 
 
 def check():
-    _title, _body, labels = GH.get_pr_title_body_labels()
+    # read actual PR body from GH API - fallback to workflow context if failed
+    title, body, labels = GH.get_pr_title_body_labels()
+    if body:
+        pr_body = body
+    else:
+        print("WARNING: Failed to get PR body from GH API - using workflow context")
+        pr_body = Info().pr_body
     if not labels:
         labels = Info().pr_labels
 
@@ -188,14 +198,18 @@ def check():
 
     # Branching by what kinds of new tests the PR adds. The structure
     # below is deliberately mutually exclusive on the FT/IT-vs-rest axis
-    # so the unit-only shortcut cannot bypass per-arch Bugfix Validation
-    # when the PR adds functional or integration regression tests. (Bot
-    # reviews on PR #103541, 2026-05-03 / 2026-05-04 - concerns #5 and #6.)
+    # so neither the unit-only shortcut nor the CI-report-link fallback
+    # can bypass per-arch Bugfix Validation when the PR adds functional
+    # or integration regression tests. (Bot reviews on PR #103541,
+    # 2026-05-03 / 2026-05-04 - concerns #5 and #6.)
 
     # New functional or integration regression tests exist. Those tests
     # MUST validate on at least one arch (the bug reproduces on master
-    # HEAD and is fixed on the PR). The presence of an additional unit
-    # test alongside FT/IT does not relax this requirement either.
+    # HEAD and is fixed on the PR). The CI-report-link fallback is NOT
+    # accepted here - it would let an unvalidated FT/IT regression test
+    # through and weaken the contract this hook enforces. The presence
+    # of an additional unit test alongside FT/IT does not relax this
+    # requirement either.
     if has_ft or has_it:
         if any_bugfix_validation_passed():
             print(
@@ -245,7 +259,16 @@ def check():
         )
         return True
 
-    # No new tests at all.
+    # No new tests at all. Allow a link to a CI report in the PR body as
+    # proof the bug exists and was fixed (operator-supplied evidence in
+    # lieu of an automated test). This fallback applies only here - it
+    # does NOT override per-arch Bugfix Validation when FT/IT tests are
+    # present (see the branch above).
+    if has_ci_report_link(pr_body):
+        print(
+            "No new tests have been added, but the PR description has a link to a CI report - pass"
+        )
+        return True
     print("No new tests have been added")
     return False
 

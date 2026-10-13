@@ -1,6 +1,8 @@
 #include <cstddef>
 #include <Columns/IColumn.h>
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnSparse.h>
+#include <Columns/ColumnReplicated.h>
 
 #include <Common/checkStackSize.h>
 #include <Common/Exception.h>
@@ -86,10 +88,17 @@ MutableColumnPtr IDataType::createUninitializedColumnWithSize(size_t size) const
 
 MutableColumnPtr IDataType::createColumn(const ISerialization & serialization) const
 {
-    /// Let the serialization wrap the base column into the layout it deserializes into: ColumnSparse for the
-    /// Sparse kind, ColumnReplicated for Replicated, ColumnBLOB for Detached, and any custom wrapping such as
-    /// the ColumnConst produced by the quantized-vector codebook serialization.
-    return serialization.wrapColumnForDeserialization(createColumn());
+    auto kind_stack = serialization.getKindStack();
+    auto column = createColumn();
+    for (auto kind : kind_stack)
+    {
+        if (kind == ISerialization::Kind::SPARSE)
+            column = ColumnSparse::create(std::move(column));
+        else if (kind == ISerialization::Kind::REPLICATED)
+            column = ColumnReplicated::create(std::move(column), ColumnUInt8::create());
+    }
+
+    return column;
 }
 
 MutableColumnConstPtr IDataType::createColumnConst(size_t size, const Field & field) const
@@ -163,7 +172,7 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
             size_t prefix_len = i + 1;
             if (!subpath[i].visited && ISerialization::hasSubcolumnForPath(subpath, prefix_len))
             {
-                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, false, initial_array_level);
+                auto name = ISerialization::getSubcolumnNameForStream(subpath, prefix_len, initial_array_level);
                 /// Create data from path only if it's requested subcolumn.
                 /// Use the first exact match to be consistent with ColumnsDescription::addSubcolumns
                 /// which also keeps the first subcolumn when there are name collisions
@@ -190,9 +199,12 @@ std::unique_ptr<IDataType::SubstreamData> IDataType::getSubcolumnData(
                         auto tmp_subpath = subpath;
                         if (tmp_subpath[i].creator)
                         {
+                            /// Build the serialization before the type is wrapped, so that a creator
+                            /// inspecting its prev_type argument sees the type the serialization
+                            /// actually serializes. Same order as in ISerialization::createFromPath.
+                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization, dynamic_subcolumn_data->type);
                             dynamic_subcolumn_data->type = tmp_subpath[i].creator->create(dynamic_subcolumn_data->type);
                             dynamic_subcolumn_data->column = tmp_subpath[i].creator->create(dynamic_subcolumn_data->column);
-                            dynamic_subcolumn_data->serialization = tmp_subpath[i].creator->create(dynamic_subcolumn_data->serialization, dynamic_subcolumn_data->type);
                         }
 
                         tmp_subpath[i].data = *dynamic_subcolumn_data;
@@ -267,14 +279,6 @@ DataTypePtr IDataType::getSubcolumnType(std::string_view subcolumn_name) const
 
 ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.get()))
-    {
-        auto subcolumn = tryGetSubcolumn(subcolumn_name, column_const->getDataColumnPtr());
-        if (!subcolumn)
-            return nullptr;
-        return ColumnConst::create(subcolumn, column_const->size());
-    }
-
     auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
     auto subcolumn_data = getSubcolumnData(subcolumn_name, data, {}, false);
     return subcolumn_data ? subcolumn_data->column : nullptr;
@@ -282,9 +286,6 @@ ColumnPtr IDataType::tryGetSubcolumn(std::string_view subcolumn_name, const Colu
 
 ColumnPtr IDataType::getSubcolumn(std::string_view subcolumn_name, const ColumnPtr & column) const
 {
-    if (const auto * column_const = checkAndGetColumn<ColumnConst>(column.get()))
-        return ColumnConst::create(getSubcolumn(subcolumn_name, column_const->getDataColumnPtr()), column_const->size());
-
     auto data = SubstreamData(getSerialization(*getSerializationInfo(*column))).withType(getPtr()).withColumn(column);
     return getSubcolumnData(subcolumn_name, data, {}, true)->column;
 }
@@ -334,15 +335,13 @@ MutableSerializationInfoPtr IDataType::createSerializationInfo(const Serializati
 
 SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column) const
 {
-    return getSerializationInfo(column, SerializationInfoSettings::enableAllSupportedSerializations());
-}
-
-SerializationInfoPtr IDataType::getSerializationInfo(const IColumn & column, const SerializationInfoSettings & settings) const
-{
     if (const auto * column_const = checkAndGetColumn<ColumnConst>(&column))
-        return getSerializationInfo(column_const->getDataColumn(), settings);
+        return getSerializationInfo(column_const->getDataColumn());
 
-    return std::make_shared<SerializationInfo>(ISerialization::getKindStack(column), settings);
+    /// Enable all supported serialization features when deriving info from an existing column. Since the column
+    /// reflects the actual in-memory state, the serialization info must accept any variant that the column may contain.
+    return std::make_shared<SerializationInfo>(
+        ISerialization::getKindStack(column), SerializationInfoSettings::enableAllSupportedSerializations());
 }
 
 SerializationPtr IDataType::getDefaultSerialization() const

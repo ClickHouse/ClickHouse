@@ -326,7 +326,7 @@ Retorna o maior valor entre os argumentos.
 Argumentos `NULL` são ignorados.
 
 * Para arrays, retorna o array lexicograficamente maior.
-* Para tipos `DateTime`, o tipo do resultado é promovido para o maior tipo (por exemplo, `DateTime64` se combinado com `DateTime32`).
+* Para tipos `DateTime`, o tipo do resultado é promovido ao maior tipo (por exemplo, `DateTime64` se combinado com `DateTime32`).
 
 <Info>
   **Use a configuração `least_greatest_legacy_null_behavior` para alterar o comportamento de `NULL`**
@@ -343,19 +343,19 @@ greatest(x1[, x2, ...])
 
 **Argumentos**
 
-* `x1[, x2, ...]` — Um ou mais valores para comparar. Todos os argumentos devem ser de tipos comparáveis. [`Any`](/pt-BR/reference/data-types/index)
+* `x1[, x2, ...]` — Um ou mais valores a serem comparados. Todos os argumentos devem ser de tipos comparáveis. [`Any`](/pt-BR/reference/data-types/index)
 
 **Valor retornado**
 
-Retorna o maior valor entre os argumentos, promovido para o maior tipo compatível. [`Any`](/pt-BR/reference/data-types/index)
+Retorna o maior valor entre os argumentos, promovido ao maior tipo compatível. [`Any`](/pt-BR/reference/data-types/index)
 
 **Exemplos**
 
 **Tipos numéricos**
 
 ```sql title=Query
--- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
 SELECT greatest(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
+-- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
 ```
 
 ```response title=Response
@@ -379,13 +379,13 @@ SELECT greatest(['hello'], ['there'], ['world']);
 **Tipos de DateTime**
 
 ```sql title=Query
+SELECT greatest(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
-SELECT greatest(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─greatest(toD⋯0.000', 3))─┐
-│  2025-01-02 12:00:00.000 │
+┌─greatest(toD⋯(now(), 3))─┐
+│  2025-05-28 15:50:53.000 │
 └──────────────────────────┘
 ```
 
@@ -400,7 +400,7 @@ Executa uma ramificação condicional.
 * Se a condição `cond` for avaliada como um valor diferente de zero, a função retorna o resultado da expressão `then`.
 * Se `cond` for avaliada como zero ou NULL, o resultado da expressão `else` será retornado.
 
-A configuração [`short_circuit_function_evaluation`](/pt-BR/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controla se a avaliação de curto-circuito é usada.
+A configuração [`short_circuit_function_evaluation`](/pt-BR/reference/settings/session-settings#short_circuit_function_evaluation) controla se a avaliação de curto-circuito é usada.
 
 Se estiver habilitada, a expressão `then` será avaliada apenas nas linhas em que `cond` for true, e a expressão `else`, naquelas em que `cond` for false.
 
@@ -479,8 +479,8 @@ Retorna o menor valor entre os argumentos, promovido para o maior tipo compatív
 **Tipos numéricos**
 
 ```sql title=Query
--- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
 SELECT least(1, 2, toUInt8(3), 3.) AS result, toTypeName(result) AS type;
+-- The type returned is a Float64 as the UInt8 must be promoted to 64 bit for the comparison.
 ```
 
 ```response title=Response
@@ -504,13 +504,13 @@ SELECT least(['hello'], ['there'], ['world']);
 **Tipos de DateTime**
 
 ```sql title=Query
+SELECT least(toDateTime32(now() + toIntervalDay(1)), toDateTime64(now(), 3));
 -- The type returned is a DateTime64 as the DateTime32 must be promoted to 64 bit for the comparison.
-SELECT least(toDateTime32('2025-01-02 12:00:00'), toDateTime64('2025-01-01 12:00:00.000', 3));
 ```
 
 ```response title=Response
-┌─least(toDate⋯0.000', 3))─┐
-│  2025-01-01 12:00:00.000 │
+┌─least(toDate⋯(now(), 3))─┐
+│  2025-05-27 15:55:20.000 │
 └──────────────────────────┘
 ```
 
@@ -524,7 +524,7 @@ Permite escrever o operador [`CASE`](/pt-BR/reference/operators/index#conditiona
 Avalia cada condição em ordem. Para a primeira condição que for true (diferente de zero e não `NULL`), retorna o valor correspondente.
 Se nenhuma das condições for true, retorna o valor de `else`.
 
-A configuração [`short_circuit_function_evaluation`](/pt-BR/reference/settings/session-settings/short-circuit-function-evaluation#short_circuit_function_evaluation) controla
+A configuração [`short_circuit_function_evaluation`](/pt-BR/reference/settings/session-settings#short_circuit_function_evaluation) controla
 se a avaliação de curto-circuito é usada. Se estiver ativada, a expressão `then_i` será avaliada apenas nas linhas em que
 `((NOT cond_1) AND ... AND (NOT cond_{i-1}) AND cond_i)` for true.
 

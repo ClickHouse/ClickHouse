@@ -14,7 +14,7 @@ doc_type: 'reference'
 
 可通过将引擎特定的 `handle_error_mode` 设置指定为 `dead_letter_queue` 来启用日志记录。
 
-数据的刷新周期在服务器设置部分 [dead&#95;letter&#95;queue](/zh/reference/settings/server-settings/settings/other#dead_letter_queue) 的 `flush_interval_milliseconds` 参数中设置。要强制刷新，请使用 [SYSTEM FLUSH LOGS](/zh/reference/statements/system#flush-logs) 查询。
+数据的刷新周期在服务器设置部分 [dead&#95;letter&#95;queue](/zh/reference/settings/server-settings/settings#dead_letter_queue) 的 `flush_interval_milliseconds` 参数中设置。要强制刷新，请使用 [SYSTEM FLUSH LOGS](/zh/reference/statements/system#flush-logs) 查询。
 
 ClickHouse 不会自动从该表中删除数据。更多详情，请参阅 [简介](/zh/reference/system-tables/overview#system-tables-introduction)。
 

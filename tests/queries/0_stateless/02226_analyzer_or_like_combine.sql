@@ -1,7 +1,5 @@
 -- Tags: no-fasttest
 -- no-fasttest: Reference output uses `multiMatchAny`, which requires vectorscan
-SET enable_analyzer = 1;
-
 SET allow_hyperscan = 1, max_hyperscan_regexp_length = 0, max_hyperscan_regexp_total_length = 0;
 SET optimize_rewrite_like_perfect_affix = 0; -- prevent input/output interference from another LIKE rewrite pass
 -- Exercise the rewrite for the short chains in this test; production defaults are 10 (regexp) and 4 (substring).
@@ -104,6 +102,7 @@ EXPLAIN QUERY TREE run_passes=1 SELECT materialize('Привет, World') AS s1,
 
 -- Verify results stay correct when the size guard skips the rewrite (the row should still match).
 SELECT materialize('Привет, World') AS s1, materialize('Привет, World') AS s2 WHERE (s1 LIKE 'hell%') OR (s2 ILIKE '%привет%') OR (s1 ILIKE 'world%') SETTINGS optimize_or_like_chain = 1, enable_analyzer = 1, max_hyperscan_regexp_length = 5;
+SELECT materialize('Привет, World') AS s1, materialize('Привет, World') AS s2 WHERE (s1 LIKE 'hell%') OR (s2 ILIKE '%привет%') OR (s1 ILIKE 'world%') SETTINGS optimize_or_like_chain = 1, enable_analyzer = 0, max_hyperscan_regexp_length = 5;
 
 -- Partial-rewrite correctness: when one LHS group is rewritten and another is kept as originals
 -- (size limits exceeded), the `indexHint` payload must include *all* original branches — using

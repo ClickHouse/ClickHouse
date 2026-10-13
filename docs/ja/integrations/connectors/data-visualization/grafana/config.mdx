@@ -12,7 +12,7 @@ integration:
 
 import { Image } from "/snippets/ja/components/Image.jsx";
 
-import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/ja/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -34,24 +34,24 @@ import { ClickHouseSupportedBadge } from "/snippets/ja/components/ClickHouseSupp
 
 ```yaml
 jsonData:
-  host: 127.0.0.1 # (required) server address.
-  port: 9000      # (required) server port. For native, defaults to 9440 secure and 9000 insecure. For HTTP, defaults to 8443 secure and 8123 insecure.
+  host: 127.0.0.1 # (必須) サーバーアドレス。
+  port: 9000      # (必須) サーバーポート。nativeの場合、デフォルトはセキュア9440、非セキュア9000。HTTPの場合、デフォルトはセキュア8443、非セキュア8123。
 
-  protocol: native # (required) the protocol used for the connection. Can be set to "native" or "http".
-  secure: false    # set to true if the connection is secure.
+  protocol: native # (必須) 接続に使用するプロトコル。"native" または "http" に設定可能。
+  secure: false    # セキュア接続の場合はtrueに設定。
 
-  username: default # the username used for authentication.
+  username: default # 認証に使用するユーザー名。
 
-  tlsSkipVerify:     <boolean> # skips TLS verification when set to true.
-  tlsAuth:           <boolean> # set to true to enable TLS client authentication.
-  tlsAuthWithCACert: <boolean> # set to true if CA certificate is provided. Required for verifying self-signed TLS certificates.
+  tlsSkipVerify:     <boolean> # trueに設定するとTLS検証をスキップ。
+  tlsAuth:           <boolean> # TLSクライアント認証を有効にする場合はtrueに設定。
+  tlsAuthWithCACert: <boolean> # CA証明書を使用する場合はtrueに設定。自己署名TLS証明書の検証に必要。
 
 secureJsonData:
-  password: secureExamplePassword # the password used for authentication.
+  password: secureExamplePassword # 認証に使用するパスワード。
 
-  tlsCACert:     <string> # TLS CA certificate
-  tlsClientCert: <string> # TLS client certificate
-  tlsClientKey:  <string> # TLS client key
+  tlsCACert:     <string> # TLS CA証明書
+  tlsClientCert: <string> # TLSクライアント証明書
+  tlsClientKey:  <string> # TLSクライアント秘密鍵
 ```
 
 設定をUIから保存すると、`version` プロパティが追加される点に注意してください。これは、その設定がどのバージョンのプラグインで保存されたかを示します。
@@ -118,12 +118,12 @@ YAML の例:
 
 ```yaml
 jsonData:
-  defaultDatabase: default # default database loaded by the query builder. Defaults to "default".
-  defaultTable: <string>   # default table loaded by the query builder.
+  defaultDatabase: default # クエリビルダーで読み込まれるデフォルトのdatabase。デフォルトは "default"。
+  defaultTable: <string>   # クエリビルダーで読み込まれるデフォルトのtable。
 
-  dialTimeout: 10    # dial timeout when connecting to the server, in seconds. Defaults to "10".
-  queryTimeout: 60   # query timeout when running a query, in seconds. Defaults to 60. This requires permissions on the user, if you get a permission error try setting it to "0" to disable it.
-  validateSql: false # when set to true, will validate the SQL in the SQL editor.
+  dialTimeout: 10    # serverへの接続時のダイヤルtimeout（秒）。デフォルトは "10"。
+  queryTimeout: 60   # クエリ実行時のクエリtimeout（秒）。デフォルトは60。ユーザーにpermissionsが必要です。権限エラーが発生した場合は "0" に設定して無効にしてください。
+  validateSql: false # trueに設定すると、SQL エディタ内のSQLを検証します。
 ```
 
 <div id="opentelemetry">
@@ -140,10 +140,10 @@ OpenTelemetryデータは、[exporter plugin](https://github.com/open-telemetry/
   ### ログ
 </div>
 
-[ログのクエリ構築](/ja/integrations/connectors/data-visualization/grafana/query-builder#logs)を高速化するために、ログクエリ用のデフォルトのデータベース/テーブルとカラムを設定できます。これにより、クエリビルダーに実行可能なログクエリが事前に読み込まれ、Explore ページでログをすばやく確認できるようになり、オブザーバビリティ用途での閲覧が効率化されます。
+[ログのクエリ構築](/ja/integrations/connectors/data-visualization/grafana/query-builder#logs)を高速化するために、ログクエリ用のデフォルトのデータベース/テーブルとカラムを設定できます。これにより、クエリビルダーに実行可能なログクエリが事前に読み込まれ、Explore ページでのオブザーバビリティ向けの閲覧がより高速になります。
 
 OpenTelemetry を使用している場合は、&quot;**Use OTel**&quot; スイッチを有効にし、**デフォルトのログテーブル** を `otel_logs` に設定してください。
-これにより、デフォルトのカラムは自動的に上書きされ、選択した OTel スキーマバージョンが使用されます。
+これにより、デフォルトのカラムは自動的に上書きされ、選択した OTel スキーマのバージョンが使用されます。
 
 ログで OpenTelemetry は必須ではありませんが、logs/trace で単一のデータセットを使用すると、[データリンク](/ja/integrations/connectors/data-visualization/grafana/query-builder#data-links)によって、よりスムーズなオブザーバビリティのワークフローを実現できます。
 
@@ -156,16 +156,16 @@ OpenTelemetry を使用している場合は、&quot;**Use OTel**&quot; スイ�
 ```yaml
 jsonData:
   logs:
-    defaultDatabase: default # default log database.
-    defaultTable: otel_logs  # default log table. If you're using OTel, this should be set to "otel_logs".
+    defaultDatabase: default # デフォルトのログデータベース。
+    defaultTable: otel_logs  # デフォルトのログテーブル。OTelを使用する場合は "otel_logs" に設定してください。
 
-    otelEnabled: false  # set to true if OTel is enabled.
-    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
+    otelEnabled: false  # OTelが有効な場合はtrueに設定してください。
+    otelVersion: latest # 使用するOTel collectorのスキーマバージョン。バージョンはUIに表示されますが、"latest" を指定するとプラグインで利用可能な最新バージョンが使用されます。
 
-    # Default columns to be selected when opening a new log query. Will be ignored if OTel is enabled.
-    timeColumn:       <string> # the primary time column for the log.
-    levelColumn:   <string> # the log level/severity of the log. Values typically look like "INFO", "error", or "Debug".
-    messageColumn: <string> # the log's message/content.
+    # 新しいログクエリを開いた際にデフォルトで選択されるカラム。OTelが有効な場合は無視されます。
+    timeColumn:       <string> # ログのプライマリ時刻カラム。
+    levelColumn:   <string> # ログのレベル/重大度。値は通常 "INFO"、"error"、"Debug" のような形式になります。
+    messageColumn: <string> # ログのメッセージ/内容。
 ```
 
 <div id="traces">
@@ -187,23 +187,23 @@ OpenTelemetry は必須ではありませんが、トレースにそのスキー
 ```yaml
 jsonData:
   traces:
-    defaultDatabase: default  # default trace database.
-    defaultTable: otel_traces # default trace table. If you're using OTel, this should be set to "otel_traces".
+    defaultDatabase: default  # デフォルトのトレースデータベース。
+    defaultTable: otel_traces # デフォルトのトレーステーブル。OTelを使用している場合は "otel_traces" に設定してください。
 
-    otelEnabled: false  # set to true if OTel is enabled.
-    otelVersion: latest # the otel collector schema version to be used. Versions are displayed in the UI, but "latest" will use latest available version in the plugin.
+    otelEnabled: false  # OTelが有効な場合はtrueに設定してください。
+    otelVersion: latest # 使用するOTel collectorのスキーマバージョン。バージョンはUIに表示されますが、"latest" を指定するとプラグインで利用可能な最新バージョンが使用されます。
 
-    # Default columns to be selected when opening a new trace query. Will be ignored if OTel is enabled.
-    traceIdColumn:       <string>    # trace ID column.
-    spanIdColumn:        <string>    # span ID column.
-    operationNameColumn: <string>    # operation name column.
-    parentSpanIdColumn:  <string>    # parent span ID column.
-    serviceNameColumn:   <string>    # service name column.
-    durationTimeColumn:  <string>    # duration time column.
-    durationUnitColumn:  <time unit> # duration time unit. Can be set to "seconds", "milliseconds", "microseconds", or "nanoseconds". For OTel the default is "nanoseconds".
-    startTimeColumn:     <string>    # start time column. This is the primary time column for the trace span.
-    tagsColumn:          <string>    # tags column. This is expected to be a map type.
-    serviceTagsColumn:   <string>    # service tags column. This is expected to be a map type.
+    # 新しいトレースクエリを開いたときにデフォルトで選択されるカラム。OTelが有効な場合は無視されます。
+    traceIdColumn:       <string>    # トレースIDカラム。
+    spanIdColumn:        <string>    # スパンIDカラム。
+    operationNameColumn: <string>    # オペレーション名カラム。
+    parentSpanIdColumn:  <string>    # 親スパンIDカラム。
+    serviceNameColumn:   <string>    # サービス名カラム。
+    durationTimeColumn:  <string>    # 所要時間カラム。
+    durationUnitColumn:  <time unit> # 所要時間の単位。"seconds"、"milliseconds"、"microseconds"、または "nanoseconds" を指定できます。OTelのデフォルトは "nanoseconds" です。
+    startTimeColumn:     <string>    # 開始時刻カラム。トレーススパンのプライマリ時刻カラムです。
+    tagsColumn:          <string>    # タグカラム。Map型であることが前提です。
+    serviceTagsColumn:   <string>    # サービスタグカラム。Map型であることが前提です。
 ```
 
 <div id="column-aliases">
@@ -254,9 +254,9 @@ Grafana では、別名テーブルに次のカラム構造が必要です。
 
 ```sql
 CREATE TABLE aliases (
-  `alias` String,  -- The name of the alias, as seen in the Grafana column selector
-  `select` String, -- The SELECT syntax to use in the SQL generator
-  `type` String    -- The type of the resulting column, so the plugin can modify the UI options to match the data type.
+  `alias` String,  -- Grafana のカラムセレクターに表示される別名の名前
+  `select` String, -- SQL ジェネレーターで使用する SELECT 構文
+  `type` String    -- 結果カラムのデータ型。プラグインがデータ型に合わせて UI オプションを変更する際に使用される。
 )
 ```
 
@@ -270,17 +270,17 @@ CREATE TABLE example_table (
 CREATE TABLE example_table_aliases (`alias` String, `select` String, `type` String);
 
 INSERT INTO example_table_aliases (`alias`, `select`, `type`) VALUES
-('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- Preserve original column from table (optional)
-('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- Add new column that converts TimestampNanos to a Date
+('TimestampNanos', 'TimestampNanos', 'DateTime(9)'), -- テーブルの元のカラムを保持する（省略可）
+('TimestampDate', 'toDate(TimestampNanos)', 'Date'); -- TimestampNanos を Date 型に変換する新しいカラムを追加する
 ```
 
 次に、このテーブルを Grafana で使えるように設定できます。なお、名前は任意で、別のデータベースで定義することも可能です。
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="別名テーブル設定の例" border />
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_config_example.webp" alt="エイリアステーブル設定の例" border />
 
 これで Grafana では、`DESC example_table` の結果ではなく、別名テーブル の結果が表示されます。
 
-<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="別名テーブル選択の例" border />
+<Image size="md" img="/images/integrations/data-visualization/grafana/alias_table_select_example.webp" alt="エイリアステーブル選択の例" border />
 
 どちらのエイリアス方式も、複雑な型変換や JSON フィールドの抽出に利用できます。
 

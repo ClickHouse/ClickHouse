@@ -50,8 +50,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_FailedInsertQuery` ([UInt64](/es/reference/data-types/int-uint)) — Igual que FailedQuery, pero solo para consultas INSERT.
 * `ProfileEvent_FailedAsyncInsertQuery` ([UInt64](/es/reference/data-types/int-uint)) — Número de consultas ASYNC INSERT fallidas.
 * `ProfileEvent_ASTFuzzerQueries` ([UInt64](/es/reference/data-types/int-uint)) — Número de consultas con fuzzing intentadas por el fuzzer AST del servidor.
-* `ProfileEvent_ASTFuzzerSkippedBackupRestore` ([UInt64](/es/reference/data-types/int-uint)) — Número de consultas BACKUP/RESTORE con fuzzing que el fuzzer AST del servidor omitió en lugar de ejecutar.
-* `ProfileEvent_ASTFuzzerSkippedReplicatedDDLInternal` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el fuzzer AST del servidor omitió el fuzzing porque había una ejecución interna de DDL de una base de datos replicada (una ZooKeeperMetadataTransaction activa) en curso en el contexto.
 * `ProfileEvent_QueryTimeMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total de todas las consultas.
 * `ProfileEvent_SelectQueryTimeMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total de las consultas SELECT.
 * `ProfileEvent_InsertQueryTimeMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total de las consultas INSERT.
@@ -96,48 +94,33 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_IOBufferAllocBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes asignados para los búferes de E/S (para ReadBuffer/WriteBuffer).
 * `ProfileEvent_ArenaAllocChunks` ([UInt64](/es/reference/data-types/int-uint)) — Número de fragmentos asignados para la Arena de memoria (utilizada para GROUP BY y operaciones similares)
 * `ProfileEvent_ArenaAllocBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes asignados para la Arena de memoria (utilizada para GROUP BY y operaciones similares)
-* `ProfileEvent_FiberStackAllocs` ([UInt64](/es/reference/data-types/int-uint)) — Número de pilas asignadas para fibras (las fibras se utilizan para la comunicación asíncrona con réplicas remotas).
-* `ProfileEvent_FiberStackAllocBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes asignados para las pilas de fibras, incluidas las páginas de guarda (las páginas de guarda solo se usan en compilaciones de depuración y con sanitizador).
-* `ProfileEvent_FiberStackAllocNanoseconds` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de tiempo dedicada a asignar pilas de fibras. Se usan nanosegundos porque una sola asignación normalmente tarda menos de un microsegundo, a menos que haya contención en el asignador o el kernel.
-* `ProfileEvent_FiberStackFreeNanoseconds` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de tiempo dedicada a liberar pilas de fibras.
 * `ProfileEvent_FunctionExecute` ([UInt64](/es/reference/data-types/int-uint)) — Número de llamadas a funciones SQL ordinarias (las funciones SQL se llaman por bloque, por lo que este número representa la cantidad de bloques).
 * `ProfileEvent_TableFunctionExecute` ([UInt64](/es/reference/data-types/int-uint)) — Número de llamadas a funciones de tabla.
 * `ProfileEvent_DefaultImplementationForNullsRows` ([UInt64](/es/reference/data-types/int-uint)) — Número de filas procesadas por la implementación predeterminada para NULL en la ejecución de funciones
 * `ProfileEvent_DefaultImplementationForNullsRowsWithNulls` ([UInt64](/es/reference/data-types/int-uint)) — Número de filas que contienen valores NULL procesadas por la implementación predeterminada para NULL en la ejecución de funciones
 * `ProfileEvent_MarkCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se encontró una entrada en la caché de marcas, por lo que no fue necesario cargar un archivo de marcas.
 * `ProfileEvent_MarkCacheMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se encontró una entrada en la caché de marcas, por lo que fue necesario cargar un archivo de marcas en memoria, una operación costosa que aumenta la latencia de la consulta.
-* `ProfileEvent_UniqueKeyBitmapLoadMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a leer y deserializar archivos auxiliares de bitmap de eliminación de UNIQUE KEY ante un fallo de DeleteBitmapCache.
-* `ProfileEvent_UniqueKeyBitmapUpdates` ([UInt64](/es/reference/data-types/int-uint)) — Número de archivos auxiliares de bitmap de eliminación de UNIQUE KEY escritos (uno por cada sustitución / commit de DELETE).
 * `ProfileEvent_PrimaryIndexCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se encontró una entrada en la caché del índice primario, por lo que no fue necesario cargar un archivo de índice.
 * `ProfileEvent_PrimaryIndexCacheMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se encontró una entrada en la caché del índice primario, por lo que fue necesario cargar un archivo de índice en memoria, una operación costosa que aumenta la latencia de la consulta.
 * `ProfileEvent_IcebergMetadataFilesCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se encontraron archivos de metadatos de Iceberg en la caché.
 * `ProfileEvent_IcebergMetadataFilesCacheMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se encontraron archivos de metadatos de Iceberg en la caché de metadatos de Iceberg y fue necesario leerlos desde el disco (remoto).
 * `ProfileEvent_IcebergMetadataFilesCacheStaleMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se encontraron archivos de metadatos de Iceberg en la caché, pero se consideraron desactualizados y fue necesario leerlos desde el disco (remoto).
 * `ProfileEvent_IcebergMetadataFilesCacheWeightLost` ([UInt64](/es/reference/data-types/int-uint)) — Número aproximado de bytes expulsados de la caché de metadatos de Iceberg.
-* `ProfileEvent_PaimonMetadataFilesCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se encontraron archivos de metadatos de paimon en la caché.
-* `ProfileEvent_PaimonMetadataFilesCacheMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se encontraron archivos de metadatos de paimon en la caché de metadatos de paimon y fue necesario leerlos desde el disco (remoto).
-* `ProfileEvent_PaimonMetadataFilesCacheWeightLost` ([UInt64](/es/reference/data-types/int-uint)) — Número aproximado de bytes expulsados de la caché de metadatos de paimon.
 * `ProfileEvent_IcebergMetadataReadWaitTimeMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total que los lectores de datos pasan esperando a que los archivos de metadatos de Iceberg se lean y analicen, sumado en todos los hilos de lectura.
 * `ProfileEvent_ParquetMetadataCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se encontraron metadatos de Parquet en la caché.
 * `ProfileEvent_ParquetMetadataCacheMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se encontraron metadatos de Parquet en la caché y fue necesario leerlos desde el disco.
 * `ProfileEvent_ParquetMetadataCacheWeightLost` ([UInt64](/es/reference/data-types/int-uint)) — Número aproximado de bytes expulsados de la caché de metadatos de Parquet.
 * `ProfileEvent_IcebergIteratorInitializationMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a la inicialización síncrona de los iteradores de datos de Iceberg.
-* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a actualizar los metadatos de almacenamiento de Iceberg desde el estado (buildStorageMetadataFromState).
+* `ProfileEvent_IcebergMetadataUpdateMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a la inicialización síncrona de los iteradores de datos de Iceberg.
 * `ProfileEvent_IcebergMetadataReturnedObjectInfos` ([UInt64](/es/reference/data-types/int-uint)) — Número total de informaciones de objetos devueltas por el iterador de Iceberg.
 * `ProfileEvent_IcebergMinMaxNonPrunedDeleteFiles` ([UInt64](/es/reference/data-types/int-uint)) — Número total de pares aceptados de archivos de datos y archivos de eliminación por posición mediante análisis minmax, a partir de pares aptos según la partición y el número de secuencia.
 * `ProfileEvent_IcebergMinMaxPrunedDeleteFiles` ([UInt64](/es/reference/data-types/int-uint)) — Número total de pares aceptados de archivos de datos y archivos de eliminación por posición mediante análisis minmax, a partir de pares aptos según la partición y el número de secuencia.
-* `ProfileEvent_OneLakeAccessTokenRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes de tokens de acceso emitidas por el catálogo OneLake mediante la concesión de tokens de actualización de Entra ID.
-* `ProfileEvent_OneLakeAccessTokenRequestFailures` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes fallidas de tokens de acceso emitidas por el catálogo OneLake mediante la concesión de tokens de actualización de Entra ID (incluidos los tokens de actualización expirados o revocados).
-* `ProfileEvent_OneLakeAccessTokenRequestMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a solicitar tokens de acceso mediante la concesión de tokens de actualización de Entra ID en el catálogo OneLake.
-* `ProfileEvent_OneLakeAccessTokenExpirations` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se detectó que el token de acceso de OneLake almacenado en caché había expirado y se renovó de forma transparente.
 * `ProfileEvent_VectorSimilarityIndexCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se encontró un gránulo de índice en la caché del índice vectorial.
 * `ProfileEvent_VectorSimilarityIndexCacheMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se encontró un gránulo de índice en la caché del índice vectorial y fue necesario leerlo desde el disco.
 * `ProfileEvent_VectorSimilarityIndexCacheWeightLost` ([UInt64](/es/reference/data-types/int-uint)) — Número aproximado de bytes expulsados de la caché del índice vectorial.
 * `ProfileEvent_TextIndexReadDictionaryBlocks` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se leyó desde el disco un bloque de diccionario del índice de texto.
 * `ProfileEvent_TextIndexTokensCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se encontró en la caché información de token del índice de texto.
 * `ProfileEvent_TextIndexTokensCacheMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se encontró en la caché información de token del índice de texto.
-* `ProfileEvent_TextIndexTokensCacheNegativeHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se encontró en la caché un token ausente del índice de texto.
-* `ProfileEvent_TextIndexTokensCacheNegativeMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de tokens ausentes del índice de texto añadidos a la caché después de una búsqueda en el diccionario.
 * `ProfileEvent_TextIndexHeaderCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se ha encontrado un encabezado en la caché.
 * `ProfileEvent_TextIndexHeaderCacheMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se ha encontrado un encabezado en la caché.
 * `ProfileEvent_TextIndexPostingsCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se ha encontrado una lista de postings del índice de texto en la caché.
@@ -145,29 +128,13 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_TextIndexReadSparseIndexBlocks` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se ha leído un bloque de índice disperso desde el índice de texto.
 * `ProfileEvent_TextIndexReaderTotalMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a leer el índice de texto.
 * `ProfileEvent_TextIndexReadGranulesMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a leer y analizar gránulos del índice de texto.
-* `ProfileEvent_TextIndexPositionsDecodeMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a decodificar listas de posiciones (.pos) del índice de texto para la búsqueda de frases.
-* `ProfileEvent_TextIndexPhraseMatchMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a la intersección de coincidencias de frases roaringish.
 * `ProfileEvent_TextIndexReadPostings` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se ha leído una lista de postings desde el índice de texto.
 * `ProfileEvent_TextIndexUsedEmbeddedPostings` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se ha utilizado una lista de postings incrustada en el Diccionario.
 * `ProfileEvent_TextIndexUseHint` ([UInt64](/es/reference/data-types/int-uint)) — Número de gránulos de índice en los que se añadió como sugerencia una lectura directa desde el índice de texto y se utilizó.
 * `ProfileEvent_TextIndexDiscardHint` ([UInt64](/es/reference/data-types/int-uint)) — Número de gránulos de índice en los que se añadió como sugerencia una lectura directa desde el índice de texto y se descartó debido a la baja selectividad.
-* `ProfileEvent_TextIndexTemporarySegmentsWritten` ([UInt64](/es/reference/data-types/int-uint)) — Número de segmentos temporales escritos durante la creación de índices de texto.
-* `ProfileEvent_TextIndexLazyPackedBlocksDecoded` ([UInt64](/es/reference/data-types/int-uint)) — Número de bloques empaquetados decodificados en modo de listas de postings diferidas.
-* `ProfileEvent_TextIndexLazyAdvanceCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de operaciones de avance realizadas en modo de listas de postings diferidas.
-* `ProfileEvent_TextIndexLazySegmentsPrepared` ([UInt64](/es/reference/data-types/int-uint)) — Número de segmentos preparados (leídos del disco o de la caché) en modo de listas de postings diferidas.
-* `ProfileEvent_TextIndexLazySegmentsBuilt` ([UInt64](/es/reference/data-types/int-uint)) — Número de segmentos realmente leídos y decodificados (fallos de caché) en modo de listas de postings diferidas.
-* `ProfileEvent_TextIndexLazyBruteForceIntersections` ([UInt64](/es/reference/data-types/int-uint)) — Número de intersecciones por fuerza bruta realizadas en modo de listas de postings diferidas.
-* `ProfileEvent_TextIndexLazyLeapfrogIntersections` ([UInt64](/es/reference/data-types/int-uint)) — Número de intersecciones leapfrog realizadas en modo de listas de postings diferidas.
-* `ProfileEvent_TextIndexLazySegmentsSkippedDense` ([UInt64](/es/reference/data-types/int-uint)) — Número de segmentos completamente densos rellenados en su totalidad (memset para OR, incremento para AND) en lugar de decodificar bloques, en modo de listas de postings diferidas.
-* `ProfileEvent_TextIndexLazySegmentsSkippedResolved` ([UInt64](/es/reference/data-types/int-uint)) — Número de segmentos omitidos porque la región de salida ya estaba resuelta (todos unos para OR, todos ceros para AND) en modo de listas de postings diferidas.
-* `ProfileEvent_TextIndexLazyBlocksSkippedResolved` ([UInt64](/es/reference/data-types/int-uint)) — Número de bloques empaquetados omitidos porque la región de salida ya estaba resuelta (todos unos para OR, todos ceros para AND) en modo de listas de postings diferidas.
 * `ProfileEvent_TextIndexDiscardPatternScan` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se descartó una exploración del diccionario basada en patrones en un índice de texto porque el número de listas de postings que debían leerse superó el umbral.
-* `ProfileEvent_TextIndexGenericExclusionSearchAlgorithm` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se usa el algoritmo genérico de búsqueda por exclusión sobre el índice de texto.
-* `ProfileEvent_TextIndexGenericExclusionSearchStepLimitReached` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que la búsqueda genérica por exclusión sobre el índice de texto alcanzó merge&#95;tree&#95;generic&#95;exclusion&#95;search&#95;max&#95;steps y aceptó los rangos de marcas restantes sin dividirlos más.
 * `ProfileEvent_QueryConditionCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se ha encontrado una entrada en la caché de condiciones de consulta (y se puede omitir la lectura de marcas). Solo se actualiza para consultas SELECT con SETTING use&#95;query&#95;condition&#95;cache = 1.
 * `ProfileEvent_QueryConditionCacheMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se ha encontrado una entrada en la caché de condiciones de consulta (y no se puede omitir la lectura de una marca). Solo se actualiza para consultas SELECT con SETTING use&#95;query&#95;condition&#95;cache = 1.
-* `ProfileEvent_EncryptionHeaderCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se encontraron bytes de encabezado de cifrado en la caché de encabezados de cifrado, por lo que se omitió la lectura del encabezado desde el origen.
-* `ProfileEvent_EncryptionHeaderCacheMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se encontraron bytes de encabezado de cifrado en la caché de encabezados de cifrado, por lo que se leyeron desde el origen.
 * `ProfileEvent_QueryCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se ha encontrado un resultado de consulta en la caché de consultas (y se evitó el cálculo de la consulta). Solo se actualiza para consultas SELECT con SETTING use&#95;query&#95;cache = 1.
 * `ProfileEvent_QueryCacheMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se ha encontrado un resultado de consulta en la caché de consultas (y fue necesario calcular la consulta). Solo se actualiza para consultas SELECT con SETTING use&#95;query&#95;cache = 1.
 * `ProfileEvent_QueryCacheAgeSeconds` ([UInt64](/es/reference/data-types/int-uint)) — La suma, en segundos, de la antigüedad de las entradas de la caché de consultas encontradas. El valor se establece tanto para aciertos como para fallos.
@@ -266,19 +233,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_AllUsersThrottlerSleepMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total durante el que una consulta permaneció en pausa para cumplir con la limitación `max_network_bandwidth_for_all_users`.
 * `ProfileEvent_QueryRemoteReadThrottlerBytes` ([UInt64](/es/reference/data-types/int-uint)) — Bytes que pasaron por el limitador `max_remote_read_network_bandwidth`.
 * `ProfileEvent_QueryRemoteReadThrottlerSleepMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total durante el que una consulta permaneció en pausa para cumplir con la limitación `max_remote_read_network_bandwidth`.
-* `ProfileEvent_ReaderExecutorSourceRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes del lado de la fuente abiertas por ReaderExecutor (excluye reutilizaciones de búferes activos).
-* `ProfileEvent_ReaderExecutorBytesFromSource` ([UInt64](/es/reference/data-types/int-uint)) — Bytes físicos que ReaderExecutor solicitó a la fuente tras no encontrar datos en ninguno de los niveles de caché (prefetch en primer plano y en segundo plano, incluidos los bytes de un prefetch desperdiciados por un descarte posterior); no son bytes atendidos al consumidor; consulte ReaderExecutorDeliveredBytes.
-* `ProfileEvent_ReaderExecutorDeliveredBytes` ([UInt64](/es/reference/data-types/int-uint)) — Bytes útiles que ReaderExecutor entregó a las solicitudes de lectura (la carga útil de la ventana solicitada, excluidas las lecturas adicionales y la escritura diferida en caché). Denominador para el KPI de coste por byte modelado (ReaderExecutorModeledCostMicroseconds / ReaderExecutorDeliveredBytes).
-* `ProfileEvent_ReaderExecutorCacheGetRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número de invocaciones de ICacheHandle::get en ReaderExecutor. Cero hasta que se introduzcan los niveles de caché de ReaderExecutor.
-* `ProfileEvent_ReaderExecutorCachePopulateRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número de invocaciones de ICacheHandle::put en ReaderExecutor. Cero hasta que se introduzcan los niveles de caché de ReaderExecutor.
-* `ProfileEvent_ReaderExecutorIncompleteConnections` ([UInt64](/es/reference/data-types/int-uint)) — Número de conexiones de origen que ReaderExecutor descartó antes de leerlas hasta su límite superior; no reutilizables desde el grupo, lo que obliga a restablecer la conexión. Cero hasta que se introduzca la reutilización activa de búferes de origen de ReaderExecutor.
-* `ProfileEvent_ReaderExecutorWorkMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total de reloj empleado dentro de ReaderExecutor::readNextWindow (apertura, reposicionamiento y lectura de la ventana atendida). Contribuye directamente a la latencia de lectura de la consulta.
-* `ProfileEvent_ReaderExecutorDecryptMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo que ReaderExecutor dedicó a descifrar in situ la carga útil atendida (CTR, direccionable por posición). Cero para lecturas sin cifrar y en compilaciones sin SSL.
-* `ProfileEvent_ReaderExecutorModeledCostMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Coste de E/S modelado de las lecturas de ReaderExecutor: un KPI proxy sintético de la optimalidad de la ruta de lectura, NO una latencia medida. Suma ponderada de los contadores anteriores con pesos heurísticos de S3: 30 ms por solicitud de origen + 5 ms por conexión incompleta + 20 ms por MiB transferido desde el origen (carga útil útil más lectura adicional) + 0,1 ms por inserción en caché + 0,05 ms por obtención de caché. Divida por ReaderExecutorDeliveredBytes para obtener un coste por byte independiente de la carga. Experimental; realiza seguimiento del ReaderExecutor experimental.
-* `ProfileEvent_ReaderExecutorLongConnectionOpened` ([UInt64](/es/reference/data-types/int-uint)) — Número de conexiones de origen largas abiertas por ReaderExecutor para optimizar la lectura secuencial.
-* `ProfileEvent_ReaderExecutorLongConnectionHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de ventanas que ReaderExecutor atendió leyendo desde una conexión de origen larga ya abierta.
-* `ProfileEvent_ReaderExecutorLongConnectionFallbacks` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que ReaderExecutor quiso una conexión larga, pero recurrió a una lectura única porque no había ningún slot disponible.
-* `ProfileEvent_ReaderExecutorLongConnectionBytes` ([UInt64](/es/reference/data-types/int-uint)) — Total de bytes leídos a través de conexiones de origen largas.
 * `ProfileEvent_QueryRemoteWriteThrottlerBytes` ([UInt64](/es/reference/data-types/int-uint)) — Bytes que pasaron por el limitador `max_remote_write_network_bandwidth`.
 * `ProfileEvent_QueryRemoteWriteThrottlerSleepMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total durante el que una consulta permaneció en pausa para cumplir con la limitación `max_remote_write_network_bandwidth`.
 * `ProfileEvent_QueryLocalReadThrottlerBytes` ([UInt64](/es/reference/data-types/int-uint)) — Bytes que pasaron por el limitador `max_local_read_bandwidth`.
@@ -296,7 +250,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_PatchesAppliedInAllReadTasks` ([UInt64](/es/reference/data-types/int-uint)) — Número total de patch parts aplicadas entre todas las tareas de lectura
 * `ProfileEvent_PatchesMergeAppliedInAllReadTasks` ([UInt64](/es/reference/data-types/int-uint)) — Número total de patch parts aplicadas en modo Merge entre todas las tareas de lectura
 * `ProfileEvent_PatchesJoinAppliedInAllReadTasks` ([UInt64](/es/reference/data-types/int-uint)) — Número total de patch parts aplicadas en modo Join entre todas las tareas de lectura
-* `ProfileEvent_PatchesMergeOnKeyAppliedInAllReadTasks` ([UInt64](/es/reference/data-types/int-uint)) — Número total de patch parts aplicadas en modo MergeOnKey (v2) entre todas las tareas de lectura
 * `ProfileEvent_PatchesReadRows` ([UInt64](/es/reference/data-types/int-uint)) — Número total de filas leídas de patch parts
 * `ProfileEvent_PatchesReadUncompressedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número total de bytes sin comprimir leídos de patch parts
 * `ProfileEvent_PatchesJoinRowsAddedToHashTable` ([UInt64](/es/reference/data-types/int-uint)) — Número total de filas añadidas a tablas hash al aplicar patch parts en modo Join
@@ -304,7 +257,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_ReadPatchesMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a leer patch parts
 * `ProfileEvent_BuildPatchesMergeMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a construir índices para aplicar patch parts en modo Merge
 * `ProfileEvent_BuildPatchesJoinMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a construir índices y tablas hash para aplicar patch parts en modo Join
-* `ProfileEvent_ApplyPatchMergeOnKeyMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado dentro de los bucles de fusión por clave de ordenación de applyPatchesMergeOnKey
 * `ProfileEvent_AnalyzePatchRangesMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a analizar el índice de las patch parts
 * `ProfileEvent_ReadTasksWithAppliedMutationsOnFly` ([UInt64](/es/reference/data-types/int-uint)) — Número total de tareas de lectura en las que se aplicó alguna mutación sobre la marcha
 * `ProfileEvent_MutationsAppliedOnFlyInAllReadTasks` ([UInt64](/es/reference/data-types/int-uint)) — Número total de mutaciones aplicadas sobre la marcha entre todas las tareas de lectura
@@ -347,7 +299,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_SelfDuplicatedAsyncInserts` ([UInt64](/es/reference/data-types/int-uint)) — Número de inserciones asíncronas en el bloque insertado en una tabla ReplicatedMergeTree que se deduplicaron internamente.
 * `ProfileEvent_DuplicatedAsyncInserts` ([UInt64](/es/reference/data-types/int-uint)) — Número de inserciones asíncronas en el bloque insertado en una tabla ReplicatedMergeTree que se deduplicaron.
 * `ProfileEvent_DuplicationElapsedMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total empleado en comprobar la duplicación de bloques insertados en tablas *MergeTree.
-* `ProfileEvent_DuplicationDataHashComputations` ([UInt64](/es/reference/data-types/int-uint)) — Número de cálculos de hash de datos por columna realizados al deduplicar bloques INSERTados en tablas *MergeTree (fallos de caché en el hash de deduplicación unificado).
 * `ProfileEvent_ZooKeeperInit` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se ha establecido una conexión con ZooKeeper.
 * `ProfileEvent_ZooKeeperTransactions` ([UInt64](/es/reference/data-types/int-uint)) — Número de operaciones de ZooKeeper, incluidas operaciones de lectura y escritura, así como multitransacciones.
 * `ProfileEvent_ZooKeeperList` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes &#39;list&#39; (getChildren) a ZooKeeper.
@@ -366,21 +317,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_ZooKeeperClose` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que la conexión con ZooKeeper se ha cerrado voluntariamente.
 * `ProfileEvent_ZooKeeperGetACL` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes &#39;getACL&#39; a ZooKeeper.
 * `ProfileEvent_ZooKeeperWatchResponse` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se ha recibido una notificación watch de ZooKeeper.
-* `ProfileEvent_ZooKeeperWatchCallbackDurationMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total empleado en los callbacks de watch de ZooKeeper (hilo de red).
-* `ProfileEvent_ZooKeeperWatchCallbackErrors` ([UInt64](/es/reference/data-types/int-uint)) — Número de excepciones generadas por los callbacks de watch de ZooKeeper.
-* `ProfileEvent_ZooKeeperWatchTriggeredOther` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas a callbacks sin categorizar.
-* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedMergeTreeLog` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas a entradas de log de ReplicatedMergeTree.
-* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedMergeTreeMutations` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas a mutaciones de ReplicatedMergeTree.
-* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedMergeTreeLeaderElection` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas a la elección de líder o a los bloqueos de réplicas de ReplicatedMergeTree.
-* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedMergeTreeReplicaSync` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas mientras se espera que las réplicas procesen entradas de log (SYNC REPLICA, ALTER, mutaciones).
-* `ProfileEvent_ZooKeeperWatchTriggeredDistributedDDL` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas a la cola de DDLWorker.
-* `ProfileEvent_ZooKeeperWatchTriggeredReplicatedAccessControl` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas a ReplicatedAccessStorage.
-* `ProfileEvent_ZooKeeperWatchTriggeredUserDefinedSQLObjects` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas a UserDefinedSQLObjectsZooKeeperStorage.
-* `ProfileEvent_ZooKeeperWatchTriggeredWorkloadEntity` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas a WorkloadEntityKeeperStorage.
-* `ProfileEvent_ZooKeeperWatchTriggeredBackupCoordination` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas a la coordinación de copia de seguridad o restauración.
-* `ProfileEvent_ZooKeeperWatchTriggeredObjectStorageQueue` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas a ObjectStorageQueue o S3Queue.
-* `ProfileEvent_ZooKeeperWatchTriggeredClusterDiscovery` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas a ClusterDiscovery.
-* `ProfileEvent_ZooKeeperWatchTriggeredMaterializedViewRefresh` ([UInt64](/es/reference/data-types/int-uint)) — Número de notificaciones de watch enviadas a la coordinación de actualización de MaterializedView.
 * `ProfileEvent_ZooKeeperUserExceptions` ([UInt64](/es/reference/data-types/int-uint)) — Número de excepciones al trabajar con ZooKeeper relacionadas con los datos (nodo inexistente, versión incorrecta o similar).
 * `ProfileEvent_ZooKeeperHardwareExceptions` ([UInt64](/es/reference/data-types/int-uint)) — Número de excepciones al trabajar con ZooKeeper relacionadas con la red (pérdida de conexión o similar).
 * `ProfileEvent_ZooKeeperOtherExceptions` ([UInt64](/es/reference/data-types/int-uint)) — Número de excepciones al trabajar con ZooKeeper distintas de ZooKeeperUserExceptions y ZooKeeperHardwareExceptions.
@@ -394,7 +330,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_DistributedConnectionStaleReplica` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se rechazó una réplica de una consulta distribuida porque alguna tabla necesaria para la consulta tenía un retraso de replicación superior al umbral configurado.
 * `ProfileEvent_DistributedConnectionSkipReadOnlyReplica` ([UInt64](/es/reference/data-types/int-uint)) — Número de réplicas omitidas durante `INSERT` en una tabla Distributed debido a que las réplicas eran de solo lectura
 * `ProfileEvent_DistributedConnectionFailAtAll` ([UInt64](/es/reference/data-types/int-uint)) — Recuento total de veces que una conexión distribuida falla tras agotarse todos los reintentos.
-* `ProfileEvent_DistributedShardsSkipped` ([UInt64](/es/reference/data-types/int-uint)) — Número de segmentos omitidos silenciosamente en una consulta a una tabla Distributed (o a las funciones de tabla remote/cluster) cuando `skip_unavailable_shards` está habilitado, ya sea porque el segmento no estaba disponible o porque generó una excepción cubierta por `skip_unavailable_shards_mode`.
 * `ProfileEvent_Shards` ([UInt64](/es/reference/data-types/int-uint)) — Número de segmentos implicados en una consulta, sumado entre todas las tablas distribuidas y las funciones de tabla. Un mismo host se cuenta varias veces si aparece en varias tablas. El recuento refleja el número total esperado de segmentos, incluidos los segmentos omitidos con la configuración `skip_unavailable_shards`.
 * `ProfileEvent_HedgedRequestsChangeReplica` ([UInt64](/es/reference/data-types/int-uint)) — Recuento total de veces que expiró el timeout para cambiar de réplica en solicitudes hedged.
 * `ProfileEvent_SuspendSendingQueryToShard` ([UInt64](/es/reference/data-types/int-uint)) — Recuento total de veces que se suspendió el envío de la consulta al segmento cuando async&#95;query&#95;sending&#95;for&#95;remote está habilitado.
@@ -402,7 +337,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_CompiledFunctionExecute` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se ejecutó una función compilada.
 * `ProfileEvent_CompileExpressionsMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a compilar expresiones a código LLVM.
 * `ProfileEvent_CompileExpressionsBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes utilizados para la compilación de expresiones.
-* `ProfileEvent_CompileRegexpFunction` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que una expresión regular se compiló con JIT a código máquina.
 * `ProfileEvent_ExecuteShellCommand` ([UInt64](/es/reference/data-types/int-uint)) — Número de ejecuciones de comandos de shell.
 * `ProfileEvent_ExternalProcessingCompressedBytesTotal` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes comprimidos escritos por el procesamiento externo (ordenación/agregación/join)
 * `ProfileEvent_ExternalProcessingUncompressedBytesTotal` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de datos (sin comprimir, antes de la compresión) escrita por el procesamiento externo (ordenación/agregación/join)
@@ -434,10 +368,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_JoinReorderMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total empleado en ejecutar el algoritmo de reordenación de JOIN.
 * `ProfileEvent_JoinOptimizeMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total empleado en ejecutar las optimizaciones del plan de JOIN.
 * `ProfileEvent_QueryPlanOptimizeMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total empleado en ejecutar las optimizaciones del plan de consulta.
-* `ProfileEvent_QueryParseMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a analizar el texto de la consulta para convertirlo en un AST.
-* `ProfileEvent_QueryAnalysisMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a crear el árbol de consulta y ejecutar las pasadas del analizador (resolución de identificadores, tipos y expresiones).
-* `ProfileEvent_QueryPlanBuildMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a crear el QueryPlan a partir del árbol de consulta analizado.
-* `ProfileEvent_QueryPipelineBuildMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a construir el QueryPipeline a partir del QueryPlan optimizado.
 * `ProfileEvent_DeltaLakePartitionPrunedFiles` ([UInt64](/es/reference/data-types/int-uint)) — Número de archivos omitidos durante la poda de particiones de DeltaLake
 * `ProfileEvent_DeltaLakeSnapshotInitializations` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se inicializó una instantánea de tabla de DeltaLake (cargada desde almacenamiento de objetos)
 * `ProfileEvent_DeltaLakeScannedFiles` ([UInt64](/es/reference/data-types/int-uint)) — Número de archivos analizados durante los callbacks de escaneo de DeltaLake
@@ -445,12 +375,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_ReadBackoff` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se redujo el número de hilos de procesamiento de consultas debido a lecturas lentas.
 * `ProfileEvent_ReplicaPartialShutdown` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que una tabla Replicated tiene que desinicializar su estado debido al vencimiento de la sesión en ZooKeeper. El estado se reinicializa cada vez que ZooKeeper vuelve a estar disponible.
 * `ProfileEvent_IndexAnalysisRounds` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se realizó el análisis de índices dentro de la consulta.
-* `ProfileEvent_UniqueKeyIndexCacheLookupMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de reloj transcurrido dentro de `UniqueKeyIndexCache::Lookup` + `UniqueKeyIndexCache::Insert` (adaptador `CacheBase` del lado de ClickHouse para la caché de bloques de RocksDB).
-* `ProfileEvent_UniqueKeyIndexCacheHits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se encontró una entrada en la caché de índices UNIQUE KEY, por lo que no fue necesario cargar un bloque SST.
-* `ProfileEvent_UniqueKeyIndexCacheMisses` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se encontró una entrada en la caché de índices UNIQUE KEY, por lo que fue necesario cargar un bloque SST desde el disco.
-* `ProfileEvent_UniqueKeySSTWriteMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total de reloj transcurrido durante la vida útil de un `SSTIndexWriter`: abarca la apertura (`Open`) del SST, cada operación Put de `addEncoded` y la finalización de `Finish` + `WriteBuffer` en `finalizeToStorage` (los bytes del SST se transmiten directamente al `WriteBuffer` del almacenamiento de la parte). Excluye el trabajo que realizan los asistentes estáticos antes de crear el escritor (codificación + ordenación de rutas sin prefijo). Se emite una vez por escritor.
-* `ProfileEvent_UniqueKeyLoadTimeSSTRebuildCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de partes UNIQUE KEY cuyo `unique_key_index.sst` se reconstruyó en el momento de la carga tras la ventana de fallo antes del vaciado.
-* `ProfileEvent_UniqueKeyLoadTimeSSTRebuildMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a reconstruir `unique_key_index.sst` en el momento de la carga (lectura secuencial de columnas UK + escritura de SST).
 * `ProfileEvent_SelectedParts` ([UInt64](/es/reference/data-types/int-uint)) — Número de partes de datos seleccionadas para leer de una tabla MergeTree.
 * `ProfileEvent_SelectedPartsTotal` ([UInt64](/es/reference/data-types/int-uint)) — Número total de partes de datos antes de seleccionar cuáles leer de una tabla MergeTree.
 * `ProfileEvent_SelectedRanges` ([UInt64](/es/reference/data-types/int-uint)) — Número de rangos (no adyacentes) en todas las partes de datos seleccionadas para leer de una tabla MergeTree.
@@ -572,15 +496,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_RegexpLocalCacheMiss` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no pudimos recuperar una expresión regular compilada de una caché local.
 * `ProfileEvent_ContextLock` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se adquirió o se intentó adquirir el bloqueo de Context. Este es un bloqueo global.
 * `ProfileEvent_ContextLockWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de espera del bloqueo de Context en microsegundos
-* `ProfileEvent_RowPolicyCacheRecalculations` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que la caché de políticas de fila volvió a combinar los filtros para todos los conjuntos activos habilitados. Se agrupa en una sola vez por lote de notificaciones de entidades de acceso.
-* `ProfileEvent_RowPolicyCacheRecalculationMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a volver a combinar los filtros de políticas de fila para todos los conjuntos activos habilitados, fuera del mutex de RowPolicyCache (por lo que no bloquea la ruta de compilación de ContextAccess).
-* `ProfileEvent_RoleCacheRecalculations` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que la caché de roles recalculó todos los conjuntos de roles activos habilitados. Se agrupa en una sola vez por lote de notificaciones de entidades de acceso.
-* `ProfileEvent_RoleCacheRecalculationMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a recalcular todos los conjuntos de roles activos habilitados (mantenido bajo el mutex de la caché que también adquiere la ruta de compilación de ContextAccess).
-* `ProfileEvent_SettingsProfileCacheRecalculations` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que la caché de perfiles de configuración volvió a fusionar las configuraciones y restricciones para todos los conjuntos activos habilitados. Se agrupa en una sola vez por lote de notificaciones de entidades de acceso.
-* `ProfileEvent_SettingsProfileCacheRecalculationMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a volver a fusionar configuraciones y restricciones para todos los conjuntos habilitados activos (se mantiene bajo el mutex de la caché que también utiliza la ruta de compilación de ContextAccess).
-* `ProfileEvent_QuotaCacheRecalculations` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que la caché de cuotas volvió a seleccionar cuotas para todos los conjuntos habilitados activos. Se agrupa en una por lote de notificaciones de entidades de acceso.
-* `ProfileEvent_QuotaCacheRecalculationMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a volver a seleccionar cuotas para todos los conjuntos habilitados activos (se mantiene bajo el mutex de la caché que también utiliza la ruta de compilación de ContextAccess).
-* `ProfileEvent_FileProgressCallbackInvocations` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se invocó el `FileProgressCallback` por consulta (cuenta cada evento `FileProgress` por archivo entregado al cliente mediante TCP nativo o a través de `clickhouse-local`).
 * `ProfileEvent_StorageBufferFlush` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se volcó un búfer en una tabla &#39;Buffer&#39;.
 * `ProfileEvent_StorageBufferErrorOnFlush` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que un búfer de la tabla &#39;Buffer&#39; no pudo volcarse debido a un error de escritura en la tabla de destino.
 * `ProfileEvent_StorageBufferPassedAllMinThresholds` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se alcanzó un criterio de umbrales mínimos para volcar un búfer en una tabla &#39;Buffer&#39;.
@@ -617,6 +532,10 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
   9. La configuración relacionada con el formato de las partes, como &#39;enable&#95;mixed&#95;granularity&#95;parts&#39;, es diferente en distintas réplicas.
      El servidor detectó correctamente esta situación y descargará la parte fusionada desde la réplica para forzar un resultado idéntico byte a byte.
 * `ProfileEvent_DataAfterMutationDiffersFromReplica` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que los datos tras una mutación no son idénticos byte a byte a los datos de otras réplicas. Además de las razones descritas en &#39;DataAfterMergeDiffersFromReplica&#39;, esto también puede deberse a una mutación no determinista.
+* `ProfileEvent_PolygonsAddedToPool` ([UInt64](/es/reference/data-types/int-uint)) — Se ha añadido un polígono a la caché (grupo) para la función &#39;pointInPolygon&#39;.
+* `ProfileEvent_PolygonsInPoolAllocatedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes asignados a los polígonos añadidos a la caché (grupo) para la función &#39;pointInPolygon&#39;.
+* `ProfileEvent_NaiveBayesClassifierModelsLoaded` ([UInt64](/es/reference/data-types/int-uint)) — Número de modelos del clasificador Naive Bayes cargados.
+* `ProfileEvent_NaiveBayesClassifierModelsAllocatedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes asignados para los modelos del clasificador Naive Bayes.
 * `ProfileEvent_USearchAddCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de vectores añadidos a los índices de usearch.
 * `ProfileEvent_USearchAddVisitedMembers` ([UInt64](/es/reference/data-types/int-uint)) — Número de nodos visitados al añadir vectores a los índices de usearch.
 * `ProfileEvent_USearchAddComputedDistances` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se calculó la distancia al añadir vectores a los índices de usearch.
@@ -657,8 +576,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_ParallelReplicasReadUnassignedMarks` ([UInt64](/es/reference/data-types/int-uint)) — Suma, en todas las réplicas, de cuántas marcas no asignadas fueron programadas
 * `ProfileEvent_ParallelReplicasReadAssignedForStealingMarks` ([UInt64](/es/reference/data-types/int-uint)) — Suma, en todas las réplicas, de cuántas de las marcas programadas fueron asignadas para robo mediante hash consistente
 * `ProfileEvent_ParallelReplicasReadMarks` ([UInt64](/es/reference/data-types/int-uint)) — Cuántas marcas fueron leídas por la réplica dada
-* `ProfileEvent_ReadPoolRangeRefinerDroppedMarks` ([UInt64](/es/reference/data-types/int-uint)) — Número de marcas descartadas de las tareas de lectura por un refinador de rangos en los grupos de lectura de MergeTree (por ejemplo, marcas filtradas por completo mediante un índice de proyección)
-* `ProfileEvent_ReadPoolRangeRefinerDroppedCuts` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que un refinador de rangos descartó por completo rangos extraídos de una parte por un grupo de lectura de MergeTree, de modo que no se creó ninguna tarea de lectura para ellos
 * `ProfileEvent_ParallelReplicasStealingByHashMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a recopilar segmentos destinados al robo mediante hash
 * `ProfileEvent_ParallelReplicasProcessingPartsMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a procesar partes de datos
 * `ProfileEvent_ParallelReplicasStealingLeftoversMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a recopilar segmentos huérfanos
@@ -773,7 +690,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_WriteBufferFromS3RequestsErrors` ([UInt64](/es/reference/data-types/int-uint)) — Número de excepciones al escribir en S3.
 * `ProfileEvent_WriteBufferFromS3WaitInflightLimitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a esperar mientras algunas de las solicitudes actuales finalizan al alcanzar su número el límite definido por s3&#95;max&#95;inflight&#95;parts&#95;for&#95;one&#95;file.
 * `ProfileEvent_QueryMemoryLimitExceeded` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se superó el límite de memoria de la consulta.
-* `ProfileEvent_GlobalMemoryLimitExceeded` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se superó el límite global de memoria.
 * `ProfileEvent_MemoryAllocatedWithoutCheck` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se asignó memoria sin comprobar las restricciones de memoria.
 * `ProfileEvent_MemoryAllocatedWithoutCheckBytes` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de bytes asignados sin comprobar las restricciones de memoria.
 * `ProfileEvent_AzureGetObject` ([UInt64](/es/reference/data-types/int-uint)) — Número de llamadas a GetObject de la API de Azure.
@@ -810,11 +726,9 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_CachedReadBufferPredownloadedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Bytes leídos desde el origen de la caché del sistema de archivos. Los segmentos de la caché se leen completos de izquierda a derecha; puede que sea necesario predescargar alguna parte del segmento que no sea relevante para la tarea actual solo para llegar a los datos necesarios
 * `ProfileEvent_CachedReadBufferCacheWriteBytes` ([UInt64](/es/reference/data-types/int-uint)) — Bytes escritos desde el origen (sistema de archivos remoto, etc.) en la caché del sistema de archivos
 * `ProfileEvent_CachedReadBufferCacheWriteMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a escribir datos en la caché del sistema de archivos
-* `ProfileEvent_CachedReadBufferCacheWriteStopped` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se interrumpió la escritura de un segmento de archivo en la caché del sistema de archivos a mitad de la descarga (falló la reserva de espacio o la escritura en la caché), tras lo cual la lectura continúa omitiendo la caché
 * `ProfileEvent_CachedReadBufferCreateBufferMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de preparación del búfer
 * `ProfileEvent_CachedWriteBufferCacheWriteBytes` ([UInt64](/es/reference/data-types/int-uint)) — Bytes escritos desde el origen (remote fs, etc.) en la caché del sistema de archivos
 * `ProfileEvent_CachedWriteBufferCacheWriteMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a escribir datos en la caché del sistema de archivos
-* `ProfileEvent_CachedWriteBufferCacheWriteStopped` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se interrumpió el almacenamiento en caché write-through (falló la reserva de espacio o la escritura en la caché, o se estaba expulsando un segmento que lo cubría), tras lo cual la escritura continúa sin llenar la caché
 * `ProfileEvent_FilesystemCacheLoadMetadataMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a cargar los metadatos de la caché del sistema de archivos
 * `ProfileEvent_FilesystemCacheEvictedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes expulsados de la caché del sistema de archivos
 * `ProfileEvent_FilesystemCacheCreatedKeyDirectories` ([UInt64](/es/reference/data-types/int-uint)) — Número de directorios de claves creados
@@ -826,29 +740,21 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_FilesystemCacheEvictionSkippedMovingFileSegments` ([UInt64](/es/reference/data-types/int-uint)) — Número de segmentos de archivo omitidos para expulsión por estar en estado de movimiento
 * `ProfileEvent_FilesystemCacheEvictionTries` ([UInt64](/es/reference/data-types/int-uint)) — Número de intentos de expulsión de la caché del sistema de archivos
 * `ProfileEvent_FilesystemCacheEvictionReusedIterator` ([UInt64](/es/reference/data-types/int-uint)) — Número de reutilizaciones del iterador de la caché del sistema de archivos
-* `ProfileEvent_FilesystemCacheOvercommitCandidatesIterationSteps` ([UInt64](/es/reference/data-types/int-uint)) — Número de iteraciones externas que el bucle de expulsión por overcommit ejecutó después de la primera pasada para cubrir el déficit de una reserva
 * `ProfileEvent_FilesystemCacheLockKeyMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de bloqueo de la clave de caché
 * `ProfileEvent_FilesystemCacheLockMetadataMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de bloqueo de los metadatos de la caché del sistema de archivos
-* `ProfileEvent_FilesystemCacheLockOriginPoolMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de bloqueo del grupo compartido de orígenes de la caché del sistema de archivos
 * `ProfileEvent_FilesystemCachePriorityWriteLockMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de bloqueo de la caché del sistema de archivos para escritura en la cola de prioridad
 * `ProfileEvent_FilesystemCachePriorityReadLockMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de bloqueo de la caché del sistema de archivos para lectura en la cola de prioridad
 * `ProfileEvent_FilesystemCacheStateLockMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de bloqueo del estado de la caché del sistema de archivos
 * `ProfileEvent_FilesystemCacheReserveMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de reserva de espacio en la caché del sistema de archivos
 * `ProfileEvent_FilesystemCacheReserveAttempts` ([UInt64](/es/reference/data-types/int-uint)) — Número de intentos de reserva de espacio en la caché del sistema de archivos
-* `ProfileEvent_FilesystemCacheFailedReserveAttempts` ([UInt64](/es/reference/data-types/int-uint)) — Número de intentos fallidos de reserva de espacio en la caché de archivos.
 * `ProfileEvent_FilesystemCacheEvictMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de expulsión de la caché del sistema de archivos
 * `ProfileEvent_FilesystemCacheGetOrSetMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de getOrSet() de la caché del sistema de archivos
 * `ProfileEvent_FilesystemCacheGetMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de get() de la caché del sistema de archivos
 * `ProfileEvent_FilesystemCacheBackgroundEvictedFileSegments` ([UInt64](/es/reference/data-types/int-uint)) — Número de segmentos de archivo desalojados por el hilo en segundo plano
 * `ProfileEvent_FilesystemCacheBackgroundEvictedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes desalojados por el hilo en segundo plano
-* `ProfileEvent_FilesystemCacheIdleClientEvictions` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se purgaron todas las entradas de caché de un client de caché distribuida inactivo (`user_id`) porque no se produjo ningún acceso dentro de `idle_client_ttl_sec`.
-* `ProfileEvent_FilesystemCacheBackgroundRemovedInvalidatedEntries` ([UInt64](/es/reference/data-types/int-uint)) — Número de entradas invalidadas de la cola de prioridad (eliminadas de forma diferida) purgadas por el hilo de limpieza en segundo plano
-* `ProfileEvent_FilesystemCacheClientsMapLockWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a esperar un bloqueo de segmento del mapa de uso por client (`user_id`) en contención en la política de caché overcommit
-* `ProfileEvent_FilesystemCacheInvalidatedEntriesCleanupThreadWorkMilliseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo durante el cual el hilo en segundo plano ejecutó la tarea de limpieza de entradas invalidadas de la cola de prioridad
 * `ProfileEvent_FilesystemCacheCheckCorrectness` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se llamó a FileCache::assertCacheCorrectness
 * `ProfileEvent_FilesystemCacheCheckCorrectnessMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo que tarda FileCache::assertCacheCorrectness
 * `ProfileEvent_FileSegmentWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de espera en el estado DOWNLOADING
-* `ProfileEvent_FileSegmentWaitTimeouts` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que expiró el tiempo de espera de un segmento de archivo en estado DOWNLOADING (consulte `filesystem_cache_wait_for_concurrent_download_timeout_milliseconds`)
 * `ProfileEvent_FileSegmentCompleteMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Duración de FileSegment::complete() en la caché del sistema de archivos
 * `ProfileEvent_FileSegmentLockMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de bloqueo del segmento de archivo
 * `ProfileEvent_FileSegmentWriteMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de write() del segmento de archivo
@@ -862,7 +768,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_FilesystemCacheUnusedHoldFileSegments` ([UInt64](/es/reference/data-types/int-uint)) — Recuento de segmentos de archivo retenidos en la caché del sistema de archivos, pero no utilizados (debido a un reposicionamiento o a LIMIT n, etc.)
 * `ProfileEvent_FilesystemCacheFreeSpaceKeepingThreadRun` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el hilo en segundo plano ejecutó la tarea de mantenimiento del espacio libre
 * `ProfileEvent_FilesystemCacheFreeSpaceKeepingThreadWorkMilliseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo durante el cual el hilo en segundo plano ejecutó la tarea de mantenimiento del espacio libre
-* `ProfileEvent_FilesystemCacheFreeSpaceKeepingThreadErrors` ([UInt64](/es/reference/data-types/int-uint)) — Número de excepciones capturadas por la tarea en segundo plano de mantenimiento del espacio libre (recopilación, eliminación o finalización)
 * `ProfileEvent_FilesystemCacheFailedEvictionCandidates` ([UInt64](/es/reference/data-types/int-uint)) — Número de segmentos de archivo que, inesperadamente, no pudieron desalojarse durante el desalojo dinámico de la caché del sistema de archivos
 * `ProfileEvent_RemoteFSSeeks` ([UInt64](/es/reference/data-types/int-uint)) — Número total de reposicionamientos del búfer asíncrono
 * `ProfileEvent_RemoteFSPrefetches` ([UInt64](/es/reference/data-types/int-uint)) — Número de precargas realizadas con lectura asíncrona desde el sistema de archivos remoto
@@ -903,23 +808,7 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_ExternalDataSourceLocalCacheReadBytes` ([UInt64](/es/reference/data-types/int-uint)) — Bytes leídos del búfer de caché local en RemoteReadBufferCache
 * `ProfileEvent_MainConfigLoads` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se recargó la configuración principal.
 * `ProfileEvent_AggregationPreallocatedElementsInHashTables` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de elementos preasignados en tablas hash para la agregación.
-* `ProfileEvent_AdaptiveAggregationLocalFreezes` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de tablas hash locales que la agregación adaptativa congeló al alcanzar el umbral de congelación.
-* `ProfileEvent_AdaptiveAggregationGiveUps` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de hilos que desistieron de congelarse en la agregación adaptativa porque su flujo contenía pocas claves distintas.
-* `ProfileEvent_AdaptiveAggregationPressureStandDowns` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de hilos de la agregación adaptativa que abandonaron definitivamente la fase de aprendizaje porque la presión de memoria superó el umbral de agregación externa, de modo que sus tablas locales se vuelcan mediante la agregación externa normal.
-* `ProfileEvent_AdaptiveAggregationThaws` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que la agregación adaptativa descongeló las tablas locales porque el flujo por etapas resultó estar dominado por repeticiones.
-* `ProfileEvent_AdaptiveAggregationProbeBypasses` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de hilos que dejaron de sondear su tabla local congelada en la agregación adaptativa porque casi ninguna fila coincidía con ella.
-* `ProfileEvent_AdaptiveAggregationStagedRecords` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de registros diferidos que la agregación adaptativa preparó antes de la deduplicación.
-* `ProfileEvent_AdaptiveAggregationStagedRecordsMerged` ([UInt64](/es/reference/data-types/int-uint)) — Número de registros preparados que la agregación adaptativa fusionó como claves duplicadas durante la publicación y el sellado.
-* `ProfileEvent_AdaptiveAggregationStagedBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes de claves que la agregación adaptativa preparó para el drenaje durante la fusión.
-* `ProfileEvent_AdaptiveAggregationSealedChunks` ([UInt64](/es/reference/data-types/int-uint)) — Número de fragmentos coalescidos que la agregación adaptativa selló a partir de lotes de preparación almacenados temporalmente en el búfer.
-* `ProfileEvent_AdaptiveAggregationSealNormalizations` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el sellado de la agregación adaptativa normalizó las representaciones de columnas porque los lotes almacenados temporalmente en el búfer diferían en una posición de argumento.
-* `ProfileEvent_AdaptiveAggregationDrainedRecords` ([UInt64](/es/reference/data-types/int-uint)) — Número de registros diferidos que la agregación adaptativa drenó a la tabla compartida durante la fusión.
-* `ProfileEvent_AdaptiveAggregationPressureSweeps` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que la agregación adaptativa drenó registros preparados anticipadamente debido a la presión de memoria.
-* `ProfileEvent_AdaptiveAggregationPressureDrainedRecords` ([UInt64](/es/reference/data-types/int-uint)) — Número de registros preparados que la agregación adaptativa drenó anticipadamente bajo presión de memoria.
-* `ProfileEvent_AdaptiveAggregationBucketsRetired` ([UInt64](/es/reference/data-types/int-uint)) — Número de buckets de dos niveles cuya memoria de trabajo (slot de arena, referencias a fragmentos preparados) se liberó justo después de completar su fusión y conversión, antes de que finalizara toda la fusión.
-* `ProfileEvent_AggregationBucketTopKConversions` ([UInt64](/es/reference/data-types/int-uint)) — Número de buckets de dos niveles convertidos mediante la selección Top-K local del bucket (la optimización del plan aggregationBucketTopK).
 * `ProfileEvent_AggregationHashTablesInitializedAsTwoLevel` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de tablas hash inicializadas como de dos niveles para la agregación.
-* `ProfileEvent_AggregationConvertedToTwoLevel` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que una tabla hash de agregación de un nivel se convirtió en una de dos niveles en tiempo de ejecución.
 * `ProfileEvent_AggregationOptimizedEqualRangesOfKeys` ([UInt64](/es/reference/data-types/int-uint)) — Número de bloques en los que se aplicó la optimización de rangos iguales de claves
 * `ProfileEvent_HashJoinPreallocatedElementsInHashTables` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de elementos preasignados en tablas hash para hash join.
 * `ProfileEvent_MetadataFromKeeperCacheHit` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que una solicitud de metadatos de almacenamiento de objetos se resolvió desde la caché sin realizar una solicitud a Keeper
@@ -1001,14 +890,10 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_KeeperReadRequestQueueLockWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de espera para adquirir el bloqueo de la cola de solicitudes de lectura de Keeper
 * `ProfileEvent_KeeperProcessAndResponsesLockWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de espera para adquirir el bloqueo de procesamiento y respuestas de Keeper
 * `ProfileEvent_KeeperCommitWaitElapsedMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de espera hasta que se haga commit de un determinado log
-* `ProfileEvent_KeeperBatchMaxCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de lotes que alcanzaron el límite max&#95;requests&#95;batch&#95;size
-* `ProfileEvent_KeeperBatchMaxTotalSize` ([UInt64](/es/reference/data-types/int-uint)) — Número de lotes que alcanzaron el límite max&#95;requests&#95;batch&#95;bytes&#95;size
-* `ProfileEvent_KeeperBatchMaxReadCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de lotes que alcanzaron el límite max&#95;read&#95;batch&#95;size
-* `ProfileEvent_KeeperBatchMaxReadTotalSize` ([UInt64](/es/reference/data-types/int-uint)) — Número de lotes que alcanzaron el límite max&#95;read&#95;batch&#95;bytes&#95;size
+* `ProfileEvent_KeeperBatchMaxCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el tamaño del lote estuvo limitado por la cantidad
+* `ProfileEvent_KeeperBatchMaxTotalSize` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el tamaño del lote estuvo limitado por el tamaño total en bytes
 * `ProfileEvent_KeeperReadBatchCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de lotes de solicitudes de lectura procesados por Keeper
 * `ProfileEvent_KeeperReadBatchTotalRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número total de solicitudes de lectura procesadas en lotes por Keeper
-* `ProfileEvent_KeeperWriteBatchCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de lotes de solicitudes de escritura procesados por Keeper
-* `ProfileEvent_KeeperWriteBatchTotalRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número total de solicitudes de escritura procesadas en lotes por Keeper
 * `ProfileEvent_KeeperCommits` ([UInt64](/es/reference/data-types/int-uint)) — Número de commits exitosos
 * `ProfileEvent_KeeperCommitsFailed` ([UInt64](/es/reference/data-types/int-uint)) — Número de commits fallidos
 * `ProfileEvent_KeeperSnapshotCreations` ([UInt64](/es/reference/data-types/int-uint)) — Número de creaciones de instantáneas
@@ -1018,7 +903,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_KeeperReadSnapshot` ([UInt64](/es/reference/data-types/int-uint)) — Número de lecturas de snapshot completadas
 * `ProfileEvent_KeeperReadSnapshotObject` ([UInt64](/es/reference/data-types/int-uint)) — Número de objetos de snapshot enviados a followers
 * `ProfileEvent_KeeperReadSnapshotFailed` ([UInt64](/es/reference/data-types/int-uint)) — Número de lecturas de snapshot fallidas
-* `ProfileEvent_KeeperReadSnapshotDeferred` ([UInt64](/es/reference/data-types/int-uint)) — Número de lecturas de snapshot aplazadas porque el snapshot solicitado ya no está disponible localmente; NuRaft reintentará el snapshot más reciente.
 * `ProfileEvent_KeeperSnapshotRemoteLoaderErrors` ([UInt64](/es/reference/data-types/int-uint)) — Número de errores de lectura remota en RemoteSnapshotLoader al servir un snapshot a un follower
 * `ProfileEvent_KeeperSaveSnapshotObject` ([UInt64](/es/reference/data-types/int-uint)) — Número de objetos de snapshot recibidos del leader
 * `ProfileEvent_KeeperSaveSnapshotFailed` ([UInt64](/es/reference/data-types/int-uint)) — Número de guardados de snapshot fallidos
@@ -1040,14 +924,7 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_KeeperCheckWatchRequest` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes de remove watches
 * `ProfileEvent_KeeperRequestRejectedDueToSoftMemoryLimitCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes rechazadas por superar el soft memory limit
 * `ProfileEvent_KeeperStaleRequestsSkipped` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes de Keeper omitidas porque la sesión ya no está activa
-* `ProfileEvent_KeeperTTLRemoveRequestsEnqueued` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes de eliminación por TTL encoladas correctamente
-* `ProfileEvent_KeeperTTLRemoveRequestsDropped` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes de eliminación por TTL descartadas porque la cola estaba llena
 * `ProfileEvent_KeeperLiveSessionsLockWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a esperar para adquirir el bloqueo de sesiones activas de Keeper
-* `ProfileEvent_KeeperWatchesTriggered` ([UInt64](/es/reference/data-types/int-uint)) — Número de activaciones de watches
-* `ProfileEvent_KeeperWatchTriggeredNodeCreated` ([UInt64](/es/reference/data-types/int-uint)) — Número de activaciones de watches por la operación `CREATE`
-* `ProfileEvent_KeeperWatchTriggeredNodeDeleted` ([UInt64](/es/reference/data-types/int-uint)) — Número de activaciones de watches por la operación `DELETE`
-* `ProfileEvent_KeeperWatchTriggeredNodeDataChanged` ([UInt64](/es/reference/data-types/int-uint)) — Número de activaciones de watches por operaciones de cambio
-* `ProfileEvent_KeeperWatchTriggeredNodeChildrenChanged` ([UInt64](/es/reference/data-types/int-uint)) — Número de activaciones de watches por operaciones de cambio de hijos
 * `ProfileEvent_OverflowBreak` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el procesamiento de datos se canceló debido a la limitación de complejidad de la consulta con la configuración &#39;*&#95;overflow&#95;mode&#39; = &#39;break&#39;, y el resultado quedó incompleto.
 * `ProfileEvent_OverflowThrow` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el procesamiento de datos se canceló debido a la limitación de complejidad de la consulta con la configuración &#39;*&#95;overflow&#95;mode&#39; = &#39;throw&#39; y se lanzó una excepción.
 * `ProfileEvent_OverflowAny` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se aplicó un GROUP BY aproximado: cuando la agregación se realizó solo sobre las primeras &#39;max&#95;rows&#95;to&#95;group&#95;by&#39; claves únicas y las demás claves se ignoraron debido a &#39;group&#95;by&#95;overflow&#95;mode&#39; = &#39;any&#39;.
@@ -1074,8 +951,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_ObjectStorageQueueTaggedObjects` ([UInt64](/es/reference/data-types/int-uint)) — Número de objetos etiquetados como parte de after&#95;processing = tag
 * `ProfileEvent_ObjectStorageQueueInsertIterations` ([UInt64](/es/reference/data-types/int-uint)) — Número de iteraciones de inserción
 * `ProfileEvent_ObjectStorageQueueCommitRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes a Keeper para hacer commit de archivos como fallidos o procesados
-* `ProfileEvent_ObjectStorageQueueBucketLockLostOwnership` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se detectó la pérdida de la propiedad de un bloqueo de bucket en S3(Azure)Queue. Un valor distinto de cero indica que persistent&#95;processing&#95;node&#95;ttl&#95;seconds es demasiado pequeño o que existe un bug
-* `ProfileEvent_ObjectStorageQueueBucketLockRefreshes` ([UInt64](/es/reference/data-types/int-uint)) — Número de actualizaciones correctas del bloqueo de bucket en S3(Azure)Queue
 * `ProfileEvent_ObjectStorageQueueSuccessfulCommits` ([UInt64](/es/reference/data-types/int-uint)) — Número de commits de Keeper realizados correctamente
 * `ProfileEvent_ObjectStorageQueueUnsuccessfulCommits` ([UInt64](/es/reference/data-types/int-uint)) — Número de commits de Keeper fallidos
 * `ProfileEvent_ObjectStorageQueueCancelledFiles` ([UInt64](/es/reference/data-types/int-uint)) — Número de archivos cancelados en StorageS3(Azure)Queue
@@ -1122,7 +997,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_MergerMutatorSelectRangePartsCount` ([UInt64](/es/reference/data-types/int-uint)) — Cantidad de partes en el rango seleccionado para la fusión
 * `ProfileEvent_ConnectionPoolIsFullMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a esperar un hueco en el grupo de conexiones.
 * `ProfileEvent_AsyncLoaderWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total que una consulta estuvo esperando trabajos del cargador asíncrono.
-* `ProfileEvent_AsyncLoaderSpawnFailures` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el cargador asíncrono no pudo generar un worker porque el grupo global de hilos no pudo proporcionar un hilo. Los trabajos en cola se ejecutan entonces mediante un worker que el grupo ya tiene: uno que está en ejecución o uno que se reanuda tras esperar un trabajo de otro grupo.
 * `ProfileEvent_DistrCacheServerSwitches` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de lectura de Distributed Cache. Número de cambios de server entre servers de Distributed Cache en la caché read/write-through
 * `ProfileEvent_DistrCacheReadMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de lectura de Distributed Cache. Tiempo dedicado a leer desde Distributed Cache
 * `ProfileEvent_DistrCacheFallbackReadMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de lectura de Distributed Cache. Tiempo dedicado a leer desde el búfer de respaldo en lugar de Distributed Cache
@@ -1132,41 +1006,28 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_DistrCacheRangeChange` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de lectura de Distributed Cache. Número de veces que cambiamos el rango de lectura debido a un cambio en seek/last&#95;position
 * `ProfileEvent_DistrCacheRangeResetBackward` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de lectura de Distributed Cache. Número de veces que restablecimos el rango de lectura debido a un cambio en seek/last&#95;position
 * `ProfileEvent_DistrCacheRangeResetForward` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de lectura de Distributed Cache. Número de veces que restablecimos el rango de lectura debido a un cambio en seek/last&#95;position
-* `ProfileEvent_DistrCacheReadRequestRetries` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de lectura de Distributed Cache. Número de reintentos de solicitudes de lectura tras un error reintentable (incluidos los reintentos de creación de la solicitud inicial)
+* `ProfileEvent_DistrCacheReconnectsAfterTimeout` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de lectura de Distributed Cache. Número de reconexiones tras un timeout
 * `ProfileEvent_DistrCacheServerUpdates` ([UInt64](/es/reference/data-types/int-uint)) — Evento de Distributed Cache. Número de cambios de server durante la lectura o escritura porque cambió el server elegido por hash (p. ej., debido a la anulación del registro del server)
-* `ProfileEvent_DistrCacheReadErrors` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número total de errores de Distributed Cache durante las solicitudes de lectura (igual a DistrCacheReadErrorsRetriable + DistrCacheReadErrorsNonRetriable)
-* `ProfileEvent_DistrCacheReadErrorsRetriable` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de errores reintentables de Distributed Cache durante las solicitudes de lectura (contados en cada ocurrencia, incluidos los recuperados mediante un reintento)
-* `ProfileEvent_DistrCacheReadErrorsNonRetriable` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de errores no reintentables de Distributed Cache durante las solicitudes de lectura
-* `ProfileEvent_DistrCacheReadRequestRetriesExhausted` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de lectura de Distributed Cache. Número de veces que un error de lectura reintentable no se resolvió dentro del límite de reintentos de solicitudes de lectura
-* `ProfileEvent_DistrCacheWriteErrors` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número total de errores de Distributed Cache durante las solicitudes de escritura (igual a DistrCacheWriteErrorsRetriable + DistrCacheWriteErrorsNonRetriable). Un `Stop` de caché write-through iniciado por el servidor es control de flujo, no un error, y no se contabiliza
-* `ProfileEvent_DistrCacheWriteErrorsRetriable` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de errores reintentables de Distributed Cache durante las solicitudes de escritura (contados en cada ocurrencia, incluidos los recuperados mediante un reintento)
-* `ProfileEvent_DistrCacheWriteErrorsNonRetriable` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de errores no reintentables de Distributed Cache durante las solicitudes de escritura
-* `ProfileEvent_DistrCacheWriteRequestRetriesExhausted` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de escritura de Distributed Cache. Número de veces que un error de escritura reintentable no se resolvió dentro del límite de reintentos de solicitudes de escritura
-* `ProfileEvent_DistrCacheWriteRequestRetries` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de escritura de Distributed Cache. Número de reintentos de solicitudes de escritura después de un error recuperable
+* `ProfileEvent_DistrCacheReadErrors` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de lectura de Distributed Cache. Número de errores de Distributed Cache durante la lectura
+* `ProfileEvent_DistrCacheWriteErrors` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de escritura de Distributed Cache. Número de errores de Distributed Cache durante la escritura
+* `ProfileEvent_DistrCacheWriteReconnectsAfterTimeout` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de escritura de Distributed Cache. Número de reconexiones tras un timeout
 * `ProfileEvent_DistrCacheWriteMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de escritura de Distributed Cache. Tiempo dedicado en WriteBufferFromDistributedCache::writeToFileSegment
 * `ProfileEvent_DistrCacheWriteBytes` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de escritura de Distributed Cache. Número de bytes escritos en Distributed Cache
 * `ProfileEvent_DistrCacheObjectStorageWriteMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de escritura de Distributed Cache. Tiempo dedicado a escribir en el almacenamiento de objetos
 * `ProfileEvent_DistrCacheObjectStorageWriteBytes` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de escritura de Distributed Cache. Número de bytes escritos en el almacenamiento de objetos
-* `ProfileEvent_DistrCacheBackgroundWrites` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de escritura de Distributed Cache. Número de escrituras en caché que se ejecutaron en un hilo en segundo plano (se adquirió un slot de escritura en segundo plano)
-* `ProfileEvent_DistrCacheInlineWrites` ([UInt64](/es/reference/data-types/int-uint)) — Evento del búfer de escritura de Distributed Cache. Número de escrituras en caché que se ejecutaron en línea en el hilo que realizó la llamada (no había ningún slot de escritura en segundo plano libre o la escritura era para datos temporales)
 * `ProfileEvent_DistrCacheGetResponseMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Tiempo dedicado a esperar la respuesta de Distributed Cache
-* `ProfileEvent_DistrCacheConnectErrors` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de fallos al conectarse a un servidor de Distributed Cache antes de realizar una solicitud (se cuenta una vez por solicitud, después de agotar todos los intentos de conexión, a diferencia de DistrCacheUnsuccessfulConnectAttempts, que se cuenta por intento). Un timeout al esperar una conexión libre del grupo también se cuenta aquí. En cambio, los fallos al reconectarse durante la creación de la solicitud se cuentan en DistrCacheMakeRequestErrors
 * `ProfileEvent_DistrCacheMakeRequestErrors` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de errores de Distributed Cache al realizar una solicitud
 * `ProfileEvent_DistrCacheReceiveResponseErrors` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de errores de Distributed Cache al recibir la respuesta a una solicitud
-* `ProfileEvent_DistrCacheSystemTablesErrors` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de errores de Distributed Cache durante las solicitudes de tablas del sistema de introspección (system.distributed&#95;cache, system.distributed&#95;cache&#95;metrics, system.distributed&#95;cache&#95;events). Estas solicitudes no se reintentan, por lo que los errores recuperables y no recuperables se cuentan juntos
 * `ProfileEvent_DistrCacheReceivedDataPackets` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número total de paquetes Data recibidos desde Distributed Cache
 * `ProfileEvent_DistrCacheReceivedDataPacketsBytes` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de bytes en los paquetes Data recibidos desde Distributed Cache
 * `ProfileEvent_DistrCacheReceivedOkPackets` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número total de paquetes Ok recibidos desde Distributed Cache
 * `ProfileEvent_DistrCacheReceivedErrorPackets` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número total de paquetes Error recibidos desde Distributed Cache
 * `ProfileEvent_DistrCacheReceivedCredentialsRefreshPackets` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número total de paquetes RefreshCredentials recibidos desde Distributed Cache
 * `ProfileEvent_DistrCacheReceivedStopPackets` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número total de paquetes Stop recibidos desde Distributed Cache
-* `ProfileEvent_DistrCacheReceivedSlowDownPackets` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número total de paquetes SlowDown recibidos desde Distributed Cache (el servidor rechazó una nueva conexión porque este client tiene demasiadas conexiones abiertas en relación con su peso)
 * `ProfileEvent_DistrCacheSentDataPackets` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número total de paquetes Data enviados a Distributed Cache
 * `ProfileEvent_DistrCacheSentDataPacketsBytes` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de bytes de los paquetes Data enviados a Distributed Cache
 * `ProfileEvent_DistrCacheUnusedPackets` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de paquetes no utilizados omitidos de Distributed Cache
 * `ProfileEvent_DistrCacheUnusedDataPacketsBytes` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de bytes de los paquetes Data que se ignoraron
-* `ProfileEvent_DistrCacheUnusedDataPacketsBytesUnknownRequest` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de bytes de paquetes Data ignorados (parte de DistrCacheUnusedDataPacketsBytes) que llegaron para una solicitud que el client ya no rastrea (p. ej., la lectura se detuvo mediante EndRequest después de que el server ya hubiera enviado más datos)
-* `ProfileEvent_DistrCacheUnusedDataPacketsBytesReadRangeIdChanged` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de bytes de paquetes Data ignorados (parte de DistrCacheUnusedDataPacketsBytes) que llegaron para la solicitud rastreada, pero con un identificador de rango de lectura anterior (se solicitó un rango de lectura más reciente en la misma solicitud)
 * `ProfileEvent_DistrCacheUnusedPacketsBufferAllocations` ([UInt64](/es/reference/data-types/int-uint)) — Evento de client de Distributed Cache. Número de asignaciones adicionales de búfer cuando no se pudo reutilizar el búfer existente
 * `ProfileEvent_DistrCacheLockRegistryMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Evento de registry de Distributed Cache. Tiempo empleado en adquirir el bloqueo de DistributedCacheRegistry
 * `ProfileEvent_DistrCacheRegistryUpdateMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Evento de registry de Distributed Cache. Tiempo empleado en actualizar el registro de Distributed Cache
@@ -1203,11 +1064,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_DistrCacheServerCachedReadBufferObjectStorageReadBytes` ([UInt64](/es/reference/data-types/int-uint)) — Evento del servidor de Distributed Cache. Número de bytes leídos del object storage en Distributed Cache al leer desde la caché del sistema de archivos
 * `ProfileEvent_DistrCacheServerCachedReadBufferCachePredownloadBytes` ([UInt64](/es/reference/data-types/int-uint)) — Evento del servidor de Distributed Cache. Número de bytes leídos del object storage para predownload en Distributed Cache al leer desde la caché del sistema de archivos
 * `ProfileEvent_DistrCacheServerSkipped` ([UInt64](/es/reference/data-types/int-uint)) — Evento del servidor de Distributed Cache. Número de veces que se omitió el servidor de Distributed Cache debido a intentos de conexión fallidos anteriores
-* `ProfileEvent_DistrCacheServerShutdownConnectionsMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Evento del servidor de Distributed Cache. Tiempo dedicado en shutdownAllConnections a esperar a que finalicen las conexiones activas (o se cierren de forma forzada) durante el apagado del servidor
-* `ProfileEvent_DistrCacheServerConnectionsDroppedOverLimit` ([UInt64](/es/reference/data-types/int-uint)) — Evento del servidor de Distributed Cache. Número de conexiones cerradas porque se superó el límite de conexiones (se cierran las del client con el mayor número de conexiones en relación con su peso)
-* `ProfileEvent_DistrCacheServerConnectionsRejectedOverLimit` ([UInt64](/es/reference/data-types/int-uint)) — Evento del servidor de Distributed Cache. Número de conexiones nuevas rechazadas con un paquete SlowDown porque el client que se conecta superó su cuota de conexiones
-* `ProfileEvent_DistrCacheServerConnectionRegistryLockWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Evento del servidor de Distributed Cache. Tiempo dedicado a esperar el mutex global del registro de conexiones debido a contención (identify, setClientWeight, expulsión y anulación del registro cuando se debe reindexar o eliminar un bucket)
-* `ProfileEvent_DistrCacheServerConnectionRegistryClientLockWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Evento del servidor de Distributed Cache. Tiempo dedicado a esperar el mutex de un bucket de conexiones por client debido a contención (register/unregister/identify/expulsión)
 * `ProfileEvent_LogTest` ([UInt64](/es/reference/data-types/int-uint)) — Número de mensajes de registro con nivel Test
 * `ProfileEvent_LogTrace` ([UInt64](/es/reference/data-types/int-uint)) — Número de mensajes de registro con nivel Trace
 * `ProfileEvent_LogDebug` ([UInt64](/es/reference/data-types/int-uint)) — Número de mensajes de registro con nivel Debug
@@ -1231,9 +1087,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_ParallelReplicasUsedCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de réplicas utilizadas para ejecutar una consulta con réplicas paralelas basadas en tareas
 * `ProfileEvent_ParallelReplicasAvailableCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de réplicas disponibles para ejecutar una consulta con réplicas paralelas basadas en tareas
 * `ProfileEvent_ParallelReplicasUnavailableCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de réplicas seleccionadas que resultaron no estar disponibles durante la ejecución de la consulta con réplicas paralelas basadas en tareas
-* `ProfileEvent_DistributedPlanRemoteTasks` ([UInt64](/es/reference/data-types/int-uint)) — Número de tareas enviadas a workers remotos al ejecutar una consulta con make&#95;distributed&#95;plan. Un valor distinto de cero significa que la consulta se ejecutó realmente de forma distribuida.
-* `ProfileEvent_DistributedPlanLocalExecution` ([UInt64](/es/reference/data-types/int-uint)) — Se establece en 1 cuando una consulta make&#95;distributed&#95;plan se ejecutó en el mismo proceso mediante el ejecutor local (distributed&#95;plan&#95;execute&#95;locally) en lugar de enviarse a workers remotos.
-* `ProfileEvent_DistributedPlanHostsUsed` ([UInt64](/es/reference/data-types/int-uint)) — Número de hosts distintos a los que se asignó al menos una tarea al ejecutar una consulta con make&#95;distributed&#95;plan.
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdates` ([UInt64](/es/reference/data-types/int-uint)) — Número de actualizaciones de partes virtuales
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdatesByLeader` ([UInt64](/es/reference/data-types/int-uint)) — Actualizaciones de partes virtuales por el líder
 * `ProfileEvent_SharedMergeTreeVirtualPartsUpdateMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Microsegundos dedicados a la actualización de partes virtuales
@@ -1266,7 +1119,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdateTaskRuns` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se ha ejecutado updateReplicaSetTask
 * `ProfileEvent_SharedMergeTreeOptimizeAsync` ([UInt64](/es/reference/data-types/int-uint)) — Consultas OPTIMIZE asíncronas ejecutadas
 * `ProfileEvent_SharedMergeTreeOptimizeSync` ([UInt64](/es/reference/data-types/int-uint)) — Consultas OPTIMIZE síncronas ejecutadas
-* `ProfileEvent_SharedMergeTreePartitionOperationRetries` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que una operación a nivel de partición (DROP/MOVE/REPLACE/CLONE/TRUNCATE PARTITION) tuvo que reintentar la escritura múltiple de Keeper debido a un cambio concurrente
 * `ProfileEvent_SharedMergeTreeScheduleDataProcessingJob` ([UInt64](/es/reference/data-types/int-uint)) — Cuántas veces se llamó a scheduleDataProcessingJob/
 * `ProfileEvent_SharedMergeTreeScheduleDataProcessingJobNothingToScheduled` ([UInt64](/es/reference/data-types/int-uint)) — Cuántas veces se llamó a scheduleDataProcessingJob, pero no había nada que hacer
 * `ProfileEvent_SharedMergeTreeScheduleDataProcessingJobMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — tiempo de ejecución de scheduleDataProcessingJob
@@ -1297,21 +1149,11 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número total de solicitudes a ZooKeeper realizadas para actualizar el conjunto de réplicas
 * `ProfileEvent_SharedMergeTreeReplicaSetUpdatesFromZooKeeperMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a actualizar el conjunto de réplicas
 * `ProfileEvent_KeeperLogsEntryReadFromLatestCache` ([UInt64](/es/reference/data-types/int-uint)) — Número de entradas de log de Keeper leídas desde la caché de logs más recientes
+* `ProfileEvent_KeeperLogsEntryReadFromCommitCache` ([UInt64](/es/reference/data-types/int-uint)) — Número de entradas de log de Keeper leídas desde la caché de logs de commit
 * `ProfileEvent_KeeperLogsEntryReadFromFile` ([UInt64](/es/reference/data-types/int-uint)) — Número de entradas de log de Keeper leídas directamente desde el archivo de changelog
-* `ProfileEvent_KeeperLogsReadAheadFillReopens` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que la tarea de llenado de lectura anticipada de Keeper reabrió o reposicionó un archivo de changelog
-* `ProfileEvent_KeeperLogsReadAheadFillDecodedEntries` ([UInt64](/es/reference/data-types/int-uint)) — Número de entradas de log decodificadas por la tarea de llenado de lectura anticipada de Keeper
-* `ProfileEvent_KeeperLogsReadAheadCursorsInstalled` ([UInt64](/es/reference/data-types/int-uint)) — Número de nuevos cursores de llenado encolados en un lector de lectura anticipada del changelog de Keeper (par o commit) que la tarea de llenado aún no cubría
-* `ProfileEvent_KeeperLogsReadAheadPlanEpochMismatches` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se descartó un plan de lectura del changelog de Keeper porque un truncamiento concurrente de write&#95;at lo invalidó antes de que pudiera atenderse
-* `ProfileEvent_KeeperLogsReadAheadScheduleRejected` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que no se pudo crear un lector de lectura anticipada del changelog de Keeper porque la cola del grupo de hilos de lectura anticipada estaba llena; quien realiza la llamada recurre a una lectura directa
-* `ProfileEvent_KeeperLogsReadAheadReadersCreated` ([UInt64](/es/reference/data-types/int-uint)) — Número de lectores de lectura anticipada del changelog de Keeper (y sus tareas de llenado) creados; si se mantiene estable entre límites de archivos, indica que se reutiliza un lector en lugar de desmontarlo y recrearlo
-* `ProfileEvent_KeeperLogsReadAheadTimeoutFallbacks` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que una solicitud de servicio de lectura anticipada del changelog de Keeper agotó el tiempo de espera mientras aguardaba la tarea de llenado y recurrió a una lectura directa del extremo final restante
-* `ProfileEvent_KeeperLogsEntryReadFromCommitReadAhead` ([UInt64](/es/reference/data-types/int-uint)) — Número de entradas de log atendidas al hilo de commit desde la ventana decodificada del lector de lectura anticipada de commit (extracción rápida o extracción de vaciado del primer elemento de la ventana)
+* `ProfileEvent_KeeperLogsPrefetchedEntries` ([UInt64](/es/reference/data-types/int-uint)) — Número de entradas de log de Keeper precargadas desde el archivo de changelog
 * `ProfileEvent_KeeperChangelogWrittenBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes escritos en el changelog de Keeper
 * `ProfileEvent_KeeperChangelogFileSyncMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a fsync para el changelog de Keeper (solo logs sin comprimir)
-* `ProfileEvent_KeeperChangelogStartupReadMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de reloj dedicado a la lectura paralela del changelog durante el inicio de Keeper
-* `ProfileEvent_KeeperChangelogStartupStitchMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de reloj dedicado a integrar los resultados de la lectura paralela de inicio por archivo en el estado de LogEntryStorage
-* `ProfileEvent_KeeperChangelogStartupReadEntries` ([UInt64](/es/reference/data-types/int-uint)) — Número de registros del changelog validados por el lector paralelo de inicio de Keeper
-* `ProfileEvent_KeeperChangelogStartupReadBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes físicos (suma de comprobación + encabezado + blob) leídos de archivos de changelog por el lector paralelo de inicio de Keeper
 * `ProfileEvent_KeeperSnapshotWrittenBytes` ([UInt64](/es/reference/data-types/int-uint)) — Número de bytes escritos en los archivos de snapshot de Keeper
 * `ProfileEvent_KeeperSnapshotFileSyncMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a fsync para los archivos de snapshot de Keeper
 * `ProfileEvent_StorageConnectionsCreated` ([UInt64](/es/reference/data-types/int-uint)) — Número de conexiones creadas para almacenamientos
@@ -1349,10 +1191,10 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_WriteBufferFromHTTPRequestsSent` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes HTTP enviadas por WriteBufferFromHTTP
 * `ProfileEvent_WriteBufferFromHTTPBytes` ([UInt64](/es/reference/data-types/int-uint)) — Tamaño total de los bytes de la carga útil recibidos y enviados por WriteBufferFromHTTP. No incluye las cabeceras HTTP.
 * `ProfileEvent_ConcurrencyControlSlotsGranted` ([UInt64](/es/reference/data-types/int-uint)) — Número de slots de CPU asignados según la garantía de 1 hilo por consulta y para consultas con la configuración &#39;use&#95;concurrency&#95;control&#39; = 0
-* `ProfileEvent_ConcurrencyControlSlotsDelayed` ([UInt64](/es/reference/data-types/int-uint)) — Número de slots de CPU no asignados en el momento de la asignación debido a presión de capacidad. Excluye los slots retenidos por la asignación diferida.
+* `ProfileEvent_ConcurrencyControlSlotsDelayed` ([UInt64](/es/reference/data-types/int-uint)) — Número de slots de CPU no asignados inicialmente y que tuvieron que esperar a que hubiera un slot de CPU libre
 * `ProfileEvent_ConcurrencyControlSlotsAcquired` ([UInt64](/es/reference/data-types/int-uint)) — Número total de slots de CPU adquiridos
 * `ProfileEvent_ConcurrencyControlSlotsAcquiredNonCompeting` ([UInt64](/es/reference/data-types/int-uint)) — Número total de slots de CPU adquiridos sin competencia
-* `ProfileEvent_ConcurrencyControlQueriesDelayed` ([UInt64](/es/reference/data-types/int-uint)) — Número de consultas retrasadas por presión de capacidad de slots de CPU. Indicador de contención: excluye las esperas de ampliación diferida en un servidor sin contención.
+* `ProfileEvent_ConcurrencyControlQueriesDelayed` ([UInt64](/es/reference/data-types/int-uint)) — Número total de asignaciones de slots de CPU (consultas) que tuvieron que esperar a que hubiera slots disponibles para ampliar la capacidad
 * `ProfileEvent_ConcurrencyControlWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total que una consulta estuvo esperando solicitudes de recurso para slots de CPU.
 * `ProfileEvent_ConcurrencyControlPreemptedMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total que una consulta estuvo esperando debido a la expulsión preventiva de slots de CPU.
 * `ProfileEvent_ConcurrencyControlPreemptions` ([UInt64](/es/reference/data-types/int-uint)) — Número total de expulsiones preventivas de CPU
@@ -1360,12 +1202,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_ConcurrencyControlDownscales` ([UInt64](/es/reference/data-types/int-uint)) — Número total de eventos de reducción de CPU
 * `ProfileEvent_ConcurrentQuerySlotsAcquired` ([UInt64](/es/reference/data-types/int-uint)) — Número total de slots de consulta adquiridos
 * `ProfileEvent_ConcurrentQueryWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total que una consulta estuvo esperando por slots de consulta
-* `ProfileEvent_MemoryReservationAdmitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total que una consulta estuvo esperando a que se admitiera la reserva de memoria inicial
-* `ProfileEvent_MemoryReservationIncreaseMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total que una consulta estuvo esperando a que se aprobara el aumento de la reserva de memoria
-* `ProfileEvent_MemoryReservationIncreases` ([UInt64](/es/reference/data-types/int-uint)) — Número total de solicitudes aprobadas de aumento de reserva de memoria
-* `ProfileEvent_MemoryReservationDecreases` ([UInt64](/es/reference/data-types/int-uint)) — Número total de solicitudes aprobadas de reducción de reserva de memoria
-* `ProfileEvent_MemoryReservationKilled` ([UInt64](/es/reference/data-types/int-uint)) — Número total de señales de terminación de reservas de memoria
-* `ProfileEvent_MemoryReservationFailed` ([UInt64](/es/reference/data-types/int-uint)) — Número total de reservas de memoria fallidas
 * `ProfileEvent_CoordinatedMergesMergeCoordinatorUpdateCount` ([UInt64](/es/reference/data-types/int-uint)) — Número total de actualizaciones del coordinador de merge
 * `ProfileEvent_CoordinatedMergesMergeCoordinatorUpdateMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a actualizar el estado del coordinador de merge
 * `ProfileEvent_CoordinatedMergesMergeCoordinatorFetchMetadataMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a obtener metadatos actualizados dentro del coordinador de merge
@@ -1383,7 +1219,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_CoordinatedMergesMergeAssignmentResponseMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado al handler de asignación de merge
 * `ProfileEvent_SharedDatabaseCatalogFailedToApplyState` ([UInt64](/es/reference/data-types/int-uint)) — Número de fallos al aplicar un nuevo estado en SharedDatabaseCatalog
 * `ProfileEvent_SharedDatabaseCatalogStateApplicationMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a aplicar un nuevo estado en SharedDatabaseCatalog
-* `ProfileEvent_SharedCatalogStateFetchFullFallback` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que la obtención incremental del estado de Shared Catalog falló demasiadas veces seguidas y se realizó una obtención completa del estado en su lugar
 * `ProfileEvent_MemoryWorkerRun` ([UInt64](/es/reference/data-types/int-uint)) — Número de ejecuciones realizadas por MemoryWorker en segundo plano
 * `ProfileEvent_MemoryWorkerRunElapsedMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado por MemoryWorker al trabajo en segundo plano
 * `ProfileEvent_ParquetFetchWaitTimeMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de espera de las lecturas de archivos Parquet realizadas por los hilos de decodificación (no por los hilos de prefetch)
@@ -1393,18 +1228,8 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_WasmTotalExecuteMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo dedicado a ejecutar código WebAssembly
 * `ProfileEvent_WasmModuleInstatiate` ([UInt64](/es/reference/data-types/int-uint)) — Número de compartimentos de WebAssembly creados
 * `ProfileEvent_WasmMemoryAllocated` ([UInt64](/es/reference/data-types/int-uint)) — Memoria total asignada a los compartimentos de WebAssembly
-* `ProfileEvent_ExecutableUserDefinedFunctionInvocations` ([UInt64](/es/reference/data-types/int-uint)) — Número de invocaciones de funciones definidas por el usuario ejecutables y de executable&#95;pool.
-* `ProfileEvent_ExecutableUserDefinedFunctionElapsedMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de reloj empleado en ejecutar funciones definidas por el usuario ejecutables y executable&#95;pool, en microsegundos.
-* `ProfileEvent_ExecutableUserDefinedFunctionUserTimeMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de CPU en modo usuario consumido por los procesos secundarios de funciones definidas por el usuario ejecutables y executable&#95;pool, en microsegundos.
-* `ProfileEvent_ExecutableUserDefinedFunctionSystemTimeMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de CPU en modo kernel consumido por los procesos secundarios de funciones definidas por el usuario ejecutables y executable&#95;pool, en microsegundos.
-* `ProfileEvent_ExecutableUserDefinedFunctionPeakMemoryByteSeconds` ([UInt64](/es/reference/data-types/int-uint)) — Pico de memoria por proceso utilizado por los procesos secundarios de funciones definidas por el usuario ejecutables y executable&#95;pool, integrado a lo largo del tiempo de reloj, en bytes-segundo.
-* `ProfileEvent_ExecutableUserDefinedFunctionInputBytes` ([UInt64](/es/reference/data-types/int-uint)) — Total de bytes escritos en stdin de los procesos secundarios de funciones definidas por el usuario ejecutables y executable&#95;pool.
-* `ProfileEvent_ExecutableUserDefinedFunctionOutputBytes` ([UInt64](/es/reference/data-types/int-uint)) — Total de bytes leídos desde stdout de los procesos secundarios de funciones definidas por el usuario ejecutables y executable&#95;pool.
-* `ProfileEvent_ExecutableUserDefinedFunctionPoolWaitMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo de espera en tryBorrowObject cuando se agota el pool de funciones definidas por el usuario executable&#95;pool, en microsegundos.
 * `ProfileEvent_ParquetReadRowGroups` ([UInt64](/es/reference/data-types/int-uint)) — Número total de grupos de filas leídos de datos Parquet
 * `ProfileEvent_ParquetPrunedRowGroups` ([UInt64](/es/reference/data-types/int-uint)) — Número total de grupos de filas descartados de los datos Parquet
-* `ProfileEvent_ParquetReadPages` ([UInt64](/es/reference/data-types/int-uint)) — Número total de páginas de datos Parquet leídas
-* `ProfileEvent_ParquetPrunedPages` ([UInt64](/es/reference/data-types/int-uint)) — Número total de páginas descartadas de los datos Parquet mediante el índice de columnas
 * `ProfileEvent_ParquetDecodingTasks` ([UInt64](/es/reference/data-types/int-uint)) — Tareas emitidas por el lector de Parquet
 * `ProfileEvent_ParquetDecodingTaskBatches` ([UInt64](/es/reference/data-types/int-uint)) — Grupos de tareas enviados a un pool de hilos por el lector de Parquet
 * `ProfileEvent_ParquetPrefetcherReadRandomRead` ([UInt64](/es/reference/data-types/int-uint)) — Número total de lecturas con ReadMode::RandomRead realizadas por DB::Parquet::Prefetcher
@@ -1417,7 +1242,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_QueryPreempted` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que las tareas se pausan y quedan en espera debido a la configuración &#39;priority&#39;
 * `ProfileEvent_IndexBinarySearchAlgorithm` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se usa el algoritmo de búsqueda binaria sobre las marcas de índice
 * `ProfileEvent_IndexGenericExclusionSearchAlgorithm` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se usa el algoritmo genérico de búsqueda por exclusión sobre las marcas de índice
-* `ProfileEvent_IndexGenericExclusionSearchStepLimitReached` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que la búsqueda genérica por exclusión en las marcas de índice alcanzó merge&#95;tree&#95;generic&#95;exclusion&#95;search&#95;max&#95;steps y aceptó los rangos de marcas restantes sin dividirlos más
 * `ProfileEvent_ParallelReplicasQueryCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de (sub)consultas ejecutadas con réplicas paralelas durante la ejecución de una consulta
 * `ProfileEvent_DistributedConnectionReconnectCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de reconexiones a otros servidores realizadas durante la ejecución distribuida de consultas. Puede ocurrir cuando se obtiene una conexión obsoleta del pool de conexiones
 * `ProfileEvent_DistributedConnectionConnectCount` ([UInt64](/es/reference/data-types/int-uint)) — Número de conexiones a otros servidores realizadas durante la ejecución distribuida de consultas. Ocurre cuando se establece una conexión nueva en lugar de usar una existente del pool.
@@ -1449,35 +1273,12 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `ProfileEvent_RuntimeFilterRowsChecked` ([UInt64](/es/reference/data-types/int-uint)) — Número de filas comprobadas por JOIN Runtime Filters
 * `ProfileEvent_RuntimeFilterRowsPassed` ([UInt64](/es/reference/data-types/int-uint)) — Número de filas que pasaron (es decir, que no fueron filtradas por) JOIN Runtime Filters
 * `ProfileEvent_RuntimeFilterRowsSkipped` ([UInt64](/es/reference/data-types/int-uint)) — Número de filas de bloques que fueron omitidas por JOIN Runtime Filters
-* `ProfileEvent_RuntimeFilterGranulesConsidered` ([UInt64](/es/reference/data-types/int-uint)) — Número de gránulos examinados para la poda durante la lectura por JOIN Runtime Filters
-* `ProfileEvent_RuntimeFilterGranulesDropped` ([UInt64](/es/reference/data-types/int-uint)) — Número de gránulos descartados durante la lectura por JOIN Runtime Filters
 * `ProfileEvent_JoinBuildPostProcessingMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo transcurrido en los pasos de posprocesamiento después de construir el lado derecho del JOIN.
 * `ProfileEvent_AIInputTokens` ([UInt64](/es/reference/data-types/int-uint)) — Total de tokens de prompt consumidos en todas las llamadas a funciones de IA de la consulta.
 * `ProfileEvent_AIOutputTokens` ([UInt64](/es/reference/data-types/int-uint)) — Total de tokens de completado consumidos en todas las llamadas a funciones de IA de la consulta.
 * `ProfileEvent_AIAPICalls` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes HTTP enviadas a proveedores de IA.
 * `ProfileEvent_AIRowsProcessed` ([UInt64](/es/reference/data-types/int-uint)) — Número de filas que recibieron un resultado de IA.
 * `ProfileEvent_AIRowsSkipped` ([UInt64](/es/reference/data-types/int-uint)) — Número de filas que recibieron un valor predeterminado debido a una cuota o a un error.
-* `ProfileEvent_StatelessWorkerRequested` ([UInt64](/es/reference/data-types/int-uint)) — Número de workers sin estado solicitados por las consultas para la ejecución distribuida de consultas.
-* `ProfileEvent_StatelessWorkerProvided` ([UInt64](/es/reference/data-types/int-uint)) — Número de workers sin estado proporcionados a las consultas para la ejecución distribuida de consultas.
-* `ProfileEvent_StatelessWorkerProvisioningMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total que las consultas dedicaron a esperar que se aprovisionaran workers sin estado.
-* `ProfileEvent_StatelessWorkerProvisioningWaits` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que una consulta tuvo que esperar a que el servicio de detección de workers sin estado proporcionara workers.
-* `ProfileEvent_StatelessWorkerCreateLeaseRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes create&#95;lease enviadas al servicio de detección de workers sin estado para adquirir workers.
-* `ProfileEvent_StatelessWorkerCreateLeaseMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a solicitudes create&#95;lease al servicio de detección de workers sin estado.
-* `ProfileEvent_StatelessWorkerCreateLeaseErrors` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes create&#95;lease fallidas al servicio de detección de workers sin estado (por cualquier error o timeout).
-* `ProfileEvent_StatelessWorkerGetLeaseRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes get&#95;lease enviadas al servicio de detección de workers sin estado para actualizar la lista de workers con lease.
-* `ProfileEvent_StatelessWorkerGetLeaseMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a solicitudes get&#95;lease al servicio de detección de workers sin estado.
-* `ProfileEvent_StatelessWorkerGetLeaseErrors` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes get&#95;lease fallidas al servicio de descubrimiento de stateless workers (por cualquier error o timeout).
-* `ProfileEvent_StatelessWorkerUpdateLeaseRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes update&#95;lease enviadas al servicio de descubrimiento de stateless workers para renovar los leases de los workers.
-* `ProfileEvent_StatelessWorkerUpdateLeaseMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total dedicado a solicitudes update&#95;lease al servicio de descubrimiento de stateless workers.
-* `ProfileEvent_StatelessWorkerUpdateLeaseErrors` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes update&#95;lease fallidas al servicio de descubrimiento de stateless workers (por cualquier error o timeout).
-* `ProfileEvent_StatelessWorkerServerRegisterRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes de registro enviadas por un stateless worker al servicio de descubrimiento de stateless workers.
-* `ProfileEvent_StatelessWorkerServerRegisterMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total que los stateless workers dedicaron a registrarse en el servicio de descubrimiento de stateless workers.
-* `ProfileEvent_StatelessWorkerServerRegisterErrors` ([UInt64](/es/reference/data-types/int-uint)) — Número de solicitudes de registro fallidas de stateless workers al servicio de descubrimiento de stateless workers (por cualquier error o timeout).
-* `ProfileEvent_StatelessWorkerServerHeartbeatRequests` ([UInt64](/es/reference/data-types/int-uint)) — Número de heartbeats enviados por un stateless worker al servicio de descubrimiento de stateless workers.
-* `ProfileEvent_StatelessWorkerServerHeartbeatMicroseconds` ([UInt64](/es/reference/data-types/int-uint)) — Tiempo total que los stateless workers dedicaron a enviar heartbeats al servicio de descubrimiento de stateless workers.
-* `ProfileEvent_StatelessWorkerServerHeartbeatErrors` ([UInt64](/es/reference/data-types/int-uint)) — Número de heartbeats fallidos de stateless workers al servicio de descubrimiento de stateless workers (por cualquier error o timeout).
-* `ProfileEvent_StatelessWorkerServerTenantBindings` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que se asignó un stateless worker a un tenant para atender sus consultas.
-* `ProfileEvent_StatelessWorkerServerLeasesLost` ([UInt64](/es/reference/data-types/int-uint)) — Número de veces que el lease de un stateless worker finalizó y este comenzó a esperar el apagado.
 * `CurrentMetric_Query` ([Int64](/es/reference/data-types/int-uint)) — Número de consultas en ejecución
 * `CurrentMetric_ASTFuzzerAccumulatedFragments` ([Int64](/es/reference/data-types/int-uint)) — Número de fragmentos de AST acumulados por el AST fuzzer del lado del servidor para su uso en futuras mutaciones.
 * `CurrentMetric_QueryNonInternal` ([Int64](/es/reference/data-types/int-uint)) — Número de consultas no internas en ejecución (consultas iniciadas por usuarios, excluidas las consultas internas de ClickHouse)
@@ -1505,8 +1306,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_BackgroundDistributedSchedulePoolSize` ([Int64](/es/reference/data-types/int-uint)) — Límite del número de tareas en BackgroundDistributedSchedulePool
 * `CurrentMetric_BackgroundMessageBrokerSchedulePoolTask` ([Int64](/es/reference/data-types/int-uint)) — Número de tareas activas en BackgroundMessageBrokerSchedulePool para streaming de mensajes
 * `CurrentMetric_BackgroundMessageBrokerSchedulePoolSize` ([Int64](/es/reference/data-types/int-uint)) — Límite del número de tareas en BackgroundMessageBrokerSchedulePool para streaming de mensajes
-* `CurrentMetric_BackgroundStreamingSchedulePoolTask` ([Int64](/es/reference/data-types/int-uint)) — Número de tareas activas en BackgroundStreamingSchedulePool para tareas de consultas de streaming
-* `CurrentMetric_BackgroundStreamingSchedulePoolSize` ([Int64](/es/reference/data-types/int-uint)) — Límite del número de tareas en BackgroundStreamingSchedulePool para tareas de consultas de streaming
 * `CurrentMetric_CacheDictionaryUpdateQueueBatches` ([Int64](/es/reference/data-types/int-uint)) — Número de &#39;lotes&#39; (un conjunto de claves) en la cola de actualización de CacheDictionaries.
 * `CurrentMetric_CacheDictionaryUpdateQueueKeys` ([Int64](/es/reference/data-types/int-uint)) — Número exacto de claves en la cola de actualización de CacheDictionaries.
 * `CurrentMetric_DiskSpaceReservedForMerge` ([Int64](/es/reference/data-types/int-uint)) — Espacio en disco reservado para las fusiones en segundo plano que se están ejecutando actualmente. Es ligeramente superior al tamaño total de las partes que se están fusionando actualmente.
@@ -1531,9 +1330,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_TemporaryFilesUnknown` ([Int64](/es/reference/data-types/int-uint)) — Número de archivos temporales creados sin un propósito conocido
 * `CurrentMetric_Read` ([Int64](/es/reference/data-types/int-uint)) — Número de llamadas al sistema de lectura (read, pread, io&#95;getevents, etc.) en curso
 * `CurrentMetric_RemoteRead` ([Int64](/es/reference/data-types/int-uint)) — Número de operaciones de lectura remota en curso
-* `CurrentMetric_ReaderExecutorActive` ([Int64](/es/reference/data-types/int-uint)) — Número de instancias activas de ReaderExecutor.
-* `CurrentMetric_ReaderExecutorChainedBufferBytes` ([Int64](/es/reference/data-types/int-uint)) — Bytes retenidos actualmente en los búferes encadenados de las instancias activas de ReaderExecutor (OwnedChainedBuffer): memoria de lectura activa en curso, no un total acumulado.
-* `CurrentMetric_ReaderExecutorLongConnections` ([Int64](/es/reference/data-types/int-uint)) — Número de conexiones de origen largas que ReaderExecutor mantiene actualmente abiertas para optimizar la lectura secuencial.
 * `CurrentMetric_Write` ([Int64](/es/reference/data-types/int-uint)) — Número de llamadas al sistema de escritura (write, pwrite, io&#95;getevents, etc.) en curso
 * `CurrentMetric_NetworkReceive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos que reciben datos de la red. Solo se incluye la interacción de red relacionada con ClickHouse, no la de bibliotecas de terceros.
 * `CurrentMetric_NetworkSend` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos que envían datos a la red. Solo se incluye la interacción de red relacionada con ClickHouse, no la de bibliotecas de terceros.
@@ -1649,9 +1445,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_AsynchronousInsertThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el pool de hilos AsynchronousInsert.
 * `CurrentMetric_AsynchronousInsertThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el pool de hilos AsynchronousInsert que ejecutan una tarea.
 * `CurrentMetric_AsynchronousInsertThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de trabajos en cola o activos en el pool de hilos AsynchronousInsert.
-* `CurrentMetric_QueryRunnerThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el pool de hilos QueryRunner.
-* `CurrentMetric_QueryRunnerThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el pool de hilos QueryRunner que ejecutan una tarea.
-* `CurrentMetric_QueryRunnerThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de trabajos en cola o activos en el pool de hilos QueryRunner.
 * `CurrentMetric_AsynchronousInsertQueueSize` ([Int64](/es/reference/data-types/int-uint)) — Número de tareas pendientes en la cola AsynchronousInsert.
 * `CurrentMetric_AsynchronousInsertQueueBytes` ([Int64](/es/reference/data-types/int-uint)) — Número de bytes pendientes en la cola AsynchronousInsert.
 * `CurrentMetric_StartupSystemTablesThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el pool de hilos StartupSystemTables.
@@ -1693,18 +1486,9 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_IcebergCatalogThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de jobs en cola o activos en el pool de subprocesos de IcebergCatalog.
 * `CurrentMetric_IcebergSchedulePoolTask` ([Int64](/es/reference/data-types/int-uint)) — Número de tareas en el pool de programación en segundo plano para tablas Iceberg.
 * `CurrentMetric_IcebergSchedulePoolSize` ([Int64](/es/reference/data-types/int-uint)) — Límite del número de tareas en el pool de programación en segundo plano para tablas Iceberg.
-* `CurrentMetric_IcebergCompactionThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el pool de hilos IcebergCompaction.
-* `CurrentMetric_IcebergCompactionThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el pool de hilos IcebergCompaction que ejecutan una tarea.
-* `CurrentMetric_IcebergCompactionThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de trabajos en cola o activos en el pool de hilos IcebergCompaction.
-* `CurrentMetric_IcebergCompactionSnapshots` ([Int64](/es/reference/data-types/int-uint)) — Número de compactaciones de Iceberg.
-* `CurrentMetric_IcebergCompactionMerge` ([Int64](/es/reference/data-types/int-uint)) — Número de fusiones de compactación de Iceberg en segundo plano en ejecución.
-* `CurrentMetric_IcebergCompactionSourceFiles` ([Int64](/es/reference/data-types/int-uint)) — Número de archivos de origen de entrada (archivos de datos y archivos de eliminación por posición) que participan en las fusiones de compactación de Iceberg actualmente en ejecución.
 * `CurrentMetric_ParallelWithQueryThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de subprocesos en el threadpool para procesar consultas PARALLEL WITH.
 * `CurrentMetric_ParallelWithQueryActiveThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de subprocesos activos en el threadpool para procesar consultas PARALLEL WITH.
 * `CurrentMetric_ParallelWithQueryScheduledThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de jobs en cola o activos en el threadpool para procesar consultas PARALLEL WITH.
-* `CurrentMetric_UDFDriverInvokerThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en los pools de hilos que atienden pipes de comandos del driver de UDF ejecutables.
-* `CurrentMetric_UDFDriverInvokerThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos activos en los pools de hilos que atienden pipes de comandos del driver de UDF ejecutables.
-* `CurrentMetric_UDFDriverInvokerThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de trabajos en cola o activos en los pools de hilos que atienden pipes de comandos del driver de UDF ejecutables.
 * `CurrentMetric_DiskPlainRewritableAzureDirectoryMapSize` ([Int64](/es/reference/data-types/int-uint)) — Número de entradas de rutas locales a remotas en el mapa en memoria &#39;plain&#95;rewritable&#39; de AzureObjectStorage.
 * `CurrentMetric_DiskPlainRewritableAzureFileCount` ([Int64](/es/reference/data-types/int-uint)) — Número de entradas de archivo en el mapa en memoria &#39;plain&#95;rewritable&#39; de AzureObjectStorage.
 * `CurrentMetric_DiskPlainRewritableLocalDirectoryMapSize` ([Int64](/es/reference/data-types/int-uint)) — Número de entradas de rutas locales a remotas en el mapa en memoria &#39;plain&#95;rewritable&#39; de LocalObjectStorage.
@@ -1765,14 +1549,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_KeeperReadThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de hilos para lecturas del servidor Keeper.
 * `CurrentMetric_KeeperReadThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos activos en el grupo de hilos para lecturas del servidor Keeper.
 * `CurrentMetric_KeeperReadThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de tareas en cola o activas en el grupo de hilos para lecturas del servidor Keeper. Es una métrica sin sentido; las tareas reales de lectura de este grupo de hilos se programan mediante un mecanismo diferente.
-* `CurrentMetric_KeeperChangelogReadAheadThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de hilos para tareas de llenado de lectura anticipada del changelog de Keeper.
-* `CurrentMetric_KeeperChangelogReadAheadThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos activos en el grupo de hilos para tareas de llenado de lectura anticipada del changelog de Keeper.
-* `CurrentMetric_KeeperChangelogReadAheadThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de tareas en cola o activas en el grupo de hilos para tareas de llenado de lectura anticipada del changelog de Keeper.
-* `CurrentMetric_KeeperChangelogStartupReadThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de hilos para lecturas paralelas del changelog de Keeper durante el inicio.
-* `CurrentMetric_KeeperChangelogStartupReadThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos activos en el grupo de hilos para lecturas paralelas del changelog de Keeper durante el inicio.
-* `CurrentMetric_KeeperChangelogStartupReadThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de tareas en cola o activas en el grupo de hilos para lecturas paralelas del changelog de Keeper durante el inicio.
-* `CurrentMetric_KeeperBlockCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de los bloques de la caché de bloques de almacenamiento de Keeper, en bytes.
-* `CurrentMetric_KeeperBlockCacheBlocks` ([Int64](/es/reference/data-types/int-uint)) — Número de bloques en la caché de bloques de almacenamiento de Keeper.
 * `CurrentMetric_DistributedBytesToInsert` ([Int64](/es/reference/data-types/int-uint)) — Número de bytes pendientes de procesar para la inserción asíncrona en tablas Distributed. Se suma el número de bytes de cada segmento.
 * `CurrentMetric_BrokenDistributedBytesToInsert` ([Int64](/es/reference/data-types/int-uint)) — Número de bytes para la inserción asíncrona en tablas Distributed que se han marcado como defectuosos. Se suma el número de bytes de cada segmento.
 * `CurrentMetric_DistributedFilesToInsert` ([Int64](/es/reference/data-types/int-uint)) — Número de archivos pendientes de procesar para la inserción asíncrona en tablas Distributed. Se suma el número de archivos de cada segmento.
@@ -1797,8 +1573,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_PartsCompact` ([Int64](/es/reference/data-types/int-uint)) — Partes compactas.
 * `CurrentMetric_MMappedFiles` ([Int64](/es/reference/data-types/int-uint)) — Número total de archivos mapeados en memoria.
 * `CurrentMetric_MMappedFileBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de las regiones de archivos mapeadas en memoria.
-* `CurrentMetric_FiberStacks` ([Int64](/es/reference/data-types/int-uint)) — Número de pilas de fibras asignadas actualmente (las fibras se usan para la comunicación asíncrona con réplicas remotas).
-* `CurrentMetric_FiberStackBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de las pilas de fibras asignadas actualmente.
 * `CurrentMetric_AsynchronousReadWait` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en espera de lectura asíncrona.
 * `CurrentMetric_PendingAsyncInsert` ([Int64](/es/reference/data-types/int-uint)) — Número de inserciones asíncronas que están esperando el volcado.
 * `CurrentMetric_KafkaConsumers` ([Int64](/es/reference/data-types/int-uint)) — Número de consumidores de Kafka activos
@@ -1821,23 +1595,14 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_FilesystemCacheDelayedCleanupElements` ([Int64](/es/reference/data-types/int-uint)) — Elementos de la caché del sistema de archivos en la cola de limpieza en segundo plano
 * `CurrentMetric_FilesystemCacheHoldFileSegments` ([Int64](/es/reference/data-types/int-uint)) — Segmentos de archivo de la caché del sistema de archivos que actualmente se mantienen como no liberables
 * `CurrentMetric_FilesystemCacheKeys` ([Int64](/es/reference/data-types/int-uint)) — Número de claves en la caché del sistema de archivos
-* `CurrentMetric_FilesystemCacheOvercommitUsers` ([Int64](/es/reference/data-types/int-uint)) — Número de usuarios rastreados por la política de expulsión por overcommit de la caché del sistema de archivos
 * `CurrentMetric_FilesystemCacheReserveThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos que intentan reservar espacio en la caché
-* `CurrentMetric_FilesystemCacheEvictionThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de expulsión (eliminación) en segundo plano de la caché del sistema de archivos
-* `CurrentMetric_FilesystemCacheEvictionThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de expulsión en segundo plano de la caché del sistema de archivos que ejecutan una tarea
-* `CurrentMetric_FilesystemCacheEvictionThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de trabajos en cola o activos en el grupo de expulsión en segundo plano de la caché del sistema de archivos
-* `CurrentMetric_FilesystemCacheDropCacheThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de la caché del sistema de archivos para la eliminación paralela de claves mediante SYSTEM DROP FILESYSTEM CACHE
-* `CurrentMetric_FilesystemCacheDropCacheThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de eliminación de claves de la caché del sistema de archivos que ejecutan una tarea
-* `CurrentMetric_FilesystemCacheDropCacheThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de trabajos en cola o activos en el grupo de eliminación de claves de la caché del sistema de archivos
 * `CurrentMetric_AsyncInsertCacheSize` ([Int64](/es/reference/data-types/int-uint)) — Número de ID hash de async insert en caché
 * `CurrentMetric_IcebergMetadataFilesCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño de la caché de metadatos de Iceberg en bytes
 * `CurrentMetric_IcebergMetadataFilesCacheFiles` ([Int64](/es/reference/data-types/int-uint)) — Número de archivos en caché en la caché de metadatos de Iceberg
-* `CurrentMetric_PaimonMetadataFilesCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño de la caché de metadatos de Paimon en bytes
-* `CurrentMetric_PaimonMetadataFilesCacheFiles` ([Int64](/es/reference/data-types/int-uint)) — Número de archivos en caché en la caché de metadatos de Paimon
 * `CurrentMetric_ParquetMetadataCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño de la caché de metadatos de Parquet en bytes
 * `CurrentMetric_ParquetMetadataCacheFiles` ([Int64](/es/reference/data-types/int-uint)) — Número de archivos en caché en la caché de metadatos de Parquet
 * `CurrentMetric_AvroSchemaCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño de la caché de esquemas de Avro en bytes
-* `CurrentMetric_AvroSchemaCacheCells` ([Int64](/es/reference/data-types/int-uint)) — Número de esquemas de Avro en caché, incluidos los esquemas registrados y los obtenidos.
+* `CurrentMetric_AvroSchemaCacheCells` ([Int64](/es/reference/data-types/int-uint)) — Número de esquemas de Avro en caché
 * `CurrentMetric_AvroSchemaRegistryCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño de la caché del registro de esquemas de Avro en bytes
 * `CurrentMetric_AvroSchemaRegistryCacheCells` ([Int64](/es/reference/data-types/int-uint)) — Número de entradas en la caché del registro de esquemas de Avro
 * `CurrentMetric_HiveFilesCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño de la caché de Hive en bytes
@@ -1852,21 +1617,14 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_TextIndexHeaderCacheCells` ([Int64](/es/reference/data-types/int-uint)) — Número de entradas en la caché del encabezado del índice de texto
 * `CurrentMetric_TextIndexPostingsCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño de la caché de listas de postings del índice de texto en bytes
 * `CurrentMetric_TextIndexPostingsCacheCells` ([Int64](/es/reference/data-types/int-uint)) — Número de entradas en la caché de listas de postings del índice de texto
-* `CurrentMetric_PointInPolygonCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño en bytes de la caché de polígonos constantes preprocesados para la función `pointInPolygon`
-* `CurrentMetric_PointInPolygonCacheCells` ([Int64](/es/reference/data-types/int-uint)) — Número de polígonos constantes preprocesados en la caché para la función `pointInPolygon`
-* `CurrentMetric_PointInPolygonCacheSizeLimit` ([Int64](/es/reference/data-types/int-uint)) — Tamaño máximo en bytes de la caché de polígonos constantes preprocesados para la función `pointInPolygon` (el valor aplicado de la configuración del servidor `point_in_polygon_cache_size`)
 * `CurrentMetric_DNSHostsCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño de la caché de hosts DNS en bytes
 * `CurrentMetric_DNSHostsCacheSize` ([Int64](/es/reference/data-types/int-uint)) — Número de hosts DNS en caché
 * `CurrentMetric_DNSAddressesCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño de la caché de direcciones DNS en bytes
 * `CurrentMetric_DNSAddressesCacheSize` ([Int64](/es/reference/data-types/int-uint)) — Número de direcciones DNS en caché
 * `CurrentMetric_MarkCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de la caché de marcas en bytes
 * `CurrentMetric_MarkCacheFiles` ([Int64](/es/reference/data-types/int-uint)) — Número total de archivos de marcas almacenados en caché en la caché de marcas
-* `CurrentMetric_UniqueKeyIndexCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de la caché de índices UNIQUE KEY en bytes
-* `CurrentMetric_UniqueKeyIndexCacheEntries` ([Int64](/es/reference/data-types/int-uint)) — Número total de bloques de índice UNIQUE KEY almacenados en caché
-* `CurrentMetric_DeleteBitmapCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de la caché de bitmap de eliminación UNIQUE KEY en bytes
-* `CurrentMetric_DeleteBitmapCacheEntries` ([Int64](/es/reference/data-types/int-uint)) — Número total de bitmaps de eliminación UNIQUE KEY almacenados en caché
 * `CurrentMetric_NamedCollection` ([Int64](/es/reference/data-types/int-uint)) — Número de colecciones nombradas
-* `CurrentMetric_PrimaryIndexCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de la caché del índice primario en bytes. Contiene índices de clave primaria cargados bajo demanda cuando `primary_key_lazy_load=1` y `use_primary_key_cache=1`. Cuando el pool dedicado de arenas de metadatos de MergeTree está habilitado (`jemalloc_merge_tree_arenas` &gt; 0 con jemalloc), las columnas de índice se asignan allí (`jemalloc.mergetree_arena.*`), incluso cuando pertenecen a esta caché. NUNCA se solapa con `system.parts.primary_key_bytes_in_memory[_allocated]`: el índice de una parte reside en esta caché (contado aquí) o en la propia parte (contado allí), pero nunca en ambos. Para obtener la memoria total del índice primario de todas las partes, sume ambos valores.
+* `CurrentMetric_PrimaryIndexCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de la caché del índice primario en bytes
 * `CurrentMetric_PrimaryIndexCacheFiles` ([Int64](/es/reference/data-types/int-uint)) — Número total de archivos de índice almacenados en caché en la caché del índice primario
 * `CurrentMetric_PageCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de la caché de páginas en espacio de usuario en bytes
 * `CurrentMetric_PageCacheCells` ([Int64](/es/reference/data-types/int-uint)) — Número total de entradas en la caché de páginas en espacio de usuario
@@ -1881,9 +1639,7 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_QueryCacheEntries` ([Int64](/es/reference/data-types/int-uint)) — Número total de entradas en la caché de consultas
 * `CurrentMetric_QueryConditionCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de la caché de condiciones de consulta en bytes
 * `CurrentMetric_QueryConditionCacheEntries` ([Int64](/es/reference/data-types/int-uint)) — Número total de entradas en la caché de condiciones de consulta
-* `CurrentMetric_EncryptionHeaderCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de la caché de encabezados de cifrado en bytes
-* `CurrentMetric_EncryptionHeaderCacheEntries` ([Int64](/es/reference/data-types/int-uint)) — Número total de entradas en la caché de encabezados de cifrado
-* `CurrentMetric_CompiledExpressionCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Capacidad reservada de bloques de páginas (redondeada a páginas completas con un factor de sobreaprovisionamiento de 2x) mantenida por `JITModuleMemoryManager` para las secciones ejecutables y de datos de las funciones compiladas con JIT almacenadas en caché. NO son los bytes reales de código máquina en uso (esa cantidad es menor). Se asigna mediante `posix_memalign`, que se intercepta en jemalloc, por lo que se contabiliza dentro de la arena de JIT dedicada y es un subconjunto de `jemalloc.jit_arena.active_bytes`.
+* `CurrentMetric_CompiledExpressionCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Total de bytes usados por la caché de código compilado con JIT
 * `CurrentMetric_CompiledExpressionCacheCount` ([Int64](/es/reference/data-types/int-uint)) — Número total de entradas en la caché de código compilado con JIT
 * `CurrentMetric_SerializationCacheBytesInMemoryAllocated` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de la caché de serialización en bytes, incluidas las claves y la sobrecarga de los slots vacíos
 * `CurrentMetric_SerializationCacheBytesInMemory` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de la caché de serialización en bytes, incluidos solo los valores
@@ -1893,15 +1649,9 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_BcryptCacheBytes` ([Int64](/es/reference/data-types/int-uint)) — Tamaño total de la caché de autenticación bcrypt en bytes
 * `CurrentMetric_BcryptCacheSize` ([Int64](/es/reference/data-types/int-uint)) — Número total de entradas en la caché de autenticación bcrypt
 * `CurrentMetric_ColumnsDescriptionsCacheSize` ([Int64](/es/reference/data-types/int-uint)) — Tamaño de la caché ColumnsDescriptions (caché por tabla)
-* `CurrentMetric_SharedPartSerializationsCacheSize` ([Int64](/es/reference/data-types/int-uint)) — Número de mapas de serialización distintos compartidos entre partes de datos (suma de las cachés por tabla)
-* `CurrentMetric_SharedPartSerializationGroupsCacheSize` ([Int64](/es/reference/data-types/int-uint)) — Número de grupos de serialización por columna distintos compartidos entre partes de datos (suma de las cachés por tabla)
-* `CurrentMetric_SharedPartColumnsSubstreamsCacheSize` ([Int64](/es/reference/data-types/int-uint)) — Número de listas de substreams de columnas distintas compartidas entre partes de datos (suma de las cachés por tabla)
-* `CurrentMetric_SharedPartColumnSubstreamsEntriesCacheSize` ([Int64](/es/reference/data-types/int-uint)) — Número de entradas de subflujos distintas por columna compartidas entre partes de datos (suma de las cachés por tabla)
 * `CurrentMetric_S3Requests` ([Int64](/es/reference/data-types/int-uint)) — Número de solicitudes a S3
 * `CurrentMetric_KeeperAliveConnections` ([Int64](/es/reference/data-types/int-uint)) — Número de conexiones activas
 * `CurrentMetric_KeeperOutstandingRequests` ([Int64](/es/reference/data-types/int-uint)) — Número de solicitudes pendientes
-* `CurrentMetric_KeeperTTLNodes` ([Int64](/es/reference/data-types/int-uint)) — Número de nodos con un TTL establecido almacenados actualmente en Keeper.
-* `CurrentMetric_KeeperContainerNodes` ([Int64](/es/reference/data-types/int-uint)) — Número de nodos contenedor almacenados actualmente en Keeper.
 * `CurrentMetric_ThreadsInOvercommitTracker` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en espera dentro de OvercommitTracker
 * `CurrentMetric_IOUringPendingEvents` ([Int64](/es/reference/data-types/int-uint)) — Número de SQE de io&#95;uring en espera de enviarse
 * `CurrentMetric_IOUringInFlightEvents` ([Int64](/es/reference/data-types/int-uint)) — Número de SQE de io&#95;uring en curso
@@ -1958,9 +1708,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_BlobCopierThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de hilos del proceso en segundo plano de replicación del disco de almacenamiento de objetos
 * `CurrentMetric_BlobCopierThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos del grupo de hilos del proceso en segundo plano de replicación del disco de almacenamiento de objetos que están ejecutando una tarea
 * `CurrentMetric_BlobCopierThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de tareas en cola o activas en el grupo de hilos del proceso en segundo plano de replicación del disco de almacenamiento de objetos
-* `CurrentMetric_DiskObjectStorageCopyObjectThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de hilos utilizado para paralelizar las llamadas a copyObjectToAnotherObjectStorage dentro de las transacciones del disco de almacenamiento de objetos
-* `CurrentMetric_DiskObjectStorageCopyObjectThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de hilos de copia del disco de almacenamiento de objetos que ejecutan una tarea
-* `CurrentMetric_DiskObjectStorageCopyObjectThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de tareas en cola o activas en el grupo de hilos de copia del disco de almacenamiento de objetos
 * `CurrentMetric_HTTPConnectionsStored` ([Int64](/es/reference/data-types/int-uint)) — Recuento total de sesiones almacenadas en el grupo de sesiones para hosts HTTP
 * `CurrentMetric_HTTPConnectionsTotal` ([Int64](/es/reference/data-types/int-uint)) — Recuento total de todas las sesiones para hosts HTTP: almacenadas en el grupo y en uso activo en este momento
 * `CurrentMetric_AddressesActive` ([Int64](/es/reference/data-types/int-uint)) — Recuento total de direcciones que se usan para crear conexiones con grupos de conexiones
@@ -1974,8 +1721,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_ConcurrencyControlPreempted` ([Int64](/es/reference/data-types/int-uint)) — Número total de hilos interrumpidos que esperan un CPU slot
 * `CurrentMetric_ConcurrentQueryScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número total de solicitudes de slots de consulta que se están programando actualmente
 * `CurrentMetric_ConcurrentQueryAcquired` ([Int64](/es/reference/data-types/int-uint)) — Número total de slots de consulta adquiridos
-* `CurrentMetric_MemoryReservationApproved` ([Int64](/es/reference/data-types/int-uint)) — Número total de bytes asignados actualmente (aprobados) para reservas de memoria
-* `CurrentMetric_MemoryReservationDemand` ([Int64](/es/reference/data-types/int-uint)) — Número total de bytes de solicitudes de ampliación pendientes para reservas de memoria
 * `CurrentMetric_DiskS3NoSuchKeyErrors` ([Int64](/es/reference/data-types/int-uint)) — El número de errores `NoSuchKey` que se producen al leer datos desde el almacenamiento en la nube de S3 a través de los discos de ClickHouse.
 * `CurrentMetric_SharedCatalogStateApplicationThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de hilos para la aplicación del estado en Shared Catalog.
 * `CurrentMetric_SharedCatalogStateApplicationThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos activos en el grupo de hilos para la aplicación del estado en Shared Catalog.
@@ -1999,12 +1744,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_StatelessWorkerThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de hilos del stateless worker.
 * `CurrentMetric_StatelessWorkerThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de hilos del stateless worker que ejecutan una tarea.
 * `CurrentMetric_StatelessWorkerThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de trabajos en cola o activos en el grupo de hilos del stateless worker.
-* `CurrentMetric_StatelessWorkerInUse` ([Int64](/es/reference/data-types/int-uint)) — Número de workers sin estado utilizados actualmente por consultas en ejecución.
-* `CurrentMetric_StatelessWorkerIdle` ([Int64](/es/reference/data-types/int-uint)) — Número de workers sin estado que el servidor mantiene actualmente, pero que no utiliza ninguna consulta en ejecución.
-* `CurrentMetric_StatelessWorkerServerActiveTasks` ([Int64](/es/reference/data-types/int-uint)) — Número de tareas de ejecución de consultas activas actualmente en un worker sin estado (aceptadas de un tenant y aún no liberadas).
-* `CurrentMetric_ExchangeServerThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de hilos de handshake del servidor de intercambio distribuido.
-* `CurrentMetric_ExchangeServerThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos en el grupo de hilos de handshake del servidor de intercambio distribuido que ejecutan una tarea.
-* `CurrentMetric_ExchangeServerThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de trabajos en cola o activos en el grupo de hilos de handshake del servidor de intercambio distribuido.
 * `CurrentMetric_ReadonlyDisks` ([Int64](/es/reference/data-types/int-uint)) — Número de discos que se marcaron como de solo lectura durante la comprobación del disco.
 * `CurrentMetric_BrokenDisks` ([Int64](/es/reference/data-types/int-uint)) — Número de discos que se marcaron como dañados durante la comprobación del disco.
 * `CurrentMetric_TaskTrackerThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos usados por el rastreador remoto de tareas de consultas distribuidas.
@@ -2017,11 +1756,6 @@ Contiene el historial de los valores de métricas de las tablas `system.metrics`
 * `CurrentMetric_MergeTreeSnapshotCommitThreads` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos usados para hacer commit de la instantánea
 * `CurrentMetric_MergeTreeSnapshotCommitThreadsActive` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos activos usados para hacer commit de la instantánea
 * `CurrentMetric_MergeTreeSnapshotCommitThreadsScheduled` ([Int64](/es/reference/data-types/int-uint)) — Número de hilos programados usados para hacer commit de la instantánea
-* `histograms.metric` ([Array(LowCardinality(String))](/es/reference/data-types/array)) — Nombres de las familias de histogramas incluidas en la instantánea de esta fila.
-* `histograms.labels` ([Array(Map(LowCardinality(String), LowCardinality(String)))](/es/reference/data-types/array)) — Mapas de etiquetas por entrada.
-* `histograms.histogram` ([Array(Map(Float64, UInt64))](/es/reference/data-types/array)) — Recuentos acumulativos de buckets por entrada, indexados por límite superior; +Inf es la entrada final e iguala el recuento.
-* `histograms.count` ([Array(UInt64)](/es/reference/data-types/array)) — Recuentos totales de observaciones por entrada.
-* `histograms.sum` ([Array(Float64)](/es/reference/data-types/array)) — Sumas de los valores observados por entrada.
 
 {/*AUTOGENERATED_END*/}
 
@@ -2040,6 +1774,7 @@ hostname:                                                        clickhouse.eu-c
 event_date:                                                      2020-09-05
 event_time:                                                      2020-09-05 16:22:33
 event_time_microseconds:                                         2020-09-05 16:22:33.196807
+milliseconds:                                                    196
 ProfileEvent_Query:                                              0
 ProfileEvent_SelectQuery:                                        0
 ProfileEvent_InsertQuery:                                        0
@@ -2084,7 +1819,7 @@ LIMIT 1;
   ## Véase también
 </div>
 
-* [ajuste metric&#95;log](/es/reference/settings/server-settings/settings/other#metric_log) — Permite habilitar y deshabilitar el ajuste.
+* [ajuste metric&#95;log](/es/reference/settings/server-settings/settings#metric_log) — Permite habilitar y deshabilitar el ajuste.
 * [system.asynchronous&#95;metrics](/es/reference/system-tables/asynchronous_metrics) — Contiene métricas calculadas periódicamente.
 * [system.events](/es/reference/system-tables/events) — Contiene una serie de eventos ocurridos.
 * [system.metrics](/es/reference/system-tables/metrics) — Contiene métricas calculadas al instante.

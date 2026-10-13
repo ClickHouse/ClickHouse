@@ -8,7 +8,7 @@ keywords: ['data lake', 'lakehouse', 'Iceberg', 'Delta Lake', 'Hudi', 'Paimon', 
 doc_type: 'guide'
 ---
 
-import { ExperimentalBadge } from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
+import ExperimentalBadge from "/snippets/fr/components/ExperimentalBadge/ExperimentalBadge.jsx";
 
 ClickHouse fournit des fonctions de table pour interroger des données stockées dans des formats de table ouverts directement dans le stockage objet. Cela ne nécessite pas de connexion à un catalogue externe : les données sont interrogées sur place, de la même manière qu’AWS Athena lit depuis S3.
 
@@ -17,7 +17,7 @@ Vous transmettez le chemin de stockage et les identifiants directement dans l’
 <Info>
   **Server, local ou chDB**
 
-  Les étapes de ce guide peuvent être exécutées à l’aide d’une installation existante de ClickHouse server. Pour des requêtes ad hoc, vous pouvez aussi utiliser [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) et suivre le même workflow sans démarrer de serveur. Moyennant quelques ajustements mineurs, le processus peut également être effectué avec la distribution intégrée au processus de ClickHouse, [chDB](/fr/chdb/index).
+  Les étapes de ce guide peuvent être exécutées à l’aide d’une installation existante de ClickHouse server. Pour des requêtes ad hoc, vous pouvez aussi utiliser [clickhouse-local](/fr/concepts/features/tools-and-utilities/clickhouse-local) et suivre le même workflow sans démarrer de serveur. Moyennant quelques ajustements mineurs, le processus peut également être effectué avec la distribution intégrée au processus de ClickHouse, [chDB](/fr/products/chdb/index).
 </Info>
 
 Les exemples suivants utilisent le dataset [hits](/fr/get-started/sample-datasets/star-schema) stocké au format lakehouse sur S3. Pour chaque format lakehouse, des fonctions dédiées existent pour chaque fournisseur de stockage objet.

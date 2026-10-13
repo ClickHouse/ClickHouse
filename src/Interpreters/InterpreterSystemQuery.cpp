@@ -40,8 +40,6 @@
 #include <Interpreters/InterpreterFactory.h>
 #include <Interpreters/InterpreterRenameQuery.h>
 #include <Interpreters/InterpreterSystemQuery.h>
-#include <IO/ReadBufferFromString.h>
-#include <IO/ReadHelpers.h>
 #include <Interpreters/JIT/CHJIT.h>
 #include <Interpreters/JIT/CompileRegexp.h>
 #include <Interpreters/JIT/CompiledExpressionCache.h>
@@ -75,6 +73,7 @@
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/StorageMaterializedView.h>
 #include <Storages/StorageQueryRunner.h>
+#include <Storages/StorageProxy.h>
 #include <Storages/StorageReplicatedMergeTree.h>
 #include <Storages/StorageURL.h>
 #include <base/coverage.h>
@@ -96,9 +95,7 @@
 #include <Common/getNumberOfCPUCoresToUse.h>
 #include <Common/getRandomASCIIString.h>
 #include <Common/logger_useful.h>
-#include <Common/saturatedDuration.h>
 #include <Common/typeid_cast.h>
-#include <Common/formatReadable.h>
 #include <Common/SystemAllocatedMemoryHolder.h>
 #include <Common/ZooKeeper/ZooKeeper.h>
 #include <base/sleep.h>
@@ -120,10 +117,6 @@
 #if USE_JEMALLOC
 #    include <Processors/Sources/JemallocProfileSource.h>
 #    include <Common/Jemalloc.h>
-#endif
-
-#if ENABLE_DISTRIBUTED_CACHE
-#include <DistributedCache/Utils.h>
 #endif
 
 #if USE_PARQUET && USE_DELTA_KERNEL_RS
@@ -606,12 +599,7 @@ BlockIO InterpreterSystemQuery::execute()
         case Type::CLEAR_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-
-#if ENABLE_DISTRIBUTED_CACHE
-            const auto user_id = DistributedCache::getFilesystemCacheUserId(getContext());
-#else
             const auto user_id = FileCache::getCommonOrigin().user_id;
-#endif
 
             if (query.filesystem_cache_name.empty())
             {
@@ -645,14 +633,6 @@ BlockIO InterpreterSystemQuery::execute()
             }
             break;
         }
-#if ENABLE_DISTRIBUTED_CACHE
-        case Type::CLEAR_DISTRIBUTED_CACHE:
-        {
-            getContext()->checkAccess(AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE);
-            DistributedCache::clearDistributedCache(getContext(), query, log);
-            break;
-        }
-#endif
         case Type::SYNC_FILESYSTEM_CACHE:
         {
             getContext()->checkAccess(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
@@ -995,21 +975,9 @@ BlockIO InterpreterSystemQuery::execute()
                 task->cancel();
             break;
         case Type::TEST_VIEW:
-        {
-            /// The parser keeps the literal text; resolving it needs the server timezone.
-            std::optional<Int64> fake_time;
-            if (query.fake_time_for_view)
-            {
-                ReadBufferFromString buf(*query.fake_time_for_view);
-                time_t time = 0;
-                readDateTimeText(time, buf);
-                assertEOF(buf);
-                fake_time = Int64(time);
-            }
             for (const auto & task : getRefreshTasks())
-                task->setFakeTime(fake_time);
+                task->setFakeTime(query.fake_time_for_view);
             break;
-        }
         case Type::STOP:
         case Type::START:
         case Type::PAUSE:
@@ -1374,7 +1342,7 @@ void InterpreterSystemQuery::restoreReplica()
 
     const StoragePtr table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
 
-    auto * const table_replicated_ptr = dynamic_cast<StorageReplicatedMergeTree *>(table_ptr.get());
+    auto * const table_replicated_ptr = castStorage<StorageReplicatedMergeTree>(table_ptr, DeferredTable::Load).get();
 
     if (table_replicated_ptr == nullptr)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), table_id.getNameForLogs());
@@ -1447,7 +1415,9 @@ StoragePtr InterpreterSystemQuery::doRestartReplica(const StorageID & replica, C
         return nullptr;
     }
 
-    if (!dynamic_cast<const StorageReplicatedMergeTree *>(table.get()))
+    /// The resolved pointer must not outlive this check. `waitDetachedTableNotInUse` below waits
+    /// for the last reference to the detached table to be released.
+    if (!castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load))
     {
         if (throw_on_error)
             throw Exception(ErrorCodes::BAD_ARGUMENTS, table_is_not_replicated.data(), replica.getNameForLogs());
@@ -1626,7 +1596,7 @@ void InterpreterSystemQuery::restartReplicas(ContextMutablePtr system_context)
 
         for (auto it = elem.second->getTablesIterator(getContext()); it->isValid(); it->next())
         {
-            if (dynamic_cast<const StorageReplicatedMergeTree *>(it->table().get()))
+            if (castStorage<StorageReplicatedMergeTree>(it->table(), DeferredTable::Skip))
             {
                 if (!access_is_granted_globally && !access->isGranted(AccessType::SYSTEM_RESTART_REPLICA, elem.first, it->name()))
                 {
@@ -1730,7 +1700,7 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
             DatabasePtr & database = elem.second;
             for (auto iterator = database->getTablesIterator(getContext()); iterator->isValid(); iterator->next())
             {
-                if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(iterator->table().get()))
+                if (auto * storage_replicated = castStorage<StorageReplicatedMergeTree>(iterator->table(), DeferredTable::Skip).get())
                 {
                     /// getReplicaPath() is built from getZooKeeperPath(), which strips only a single trailing
                     /// slash, so a table created from "/a///" metadata keeps "/a//replicas/..." and would slip
@@ -1775,7 +1745,8 @@ void InterpreterSystemQuery::dropReplica(ASTSystemQuery & query)
 
 bool InterpreterSystemQuery::dropStorageReplica(const String & query_replica, const StoragePtr & storage)
 {
-    auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(storage.get());
+    /// Dropping a replica from Keeper is what the command asks for, so loading the table is warranted.
+    auto * storage_replicated = castStorage<StorageReplicatedMergeTree>(storage, DeferredTable::Load).get();
     if (!storage_replicated)
         return false;
 
@@ -2189,7 +2160,8 @@ bool InterpreterSystemQuery::trySyncReplica(StoragePtr table, SyncReplicaMode sy
             break;
     }
 
-    if (auto * storage_replicated = dynamic_cast<StorageReplicatedMergeTree *>(table.get()))
+
+    if (auto * storage_replicated = castStorage<StorageReplicatedMergeTree>(table, DeferredTable::Load).get())
     {
         auto log = getLogger("InterpreterSystemQuery");
         LOG_TRACE(log, "Synchronizing entries in replica's queue with table's log and waiting for current last entry to be processed");
@@ -2237,7 +2209,7 @@ void InterpreterSystemQuery::waitLoadingParts()
     getContext()->checkAccess(AccessType::SYSTEM_WAIT_LOADING_PARTS, table_id);
     StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
-    if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+    if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
     {
         LOG_TRACE(log, "Waiting for loading of parts of table {}", table_id.getFullTableName());
         merge_tree->waitForOutdatedPartsToBeLoaded();
@@ -2283,7 +2255,7 @@ void InterpreterSystemQuery::restartDisk(const String & disk_name)
         /// skip_not_loaded: act only on already-loaded tables, do not block on async loading.
         for (auto it = elem.second->getTablesIterator(getContext(), {}, /*skip_not_loaded=*/ true); it->isValid(); it->next())
         {
-            auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get());
+            auto * merge_tree = castStorage<MergeTreeData>(it->table(), DeferredTable::Skip).get();
             if (!merge_tree)
                 continue;
 
@@ -2319,7 +2291,8 @@ namespace
 
 MergeTreeData & getMergeTreeWithManualSelector(const StoragePtr & table, const StorageID & table_id, const char * action)
 {
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get());
+    auto resolved = resolveStorageProxyLoading(table);
+    auto * merge_tree = castStorage<MergeTreeData>(resolved, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Command {} is supported only for MergeTree-family tables, but got: {}",
@@ -2363,20 +2336,11 @@ void InterpreterSystemQuery::syncMerges()
     DynamicDelay poll_delay;
     poll_delay.setConfiguration(/*min_delay_=*/50, /*max_delay_=*/500, /*factor_up_=*/2.0, /*factor_lower_=*/1.0);
 
-    const auto start = std::chrono::steady_clock::now();
-    const auto max_execution_time_us = getContext()->getSettingsRef()[Setting::max_execution_time].totalMicroseconds();
-    /// Compare the *elapsed* time against the timeout instead of building an absolute deadline:
-    /// `now + max_execution_time` is not representable for the largest values `max_execution_time`
-    /// accepts, and both capping the deadline at the end of the clock's range and clamping the
-    /// timeout with `saturatedMilliseconds` (a one-year bound meant for a `wait_for` slice) would
-    /// time the command out long before the configured limit.
-    while (true)
+    const auto max_execution_time_ms = getContext()->getSettingsRef()[Setting::max_execution_time].totalMilliseconds();
+    const auto timeout = max_execution_time_ms == 0 ? std::numeric_limits<int32_t>::max() : max_execution_time_ms;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout);
+    while (std::chrono::steady_clock::now() < deadline)
     {
-        if (max_execution_time_us != 0
-            && std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count()
-                >= max_execution_time_us)
-            break;
-
         if (CurrentThread::isInitialized() && CurrentThread::get().isQueryCanceled())
             throw DB::Exception(DB::ErrorCodes::QUERY_WAS_CANCELLED, "Query was cancelled");
 
@@ -2413,7 +2377,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         getContext()->checkAccess(load ? AccessType::SYSTEM_LOAD_PRIMARY_KEY : AccessType::SYSTEM_UNLOAD_PRIMARY_KEY, table_id.database_name, table_id.table_name);
         StoragePtr table = DatabaseCatalog::instance().getTable(table_id, getContext());
 
-        if (auto * merge_tree = dynamic_cast<MergeTreeData *>(table.get()))
+        if (auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get())
         {
             LOG_TRACE(log, "{} primary keys for table {}", load ? "Loading" : "Unloading", table_id.getFullTableName());
             load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
@@ -2433,7 +2397,7 @@ void InterpreterSystemQuery::loadOrUnloadPrimaryKeysImpl(bool load)
         {
             for (auto it = database.second->getTablesIterator(getContext()); it->isValid(); it->next())
             {
-                if (auto * merge_tree = dynamic_cast<MergeTreeData *>(it->table().get()))
+                if (auto * merge_tree = castStorage<MergeTreeData>(it->table(), DeferredTable::Skip).get())
                 {
                     load ? merge_tree->loadPrimaryKeys() : merge_tree->unloadPrimaryKeys();
                 }
@@ -2544,6 +2508,7 @@ void InterpreterSystemQuery::syncReplicatedDatabase(ASTSystemQuery & query)
 
 void InterpreterSystemQuery::syncTransactionLog()
 {
+    getContext()->checkAccess(AccessType::SYSTEM_SYNC_TRANSACTION_LOG);
     getContext()->checkTransactionsAreAllowed(/* explicit_tcl_query */ true);
     TransactionLog::instance().sync();
 }
@@ -2577,7 +2542,7 @@ void InterpreterSystemQuery::flushObjectStorageQueue(ASTSystemQuery & query)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "PATH must be specified for SYSTEM FLUSH OBJECT STORAGE QUEUE");
 
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
-    auto * queue = dynamic_cast<StorageObjectStorageQueue *>(table.get());
+    auto queue = castStorage<StorageObjectStorageQueue>(table, DeferredTable::Load);
     if (!queue)
         throw Exception(ErrorCodes::BAD_ARGUMENTS,
             "Table {} is not an S3Queue or AzureQueue table", table_id.getNameForLogs());
@@ -2638,7 +2603,7 @@ void InterpreterSystemQuery::controlBackgroundActivity(const ASTSystemQuery & qu
     const bool can_views = access->isGranted(AccessType::SYSTEM_VIEWS, table_id.database_name, table_id.table_name);
     const bool can_streaming = access->isGranted(AccessType::SYSTEM_STREAMING_ENGINES, table_id.database_name, table_id.table_name);
 
-    auto storage = DatabaseCatalog::instance().tryGetTable(table_id, getContext());
+    auto storage = resolveStorageProxyLoading(DatabaseCatalog::instance().tryGetTable(table_id, getContext()));
     const bool is_streaming = storage && storage->isStreamingStorage();
     const auto * mv = storage ? dynamic_cast<const StorageMaterializedView *>(storage.get()) : nullptr;
     const bool is_refreshable_view = mv && mv->isRefreshable();
@@ -2720,8 +2685,8 @@ void InterpreterSystemQuery::prewarmMarkCache()
 
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_MARK_CACHE, table_id);
 
-    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
+    auto table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
+    auto * merge_tree = castStorage<MergeTreeData>(table_ptr, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM MARK CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
 
@@ -2744,8 +2709,8 @@ void InterpreterSystemQuery::prewarmPrimaryIndexCache()
 
     getContext()->checkAccess(AccessType::SYSTEM_PREWARM_PRIMARY_INDEX_CACHE, table_id);
 
-    auto table_ptr = DatabaseCatalog::instance().getTable(table_id, getContext());
-    auto * merge_tree = dynamic_cast<MergeTreeData *>(table_ptr.get());
+    auto table_ptr = resolveStorageProxyLoading(DatabaseCatalog::instance().getTable(table_id, getContext()));
+    auto * merge_tree = castStorage<MergeTreeData>(table_ptr, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(ErrorCodes::BAD_ARGUMENTS, "Command PREWARM PRIMARY INDEX CACHE is supported only for MergeTree table, but got: {}", table_ptr->getName());
 
@@ -2780,105 +2745,41 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
             required_access.emplace_back(AccessType::SYSTEM_SHUTDOWN);
             break;
         }
-        /// Each cache command requires the same privilege as its non-ON CLUSTER counterpart above.
-        /// CLEAR INDEX MARK CACHE and CLEAR INDEX UNCOMPRESSED CACHE have no privilege of their own
-        /// and reuse the one of the cache they clear.
         case Type::CLEAR_DNS_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_DNS_CACHE);
-            break;
         case Type::CLEAR_CONNECTIONS_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_CONNECTIONS_CACHE);
-            break;
         case Type::CLEAR_MARK_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_MARK_CACHE);
-            break;
         case Type::CLEAR_ICEBERG_METADATA_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_ICEBERG_METADATA_CACHE);
-            break;
         case Type::CLEAR_PAIMON_METADATA_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_PAIMON_METADATA_CACHE);
-            break;
         case Type::CLEAR_AVRO_SCHEMA_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_AVRO_SCHEMA_CACHE);
-            break;
         case Type::CLEAR_PARQUET_METADATA_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_PARQUET_METADATA_CACHE);
-            break;
         case Type::CLEAR_POINT_IN_POLYGON_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_POINT_IN_POLYGON_CACHE);
-            break;
         case Type::CLEAR_PRIMARY_INDEX_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_PRIMARY_INDEX_CACHE);
-            break;
         case Type::CLEAR_MMAP_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_MMAP_CACHE);
-            break;
         case Type::CLEAR_QUERY_CONDITION_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_QUERY_CONDITION_CACHE);
-            break;
         case Type::CLEAR_ENCRYPTION_HEADERS_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_ENCRYPTION_HEADERS_CACHE);
-            break;
         case Type::CLEAR_QUERY_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_QUERY_CACHE);
-            break;
         case Type::CLEAR_COMPILED_EXPRESSION_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_COMPILED_EXPRESSION_CACHE);
-            break;
         case Type::CLEAR_UNCOMPRESSED_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            break;
         case Type::CLEAR_INDEX_MARK_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_MARK_CACHE);
-            break;
         case Type::CLEAR_INDEX_UNCOMPRESSED_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_UNCOMPRESSED_CACHE);
-            break;
         case Type::CLEAR_VECTOR_SIMILARITY_INDEX_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_VECTOR_SIMILARITY_INDEX_CACHE);
-            break;
         case Type::CLEAR_TEXT_INDEX_TOKENS_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_TOKENS_CACHE);
-            break;
         case Type::CLEAR_TEXT_INDEX_HEADER_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_HEADER_CACHE);
-            break;
         case Type::CLEAR_TEXT_INDEX_POSTINGS_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_POSTINGS_CACHE);
-            break;
         case Type::CLEAR_TEXT_INDEX_CACHES:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_TEXT_INDEX_CACHES);
-            break;
         case Type::CLEAR_FILESYSTEM_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-            break;
-        case Type::SYNC_FILESYSTEM_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_SYNC_FILESYSTEM_CACHE);
-            break;
-        case Type::CLEAR_PAGE_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_PAGE_CACHE);
-            break;
-        case Type::CLEAR_SCHEMA_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_SCHEMA_CACHE);
-            break;
-        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_FORMAT_SCHEMA_CACHE);
-            break;
-        case Type::CLEAR_S3_CLIENT_CACHE:
-            required_access.emplace_back(AccessType::SYSTEM_DROP_S3_CLIENT_CACHE);
-            break;
         case Type::CLEAR_DISTRIBUTED_CACHE:
+        case Type::SYNC_FILESYSTEM_CACHE:
+        case Type::CLEAR_PAGE_CACHE:
+        case Type::CLEAR_SCHEMA_CACHE:
+        case Type::CLEAR_FORMAT_SCHEMA_CACHE:
+        case Type::CLEAR_S3_CLIENT_CACHE:
         {
-            required_access.emplace_back(AccessType::SYSTEM_DROP_DISTRIBUTED_CACHE);
+            required_access.emplace_back(AccessType::SYSTEM_DROP_CACHE);
             break;
         }
         case Type::CLEAR_DISK_METADATA_CACHE:
-#if CLICKHOUSE_CLOUD
-            required_access.emplace_back(AccessType::SYSTEM_DROP_FILESYSTEM_CACHE);
-            break;
-#else
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED, "Not implemented");
-#endif
         case Type::RELOAD_DICTIONARY:
         case Type::RELOAD_DICTIONARIES:
         case Type::RELOAD_EMBEDDED_DICTIONARIES:
@@ -2966,9 +2867,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_CLEANUP:
         {
             if (!query.table)
-                required_access.emplace_back(AccessType::SYSTEM_CLEANUP);
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
             else
-                required_access.emplace_back(AccessType::SYSTEM_CLEANUP, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_FETCHES:
@@ -3017,9 +2918,9 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         case Type::START_VIRTUAL_PARTS_UPDATE:
         {
             if (!query.table)
-                required_access.emplace_back(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE);
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG);
             else
-                required_access.emplace_back(AccessType::SYSTEM_VIRTUAL_PARTS_UPDATE, query.getDatabase(), query.getTable());
+                required_access.emplace_back(AccessType::SYSTEM_PULLING_REPLICATION_LOG, query.getDatabase(), query.getTable());
             break;
         }
         case Type::STOP_REDUCE_BLOCKING_PARTS:
@@ -3229,11 +3130,22 @@ AccessRightsElements InterpreterSystemQuery::getRequiredAccessForDDLOnCluster() 
         }
         case Type::STOP_THREAD_FUZZER:
         case Type::START_THREAD_FUZZER:
+        {
+            required_access.emplace_back(AccessType::SYSTEM_THREAD_FUZZER);
+            break;
+        }
+        case Type::RESET_COVERAGE:
+        {
+            required_access.emplace_back(AccessType::SYSTEM);
+            break;
+        }
+        /// The parser cases of the failpoint statements and of SYSTEM SET COVERAGE TEST never read an
+        /// ON CLUSTER clause, so those cluster spellings do not parse and reach no host. UNKNOWN and
+        /// END are not statements.
         case Type::ENABLE_FAILPOINT:
         case Type::WAIT_FAILPOINT:
         case Type::NOTIFY_FAILPOINT:
         case Type::DISABLE_FAILPOINT:
-        case Type::RESET_COVERAGE:
         case Type::SET_COVERAGE_TEST:
         case Type::UNKNOWN:
         case Type::END: break;

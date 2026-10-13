@@ -126,7 +126,6 @@ ActionsDAG createActionsDAGForPreprocessor(
 
 MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression_ast, const IndexDescription & index_description)
     : index_column_type(index_description.data_types.front())
-    , expression_ast_for_index_column(convertASTForIndexColumn(index_description, expression_ast, true))
     /// Use source index columns to execute index and preprocessor expressions.
     , original_actions(createActionsDAGForPreprocessor(
         index_description.expression->getRequiredColumnsWithTypes(),
@@ -145,6 +144,7 @@ MergeTreeIndexTextPreprocessor::MergeTreeIndexTextPreprocessor(ASTPtr expression
         preprocessor_column_name,
         std::make_shared<DataTypeString>(),
         convertASTForConstant(index_description, expression_ast)))
+    , expression_ast_for_index_column(convertASTForIndexColumn(index_description, expression_ast, true))
 {
     if (expression_ast)
     {
@@ -182,14 +182,11 @@ std::pair<ColumnPtr, size_t> MergeTreeIndexTextPreprocessor::processColumn(const
     return {executeUnaryExpressionActions(actions_for_index_column, index_column, index_column_type, preprocessor_column_name, n_rows), 0};
 }
 
-ASTPtr MergeTreeIndexTextPreprocessor::getExpressionAST(const String & col_name) const
+ActionsDAG MergeTreeIndexTextPreprocessor::getActionsDAGForColumn(const String & col_name, const DataTypePtr & col_type) const
 {
-    if (!expression_ast_for_index_column)
-        return nullptr;
-
-    ASTPtr result = expression_ast_for_index_column->clone();
-    replaceExpressionToIdentifier(result, preprocessor_column_name, col_name);
-    return result;
+    ASTPtr expression_ast = expression_ast_for_index_column->clone();
+    replaceExpressionToIdentifier(expression_ast, preprocessor_column_name, col_name);
+    return buildActionsDAGFromAST(std::move(expression_ast), {{col_name, col_type}});
 }
 
 String MergeTreeIndexTextPreprocessor::processConstant(const String & input) const

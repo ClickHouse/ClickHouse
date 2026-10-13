@@ -4,7 +4,6 @@
 -- PK-range layers; each layer is deduplicated independently and the layers concatenate.
 
 SET enable_parallel_replicas = 0, max_rows_to_group_by = 0, distributed_plan_default_reader_bucket_count = 4;
-SET automatic_parallel_replicas_mode = 0;
 
 DROP TABLE IF EXISTS t_final_layers_rep;
 CREATE TABLE t_final_layers_rep (k UInt64, v UInt64, ver UInt64) ENGINE = ReplacingMergeTree(ver) ORDER BY k

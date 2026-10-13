@@ -18,6 +18,7 @@ void FutureMergedMutatedPart::assign(
     size_t sum_rows = 0;
     size_t sum_bytes_uncompressed = 0;
     MergeTreeDataPartType future_part_type;
+    MergeTreeDataPartStorageType future_part_storage_type;
     UInt32 max_level = 0;
 
     for (const auto & part : parts_)
@@ -25,16 +26,14 @@ void FutureMergedMutatedPart::assign(
         sum_rows += part->rows_count;
         sum_bytes_uncompressed += part->getTotalColumnsSize().data_uncompressed;
         future_part_type = std::min(future_part_type, part->getType());
+        future_part_storage_type = std::min(future_part_storage_type, part->getDataPartStorage().getType());
         max_level = std::max(max_level, part->info.level);
     }
 
     auto chosen_format = parts_.front()->storage.choosePartFormat(sum_bytes_uncompressed, sum_rows, max_level + 1, projection);
     future_part_type = std::min(future_part_type, chosen_format.part_type);
-
-    /// The storage type needs no clamping to the sources: merges always rewrite the data, and a
-    /// mutation whose result storage type differs from the source's is routed to a full rewrite
-    /// (see `rewritesAllPartColumns`).
-    assign(std::move(parts_), std::move(patch_parts_), {future_part_type, chosen_format.storage_type});
+    future_part_storage_type = std::min(future_part_storage_type, chosen_format.storage_type);
+    assign(std::move(parts_), std::move(patch_parts_), {future_part_type, future_part_storage_type});
 }
 
 void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, MergeTreeData::DataPartsVector patch_parts_, MergeTreeDataPartFormat future_part_format)
@@ -65,7 +64,7 @@ void FutureMergedMutatedPart::assign(MergeTreeData::DataPartsVector parts_, Merg
 
     for (const auto & patch : patch_parts)
     {
-        Int64 max_patch_version = patch->getPatchPartIndex().getMaxDataVersion();
+        Int64 max_patch_version = patch->getSourcePartsSet().getMaxDataVersion();
         max_mutation = std::max(max_mutation, max_patch_version);
     }
 

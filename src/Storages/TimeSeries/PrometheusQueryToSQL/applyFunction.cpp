@@ -1,7 +1,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunction.h>
 
 #include <Common/Exception.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyClampFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyDateTimeFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionOverRange.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyFunctionScalar.h>
@@ -9,7 +8,6 @@
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyHistogramQuantile.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyLabelManipulationFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/applyOneArgumentMathFunction.h>
-#include <Storages/TimeSeries/PrometheusQueryToSQL/applyRoundFunction.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionPi.h>
 #include <Storages/TimeSeries/PrometheusQueryToSQL/fromFunctionTime.h>
 
@@ -23,8 +21,7 @@ namespace DB::ErrorCodes
 namespace DB::PrometheusQueryToSQL
 {
 
-SQLQueryPiece applyFunction(
-    const PrometheusQueryTree::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
+SQLQueryPiece applyFunction(const PQT::Function * function_node, std::vector<SQLQueryPiece> && arguments, ConverterContext & context)
 {
     std::string_view function_name = function_node->function_name;
 
@@ -42,12 +39,6 @@ SQLQueryPiece applyFunction(
 
     if (isOneArgumentMathFunction(function_name))
         return applyOneArgumentMathFunction(function_node, std::move(arguments), context);
-
-    if (isClampFunction(function_name))
-        return applyClampFunction(function_node, std::move(arguments), context);
-
-    if (isRoundFunction(function_name))
-        return applyRoundFunction(function_node, std::move(arguments), context);
 
     if (isFunctionPi(function_name))
         return fromFunctionPi(function_node, std::move(arguments), context);

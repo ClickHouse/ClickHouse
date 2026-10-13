@@ -46,7 +46,6 @@ namespace Setting
     extern const SettingsBool schema_inference_use_cache_for_s3;
     extern const SettingsBool compatibility_s3_presigned_url_query_in_path;
     extern const SettingsS3UriStyle s3_uri_style;
-    extern const SettingsString s3_base;
 }
 
 namespace S3AuthSetting
@@ -179,15 +178,16 @@ ObjectStoragePtr StorageS3Configuration::createObjectStorage(ContextPtr context,
         url, *s3_settings, context, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, /*refresh_credentials_callback*/ std::nullopt,
         is_loading_from_existing_metadata, force_anonymous_load_fallback);
 
-    auto client_refresher = [refresh_credentials_callback, this, context_ = Context::createCopy(context)] () -> std::unique_ptr<S3::Client>
+    S3ObjectStorage::S3CredentialsRefreshCallback client_refresher;
+    if (refresh_credentials_callback)
     {
-        if (!refresh_credentials_callback)
-            return nullptr;
-        auto new_client = getClient(
-            url, *s3_settings, context_, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, refresh_credentials_callback,
-            is_loading_from_existing_metadata, force_anonymous_load_fallback);
-        return new_client;
-    };
+        client_refresher = [refresh_credentials_callback, this, context_ = Context::createCopy(context)] () -> std::unique_ptr<S3::Client>
+        {
+            return getClient(
+                url, *s3_settings, context_, /* for_disk_s3 */ false, /*opt_disk_name*/ {}, refresh_credentials_callback,
+                is_loading_from_existing_metadata, force_anonymous_load_fallback);
+        };
+    }
     return std::make_shared<S3ObjectStorage>(
         std::move(client),
         std::make_unique<S3Settings>(*s3_settings),
@@ -205,25 +205,16 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
     const auto & settings = context->getSettingsRef();
     validateNamedCollection(collection, required_configuration_keys, optional_configuration_keys);
 
-    /// Resolve relative URLs against the `s3_base` setting. When the setting rewrote the URL,
-    /// record the resolved value so that `StorageObjectStorageConfiguration::initialize`
-    /// materializes it back into the persisted engine args (`url='...'` override), keeping the
-    /// persisted DDL independent of `s3_base` at attach time.
-    const String raw_collection_url = collection.get<String>("url");
-    const String collection_url = StorageURL::resolveURLBase(raw_collection_url, settings[Setting::s3_base].value, "s3_base");
-    if (collection_url != raw_collection_url)
-        url_overridden_by_base_setting = collection_url;
-
     auto filename = collection.getOrDefault<String>("filename", "");
     if (!filename.empty())
         url = S3::URI(
-            std::filesystem::path(collection_url) / filename,
+            std::filesystem::path(collection.get<String>("url")) / filename,
             settings[Setting::allow_archive_path_syntax],
             /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
             /*uri_style*/ settings[Setting::s3_uri_style]);
     else
         url = S3::URI(
-            collection_url,
+            collection.get<String>("url"),
             settings[Setting::allow_archive_path_syntax],
             /*keep_presigned_query_parameters*/ !settings[Setting::compatibility_s3_presigned_url_query_in_path],
             /*uri_style*/ settings[Setting::s3_uri_style]);
@@ -270,7 +261,6 @@ void S3StorageParsedArguments::fromNamedCollection(const NamedCollection & colle
         }
 
         partition_strategy_type = partition_strategy_type_opt.value();
-        partition_strategy_was_set = true;
     }
 
     if (collection.has("partition_columns_in_data_file"))
@@ -709,20 +699,8 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
     }
 
     /// This argument is always the first
-    String url_str = checkAndGetLiteralArgument<String>(args[0], "url");
-
-    /// Resolve relative URLs against the `s3_base` setting, and materialize the resolved URL
-    /// back into the arguments so that the persisted DDL (`SHOW CREATE TABLE`, DETACH/ATTACH,
-    /// server restart) does not depend on the value of `s3_base` at attach time.
-    if (String resolved_url = StorageURL::resolveURLBase(url_str, context->getSettingsRef()[Setting::s3_base].value, "s3_base");
-        resolved_url != url_str)
-    {
-        StorageURL::overrideURLInEngineArgs(args, resolved_url, context, /*skip_userinfo=*/ true);
-        url_str = std::move(resolved_url);
-    }
-
     url = S3::URI(
-        url_str,
+        checkAndGetLiteralArgument<String>(args[0], "url"),
         context->getSettingsRef()[Setting::allow_archive_path_syntax],
         /*keep_presigned_query_parameters*/ !context->getSettingsRef()[Setting::compatibility_s3_presigned_url_query_in_path],
         /*uri_style*/ context->getSettingsRef()[Setting::s3_uri_style]);
@@ -803,7 +781,6 @@ void S3StorageParsedArguments::fromAST(ASTs & args, ContextPtr context, bool wit
         }
 
         partition_strategy_type = partition_strategy_type_opt.value();
-        partition_strategy_was_set = true;
     }
 
     if (auto partition_columns_in_data_file_value = getFromPositionOrKeyValue<bool>("partition_columns_in_data_file", args, engine_args_to_idx, key_value_args);

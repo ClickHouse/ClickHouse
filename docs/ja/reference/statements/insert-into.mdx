@@ -165,7 +165,7 @@ Valuesフォーマットを除き、どのデータフォーマットでも `now
 
 `SELECT` 句にテーブル関数 [input()](/ja/reference/functions/table-functions/input) が含まれている場合、`FORMAT` 句はクエリの末尾で指定する必要があります。
 
-NULL不可のデータ型を持つカラムに `NULL` の代わりにデフォルト値を挿入するには、[insert&#95;null&#95;as&#95;default](/ja/reference/settings/session-settings/insert#insert_null_as_default) 設定を有効にします。
+NULL不可のデータ型を持つカラムに `NULL` の代わりにデフォルト値を挿入するには、[insert&#95;null&#95;as&#95;default](/ja/reference/settings/session-settings#insert_null_as_default) 設定を有効にします。
 
 `INSERT` は CTE (共通テーブル式) もサポートしています。たとえば、次の2つのステートメントは同等です。
 
@@ -306,7 +306,7 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
   ### 非同期挿入
 </div>
 
-小規模な挿入を高頻度で行う場合でも、データを非同期に挿入できます。こうした挿入によるデータはバッチにまとめられ、その後、安全にテーブルへ挿入されます。非同期挿入を使用するには、[`async_insert`](/ja/reference/settings/session-settings/async-insert#async_insert) 設定を有効にします。
+小規模な挿入を高頻度で行う場合でも、データを非同期に挿入できます。こうした挿入によるデータはバッチにまとめられ、その後、安全にテーブルへ挿入されます。非同期挿入を使用するには、[`async_insert`](/ja/reference/settings/session-settings#async_insert) 設定を有効にします。
 
 `async_insert` または [`Buffer` テーブルエンジン](/ja/reference/engines/table-engines/special/buffer) を使用すると、追加のバッファリングが発生します。
 
@@ -314,13 +314,13 @@ SELECT .... SETTINGS select_sequential_consistency = 1;
   ### 大量または長時間にわたる挿入
 </div>
 
-大量のデータを挿入する場合、ClickHouse は「まとめる」と呼ばれるプロセスによって書き込み性能を最適化します。メモリ内の小さな挿入データのブロックはマージされ、より大きなブロックにまとめられてからディスクに書き込まれます。まとめることで、各書き込み操作に伴うオーバーヘッドを削減できます。このプロセスでは、挿入されたデータは ClickHouse が [`max_insert_block_size`](/ja/reference/settings/session-settings/max-insert#max_insert_block_size) 行ごとの書き込みを完了するたびにクエリできるようになります。
+大量のデータを挿入する場合、ClickHouse は「まとめる」と呼ばれるプロセスによって書き込み性能を最適化します。メモリ内の小さな挿入データのブロックはマージされ、より大きなブロックにまとめられてからディスクに書き込まれます。まとめることで、各書き込み操作に伴うオーバーヘッドを削減できます。このプロセスでは、挿入されたデータは ClickHouse が [`max_insert_block_size`](/ja/reference/settings/session-settings#max_insert_block_size) 行ごとの書き込みを完了するたびにクエリできるようになります。
 
 **関連項目**
 
-* [async&#95;insert](/ja/reference/settings/session-settings/async-insert#async_insert)
-* [wait&#95;for&#95;async&#95;insert](/ja/reference/settings/session-settings/wait-for#wait_for_async_insert)
-* [wait&#95;for&#95;async&#95;insert&#95;timeout](/ja/reference/settings/session-settings/wait-for#wait_for_async_insert_timeout)
-* [async&#95;insert&#95;max&#95;data&#95;size](/ja/reference/settings/session-settings/async-insert#async_insert_max_data_size)
-* [async&#95;insert&#95;busy&#95;timeout&#95;ms](/ja/reference/settings/session-settings/async-insert#async_insert_busy_timeout_max_ms)
-* `async_insert_stale_timeout_ms`
+* [async&#95;insert](/ja/reference/settings/session-settings#async_insert)
+* [wait&#95;for&#95;async&#95;insert](/ja/reference/settings/session-settings#wait_for_async_insert)
+* [wait&#95;for&#95;async&#95;insert&#95;timeout](/ja/reference/settings/session-settings#wait_for_async_insert_timeout)
+* [async&#95;insert&#95;max&#95;data&#95;size](/ja/reference/settings/session-settings#async_insert_max_data_size)
+* [async&#95;insert&#95;busy&#95;timeout&#95;ms](/ja/reference/settings/session-settings#async_insert_busy_timeout_max_ms)
+* [async&#95;insert&#95;stale&#95;timeout&#95;ms](/ja/reference/settings/session-settings#async_insert_max_data_size)

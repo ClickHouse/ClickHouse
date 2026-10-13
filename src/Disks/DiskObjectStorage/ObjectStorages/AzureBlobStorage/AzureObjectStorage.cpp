@@ -1,4 +1,3 @@
-#include <ranges>
 #include <algorithm>
 #include <exception>
 #include <optional>
@@ -54,6 +53,7 @@ namespace DB
 namespace ErrorCodes
 {
     extern const int AZURE_BLOB_STORAGE_ERROR;
+    extern const int AZURE_OBJECT_CHANGED_DURING_READ;
     extern const int UNSUPPORTED_METHOD;
 }
 
@@ -197,17 +197,15 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
     else
         options.PageSizeHint = settings.get()->list_object_keys_size;
 
-    /// Re-issue ListBlobs per page through the client wrapper (which strips the endpoint prefix); the SDK's
-    /// MoveToNextPage refetches pages 2..N directly and would leave the raw Azure prefix on their blob names.
-    while (true)
+    for (auto blob_list_response = client_ptr->ListBlobs(options); blob_list_response.HasPage(); blob_list_response.MoveToNextPage())
     {
-        auto blob_list_response = client_ptr->ListBlobs(options);
-
         ProfileEvents::increment(ProfileEvents::AzureListObjects);
         if (client_ptr->IsClientForDisk())
             ProfileEvents::increment(ProfileEvents::DiskAzureListObjects);
 
-        for (const auto & blob : blob_list_response.Blobs)
+        const auto & blobs_list = blob_list_response.Blobs;
+
+        for (const auto & blob : blobs_list)
         {
             children.emplace_back(std::make_shared<RelativePathWithMetadata>(
                 blob.Name,
@@ -224,11 +222,6 @@ void AzureObjectStorage::listObjects(const std::string & path, RelativePathsWith
 
         if (max_keys && children.size() >= max_keys)
             break;
-
-        if (!blob_list_response.NextPageToken.HasValue() || blob_list_response.NextPageToken.Value().empty())
-            break;
-
-        options.ContinuationToken = blob_list_response.NextPageToken;
     }
 }
 
@@ -249,6 +242,26 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
             blob_storage_log->local_path = object.local_path;
     }
 
+    /// An object whose size is known to be zero is read as empty without a single `Download`
+    /// request, so no `If-Match` condition pins that read to the generation the caller has seen.
+    /// A blob listed as empty and replaced with a non-empty one since must still be rejected rather
+    /// than returned as a clean empty file, so its generation is checked on the properties instead.
+    if (object.bytes_size == 0 && !object.etag.empty())
+        getObjectMetadataOfListedGeneration(object);
+
+    /// The size of the object recorded in the metadata is a locally known bound, so it is used
+    /// as the right bound of the read rather than trusting the length of whatever the endpoint
+    /// answers with. `UnknownSize` is the only sentinel for "the size was never determined":
+    /// it is the default-constructed value, so a caller that does not know the size leaves it
+    /// there, and `bytes_size == 0` means a genuinely empty object, which must read as empty
+    /// rather than unbounded.
+    /// `S3ObjectStorage::readObject` maps `0` to "no bound" as well, because
+    /// `ReadBufferFromS3::read_until_position` is a plain `size_t` whose `0` already means
+    /// "unbounded" and therefore cannot express the empty range at all.
+    const std::optional<size_t> known_size = object.bytes_size != StoredObject::UnknownSize
+        ? std::optional<size_t>(object.bytes_size)
+        : std::nullopt;
+
     return std::make_unique<ReadBufferFromAzureBlobStorage>(
         client.get(),
         object.remote_path,
@@ -257,9 +270,18 @@ std::unique_ptr<ReadBufferFromFileBase> AzureObjectStorage::readObject( /// NOLI
         settings_ptr->max_single_download_retries,
         use_external_buffer,
         restrict_seek,
-        /* read_until_position */0,
+        /* read_until_position */ known_size,
         std::move(blob_storage_log),
-        connection_params.getContainer());
+        connection_params.getContainer(),
+        /// The size is only a correct bound for the generation of the object it was recorded for,
+        /// so the read is pinned to that generation when the caller has recorded its `ETag`, and
+        /// a replaced object is rejected instead of being truncated to the stale size.
+        object.etag,
+        /// The same size is what the buffer reports as the size of the file, so that a wrapper
+        /// that sizes itself by `getFileSize` (`CachedInMemoryReadBufferFromFile` does, and treats
+        /// an earlier end of the file as corruption) sees the bound the read has, and not the size
+        /// of whatever generation a live `GetProperties` request would meet.
+        /* file_size */ known_size);
 }
 
 SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetadata( /// NOLINT
@@ -268,6 +290,17 @@ SmallObjectDataWithMetadata AzureObjectStorage::readSmallObjectAndGetObjectMetad
     size_t max_size_bytes,
     std::optional<size_t> read_hint) const
 {
+    /// An object whose size is known to be zero is read as empty without issuing a single
+    /// `Download` request, because `readObject` bounds the read by that size. There is then no
+    /// response to take the metadata from, so it is requested explicitly, and the check that
+    /// `readObject` performs on the `ETag` of the response is made on the properties instead.
+    if (object.bytes_size == 0)
+    {
+        SmallObjectDataWithMetadata result;
+        result.metadata = getObjectMetadataOfListedGeneration(object);
+        return result;
+    }
+
     auto buffer = readObject(object, read_settings, read_hint);
     SmallObjectDataWithMetadata result;
     WriteBufferFromString out(result.data);
@@ -472,33 +505,11 @@ void AzureObjectStorage::removeObjectsBatchIfExists(
         for (const auto & object : object_batch)
             responses.push_back(requests.DeleteBlob(client_ptr->GetBlobPath(object.remote_path)));
 
+        client_ptr->SubmitBatch(requests);
+
         ProfileEvents::increment(ProfileEvents::AzureDeleteObjects, object_batch.size());
         if (is_disk)
             ProfileEvents::increment(ProfileEvents::DiskAzureDeleteObjects, object_batch.size());
-
-        try
-        {
-            client_ptr->SubmitBatch(requests);
-        }
-        catch (const Azure::Storage::StorageException & e)
-        {
-            /// A batch-level failure skips the per-object response loop below, so record one Delete attempt
-            /// per object before rethrowing. Preserve the real HTTP status (as the per-object path below
-            /// does) so these failures stay queryable by error_code.
-            const auto elapsed = watch.elapsedMicroseconds() / object_batch.size();
-            for (const auto & object : object_batch)
-                add_log_entry(object, elapsed, static_cast<Int32>(e.StatusCode), e.Message);
-            throw;
-        }
-        catch (...)
-        {
-            /// Non-Azure failure (e.g. a credential AuthenticationException) carries no HTTP status.
-            const auto elapsed = watch.elapsedMicroseconds() / object_batch.size();
-            const auto batch_error = getCurrentExceptionMessage(false);
-            for (const auto & object : object_batch)
-                add_log_entry(object, elapsed, -1, batch_error);
-            throw;
-        }
 
         size_t avg_elapsed_us = watch.elapsedMicroseconds() / object_batch.size();
         std::exception_ptr throw_at_end;
@@ -582,6 +593,22 @@ void AzureObjectStorage::tagObjects(const StoredObjects & objects, const std::st
     setAzureBlobTag(client_ptr, blob_names, tag_key, tag_value);
 }
 
+ObjectMetadata AzureObjectStorage::getObjectMetadataOfListedGeneration(const StoredObject & object) const
+{
+    ObjectMetadata metadata = getObjectMetadata(object.remote_path, /* with_tags */ false);
+
+    /// A listing spells the `ETag` without the quotes that the `ETag` header of the properties has.
+    const String listed_etag = ReadBufferFromAzureBlobStorage::quotedETag(object.etag);
+    const String current_etag = ReadBufferFromAzureBlobStorage::quotedETag(metadata.etag);
+    if (!listed_etag.empty() && current_etag != listed_etag)
+        throw Exception(
+            ErrorCodes::AZURE_OBJECT_CHANGED_DURING_READ,
+            "Azure blob {} was replaced during read (ETag changed from {} to {}); retry the query, or set azure_validate_etag_on_read=0 to disable this check for table reads",
+            object.remote_path, listed_etag, current_etag);
+
+    return metadata;
+}
+
 ObjectMetadata AzureObjectStorage::getObjectMetadata(const std::string & path, bool) const
 {
     auto client_ptr = client.get();
@@ -640,7 +667,6 @@ void AzureObjectStorage::copyObject( /// NOLINT
         client_ptr,
         connection_params.getContainer(),
         object_from.remote_path,
-        0,
         object_metadata.size_bytes,
         connection_params.getContainer(),
         object_to.remote_path,

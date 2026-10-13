@@ -47,7 +47,7 @@ SELECT 'test1_parts', count() FROM system.parts WHERE database = currentDatabase
 
 SYSTEM FLUSH LOGS part_log;
 -- Exclude TTLDropMerge: a background TTLDrop merge may race with OPTIMIZE FINAL
--- and use Horizontal algorithm due to the TTLDrop short-circuit optimization.
+-- and TTLDrop merges always use the Horizontal algorithm.
 SELECT 'test1_algo', merge_algorithm FROM system.part_log
     WHERE database = currentDatabase() AND table = 't_ttl_vert_1' AND event_type = 'MergeParts'
     AND merge_reason != 'TTLDropMerge'

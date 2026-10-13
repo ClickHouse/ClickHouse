@@ -28,7 +28,7 @@ import SystemTableCloud from '/snippets/ru/_system_table_cloud.mdx';
 * `event_time_microseconds` ([DateTime64(6)](/ru/reference/data-types/datetime64)) — Время записи с точностью до микросекунд.
 * `thread_name` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — Имя потока, из которого выполнялось логирование.
 * `thread_id` ([UInt64](/ru/reference/data-types/int-uint)) — ID потока ОС.
-* `level` ([Enum8(&#39;Fatal&#39; = 1, &#39;Critical&#39; = 2, &#39;Error&#39; = 3, &#39;Warning&#39; = 4, &#39;Notice&#39; = 5, &#39;Information&#39; = 6, &#39;Debug&#39; = 7, &#39;Trace&#39; = 8, &#39;Test&#39; = 9)](/ru/reference/data-types/enum)) — Уровень записи. Возможные значения: 1 или &#39;Fatal&#39;, 2 или &#39;Critical&#39;, 3 или &#39;Error&#39;, 4 или &#39;Warning&#39;, 5 или &#39;Notice&#39;, 6 или &#39;Information&#39;, 7 или &#39;Debug&#39;, 8 или &#39;Trace&#39;, 9 или &#39;Test&#39;.
+* `level` ([Enum8(&#39;Fatal&#39; = 1, &#39;Critical&#39; = 2, &#39;Error&#39; = 3, &#39;Warning&#39; = 4, &#39;Notice&#39; = 5, &#39;Information&#39; = 6, &#39;Debug&#39; = 7, &#39;Trace&#39; = 8, &#39;Test&#39; = 9)](/ru/reference/data-types/enum)) — Уровень записи. Возможные значения: 1 или &#39;Fatal&#39;, 2 или &#39;Critical&#39;, 3 или &#39;Error&#39;, 4 или &#39;Warning&#39;, 5 или &#39;Notice&#39;, 6 или &#39;Information&#39;, 7 или &#39;Debug&#39;, 8 или &#39;Trace&#39;.
 * `query_id` ([String](/ru/reference/data-types/string)) — ID запроса.
 * `logger_name` ([LowCardinality(String)](/ru/reference/data-types/lowcardinality)) — Имя logger (например, DDLWorker).
 * `message` ([String](/ru/reference/data-types/string)) — Само сообщение.
@@ -64,6 +64,7 @@ hostname:                clickhouse.eu-central1.internal
 event_date:              2020-09-10
 event_time:              2020-09-10 11:23:07
 event_time_microseconds: 2020-09-10 11:23:07.871397
+microseconds:            871397
 thread_name:             clickhouse-serv
 thread_id:               564917
 level:                   Information

@@ -81,7 +81,7 @@ MergeTree(또는 복제된 테이블(Replicated Table))에 직접 삽입하고, 
 비동기 삽입이 활성화되면 ClickHouse는 다음을 수행합니다:
 
 (1) 삽입 쿼리를 비동기적으로 수신합니다.
-(2) 먼저 쿼리 데이터를 인메모리 버퍼에 기록합니다.
+(2) 먼저 쿼리 데이터를 메모리 내 버퍼에 기록합니다.
 (3) 다음 버퍼 플러시가 발생할 때만 데이터를 정렬한 뒤 파트로 데이터베이스 스토리지에 기록합니다.
 
 버퍼가 플러시되기 전에는 동일하거나 다른 클라이언트의 다른 비동기 삽입 쿼리 데이터도 버퍼에 함께 수집될 수 있습니다.
@@ -91,7 +91,7 @@ MergeTree(또는 복제된 테이블(Replicated Table))에 직접 삽입하고, 
 <Note>
   데이터가 데이터베이스 스토리지로 플러시되기 전까지는 쿼리로 조회할 수 없으며, 버퍼 플러시는 구성할 수 있습니다.
 
-  비동기 삽입 구성에 대한 전체 세부 사항은 [여기](/ko/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)에서 확인할 수 있으며, 심층 분석은 [여기](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)에서 확인할 수 있습니다.
+  비동기 삽입 구성에 대한 전체 세부 사항은 [여기](/ko/concepts/features/operations/insert/asyncinserts#enabling-asynchronous-inserts)에서 확인할 수 있으며, 자세한 설명은 [여기](https://clickhouse.com/blog/asynchronous-data-inserts-in-clickhouse)에서 확인할 수 있습니다.
 </Note>
 
 <div id="use-official-clickhouse-clients">
@@ -195,7 +195,9 @@ Postgres에서 데이터를 로드할 때는 다음 방법을 사용할 수 있�
 이 예시에서는 [Hacker News 데이터셋](/ko/get-started/sample-datasets/hacker-news)을 사용합니다. 이 데이터셋에는 Hacker News 데이터 2,800만 행이 포함되어 있습니다.
 
 <Steps>
-  <Step title="CSV 다운로드" id="download-csv">
+  <Step>
+    ### CSV 다운로드
+
     다음 명령을 실행하여 공개 S3 버킷에서 데이터셋의 CSV 버전을 다운로드하십시오:
 
     ```bash
@@ -205,7 +207,9 @@ Postgres에서 데이터를 로드할 때는 다음 방법을 사용할 수 있�
     이 압축 파일은 4.6GB 크기이며 2,800만 행을 포함하므로, 다운로드에 5~10분 정도 걸릴 수 있습니다.
   </Step>
 
-  <Step title="테이블 생성" id="create-table">
+  <Step>
+    ### 테이블 생성
+
     `clickhouse-server`가 실행 중이면, 배치 모드의 `clickhouse-client`를 사용해 명령줄에서 직접 다음 스키마로 빈 테이블을 생성할 수 있습니다:
 
     ```bash
@@ -235,7 +239,9 @@ Postgres에서 데이터를 로드할 때는 다음 방법을 사용할 수 있�
     오류가 없다면 테이블이 성공적으로 생성된 것입니다. 위 명령에서는 보간을 방지하기 위해 heredoc 구분자(`_EOF`)를 작은따옴표로 감쌌습니다. 작은따옴표가 없으면 컬럼 이름을 둘러싼 백틱을 이스케이프해야 합니다.
   </Step>
 
-  <Step title="명령줄에서 데이터 삽입" id="insert-data-via-cmd">
+  <Step>
+    ### 명령줄에서 데이터 삽입
+
     이제 다음 명령을 실행하여 앞에서 다운로드한 파일의 데이터를 테이블에 삽입하십시오:
 
     ```bash
@@ -262,7 +268,9 @@ Postgres에서 데이터를 로드할 때는 다음 방법을 사용할 수 있�
     ```
   </Step>
 
-  <Step title="curl을 사용해 명령줄에서 데이터 삽입" id="insert-using-curl">
+  <Step>
+    ### curl을 사용해 명령줄에서 데이터 삽입
+
     앞선 단계에서는 먼저 `wget`을 사용해 CSV 파일을 로컬 머신에 다운로드했습니다. 단일 명령으로 원격 URL에서 직접 데이터를 삽입하는 것도 가능합니다.
 
     다음 명령을 실행하여 `hackernews` 테이블의 데이터를 비우십시오. 그러면 로컬 머신에 다운로드하는 중간 단계 없이 데이터를 다시 삽입할 수 있습니다:

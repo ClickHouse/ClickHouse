@@ -1,4 +1,3 @@
-#include <Common/StringUtils.h>
 #include <Parsers/Prometheus/PrometheusQueryParsingUtil.h>
 
 #include <Common/UTF8Helpers.h>
@@ -7,6 +6,7 @@
 #include <IO/ReadHelpers.h>
 #include <IO/readDecimalText.h>
 #include <IO/readIntText.h>
+#include <boost/algorithm/string/predicate.hpp>
 
 
 namespace DB
@@ -28,8 +28,7 @@ namespace
     }
 
     /// Parses escape sequences in a string literal and replaces them with the characters which they mean.
-    bool tryUnescapeStringLiteral(
-        std::string_view input, char quote_char, String & res_string, String * error_message, size_t * error_pos)
+    bool tryUnescapeStringLiteral(std::string_view input, String & res_string, String * error_message, size_t * error_pos)
     {
         res_string.clear();
         res_string.reserve(input.length());
@@ -69,19 +68,8 @@ namespace
                 case 't':  res_string.push_back(0x09); pos += 2; break;  /// \t  U+0009 horizontal tab
                 case 'v':  res_string.push_back(0x0B); pos += 2; break;  /// \v  U+000B vertical tab
                 case '\\': res_string.push_back('\\'); pos += 2; break;  /// \\  U+005C backslash
-                case '\'':
-                case '"':
-                {
-                    if (c != quote_char)
-                    {
-                        setErrorMessage(error_message, "Invalid escape sequence {}", quoteString(input.substr(pos)));
-                        setErrorPos(error_pos, pos);
-                        return false;
-                    }
-                    res_string.push_back(c);
-                    pos += 2;
-                    break;
-                }
+                case '\'': res_string.push_back('\''); pos += 2; break;  /// \'  U+0027 single quote
+                case '"':  res_string.push_back('"');  pos += 2; break;  /// \"  U+0022 double quote
                 case 'x':
                 {
                     /// \x followed by exactly two hexadecimal digits represents a single byte.
@@ -162,14 +150,6 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    if (UTF8::isSurrogateCodePoint(code_point))
-                    {
-                        setErrorMessage(error_message,
-                                        "Invalid escape sequence {}: A Unicode code point can't be in the surrogate range 0xD800-0xDFFF",
-                                        quoteString(input.substr(pos, 6)));
-                        setErrorPos(error_pos, pos);
-                        return false;
-                    }
                     char bytes[3];  /// 3 bytes is enough to represent a Unicode code point up to 0xFFFF.
                     size_t num_bytes = UTF8::convertCodePointToUTF8(code_point, bytes, sizeof(bytes));
                     res_string.append(bytes, num_bytes);
@@ -204,15 +184,7 @@ namespace
                         setErrorPos(error_pos, pos);
                         return false;
                     }
-                    if (UTF8::isSurrogateCodePoint(code_point))
-                    {
-                        setErrorMessage(error_message,
-                                        "Invalid escape sequence {}: A Unicode code point can't be in the surrogate range 0xD800-0xDFFF",
-                                        quoteString(input.substr(pos, 10)));
-                        setErrorPos(error_pos, pos);
-                        return false;
-                    }
-                    char bytes[4];  /// 4 bytes is enough to represent a Unicode code point up to 0x10FFFF.
+                    char bytes[4];  /// 4 bytes is enough to represent a Unicode code point up to 0xFFFF.
                     size_t num_bytes = UTF8::convertCodePointToUTF8(code_point, bytes, sizeof(bytes));
                     res_string.append(bytes, num_bytes);
                     pos += 10;
@@ -271,20 +243,10 @@ bool PrometheusQueryParsingUtil::tryParseStringLiteral(
 
     /// A string literal enclosed in quotes or double quotes: escape sequences need to be parsed.
     std::string_view unquoted = input.substr(1, input.length() - 2);
-    const size_t newline_pos = unquoted.find('\n');
-    size_t unescape_error_pos = 0;
-    const bool unescape_succeeded = tryUnescapeStringLiteral(unquoted, quote_char, res_string, error_message, &unescape_error_pos);
-
-    if (newline_pos != String::npos && (unescape_succeeded || newline_pos < unescape_error_pos))
+    if (!tryUnescapeStringLiteral(unquoted, res_string, error_message, error_pos))
     {
-        setErrorMessage(error_message, "unterminated quoted string");
-        setErrorPos(error_pos, 0);
-        return false;
-    }
-
-    if (!unescape_succeeded)
-    {
-        setErrorPos(error_pos, unescape_error_pos + 1);
+        if (error_pos)
+            ++*error_pos;
         return false;
     }
 
@@ -370,7 +332,7 @@ namespace
 
         if constexpr (is_decimal<T>)
         {
-            if (equalsCaseInsensitive(input, "Inf") || equalsCaseInsensitive(input, "NaN"))
+            if (boost::iequals(input, "Inf") || boost::iequals(input, "NaN"))
             {
                 setErrorMessage(error_message, "Cannot parse {} {}: Should be finite", getTypeName<T>(), quoteString(input));
                 setErrorPos(error_pos, 0);
@@ -472,7 +434,6 @@ namespace
         bool has_time_units = false;
         Int64 seconds = 0;
         Int64 milliseconds = 0;
-        size_t last_unit_order = 0;
 
         /// Iterate through all {number, time unit} pairs.
         size_t pos = 0;
@@ -511,43 +472,21 @@ namespace
 
             Int64 seconds_per_unit = 0;
             Int64 ms_per_unit = 0;
-            size_t unit_order = 0;
 
             if (unit_name == "y")
-            {
-                unit_order = 1;
                 seconds_per_unit = 365ULL * 24 * 60 * 60;  /// 1y equals 365d (ignoring leap days)
-            }
             else if (unit_name == "w")
-            {
-                unit_order = 2;
                 seconds_per_unit = 7 * 24 * 60 * 60;  /// 1w equals 7d
-            }
             else if (unit_name == "d")
-            {
-                unit_order = 3;
                 seconds_per_unit = 24 * 60 * 60;  /// 1d equals 24h
-            }
             else if (unit_name == "h")
-            {
-                unit_order = 4;
                 seconds_per_unit = 60 * 60;  /// 1h equals 60m
-            }
             else if (unit_name == "m")
-            {
-                unit_order = 5;
                 seconds_per_unit = 60;  /// 1m equals 60s
-            }
             else if (unit_name == "s")
-            {
-                unit_order = 6;
                 seconds_per_unit = 1;  /// 1s equals 1000ms
-            }
             else if (unit_name == "ms")
-            {
-                unit_order = 7;
                 ms_per_unit = 1;
-            }
             else
             {
                 setErrorMessage(error_message,
@@ -556,16 +495,6 @@ namespace
                 setErrorPos(error_pos, unit_start_pos);
                 return false;
             }
-
-            if (unit_order <= last_unit_order)
-            {
-                setErrorMessage(error_message,
-                                "Cannot parse {} {} in duration format: Time units must be ordered from longest to shortest and must not be repeated",
-                                getTypeName<T>(), quoteString(input));
-                setErrorPos(error_pos, unit_start_pos);
-                return false;
-            }
-            last_unit_order = unit_order;
 
             if (seconds_per_unit)
             {

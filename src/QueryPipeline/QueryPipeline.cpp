@@ -18,6 +18,7 @@
 #include <Processors/FractionalLimitTransform.h>
 #include <Processors/QueryPlan/ReadFromPreparedSource.h>
 #include <Processors/Sinks/EmptySink.h>
+#include <Processors/Sinks/NullSink.h>
 #include <Processors/Sinks/SinkToStorage.h>
 #include <Processors/Sources/DelayedSource.h>
 #include <Processors/Sources/NullSource.h>
@@ -27,7 +28,6 @@
 #include <Processors/Transforms/AggregatingTransform.h>
 #include <Processors/Transforms/CountingTransform.h>
 #include <Processors/Transforms/CreatingSetsTransform.h>
-#include <Processors/Transforms/DroppingTransform.h>
 #include <Processors/Transforms/ExpressionTransform.h>
 #include <Processors/Transforms/LimitByTransform.h>
 #include <Processors/Transforms/LimitsCheckingTransform.h>
@@ -502,38 +502,16 @@ QueryPipeline::QueryPipeline(std::shared_ptr<IOutputFormat> format)
     processors->emplace_back(std::move(format));
 }
 
-/// Discards `totals`/`extremes` without adding a childless node; see `DroppingTransform`.
-/// Requires `output != nullptr`.
-static void dropTotalsAndExtremesViaTransform(
-    OutputPort *& output, OutputPort *& totals, OutputPort *& extremes, Processors & processors)
+static void drop(OutputPort *& port, Processors & processors)
 {
-    if (!totals && !extremes)
+    if (!port)
         return;
 
-    chassert(output);
+    auto null_sink = std::make_shared<NullSink>(port->getSharedHeader());
+    connect(*port, null_sink->getPort());
 
-    auto dropping = std::make_shared<DroppingTransform>(
-        output->getSharedHeader(),
-        /*num_streams_=*/1,
-        totals ? totals->getSharedHeader() : nullptr,
-        extremes ? extremes->getSharedHeader() : nullptr);
-
-    connect(*output, dropping->getInputs().front());
-
-    if (totals)
-    {
-        connect(*totals, *dropping->getTotalsPort());
-        totals = nullptr;
-    }
-
-    if (extremes)
-    {
-        connect(*extremes, *dropping->getExtremesPort());
-        extremes = nullptr;
-    }
-
-    output = &dropping->getOutputs().front();
-    processors.emplace_back(std::move(dropping));
+    processors.emplace_back(std::move(null_sink));
+    port = nullptr;
 }
 
 QueryPipeline::QueryPipeline(std::shared_ptr<SinkToStorage> sink) : QueryPipeline(Chain(std::move(sink))) {}
@@ -543,7 +521,8 @@ void QueryPipeline::complete(std::shared_ptr<ISink> sink)
     if (!pulling())
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pulling to be completed with sink");
 
-    dropTotalsAndExtremesViaTransform(output, totals, extremes, *processors);
+    drop(totals, *processors);
+    drop(extremes, *processors);
 
     connect(*output, sink->getPort());
     processors->emplace_back(std::move(sink));
@@ -557,7 +536,8 @@ void QueryPipeline::complete(Chain chain)
 
     resources = chain.detachResources();
 
-    dropTotalsAndExtremesViaTransform(output, totals, extremes, *processors);
+    drop(totals, *processors);
+    drop(extremes, *processors);
 
     for (auto processor : chain.getProcessors())
         processors->emplace_back(std::move(processor));
@@ -580,7 +560,8 @@ void QueryPipeline::complete(Pipe pipe)
         throw Exception(ErrorCodes::LOGICAL_ERROR, "Pipeline must be pushing to be completed with pipe");
 
     pipe.resize(1);
-    pipe.dropTotalsAndExtremes();
+    pipe.dropExtremes();
+    pipe.dropTotals();
     connect(*pipe.getOutputPort(0), *input);
     input = nullptr;
 

@@ -50,32 +50,23 @@ doc_type: 'reference'
 
 设置字段：
 
-| Setting                            | Description                                                                                                                 |
-| ---------------------------------- | --------------------------------------------------------------------------------------------------------------------------- |
-| `host`                             | PostgreSQL 服务器的主机地址。您可以为所有副本统一指定，也可以为每个副本单独指定 (在 `<replica>` 内) 。                                                           |
-| `port`                             | PostgreSQL 服务器的端口。您可以为所有副本统一指定，也可以为每个副本单独指定 (在 `<replica>` 内) 。                                                             |
-| `user`                             | PostgreSQL 用户名。您可以为所有副本统一指定，也可以为每个副本单独指定 (在 `<replica>` 内) 。                                                                |
-| `password`                         | PostgreSQL 用户密码。您可以为所有副本统一指定，也可以为每个副本单独指定 (在 `<replica>` 内) 。                                                               |
-| `replica`                          | 副本配置节。可以有多个此类配置节。                                                                                                           |
-| `replica/host`                     | PostgreSQL 主机地址。                                                                                                            |
-| `replica/port`                     | PostgreSQL 端口。                                                                                                              |
-| `replica/priority`                 | 副本优先级。尝试连接时，ClickHouse 会按优先级顺序遍历各副本。数字越小，优先级越高。                                                                             |
-| `db`                               | 数据库名称。                                                                                                                      |
-| `table`                            | 表名称。                                                                                                                        |
-| `where`                            | 筛选条件。其语法与 PostgreSQL 中 `WHERE` 子句的语法相同。例如，`id > 10 AND id < 20`。可选。                                                         |
-| `invalidate_query`                 | 用于检查字典状态的查询。可选。更多信息请参见[使用 LIFETIME 刷新字典数据](/zh/reference/statements/create/dictionary/lifetime)一节。                             |
-| `background_reconnect`             | 如果连接失败，则在后台重新连接到副本。可选。                                                                                                      |
-| `query`                            | 自定义查询。可选。                                                                                                                   |
-| `sslmode`                          | 传递给 `libpq` 的 TLS/SSL 模式：`disable`、`allow`、`prefer`、`require`、`verify-ca` 或 `verify-full`。未设置时，使用 `libpq` 的默认值 `prefer`。可选。 |
-| `sslrootcert_pem`                  | 用于验证 PostgreSQL 服务器证书的 CA 证书内容。可选。                                                                                          |
-| `sslcert_pem`                      | 用于基于证书的身份验证的客户端证书内容。可选。                                                                                                     |
-| `sslkey_pem`                       | `sslcert_pem` 对应的私钥内容。可选。                                                                                                   |
-| `sslrootcert`, `sslcert`, `sslkey` | 与上述相同的凭据，但以服务器上文件路径的形式提供。仅允许用于在服务器配置文件中定义的字典，或通过其中定义的命名集合使用，详见下文。可选。                                                        |
+| Setting                | Description                                                                                     |
+| ---------------------- | ----------------------------------------------------------------------------------------------- |
+| `host`                 | PostgreSQL 服务器的主机地址。您可以为所有副本统一指定，也可以为每个副本单独指定 (在 `<replica>` 内) 。                               |
+| `port`                 | PostgreSQL 服务器的端口。您可以为所有副本统一指定，也可以为每个副本单独指定 (在 `<replica>` 内) 。                                 |
+| `user`                 | PostgreSQL 用户名。您可以为所有副本统一指定，也可以为每个副本单独指定 (在 `<replica>` 内) 。                                    |
+| `password`             | PostgreSQL 用户密码。您可以为所有副本统一指定，也可以为每个副本单独指定 (在 `<replica>` 内) 。                                   |
+| `replica`              | 副本配置节。可以有多个此类配置节。                                                                               |
+| `replica/host`         | PostgreSQL 主机地址。                                                                                |
+| `replica/port`         | PostgreSQL 端口。                                                                                  |
+| `replica/priority`     | 副本优先级。尝试连接时，ClickHouse 会按优先级顺序遍历各副本。数字越小，优先级越高。                                                 |
+| `db`                   | 数据库名称。                                                                                          |
+| `table`                | 表名称。                                                                                            |
+| `where`                | 筛选条件。其语法与 PostgreSQL 中 `WHERE` 子句的语法相同。例如，`id > 10 AND id < 20`。可选。                             |
+| `invalidate_query`     | 用于检查字典状态的查询。可选。更多信息请参见[使用 LIFETIME 刷新字典数据](/zh/reference/statements/create/dictionary/lifetime)一节。 |
+| `background_reconnect` | 如果连接失败，则在后台重新连接到副本。可选。                                                                          |
+| `query`                | 自定义查询。可选。                                                                                       |
 
 <Note>
   `table` 或 `where` 字段不能与 `query` 字段同时使用。此外，`table` 和 `query` 两个字段中必须声明其中一个。
-</Note>
-
-<Note>
-  `sslrootcert`、`sslcert` 和 `sslkey` 指定由服务器以自身特权打开的文件名，因此仅可用于在服务器配置文件中定义的字典，或通过其中定义的命名集合使用。使用 `CREATE DICTIONARY` 查询创建的字典则必须在 `sslrootcert_pem`、`sslcert_pem` 和 `sslkey_pem` 中传入相应内容。这些值会像密码一样在日志和 `SHOW` 查询中被掩码。
 </Note>

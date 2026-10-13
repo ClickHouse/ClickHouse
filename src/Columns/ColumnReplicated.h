@@ -9,6 +9,7 @@ class Collator;
 namespace DB
 {
 
+
 /** Column for replicated representation.
  *  It stores original column and indexes in this column.
  *  Used to perform lazy column replication.
@@ -217,6 +218,7 @@ private:
     static std::atomic<UInt64> global_id_counter;
 };
 
+ColumnPtr recursiveRemoveReplicated(const ColumnPtr & column);
 ColumnPtr convertOffsetsToIndexes(const IColumn::Offsets & offsets);
 
 /// For some columns like Const/LowCardinality/Int* lazy replication is useless and can lead to worse performance.

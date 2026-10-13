@@ -32,7 +32,7 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
 * 使用客户管理的 VPC 时，通常默认启用。
 * 使用 ClickHouse 管理的专用 VPC 时，通常默认禁用。
 
-您可以直接在 ClickHouse Cloud 控制台中为您的 BYOC 基础设施启用私有负载均衡器。如需进行其他端点调整 (例如移除公共负载均衡器) ，请联系 **ClickHouse Cloud Support**。
+您可以联系 **ClickHouse Cloud Support**，根据您的需求调整启用哪些端点。
 
 <div id="private-load-balancer-security-group">
   ### AWS 的私有负载均衡器安全组 (Security Group)
@@ -53,10 +53,10 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
 </Note>
 
 <div id="privatelink-or-private-service-connect">
-  ## PrivateLink、Private Service Connect 或 Private Link
+  ## PrivateLink 或 Private Service Connect
 </div>
 
-为实现最高级别的网络隔离和安全性，BYOC 部署可使用 **AWS PrivateLink**、**GCP Private Service Connect** 或 **Azure Private Link**。借助这些方案，您的应用程序可以通过私有网络连接到 ClickHouse Cloud 服务，无需配置 VPC/VNet peering，也不必将端点暴露在公共互联网中。
+为实现最高级别的网络隔离和安全性，BYOC 部署可使用 **AWS PrivateLink** 或 **GCP Private Service Connect**。借助这些方案，您的应用程序可以通过私有网络连接到 ClickHouse Cloud 服务，无需配置 VPC peering，也不必将端点暴露在公共互联网中。
 
 如需分步设置说明，请参阅 [私有网络设置指南](/zh/products/bring-your-own-cloud/onboarding/network)。
 
@@ -64,36 +64,13 @@ BYOC 部署使用 **Network Load Balancers (NLBs)** 来管理流量并将其路�
   ## Kubernetes API 私有连接
 </div>
 
-默认情况下，你的 BYOC 集群的 Kubernetes API server 端点可通过公共互联网访问，但会通过 IP 过滤器限制访问，仅允许来自 ClickHouse NAT Gateway IP 的流量。为了进一步提升安全性，你可以将 Kubernetes API server 限制为仅能通过私有网络连接访问。
-
-提供两种私有连接选项：
-
-<div id="k8s-api-private-connection-tailscale">
-  ### Tailscale (默认)
-</div>
-
-启用私网 API 端点后，ClickHouse 管理服务会通过与故障排查访问相同的 Tailscale 零信任网络连接到 Kubernetes API server。有关此连接如何工作的详细信息，请参阅 [Tailscale 私有网络](/zh/products/bring-your-own-cloud/reference/network-security#tailscale-private-network)。
+默认情况下，你的 BYOC 集群的 Kubernetes API server 端点可通过公共互联网访问，但会通过 IP 过滤器限制访问，仅允许来自 ClickHouse NAT Gateway IP 的流量。为了进一步提升安全性，你可以将 Kubernetes API server 限制为仅能通过 Tailscale 的私有网络连接访问。
 
 <Note>
   如果你完全依赖 Tailscale 提供私有连接，一旦 Tailscale agent 不可用，ClickHouse 支持团队可能会失去对你的环境的访问权限。这可能会导致故障排查或支持响应时间延长。
 </Note>
 
-<div id="k8s-api-private-connection-vpc-lattice">
-  ### AWS VPC Lattice
-</div>
-
-<Info>
-  VPC Lattice 连接功能目前处于私有预览阶段。请联系 ClickHouse 支持团队为您的部署启用此功能。
-</Info>
-
-对于 AWS 部署，也可以通过 [AWS VPC Lattice](https://aws.amazon.com/vpc/lattice/) 以私网方式访问 Kubernetes API server，且无需任何第三方组件：
-
-* ClickHouse Cloud 会自动预配一个 VPC Lattice Resource Gateway 和一个 Resource Configuration，目标指向您 BYOC VPC 内的 EKS API server 端点，并通过 AWS Resource Access Manager (RAM) 将该 Resource Configuration 共享给 ClickHouse Cloud 管理账户。
-* ClickHouse 管理服务与您的 Kubernetes API server 之间的流量始终完全保留在 AWS 私有网络中。
-* RAM 共享由您的账户创建，并且仅限于单个 BYOC 集群；删除后会立即撤销该私网访问路径。
-* 由于访问不依赖在您的 Kubernetes 集群内运行的 agent，即使集群内组件不可用，ClickHouse 支持团队仍可保留访问权限以进行故障排查。
-
-**联系 ClickHouse 支持团队** 以申请配置私网 API 端点。
+**联系 ClickHouse 支持团队** 申请配置私有 API 端点。
 
 <div id="node-groups">
   ## 节点组

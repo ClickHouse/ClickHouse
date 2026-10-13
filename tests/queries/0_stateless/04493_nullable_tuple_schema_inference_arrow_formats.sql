@@ -44,6 +44,12 @@ CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() 
 SELECT count() FROM test_04493;
 DROP TABLE test_04493;
 
+-- ORC (legacy Arrow-based reader)
+DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
+SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC') ORDER BY id SETTINGS input_format_orc_use_fast_decoder = 0;
+CREATE TABLE test_04493 ENGINE = Memory AS SELECT * FROM file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
+SELECT count() FROM test_04493;
+DROP TABLE test_04493;
 
 -- Parquet (native reader)
 DESCRIBE file(currentDatabase() || '_04493.parquet', 'Parquet');
@@ -63,7 +69,7 @@ DROP TABLE test_04493;
 SET allow_experimental_nullable_tuple_type = 1;
 DESCRIBE file(currentDatabase() || '_04493.arrow', 'Arrow');
 DESCRIBE file(currentDatabase() || '_04493.arrowstream', 'ArrowStream');
-DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC');
+DESCRIBE file(currentDatabase() || '_04493.orc', 'ORC') SETTINGS input_format_orc_use_fast_decoder = 0;
 SELECT * FROM file(currentDatabase() || '_04493.arrow', 'Arrow') ORDER BY id;
 
 -- Reading into an explicitly requested Nullable(Tuple) structure still works.

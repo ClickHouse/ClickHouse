@@ -1,21 +1,24 @@
 #pragma once
 
 #include <Processors/Port.h>
-#include <Common/ProcessorMemoryStats.h>
+#include <Common/MemorySpillScheduler.h>
 #include <Common/Stopwatch.h>
 
 #include <atomic>
 #include <list>
 #include <memory>
 #include <vector>
-#include <Processors/ProcessorsProfileLogInfo.h>
-#include <Processors/IProcessor_fwd.h>
 #include <fmt/format.h>
 
 class EventCounter;
 
 namespace DB
 {
+
+class InputPort;
+class OutputPort;
+using InputPorts = std::list<InputPort>;
+using OutputPorts = std::list<OutputPort>;
 
 class IQueryPlanStep;
 
@@ -344,6 +347,26 @@ public:
 
     ProcessorDataStats getProcessorDataStats() const;
 
+    /// Information for system.processors_profile_log
+    struct ProcessorsProfileLogInfo
+    {
+        UInt64 id = 0;
+        std::vector<UInt64> parent_ids;
+        UInt64 plan_step = 0;
+        String plan_step_name;
+        String plan_step_description;
+        UInt64 plan_group = 0;
+        String processor_uniq_id;
+        String step_uniq_id;
+        String processor_name;
+        UInt64 elapsed_us = 0;
+        UInt64 input_wait_elapsed_us = 0;
+        UInt64 output_wait_elapsed_us = 0;
+        UInt64 input_rows = 0;
+        UInt64 input_bytes = 0;
+        UInt64 output_rows = 0;
+        UInt64 output_bytes = 0;
+    };
     ProcessorsProfileLogInfo getProcessorsProfileLogInfo() const;
 
     struct ReadProgressCounters

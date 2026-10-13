@@ -8,13 +8,9 @@
 #include <IO/WriteBufferValidUTF8.h>
 #include <DataTypes/Serializations/SerializationNullable.h>
 #include <DataTypes/DataTypeNullable.h>
-#include <DataTypes/DataTypeTuple.h>
 #include <DataTypes/DataTypeFactory.h>
 #include <Common/assert_cast.h>
-#include <Common/isValidUTF8.h>
-#include <Common/typeid_cast.h>
 #include <Columns/IColumn.h>
-#include <Core/Block.h>
 
 #include <base/find_symbols.h>
 #include <base/scope_guard.h>
@@ -34,7 +30,7 @@ namespace JSONUtils
 {
     template <const char opening_bracket, const char closing_bracket>
     static std::pair<bool, size_t>
-    fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, size_t max_row_size)
+    fileSegmentationEngineJSONEachRowImpl(ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
     {
         skipWhitespaceIfAny(in);
 
@@ -43,22 +39,18 @@ namespace JSONUtils
         bool quotes = false;
         size_t number_of_rows = 0;
         bool need_more_data = true;
-        size_t object_start_bytes = 0;
 
         if (max_rows && (max_rows < min_rows))
             max_rows = min_rows;
 
         while (loadAtPosition(in, memory, pos) && need_more_data)
         {
-            if (max_row_size && balance > 0)
-            {
-                const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position()) - object_start_bytes;
-                if (current_object_size > max_row_size)
-                    throw Exception(ErrorCodes::INCORRECT_DATA,
-                        "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is {} bytes per object. "
-                        "Increase the value of setting 'input_format_json_max_object_size' or check your data manually, "
-                        "most likely JSON is malformed", in.count(), max_row_size, current_object_size);
-            }
+            const auto current_object_size = memory.size() + static_cast<size_t>(pos - in.position());
+            if (min_bytes != 0 && current_object_size > 10 * min_bytes)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Size of JSON object at position {} is extremely large. Expected not greater than {} bytes, but current is {} bytes per row. "
+                    "Increase the value setting 'min_chunk_bytes_for_parallel_parsing' or check your data manually, "
+                    "most likely JSON is malformed", in.count(), min_bytes, current_object_size);
 
             if (quotes)
             {
@@ -108,7 +100,6 @@ namespace JSONUtils
 
                 if (!quotes && balance == 0)
                 {
-                    object_start_bytes = memory.size() + static_cast<size_t>(pos - in.position());
                     ++number_of_rows;
                     if ((number_of_rows >= min_rows)
                         && ((memory.size() + static_cast<size_t>(pos - in.position()) >= min_bytes) || (number_of_rows == max_rows)))
@@ -122,15 +113,15 @@ namespace JSONUtils
     }
 
     std::pair<bool, size_t> fileSegmentationEngineJSONEachRow(
-        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows, size_t max_row_size)
+        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t max_rows)
     {
-        return fileSegmentationEngineJSONEachRowImpl<'{', '}'>(in, memory, min_bytes, 1, max_rows, max_row_size);
+        return fileSegmentationEngineJSONEachRowImpl<'{', '}'>(in, memory, min_bytes, 1, max_rows);
     }
 
     std::pair<bool, size_t> fileSegmentationEngineJSONCompactEachRow(
-        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows, size_t max_row_size)
+        ReadBuffer & in, DB::Memory<> & memory, size_t min_bytes, size_t min_rows, size_t max_rows)
     {
-        return fileSegmentationEngineJSONEachRowImpl<'[', ']'>(in, memory, min_bytes, min_rows, max_rows, max_row_size);
+        return fileSegmentationEngineJSONEachRowImpl<'[', ']'>(in, memory, min_bytes, min_rows, max_rows);
     }
 
     template <const char opening_bracket, const char closing_bracket>
@@ -220,7 +211,6 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         NamesAndTypesList names_and_types;
-        const size_t row_start_bytes = in.count();
         while (!in.eof() && *in.position() != '}')
         {
             if (!first)
@@ -232,17 +222,6 @@ namespace JSONUtils
             auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
             names_and_types.emplace_back(name, type);
             skipWhitespaceIfAny(in);
-
-            if (settings.json.max_row_size_for_json_each_row
-                && in.count() - row_start_bytes > settings.json.max_row_size_for_json_each_row)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Size of JSON object at position {} is extremely large. "
-                    "Expected not greater than {} bytes, but current is {} bytes per object. "
-                    "Increase the value of setting 'input_format_json_max_object_size' "
-                    "or check your data manually, most likely JSON is malformed",
-                    in.count(),
-                    settings.json.max_row_size_for_json_each_row,
-                    in.count() - row_start_bytes);
         }
 
         if (in.eof())
@@ -259,7 +238,6 @@ namespace JSONUtils
         skipWhitespaceIfAny(in);
         bool first = true;
         DataTypes types;
-        const size_t row_start_bytes = in.count();
         while (!in.eof() && *in.position() != ']')
         {
             if (!first)
@@ -269,17 +247,6 @@ namespace JSONUtils
             auto type = tryInferDataTypeForSingleJSONField(in, settings, inference_info);
             types.push_back(std::move(type));
             skipWhitespaceIfAny(in);
-
-            if (settings.json.max_row_size_for_json_each_row
-                && in.count() - row_start_bytes > settings.json.max_row_size_for_json_each_row)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Size of JSON object at position {} is extremely large. "
-                    "Expected not greater than {} bytes, but current is {} bytes per object. "
-                    "Increase the value of setting 'input_format_json_max_object_size' "
-                    "or check your data manually, most likely JSON is malformed",
-                    in.count(),
-                    settings.json.max_row_size_for_json_each_row,
-                    in.count() - row_start_bytes);
         }
 
         if (in.eof())
@@ -597,11 +564,6 @@ namespace JSONUtils
             {
                 WriteBufferValidUTF8 validating_buf(buf);
                 writeJSONString(name, validating_buf, settings);
-                /// The destructor of `WriteBufferValidUTF8` catches and suppresses a failure of the
-                /// final flush, which would leave `buf` empty (or partial) and make the `substr`
-                /// below throw `std::out_of_range` - an exception in a release build instead of the
-                /// real error. Flush explicitly so a failure propagates as itself.
-                validating_buf.finalize();
             }
             else
                 writeJSONString(name, buf, settings);
@@ -609,91 +571,6 @@ namespace JSONUtils
             result.push_back(buf.str().substr(1, buf.str().size() - 2));
         }
         return result;
-    }
-
-    bool namesMayProduceRawBytesInJSON(const Strings & names, const FormatSettings & settings, bool validate_utf8)
-    {
-        /// When validation is on, `makeNamesValidJSONStrings` runs the names through
-        /// `WriteBufferValidUTF8`, which replaces invalid sequences, so the result is always valid.
-        if (validate_utf8)
-            return false;
-
-        for (const auto & escaped : makeNamesValidJSONStrings(names, settings, validate_utf8))
-            if (!UTF8::isValidUTF8(reinterpret_cast<const UInt8 *>(escaped.data()), escaped.size()))
-                return true;
-
-        return false;
-    }
-
-    bool metadataTypeNamesMayProduceRawBytesInJSON(const Block & header, const FormatSettings & settings)
-    {
-        /// When any value type may itself emit invalid UTF-8, the adaptor installs a
-        /// `WriteBufferValidUTF8` around the whole output, which also validates the `meta.type`
-        /// strings, so the type names cannot leak raw bytes.
-        for (const auto & type : header.getDataTypes())
-            if (!type->textCanContainOnlyValidUTF8())
-                return false;
-
-        /// Otherwise the validating buffer is skipped and the type names are written verbatim,
-        /// mirroring `namesMayProduceRawBytesInJSON` with validation off.
-        return namesMayProduceRawBytesInJSON(header.getDataTypeNames(), settings, /*validate_utf8=*/false);
-    }
-
-    bool tupleElementNamesMayProduceRawBytesInJSON(const Block & header, const FormatSettings & settings, bool validate_utf8)
-    {
-        if (!settings.json.write_named_tuples_as_objects)
-            return false;
-
-        /// When validation is on and some value type may itself emit invalid UTF-8, the format
-        /// installs `WriteBufferValidUTF8` over the whole output, which also sanitizes the keys
-        /// synthesized from the element names. Note that this cannot be short-circuited on
-        /// `validate_utf8` alone: `DataTypeTuple::textCanContainOnlyValidUTF8` ignores the element
-        /// names, so a `Tuple` of clean value types with a non-UTF-8 element name does not install
-        /// the buffer even with validation on.
-        if (validate_utf8)
-        {
-            for (const auto & type : header.getDataTypes())
-                if (!type->textCanContainOnlyValidUTF8())
-                    return false;
-        }
-
-        Strings names;
-        auto collect = [&](const IDataType & type)
-        {
-            if (const auto * tuple = typeid_cast<const DataTypeTuple *>(&type); tuple && tuple->hasExplicitNames())
-                for (const auto & name : tuple->getElementNames())
-                    names.push_back(name);
-        };
-        for (const auto & type : header.getDataTypes())
-        {
-            collect(*type);
-            type->forEachChild(collect);
-        }
-
-        if (names.empty())
-            return false;
-
-        return namesMayProduceRawBytesInJSON(names, settings, /*validate_utf8=*/false);
-    }
-
-    bool boolRepresentationsMayProduceRawBytesInJSONStrings(const Block & header, const FormatSettings & settings, bool validate_utf8)
-    {
-        if (!settingsLiteralsMayProduceRawBytes(settings, FormatSettings::EscapingRule::None))
-            return false;
-
-        /// When validation is on and some value type may itself emit invalid UTF-8, the format
-        /// installs `WriteBufferValidUTF8` over the whole output, which also sanitizes the `Bool`
-        /// representations. This cannot be short-circuited on `validate_utf8` alone: the `Bool`
-        /// value type is itself "clean" (`textCanContainOnlyValidUTF8`), so a header of clean value
-        /// types with a non-UTF-8 representation does not install the buffer even with validation on.
-        if (validate_utf8)
-        {
-            for (const auto & type : header.getDataTypes())
-                if (!type->textCanContainOnlyValidUTF8())
-                    return false;
-        }
-
-        return true;
     }
 
     void skipColon(ReadBuffer & in)

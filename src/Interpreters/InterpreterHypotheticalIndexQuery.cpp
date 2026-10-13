@@ -4,7 +4,7 @@
 #include <Interpreters/DatabaseCatalog.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
-#include <Interpreters/HypotheticalObjectStore.h>
+#include <Interpreters/HypotheticalIndexStore.h>
 #include <Interpreters/InterpreterFactory.h>
 #include <Parsers/ASTHypotheticalIndexQuery.h>
 #include <Parsers/ASTIdentifier.h>
@@ -15,11 +15,8 @@
 #include <Storages/IndicesDescription.h>
 #include <Storages/MergeTree/MergeTreeData.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
+#include <Storages/StorageProxy.h>
 #include <Disks/IDisk.h>
-
-#include <fmt/ranges.h>
-
-#include <algorithm>
 
 namespace DB
 {
@@ -43,14 +40,26 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
 
     if (query.kind == ASTHypotheticalIndexQuery::DropAll)
     {
-        context->getHypotheticalObjectStore().clear();
+        context->getHypotheticalIndexStore().clear();
         return {};
     }
 
     auto table_id = context->resolveStorageID(StorageID(query.getDatabase(), query.getTable()));
     auto table = DatabaseCatalog::instance().getTable(table_id, context);
+    auto & store = context->getHypotheticalIndexStore();
 
-    const auto * merge_tree = dynamic_cast<const MergeTreeData *>(table.get());
+    /// Dropping only forgets a session entry, so it must not load a lazily loaded table.
+    if (query.kind == ASTHypotheticalIndexQuery::Drop)
+    {
+        /// No access check. a session-local drop leaks nothing (unlike CREATE), and every entry
+        /// in the session store already passed that check at creation
+        auto index_name = query.index_name->as<ASTIdentifier &>().name();
+        store.remove(table_id, index_name, query.if_exists);
+        return {};
+    }
+
+    table = resolveStorageProxyLoading(table);
+    const auto * merge_tree = castStorage<MergeTreeData>(table, DeferredTable::Load).get();
     if (!merge_tree)
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
@@ -65,17 +74,6 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
             "Hypothetical indexes require a table with a UUID (Atomic database); {}.{} has none",
             table_id.getDatabaseName(),
             table_id.getTableName());
-
-    auto & store = context->getHypotheticalObjectStore();
-
-    if (query.kind == ASTHypotheticalIndexQuery::Drop)
-    {
-        /// No access check. a session-local drop leaks nothing (unlike CREATE), and every entry
-        /// in the session store already passed that check at creation
-        auto index_name = query.index_name->as<ASTIdentifier &>().name();
-        store.remove(table_id, index_name, query.if_exists);
-        return {};
-    }
 
     /// CREATE HYPOTHETICAL INDEX
     const auto & index_ast = query.index_decl->as<ASTIndexDeclaration &>();
@@ -111,19 +109,13 @@ BlockIO InterpreterHypotheticalIndexQuery::execute()
     /// so calling get() on an unvalidated user AST can dereference absent arguments.
     MergeTreeIndexFactory::instance().validate(index_desc, /* attach = */ false, *merge_tree->getSettings());
 
-    /// fail closed, a newly registered index type is rejected until someone checks it
-    static constexpr std::string_view supported_types[]
-        {"bloom_filter", "minmax", "ngrambf_v1", "set", "sparse_grams", "tokenbf_v1"};
-    if (!std::ranges::contains(supported_types, index_desc.type))
+    /// Well-formed but unimplemented types are rejected here (validate accepts them).
+    auto index_helper = MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree->getSettings());
+    if (index_helper->isTextIndex() || index_helper->isVectorSimilarityIndex())
         throw Exception(
             ErrorCodes::NOT_IMPLEMENTED,
-            "Hypothetical indexes of type '{}' are not supported. Supported types: {}",
-            index_desc.type,
-            fmt::join(supported_types, ", "));
-
-    /// some argument checks live in the creator, not the validator (tokenizer bounds for
-    /// sparse_grams), so construct once here instead of failing later inside EXPLAIN WHATIF
-    MergeTreeIndexFactory::instance().get(metadata, index_desc, *merge_tree->getSettings());
+            "Hypothetical indexes of type '{}' are not supported",
+            index_desc.type);
 
     /// Old-syntax MergeTree rejects `ALTER TABLE ... ADD INDEX`, so reject it here too.
     if (!merge_tree->is_custom_partitioned)

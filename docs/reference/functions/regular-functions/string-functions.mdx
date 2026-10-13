@@ -6,7 +6,7 @@ title: 'Functions for working with strings'
 doc_type: 'reference'
 ---
 
-import { VersionBadge } from "/snippets/components/VersionBadge/VersionBadge.jsx";
+import VersionBadge from "/snippets/components/VersionBadge/VersionBadge.jsx";
 
 Functions for [searching](/reference/functions/regular-functions/string-search-functions) in strings and for [replacing](/reference/functions/regular-functions/string-replace-functions) in strings are described separately.
 
@@ -153,9 +153,9 @@ SELECT appendTrailingCharIfAbsent('https://example.com', '/');
 ```
 
 ```response title=Response
-┌─appendTrailingCharIfAbsent('https://example.com', '/')─┐
-│ https://example.com/                                   │
-└────────────────────────────────────────────────────────┘
+┌─appendTraili⋯.com', '/')─┐
+│ https://example.com/     │
+└──────────────────────────┘
 ```
 
 ## ascii {#ascii}
@@ -296,9 +296,9 @@ SELECT base58Decode('JxF12TrwUP45BMd');
 ```
 
 ```response title=Response
-┌─base58Decode('JxF12TrwUP45BMd')─┐
-│ Hello World                     │
-└─────────────────────────────────┘
+┌─base58Decode⋯rwUP45BMd')─┐
+│ Hello World              │
+└──────────────────────────┘
 ```
 
 ## base58Encode {#base58Encode}
@@ -511,9 +511,9 @@ SELECT 'some/long/path/to/file' AS a, basename(a)
 ```
 
 ```response title=Response
-┌─a──────────────────────┬─basename(a)─┐
-│ some/long/path/to/file │ file        │
-└────────────────────────┴─────────────┘
+┌─a──────────────────────┬─basename('some/long/path/to/file')─┐
+│ some/long/path/to/file │ file                               │
+└────────────────────────┴────────────────────────────────────┘
 ```
 
 **Extract filename from Windows path**
@@ -523,9 +523,9 @@ SELECT 'some\\long\\path\\to\\file' AS a, basename(a)
 ```
 
 ```response title=Response
-┌─a──────────────────────┬─basename(a)─┐
-│ some\long\path\to\file │ file        │
-└────────────────────────┴─────────────┘
+┌─a──────────────────────┬─basename('some\\long\\path\\to\\file')─┐
+│ some\long\path\to\file │ file                                   │
+└────────────────────────┴────────────────────────────────────────┘
 ```
 
 **String with no path separators**
@@ -535,9 +535,9 @@ SELECT 'some-file-name' AS a, basename(a)
 ```
 
 ```response title=Response
-┌─a──────────────┬─basename(a)────┐
-│ some-file-name │ some-file-name │
-└────────────────┴────────────────┘
+┌─a──────────────┬─basename('some-file-name')─┐
+│ some-file-name │ some-file-name             │
+└────────────────┴────────────────────────────┘
 ```
 
 ## byteHammingDistance {#byteHammingDistance}
@@ -733,17 +733,15 @@ Returns the string created by concatenating the arguments. If any of argument va
 **Group by optimization**
 
 ```sql title=Query
-CREATE TABLE key_val (key1 String, key2 String, value UInt32) ENGINE = Memory;
-INSERT INTO key_val VALUES ('Hello, ', 'World!', 1), ('Hello, ', 'World!', 2), ('Hello, ', 'World', 3);
-
-SELECT concatAssumeInjective(key1, key2) AS key, sum(value) FROM key_val GROUP BY key ORDER BY key;
+SELECT concat(key1, key2), sum(value) FROM key_val GROUP BY concatAssumeInjective(key1, key2)
 ```
 
 ```response title=Response
-┌─key───────────┬─sum(value)─┐
-│ Hello, World  │          3 │
-│ Hello, World! │          3 │
-└───────────────┴────────────┘
+┌─concat(key1, key2)─┬─sum(value)─┐
+│ Hello, World!      │          3 │
+│ Hello, World!      │          2 │
+│ Hello, World       │          3 │
+└────────────────────┴────────────┘
 ```
 
 ## concatWithSeparator {#concatWithSeparator}
@@ -940,9 +938,9 @@ SELECT convertCharset('Café', 'UTF-8', 'ISO-8859-1');
 ```
 
 ```response title=Response
-┌─convertCharset('Café', 'UTF-8', 'ISO-8859-1')─┐
-│ Caf�                                           │
-└───────────────────────────────────────────────┘
+┌─convertChars⋯SO-8859-1')─┐
+│ Caf�                     │
+└──────────────────────────┘
 ```
 
 ## damerauLevenshteinDistance {#damerauLevenshteinDistance}
@@ -1043,9 +1041,9 @@ SELECT decodeXMLComponent('&lt;tag&gt;Hello &amp; World&lt;/tag&gt;')
 ```
 
 ```response title=Response
-┌─decodeXMLComponent('&lt;tag&gt;Hello &amp; World&lt;/tag&gt;')─┐
-│ <tag>Hello & World</tag>                                       │
-└────────────────────────────────────────────────────────────────┘
+┌─decodeXMLCom⋯;/tag&gt;')─┐
+│ <tag>Hello & World</tag> │
+└──────────────────────────┘
 ```
 
 ## editDistance {#editDistance}
@@ -1188,9 +1186,9 @@ SELECT endsWith('ClickHouse', 'House');
 ```
 
 ```response title=Response
-┌─endsWith('ClickHouse', 'House')─┐
-│                               1 │
-└─────────────────────────────────┘
+┌─endsWith('Cl⋯', 'House')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 ## endsWithCaseInsensitive {#endsWithCaseInsensitive}
@@ -1223,9 +1221,9 @@ SELECT endsWithCaseInsensitive('ClickHouse', 'HOUSE');
 ```
 
 ```response title=Response
-┌─endsWithCaseInsensitive('ClickHouse', 'HOUSE')─┐
-│                                              1 │
-└────────────────────────────────────────────────┘
+┌─endsWithCaseInsensitive('Cl⋯', 'HOUSE')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
 ```
 
 ## endsWithCaseInsensitiveUTF8 {#endsWithCaseInsensitiveUTF8}
@@ -1349,9 +1347,9 @@ SELECT extractTextFromHTML('
 ```
 
 ```response title=Response
-┌─extractTextFromHTML('\n<html>\n    <head><title>Page Title</title></head>\n    <body>\n        <p>Hello <b>World</b>!</p>\n        <script>alert("test");</script>\n        <!-- comment -->\n    </body>\n</html>\n')─┐
-│ Page Title Hello World !                                                                                                                                                                                               │
-└────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┘
+┌─extractTextFromHTML('<html><head>...')─┐
+│ Page Title Hello World!                │
+└────────────────────────────────────────┘
 ```
 
 ## firstLine {#firstLine}
@@ -1383,9 +1381,9 @@ SELECT firstLine('foo\\nbar\\nbaz')
 ```
 
 ```response title=Response
-┌─firstLine('foo\\nbar\\nbaz')─┐
-│ foo\nbar\nbaz                │
-└──────────────────────────────┘
+┌─firstLine('foo\nbar\nbaz')─┐
+│ foo                        │
+└────────────────────────────┘
 ```
 
 ## idnaDecode {#idnaDecode}
@@ -1458,9 +1456,9 @@ SELECT idnaEncode('straße.münchen.de')
 ```
 
 ```response title=Response
-┌─idnaEncode('straße.münchen.de')─┐
-│ xn--strae-oqa.xn--mnchen-3ya.de │
-└─────────────────────────────────┘
+┌─idnaEncode('straße.münchen.de')─────┐
+│ xn--strae-oqa.xn--mnchen-3ya.de     │
+└─────────────────────────────────────┘
 ```
 
 ## initcap {#initcap}
@@ -1510,9 +1508,9 @@ SELECT initcap('John''s cat won''t eat.');
 ```
 
 ```response title=Response
-┌─initcap('John\'s cat won\'t eat.')─┐
-│ John'S Cat Won'T Eat.              │
-└────────────────────────────────────┘
+┌─initcap('Joh⋯n\'t eat.')─┐
+│ John'S Cat Won'T Eat.    │
+└──────────────────────────┘
 ```
 
 ## initcapUTF8 {#initcapUTF8}
@@ -1584,12 +1582,6 @@ isValidASCII(str)
 SELECT isValidASCII('hello') AS is_ascii, isValidASCII('你好') AS is_not_ascii
 ```
 
-```response title=Response
-┌─is_ascii─┬─is_not_ascii─┐
-│        1 │            0 │
-└──────────┴──────────────┘
-```
-
 ## isValidUTF8 {#isValidUTF8}
 
 Introduced in: v20.1.0
@@ -1620,7 +1612,7 @@ SELECT isValidUTF8('\\xc3\\xb1') AS valid, isValidUTF8('\\xc3\\x28') AS invalid
 
 ```response title=Response
 ┌─valid─┬─invalid─┐
-│     1 │       1 │
+│     1 │       0 │
 └───────┴─────────┘
 ```
 
@@ -1868,7 +1860,6 @@ SELECT leftUTF8('Привет', -4)
 Introduced in: v1.1.0
 
 Returns the length of a string in Unicode code points rather than in bytes or characters.
-To calculate the length of a string in bytes, use the [`length`](/reference/functions/regular-functions/array-functions#length) function.
 It assumes that the string contains valid UTF-8 encoded text.
 If this assumption is violated, no exception is thrown and the result is undefined.
 
@@ -1997,10 +1988,7 @@ Returns a natural sort key string from `s`. [`String`](/reference/data-types/str
 **Usage example**
 
 ```sql title=Query
-CREATE TABLE t (s String) ENGINE = Memory;
-INSERT INTO t VALUES ('a1'), ('a02');
-
-SELECT s FROM t ORDER BY naturalSortKey(s);
+SELECT s FROM t ORDER BY naturalSortKey(s)
 ```
 
 ```response title=Response
@@ -2154,9 +2142,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─original──┬─nfkc_cf_normalized─┐
-│ Ä ① Hello │ ä 1 hello          │
-└───────────┴────────────────────┘
+┌─original───┬─nfkc_cf_normalized─┐
+│ Ä ① Hello │ ä 1 hello           │
+└────────────┴────────────────────┘
 ```
 
 ## normalizeUTF8NFKD {#normalizeUTF8NFKD}
@@ -2360,9 +2348,9 @@ SELECT
 ```
 
 ```response title=Response
-┌─regexpPosition('hello world', 'world')─┬─regexpPosition('aXbXcXd', 'X', 1, 2)─┬─regexpPosition('aXbXcXd', 'X', 1, 2, 1)─┬─regexpPosition('Hello WORLD', 'world', 1, 1, 0, 'i')─┬─regexpPosition('foo123bar456', '([a-z]+)([0-9]+)', 1, 2, 0, '', 2)─┐
-│                                      7 │                                    4 │                                       5 │                                                    7 │                                                                 10 │
-└────────────────────────────────────────┴──────────────────────────────────────┴─────────────────────────────────────────┴──────────────────────────────────────────────────────┴────────────────────────────────────────────────────────────────────┘
+┌─...─┬─...─┬─...─┬─...─┬─...─┐
+│   7 │   4 │   5 │   7 │  10 │
+└─────┴─────┴─────┴─────┴─────┘
 ```
 
 ## removeDiacriticsUTF8 {#removeDiacriticsUTF8}
@@ -2744,9 +2732,9 @@ SELECT sparseGrams('alice', 3)
 ```
 
 ```response title=Response
-┌─sparseGrams('alice', 3)────┐
-│ ['ali','lic','ice','lice'] │
-└────────────────────────────┘
+┌─sparseGrams('alice', 3)────────────┐
+│ ['ali','lic','lice','ice']         │
+└────────────────────────────────────┘
 ```
 
 ## sparseGramsHashes {#sparseGramsHashes}
@@ -2784,9 +2772,9 @@ SELECT sparseGramsHashes('alice', 3)
 ```
 
 ```response title=Response
-┌─sparseGramsHashes('alice', 3)────────────────┐
-│ [3851133533,3120039944,646693941,2577359366] │
-└──────────────────────────────────────────────┘
+┌─sparseGramsHashes('alice', 3)──────────────────────┐
+│ [1481062250,2450405249,4012725991,1918774096]      │
+└────────────────────────────────────────────────────┘
 ```
 
 ## sparseGramsHashesUTF8 {#sparseGramsHashesUTF8}
@@ -2823,9 +2811,9 @@ SELECT sparseGramsHashesUTF8('алиса', 3)
 ```
 
 ```response title=Response
-┌─sparseGramsHashesUTF8('алиса', 3)───────────────────────┐
-│ [1328958118,547287748,4155892324,2403052185,1673399070] │
-└─────────────────────────────────────────────────────────┘
+┌─sparseGramsHashesUTF8('алиса', 3)─┐
+│ [4178533925,3855635300,561830861] │
+└───────────────────────────────────┘
 ```
 
 ## sparseGramsUTF8 {#sparseGramsUTF8}
@@ -2862,9 +2850,9 @@ SELECT sparseGramsUTF8('алиса', 3)
 ```
 
 ```response title=Response
-┌─sparseGramsUTF8('алиса', 3)────────┐
-│ ['али','лис','иса','лиса','алиса'] │
-└────────────────────────────────────┘
+┌─sparseGramsUTF8('алиса', 3)─┐
+│ ['али','лис','иса']         │
+└─────────────────────────────┘
 ```
 
 ## startsWith {#startsWith}
@@ -2897,9 +2885,9 @@ SELECT startsWith('ClickHouse', 'Click');
 ```
 
 ```response title=Response
-┌─startsWith('ClickHouse', 'Click')─┐
-│                                 1 │
-└───────────────────────────────────┘
+┌─startsWith('⋯', 'Click')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 ## startsWithCaseInsensitive {#startsWithCaseInsensitive}
@@ -2932,9 +2920,9 @@ SELECT startsWithCaseInsensitive('ClickHouse', 'CLICK');
 ```
 
 ```response title=Response
-┌─startsWithCaseInsensitive('ClickHouse', 'CLICK')─┐
-│                                                1 │
-└──────────────────────────────────────────────────┘
+┌─startsWithCaseInsensitive('⋯', 'CLICK')─┐
+│                                       1 │
+└─────────────────────────────────────────┘
 ```
 
 ## startsWithCaseInsensitiveUTF8 {#startsWithCaseInsensitiveUTF8}
@@ -2969,9 +2957,9 @@ SELECT startsWithCaseInsensitiveUTF8('приставка', 'при')
 ```
 
 ```response title=Response
-┌─startsWithCaseInsensitiveUTF8('приставка', 'при')─┐
-│                                                 1 │
-└───────────────────────────────────────────────────┘
+┌─startsWithUT⋯ка', 'при')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 ## startsWithUTF8 {#startsWithUTF8}
@@ -3006,9 +2994,9 @@ SELECT startsWithUTF8('приставка', 'при')
 ```
 
 ```response title=Response
-┌─startsWithUTF8('приставка', 'при')─┐
-│                                  1 │
-└────────────────────────────────────┘
+┌─startsWithUT⋯ка', 'при')─┐
+│                        1 │
+└──────────────────────────┘
 ```
 
 ## stringBytesEntropy {#stringBytesEntropy}
@@ -3041,7 +3029,7 @@ SELECT stringBytesEntropy('Hello, world!')
 
 ```response title=Response
 ┌─stringBytesEntropy('Hello, world!')─┐
-│                   3.180832987205441 │
+│                         3.07049960  │
 └─────────────────────────────────────┘
 ```
 
@@ -3160,8 +3148,6 @@ Byte counting starts from 1 with the following logic:
 
 An optional argument `length` specifies the maximum number of bytes the returned substring may have.
 
-See also the [`digits`](/reference/functions/regular-functions/other-functions#digits) function, which performs the analogous operation on the digits of a number.
-
 **Syntax**
 
 ```sql
@@ -3189,9 +3175,9 @@ SELECT 'database' AS db, substr(db, 5), substr(db, 5, 1)
 ```
 
 ```response title=Response
-┌─db───────┬─substr(db, 5)─┬─substr(db, 5, 1)─┐
-│ database │ base          │ b                │
-└──────────┴───────────────┴──────────────────┘
+┌─db───────┬─substring('database', 5)─┬─substring('database', 5, 1)─┐
+│ database │ base                     │ b                           │
+└──────────┴──────────────────────────┴─────────────────────────────┘
 ```
 
 ## substringIndex {#substringIndex}
@@ -3309,7 +3295,7 @@ SELECT 'Täglich grüßt das Murmeltier.' AS str, substringUTF8(str, 9), substri
 ```
 
 ```response title=Response
-Täglich grüßt das Murmeltier.	grüßt das Murmeltier.	grüßt
+Täglich grüßt das Murmeltier.    grüßt das Murmeltier.    grüßt
 ```
 
 ## toValidUTF8 {#toValidUTF8}
@@ -3342,7 +3328,10 @@ SELECT toValidUTF8('\\x61\\xF0\\x80\\x80\\x80b')
 ```
 
 ```response title=Response
-\\x61\\xF0\\x80\\x80\\x80b
+c
+┌─toValidUTF8('a����b')─┐
+│ a�b                   │
+└───────────────────────┘
 ```
 
 ## trimBoth {#trimBoth}
@@ -3378,9 +3367,9 @@ SELECT trimBoth('$$ClickHouse$$', '$')
 ```
 
 ```response title=Response
-┌─trimBoth('$$ClickHouse$$', '$')─┐
-│ ClickHouse                      │
-└─────────────────────────────────┘
+┌─trimBoth('$$⋯se$$', '$')─┐
+│ ClickHouse               │
+└──────────────────────────┘
 ```
 
 ## trimLeft {#trimLeft}
@@ -3416,9 +3405,9 @@ SELECT trimLeft('ClickHouse', 'Click');
 ```
 
 ```response title=Response
-┌─trimLeft('ClickHouse', 'Click')─┐
-│ House                           │
-└─────────────────────────────────┘
+┌─trimLeft('Cl⋯', 'Click')─┐
+│ House                    │
+└──────────────────────────┘
 ```
 
 ## trimRight {#trimRight}
@@ -3454,9 +3443,9 @@ SELECT trimRight('ClickHouse','House');
 ```
 
 ```response title=Response
-┌─trimRight('ClickHouse', 'House')─┐
-│ Click                            │
-└──────────────────────────────────┘
+┌─trimRight('C⋯', 'House')─┐
+│ Click                    │
+└──────────────────────────┘
 ```
 
 ## tryBase32Decode {#tryBase32Decode}
@@ -3626,9 +3615,9 @@ SELECT tryIdnaEncode('straße.münchen.de')
 ```
 
 ```response title=Response
-┌─tryIdnaEncode('straße.münchen.de')─┐
-│ xn--strae-oqa.xn--mnchen-3ya.de    │
-└────────────────────────────────────┘
+┌─tryIdnaEncode('straße.münchen.de')──┐
+│ xn--strae-oqa.xn--mnchen-3ya.de     │
+└─────────────────────────────────────┘
 ```
 
 ## tryPunycodeDecode {#tryPunycodeDecode}

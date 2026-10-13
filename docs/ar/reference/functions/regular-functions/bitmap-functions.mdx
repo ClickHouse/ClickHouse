@@ -166,7 +166,7 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS re
 
 أُضيفت في: v20.1.0
 
-تُنشئ bitmap من مصفوفة من الأعداد الصحيحة. أنواع العناصر المدعومة هي الأعداد الصحيحة الموقَّعة وغير الموقَّعة ذات 8 أو 16 أو 32 أو 64 بت. وهي عكس الدالة [`bitmapToArray`](/ar/reference/functions/regular-functions/bitmap-functions#bitmapToArray).
+تُنشئ bitmap من مصفوفة من الأعداد الصحيحة غير الموقَّعة. وهي عكس الدالة [`bitmapToArray`](/ar/reference/functions/regular-functions/bitmap-functions#bitmapToArray).
 
 **الصيغة**
 
@@ -174,9 +174,9 @@ SELECT bitmapAndnotCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS re
 bitmapBuild(array)
 ```
 
-**الوسيطات**
+**المعاملات**
 
-* `array` — مصفوفة من الأعداد الصحيحة. [`Array((U)Int*)`](/ar/reference/data-types/array)
+* `array` — مصفوفة من الأعداد الصحيحة غير الموقَّعة. [`Array(UInt*)`](/ar/reference/data-types/array)
 
 **القيمة المُعادة**
 
@@ -194,18 +194,6 @@ SELECT bitmapBuild([1, 2, 3, 4, 5]) AS res, toTypeName(res);
 ┌─res─┬─toTypeName(bitmapBuild([1, 2, 3, 4, 5]))─────┐
 │     │ AggregateFunction(groupBitmap, UInt8)        │
 └─────┴──────────────────────────────────────────────┘
-```
-
-**bitmap موقَّعة**
-
-```sql title=Query
-SELECT bitmapBuild([-128, -1]::Array(Int8)) AS res, toTypeName(res);
-```
-
-```response title=Response
-┌─res─┬─toTypeName(bitmapBuild([-128, -1]::Array(Int8)))─┐
-│     │ AggregateFunction(groupBitmap, Int8)             │
-└─────┴──────────────────────────────────────────────────┘
 ```
 
 <div id="bitmapCardinality">
@@ -250,7 +238,7 @@ SELECT bitmapCardinality(bitmapBuild([1, 3, 3, 5, 7, 7])) AS res
 
 أُضيف في: v20.1.0
 
-يتحقق مما إذا كانت bitmap تحتوي على عنصر معيّن. تُقارن القيمة كعدد صحيح غير موقّع من نوع عنصر bitmap. بالنسبة إلى bitmap الموقّعة، يطابق العنصر السالب نظيره غير الموقّع (على سبيل المثال، تطابق قيمة `Int8` وهي `-1` القيمة `255`).
+يتحقق مما إذا كانت الخريطة النقطية تحتوي على عنصر معيّن.
 
 **الصيغة**
 
@@ -272,18 +260,6 @@ bitmapContains(bitmap, value)
 
 ```sql title=Query
 SELECT bitmapContains(bitmapBuild([1, 2, 3]), 2) AS res;
-```
-
-```response title=Response
-┌─res─┐
-│  1  │
-└─────┘
-```
-
-**bitmap موقَّعة**
-
-```sql title=Query
-SELECT bitmapContains(bitmapBuild([-1]::Array(Int8)), 255) AS res;
 ```
 
 ```response title=Response
@@ -370,9 +346,9 @@ SELECT bitmapHasAny(bitmapBuild([1, 2, 3]), bitmapBuild([3, 4, 5])) AS res;
 
 أُضيف في: v20.1.0
 
-يعيد أكبر عنصر في bitmap، مُفسَّرًا كعدد صحيح غير موقَّع من نوع عنصر bitmap. بالنسبة إلى bitmap الموقَّعة، تُعامل القيم السالبة كمقابلاتها غير الموقَّعة (على سبيل المثال، قيمة `Int8` وهي `-1` تصبح `255`). يعيد `0` إذا كانت bitmap فارغة.
+يعيد موضع أكبر `bit` مُعيَّن في bitmap، أو `0` إذا كانت bitmap فارغة.
 
-**الصيغة**
+**البنية**
 
 ```sql
 bitmapMax(bitmap)
@@ -384,7 +360,7 @@ bitmapMax(bitmap)
 
 **القيمة المُعادة**
 
-يُرجع أكبر عنصر كقيمة غير موقعة من نوع عنصر bitmap، أو `0` إذا كانت bitmap فارغة [`UInt64`](/ar/reference/data-types/int-uint)
+يُرجع موضع أعلى بت مضبوط في الـbitmap، وإلا يُرجع `0` [`UInt64`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
@@ -400,39 +376,27 @@ SELECT bitmapMax(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 └─────┘
 ```
 
-**bitmap موقَّعة**
-
-```sql title=Query
-SELECT bitmapMax(bitmapBuild([-128, -1]::Array(Int8))) AS res;
-```
-
-```response title=Response
-┌─res─┐
-│ 255 │
-└─────┘
-```
-
 <div id="bitmapMin">
   ## bitmapMin
 </div>
 
-أُضيف في: v20.1.0
+تم تقديمه في: v20.1.0
 
-يعيد أصغر عنصر في bitmap، ويُفسَّر على أنه عدد صحيح غير موقّع من نوع عنصر bitmap. بالنسبة إلى bitmap الموقّعة، تُعامل القيم السالبة كمكافئاتها غير الموقّعة (على سبيل المثال، قيمة `Int8` ‏`-128` هي `128`). إذا كانت bitmap فارغة، يعيد `UINT32_MAX` (أو `UINT64_MAX` إذا كان نوع عنصر bitmap أعرض من 32 بتًا).
+يعيد موضع أصغر `bit` مفعَّل في `bitmap`. وإذا كانت جميع `bits` غير مفعَّلة، فيعيد `UINT32_MAX` (أو `UINT64_MAX` إذا كانت `bitmap` تحتوي على أكثر من `2^64` من `bits`).
 
-**الصيغة**
+**البنية**
 
 ```sql
 bitmapMin(bitmap)
 ```
 
-**الوسيطات**
+**الوسائط**
 
 * `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction).
 
 **القيمة المُعادة**
 
-تُعيد أصغر عنصر بوصفه قيمة غير موقعة من نوع عناصر bitmap، أو `UINT32_MAX`/`UINT64_MAX` إذا كانت bitmap فارغة [`UInt64`](/ar/reference/data-types/int-uint)
+تعيد موضع أصغر بت مُفعَّل في الـ bitmap، أو `UINT32_MAX`/`UINT64_MAX` [`UInt64`](/ar/reference/data-types/int-uint)
 
 **أمثلة**
 
@@ -445,18 +409,6 @@ SELECT bitmapMin(bitmapBuild([3, 5, 2, 6])) AS res;
 ```response title=Response
 ┌─res─┐
 │   2 │
-└─────┘
-```
-
-**bitmap موقّعة**
-
-```sql title=Query
-SELECT bitmapMin(bitmapBuild([-128, -1]::Array(Int8))) AS res;
-```
-
-```response title=Response
-┌─res─┐
-│ 128 │
 └─────┘
 ```
 
@@ -538,7 +490,7 @@ SELECT bitmapOrCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 
 أُضيفت في: v20.1.0
 
-تعيد مجموعة فرعية من `bitmap` تحتوي على عناصر تقع قيمها ضمن النطاق `[start, end)`. تُقارن قيم العناصر كأعداد صحيحة غير موقعة من نوع عنصر bitmap.
+تعيد مجموعة فرعية من `bitmap` تتضمن فقط `set bits` الواقعة ضمن النطاق المحدد [start, end). وتستخدم فهرسة تبدأ من 1.
 
 **الصيغة**
 
@@ -546,13 +498,13 @@ SELECT bitmapOrCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 bitmapSubsetInRange(bitmap, start, end)
 ```
 
-**الوسيطات**
+**المعاملات**
 
-* `bitmap` — الـ bitmap المطلوب استخراج المجموعة الفرعية منه. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `start` — بداية النطاق (شامل). [`UInt*`](/ar/reference/data-types/int-uint) - `end` — نهاية النطاق (غير شامل). [`UInt*`](/ar/reference/data-types/int-uint)
+* `bitmap` — الـ bitmap المطلوب استخراج المجموعة الجزئية منه. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `start` — بداية النطاق (شامل). [`UInt*`](/ar/reference/data-types/int-uint) - `end` — نهاية النطاق (غير شامل). [`UInt*`](/ar/reference/data-types/int-uint)
 
 **القيمة المُعادة**
 
-تعيد bitmap يحتوي فقط على العناصر ضمن نطاق القيم المحدد [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction)
+تعيد bitmap يحتوي فقط على البتات المعيّنة ضمن النطاق المحدد [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction)
 
 **أمثلة**
 
@@ -574,33 +526,33 @@ SELECT bitmapToArray(bitmapSubsetInRange(bitmapBuild([1, 2, 3, 4, 5]), 2, 5)) AS
 
 أُضيف في: v20.1.0
 
-تُرجِع مجموعة فرعية تضم ما لا يزيد عن `cardinality_limit` عنصرًا، وتكون قيم عناصرها أكبر من أو تساوي `range_start`، مع اختيار أصغر هذه القيم وفق الترتيب غير الموقّع.
+يعيد مجموعة فرعية من bitmap بدءًا من الموضع `range_start` وبحد أقصى `cardinality_limit` من البتات المعيّنة. يستخدم فهرسة تبدأ من 1.
 
-**الصيغة**
+**الصياغة**
 
 ```sql
 bitmapSubsetLimit(bitmap, range_start, cardinality_limit)
 ```
 
-**الوسيطات**
+**المعاملات**
 
-* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `range_start` — بداية النطاق (متضمنة). [`UInt32`](/ar/reference/data-types/int-uint) - `cardinality_limit` — الحد الأقصى لعدد العناصر للمجموعة الفرعية. [`UInt32`](/ar/reference/data-types/int-uint)
+* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `range_start` — بداية النطاق (متضمنة). [`UInt32`](/ar/reference/data-types/int-uint) - `cardinality_limit` — الحد الأقصى لكاردينالية المجموعة الفرعية. [`UInt32`](/ar/reference/data-types/int-uint)
 
 **القيمة المعادة**
 
-تُرجِع كائن bitmap يحتوي على ما لا يزيد عن `cardinality_limit` من العناصر ذات القيمة غير الموقعة التي لا تقل عن `range_start` [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction)
+تُرجِع كائن bitmap يحتوي على ما لا يزيد عن `cardinality_limit` من البتات المضبوطة، بدءًا من `range_start` [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction)
 
 **أمثلة**
 
 **مثال على الاستخدام**
 
 ```sql title=Query
-SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2))) AS res;
+SELECT bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3, 2)) AS res;
 ```
 
 ```response title=Response
 ┌─res────┐
-│ [3, 5] │
+│ [5, 3] │
 └────────┘
 ```
 
@@ -610,7 +562,7 @@ SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3
 
 أُضيفت في: v20.1.0
 
-تحوّل bitmap إلى مصفوفة من عناصرها. يطابق نوع عنصر المصفوفة نوع عنصر bitmap `T` (عدد صحيح موقَّع أو غير موقَّع). وهي عكس الدالة [`bitmapBuild`](/ar/reference/functions/regular-functions/bitmap-functions#bitmapBuild).
+تحوّل bitmap إلى مصفوفة من الأعداد الصحيحة غير الموقَّعة. وهي عكس الدالة [`bitmapBuild`](/ar/reference/functions/regular-functions/bitmap-functions#bitmapBuild).
 
 **الصيغة**
 
@@ -618,13 +570,13 @@ SELECT arraySort(bitmapToArray(bitmapSubsetLimit(bitmapBuild([1, 5, 3, 2, 8]), 3
 bitmapToArray(bitmap)
 ```
 
-**الوسيطات**
+**الوسائط**
 
 * `bitmap` — قيمة `bitmap` المطلوب تحويلها. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction).
 
 **القيمة المُعادة**
 
-يعيد مصفوفة من العناصر الموجودة في `bitmap` [`Array(T)`](/ar/reference/data-types/array)
+يعيد مصفوفة من الأعداد الصحيحة غير الموقَّعة الموجودة في `bitmap` [`Array(UInt*)`](/ar/reference/data-types/array)
 
 **أمثلة**
 
@@ -640,29 +592,13 @@ SELECT bitmapToArray(bitmapBuild([1, 2, 3, 4, 5])) AS res;
 └─────────────────┘
 ```
 
-**bitmap الموقَّعة**
-
-```sql title=Query
-SELECT arraySort(bitmapToArray(bitmapBuild([-128, -1]::Array(Int8)))) AS res;
-```
-
-```response title=Response
-┌─res────────┐
-│ [-128, -1] │
-└────────────┘
-```
-
 <div id="bitmapTransform">
   ## bitmapTransform
 </div>
 
 أُضيف في: v20.1.0
 
-يستبدل العناصر في bitmap وفقًا لتعيين من `from_array` إلى `to_array`.
-تُفسَّر القيم كأعداد صحيحة غير موقعة من نوع عنصر bitmap (ضمن نفس المجال مثل [`bitmapContains`](/ar/reference/functions/regular-functions/bitmap-functions#bitmapContains)).
-بالنسبة إلى bitmaps الموقعة، يطابق العنصر السالب نظيره غير الموقّع (على سبيل المثال، تطابق قيمة `Int8`‏ `-1` القيمة `255`).
-تؤدي القيمة في `to_array` التي لا تلائم نوع عنصر bitmap إلى ظهور الخطأ `BAD_ARGUMENTS`. أما القيمة في `from_array`
-التي لا تلائم النوع فلا يُعثر عليها ببساطة، لذا لا يُطبَّق الاستبدال المقابل.
+يغيّر ما يصل إلى N بتًا في bitmap، وذلك باستبدال قيم بتات محددة في `from_array` بالقيم المناظرة لها في `to_array`.
 
 **الصيغة**
 
@@ -672,7 +608,7 @@ bitmapTransform(bitmap, from_array, to_array)
 
 **الوسيطات**
 
-* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `from_array` — مصفوفة من البتات المضبوطة الأصلية المطلوب استبدالها. [`Array(T)`](/ar/reference/data-types/array). - `to_array` — مصفوفة من البتات المضبوطة الجديدة التي سيُستبدل بها. [`Array(T)`](/ar/reference/data-types/array).
+* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `from_array` — مصفوفة من البتات المضبوطة الأصلية المطلوب استبدالها. [`Array(T)`](/ar/reference/data-types/array). - `to_array` — مصفوفة من البتات المضبوطة الجديدة المراد الاستبدال بها. [`Array(T)`](/ar/reference/data-types/array).
 
 **القيمة المُعادة**
 
@@ -690,18 +626,6 @@ SELECT bitmapToArray(bitmapTransform(bitmapBuild([1, 2, 3, 4, 5]), [2, 4], [20, 
 ┌─res───────────────┐
 │ [1, 3, 5, 20, 40] │
 └───────────────────┘
-```
-
-**bitmap موقّع**
-
-```sql title=Query
-SELECT arraySort(bitmapToArray(bitmapTransform(bitmapBuild([-1, 0]::Array(Int8)), [255], [10]))) AS res;
-```
-
-```response title=Response
-┌─res─────┐
-│ [0, 10] │
-└─────────┘
 ```
 
 <div id="bitmapXor">
@@ -782,9 +706,9 @@ SELECT bitmapXorCardinality(bitmapBuild([1,2,3]), bitmapBuild([3,4,5])) AS res;
 
 أُضيف في: v21.9.0
 
-يعيد مجموعة فرعية من bitmap بعد تخطي `offset` عنصرًا، بترتيب تصاعدي للقيم غير الموقعة. الحد الأقصى لعدد العناصر في bitmap المُعادة هو `cardinality_limit`.
+يعيد مجموعة فرعية من الخريطة النقطية، بدءًا من الموضع `offset`. الحد الأقصى لعدد العناصر في الخريطة النقطية المُعادة هو `cardinality_limit`.
 
-**الصيغة**
+**بناء الجملة**
 
 ```sql
 subBitmap(bitmap, offset, cardinality_limit)
@@ -792,11 +716,11 @@ subBitmap(bitmap, offset, cardinality_limit)
 
 **الوسيطات**
 
-* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `offset` — عدد البتات المضبوطة المطلوب تخطيها من البداية (بفهرسة تبدأ من الصفر). [`UInt32`](/ar/reference/data-types/int-uint) - `cardinality_limit` — الحد الأقصى لعدد البتات المضبوطة التي يمكن تضمينها في المجموعة الفرعية. [`UInt32`](/ar/reference/data-types/int-uint)
+* `bitmap` — كائن bitmap. [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction). - `offset` — عدد البتات المعيّنة المطلوب تخطيها من البداية (بفهرسة تبدأ من الصفر). [`UInt32`](/ar/reference/data-types/int-uint) - `cardinality_limit` — الحد الأقصى لعدد البتات المعيّنة التي يمكن تضمينها في المجموعة الفرعية. [`UInt32`](/ar/reference/data-types/int-uint)
 
 **القيمة المُعادة**
 
-يعيد bitmap يحتوي على عدد لا يتجاوز `cardinality_limit` من العناصر بعد تخطي `offset` من العناصر بترتيب تصاعدي للقيم غير الموقعة [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction)
+يعيد bitmap يحتوي على عدد لا يتجاوز `limit` من البتات المعيّنة، بعد تخطي `offset` من البتات المعيّنة وبترتيب تصاعدي [`AggregateFunction(groupBitmap, T)`](/ar/reference/data-types/aggregatefunction)
 
 **أمثلة**
 

@@ -7,7 +7,7 @@ title: 'Материализации'
 doc_type: 'guide'
 ---
 
-import { ClickHouseSupportedBadge } from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/ru/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
@@ -201,16 +201,7 @@ models:
   ### Проекции
 </div>
 
-Вы можете добавлять [проекции](/ru/concepts/features/projections/projections) в материализации `table` и `distributed_table` с помощью конфигурации `projections`. Для каждой записи проекции требуется ключ `query` или `index` (но не оба).
-
-**Примечание**: Для distributed таблиц проекция применяется к таблицам `_local`, а не к прокси-таблице distributed.
-**Примечание**: Указание одновременно `query` и `index` в одной записи проекции вызывает ошибку на этапе компиляции.
-
-<div id="query-projections">
-  #### Проекции запросов
-</div>
-
-Используйте `query`, чтобы задать полный запрос проекции:
+Вы можете добавлять [проекции](/ru/concepts/features/projections/projections) в материализации `table` и `distributed_table` с помощью конфигурации `projections`:
 
 ```sql
 {{ config(
@@ -224,42 +215,7 @@ models:
 ) }}
 ```
 
-<div id="index-projections">
-  #### Индексные проекции
-</div>
-
-Используйте `index` как синтаксический сахар для легковесных [индексных проекций](https://clickhouse.com/blog/clickhouse-release-25-06#index-projections), использующих виртуальный столбец `_part_offset`. В качестве ключа сортировки укажите имя одного столбца или список столбцов:
-
-```sql
-{{ config(
-       materialized='table',
-       projections=[
-           {
-               'name': 'proj_by_age',
-               'index': 'age'
-           }
-       ]
-) }}
-```
-
-```sql
-{{ config(
-       materialized='table',
-       projections=[
-           {
-               'name': 'proj_by_dept_age',
-               'index': ['department', 'age']
-           }
-       ]
-) }}
-```
-
-dbt-clickhouse автоматически генерирует DDL с учётом версии:
-
-| Версия ClickHouse | Сгенерированный SQL                                             |
-| ----------------- | --------------------------------------------------------------- |
-| 26.1+             | `ADD PROJECTION proj_by_age INDEX age TYPE basic`               |
-| 25.8 – 26.0       | `ADD PROJECTION proj_by_age (SELECT _part_offset ORDER BY age)` |
+**Примечание**: Для distributed таблиц проекция применяется к таблицам `_local`, а не к прокси-таблице distributed.
 
 <div id="materialization-incremental">
   ## Материализация: инкрементальная

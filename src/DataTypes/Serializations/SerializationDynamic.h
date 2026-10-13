@@ -56,6 +56,8 @@ public:
         Value value;
 
         static void checkVersion(UInt64 version);
+        /// Each version is written into one channel only, so reading data of the other channel means the data is corrupted.
+        static void checkVersion(UInt64 version, bool native_format);
 
         explicit SerializationVersion(UInt64 version);
         explicit SerializationVersion(MergeTreeDynamicSerializationVersion version);
@@ -101,7 +103,8 @@ public:
         size_t & total_size_of_variants) const;
 
     void deserializeBinaryBulkWithMultipleStreams(
-        IColumn & column,
+        ColumnPtr & column,
+        size_t rows_offset,
         size_t limit,
         DeserializeBinaryBulkSettings & settings,
         DeserializeBinaryBulkStatePtr & state,

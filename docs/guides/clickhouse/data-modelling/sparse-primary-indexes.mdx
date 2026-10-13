@@ -319,7 +319,7 @@ The first (based on physical order on disk) 8192 rows (their column values) logi
 
   Therefore all granules (except the last one) of our example table have the same size.
 
-- For tables with adaptive index granularity (index granularity is adaptive by [default](/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes)) the size of some granules can be less than 8192 rows depending on the row data sizes.
+- For tables with adaptive index granularity (index granularity is adaptive by [default](/reference/settings/merge-tree-settings#index_granularity_bytes) the size of some granules can be less than 8192 rows depending on the row data sizes.
 
 - We marked some column values from our primary key columns (`UserID`, `URL`) in orange.
   These orange-marked column values are the primary key column values of each first row of each granule.
@@ -354,7 +354,7 @@ In total the index has 1083 entries for our table with 8.87 million rows and 108
 
 On a self-managed ClickHouse cluster we can use the [file table function](/reference/functions/table-functions/file) for inspecting the content of the primary index of our example table.
 
-For that we first need to copy the primary index file into the [user_files_path](/reference/settings/server-settings/settings/user#user_files_path) of a node from the running cluster:
+For that we first need to copy the primary index file into the [user_files_path](/reference/settings/server-settings/settings#user_files_path) of a node from the running cluster:
 
 **Step 1: Get part-path that contains the primary index file**
 
@@ -362,7 +362,7 @@ For that we first need to copy the primary index file into the [user_files_path]
 SELECT path FROM system.parts WHERE table = 'hits_UserID_URL' AND active = 1
 ```
 
-returns `/Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` on the test machine.
+returns `/Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4` on the test machine.
 
 **Step 2: Get user_files_path**
 
@@ -370,12 +370,12 @@ The [default user_files_path](https://github.com/ClickHouse/ClickHouse/blob/22.1
 
 and on Linux you can check if it got changed: `$ grep user_files_path /etc/clickhouse-server/config.xml`
 
-On the test machine the path is `/Users/tomschreiber/ClickHouse/user_files/`
+On the test machine the path is `/Users/tomschreiber/Clickhouse/user_files/`
 
 **Step 3: Copy the primary index file into the user_files_path**
 
 ```bash
-cp /Users/tomschreiber/ClickHouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/ClickHouse/user_files/primary-hits_UserID_URL.idx
+cp /Users/tomschreiber/Clickhouse/store/85f/85f4ee68-6e28-4f08-98b1-7d8affa1d88c/all_1_9_4/primary.idx /Users/tomschreiber/Clickhouse/user_files/primary-hits_UserID_URL.idx
 ```
 
 Now we can inspect the content of the primary index via SQL:
@@ -475,7 +475,7 @@ Processed 8.19 thousand rows,
 
 The output for the ClickHouse client is now showing that instead of doing a full table scan, only 8.19 thousand rows were streamed into ClickHouse.
 
-If <a href="/reference/settings/server-settings/settings/other#logger" target="_blank">trace logging</a> is enabled then the ClickHouse server log file shows that ClickHouse was running a <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">binary search</a> over the 1083 UserID index marks, in order to identify granules that possibly can contain rows with a UserID column value of `749927693`. This requires 19 steps with an average time complexity of `O(log2 n)`:
+If <a href="/reference/settings/server-settings/settings#logger" target="_blank">trace logging</a> is enabled then the ClickHouse server log file shows that ClickHouse was running a <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">binary search</a> over the 1083 UserID index marks, in order to identify granules that possibly can contain rows with a UserID column value of `749927693`. This requires 19 steps with an average time complexity of `O(log2 n)`:
 ```response highlight={2,7}
 ...Executor): Key condition: (column 0 in [749927693, 749927693])
 ...Executor): Running binary search on index range for part all_1_9_2 (1083 marks)
@@ -486,10 +486,6 @@ If <a href="/reference/settings/server-settings/settings/other#logger" target="_
               1/1083 marks by primary key, 1 marks to read from 1 ranges
 ...Reading ...approx. 8192 rows starting from 1441792
 ```
-
-:::note
-In recent versions of ClickHouse the `Running binary search on index range`, `Found (LEFT) boundary mark`, and `Found (RIGHT) boundary mark` messages are logged at the `test` level (the highest verbosity) rather than at `trace`. To see them, raise the log verbosity to `test` (for example, `SET send_logs_level = 'test'` on the client, or `<logger><level>test</level></logger>` in the server configuration). The remaining lines shown above are still logged at `trace`. This applies to every binary-search log example in this guide.
-:::
 
 We can see in the trace log above, that one mark out of the 1083 existing marks satisfied the query.
 
@@ -596,7 +592,7 @@ All the 8192 rows belonging to the located uncompressed granule are then streame
 
 - For tables with [wide format](/reference/engines/table-engines/mergetree-family/mergetree#mergetree-data-storage) and without [adaptive index granularity](/resources/changelogs/oss/2019#experimental-features-1), ClickHouse uses `.mrk` mark files as visualised above, that contain entries with two 8 byte long addresses per entry. These entries are physical locations of granules that all have the same size.
 
- Index granularity is adaptive by [default](/reference/settings/merge-tree-settings/index-granularity#index_granularity_bytes), but for our example table we disabled adaptive index granularity (in order to simplify the discussions in this guide, as well as make the diagrams and results reproducible). Our table is using wide format because the size of the data is larger than [min_bytes_for_wide_part](/reference/settings/merge-tree-settings/min-bytes#min_bytes_for_wide_part) (which is 10 MB by default for self-managed clusters).
+ Index granularity is adaptive by [default](/reference/settings/merge-tree-settings#index_granularity_bytes), but for our example table we disabled adaptive index granularity (in order to simplify the discussions in this guide, as well as make the diagrams and results reproducible). Our table is using wide format because the size of the data is larger than [min_bytes_for_wide_part](/reference/settings/merge-tree-settings#min_bytes_for_wide_part) (which is 10 MB by default for self-managed clusters).
 
 - For tables with wide format and with adaptive index granularity, ClickHouse uses `.mrk2` mark files, that contain similar entries to `.mrk` mark files but with an additional third value per entry: the number of rows of the granule that the current entry is associated with.
 
@@ -695,7 +691,7 @@ Processed 8.81 million rows,
 
 The client output indicates that ClickHouse almost executed a full table scan despite the [URL column being part of the compound primary key](#a-table-with-a-primary-key)! ClickHouse reads 8.81 million rows from the 8.87 million rows of the table.
 
-If [trace_logging](/reference/settings/server-settings/settings/other#logger) is enabled then the ClickHouse server log file shows that ClickHouse used a <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">generic exclusion search</a> over the 1083 URL index marks in order to identify those granules that possibly can contain rows with a URL column value of "http://public_search":
+If [trace_logging](/reference/settings/server-settings/settings#logger) is enabled then the ClickHouse server log file shows that ClickHouse used a <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1444" target="_blank">generic exclusion search</a> over the 1083 URL index marks in order to identify those granules that possibly can contain rows with a URL column value of "http://public_search":
 ```response highlight={3,6}
 ...Executor): Key condition: (column 1 in ['http://public_search',
                                            'http://public_search'])
@@ -914,7 +910,7 @@ Now, instead of [almost doing a full table scan](/guides/clickhouse/data-modelli
 With the primary index from the [original table](#a-table-with-a-primary-key) where UserID was the first, and URL the second key column, ClickHouse used a [generic exclusion search](/guides/clickhouse/data-modelling/sparse-primary-indexes#generic-exclusion-search-algorithm) over the index marks for executing that query and that wasn't very effective because of the similarly high cardinality of UserID and URL.
 
 With URL as the first column in the primary index, ClickHouse is now running <a href="https://github.com/ClickHouse/ClickHouse/blob/22.3/src/Storages/MergeTree/MergeTreeDataSelectExecutor.cpp#L1452" target="_blank">binary search</a> over the index marks.
-The corresponding server log confirms that (in recent versions the binary-search messages are logged at the `test` level — see the [note above](#the-primary-index-is-used-for-selecting-granules)):
+The corresponding trace log in the ClickHouse server log file confirms that:
 ```response highlight={3,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',
                                            'http://public_search'])
@@ -1049,7 +1045,7 @@ Processed 335.87 thousand rows,
 
 Because effectively the implicitly created table (and its primary index) backing the materialized view is identical to the [secondary table that we created explicitly](/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), the query is executed in the same effective way as with the explicitly created table.
 
-The corresponding server log confirms that ClickHouse is running binary search over the index marks (in recent versions the binary-search messages are logged at the `test` level — see the [note above](#the-primary-index-is-used-for-selecting-granules)):
+The corresponding trace log in the ClickHouse server log file confirms that ClickHouse is running binary search over the index marks:
 
 ```response highlight={3,6}
 ...Executor): Key condition: (column 0 in ['http://public_search',
@@ -1128,7 +1124,7 @@ Processed 319.49 thousand rows, 1
 
 Because effectively the hidden table (and its primary index) created by the projection is identical to the [secondary table that we created explicitly](/guides/clickhouse/data-modelling/sparse-primary-indexes#option-1-secondary-tables), the query is executed in the same effective way as with the explicitly created table.
 
-The corresponding server log confirms that ClickHouse is running binary search over the index marks (in recent versions the binary-search messages are logged at the `test` level — see the [note above](#the-primary-index-is-used-for-selecting-granules)):
+The corresponding trace log in the ClickHouse server log file confirms that ClickHouse is running binary search over the index marks:
 
 ```response highlight={3,5,8}
 ...Executor): Key condition: (column 0 in ['http://public_search',

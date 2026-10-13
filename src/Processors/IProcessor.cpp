@@ -155,7 +155,7 @@ IProcessor::ProcessorDataStats IProcessor::getProcessorDataStats() const
     return stats;
 }
 
-ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
+IProcessor::ProcessorsProfileLogInfo IProcessor::getProcessorsProfileLogInfo() const
 {
     ProcessorsProfileLogInfo info;
 

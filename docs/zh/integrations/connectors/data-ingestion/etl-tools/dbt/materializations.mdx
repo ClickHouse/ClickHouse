@@ -7,11 +7,11 @@ title: '物化类型'
 doc_type: 'guide'
 ---
 
-import { ClickHouseSupportedBadge } from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
+import ClickHouseSupportedBadge from "/snippets/zh/components/ClickHouseSupported/ClickHouseSupported.jsx";
 
 <ClickHouseSupportedBadge />
 
-本节介绍 dbt-clickhouse 中提供的所有物化类型，包括 Experimental 功能。
+本节介绍 dbt-clickhouse 中提供的所有物化类型，包括实验性功能。
 
 <div id="general-materialization-configurations">
   ## 通用物化类型配置
@@ -199,16 +199,7 @@ models:
   ### 投影
 </div>
 
-你可以使用 `projections` 配置，为 `table` 和 `distributed_table` 物化类型添加[投影](/zh/concepts/features/projections/projections)。每个投影条目都需要 `query` 或 `index` 键之一 (不能同时使用两者) 。
-
-**注意**：对于分布式表，投影会应用到 `_local` 表上，而不是分布式代理表本身。
-**注意**：在同一个投影条目上同时指定 `query` 和 `index` 会引发编译时错误。
-
-<div id="query-projections">
-  #### 查询投影
-</div>
-
-使用 `query` 定义完整的投影查询：
+你可以使用 `projections` 配置，为 `table` 和 `distributed_table` 物化类型添加[投影](/zh/concepts/features/projections/projections)：
 
 ```sql
 {{ config(
@@ -222,42 +213,7 @@ models:
 ) }}
 ```
 
-<div id="index-projections">
-  #### 索引投影
-</div>
-
-使用 `index` 作为轻量级[索引投影](https://clickhouse.com/blog/clickhouse-release-25-06#index-projections)的语法糖。此类投影使用 `_part_offset` 虚拟列。传入单个列名或列名列表作为排序依据：
-
-```sql
-{{ config(
-       materialized='table',
-       projections=[
-           {
-               'name': 'proj_by_age',
-               'index': 'age'
-           }
-       ]
-) }}
-```
-
-```sql
-{{ config(
-       materialized='table',
-       projections=[
-           {
-               'name': 'proj_by_dept_age',
-               'index': ['department', 'age']
-           }
-       ]
-) }}
-```
-
-dbt-clickhouse 会自动生成适用于相应版本的 DDL：
-
-| ClickHouse 版本 | 生成的 SQL                                                         |
-| ------------- | --------------------------------------------------------------- |
-| 26.1+         | `ADD PROJECTION proj_by_age INDEX age TYPE basic`               |
-| 25.8 – 26.0   | `ADD PROJECTION proj_by_age (SELECT _part_offset ORDER BY age)` |
+**注意**：对于分布式表，投影会应用到 `_local` 表上，而不是分布式代理表本身。
 
 <div id="materialization-incremental">
   ## 物化：incremental

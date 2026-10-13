@@ -31,7 +31,7 @@ function run_cancel_check()
     # pinned against randomization. 1000 rows x 0.001s = 1s per block, ~100s natural query duration.
     $CLICKHOUSE_CLIENT --query-id="$query_id" -q "
         SELECT x, count() FROM t_dp_cancel WHERE NOT sleepEachRow(0.001) GROUP BY x FORMAT Null
-        SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, automatic_parallel_replicas_mode = 0, distributed_plan_execute_locally = 1, distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
+        SETTINGS make_distributed_plan = 1, enable_parallel_replicas = 0, distributed_plan_execute_locally = 1, distributed_plan_default_shuffle_join_bucket_count = 3, distributed_plan_default_reader_bucket_count = 3,
             distributed_plan_max_rows_to_broadcast = 0, max_rows_to_group_by = 0, max_execution_time = 300,
             max_block_size = 1000$extra_settings
     " 2> "$client_log" &
@@ -51,9 +51,8 @@ function run_cancel_check()
     fi
 
     # SYNC waits for the query to actually terminate; bound it so a cancellation hang fails the
-    # test instead of hanging the runner. The bound must absorb a loaded sanitizer box (the flaky
-    # check runs many heavy tests at once and everything slows several-fold).
-    timeout 180 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null" || echo "KILL timed out"
+    # test instead of hanging the runner.
+    timeout 60 $CLICKHOUSE_CLIENT -q "KILL QUERY WHERE query_id = '$query_id' SYNC FORMAT Null" || echo "KILL timed out"
 
     # Bound the wait for the client too: with a broken cancellation path the client never exits on
     # its own (the query may ignore max_execution_time as well), and an unbounded wait would hang

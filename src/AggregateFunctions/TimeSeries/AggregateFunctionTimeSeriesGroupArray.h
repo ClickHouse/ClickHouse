@@ -1,7 +1,6 @@
 #pragma once
 
 #include <AggregateFunctions/IAggregateFunction.h>
-#include <AggregateFunctions/TimeSeries/timeseriesMaxValueForDuplicateTimestamp.h>
 #include <DataTypes/DataTypeArray.h>
 #include <DataTypes/DataTypesDecimal.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -10,6 +9,8 @@
 #include <Common/Arena.h>
 #include <IO/ReadHelpers.h>
 #include <IO/WriteHelpers.h>
+
+#include <limits>
 
 
 namespace DB
@@ -20,16 +21,18 @@ namespace ErrorCodes
     extern const int BAD_ARGUMENTS;
     extern const int INCORRECT_DATA;
     extern const int LOGICAL_ERROR;
+    extern const int TOO_LARGE_ARRAY_SIZE;
 }
 
 /// Aggregate function sorting pairs (timestamp, values) by timestamp.
-/// If there are pairs with the same timestamp then the function keeps only a pair with the biggest value,
-/// where a NaN value loses to any other value (see `timeseriesMaxValueForDuplicateTimestamp`).
+/// If there are pairs with the same timestamp then the function keeps only a pair with the biggest value.
 template <typename TimestampType, typename ValueType, bool array_arguments>
 class AggregateFunctionTimeSeriesGroupArray final :
     public IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType, array_arguments>>
 {
 public:
+    static constexpr bool DateTime64Supported = true;
+
     using Base = IAggregateFunctionHelper<AggregateFunctionTimeSeriesGroupArray<TimestampType, ValueType, array_arguments>>;
 
     using ColVecType = ColumnVectorOrDecimal<TimestampType>;
@@ -53,12 +56,21 @@ public:
         size_t size = 0;
         size_t allocated_size = 0;
 
+        /// Maximum number of elements: the size of the allocation in bytes must fit into `size_t`.
+        static constexpr size_t MAX_ELEMENTS = std::numeric_limits<size_t>::max() / sizeof(Element);
+
         void reserve(size_t new_size, Arena * arena)
         {
             if (new_size > allocated_size)
             {
+                if (new_size > MAX_ELEMENTS)
+                    throw Exception(
+                        ErrorCodes::TOO_LARGE_ARRAY_SIZE,
+                        "Too many elements ({}) in the state of aggregate function timeSeriesGroupArray, maximum {}",
+                        new_size, MAX_ELEMENTS);
+
                 auto old_size = allocated_size;
-                allocated_size = std::max(2 * allocated_size, new_size);
+                allocated_size = std::min(std::max(2 * allocated_size, new_size), MAX_ELEMENTS);
                 elements = reinterpret_cast<Element *>(arena->alignedRealloc(
                     reinterpret_cast<char *>(elements), old_size * sizeof(Element), allocated_size * sizeof(Element),
                     alignof(Element)));
@@ -96,11 +108,11 @@ public:
                 {
                     if (elements[i].timestamp == elements[i - 1].timestamp)
                     {
-                        /// If there are multiple values with the same timestamp, then we move the kept value
+                        /// If there are multiple values with the same timestamp, then we move the biggest value
                         /// to the first position in each group of values with the same timestamp.
                         /// We do that because std::unique() which is called below will remove all except the first element
                         /// in each group of values with the same timestamp.
-                        elements[i - 1].value = timeseriesMaxValueForDuplicateTimestamp(elements[i - 1].value, elements[i].value);
+                        elements[i - 1].value = std::max(elements[i - 1].value, elements[i].value);
                         need_deduplication = true;
                     }
                 }
@@ -392,10 +404,18 @@ public:
         size_t size = 0;
         readBinaryLittleEndian(size, buf);
 
-        data.reserve(size, arena);
+        /// The number of elements is read from the state and cannot be trusted, so only a bounded amount is
+        /// reserved upfront and the array grows while the timestamps are read. That way a corrupted size fails
+        /// with an end-of-buffer error instead of allocating memory for the claimed number of elements.
+        data.reserve(std::min(size, MAX_ELEMENTS_TO_RESERVE), arena);
 
         for (size_t i = 0; i < size; ++i)
-            readBinaryLittleEndian(data.elements[i].timestamp, buf);
+        {
+            TimestampType timestamp{};
+            readBinaryLittleEndian(timestamp, buf);
+            data.reserve(i + 1, arena);
+            data.elements[i].timestamp = timestamp;
+        }
 
         for (size_t i = 0; i < size; ++i)
             readBinaryLittleEndian(data.elements[i].value, buf);
@@ -435,6 +455,9 @@ public:
 
 private:
     static constexpr UInt16 FORMAT_VERSION = 1;
+
+    /// How many elements `deserialize` reserves before reading the data. Bigger states grow while they are read.
+    static constexpr size_t MAX_ELEMENTS_TO_RESERVE = 4096;
 };
 
 }

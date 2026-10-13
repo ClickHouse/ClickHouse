@@ -1,6 +1,5 @@
 ---
 sidebarTitle: 'Insertar datos con clickhouse-client'
-searchable: true
 title: 'Insertar datos en ClickHouse Cloud con clickhouse-client'
 useCases: ['All']
 products: ['Cloud']
@@ -16,9 +15,9 @@ import ClickHouseAcademyCTA from '/get-started/quickstarts/_academy-ctas/_academ
 
 <div className="mt-2 flex flex-wrap gap-2">
   <Badge size="lg" color="blue">Analítica en tiempo real</Badge>
-  <Badge size="lg" color="blue">Data Warehousing</Badge>
+  <Badge size="lg" color="blue">Data warehousing</Badge>
   <Badge size="lg" color="blue">Observabilidad</Badge>
-  <Badge size="lg" color="blue">IA/ML</Badge>
+  <Badge size="lg" color="blue">AI/ML</Badge>
   <Badge size="lg" color="orange">Cloud</Badge>
 </div>
 
@@ -42,7 +41,9 @@ Instalarás clickhouse-client, prepararás un conjunto de datos de ejemplo, te c
 Al final, sabrás cómo usar clickhouse-client para cargar archivos locales en ClickHouse Cloud, en un flujo de trabajo compatible con CSV, Parquet, JSON y muchos otros formatos.
 
 <Steps titleSize="h3">
-  <Step title="Instalar clickhouse-client" id="install-clickhouse-client">
+  <Step>
+    ### Instalar clickhouse-client
+
     `clickhouse-client` es la interfaz de línea de comandos oficial para conectarse a ClickHouse. Está incluido en el binario de ClickHouse.
 
     Instálalo con el instalador universal:
@@ -60,7 +61,9 @@ Al final, sabrás cómo usar clickhouse-client para cargar archivos locales en C
     Deberías ver una salida que muestre el número de versión de ClickHouse, lo que confirma que `clickhouse-client` está listo para usarse.
   </Step>
 
-  <Step title="Prepara un archivo CSV de ejemplo" id="prepare-a-sample-csv-file">
+  <Step>
+    ### Prepara un archivo CSV de ejemplo
+
     Crea un pequeño archivo CSV de ejemplo para que esta guía de inicio rápido sea autosuficiente. Ejecuta lo siguiente en tu terminal:
 
     ```bash
@@ -80,7 +83,9 @@ Al final, sabrás cómo usar clickhouse-client para cargar archivos locales en C
     ```
   </Step>
 
-  <Step title="Conéctate a tu servicio en Cloud" id="connect-to-your-cloud-service">
+  <Step>
+    ### Conéctate a tu servicio en Cloud
+
     Los siguientes comandos asumen que has exportado `CLICKHOUSE_HOST`, `CLICKHOUSE_USER` y `CLICKHOUSE_PASSWORD` como variables de entorno, tal como se describe en la [guía de inicio rápido para obtener los detalles de conexión de tu servicio en Cloud](/es/get-started/quickstarts/obtain-your-cloud-connection-details). Si no lo has hecho, puedes sustituirlos directamente por tus valores.
 
     Prueba la conectividad ejecutando una consulta sencilla en tu servicio en Cloud:
@@ -102,7 +107,9 @@ Al final, sabrás cómo usar clickhouse-client para cargar archivos locales en C
     </Note>
   </Step>
 
-  <Step title="Crear una tabla de destino e insertar datos" id="create-a-target-table-and-insert-data">
+  <Step>
+    ### Crear una tabla de destino e insertar datos
+
     Primero, crea una tabla en tu servicio de Cloud para recibir los datos:
 
     ```bash
@@ -140,7 +147,9 @@ Al final, sabrás cómo usar clickhouse-client para cargar archivos locales en C
     `clickhouse-client` envía el contenido del archivo CSV directamente a tu servicio de Cloud. El formato `CSVWithNames` indica a ClickHouse que la primera fila contiene los nombres de las columnas.
   </Step>
 
-  <Step title="Verifica que se hayan insertado los datos" id="verify-the-data-was-inserted">
+  <Step>
+    ### Verifica que se hayan insertado los datos
+
     Ejecuta una consulta en tu servicio de Cloud para confirmar que las filas se insertaron correctamente:
 
     ```bash
@@ -171,9 +180,7 @@ Al final, sabrás cómo usar clickhouse-client para cargar archivos locales en C
   </Step>
 </Steps>
 
-<div id="next-steps">
-  ## Siguientes pasos
-</div>
+## Siguientes pasos
 
 En esta guía de inicio rápido instalaste `clickhouse-client`, lo conectaste a un servicio de ClickHouse Cloud y lo usaste para cargar datos desde un archivo CSV local en Cloud. Este mismo enfoque funciona con Parquet, JSON y decenas de otros formatos.
 

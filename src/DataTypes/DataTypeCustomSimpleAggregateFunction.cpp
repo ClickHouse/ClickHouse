@@ -188,7 +188,7 @@ void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)
 ## Description {#description}
 
 The `SimpleAggregateFunction` data type stores the intermediate state of an
-aggregate function, but not its full state as the [`AggregateFunction`](/reference/data-types/aggregatefunction)
+aggregate function, but not its full state as the [`AggregateFunction`](../../sql-reference/data-types/aggregatefunction.md)
 type does.
 
 This optimization can be applied to functions for which the following property
@@ -206,7 +206,7 @@ requires keeping track of a sum and a count, which will be divided to get the
 average in a final `Merge` step which combines the intermediate states.
 
 Aggregate function values are commonly produced by calling an aggregate function
-with the [`-SimpleState`](/reference/functions/aggregate-functions/combinators#-simplestate) combinator appended to the function name.
+with the [`-SimpleState`](/sql-reference/aggregate-functions/combinators#-simplestate) combinator appended to the function name.
 
 ## Syntax {#syntax}
 
@@ -223,23 +223,23 @@ SimpleAggregateFunction(aggregate_function_name, types_of_arguments...)
 
 The following aggregate functions are supported:
 
-- [`any`](/reference/functions/aggregate-functions/any)
-- [`any_respect_nulls`](/reference/functions/aggregate-functions/any)
-- [`anyLast`](/reference/functions/aggregate-functions/anyLast)
-- [`anyLast_respect_nulls`](/reference/functions/aggregate-functions/anyLast)
-- [`min`](/reference/functions/aggregate-functions/min)
-- [`max`](/reference/functions/aggregate-functions/max)
-- [`sum`](/reference/functions/aggregate-functions/sum)
-- [`sumWithOverflow`](/reference/functions/aggregate-functions/sumWithOverflow)
-- [`groupBitAnd`](/reference/functions/aggregate-functions/groupBitAnd)
-- [`groupBitOr`](/reference/functions/aggregate-functions/groupBitOr)
-- [`groupBitXor`](/reference/functions/aggregate-functions/groupBitXor)
-- [`groupArrayArray`](/reference/functions/aggregate-functions/groupArrayArray)
-- [`groupUniqArrayArray`](/reference/functions/aggregate-functions/groupUniqArray)
-- [`groupUniqArrayArrayMap`](/reference/functions/aggregate-functions/combinators#-map)
-- [`sumMap` (`sumMappedArrays`)](/reference/functions/aggregate-functions/sumMap)
-- [`minMap` (`minMappedArrays`)](/reference/functions/aggregate-functions/minMap)
-- [`maxMap` (`maxMappedArrays`)](/reference/functions/aggregate-functions/maxMap)
+- [`any`](/sql-reference/aggregate-functions/reference/any.md)
+- [`any_respect_nulls`](/sql-reference/aggregate-functions/reference/any.md)
+- [`anyLast`](/sql-reference/aggregate-functions/reference/anyLast.md)
+- [`anyLast_respect_nulls`](/sql-reference/aggregate-functions/reference/anyLast.md)
+- [`min`](/sql-reference/aggregate-functions/reference/min.md)
+- [`max`](/sql-reference/aggregate-functions/reference/max.md)
+- [`sum`](/sql-reference/aggregate-functions/reference/sum.md)
+- [`sumWithOverflow`](/sql-reference/aggregate-functions/reference/sumWithOverflow.md)
+- [`groupBitAnd`](/sql-reference/aggregate-functions/reference/groupBitAnd.md)
+- [`groupBitOr`](/sql-reference/aggregate-functions/reference/groupBitOr.md)
+- [`groupBitXor`](/sql-reference/aggregate-functions/reference/groupBitXor.md)
+- [`groupArrayArray`](/sql-reference/aggregate-functions/reference/groupArrayArray.md)
+- [`groupUniqArrayArray`](../../sql-reference/aggregate-functions/reference/groupUniqArray.md)
+- [`groupUniqArrayArrayMap`](../../sql-reference/aggregate-functions/combinators#-map)
+- [`sumMap` (`sumMappedArrays`)](/sql-reference/aggregate-functions/reference/sumMappedArrays.md)
+- [`minMap` (`minMappedArrays`)](/sql-reference/aggregate-functions/reference/minMappedArrays.md)
+- [`maxMap` (`maxMappedArrays`)](/sql-reference/aggregate-functions/reference/maxMappedArrays.md)
 
 :::note
 Values of the `SimpleAggregateFunction(func, Type)` have the same `Type`,
@@ -258,7 +258,7 @@ CREATE TABLE simple (id UInt64, val SimpleAggregateFunction(sum, Double)) ENGINE
 ## Related Content {#related-content}
 
 - Blog: [Using Aggregate Combinators in ClickHouse](https://clickhouse.com/blog/aggregate-functions-combinators-in-clickhouse-for-arrays-maps-and-states)
-- [AggregateFunction](/reference/data-types/aggregatefunction) type.
+- [AggregateFunction](/sql-reference/data-types/aggregatefunction) type.
 )DOCS_MD",
             .syntax = "SimpleAggregateFunction(name, types...)",
             .examples = {},

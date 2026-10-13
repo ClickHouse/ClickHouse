@@ -12,7 +12,7 @@ keywords: ['PostgreSQL', 'Postgres', 'FDW', '外部数据包装器', 'pg_clickho
 </div>
 
 pg&#95;clickhouse 是一个 PostgreSQL 扩展，可在 ClickHouse 数据库上远程执行查询，
-其中包括一个[外部数据包装器]。它支持 PostgreSQL 13 及以上版本，以及 ClickHouse 23.3 及以上版本。
+其中包括一个[外部数据包装器]。它支持 PostgreSQL 13 及以上版本，以及 ClickHouse 23 及以上版本。
 
 <div id="getting-started">
   ## 快速开始
@@ -143,6 +143,10 @@ CREATE SERVER taxi_srv FOREIGN DATA WRAPPER clickhouse_fdw
   &quot;none&quot;、&quot;lz4&quot; 或 &quot;zstd&quot;。默认为 &quot;lz4&quot;。http 驱动会忽略此选项。
 * `dbname`：连接时使用的 ClickHouse 数据库。默认为
   &quot;default&quot;。
+* `fetch_size`：HTTP streaming 的近似批次大小 (以字节为单位) 。批次
+  按行边界拆分。默认为 `50000000` (50 MB) 。`0` 会禁用
+  streaming 并缓冲整个响应。foreign table 可以覆盖此
+  值。
 * `host`：ClickHouse server 的主机名。默认为 &quot;localhost&quot;；
 * `port`：连接到 ClickHouse server 时使用的端口。默认值
   如下：
@@ -316,21 +320,24 @@ CREATE FOREIGN TABLE acts (
     sign       smallint
 ) SERVER taxi_srv OPTIONS(
     table_name 'acts'
-    engine 'CollapsingMergeTree(sign)'
+    engine 'CollapsingMergeTree'
 );
 ```
 
 支持的表选项如下：
 
-* `database`：远程 数据库 的名称。默认使用为 外部服务器
-  定义的 数据库。
+* `database`：远程 database 的名称。默认使用为 外部服务器
+  定义的 database。
+* `fetch_size`：HTTP streaming 的近似批次大小 (以字节为单位) 。会覆盖
+  server 级别的 `fetch_size`。默认值为 `50000000` (50 MB) 。`0` 会禁用
+  流式传输并缓冲完整响应。
 * `table_name`：远程表的名称。默认使用为 foreign table 指定的名称。
 * `engine`：ClickHouse 表使用的[表引擎]。对于
   `CollapsingMergeTree()` 和 `AggregatingMergeTree()`，pg&#95;clickhouse
   会自动将参数应用于在该表上执行的函数表达式。
 
 对于每一列，请使用与远程 ClickHouse 数据
-类型相对应的[数据类型](#data-types)。支持的列选项如下：
+类型相对应的[data type](#data-types)。支持的列选项如下：
 
 * `column_name`：ClickHouse 端的列名，在反解析查询和
   插入语句时，会优先使用该名称而不是 PostgreSQL attribute 名称。
@@ -583,74 +590,6 @@ try=# EXPLAIN (ANALYZE, VERBOSE)
 
 “Foreign Scan”节点现在会按 `node_id` 下推聚合，将需要从 Postgres 拉回的行数从 1000 行 (全部行) 减少到仅 8 行，即每个节点 1 行。
 
-<div id="partitioned-tables">
-  ### 分区表
-</div>
-
-PostgreSQL [分区表]可以同时包含本地分区和由 ClickHouse 支持的外部分区。常见的布局是将较早的数据迁移到 ClickHouse，而较新的数据保留在 PostgreSQL 中：
-
-```sql
-CREATE TABLE events (id int, ts date, val int, amt float8)
-    PARTITION BY RANGE (ts);
-
--- 2023 data lives on ClickHouse
-CREATE FOREIGN TABLE events_2023 PARTITION OF events
-    FOR VALUES FROM ('2023-01-01') TO ('2024-01-01')
-    SERVER ch_svr OPTIONS (table_name 'events');
-
--- 2024 data stays local
-CREATE TABLE events_2024 PARTITION OF events
-    FOR VALUES FROM ('2024-01-01') TO ('2025-01-01');
-```
-
-有关如何将数据从本地分区迁移到外部分区的示例，请参阅
-[offload-partition.sql]。
-
-跨本地分区和外部分区的聚合需要启用 [partitionwise
-aggregation]，而 PostgreSQL 默认将其禁用：
-
-```pgsql
-SET enable_partitionwise_aggregate = on;
-```
-
-启用 `enable_partitionwise_aggregate` 后，PostgreSQL 会在 `Append` 下方计算*部分聚合*，再由上方的*最终聚合*将这些部分结果合并为最终结果。pg&#95;clickhouse 会将外部分区的部分聚合下推至 ClickHouse：
-
-```pgsql
-try=# EXPLAIN (VERBOSE, COSTS OFF)
-       SELECT count(*), sum(val), min(ts), max(ts) FROM events;
-                                                       QUERY PLAN
--------------------------------------------------------------------------------------------------------------------------
- Finalize Aggregate
-   Output: count(*), sum(events.val), min(events.ts), max(events.ts)
-   ->  Append
-         ->  Foreign Scan
-               Output: (PARTIAL count(*)), (PARTIAL sum(events.val)), (PARTIAL min(events.ts)), (PARTIAL max(events.ts))
-               Relations: Aggregate on (events_2023 events)
-               Remote SQL: SELECT count(*), sum(val), min(ts), max(ts) FROM "default".events
-         ->  Partial Aggregate
-               Output: PARTIAL count(*), PARTIAL sum(events_1.val), PARTIAL min(events_1.ts), PARTIAL max(events_1.ts)
-               ->  Seq Scan on public.events_2024 events_1
-                     Output: events_1.val, events_1.ts
-```
-
-<div id="when-partial-aggregates-push-down">
-  #### 部分聚合何时可以下推
-</div>
-
-PostgreSQL 将部分聚合表示为*转换状态*，并由最终化步骤在各分区间合并。只有当 pg&#95;clickhouse 能将分区的部分聚合表示为 ClickHouse 值时，才能将其下推：
-
-* **可分解聚合函数**的转换状态本身就是最终值，因此可以直接下推：`count`、`sum`、`min`、`max`、`bool_and`/`every`、`bool_or`、`bit_and`、`bit_or` 和 `bit_xor`。
-* **作用于整数的 `avg`** 会将其 `{count, sum}` 状态作为数组下推。
-* **作用于浮点数的 `avg`、`var_pop`、`var_samp`、`stddev_pop` 和 `stddev_samp`** 会将其 `{N, sum, squared deviations 的总和}` 状态作为数组下推。
-
-`FILTER (WHERE …)` 也可以与这些聚合函数一起下推。
-
-<div id="when-they-fall-back">
-  #### 何时回退
-</div>
-
-转换状态为 PostgreSQL 不透明 `internal` 类型的聚合没有可移植的表示形式，因此外部分区会转而拉取其行，并在本地进行聚合。这包括所有基于 `numeric` 的聚合，以及 `avg(bigint)` 和 `avg(interval)`。`DISTINCT`、有序集聚合和可变参数聚合也会回退。
-
 <div id="prepare-execute-deallocate">
   ### PREPARE, EXECUTE, DEALLOCATE
 </div>
@@ -794,16 +733,8 @@ LOAD
 SET pg_clickhouse.session_settings = 'join_use_nulls 1, final 1';
 ```
 
-默认值为
-
-```
-join_use_nulls 1, group_by_use_nulls 1, final 1, transform_null_in 0
-```
-
-将其设为空字符串即可恢复为 ClickHouse server 的设置 —
-但请注意，下推的正确性取决于其中某些默认值：
-OUTER JOIN 的 `join_use_nulls` 以及 `IN` 家族的 `transform_null_in`
-(请参阅 [IN 和 NULL 语义](#in-and-null-semantics)) 。
+默认值为 `join_use_nulls 1, group_by_use_nulls 1, final 1`。将其设为空
+字符串即可恢复为 ClickHouse server 的设置。
 
 ```sql
 SET pg_clickhouse.session_settings = '';
@@ -965,11 +896,6 @@ PostgreSQL 列中的第一种类型；其他类型可在
 | UInt8      | smallint         |                    |
 | UUID       | uuid             |                    |
 
-任何列也可读取为 `text`、`varchar` 或其他 String 类型。该值
-会采用上述 PostgreSQL 类型，然后通过该类型的输出
-函数进行呈现。超过 bigint 最大值的 UInt64 值仍会报错，因此请使用
-ClickHouse `toString()` 函数呈现这些值。
-
 更多说明和细节如下。
 
 <div id="bytea">
@@ -979,59 +905,59 @@ ClickHouse `toString()` 函数呈现这些值。
 ClickHouse 不提供与 PostgreSQL [BYTEA] 类型等效的类型，但允许将任意字节存储在 [String] 类型中。一般情况下，ClickHouse 字符串应映射到 PostgreSQL 的 [TEXT] 类型；若需使用二进制数据，则应映射到 [BYTEA]。示例：
 
 ```sql
--- Create ClickHouse table with String columns.
-CALL clickhouse_perform('ch_srv', $$
+-- 创建带有 String 列的 ClickHouse 表。
+SELECT clickhouse_raw_query($$
     CREATE TABLE bytes (
         c1 Int8, c2 String, c3 String
     ) ENGINE = MergeTree ORDER BY (c1);
 $$);
 
--- Create foreign table with BYTEA columns.
+-- 创建带有 BYTEA 列的外部表。
 CREATE FOREIGN TABLE bytes (
     c1 int,
     c2 BYTEA,
     c3 BYTEA
 ) SERVER ch_srv OPTIONS( table_name 'bytes' );
 
--- Insert binary data into the foreign table.
+-- 向外部表中插入二进制数据。
 INSERT INTO bytes
 SELECT n, sha224(bytea('val'||n)), decode(md5('int'||n), 'hex')
   FROM generate_series(1, 4) n;
 
--- View the results.
+-- 查看结果。
 SELECT * FROM bytes;
 ```
 
 最终的 `SELECT` 查询将输出：
 
 ```pgsql
- c1 |                             c2                             |                 c3
+c1 |                             c2                             |                 c3
 ----+------------------------------------------------------------+------------------------------------
   1 | \x1bf7f0cc821d31178616a55a8e0c52677735397cdde6f4153a9fd3d7 | \xae3b28cde02542f81acce8783245430d
   2 | \x5f6e9e12cd8592712e638016f4b1a2e73230ee40db498c0f0b1dc841 | \x23e7c6cacb8383f878ad093b0027d72b
   3 | \x53ac2c1fa83c8f64603fe9568d883331007d6281de330a4b5e728f9e | \x7e969132fc656148b97b6a2ee8bc83c1
   4 | \x4e3c2e4cb7542a45173a8dac939ddc4bc75202e342ebc769b0f5da2f | \x8ef30f44c65480d12b650ab6b2b04245
-(4 rows)
+(4 行)
 ```
 
 请注意，如果 ClickHouse 列中存在空字节，使用 [TEXT] 列的外部表将无法输出正确的值：
 
 ```sql
--- Create foreign table with TEXT columns.
+-- 创建包含 TEXT 列的外部表。
 CREATE FOREIGN TABLE texts (
     c1 int,
     c2 TEXT,
     c3 TEXT
 ) SERVER ch_srv OPTIONS( table_name 'bytes' );
 
--- Encode binary data as hex.
+-- 将二进制数据编码为十六进制。
 SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER BY c1;
 ```
 
 输出结果：
 
 ```pgsql
- c1 |                          encode                          |              encode
+c1 |                          encode                          |              encode
 ----+----------------------------------------------------------+----------------------------------
   1 | 1bf7f0cc821d31178616a55a8e0c52677735397cdde6f4153a9fd3d7 | ae3b28cde02542f81acce8783245430d
   2 | 5f6e9e12cd8592712e638016f4b1a2e73230ee40db498c0f0b1dc841 | 23e7c6cacb8383f878ad093b
@@ -1047,17 +973,17 @@ PostgreSQL 依赖以 nul 结尾的字符串，且不支持在字符串中
 尝试向 [TEXT] 列插入二进制值将会成功，并按预期运行：
 
 ```sql
--- Insert via text columns:
+-- 通过文本列插入：
 TRUNCATE texts;
 INSERT INTO texts
 SELECT n, sha224(bytea('val'||n)), decode(md5('int'||n), 'hex')
   FROM generate_series(1, 4) n;
 
--- View the data.
+-- 查看数据。
 SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER BY c1;
 ```
 
-文本列将是正确的：
+文本列将显示正确：
 
 ```pgsql
 
@@ -1067,7 +993,7 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER B
   2 | 5f6e9e12cd8592712e638016f4b1a2e73230ee40db498c0f0b1dc841 | 23e7c6cacb8383f878ad093b0027d72b
   3 | 53ac2c1fa83c8f64603fe9568d883331007d6281de330a4b5e728f9e | 7e969132fc656148b97b6a2ee8bc83c1
   4 | 4e3c2e4cb7542a45173a8dac939ddc4bc75202e342ebc769b0f5da2f | 8ef30f44c65480d12b650ab6b2b04245
-(4 rows)
+(4 行)
 ```
 
 但如果按 [BYTEA] 读取，则不会：
@@ -1080,7 +1006,7 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER B
   2 | \x5c783566366539653132636438353932373132653633383031366634623161326537333233306565343064623439386330663062316463383431 | \x5c783233653763366361636238333833663837386164303933623030323764373262
   3 | \x5c783533616332633166613833633866363436303366653935363864383833333331303037643632383164653333306134623565373238663965 | \x5c783765393639313332666336353631343862393762366132656538626338336331
   4 | \x5c783465336332653463623735343261343531373361386461633933396464633462633735323032653334326562633736396230663564613266 | \x5c783865663330663434633635343830643132623635306162366232623034323435
-(4 rows)
+(4 行)
 ```
 
 <Tip>
@@ -1102,13 +1028,6 @@ SELECT c1, encode(c2::bytea, 'hex'), encode(c3::bytea, 'hex') FROM texts ORDER B
   #### `clickhouse_raw_query`
 </div>
 
-<Warning>
-  已弃用：`clickhouse_raw_query()` 会发出弃用 Warning，并将在下一个 release 中
-  移除。请使用 [`clickhouse_query`](#clickhouse_query) 读取行，并使用 [`clickhouse_perform`](#clickhouse_perform) 执行
-  不返回任何内容的语句。两者都会复用已配置 server 的 driver、credentials、
-  database 和 连接缓存，而非使用临时 connection string。
-</Warning>
-
 ```sql
 SELECT clickhouse_raw_query(
     'CREATE TABLE t1 (x String) ENGINE = Memory',
@@ -1116,25 +1035,17 @@ SELECT clickhouse_raw_query(
 );
 ```
 
-连接到 ClickHouse 服务，执行单个
+通过其 HTTP interface 连接到 ClickHouse 服务，执行单个
 查询，然后断开连接。可选的第二个参数用于指定连接
 字符串，默认为 `host=localhost port=8123`。支持的连接
 参数如下：
 
-* `driver`：要使用的连接驱动程序，可以是 &quot;http&quot; 或 &quot;binary&quot;；默认为
-  &quot;http&quot;
 * `host`：要连接到的主机；必填。
-* `port`：要连接的端口。对于 &quot;http&quot; 驱动程序，默认为 `8123`；对于
-  &quot;binary&quot; 驱动程序，默认为 `9000`。当 `host` 是 ClickHouse Cloud 主机时，
-  则分别切换为 `8443` 或 `9440`
+* `port`：要连接的 HTTP 端口；默认为 `8123`，除非 `host` 是
+  ClickHouse Cloud 主机，此时默认值为 `8443`
 * `dbname`：要连接到的数据库名称。
 * `username`：连接时使用的用户名；默认为 `default`
 * `password`：用于身份验证的密码；默认无密码
-
-两种驱动程序都返回制表符分隔的行 (NULL 值为 `\N`) ，但各值的
-表示形式不同：&quot;http&quot; 驱动程序会原样返回 ClickHouse 自有的 TSV
-格式，而 &quot;binary&quot; 驱动程序会将每个值传递给其
-PostgreSQL 输出函数。
 
 默认情况下，没有任何角色具有对此函数的 `EXECUTE` 权限；请考虑仅向
 确实需要执行临时 ClickHouse 查询的角色 [GRANT] 此权限，
@@ -1162,84 +1073,11 @@ SELECT clickhouse_raw_query(
 (1 row)
 ```
 
-<div id="clickhouse_server_version">
-  #### `clickhouse_server_version`
-</div>
-
-```sql
-SELECT clickhouse_server_version('taxi_srv');
-```
-
-报告指定 外部服务器 的 ClickHouse 服务器版本，格式为 `major.minor.patch`。如有必要，将使用该服务器的选项和当前用户的 user mapping 进行连接：
-
-```sql
- clickhouse_server_version
----------------------------
- 25.8.1
-(1 row)
-```
-
-从原生协议连接的握手过程中读取版本信息，或通过 HTTP 执行单个 `SELECT version()` 查询获取版本信息，并在连接的整个生命周期内缓存该信息。
-
-<div id="clickhouse_query">
-  #### `clickhouse_query`
-</div>
-
-```sql
-SELECT * FROM clickhouse_query(
-    'server',
-    'SELECT id, name, salary FROM remote_table WHERE salary > 50000'
-) AS ch(id int, name text, salary numeric);
-```
-
-针对已配置的外部服务器执行查询，并将返回的
-行作为关系返回，同时将每个 ClickHouse 结果列映射为列定义列表中
-指定的 PostgreSQL 类型。它会复用该服务器的 `driver`、
-凭据、数据库和连接缓存。
-
-第一个参数是通过 [CREATE SERVER] 创建的服务器名称。必须提供
-列定义列表 (`AS name(col type, ...)`) ：PostgreSQL 在拉取行之前需要知道
-结果形态，且该列表必须与查询返回的列相匹配。值会以与外部表列相同的方式
-从 ClickHouse 转换为声明的类型。不返回结果的语句 (如 DDL)
-无需声明任何内容；请改用
-[`clickhouse_perform`](#clickhouse_perform) 执行它们。
-
-默认情况下，任何角色都没有 `EXECUTE` 权限；请向角色 `GRANT` 权限，以允许其使用
-该函数。
-
-```sql
-GRANT EXECUTE ON FUNCTION clickhouse_query(text, text) TO ch_admin;
-```
-
-<div id="clickhouse_perform">
-  #### `clickhouse_perform`
-</div>
-
-```sql
-CALL clickhouse_perform(
-    'server',
-    'CREATE TABLE remote_table (id Int32) ENGINE = MergeTree ORDER BY id'
-);
-```
-
-对已配置的 外部服务器 执行一条语句，并丢弃
-所有结果。适用于不返回行的语句，例如 DDL；此时
-[`clickhouse_query`](#clickhouse_query) 没有可声明的结果形态。它以与 `clickhouse_query` 相同的方式
-解析 server，并复用其 `driver`、credentials、database 和 连接缓存。
-
-作为存储过程，必须通过 [CALL] 而非 `SELECT` 调用，并且不返回
-行。默认情况下，没有任何角色拥有 `EXECUTE` 权限；向角色授予 `GRANT` 权限即可允许其
-使用该存储过程。
-
-```sql
-GRANT EXECUTE ON PROCEDURE clickhouse_perform(text, text) TO ch_admin;
-```
-
 <div id="pushdown-functions">
   ### 下推函数
 </div>
 
-pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的部分 PostgreSQL 内置函数下推到 ClickHouse 中执行。该子集与 ClickHouse 中的对应函数如下：
+`pg_clickhouse` 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的部分 PostgreSQL 内置函数下推到 ClickHouse 中执行。该子集与 ClickHouse 中的对应函数如下：
 
 * `abs`: [abs](/zh/reference/functions/regular-functions/arithmetic-functions#abs)
 * `factorial`: [factorial](/zh/reference/functions/regular-functions/math-functions#factorial)
@@ -1274,17 +1112,11 @@ pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的�
 * `extract(field FROM source)`：映射与 `date_part` 相同
 * `date(timestamp)` &amp; `date(timestamptz)`: [toDate](/zh/reference/functions/regular-functions/type-conversion-functions#toDate)
   (反解析后为 CH 别名 `date`)
-* `array_position`：[indexOf](/zh/reference/functions/regular-functions/array-functions#indexOf)，配合
-  [nullIf](reference/functions/regular-functions/functions-for-nulls#nullif)
-  将 `0` 转换为 `NULL`；如果存在用于指定搜索起始索引的第三个参数，则使用
-  [arraySlice](reference/functions/regular-functions/array-functions#arraySlice)。
-  请注意，`nan` 当前[不会匹配](https://github.com/ClickHouse/ClickHouse/issues/113169)
+* `array_position`：[indexOf](/zh/reference/functions/regular-functions/array-functions#indexOf)
 * `array_cat`: [arrayConcat](/zh/reference/functions/regular-functions/array-functions#arrayConcat)
 * `array_append`: [arrayPushBack](/zh/reference/functions/regular-functions/array-functions#arrayPushBack)
 * `array_prepend`: [arrayPushFront](/zh/reference/functions/regular-functions/array-functions#arrayPushFront)
 * `array_remove`: [arrayRemove](/zh/reference/functions/regular-functions/array-functions#arrayRemove)
-* `cardinality`：[length](reference/functions/regular-functions/array-functions#length)
-* `array_length(array, 1)`：`nullIf(length(array), 0)`
 * `array_length` &amp; `cardinality`：[length](/zh/reference/functions/regular-functions/array-functions#length)
 * `array_to_string`: [arrayStringConcat](/zh/reference/functions/regular-functions/array-functions#arrayStringConcat)
 * `string_to_array`: [splitByString](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByString)
@@ -1296,8 +1128,8 @@ pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的�
 * `array_sample`: [arrayRandomSample](/zh/reference/functions/regular-functions/array-functions#arrayRandomSample)
 * `array_sort`: [arraySort](/zh/reference/functions/regular-functions/array-functions#arraySort) / [arrayReverseSort](/zh/reference/functions/regular-functions/array-functions#arrayReverseSort)
 * `btrim`: [trimBoth](/zh/reference/functions/regular-functions/string-functions#trimboth)
-* `ltrim`: [trimLeft](/zh/reference/functions/regular-functions/string-functions#trimLeft)
-* `rtrim`: [trimRight](/zh/reference/functions/regular-functions/string-functions#trimRight)
+* `ltrim`: [ltrim](/zh/reference/functions/regular-functions/string-functions#ltrim)
+* `rtrim`: [rtrim](/zh/reference/functions/regular-functions/string-functions#rtrim)
 * `concat_ws`: [concatWithSeparator](/zh/reference/functions/regular-functions/string-functions#concatwithseparator)
 * `lower(text)`: [lowerUTF8](/zh/reference/functions/regular-functions/string-functions#lowerutf8)
 * `upper(text)`: [upperUTF8](/zh/reference/functions/regular-functions/string-functions#upperutf8)
@@ -1316,21 +1148,12 @@ pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的�
 * `regexp_replace`：[replaceRegexpOne](/zh/reference/functions/regular-functions/string-replace-functions#replaceRegexpOne) 或 [replaceRegexpOne](/zh/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll)，存在 `g` 标志时
 * `regexp_split_to_array`: [splitByRegexp](/zh/reference/functions/regular-functions/splitting-merging-functions#splitByRegexp)
 * `md5`: [MD5](/zh/reference/functions/regular-functions/hash-functions#MD5)
-* 当 `fmt` 为字符串常量 (不区分大小写) 时的 `encode(bytea, fmt)`：
-  * `encode(bytea, 'hex')`：[hex](/zh/reference/functions/regular-functions/encoding-functions#hex)
-    再套用 [lower](/zh/reference/functions/regular-functions/string-functions#lower)，
-    因为 PostgreSQL 会输出小写 hex。
-  * `encode(bytea, 'base64')`：[base64Encode](/zh/reference/functions/regular-functions/encoding-functions#base64encode)
-    再套用 [replaceRegexpAll](/zh/reference/functions/regular-functions/string-replace-functions#replaceRegexpAll)，
-    以复现 PostgreSQL&#39;s MIME (RFC 2045) 每 76 个字符换行的规则。
-  * `encode(bytea, 'base64url')` (PostgreSQL 19+)：[base64URLEncode](/zh/reference/functions/regular-functions/encoding-functions#base64urlencode)，
-    与 PostgreSQL&#39;s 不带 padding 的 RFC 4648 URL 字母表一致。
 * `json_extract_path_text`：[子列语法](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `json_extract_path`: [toJSONString](/zh/reference/functions/regular-functions/json-functions#toJSONString) + [子列语法](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `jsonb_extract_path_text`: [子列语法](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `jsonb_extract_path`：[toJSONString](/zh/reference/functions/regular-functions/json-functions#toJSONString) + [子列语法](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `bit_count(bytea)`: [bitCount](/zh/reference/functions/regular-functions/bit-functions#bitcount)
-* `to_timestamp(float8)`: [toDateTime64](/zh/reference/functions/regular-functions/type-conversion-functions#todatetime64)
+* `to_timestamp(float8)`: [fromUnixTimestamp](/zh/reference/functions/regular-functions/date-time-functions#fromUnixTimestamp)
 * `to_char(timestamp[tz], fmt)`: [formatDateTime](/zh/reference/functions/regular-functions/date-time-functions#formatDateTime)
   当 `fmt` 为字符串常量，且其中每个关键字在
   ClickHouse 中都有完全对应的等价写法时。支持的关键字请参见兼容性说明中的 [to&#95;char()](#to_char)。
@@ -1371,40 +1194,11 @@ pg&#95;clickhouse 会将条件子句 (`HAVING` 和 `WHERE` 子句) 中使用的�
 * `->>` (将 JSON/JSONB 元素提取为文本) : [sub-column syntax](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 * `->` (提取 JSON/JSONB) : [toJSONString](/zh/reference/functions/regular-functions/json-functions#toJSONString) + [sub-column syntax](/zh/reference/data-types/newjson#reading-json-paths-as-sub-columns)
 
-<div id="in-and-null-semantics">
-  ### IN 和 NULL 语义
-</div>
-
-ClickHouse 对 `IN` 采用二值逻辑：当探测值未找到
-匹配项时，即使涉及 NULL，也会返回 `0`，而 PostgreSQL 则会计算为
-NULL。为保留 PostgreSQL 语义，pg&#95;clickhouse 会无条件下推针对常量列表或数组的 `IN`
-系列操作 (`IN`、`NOT IN`、`= ANY`、`= ALL`、
-`<> ANY`、`<> ALL`) ：若能够证明探测值和数组元素均不可能为 NULL，则使用原生或开销较低的形式；
-否则使用带保护条件的 `CASE` 形式，在运行时检查 NULL 值，
-从而在所有上下文中准确计算 PostgreSQL 的三值结果 (TRUE、FALSE、NULL) ，
-包括 `SELECT` 列表或 `GROUP BY` 等值位置。
-
-针对可空列的 `NOT IN (SELECT ...)` 过滤器也会下推，
-并在反解析时加入补偿性保护条件，以保持 PostgreSQL 的行为：包含 NULL 的集合会排除
-所有行，而 NULL 探测值仅会在集合为空时通过。当 `NOT NULL` 声明
-证明某个保护条件并非必需时，该条件会被省略。与上述数组形式不同，此保护条件仅
-适用于普通过滤条件 (或位于 `NOT` 之下) ；我们仍不会下推
-值位置中的 `IN (SELECT ...)`，也不会下推已分组或聚合的子查询
-主体。将列声明为 `NOT NULL` 可使系统采用开销更低的无保护形式，从而最大化
-下推；对于非 `Nullable` 的 ClickHouse 列，[IMPORT FOREIGN SCHEMA] 会自动执行此操作。
-该推断基于非 NULL 常量、`NOT NULL` 列，以及对它们执行的基本算术运算 (`+`、`-`、`*`、一元 `-`) 。
-
-这些规则假定 ClickHouse 的默认设置为 `transform_null_in = 0`。pg&#95;clickhouse 会通过
-[`pg_clickhouse.session_settings`](#pg_clickhousesession_settings) 参数的默认值，
-在每个查询中设置该值，
-以防止 ClickHouse server profile 对其进行静默更改。设置
-`transform_null_in = 1` 会破坏所有已下推 `IN` 的语义。
-
 <div id="custom-functions">
   ### 自定义函数
 </div>
 
-这些由 pg&#95;clickhouse 创建的自定义函数，可为部分在 PostgreSQL 中没有对应实现的 ClickHouse 函数提供外部查询下推。如果其中任何函数无法下推，则会引发异常。
+这些由 `pg_clickhouse` 创建的自定义函数，可为部分在 PostgreSQL 中没有对应实现的 ClickHouse 函数提供外部查询下推。如果其中任何函数无法下推，则会引发异常。
 
 * [dictGet](/zh/reference/functions/regular-functions/ext-dict-functions#dictget-dictgetordefault-dictgetornull)
 
@@ -1418,9 +1212,8 @@ pg&#95;clickhouse 可识别部分核心扩展和第三方扩展中的函数，�
   #### re2
 </div>
 
-所有 [re2 extension] 运算符和函数都可 1:1 下推到 ClickHouse：
+所有 [re2 extension] 函数都可 1:1 下推到 ClickHouse：
 
-* `@~` → [match](/zh/reference/functions/regular-functions/string-search-functions#match)
 * `re2match` → [match](/zh/reference/functions/regular-functions/string-search-functions#match)
 * `re2extract` → [extract](/zh/reference/functions/regular-functions/string-search-functions#extract)
 * `re2extractall` → [extractAll](/zh/reference/functions/regular-functions/string-search-functions#extractAll)
@@ -1474,7 +1267,6 @@ ClickHouse 会拒绝执行该类型转换。
 
 以下 PostgreSQL 聚合函数可下推到 ClickHouse。
 
-* [any&#95;value](/zh/reference/functions/aggregate-functions/any)
 * [array&#95;agg](/zh/reference/functions/aggregate-functions/groupArray)
 * [avg](/zh/reference/functions/aggregate-functions/avg)
 * [bit&#95;and](/zh/reference/functions/aggregate-functions/groupBitAnd)
@@ -1483,23 +1275,16 @@ ClickHouse 会拒绝执行该类型转换。
 * [bool&#95;and / every](/zh/reference/functions/aggregate-functions/groupBitAnd)
 * [bool&#95;or](/zh/reference/functions/aggregate-functions/groupBitOr)
 * [count](/zh/reference/functions/aggregate-functions/count)
-* [corr](/zh/reference/functions/aggregate-functions/corr)
-* [covarpop](/zh/reference/functions/aggregate-functions/covarPop)
-* [covarsamp](/zh/reference/functions/aggregate-functions/covarSamp)
 * [min](/zh/reference/functions/aggregate-functions/min)
 * [max](/zh/reference/functions/aggregate-functions/max)
-* [stddev&#95;pop](/zh/reference/functions/aggregate-functions/stddevPop)
-* [stddev&#95;samp / stddev](/zh/reference/functions/aggregate-functions/stddevSamp)
 * [string&#95;agg](/zh/reference/functions/aggregate-functions/groupConcat)
 * [sum](/zh/reference/functions/aggregate-functions/sum)
-* [var&#95;op](/zh/reference/functions/aggregate-functions/varPop)
-* [var&#95;samp /variance](/zh/reference/functions/aggregate-functions/varSamp)
 
 <div id="custom-aggregates">
   ### 自定义聚合函数
 </div>
 
-这些由 pg&#95;clickhouse 创建的自定义聚合函数，可为部分在 PostgreSQL
+这些由 `pg_clickhouse` 创建的自定义聚合函数，可为部分在 PostgreSQL
 中没有对应函数的 ClickHouse 聚合函数提供外部查询下推。如果这些函数中的任何一个无法下推，
 就会引发异常。
 
@@ -1535,51 +1320,31 @@ SELECT quantile(0.25)(a) FROM t1;
 使用它们会报错。
 
 * `percentile_cont(double)`: [quantile](/zh/reference/functions/aggregate-functions/quantile)
-* `percentile_cont(double[])`: [quantiles](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantiles)
-* `percentile_disc(double)`: [quantileExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantileExactLow)
-* `percentile_disc(double[])`: [quantilesExactLow](https://clickhouse.com/docs/reference/functions/aggregate-functions/quantilesExactLow)
-
-<div id="custom-ordered-set-aggregates">
-  ### 自定义有序集合聚合函数
-</div>
-
-这些由 pg&#95;clickhouse 创建的自定义[有序集合聚合函数]为部分 ClickHouse [参数化聚合
-函数]提供外部查询下推。若其中任何函数无法下推，将引发异常。
-
 * `quantile(double)`: [quantile](/zh/reference/functions/aggregate-functions/quantile)
 * `quantileExact(double)`: [quantileExact](/zh/reference/functions/aggregate-functions/quantileExact)
-
-<div id="custom-ordered-set-aggregates">
-  ### 自定义有序集合聚合函数
-</div>
-
-这些由 pg&#95;clickhouse 创建的自定义[有序集合聚合函数]可为特定的 ClickHouse [参数化聚合函数]提供外部查询下推。如果其中任何函数无法下推，则会引发异常。
-
-* [quantile](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantile)
-* [quantileExact](https://clickhouse.com/docs/sql-reference/aggregate-functions/reference/quantileexact)
 
 <div id="pushdown-window-functions">
   ### 下推窗口函数
 </div>
 
-以下 PostgreSQL [窗口函数]可通过包含 `OVER
-(PARTITION BY ... ORDER BY ...)` 子句的查询下推到 ClickHouse；适用时还包括窗口帧规范。
+这些 PostgreSQL [窗口函数] 可以通过 `OVER
+(PARTITION BY ... ORDER BY ...)` 子句下推到 ClickHouse；在适用情况下，也包括窗口帧规范。
 
-* [row&#95;number](https://clickhouse.com/docs/reference/functions/window-functions/row_number)
-* [rank](https://clickhouse.com/docs/reference/functions/window-functions/rank)
-* [dense&#95;rank](https://clickhouse.com/docs/reference/functions/window-functions/dense_rank)
-* [ntile](https://clickhouse.com/docs/reference/functions/window-functions/ntile)
-* [cume&#95;dist](https://clickhouse.com/docs/reference/functions/window-functions/cume_dist)
-* [percent&#95;rank](https://clickhouse.com/docs/reference/functions/window-functions/percent_rank)
-* [lead](https://clickhouse.com/docs/reference/functions/window-functions/lead)
-* [lag](https://clickhouse.com/docs/reference/functions/window-functions/lag)
-* [first&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/first_value)
-* [last&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/last_value)
-* [nth&#95;value](https://clickhouse.com/docs/reference/functions/window-functions/nth_value)
+* [row&#95;number](/zh/reference/functions/window-functions/index#row_number)
+* [rank](/zh/reference/functions/window-functions/index#rank)
+* [dense&#95;rank](/zh/reference/functions/window-functions/index#dense_rank)
+* [ntile](/zh/reference/functions/window-functions/index#ntile)
+* [cume&#95;dist](/zh/reference/functions/window-functions/index#cume_dist)
+* [percent&#95;rank](/zh/reference/functions/window-functions/index#percent_rank)
+* [lead](/zh/reference/functions/window-functions/index#lead)
+* [lag](/zh/reference/functions/window-functions/index#lag)
+* [first&#95;value](/zh/reference/functions/window-functions/index#first_value)
+* [last&#95;value](/zh/reference/functions/window-functions/index#last_value)
+* [nth&#95;value](/zh/reference/functions/window-functions/index#nth_value)
 * `min` / `max` (带 `OVER` 子句)
 
 排名函数 (`row_number`、`rank`、`dense_rank`、`ntile`、`cume_dist`、
-`percent_rank`) 在下推时会省略窗口帧子句，因为 ClickHouse 不支持为这些函数指定窗口帧。
+`percent_rank`) 在下推时会省略窗口帧子句，因为 ClickHouse 不接受这些函数的窗口帧规范。
 
 <div id="compatibility-notes">
   ## 兼容性说明
@@ -1754,8 +1519,6 @@ PostgreSQL 中用于 `timestamp` 和 `timestamp with time zone` 的 [`to_char()`
 
 [CREATE SERVER]: https://www.postgresql.org/docs/current/sql-createserver.html "PostgreSQL 文档：CREATE SERVER"
 
-[CALL]: https://www.postgresql.org/docs/current/sql-call.html "PostgreSQL 文档：CALL"
-
 [ALTER SERVER]: https://www.postgresql.org/docs/current/sql-alterserver.html "PostgreSQL 文档：ALTER SERVER"
 
 [DROP SERVER]: https://www.postgresql.org/docs/current/sql-dropserver.html "PostgreSQL 文档：DROP SERVER"
@@ -1786,12 +1549,6 @@ PostgreSQL 中用于 `timestamp` 和 `timestamp with time zone` 的 [`to_char()`
 
 [SELECT]: https://www.postgresql.org/docs/current/sql-select.html "PostgreSQL 文档：SELECT"
 
-[partitioned table]: https://www.postgresql.org/docs/current/ddl-partitioning.html "PostgreSQL 文档：表分区"
-
-[partitionwise aggregation]: https://www.postgresql.org/docs/current/runtime-config-query.html#GUC-ENABLE-PARTITIONWISE-AGGREGATE "PostgreSQL 文档：enable_partitionwise_aggregate"
-
-[offload-partition.sql]: https://github.com/ClickHouse/pg_clickhouse/blob/main/doc/offload-partition.sql
-
 [PREPARE]: https://www.postgresql.org/docs/current/sql-prepare.html "PostgreSQL 文档：PREPARE"
 
 [EXECUTE]: https://www.postgresql.org/docs/current/sql-execute.html "PostgreSQL 文档：EXECUTE"
@@ -1810,7 +1567,7 @@ PostgreSQL 中用于 `timestamp` 和 `timestamp with time zone` 的 [`to_char()`
 
 [ALTER ROLE]: https://www.postgresql.org/docs/current/sql-alterrole.html "PostgreSQL 文档：ALTER ROLE"
 
-[共享库预加载]: https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-PRELOAD "PostgreSQL 文档：共享库预加载"
+[shared library preloading]: https://www.postgresql.org/docs/current/runtime-config-client.html#RUNTIME-CONFIG-CLIENT-PRELOAD "PostgreSQL 文档：共享库预加载"
 
 [有序集合聚合函数]: https://www.postgresql.org/docs/current/functions-aggregate.html#FUNCTIONS-ORDEREDSET-TABLE
 

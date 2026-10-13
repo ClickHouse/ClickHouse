@@ -112,20 +112,8 @@ public:
     const SortDescription & getSortDescription() const override { return result_description; }
 
     bool hasPartitions() const { return !partition_by_description.empty(); }
-    const SortDescription & getPartitionByDescription() const { return partition_by_description; }
-    Names getPartitionByColumnNames() const;
-
-    size_t getScatterPartitions() const { return scatter_partitions; }
-
-    /// Do not reshuffle the input by the hash of the partition columns before sorting: the input streams
-    /// already carry disjoint sets of the partition key values, so sorting each stream independently is
-    /// enough to keep every partition contiguous and sorted.
-    void skipScatterByPartition() { skip_scatter_by_partition = true; }
 
     bool isSortingForMergeJoin() const { return is_sorting_for_merge_join; }
-
-    bool isPartialTopN() const { return is_partial_top_n; }
-    void setPartialTopN() { is_partial_top_n = true; }
 
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
@@ -137,19 +125,6 @@ public:
 
     void convertToPartitionedFinishSorting() { type = Type::PartitionedFinishSorting; }
 
-    /// Switch to a full sort that scatters the input by the hash of the sort key into exactly
-    /// `partitions` independent partitions and sorts each partition separately, producing one sorted
-    /// stream per partition (no final merge). Unlike the partition-by-window-frame scatter, the partition
-    /// count is fixed (not the pipeline's thread count), so both sides of a join scatter into the same
-    /// number of shards regardless of how many streams each side reads. Used by
-    /// `parallel_full_sorting_merge` to feed a hash-sharded merge join.
-    void convertToScatteredFullSort(size_t partitions)
-    {
-        partition_by_description = result_description;
-        type = Type::Full;
-        scatter_partitions = partitions;
-    }
-
     static void fullSortStreams(
         QueryPipelineBuilder & pipeline,
         const Settings & sort_settings,
@@ -158,15 +133,9 @@ public:
         bool skip_partial_sort = false,
         TopKThresholdTrackerPtr threshold_tracker = nullptr);
 
-    void serializeSettings(QueryPlanSerializationSettings & settings, UInt64 version) const override;
+    void serializeSettings(QueryPlanSerializationSettings & settings) const override;
     void serialize(Serialization & ctx) const override;
-    /// `scatter_partitions != 0` means a fixed-shard-count scatter (`convertToScatteredFullSort`, used by
-    /// `parallel_full_sorting_merge`); `scatter_partitions` is not on the wire, so such a sort must stay
-    /// unserializable rather than have a worker silently rebuild it as an ordinary partitioned sort.
-    bool isSerializable() const override
-    {
-        return (type == Type::Full || type == Type::FinishSorting) && scatter_partitions == 0;
-    }
+    bool isSerializable() const override { return type == Type::Full && partition_by_description.empty(); }
 
     static QueryPlanStepPtr deserialize(Deserialization & ctx);
 
@@ -219,19 +188,9 @@ private:
     const SortDescription result_description;
 
     SortDescription partition_by_description;
-    /// When > 0, `scatterByPartitionIfNeeded` scatters into exactly this many partitions (instead of the
-    /// pipeline's thread count), so both sides of a hash-sharded merge join get the same shard count.
-    size_t scatter_partitions = 0;
-    bool skip_scatter_by_partition = false;
 
     /// See `findQueryForParallelReplicas`
     bool is_sorting_for_merge_join = false;
-
-    /// A distributed plan can split a top-N sort in two stages: each node keeps its local
-    /// top `limit` rows, and a limit above keeps the global top `limit` of the merged result.
-    /// This flag marks the first stage. It only tells the optimizer what the sort is for (like
-    /// `is_sorting_for_merge_join`); the executed sort is the same, so it is not serialized.
-    bool is_partial_top_n = false;
 
     UInt64 limit;
     bool always_read_till_end = false;

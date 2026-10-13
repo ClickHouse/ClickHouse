@@ -579,7 +579,7 @@ function useCMSIntegrations() {
           color: #fff;
         }
         .dark .integration-external-overlay svg {
-          color: #fff;
+          color: #1f1f1f;
         }
         .integration-card:hover .integration-external-overlay {
           opacity: 1;

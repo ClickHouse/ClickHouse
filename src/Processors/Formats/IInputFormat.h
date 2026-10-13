@@ -24,10 +24,9 @@ using IColumnFilter = PaddedPODArray<UInt8>;
 /// positional deletes.
 ///
 /// Warning: we currently don't correctly update this info in most transforms. E.g. things like
-/// LimitTransform and SortingTransform logically should remove this ChunkInfo, but don't; we don't
+/// FilterTransform and SortingTransform logically should remove this ChunkInfo, but don't; we don't
 /// have a mechanism to systematically find all code sites that would need to do that or to detect
-/// if one was missed. (FilterTransform can optionally update it, but only when explicitly told to
-/// via `update_row_numbers_info`; by default it leaves it untouched like the others.)
+/// if one was missed.
 /// So this is only used in a few specific situations, and the builder of query pipeline must be
 /// careful to never put a step that uses this info after a step that breaks it.
 ///
@@ -122,7 +121,9 @@ public:
     /// in custom serializations (e.g. Sparse) for parsing and avoid extra conversion.
     virtual void setSerializationHints(const SerializationInfoByName & /*hints*/) {}
 
-    void addBuffer(std::unique_ptr<ReadBuffer> buffer) { owned_buffers.emplace_back(std::move(buffer)); }
+    /// Not by value: if the insertion throws, `buffer` must stay with the caller, since this format still reads it.
+    template <typename Buffer>
+    void addBuffer(std::unique_ptr<Buffer> && buffer) { owned_buffers.emplace_back(std::move(buffer)); }
 
     void setErrorsLogger(const InputFormatErrorsLoggerPtr & errors_logger_) { errors_logger = errors_logger_; }
 

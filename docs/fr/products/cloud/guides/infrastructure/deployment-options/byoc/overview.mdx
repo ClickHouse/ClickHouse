@@ -27,22 +27,10 @@ Dans les grandes lignes, BYOC sépare le plan de contrôle, qui s’exécute dan
 
 * AWS (GA)
 * GCP (GA)
-* Azure (GA)
+* Azure (préversion privée). Si cela vous intéresse, veuillez vous inscrire sur la liste d’attente [ici](https://clickhouse.com/cloud/bring-your-own-cloud).
 
 **Régions Cloud prises en charge :**
 Toutes les **régions publiques** répertoriées dans notre documentation sur les [régions prises en charge](/fr/products/cloud/reference/supported-regions) sont disponibles pour les déploiements BYOC. Les régions privées ne sont pas prises en charge pour le moment.
-
-<div id="prerequisites">
-  ## Prérequis
-</div>
-
-Les exigences suivantes sont essentielles à l’architecture et à l’exploitation de BYOC. Elles s’appliquent à tous les déploiements et ne peuvent faire l’objet d’aucune dérogation ni être contournées :
-
-* **Une région prise en charge.** BYOC est déployé uniquement dans les régions publiques répertoriées dans la documentation des [régions prises en charge](/fr/products/cloud/reference/supported-regions). Les AWS Local Zones et les régions à zone unique ne sont pas prises en charge. Si la région dont vous avez besoin n’est pas répertoriée, contactez votre représentant ClickHouse avant de planifier un déploiement.
-* **Trois zones de disponibilité.** Chaque infrastructure BYOC s’étend sur trois zones de disponibilité : c’est ainsi que la haute disponibilité est assurée pour les serveurs ClickHouse et ClickHouse Keeper. Les régions comptant moins de trois zones ne peuvent pas héberger BYOC, et les déploiements sur une ou deux zones ne sont pas proposés.
-* **Les artefacts d’onboarding, appliqués tels quels.** Le modèle CloudFormation ou le module Terraform doit être appliqué exactement tel qu’il est fourni : les noms de ressources (comme le rôle IAM `ClickHouseManagementRole`) et les [autorisations de référence documentées](/fr/products/bring-your-own-cloud/reference/privilege) sont codés en dur dans l’automatisation de ClickHouse. Toute modification nécessite l’approbation explicite de ClickHouse ; les personnalisations prises en charge sont exposées sous forme de paramètres de modèle. Consultez l’[onboarding standard](/fr/products/bring-your-own-cloud/onboarding/standard).
-* **Un cluster Kubernetes géré par ClickHouse.** Le cluster EKS/GKE/AKS est créé et entièrement exploité par ClickHouse. L’installation dans un cluster Kubernetes existant n’est pas prise en charge, et aucun contrôleur d’admission ni moteur de politiques à l’échelle du cluster ne doit y être installé.
-* **Principes de base du réseau.** Une résolution DNS fonctionnelle et un accès Internet sortant (directement ou via NAT) sont requis dans chaque configuration. Pour un VPC/VNet géré par ClickHouse, la plage CIDR doit être d’au moins `/23` sur AWS et Azure, et d’au moins `/20` sur GCP, dont la moitié est affectée à la plage de pods du cluster GKE. Il s’agit de minimums absolus, pas de recommandations : chaque réplique consomme des adresses IP, donc les déploiements plus importants nécessitent une plage plus étendue. Les VPC gérés par le client ont leurs propres exigences de sous-réseau selon le cloud ; consultez les guides de personnalisation [AWS](/fr/products/bring-your-own-cloud/onboarding/customization-aws) et [GCP](/fr/products/bring-your-own-cloud/onboarding/customization-gcp).
 
 <div id="features">
   ## Fonctionnalités
@@ -68,7 +56,6 @@ Les exigences suivantes sont essentielles à l’architecture et à l’exploita
 * **S3 sécurisé**
 * **[AWS PrivateLink](https://aws.amazon.com/privatelink/)**
 * **[GCP Private Service Connect](https://docs.cloud.google.com/vpc/docs/private-service-connect)**
-* **[Azure Private Link](https://learn.microsoft.com/en-us/azure/private-link/private-link-overview)**
 * **Intégration** : Consultez la liste complète sur [cette page](/fr/integrations/home).
 
 <div id="planned-features-currently-unsupported">
@@ -77,8 +64,8 @@ Les exigences suivantes sont essentielles à l’architecture et à l’exploita
 
 Les fonctionnalités suivantes présentent des limitations ou ne sont pas entièrement prises en charge dans les déploiements Bring Your Own Cloud (BYOC).
 
-* SQL Console : non disponible pour les déploiements BYOC, mais figure sur la feuille de route.
-* ClickPipes : non disponible pour les déploiements BYOC, mais figure sur la feuille de route.
+* SQL Console : la console SQL standard n’est pas disponible pour les déploiements BYOC, mais elle figure sur notre feuille de route.
+* Prise en charge de ClickPipes : actuellement disponible en préversion privée avec des intégrations de streaming telles que Kafka et Kinesis. D’autres intégrations (CDC, object storage, etc.) figurent sur la feuille de route.
 * Autoscaling : prévu sur la feuille de route pour une ajout dans de futures versions.
 * Interface MySQL
 * AWS KMS, également appelé CMEK (clés de chiffrement gérées par le client)

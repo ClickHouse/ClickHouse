@@ -24,7 +24,7 @@ import { Image } from "/snippets/ru/components/Image.jsx";
   ## Сведения о датасете
 </div>
 
-Полный датасет можно скачать с помощью [opendatalab/laion5b-downloader](https://github.com/opendatalab/laion5b-downloader).
+Полный датасет доступен в виде набора файлов `npy` и `Parquet` на [the-eye.eu](https://the-eye.eu/public/AI/cah/laion5b/)
 
 ClickHouse также предоставил подмножество из 100 миллионов векторов в бакете `S3`.
 Бакет `S3` содержит 10 файлов `Parquet`, каждый из которых включает 10 миллионов строк.
@@ -36,7 +36,9 @@ ClickHouse также предоставил подмножество из 100 �
 </div>
 
 <Steps>
-  <Step title="Создание таблицы" id="create-table">
+  <Step>
+    ### Создание таблицы
+
     Создайте таблицу `laion_5b_100m` для хранения эмбеддингов и связанных с ними атрибутов:
 
     ```sql
@@ -65,7 +67,9 @@ ClickHouse также предоставил подмножество из 100 �
     как поиск по векторному сходству работает в сочетании с постфильтрацией/префильтрацией, как описано в [документации](/ru/reference/engines/table-engines/mergetree-family/annindexes)
   </Step>
 
-  <Step title="Загрузите данные" id="load-table">
+  <Step>
+    ### Загрузите данные
+
     Чтобы загрузить данные из всех файлов `Parquet`, выполните следующий оператор SQL:
 
     ```sql
@@ -83,7 +87,9 @@ ClickHouse также предоставил подмножество из 100 �
     ```
   </Step>
 
-  <Step title="Выполнение полного перебора для векторного поиска по сходству" id="run-a-brute-force-vector-similarity-search">
+  <Step>
+    ### Выполнение полного перебора для векторного поиска по сходству
+
     Поиск KNN (k ближайших соседей), или метод полного перебора, предполагает вычисление расстояния от каждого вектора в наборе данных
     до искомого эмбеддинг-вектора с последующей сортировкой расстояний для нахождения ближайших соседей. В качестве вектора поиска
     можно использовать один из векторов самого набора данных. Например:
@@ -94,11 +100,11 @@ ClickHouse также предоставил подмножество из 100 �
     ORDER BY cosineDistance( vector, (SELECT vector FROM laion_5b_100m WHERE id = 9999) ) ASC
     LIMIT 20
 
-    The vector in the row with id = 9999 is the embedding for an image of a Deli restaurant.
+    Вектор в строке с id = 9999 — это эмбеддинг для изображения ресторана Deli.
     ```
 
     ```response title="Response" highlight={24}
-        ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
+    ┌───────id─┬─url───────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────────┐
      1. │     9999 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts.jpg                                                                                                                                  │
      2. │ 60180509 │ https://certapro.com/belleville/wp-content/uploads/sites/1369/2017/01/McAlistersFairviewHgts-686x353.jpg                                                                                                                          │
      3. │  1986089 │ https://www.gannett-cdn.com/-mm-/ceefab710d945bb3432c840e61dce6c3712a7c0a/c=30-0-4392-3280/local/-/media/2017/02/14/FortMyers/FortMyers/636226855169587730-McAlister-s-Exterior-Signage.jpg?width=534&amp;height=401&amp;fit=crop │
@@ -128,7 +134,9 @@ ClickHouse также предоставил подмножество из 100 �
     При 100 миллионах строк приведённый выше запрос без векторного индекса может занять несколько секунд или минут.
   </Step>
 
-  <Step title="Создайте индекс векторного сходства" id="build-vector-similarity-index">
+  <Step>
+    ### Создайте индекс векторного сходства
+
     Выполните следующий SQL, чтобы задать и построить индекс векторного сходства для столбца `vector` таблицы `laion_5b_100m`:
 
     ```sql
@@ -145,7 +153,9 @@ ClickHouse также предоставил подмножество из 100 �
     Построение и сохранение индекса для полного набора данных из 100 миллионов записей может занять несколько часов в зависимости от количества доступных процессорных ядер и пропускной способности хранилища.
   </Step>
 
-  <Step title="Выполните ANN-поиск" id="perform-ann-search">
+  <Step>
+    ### Выполните ANN-поиск
+
     После построения индекса векторного сходства запросы векторного поиска будут автоматически использовать этот индекс:
 
     ```sql title="Query"
@@ -159,7 +169,9 @@ ClickHouse также предоставил подмножество из 100 �
     Первая загрузка векторного индекса в память может занять от нескольких секунд до нескольких минут.
   </Step>
 
-  <Step title="Генерация эмбеддинг-векторов для поискового запроса" id="generating-embeddings-for-search-query">
+  <Step>
+    ### Генерация эмбеддинг-векторов для поискового запроса
+
     Эмбеддинг-векторы набора данных `LAION 5b` были созданы с помощью модели `OpenAI CLIP` `ViT-L/14`.
 
     Ниже приведён пример скрипта на Python, показывающий, как программно генерировать
@@ -178,21 +190,21 @@ ClickHouse также предоставил подмножество из 100 �
     device = "cuda" if torch.cuda.is_available() else "cpu"
     model, preprocess = clip.load("ViT-L/14", device=device)
 
-    # Search for images that contain both a dog and a cat
+    # Поиск изображений, содержащих одновременно собаку и кошку
     text = clip.tokenize(["a dog and a cat"]).to(device)
 
     with torch.no_grad():
         text_features = model.encode_text(text)
         np_arr = text_features.detach().cpu().numpy()
 
-        # Pass ClickHouse credentials here
+        # Укажите здесь учётные данные ClickHouse
         chclient = clickhouse_connect.get_client()
 
         params = {'v1': list(np_arr[0])}
         result = chclient.query("SELECT id, url FROM laion_5b_100m ORDER BY cosineDistance(vector, %(v1)s) LIMIT 100",
                                 parameters=params)
 
-        # Write the results to a simple HTML page that can be opened in the browser. Some URLs may have become obsolete.
+        # Запись результатов в простую HTML-страницу, которую можно открыть в браузере. Некоторые URL могут оказаться недействительными.
         print("<html>")
         for r in result.result_rows:
             print("<img src = ", r[1], 'width="200" height="200">')

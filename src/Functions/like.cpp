@@ -26,7 +26,7 @@ To match against literal `%`, `_` and `\` (which are `LIKE` metacharacters), pre
 The backslash loses its special meaning (i.e. is interpreted literally) if it prepends a character different than `%`, `_` or `\`.
 
 :::note
-ClickHouse requires backslashes in strings [to be quoted as well](/reference/syntax#string), so you would actually need to write `\\%`, `\\_` and `\\\\`.
+ClickHouse requires backslashes in strings [to be quoted as well](../syntax.md#string), so you would actually need to write `\\%`, `\\_` and `\\\\`.
 :::
 
 For `LIKE` expressions of the form `%needle%`, the function is as fast as the `position` function.
@@ -64,9 +64,9 @@ like(haystack, pattern[, escape_character])
         "Single character wildcard",
         "SELECT like('ClickHouse', 'Click_ouse');",
         R"(
-┌─like('ClickHouse', 'Click_ouse')─┐
-│                                1 │
-└──────────────────────────────────┘
+┌─like('ClickH⋯lick_ouse')─┐
+│                        1 │
+└──────────────────────────┘
         )"
     },
     {

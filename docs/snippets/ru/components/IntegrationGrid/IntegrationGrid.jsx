@@ -328,7 +328,7 @@ export const IntegrationGrid = () => {
         } catch (cmsErr) {
           if (cmsErr instanceof Error) {
             if (cmsErr.name === "AbortError") {
-              console.log("Запрос к CMS прерван по тайм-ауту")
+              console.log("Запрос к CMS прерван по тайм-ауту, используются резервные данные")
             } else {
               console.error("Ошибка загрузки интеграций из CMS:", cmsErr.message)
             }
@@ -595,7 +595,7 @@ export const IntegrationGrid = () => {
           color: #fff;
         }
         .dark .integration-external-overlay svg {
-          color: #fff;
+          color: #1f1f1f;
         }
         .integration-card:hover .integration-external-overlay {
           opacity: 1;
@@ -642,7 +642,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedFilter("All")}
             >
-              All
+              Все
             </button>
             {integrationTypes.map((type) => (
               <button
@@ -670,7 +670,7 @@ export const IntegrationGrid = () => {
               style={{ padding: "6px 12px" }}
               onClick={() => setSelectedTier("All")}
             >
-              All tiers
+              Все уровни
             </button>
             {integrationTiers.map((tier) => (
               <button

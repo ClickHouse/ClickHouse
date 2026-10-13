@@ -28,7 +28,9 @@ BigQuery에서 ClickHouse로 데이터를 내보내는 데 걸리는 시간은 �
 | 합계                                                                                                | 82.6억         | 23,577   | 3.982TB | 8분 3초         | &gt; 6일 5시간 | 53분 45초         |
 
 <Steps>
-  <Step title="테이블 데이터를 GCS로 내보내기" id="1-export-table-data-to-gcs">
+  <Step>
+    ## 테이블 데이터를 GCS로 내보내기
+
     이 단계에서는 [BigQuery SQL 워크스페이스](https://cloud.google.com/bigquery/docs/bigquery-web-ui)를 사용해 SQL 명령을 실행합니다. 아래에서는 [`EXPORT DATA`](https://cloud.google.com/bigquery/docs/reference/standard-sql/other-statements) SQL 문을 사용하여 `mytable`이라는 BigQuery 테이블의 데이터를 GCS 버킷으로 내보냅니다.
 
     ```sql
@@ -64,7 +66,9 @@ BigQuery에서 ClickHouse로 데이터를 내보내는 데 걸리는 시간은 �
     * Parquet는 컬럼 지향 포맷이므로 더 적합한 데이터 교환 포맷입니다. 기본적으로 압축되어 있어 BigQuery에서 더 빠르게 내보낼 수 있고 ClickHouse에서도 더 빠르게 쿼리할 수 있습니다.
   </Step>
 
-  <Step title="GCS에서 ClickHouse로 데이터 가져오기" id="2-importing-data-into-clickhouse-from-gcs">
+  <Step>
+    ## GCS에서 ClickHouse로 데이터 가져오기
+
     내보내기가 완료되면 이 데이터를 ClickHouse 테이블로 가져올 수 있습니다. 아래 명령은 [ClickHouse SQL 콘솔](/ko/integrations/connectors/sql-clients/sql-console) 또는 [`clickhouse-client`](/ko/concepts/features/interfaces/cli)를 사용해 실행할 수 있습니다.
 
     먼저 ClickHouse에서 [테이블을 생성](/ko/reference/statements/create/table)해야 합니다:
@@ -117,7 +121,9 @@ BigQuery에서 ClickHouse로 데이터를 내보내는 데 걸리는 시간은 �
     </Info>
   </Step>
 
-  <Step title="데이터 내보내기 성공 여부 확인" id="3-testing-successful-data-export">
+  <Step>
+    ## 데이터 내보내기 성공 여부 확인
+
     데이터가 올바르게 삽입되었는지 확인하려면 새 테이블에서 `SELECT` 쿼리를 실행하세요:
 
     ```sql

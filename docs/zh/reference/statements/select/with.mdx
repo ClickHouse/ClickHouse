@@ -239,7 +239,7 @@ SELECT gen_name('test', '.sql') as file_name;
 
 以下示例查询表明，未绑定的标识符会解析为最近作用域中的某个实体。
 这里，`extension` 在 `gen_name` lambda 函数的函数体中未绑定。
-尽管 `extension` 在 `generated_names` 的定义和使用所在的作用域中被定义为通用标量表达式 `'.txt'`，但它会被解析为表 `extension_list` 中的一列，因为它在 `generated_names` 子查询中可用。
+尽管 `extension` 在 `generated_names` 的定义和使用所在的作用域中被定义为公共标量表达式 `'.txt'`，但它会被解析为表 `extension_list` 中的一列，因为它在 `generated_names` 子查询中可用。
 
 ```sql
 CREATE TABLE extension_list
@@ -280,7 +280,7 @@ ORDER BY s;
 **示例 5：** 使用标量子查询结果
 
 ```sql
-/* this example would return TOP 10 of most huge tables */
+/* 此示例将返回占用磁盘空间最大的前 10 张表 */
 WITH
     (
         SELECT sum(bytes)
@@ -296,26 +296,11 @@ ORDER BY table_disk_usage DESC
 LIMIT 10;
 ```
 
-**示例 6：** 在子查询中复用由 lambda 定义的通用标量表达式
-
-将通用标量表达式定义为 lambda，以显式绑定其参数：
+**示例 6：** 在子查询中复用表达式
 
 ```sql
-WITH (value) -> value + 1 AS increment
-SELECT increment(first_result) AS second_increment
-FROM
-(
-    SELECT increment(number) AS first_result
-    FROM numbers(3)
-);
-```
-
-```response
-┌─second_increment─┐
-│                2 │
-│                3 │
-│                4 │
-└──────────────────┘
+WITH test1 AS (SELECT i + 1, j + 1 FROM test1)
+SELECT * FROM test1;
 ```
 
 <div id="recursive-queries">

@@ -79,17 +79,16 @@ MergeTreeReaderTextIndex::MergeTreeReaderTextIndex(
     prebuilt_cursors.resize(columns_.size());
 
     auto data_part = getDataPart();
-    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
     chassert(index_format);
 
     MergeTreeIndexDeserializationState state
     {
         .version = index_format.version,
         .condition = condition_text.get(),
-        .part_info = *data_part_info_for_read,
+        .part = *data_part,
         .index = *index.index,
         .readable_ranges = nullptr,
-        .skip_postings_deserialization = false,
     };
 
     deserialization_state = std::make_unique<MergeTreeIndexDeserializationState>(std::move(state));
@@ -134,16 +133,16 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
     /// - Pattern queries (LIKE): fallback when dictionary scan is abandoned.
     /// - Phrase queries (hasPhrase with Exact mode): fallback when estimated cardinality is too high
     ///   and reading position data would be slower than evaluating directly.
-    bool has_fallback_candidates = condition_text->hasSearchPatterns()
-        || std::ranges::any_of(
-            search_queries,
-            [](const auto & search_query)
-            {
-                return search_query && search_query->getSearchMode() == TextSearchMode::Phrase
-                    && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact;
-            });
+    /// Only exact direct read needs it: a hint keeps the original predicate, so it can just be always true.
+    auto needs_fallback_for_query = [](const auto & search_query)
+    {
+        if (!search_query || search_query->getDirectReadMode() != TextIndexDirectReadMode::Exact)
+            return false;
 
-    if (!has_fallback_candidates)
+        return !search_query->getPatterns().empty() || search_query->getSearchMode() == TextSearchMode::Phrase;
+    };
+
+    if (std::ranges::none_of(search_queries, needs_fallback_for_query))
         return;
 
     /// Build a fallback evaluation path. Compile each virtual column's default expression
@@ -167,12 +166,7 @@ void MergeTreeReaderTextIndex::initializeFallbackReader(const IMergeTreeReader *
     {
         const auto & column = columns_to_read[i];
         const auto & search_query = search_queries[i];
-        if (!search_query)
-            continue;
-
-        bool needs_fallback = !search_query->getPatterns().empty()
-            || (search_query->getSearchMode() == TextSearchMode::Phrase && search_query->getDirectReadMode() == TextIndexDirectReadMode::Exact);
-        if (!needs_fallback)
+        if (!needs_fallback_for_query(search_query))
             continue;
 
         /// Compile the virtual column's default expression (the original search predicate).
@@ -220,9 +214,7 @@ void MergeTreeReaderTextIndex::updateAllMarkRanges(const MarkRanges & ranges)
     IMergeTreeReader::updateAllMarkRanges(ranges);
 
     if (fallback_reader)
-    {
         fallback_reader->updateAllMarkRanges(ranges);
-    }
 
     if (!ranges.empty())
     {
@@ -385,7 +377,7 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
 {
     const auto & data_part = getDataPart();
 
-    auto index_format = index.index->getDeserializedFormat(*data_part, index.index->getFileName());
+    auto index_format = index.index->getDeserializedFormat(data_part->checksums, index.index->getFileName(), &data_part->getDataPartStorage());
     if (index_format.version != 2)
         return;
 
@@ -407,9 +399,11 @@ void MergeTreeReaderTextIndex::initializePositionsStream()
 
 size_t MergeTreeReaderTextIndex::readRows(
     size_t from_mark,
+    size_t current_task_last_mark,
     bool continue_reading,
     size_t max_rows_to_read,
-    MutableColumns & res_columns)
+    size_t rows_offset,
+    Columns & res_columns)
 {
     ProfileEventTimeIncrement<Microseconds> watch(ProfileEvents::TextIndexReaderTotalMicroseconds);
     const auto & index_granularity = data_part_info_for_read->getIndexGranularity();
@@ -418,17 +412,17 @@ size_t MergeTreeReaderTextIndex::readRows(
     if (continue_reading)
     {
         from_mark = current_mark;
-        from_row = current_row;
+        from_row = current_row + rows_offset;
     }
     else
     {
         /// Backward jump invalidates the per-token cursor cache: cached cursors are
         /// forward-only (their `linearOr` / `linearAnd` / `advance` walk segments from
-        /// `current_segment_idx` onward), so they cannot serve an earlier row.
+        /// `current_segment_idx` onward), so they cannot serve an earlier `row_offset`.
         if (from_mark < current_mark)
             resetCursors();
 
-        from_row = index_granularity.getMarkStartingRow(from_mark);
+        from_row = index_granularity.getMarkStartingRow(from_mark) + rows_offset;
     }
 
     size_t total_rows = data_part_info_for_read->getRowCount();
@@ -469,11 +463,11 @@ size_t MergeTreeReaderTextIndex::readRows(
     Block fallback_block;
     if (any_use_fallback && fallback_reader && max_rows_to_read > 0)
     {
-        MutableColumns fallback_cols(fallback_columns_list.size());
-        fallback_reader->readRows(from_mark, continue_reading, max_rows_to_read, fallback_cols);
+        Columns fallback_cols(fallback_columns_list.size(), nullptr);
+        fallback_reader->readRows(from_mark, current_task_last_mark, continue_reading, max_rows_to_read, rows_offset, fallback_cols);
         size_t col_idx = 0;
         for (const auto & col_name_type : fallback_columns_list)
-            fallback_block.insert({std::move(fallback_cols[col_idx++]), col_name_type.type, col_name_type.name});
+            fallback_block.insert({fallback_cols[col_idx++], col_name_type.type, col_name_type.name});
     }
 
     size_t fallback_offset = 0;
@@ -494,7 +488,8 @@ size_t MergeTreeReaderTextIndex::readRows(
 
         for (size_t i = 0; i < res_columns.size(); ++i)
         {
-            auto & column_mutable = *res_columns[i];
+            auto mutable_column = IColumn::mutate(std::move(res_columns[i]));
+            auto & column_mutable = *mutable_column;
 
             if (is_always_true[i])
             {
@@ -524,6 +519,8 @@ size_t MergeTreeReaderTextIndex::readRows(
             {
                 fillColumn(column_mutable, mark_postings[i], from_row, rows_to_read);
             }
+
+            res_columns[i] = std::move(mutable_column);
         }
 
         ++from_mark;
@@ -541,7 +538,7 @@ size_t MergeTreeReaderTextIndex::readRows(
     return read_rows;
 }
 
-void MergeTreeReaderTextIndex::createEmptyColumns(MutableColumns & columns, size_t max_rows_to_read) const
+void MergeTreeReaderTextIndex::createEmptyColumns(Columns & columns, size_t max_rows_to_read) const
 {
     for (size_t i = 0; i < columns.size(); ++i)
     {
@@ -586,7 +583,7 @@ std::vector<PostingList> MergeTreeReaderTextIndex::buildPostingsForMark(size_t m
         return result;
 
     /// Clip to `slice_range`, not the full mark, so postings stay in bounds on partial-mark
-    /// reads (`max_rows_to_read` stops inside the mark).
+    /// reads (`rows_offset > 0` or `max_rows_to_read` stops inside the mark).
     auto effective_range = mark_range->intersectWith(slice_range);
     if (!effective_range.has_value())
         return result;
@@ -656,7 +653,7 @@ PostingList MergeTreeReaderTextIndex::buildPostingsForQuery(
         else if (query.getSearchMode() == TextSearchMode::Any)
             *result |= large_postings;
 
-        if (query.getSearchMode() == TextSearchMode::All && result && result->isEmpty())
+        if (query.getSearchMode() == TextSearchMode::All && result && result->cardinality() == 0)
             return {};
     }
 
@@ -817,17 +814,8 @@ void MergeTreeReaderTextIndex::fillColumnLazy(IColumn & column, size_t column_id
                 return;
             }
 
-            /// Convert postings to a sorted array and build a cursor from it.
-            auto key = TextIndexPostingsCache::hash(granule->getIndexIdForCaches(), columns_to_read[column_idx].name, static_cast<UInt8>(TextIndexPostingsCacheKind::Flat));
-
-            auto cell = condition_text->postingsCache()->getOrSet(key, [&]
-            {
-                auto flat = std::make_shared<PaddedPODArray<UInt32>>(query_builder.postings->cardinality());
-                query_builder.postings->toUint32Array(flat->data());
-                return std::make_shared<TextIndexPostingsCacheCell>(std::move(flat));
-            });
-
-            prebuilt_cursor = std::make_shared<PostingListCursor>(std::get<FlatPostingsPtr>(cell->value));
+            /// Build a cursor over the sorted array of postings, shared by all readers of the granule.
+            prebuilt_cursor = std::make_shared<PostingListCursor>(query_builder.getFlatPostings());
             cursors.push_back(prebuilt_cursor);
         }
     }

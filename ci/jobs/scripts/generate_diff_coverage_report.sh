@@ -13,11 +13,6 @@ done
 
 cd ci/tmp
 
-# Every exit-0 path names its outcome here, so an absent marker means the script
-# died before reaching one. A stale marker must therefore not survive.
-OUTCOME_MARKER="diff_outcome.txt"
-rm -f "$OUTCOME_MARKER"
-
 if [[ ! -f "llvm_coverage.info" ]]; then
   echo "ERROR: llvm_coverage.info not found"
   exit 1
@@ -35,6 +30,9 @@ if wget --spider "${COVERAGE_URL}" 2>&1 | grep -q '200 OK'; then
 echo "Found coverage file at ${COVERAGE_URL}"
 wget --quiet "${COVERAGE_URL}" -O base_llvm_coverage.info
 FIRST_BASE_COMMIT="${TEST_COMMIT}"
+# Record which commit this baseline came from so line-number remapping
+# in print_newly_covered_code.py can compute git diffs against extras.
+echo "${TEST_COMMIT}" > base_llvm_coverage.sha
 FOUND=1
 break
 fi
@@ -45,9 +43,11 @@ if [ $FOUND -eq 0 ]; then
   exit 1
 fi
 
-# Note: base_llvm_coverage_{2..6}.info (extra older master baselines) are not
-# downloaded anywhere. The slot loop below is a no-op unless something else
-# populates those files.
+# Note: additional older master baselines for cross-validation in the
+# newly-covered analysis are downloaded on demand in llvm_coverage_job.py,
+# only when the newly-covered analysis will actually run (tests-only PR,
+# binary unchanged). Doing it here would fetch ~530 MB per baseline even for
+# PRs where the analysis is suppressed.
 
 export CURRENT_COMMIT
 export BASE_COMMIT
@@ -69,15 +69,10 @@ export REPO_NAME
 #    llvm_coverage_job.py to parse it into _changed_paths, flipping
 #    _binary_unchanged=False and suppressing the newly-covered analysis even
 #    though the PR binary is genuinely unchanged.
-#
-# `gh` reports a failure as a bare "gh: Not Found (HTTP 404)" naming no resource,
-# so each endpoint is echoed before it is requested.
-echo "Fetching diff: repos/ClickHouse/ClickHouse/compare/${FIRST_BASE_COMMIT}...${CURRENT_COMMIT}"
 gh api \
   -H "Accept: application/vnd.github.v3.diff" \
   repos/ClickHouse/ClickHouse/compare/${FIRST_BASE_COMMIT}...${CURRENT_COMMIT} \
   > changes.diff
-echo "Fetching changed files: repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT}"
 changed_files=$(gh api \
   repos/ClickHouse/ClickHouse/compare/${BASE_COMMIT}...${CURRENT_COMMIT} \
   --jq '.files[].filename'
@@ -102,7 +97,6 @@ done < <(echo "$changed_files")
 
 if [ ${#patterns[@]} -eq 0 ]; then
   echo "No coverable C/C++ source files changed (contrib/ is excluded from coverage), skipping differential coverage report"
-  echo "no_cpp_changes" > "$OUTCOME_MARKER"
   exit 0
 fi
 
@@ -116,11 +110,12 @@ lcov --extract base_llvm_coverage.info "${patterns[@]}" \
   --quiet \
   -o baseline.changed.info
 
-# If an extra older master baseline exists in slots 2-6, extract the same
-# changed-file slice from it too, for print_uncovered_code.py's LBC
-# cross-validation (intersecting them avoids false-positive LBC alerts from
-# lines that only occasionally fire in background/async code). Nothing
-# currently downloads these files, so this loop is presently a no-op.
+# Extract the same changed-file slice from each extra master baseline that was
+# downloaded by llvm_coverage_job.py for LBC cross-validation. These small
+# files (one per changed C/C++ file, same patterns as baseline.changed.info)
+# are passed to print_uncovered_code.py which intersects them to avoid
+# false-positive LBC alerts caused by lines that only occasionally fire in
+# background/async code.
 for slot in 2 3 4 5 6; do
   src="base_llvm_coverage_${slot}.info"
   if [ -f "$src" ] && [ -s "$src" ]; then
@@ -137,15 +132,11 @@ baseline_sf_count=$(grep -c '^SF:' baseline.changed.info 2>/dev/null || true)
 
 if [ "$current_sf_count" -eq 0 ] && [ "$baseline_sf_count" -eq 0 ]; then
   echo "No coverage data found for changed files (files may be new or not instrumented), skipping differential coverage report"
-  echo "no_coverage_data" > "$OUTCOME_MARKER"
   exit 0
 fi
 
 if [ "$current_sf_count" -eq 0 ]; then
-  # print_uncovered_code.py reads only current.changed.info, so it has no data
-  # to report in this state either.
-  echo "Current coverage is empty for changed files (tests may have been removed or disabled), skipping differential coverage report"
-  echo "current_coverage_empty" > "$OUTCOME_MARKER"
+  echo "Current coverage is empty for changed files (tests may have been removed or disabled). Skipping genhtml — LBC analysis will run separately."
   exit 0
 fi
 
@@ -180,4 +171,3 @@ genhtml \
   --flat \
   current.changed.info
 
-echo "report_generated" > "$OUTCOME_MARKER"

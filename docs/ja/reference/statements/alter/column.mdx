@@ -37,10 +37,10 @@ ALTER [TEMPORARY] TABLE [db].name [ON CLUSTER cluster] ADD|DROP|RENAME|CLEAR|COM
 </div>
 
 ```sql
-ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
+ADD COLUMN [IF NOT EXISTS] name [type] [default_expr] [codec] [AFTER name_after | FIRST]
 ```
 
-指定した `name`、`type`、[`codec`](/ja/reference/statements/create/table/codec)、および `default_expr` を持つ新しいカラムをテーブルに追加します ([デフォルト式](/ja/reference/statements/create/table#default_values) のセクションを参照) 。型に続く修飾子は任意の順序で記述でき、それぞれ最大1回まで指定できます。[カラム定義](/ja/reference/statements/create/table#with-explicit-schema) を参照してください。
+指定した `name`、`type`、[`codec`](/ja/reference/statements/create/table#column_compression_codec)、および `default_expr` を持つ新しいカラムをテーブルに追加します ([デフォルト式](/ja/reference/statements/create/table#default_values) のセクションを参照) 。
 
 `IF NOT EXISTS` 句が含まれている場合、カラムがすでに存在していてもクエリはエラーを返しません。`AFTER name_after` (別のカラム名) を指定すると、そのカラムはテーブルのカラム一覧で指定したカラムの直後に追加されます。カラムをテーブルの先頭に追加する場合は、`FIRST` 句を使用します。それ以外の場合、カラムはテーブルの末尾に追加されます。一連の操作では、`name_after` に前のいずれかの操作で追加されたカラム名を指定することもできます。
 
@@ -154,14 +154,12 @@ ALTER TABLE visits COMMENT COLUMN browser 'This column shows the browser used fo
 
 ```sql
 MODIFY COLUMN [IF EXISTS] name
-    [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
+    [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ALTER COLUMN [IF EXISTS] name
-    TYPE [type] [default_expr] [COMMENT 'comment for column'] [codec] [STATISTICS] [TTL] [settings] [AFTER name_after | FIRST]
+    TYPE [type] [default_expr] [codec] [TTL] [settings] [AFTER name_after | FIRST]
     | ADD ENUM VALUES ( 'name' [= number] [, ...] )
 ```
-
-型の後に続く修飾子は任意の順序で記述でき、それぞれ 1 回まで指定できます。詳しくは [カラム定義](/ja/reference/statements/create/table#with-explicit-schema) を参照してください。
 
 このクエリは、`name` カラムの以下のプロパティを変更します。
 
@@ -177,11 +175,11 @@ ALTER COLUMN [IF EXISTS] name
 
 * Enum/Enum8/Enum16 型の Enum 値
 
-カラムの圧縮 CODEC の変更例については、[カラム圧縮コーデック](/ja/reference/statements/create/table/codec) を参照してください。
+カラムの圧縮 CODEC の変更例については、[カラム圧縮コーデック](/ja/reference/statements/create/table#column_compression_codec) を参照してください。
 
 カラムの TTL の変更例については、[カラム TTL](/ja/reference/engines/table-engines/mergetree-family/mergetree#mergetree-column-ttl) を参照してください。
 
-カラムレベル設定の変更例については、[カラムレベル設定](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings) を参照してください。
+カラムレベル設定の変更例については、[カラムレベルの設定](/ja/reference/engines/table-engines/mergetree-family/mergetree#column-level-settings) を参照してください。
 
 `IF EXISTS` 句が指定されている場合、カラムが存在しなくても、このクエリはエラーを返しません。
 
@@ -195,7 +193,7 @@ ALTER TABLE visits MODIFY COLUMN browser Array(String)
 
 カラム型の変更だけが複雑な操作であり、データを含むファイルの内容も変更されます。大規模なテーブルでは、これに時間がかかる場合があります。
 
-このクエリでは、`FIRST | AFTER` 句を使用してカラムの順序を変更することもできます。詳しくは [ADD COLUMN](#add-column) の説明を参照してください。ただし、この場合はカラム型の指定が必須です。
+このクエリでは、`FIRST | AFTER` clause を使用してカラムの順序を変更することもできます。詳しくは [ADD COLUMN](#add-column) の説明を参照してください。ただし、この場合はカラム型の指定が必須です。
 
 例:
 
@@ -379,20 +377,9 @@ SELECT groupArray(x), groupArray(s) FROM tmp;
 └───────────────────────┴───────────────────────────────────────────────────────┘
 ```
 
-<Note>
-  `MATERIALIZE COLUMN` は常に**カラム値**を書き換えます。[データスキッピングインデックス](/ja/reference/statements/alter/skipping-index) (テキスト索引を含む) も再構築されるかどうかは、パーツのレイアウトと索引の保存方法によって異なります。
-
-  * **wide + full-storage** のパーツでは、カラムのみを書き換えた場合、**スタンドアロン**のスキップ索引ファイル (およびテキスト索引) は自動的に再構築**されません**。索引が依存する基になるカラムデータを変更した後、それらの索引ファイルを更新する必要がある場合は、[`ALTER TABLE ... MATERIALIZE INDEX`](/ja/reference/statements/alter/skipping-index#materialize-index) を実行してください。
-  * **例外:** `skp_idx.packed` にパックされた通常のスキップ索引 (デフォルトの [`packed_skip_index_max_bytes`](/ja/reference/settings/merge-tree-settings/other#packed_skip_index_max_bytes) 未満の小さなスキップ索引サブストリーム。全文索引はこの方式ではパックされません) は、wide + full-storage のパーツでも強制的に再計算されます。
-  * **wide + full-storage ではないすべてのパーツ** (**compact + full**、**compact + packed**、**wide + packed** を含む) では、ミューテーションはパーツ全体を書き換える経路をたどり、そのパーツ上の既存のセカンダリ索引を強制的に再計算します。小さなパーツは、デフォルトではフルパーツストレージを使用しつつ compact であることが一般的なため、この分岐は最近の挿入でよく見られるケースです。
-
-  これとは別に、`ADD INDEX` はメタデータのみを更新します。履歴パーツ上の新しい索引 (テキスト索引を含む) が直ちにマテリアライズされることは**ありません**。履歴パーツは、明示的な [`MATERIALIZE INDEX`](/ja/reference/statements/alter/skipping-index#materialize-index) によって、または [`materialize_skip_indexes_on_merge`](/ja/reference/settings/merge-tree-settings/materialize#materialize_skip_indexes_on_merge) が有効で、索引が [`exclude_materialize_skip_indexes_on_merge`](/ja/reference/settings/merge-tree-settings/exclude#exclude_materialize_skip_indexes_on_merge) に含まれていない場合に後続のマージによってマテリアライズされます。マージ設定を待たずに索引を構築する必要がある場合は、明示的な `MATERIALIZE INDEX` が確実な方法です。
-</Note>
-
 **関連項目**
 
 * [MATERIALIZED](/ja/reference/statements/create/view#materialized-view)。
-* [MATERIALIZE INDEX](/ja/reference/statements/alter/skipping-index#materialize-index)。
 
 <div id="limitations">
   ## 制限事項

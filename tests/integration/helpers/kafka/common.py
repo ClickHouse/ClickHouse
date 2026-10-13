@@ -80,16 +80,10 @@ def kafka_create_topic(
 
 def kafka_delete_topic(admin_client, topic, max_retries=50):
     # Retry the delete RPC on transient broker/controller errors, like kafka_create_topic.
-    # UnknownTopicOrPartitionError means the topic is absent, which is the requested end
-    # state, so it is not retried; the listing loop below is what confirms it.
-    result = None
     retries = 0
     while True:
         try:
             result = admin_client.delete_topics([topic])
-            break
-        except kafka.errors.UnknownTopicOrPartitionError as e:
-            logging.debug(f"Topic {topic} is already absent: {e}")
             break
         except Exception as e:
             retries += 1
@@ -99,12 +93,11 @@ def kafka_delete_topic(admin_client, topic, max_retries=50):
             else:
                 raise
 
-    if result is not None:
-        for deleted_topic, e in result.topic_error_codes:
-            if e == 0:
-                logging.debug(f"Topic {deleted_topic} deleted")
-            else:
-                logging.error(f"Failed to delete topic {deleted_topic}: {e}")
+    for topic, e in result.topic_error_codes:
+        if e == 0:
+            logging.debug(f"Topic {topic} deleted")
+        else:
+            logging.error(f"Failed to delete topic {topic}: {e}")
 
     retries = 0
     while True:
