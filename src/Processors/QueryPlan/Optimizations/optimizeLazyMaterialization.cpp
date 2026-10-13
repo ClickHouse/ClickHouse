@@ -38,6 +38,7 @@ static void removeUsedColumnNames(
     String filter_name = {})
 {
     const auto & actions_outputs = actions.getOutputs();
+    NameSet passthrough_inputs;
 
     for (const auto * output_node : actions_outputs)
     {
@@ -51,6 +52,16 @@ static void removeUsedColumnNames(
 
         if (!node)
             continue;
+
+        /// The lazy reader maps each source column to a single output name. If an input
+        /// is forwarded more than once (for example, both a column and its alias), read
+        /// it eagerly so all outputs contain real data and do not duplicate lazy row coordinates.
+        if (node->type == ActionsDAG::ActionType::INPUT && !passthrough_inputs.insert(node->result_name).second)
+        {
+            const auto it = alias_index.find(node->result_name);
+            if (it != alias_index.end())
+                lazily_read_column_name_set.erase(it->second);
+        }
 
         if (node->type == ActionsDAG::ActionType::FUNCTION || node->type == ActionsDAG::ActionType::ARRAY_JOIN
             || (!filter_name.empty() && filter_name == output_node->result_name))
