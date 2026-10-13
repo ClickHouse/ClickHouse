@@ -75,8 +75,8 @@ struct LocalQueryState
     std::shared_ptr<ColumnsDescription> columns_description;
     std::optional<ProfileInfo> profile_info;
 
-    /// Is request cancelled
-    bool is_cancelled = false;
+    /// Is request cancelled. Atomic: the interactive cancel callback may set it on a pipeline thread.
+    std::atomic_bool is_cancelled = false;
     bool is_finished = false;
 
     bool sent_totals = false;
