@@ -581,12 +581,13 @@ requires MapAggregationMethod<Method>
 size_t NO_INLINE Aggregator::countPartitionGroups(
     Table & counting_table, const AdaptiveRecordRanges & ranges, const Filter & filter, const UpdateCandidates & update_candidates) const
 {
+    /// A count-first unit ranks by a count among other aggregates, so its records carry arguments.
+    chassert(adaptive_argument_layout && !is_simple_count);
     using Key = AdaptiveRecordKey<Method>;
     const bool prefetch = prefetchesStagedKeys<Key>(counting_table);
     size_t skipped = 0;
     visitStagedRecordFormat<Key>(adaptive_argument_layout.get(), is_simple_count, [&]<typename Record>(Record format) ALWAYS_INLINE
     {
-        /// A count-first unit ranks by a count among other aggregates, so its records carry arguments.
         if constexpr (Record::with_arguments)
         {
             skipped = walkStagedRecords<Key>(
