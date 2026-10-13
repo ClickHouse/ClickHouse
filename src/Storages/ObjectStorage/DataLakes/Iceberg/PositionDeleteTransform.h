@@ -28,7 +28,8 @@ public:
         ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
-        ContextPtr context_)
+        ContextPtr context_,
+        InputFormatPtr data_input_format_ = nullptr)
         : ISimpleTransform(header_, header_, false)
         , header(header_)
         , iceberg_object_info(iceberg_object_info_)
@@ -36,16 +37,21 @@ public:
         , format_settings(format_settings_)
         , context(context_)
         , parser_shared_resources(parser_shared_resources_)
+        , data_input_format(std::move(data_input_format_))
     {
-        initializeDeleteSources();
     }
 
     String getName() const override { return "IcebergPositionDeleteTransform"; }
 
-private:
-    void initializeDeleteSources();
-
 protected:
+    void ensureInitialized();
+    virtual void initializeDeletes() = 0;
+    void initializeDeleteSources();
+    bool isPositionInRange(UInt64 position) const
+    {
+        return !row_range.has_value() || (position >= row_range->first && position < row_range->second);
+    }
+
     LoggerPtr log = getLogger("IcebergPositionDeleteTransform");
     static size_t getColumnIndex(const std::shared_ptr<IInputFormat> & delete_source, const String & column_name);
 
@@ -65,6 +71,10 @@ protected:
     /// We need to keep the read buffers alive since the position_delete_files depend on them.
     std::vector<std::unique_ptr<ReadBuffer>> delete_read_buffers;
     std::vector<std::shared_ptr<IInputFormat>> position_delete_files;
+
+    InputFormatPtr data_input_format;
+    std::optional<std::pair<size_t, size_t>> row_range;
+    bool initialized = false;
 };
 
 class IcebergBitmapPositionDeleteTransform final : public IcebergPositionDeleteTransform
@@ -78,10 +88,11 @@ public:
         ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
-        ContextPtr context_)
-        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
+        ContextPtr context_,
+        InputFormatPtr data_input_format_ = nullptr)
+        : IcebergPositionDeleteTransform(
+              header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_, std::move(data_input_format_))
     {
-        initialize();
     }
 
     String getName() const override { return "IcebergBitmapPositionDeleteTransform"; }
@@ -89,7 +100,7 @@ public:
     void transform(Chunk & chunk) override;
 
 private:
-    void initialize();
+    void initializeDeletes() override;
     ExcludedRows bitmap;
 };
 
@@ -104,10 +115,11 @@ public:
         ObjectStoragePtr object_storage_,
         const std::optional<FormatSettings> & format_settings_,
         FormatParserSharedResourcesPtr parser_shared_resources_,
-        ContextPtr context_)
-        : IcebergPositionDeleteTransform(header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_)
+        ContextPtr context_,
+        InputFormatPtr data_input_format_ = nullptr)
+        : IcebergPositionDeleteTransform(
+              header_, iceberg_object_info_, object_storage_, format_settings_, parser_shared_resources_, context_, std::move(data_input_format_))
     {
-        initialize();
     }
 
     String getName() const override { return "IcebergStreamingPositionDeleteTransform"; }
@@ -115,7 +127,7 @@ public:
     void transform(Chunk & chunk) override;
 
 private:
-    void initialize();
+    void initializeDeletes() override;
 
     struct PositionDeleteFileIndexes
     {

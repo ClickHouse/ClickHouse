@@ -627,6 +627,7 @@ enum class ObjectStorageGranularityLevel : uint8_t
 {
     FILE = 0,
     BUCKET = 1,
+    AUTO = 2,
 };
 
 DECLARE_SETTING_ENUM(ObjectStorageGranularityLevel)
