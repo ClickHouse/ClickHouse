@@ -96,7 +96,8 @@ constexpr size_t vectorHeaderSize()
 
 /// Reading.
 
-/// An `ALP` page with a validated page header. Each vector is validated when it is decoded.
+/// An `ALP` page with a validated page header and offset sequence. The contents of each vector
+/// are validated when it is decoded.
 template <typename T>
 struct AlpPage
 {
@@ -141,15 +142,37 @@ struct AlpPage
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ALP page is too short for the offsets of its {} vectors: {} bytes", num_vectors, data.size());
 
-        /// The vectors are stored back to back right after the offset array. `decodeVector` checks
-        /// that each vector ends exactly where the next one begins.
-        if (num_vectors > 0)
+        /// The vectors are stored back to back right after the offset array, and the last one ends
+        /// exactly at the end of the page. Validate the whole offset sequence here, by reading only
+        /// the vector headers, so that it holds even for vectors that are skipped and never decoded.
+        size_t expected_offset = num_vectors * 4;
+        for (size_t vector_idx = 0; vector_idx < num_vectors; ++vector_idx)
         {
-            const size_t first_offset = unalignedLoadLittleEndian<UInt32>(body);
-            if (first_offset != num_vectors * 4)
+            const size_t offset = unalignedLoadLittleEndian<UInt32>(body + vector_idx * 4);
+            if (offset != expected_offset)
                 throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Invalid offset of ALP vector 0: {}, expected {}", first_offset, num_vectors * 4);
+                    "Invalid offset of ALP vector {}: {}, expected {}", vector_idx, offset, expected_offset);
+            if (body_size - offset < vectorHeaderSize<T>())
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "ALP page is too short for the header of vector {}: the page body has {} bytes", vector_idx, body_size);
+            const char * ptr = body + offset;
+            const size_t n = vectorLength(vector_idx);
+            const size_t num_exceptions = unalignedLoadLittleEndian<UInt16>(ptr + 2);
+            const unsigned bit_width = static_cast<UInt8>(ptr[4 + sizeof(T)]);
+            if (bit_width > sizeof(T) * 8)
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid ALP bit width in vector {}: {}", vector_idx, bit_width);
+            if (num_exceptions > n)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "ALP vector {} has {} exceptions, but only {} values", vector_idx, num_exceptions, n);
+            expected_offset = offset + vectorHeaderSize<T>() + (n * bit_width + 7) / 8 + num_exceptions * (sizeof(UInt16) + sizeof(T));
+            if (expected_offset > body_size)
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "ALP vector {} needs {} bytes, but the page has only {} bytes left",
+                    vector_idx, expected_offset - offset, body_size - offset);
         }
+        if (expected_offset != body_size)
+            throw Exception(ErrorCodes::INCORRECT_DATA,
+                "ALP page has {} bytes after its last vector", body_size - expected_offset);
     }
 
     size_t vectorLength(size_t vector_idx) const
@@ -182,11 +205,8 @@ struct AlpPage
         if (exponent > Traits::max_exponent || factor > exponent)
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "Invalid ALP exponent and factor in vector {}: {} and {}", vector_idx, exponent, factor);
-        if (bit_width > sizeof(T) * 8)
-            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid ALP bit width in vector {}: {}", vector_idx, bit_width);
-        if (num_exceptions > n)
-            throw Exception(ErrorCodes::INCORRECT_DATA,
-                "ALP vector {} has {} exceptions, but only {} values", vector_idx, num_exceptions, n);
+        /// The bit width, the number of exceptions and the size of the vector were checked in the constructor.
+        chassert(bit_width <= sizeof(T) * 8 && num_exceptions <= n);
 
         const size_t packed_size = (n * bit_width + 7) / 8;
         const size_t exceptions_size = num_exceptions * (sizeof(UInt16) + sizeof(T));
@@ -194,16 +214,6 @@ struct AlpPage
             throw Exception(ErrorCodes::INCORRECT_DATA,
                 "ALP vector {} needs {} bytes, but the page has only {} bytes left",
                 vector_idx, vectorHeaderSize<T>() + packed_size + exceptions_size, vectorHeaderSize<T>() + available);
-
-        if (vector_idx + 1 < num_vectors)
-        {
-            const size_t expected_next_offset = offset + vectorHeaderSize<T>() + packed_size + exceptions_size;
-            const size_t next_offset = unalignedLoadLittleEndian<UInt32>(body + (vector_idx + 1) * 4);
-            if (next_offset != expected_next_offset)
-                throw Exception(ErrorCodes::INCORRECT_DATA,
-                    "Invalid offset of ALP vector {}: {}, expected {} (the end of the previous vector)",
-                    vector_idx + 1, next_offset, expected_next_offset);
-        }
 
         /// Two separate multiplications, in this order, as the specification requires.
         const T multiplier_factor = Traits::pow10[factor];

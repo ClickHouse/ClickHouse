@@ -47,7 +47,7 @@ check "$HEADER" 2 "02"         # log_vector_size below the minimum
 check "$HEADER" 2 "10"         # log_vector_size above the maximum
 check "$HEADER" 3 "FFFFFFFF"   # negative number of values
 check "$HEADER" 3 "FFFFFF7F"   # too many vectors for the page
-check "$HEADER" 3 "32000000"   # fewer values than the definition levels say
+check "$HEADER" 3 "32000000"   # fewer values than the page has
 echo "--- offsets"
 check "$HEADER" 7 "00000000"   # into the offset array
 check "$HEADER" 7 "FFFFFF00"   # past the end of the page
@@ -57,6 +57,7 @@ check "$HEADER" 11 "13"        # exponent above the maximum
 check "$HEADER" 12 "FF"        # factor above the exponent
 check "$HEADER" 13 "FFFF"      # more exceptions than values
 check "$HEADER" 13 "0200"      # exceptions past the end of the page
+check "$HEADER" 13 "0000"      # fewer exceptions, the page has bytes after the last vector
 check "$HEADER" 23 "41"        # bit width above the maximum
 check "$HEADER" 23 "40"        # packed values past the end of the page
 echo "--- exceptions"
