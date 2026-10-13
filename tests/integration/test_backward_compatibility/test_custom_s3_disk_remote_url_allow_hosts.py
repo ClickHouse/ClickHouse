@@ -12,7 +12,10 @@ cluster = ClickHouseCluster(__file__)
 # Two instances: a failed check on the database metadata disk would stop the server.
 node = cluster.add_instance(
     "node",
-    main_configs=["configs/remote_url_allow_hosts_without_minio.xml"],
+    main_configs=[
+        "configs/remote_url_allow_hosts_without_minio.xml",
+        "configs/drop_table_delay.xml",
+    ],
     image="clickhouse/clickhouse-server",
     tag="26.8",
     with_installed_binary=True,
@@ -21,7 +24,10 @@ node = cluster.add_instance(
 )
 node_db = cluster.add_instance(
     "node_db",
-    main_configs=["configs/remote_url_allow_hosts_without_minio.xml"],
+    main_configs=[
+        "configs/remote_url_allow_hosts_without_minio.xml",
+        "configs/drop_table_delay.xml",
+    ],
     image="clickhouse/clickhouse-server",
     tag="26.8",
     with_installed_binary=True,
@@ -60,6 +66,13 @@ def test_table_on_custom_s3_disk_loads_after_upgrade(started_cluster):
     )
     node.query("INSERT INTO t_detached VALUES (4), (5)")
     node.query("DETACH TABLE t_detached PERMANENTLY")
+    # Dropped before the upgrade and still in the drop queue: the new binary rebuilds it at start from
+    # metadata_dropped under FORCE_RESTORE, which is the path UNDROP relies on.
+    node.query(
+        f"CREATE TABLE t_dropped (id UInt64) ENGINE = MergeTree ORDER BY id SETTINGS disk = {s3_disk('dropped_disk')}"
+    )
+    node.query("INSERT INTO t_dropped VALUES (6), (7)")
+    node.query("DROP TABLE t_dropped")
 
     node.restart_with_latest_version()
 
@@ -72,6 +85,15 @@ def test_table_on_custom_s3_disk_loads_after_upgrade(started_cluster):
         )
         == "1\n"
     )
+    # Two disks were built at start and reported: the live table's and the dropped table's.
+    assert (
+        node.query(
+            "SELECT countSubstrings(message, '->') FROM system.warnings WHERE message LIKE '%remote_url_allow_hosts%'"
+        )
+        == "2\n"
+    )
+    node.query("UNDROP TABLE t_dropped")
+    assert node.query("SELECT id FROM t_dropped ORDER BY id") == "6\n7\n"
 
     # Only loading existing metadata is exempt. A user ATTACH is checked like a CREATE, in the short form too:
     # the first build of the parked table's disk is rejected, like every other disk check on a short ATTACH.
