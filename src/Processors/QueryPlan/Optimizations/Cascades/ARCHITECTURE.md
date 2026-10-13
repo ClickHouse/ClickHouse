@@ -603,11 +603,12 @@ branch-and-bound pruning as the primary bound.
 9. **Runtime bloom filter placement in Cascades**: the pre-Cascades pass may add
    `BuildRuntimeFilterStep` and Cascades passes it through, but Cascades does not
    create or cost runtime-filter alternatives. The single biggest gap vs StarRocks.
-10. **Join ordering in Cascades**: the pre-Cascades join orderer already offers `dphyp`
-   (inner joins) alongside `dpsub`, `dpsize`, and `greedy`; in an algorithm chain such as
-   `dphyp,greedy`, unsupported cases fall through to the next algorithm. Cascades still
-   receives a single fixed order; feeding the top k orders into the memo (the hybrid TOP-K
-   of Gretscher & Dittrich, PVLDB 2025) is future work.
+10. **Join ordering in Cascades**: the pre-Cascades join orderer (`dphyp`, `dpsub`, `dpsize`, `greedy`) chooses a
+   join order. With `cascades_join_order_alternatives`, DPhyp and DPsize also keep the cheapest complete orders that
+   split the joined relations differently at the top join; the graph then reaches Cascades as one `JoinGraphStep`
+   over its inputs, and the import adds the joins of every order over input groups imported once, sharing the group
+   of a set of inputs between orders whose joins have equal output headers. Orders that differ only below the top
+   join are not offered yet, and Cascades has no join associativity rule.
 11. **Window function distribution**: `WindowStep` currently goes through
    `DefaultImplementation` at `{1 node}`. Needs a `WindowImplementation` rule
    that sets distribution by PARTITION BY key.

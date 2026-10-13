@@ -1,7 +1,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <Interpreters/Context.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
-#include <Processors/QueryPlan/JoinOrderAlternativesStep.h>
+#include <Processors/QueryPlan/JoinGraphStep.h>
 #include <Processors/QueryPlan/AggregatingStep.h>
 #include <Processors/QueryPlan/CreatingSetsStep.h>
 #include <Processors/QueryPlan/DistinctStep.h>
@@ -284,23 +284,16 @@ void applyParallelReplicas(QueryPlan & query_plan, QueryPlan::Nodes & nodes, con
 /// creates a step it did not see; `convertToDistributed` throws if one slips through. Nothing is
 /// lost by skipping: every worker re-optimizes its fragment with `make_distributed_plan = 0` and
 /// applies these passes to its own part of the plan.
-/// Replaces every `JoinOrderAlternativesStep` left in the plan by its first input, the order the join order
-/// optimizer chose. The step becomes an expression that passes the columns through, so that no plan node
-/// is left without a step.
-static void resolveJoinOrderAlternatives(QueryPlan::Node & root)
+/// Replaces every `JoinGraphStep` left in the plan, where Cascades did not run, by the plan of its chosen join order.
+static void expandJoinGraphs(QueryPlan::Node & root)
 {
     std::vector<QueryPlan::Node *> stack{&root};
     while (!stack.empty())
     {
         auto * node = stack.back();
         stack.pop_back();
-        if (typeid_cast<const JoinOrderAlternativesStep *>(node->step.get()))
-        {
-            auto * chosen = node->children.front();
-            const auto & header = chosen->step->getOutputHeader();
-            node->step = std::make_unique<ExpressionStep>(header, ActionsDAG(header->getColumnsWithTypeAndName()));
-            node->children = {chosen};
-        }
+        if (typeid_cast<const JoinGraphStep *>(node->step.get()))
+            JoinGraphStep::expandToChosenOrder(*node);
         for (auto * child : node->children)
             stack.push_back(child);
     }
@@ -404,8 +397,7 @@ void optimizeTreeSecondPass(
     const bool cascades_will_run = optimization_settings.make_distributed_plan && optimization_settings.enable_cascades_optimizer
         && !planContainsLogicalExchange(root);
 
-    /// Join reordering also builds other join orders when Cascades will choose between them, see
-    /// `JoinOrderAlternativesStep`.
+    /// Join reordering also keeps other join orders when Cascades will choose between them, see `JoinGraphStep`.
     optimization_settings.build_join_order_alternatives = optimization_settings.cascades_join_order_alternatives > 0 && cascades_will_run;
 
     /// Join runtime filters are registered and found in the lookup of the thread's query context, so they need a query.
@@ -590,9 +582,9 @@ void optimizeTreeSecondPass(
         cascades_optimizer.optimize();
     }
 
-    /// Cascades chose between the join orders; any left (Cascades did not run on this plan) keep the first.
+    /// Cascades chose between the join orders; a join graph left (Cascades did not run on this plan) keeps the chosen one.
     if (optimization_settings.build_join_order_alternatives)
-        resolveJoinOrderAlternatives(root);
+        expandJoinGraphs(root);
     optimization_settings.build_join_order_alternatives = false;
 
     stack.push_back({.node = &root});

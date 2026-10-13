@@ -14,6 +14,8 @@
 namespace DB
 {
 
+class JoinGraphStep;
+
 struct QueryPlanOptimizationSettings;
 
 class CascadesOptimizer
@@ -57,12 +59,17 @@ public:
     const Memo & getMemo() const { return memo; }
 
 private:
+    /// Imports a `JoinGraphStep`: each input once, and the joins of every join order over the input groups.
+    std::pair<GroupId, ExpressionProperties> addJoinGraph(QueryPlan::Node & node, const JoinGraphStep & graph_step);
+
     void addRule(OptimizationRulePtr rule);
     void addEnforcerRule(OptimizationRulePtr rule);
 
     QueryPlanPtr buildBestPlan(GroupId subtree_root_group_id, ExpressionProperties required_properties);
 
     QueryPlan & query_plan;
+    /// Owns the plans of the join orders that `addJoinGraph` builds, whose steps the memo takes.
+    QueryPlan::Nodes join_graph_nodes;
     const QueryPlanOptimizationSettings & optimization_settings;
     bool optimize_was_called = false;
 

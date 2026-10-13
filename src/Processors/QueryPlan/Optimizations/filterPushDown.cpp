@@ -20,7 +20,6 @@
 #include <Processors/QueryPlan/DistinctStep.h>
 #include <Processors/QueryPlan/ExpressionStep.h>
 #include <Processors/QueryPlan/FilterStep.h>
-#include <Processors/QueryPlan/JoinOrderAlternativesStep.h>
 #include <Processors/QueryPlan/JoinStep.h>
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Processors/QueryPlan/LimitByStep.h>
@@ -1447,13 +1446,6 @@ size_t tryPushDownFilter(QueryPlan::Node * parent_node, QueryPlan::Nodes & nodes
         return pushDownFilterIntoEveryInput(
             parent_node, nodes,
             std::make_unique<UnionStep>(union_input_headers, union_step->getMaxThreads(), union_step->isNarrowingAllowed()));
-    }
-
-    if (typeid_cast<JoinOrderAlternativesStep *>(child.get()))
-    {
-        /// Both inputs have the header of the step, so the filter applies to each of them.
-        SharedHeaders input_headers(child->getInputHeaders().size(), filter->getOutputHeader());
-        return pushDownFilterIntoEveryInput(parent_node, nodes, std::make_unique<JoinOrderAlternativesStep>(input_headers));
     }
 
     if (auto * parallel_replicas_local_plan = typeid_cast<ReadFromLocalParallelReplicaStep *>(child.get()))
