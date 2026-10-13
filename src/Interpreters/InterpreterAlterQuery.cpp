@@ -32,10 +32,12 @@
 #include <Parsers/ASTAlterQuery.h>
 #include <Parsers/ASTAssignment.h>
 #include <Parsers/ASTIdentifier.h>
+#include <Parsers/ASTIndexDeclaration.h>
 #include <Parsers/ASTIdentifier_fwd.h>
 #include <Parsers/ASTColumnDeclaration.h>
 #include <QueryPipeline/QueryPlanResourceHolder.h>
 #include <Storages/AlterCommands.h>
+#include <Storages/IndicesDescription.h>
 #include <Storages/MutationCommands.h>
 #include <Storages/PartitionCommands.h>
 #include <Storages/ExecuteCommands.h>
@@ -592,6 +594,13 @@ BlockIO InterpreterAlterQuery::executeToTable(const ASTAlterQuery & alter)
         {
             is_mutation = true;
             checkNoRowPolicyForSetOperands(child, table_id.database_name, getContext());
+        }
+        /// Not where the command is applied: a `Replicated` database enqueues it below and the
+        /// replicas apply it without the submitting user.
+        else if (command.type == ASTAlterCommand::ADD_INDEX && command.index_decl)
+        {
+            if (const auto * declaration = command.index_decl->as<ASTIndexDeclaration>())
+                checkTextIndexPreAndPostProcessorPermissions(*declaration, getContext());
         }
     }
 

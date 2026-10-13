@@ -59,14 +59,9 @@ void resolveFunctionsAsUser(const ASTPtr & ast, const ContextPtr & context)
         resolveFunctionsAsUser(child, context);
 }
 
-}
-
-void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context)
+void checkTransformPermissions(const ASTPtr & arguments, const ContextPtr & context)
 {
-    if (index.type != TEXT_INDEX_NAME || !index.arguments)
-        return;
-
-    for (const auto & child : index.arguments->children)
+    for (const auto & child : arguments->children)
     {
         const auto * func = child->as<ASTFunction>();
         if (!func || func->name != "equals" || !func->arguments || func->arguments->children.size() != 2)
@@ -77,16 +72,29 @@ void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index
             continue;
 
         auto expression = func->arguments->children[1]->clone();
-        /// Replaces every call of a SQL user-defined function by its body, as `TreeRewriter` does, so
-        /// that a function referenced only from inside a UDF is seen below.
+        /// Inlines SQL UDF bodies, as `TreeRewriter` does, so a function used only inside one is seen.
         if (!UserDefinedSQLFunctionFactory::instance().empty())
             UserDefinedSQLFunctionVisitor::visit(expression, context);
 
-        /// Resolving a name runs the function's `create`, which is where a grant-checked function
-        /// such as `demangle` performs its `checkAccess`. Names only: building the expression would
-        /// also check argument types, reporting those errors from here instead of from the validator.
+        /// Resolving a name runs the function's `create`, where `checkAccess` lives. Names only:
+        /// building the expression would also report its type errors from here, not from the validator.
         resolveFunctionsAsUser(expression, context);
     }
+}
+
+}
+
+void checkTextIndexPreAndPostProcessorPermissions(const IndexDescription & index, const ContextPtr & context)
+{
+    if (index.type == TEXT_INDEX_NAME && index.arguments)
+        checkTransformPermissions(index.arguments, context);
+}
+
+void checkTextIndexPreAndPostProcessorPermissions(const ASTIndexDeclaration & declaration, const ContextPtr & context)
+{
+    const auto * type = declaration.getType() ? declaration.getType()->as<ASTFunction>() : nullptr;
+    if (type && Poco::toLower(type->name) == TEXT_INDEX_NAME && type->arguments)
+        checkTransformPermissions(type->arguments, context);
 }
 
 IndexDescription::IndexDescription(const IndexDescription & other)
