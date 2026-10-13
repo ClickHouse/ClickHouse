@@ -7,6 +7,7 @@
 #include <Storages/MergeTree/MergeTreeIndexGranularityConstant.h>
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
+#include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/NestedUtils.h>
 #include <Common/quoteString.h>
 #include <Core/NamesAndTypes.h>
@@ -37,6 +38,33 @@ namespace MergeTreeSetting
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version;
     extern const MergeTreeSettingsMergeTreeObjectSharedDataSerializationVersion object_shared_data_serialization_version_for_zero_level_parts;
     extern const MergeTreeSettingsNonZeroUInt64 object_shared_data_buckets_for_wide_part;
+}
+
+namespace
+{
+
+/// The number of bytes that each row of a column takes in a stream at least, or 0 if it is not known.
+/// Only the streams with one value per row of the column count, so the path may only go through `Nullable`.
+size_t getMinBytesPerRowOfStream(const DataTypePtr & type, const ISerialization::SubstreamPath & substream_path)
+{
+    for (size_t i = 0; i < substream_path.size(); ++i)
+    {
+        auto substream_type = substream_path[i].type;
+        bool is_last = i + 1 == substream_path.size();
+        if (is_last && substream_type == ISerialization::Substream::NullMap)
+            return sizeof(UInt8);
+        if (is_last && substream_type == ISerialization::Substream::ArraySizes)
+            return sizeof(UInt64);
+        if (substream_type != ISerialization::Substream::NullableElements && substream_type != ISerialization::Substream::Regular)
+            return 0;
+    }
+
+    auto nested_type = removeNullable(type);
+    if (nested_type->isValueUnambiguouslyRepresentedInFixedSizeContiguousMemoryRegion())
+        return nested_type->getSizeOfValueInMemory();
+    return 0;
+}
+
 }
 
 MergeTreeDataPartWide::MergeTreeDataPartWide(
@@ -524,6 +552,36 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                     marks_file_extension);
         };
 
+        /// Without a final mark (non-adaptive granularity) the marks tell only where the last granule starts.
+        /// For the streams whose rows take a known number of bytes at least, check that the last granule has them.
+        std::unordered_map<String, size_t> min_bytes_per_row_of_streams;
+        if (!index_granularity->hasFinalMark())
+        {
+            ISerialization::EnumerateStreamsSettings settings;
+            settings.enumerate_dynamic_streams = false;
+            for (const auto & name_type : getColumns())
+            {
+                auto serialization = getSerialization(name_type.name);
+                auto data = ISerialization::SubstreamData(serialization).withType(name_type.type);
+                serialization->enumerateStreams(settings, [&](const ISerialization::SubstreamPath & substream_path)
+                {
+                    size_t min_bytes_per_row = getMinBytesPerRowOfStream(name_type.type, substream_path);
+                    if (!min_bytes_per_row)
+                        return;
+
+                    auto stream_name = getStreamNameForColumn(name_type, substream_path, marks_file_extension, getDataPartStorage(), storage.getSettings());
+                    if (stream_name)
+                        min_bytes_per_row_of_streams.emplace(*stream_name, min_bytes_per_row);
+                }, data);
+            }
+        }
+
+        auto get_min_bytes_per_row = [&](const String & stream_name) -> size_t
+        {
+            auto it = min_bytes_per_row_of_streams.find(stream_name);
+            return it == min_bytes_per_row_of_streams.end() ? 0 : it->second;
+        };
+
         if (!cols_substreams.empty())
         {
             /// Use columns_substreams.txt as the source of truth.
@@ -571,7 +629,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                             ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                             "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
 
-                    checkDataFileCoversMarks(*stream_name + DATA_FILE_EXTENSION, file_path, /*num_columns_in_mark=*/ 1);
+                    checkDataFileCoversMarks(*stream_name + DATA_FILE_EXTENSION, file_path, /*num_columns_in_mark=*/ 1, get_min_bytes_per_row(*stream_name));
                 }
             }
         }
@@ -606,7 +664,7 @@ void MergeTreeDataPartWide::doCheckConsistency(bool require_part_metadata) const
                         ErrorCodes::BAD_SIZE_OF_FILE_IN_DATA_PART,
                         "Part {} is broken: marks have different sizes.", getDataPartStorage().getFullPath());
 
-                checkDataFileCoversMarks(stream_name + DATA_FILE_EXTENSION, file_path, /*num_columns_in_mark=*/ 1);
+                checkDataFileCoversMarks(stream_name + DATA_FILE_EXTENSION, file_path, /*num_columns_in_mark=*/ 1, get_min_bytes_per_row(stream_name));
             };
 
             /// Dynamic streams are not enumerated here, so a sample column with the dynamic structure is not

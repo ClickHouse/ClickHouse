@@ -8,6 +8,7 @@
 #include <Columns/ColumnLowCardinality.h>
 #include <Columns/ColumnNullable.h>
 #include <Compression/CompressedReadBuffer.h>
+#include <Compression/CompressedReadBufferFromFile.h>
 #include <Compression/CompressionCodecMultiple.h>
 #include <Compression/CompressionFactory.h>
 #include <Compression/getCompressionCodecForFile.h>
@@ -3428,7 +3429,8 @@ void IMergeTreeDataPart::doCheckConsistency(bool /* require_part_metadata */) co
     throw Exception(ErrorCodes::NOT_IMPLEMENTED, "Method 'checkConsistency' is not implemented for part with type {}", getType().toString());
 }
 
-void IMergeTreeDataPart::checkDataFileCoversMarks(const String & data_file_name, const String & marks_file_name, size_t num_columns_in_mark) const
+void IMergeTreeDataPart::checkDataFileCoversMarks(
+    const String & data_file_name, const String & marks_file_name, size_t num_columns_in_mark, size_t min_bytes_per_row) const
 {
     size_t marks_count = index_granularity->getMarksCount();
     if (marks_count == 0)
@@ -3467,6 +3469,37 @@ void IMergeTreeDataPart::checkDataFileCoversMarks(const String & data_file_name,
             data_file_size,
             marks_file_name,
             farthest_mark.toString());
+
+    /// Without a final mark the farthest mark is only the start of the last granule, so a data file cut after
+    /// it at a compressed block boundary passes the check above. Check that the last granule is complete.
+    if (min_bytes_per_row == 0 || index_granularity->hasFinalMark())
+        return;
+
+    chassert(num_columns_in_mark == 1);
+    size_t last_granule_rows = index_granularity->getMarkRows(marks_count - 1);
+    size_t expected_bytes = last_granule_rows * min_bytes_per_row;
+    if (expected_bytes == 0)
+        return;
+
+    MarkInCompressedFile last_mark = marks->getMark(marks_count - 1, 0);
+    size_t available_bytes = 0;
+    if (last_mark.offset_in_compressed_file < data_file_size)
+    {
+        CompressedReadBufferFromFile data_in(getDataPartStorage().readFile(data_file_name, getReadSettings(), data_file_size));
+        data_in.seek(last_mark.offset_in_compressed_file, last_mark.offset_in_decompressed_block);
+        available_bytes = data_in.tryIgnore(expected_bytes);
+    }
+
+    if (available_bytes < expected_bytes)
+        throw Exception(
+            ErrorCodes::CORRUPTED_DATA,
+            "Part {} is broken: the last granule of {} rows in data file {} needs at least {} bytes from {}, but it has {}",
+            getDataPartStorage().getFullPath(),
+            last_granule_rows,
+            data_file_name,
+            expected_bytes,
+            last_mark.toString(),
+            available_bytes);
 }
 
 void IMergeTreeDataPart::checkConsistencyWithProjections(bool require_part_metadata) const

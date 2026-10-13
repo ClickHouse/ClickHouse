@@ -20,6 +20,8 @@ WIDE="min_bytes_for_wide_part = 0, min_rows_for_wide_part = 0"
 SMALL_MARKS="index_granularity = 100, marks_compress_block_size = 256"
 # The data is in small compressed blocks, so that each data file consists of several of them.
 SMALL_BLOCKS="min_compress_block_size = 1024, max_compress_block_size = 1024"
+# Non-adaptive granularity has no final mark, so the marks tell only where the last granule starts.
+NON_ADAPTIVE="index_granularity_bytes = 0"
 
 # Every case is a table of its own, so that all of them are created by one run of `clickhouse-local`
 # and loaded by another one.
@@ -50,12 +52,15 @@ TABLES="
     wide_torn_data_no_checksums
     compact_torn_data_no_checksums
     wide_torn_data_empty_checksums
+    wide_non_adaptive_no_checksums
+    wide_non_adaptive_torn_tail_no_checksums
 "
 
 table_settings()
 {
     case "$1" in
         wide_no_checksums|wide_empty_checksums) echo "${WIDE}" ;;
+        wide_non_adaptive_*) echo "${WIDE}, ${SMALL_MARKS}, ${SMALL_BLOCKS}, ${NON_ADAPTIVE}" ;;
         wide_several_blocks_*|wide_torn_data_*) echo "${WIDE}, ${SMALL_MARKS}, ${SMALL_BLOCKS}" ;;
         compact_several_blocks_*|compact_torn_data_*) echo "${COMPACT}, ${SMALL_MARKS}, ${SMALL_BLOCKS}" ;;
         wide_*) echo "${WIDE}, ${SMALL_MARKS}" ;;
@@ -135,6 +140,27 @@ truncate_to_first_block()
     done
 }
 
+# A compressed file cut by a crash right before its last compressed block.
+truncate_last_block()
+{
+    local file="$1"
+    local file_size
+    file_size=$(wc -c < "${file}" | tr -d " ")
+    local offset=0
+    while true
+    do
+        local compressed_size
+        compressed_size=$(od -An -t u4 -j $((offset + 17)) -N 4 "${file}" | tr -d ' ')
+        local next_offset=$((offset + 16 + compressed_size))
+        if [ "${next_offset}" -ge "${file_size}" ]
+        then
+            truncate -s "${offset}" "${file}"
+            return
+        fi
+        offset=${next_offset}
+    done
+}
+
 # The marks of the part itself are gone as well as the projection's, which is what a single power loss
 # can leave behind.
 truncate -s 0 "$(part_path both)/data.cmrk4" "$(part_path both)/p.proj/data.cmrk4"
@@ -185,6 +211,9 @@ rm "$(part_path wide_missing_dynamic_data_no_substreams_empty_checksums)/$(colum
 truncate_to_first_block "$(part_path wide_torn_data_no_checksums)/$(column_file wide_torn_data_no_checksums v).bin"
 truncate_to_first_block "$(part_path compact_torn_data_no_checksums)/data.bin"
 truncate_to_first_block "$(part_path wide_torn_data_empty_checksums)/$(column_file wide_torn_data_empty_checksums v).bin"
+# Without a final mark, the marks of a data file cut inside its last granule do not point past its end:
+# the last granule starts in an earlier compressed block.
+truncate_last_block "$(part_path wide_non_adaptive_torn_tail_no_checksums)/$(column_file wide_non_adaptive_torn_tail_no_checksums v).bin"
 for table in ${TABLES}
 do
     if [[ ${table} == *_no_substreams_* ]]

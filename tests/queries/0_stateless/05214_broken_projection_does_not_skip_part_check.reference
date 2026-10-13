@@ -17,6 +17,8 @@ wide_missing_dynamic_no_substreams_no_checksums	Wide	5000
 wide_missing_second_column_empty_checksums	Wide	5000
 wide_missing_second_column_no_checksums	Wide	5000
 wide_no_checksums	Wide	5000
+wide_non_adaptive_no_checksums	Wide	5000
+wide_non_adaptive_torn_tail_no_checksums	Wide	5000
 wide_several_blocks_no_checksums	Wide	5000
 wide_torn_data_empty_checksums	Wide	5000
 wide_torn_data_no_checksums	Wide	5000
@@ -102,3 +104,9 @@ compact_torn_data_no_checksums broken projections	0
 wide_torn_data_empty_checksums rows	0
 wide_torn_data_empty_checksums detached parts	1	broken-on-start
 wide_torn_data_empty_checksums broken projections	0
+wide_non_adaptive_no_checksums rows	5000
+wide_non_adaptive_no_checksums detached parts	0	\N
+wide_non_adaptive_no_checksums broken projections	0
+wide_non_adaptive_torn_tail_no_checksums rows	0
+wide_non_adaptive_torn_tail_no_checksums detached parts	1	broken-on-start
+wide_non_adaptive_torn_tail_no_checksums broken projections	0
