@@ -1028,8 +1028,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         bin_bounds = pruning->boundsForBucket(bucket);
         addMergeCountedTablesToBounds<Method>(data, bucket, *pruning, bin_bounds, arena);
     }
-    std::array<bool, adaptive_count_bins_per_bucket> alive{};
-    const size_t bins_per_unit = adaptive_count_bins_per_bucket / units;
+    AdaptiveTopKPruning::AliveBins alive{};
     size_t pruned_records = 0;
 
     /// A top-K by a count among other aggregates keeps only each unit's best groups by the count in the final
@@ -1065,20 +1064,14 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         if (!unit_records && cells.empty())
             continue;
 
-        /// The unit's bins that can still hold a group of the top, at the threshold of the moment: a unit with none is
-        /// skipped, its source cells dropped and its records freed unread; a unit with some drains only theirs.
+        /// The unit's bins that can still hold a group of the top, at the threshold of the moment (see
+        /// `AdaptiveTopKPruning::selectUnit`): a unit with none is skipped, its source cells dropped and its records freed
+        /// unread; a unit with some drains only theirs.
         const bool * alive_bins = nullptr;
-        size_t alive_count = bins_per_unit;
         if (pruning)
         {
-            const UInt64 threshold = pruning->currentThreshold();
-            alive_count = 0;
-            for (size_t bin = unit * bins_per_unit; bin < (unit + 1) * bins_per_unit; ++bin)
-            {
-                alive[bin] = bin_bounds[bin] >= threshold;
-                alive_count += alive[bin];
-            }
-            if (!alive_count)
+            const auto selection = pruning->selectUnit(bin_bounds, unit, units, alive);
+            if (selection == AdaptiveTopKPruning::UnitSelection::Skip)
             {
                 if constexpr (MapAggregationMethod<Method>)
                     for (auto & cell : cells)
@@ -1089,7 +1082,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
                 ProfileEvents::increment(ProfileEvents::AdaptiveAggregationPrunedUnits);
                 continue;
             }
-            if (alive_count < bins_per_unit)
+            if (selection == AdaptiveTopKPruning::UnitSelection::Filter)
                 alive_bins = alive.data();
         }
 

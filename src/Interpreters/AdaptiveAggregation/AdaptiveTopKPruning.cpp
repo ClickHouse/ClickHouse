@@ -50,6 +50,22 @@ AdaptiveTopKPruning::BucketBounds AdaptiveTopKPruning::boundsForBucket(size_t bu
     return bounds;
 }
 
+AdaptiveTopKPruning::UnitSelection
+AdaptiveTopKPruning::selectUnit(const BucketBounds & bounds, size_t unit, size_t units, AliveBins & alive) const
+{
+    const UInt64 current = currentThreshold();
+    const size_t bins_per_unit = adaptive_count_bins_per_bucket / units;
+    size_t alive_count = 0;
+    for (size_t bin = unit * bins_per_unit; bin < (unit + 1) * bins_per_unit; ++bin)
+    {
+        alive[bin] = bounds[bin] >= current;
+        alive_count += alive[bin];
+    }
+    if (!alive_count)
+        return UnitSelection::Skip;
+    return alive_count == bins_per_unit ? UnitSelection::KeepAll : UnitSelection::Filter;
+}
+
 void AdaptiveTopKPruning::offerCounts(std::span<const UInt64> counts)
 {
     std::lock_guard lock(best_mutex);

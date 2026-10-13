@@ -88,6 +88,20 @@ public:
     /// The bounds of the bins of a bucket.
     using BucketBounds = std::array<UInt64, adaptive_count_bins_per_bucket>;
 
+    /// The bins of a bucket that can still hold a group of the top (see `selectUnit`).
+    using AliveBins = std::array<bool, adaptive_count_bins_per_bucket>;
+
+    /// What the merge does with a merge unit at the threshold of the moment (see `selectUnit`).
+    enum class UnitSelection : UInt8
+    {
+        /// No bin of the unit can hold a group of the top: the merge skips the unit.
+        Skip,
+        /// Every bin of the unit can: the merge drains all of it.
+        KeepAll,
+        /// Some bins can: the merge drains only the records and source cells of the bins marked alive.
+        Filter,
+    };
+
     explicit AdaptiveTopKPruning(size_t limit_) : limit(limit_) { }
 
     /// Takes a producer's bins at its finish and finds the largest bin of each bucket. Called before the producer takes
@@ -129,6 +143,11 @@ public:
 
     /// The smallest of the `limit` best exact counts converted so far, or zero while there are fewer.
     ALWAYS_INLINE UInt64 currentThreshold() const { return threshold.load(std::memory_order_relaxed); }
+
+    /// Selects what the merge does with unit `unit` of the `units` that split the bucket, each a run of its partitions
+    /// and so of its bins, at the threshold of the moment: a bin can hold a group of the top while its bound in
+    /// `bounds` reaches the threshold. Marks the unit's bins that can in `alive`, which the merge reads for `Filter`.
+    UnitSelection selectUnit(const BucketBounds & bounds, size_t unit, size_t units, AliveBins & alive) const;
 
     /// Offers the counts of a converted unit's groups to the best counts, and publishes the smallest of them as the
     /// threshold once there are `limit`.
