@@ -1353,23 +1353,22 @@ static FormatSettings::JSON getJSONSettingsForReadingField(const FormatSettings:
 
 /// A value that is valid only with the `ISODate` wrapper must reach a `DateTime64` or be rejected:
 /// a `String` variant must not take an object or an array containing the wrapper as a raw string.
-const FormatSettings & SerializationVariant::getSettingsForDeserializingJSONField(
-    const String & field, const FormatSettings & settings, std::optional<FormatSettings> & adjusted_settings) const
+bool SerializationVariant::tryDeserializeTextJSONField(IColumn & column, const String & field, const FormatSettings & settings) const
 {
-    if (!has_datetime64_in_variants || field.find("ISODate(") == String::npos)
-        return settings;
+    if (!has_datetime64_in_variants || !field.contains("ISODate("))
+        return tryDeserializeTextJSONImpl(column, field, settings);
 
     /// The wrapper text may also be inside a JSON string, check whether the value is valid JSON without it.
     FormatSettings::JSON strict_json_settings = settings.json;
     strict_json_settings.allow_mongodb_isodate_wrapper = false;
     ReadBufferFromString buf(field);
     if (trySkipJSONField(buf, "", strict_json_settings) && buf.eof())
-        return settings;
+        return tryDeserializeTextJSONImpl(column, field, settings);
 
-    adjusted_settings.emplace(settings);
-    adjusted_settings->json.read_objects_as_strings = false;
-    adjusted_settings->json.read_arrays_as_strings = false;
-    return *adjusted_settings;
+    FormatSettings adjusted_settings = settings;
+    adjusted_settings.json.read_objects_as_strings = false;
+    adjusted_settings.json.read_arrays_as_strings = false;
+    return tryDeserializeTextJSONImpl(column, field, adjusted_settings);
 }
 
 bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
@@ -1377,16 +1376,14 @@ bool SerializationVariant::tryDeserializeTextJSON(IColumn & column, ReadBuffer &
     String field;
     if (!tryReadJSONField(field, istr, getJSONSettingsForReadingField(settings.json, has_datetime64_in_variants)))
         return false;
-    std::optional<FormatSettings> adjusted_settings;
-    return tryDeserializeTextJSONImpl(column, field, getSettingsForDeserializingJSONField(field, settings, adjusted_settings));
+    return tryDeserializeTextJSONField(column, field, settings);
 }
 
 void SerializationVariant::deserializeTextJSON(IColumn & column, ReadBuffer & istr, const FormatSettings & settings) const
 {
     String field;
     readJSONField(field, istr, getJSONSettingsForReadingField(settings.json, has_datetime64_in_variants));
-    std::optional<FormatSettings> adjusted_settings;
-    if (!tryDeserializeTextJSONImpl(column, field, getSettingsForDeserializingJSONField(field, settings, adjusted_settings)))
+    if (!tryDeserializeTextJSONField(column, field, settings))
         throw Exception(ErrorCodes::INCORRECT_DATA, "Cannot parse JSON value of type {} here: {}", variant_name, field);
 }
 

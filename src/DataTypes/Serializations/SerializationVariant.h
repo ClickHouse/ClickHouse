@@ -245,10 +245,9 @@ private:
     bool tryDeserializeWholeTextImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeTextCSVImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
     bool tryDeserializeTextJSONImpl(IColumn & column, const String & field, const FormatSettings & settings) const;
-    /// Settings for deserializing a JSON value read with `readJSONField` into the variants.
-    /// Either `settings` or `adjusted_settings` after it is filled.
-    const FormatSettings & getSettingsForDeserializingJSONField(
-        const String & field, const FormatSettings & settings, std::optional<FormatSettings> & adjusted_settings) const;
+    /// Deserializes a JSON value read with `readJSONField` into the variants,
+    /// adjusting `settings` for a value that is valid only with the `ISODate` wrapper.
+    bool tryDeserializeTextJSONField(IColumn & column, const String & field, const FormatSettings & settings) const;
 
     bool tryDeserializeImpl(
         IColumn & column,
