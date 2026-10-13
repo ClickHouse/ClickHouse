@@ -235,6 +235,16 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     params.top_k.reset();
 }
 
+bool AggregatingStep::supportsDataflowStatisticsCollection() const
+{
+    /// `recordAggregationStateSizes` refuses to measure the single state of an aggregation without keys that owns
+    /// memory (`uniqExact`), so such a query never gets statistics. Refuse it before the plan with parallel replicas is built.
+    if (params.keys.empty()
+        && std::ranges::any_of(params.aggregates, [](const auto & aggregate) { return !aggregate.function->hasTrivialDestructor(); }))
+        return false;
+    return grouping_sets_params.empty();
+}
+
 void AggregatingStep::applyTopKOptimization(Aggregator::Params::TopKParams top_k)
 {
     params.top_k = std::move(top_k);
