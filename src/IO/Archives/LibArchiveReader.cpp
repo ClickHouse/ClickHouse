@@ -18,6 +18,18 @@ extern const int CANNOT_READ_ALL_DATA;
 extern const int UNSUPPORTED_METHOD;
 }
 
+namespace
+{
+
+/// `archive_error_string` returns nullptr if libarchive failed without setting a message.
+const char * getArchiveErrorMessage(struct archive * archive)
+{
+    const char * message = archive_error_string(archive);
+    return message ? message : "unknown error";
+}
+
+}
+
 /// C++ exceptions must not propagate through the libarchive C library (undefined behavior).
 /// The callback catches exceptions and stores them for later re-throwing in C++ code.
 class LibArchiveReader::StreamInfo
@@ -222,7 +234,7 @@ public:
         return result;
     }
 
-    const char * getArchiveError() { return archive_error_string(current_archive); }
+    const char * getArchiveError() { return getArchiveErrorMessage(current_archive); }
 
     /// Re-throws a stored exception from the stream's C callback, if any.
     void rethrowStreamException()
@@ -241,7 +253,7 @@ private:
             throw Exception(
                 ErrorCodes::CANNOT_UNPACK_ARCHIVE,
                 "Failed to read archive while fetching all files: {}",
-                archive_error_string(current_archive));
+                getArchiveErrorMessage(current_archive));
     }
 
     void resetFileInfo()
@@ -277,7 +289,7 @@ private:
                     ErrorCodes::CANNOT_UNPACK_ARCHIVE,
                     "Couldn't open archive {}: {}",
                     quoteString(path_to_archive),
-                    archive_error_string(archive));
+                    getArchiveErrorMessage(archive));
             }
         }
         catch (...)
@@ -312,7 +324,7 @@ private:
                     ErrorCodes::CANNOT_UNPACK_ARCHIVE,
                     "Couldn't open archive {}: {}",
                     quoteString(path_to_archive),
-                    archive_error_string(archive));
+                    getArchiveErrorMessage(archive));
         }
         catch (...)
         {
