@@ -2714,6 +2714,10 @@ void Aggregator::writeToTemporaryFile(AggregatedDataVariants & data_variants, si
 
 size_t Aggregator::spill(AggregatedDataVariants & data_variants) const
 {
+    /// An emptied two-level table retains its buffers, but spilling it again cannot reclaim them.
+    if (!data_variants.hasData())
+        return 0;
+
     std::optional<MemoryTrackerSwitcher> memory_tracker_switcher;
     switchToOwnTracker(data_variants, memory_tracker_switcher);
 

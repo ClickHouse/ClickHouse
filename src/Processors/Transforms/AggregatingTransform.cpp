@@ -1587,7 +1587,7 @@ void AggregatingTransform::applySharedKeptKeysCutoff(bool may_freeze)
 ProcessorMemoryStats AggregatingTransform::getMemoryStats() const
 {
     /// Reclaimable only while the table is still being filled and can be written out as two-level.
-    if (is_consume_finished || variants.empty() || !params->params.tmp_data_scope)
+    if (is_consume_finished || !variants.hasData() || !params->params.tmp_data_scope)
         return {};
     if (!variants.isTwoLevel() && !variants.isConvertibleToTwoLevel())
         return {};
