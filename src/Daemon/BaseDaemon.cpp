@@ -248,8 +248,13 @@ void BaseDaemon::initialize(Application & self)
         /// Resolve relative paths from the command line against the directory the server was started from:
         /// `ServerApplication::run` has already changed the current directory to `/` in daemon mode.
         /// The command line arguments are stored in a read-only layer, so put the resolved paths into a layer above it.
+        ///
+        /// Every key here names a file the daemon opens after the `chdir` below. `config-file`, `pid`,
+        /// `logger.log` and `logger.errorlog` have their own options; `logger.stderr` and `logger.stdout` have
+        /// no option of their own and arrive through `argsToConfig` as `-- --logger.stderr=...`, but they are
+        /// read further down in this function just the same, after the `chdir`, so they need resolving too.
         Poco::AutoPtr<Poco::Util::MapConfiguration> absolute_paths = new Poco::Util::MapConfiguration;
-        for (const auto * key : {"config-file", "pid", "logger.log", "logger.errorlog"})
+        for (const auto * key : {"config-file", "pid", "logger.log", "logger.errorlog", "logger.stderr", "logger.stdout"})
         {
             if (config().has(key))
             {

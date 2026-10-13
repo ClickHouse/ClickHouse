@@ -8,7 +8,9 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # `clickhouse server --daemon` changes the current directory before it reads the config and opens the
 # pid and log files, so relative `--config-file`, `--pid-file`, `--log-file` and `--errorlog-file`
-# must be resolved against the directory the server was started from.
+# must be resolved against the directory the server was started from. `logger.stderr` and
+# `logger.stdout` have no option of their own and are passed through `argsToConfig` after `--`, but the
+# daemon opens them after the same `chdir`, so they are checked here too.
 # https://github.com/ClickHouse/ClickHouse/issues/43170
 
 work="${CLICKHOUSE_TMP}/${CLICKHOUSE_DATABASE}_05261"
@@ -47,6 +49,7 @@ $CLICKHOUSE_BINARY server --daemon \
     -P server.pid \
     -L server.log \
     -E server.err.log \
+    -- --logger.stderr=stderr.log --logger.stdout=stdout.log \
     >/dev/null 2>&1
 
 for _ in {1..600}; do
@@ -61,6 +64,8 @@ fi
 
 [ -f server.log ] && echo "log file created"
 [ -f server.err.log ] && echo "error log file created"
+[ -f stderr.log ] && echo "stderr file created"
+[ -f stdout.log ] && echo "stdout file created"
 
 server_pid=$(cat server.pid 2>/dev/null)
 if [ -n "$server_pid" ] && kill -0 "$server_pid" 2>/dev/null; then
