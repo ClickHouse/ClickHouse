@@ -6,6 +6,8 @@
 #include <Processors/QueryPlan/JoinStepLogical.h>
 #include <Common/typeid_cast.h>
 
+#include <ranges>
+
 namespace DB::ErrorCodes
 {
     extern const int LOGICAL_ERROR;
@@ -176,8 +178,6 @@ struct Built
     ActionsDAG::NodeRawConstPtrs pre_join_nodes;
 };
 
-Built buildImpl(QueryPlan::Node & node);
-
 }
 
 bool canEnterStep(const QueryPlan::Node & node)
@@ -215,13 +215,11 @@ bool canEnterStep(const QueryPlan::Node & node)
 namespace
 {
 
-/// Returns nullopt when the step cannot be represented, which is not a failure: the caller stops the
-/// walk there and the step becomes a source.
-std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
+/// Builds a step for which `canEnterStep` holds on top of what its children built, in their order. Returns nullopt
+/// when the step cannot be represented, which is not a failure: the caller stops the walk there and the step becomes
+/// a source.
+std::optional<Built> tryBuildFromStep(QueryPlan::Node & node, std::vector<Built> & children)
 {
-    if (!canEnterStep(node))
-        return {};
-
     auto * step = node.step.get();
 
     const auto mergeAndTrack = [&node](Built & built, const ActionsDAG & step_dag, ActionsDAG::NodeMapping & clone_mapping)
@@ -250,7 +248,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     if (auto * expression_step = typeid_cast<ExpressionStep *>(step))
     {
         const auto & step_dag = expression_step->getExpression();
-        auto built = buildImpl(*node.children.front());
+        auto built = std::move(children.front());
 
         ActionsDAG::NodeMapping clone_mapping;
         if (!mergeAndTrack(built, step_dag, clone_mapping))
@@ -265,7 +263,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
 
     if (auto * runtime_filter_step = typeid_cast<BuildRuntimeFilterStep *>(step))
     {
-        auto built = buildImpl(*node.children.front());
+        auto built = std::move(children.front());
 
         /// The step outputs what it reads, so the outputs stand as they are.
         const auto & outputs = built.dag.getOutputs();
@@ -284,7 +282,7 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     if (auto * filter_step = typeid_cast<FilterStep *>(step))
     {
         const auto & step_dag = filter_step->getExpression();
-        auto built = buildImpl(*node.children.front());
+        auto built = std::move(children.front());
 
         ActionsDAG::NodeMapping clone_mapping;
         if (!mergeAndTrack(built, step_dag, clone_mapping))
@@ -312,8 +310,8 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     auto * join_step = typeid_cast<JoinStepLogical *>(step);
     const auto & step_dag = join_step->getActionsDAG();
 
-    auto built = buildImpl(*node.children.front());
-    auto right = buildImpl(*node.children.back());
+    auto built = std::move(children.front());
+    auto & right = children.back();
 
     /// The join reads the left header first, so uniting in that order lines the columns up with its
     /// inputs, including the columns both sides happen to name alike.
@@ -479,14 +477,8 @@ std::optional<Built> tryBuildFromStep(QueryPlan::Node & node)
     return built;
 }
 
-Built buildImpl(QueryPlan::Node & node)
+Built buildFromSource(QueryPlan::Node & node)
 {
-    /// A step that cannot be represented - because of what it computes, or because the DAG built for it
-    /// does not reproduce its header, which would mean optimizing on a wrong model of the plan - is
-    /// where the walk stops, with that step standing in as a source.
-    if (auto built = tryBuildFromStep(node))
-        return std::move(*built);
-
     Built built;
     built.dag = startDAGFromSource(node);
     built.ungated_nodes = built.dag.sources.front().inputs;
@@ -497,7 +489,53 @@ Built buildImpl(QueryPlan::Node & node)
 
 MergedPlanDAG buildMergedPlanDAG(QueryPlan::Node & root)
 {
-    auto built = buildImpl(root);
+    /// Bottom-up, with the subtrees built so far on a stack: a step is built once its children are, from their results.
+    /// A step that cannot be represented - because of what it computes, or because the DAG built for it does not
+    /// reproduce its header, which would mean optimizing on a wrong model of the plan - is where the walk stops, with
+    /// that step standing in as a source, and what its children built is thrown away.
+    struct Frame
+    {
+        QueryPlan::Node * node;
+        bool children_built = false;
+    };
+
+    std::vector<Frame> stack{{&root}};
+    std::vector<Built> results;
+    while (!stack.empty())
+    {
+        auto & frame = stack.back();
+        auto * node = frame.node;
+
+        if (!frame.children_built)
+        {
+            if (!canEnterStep(*node))
+            {
+                results.push_back(buildFromSource(*node));
+                stack.pop_back();
+                continue;
+            }
+
+            /// The children are built left to right, so their results stand on the stack in their order.
+            frame.children_built = true;
+            for (auto * child : node->children | std::views::reverse)
+                stack.push_back({child});
+            continue;
+        }
+
+        stack.pop_back();
+
+        std::vector<Built> children;
+        const auto first_child = results.end() - node->children.size();
+        children.insert(children.end(), std::make_move_iterator(first_child), std::make_move_iterator(results.end()));
+        results.erase(first_child, results.end());
+
+        if (auto built = tryBuildFromStep(*node, children))
+            results.push_back(std::move(*built));
+        else
+            results.push_back(buildFromSource(*node));
+    }
+
+    auto built = std::move(results.front());
 
     /// Filled once, from the outermost join: everything created before it is what some join sits above,
     /// and so is what a join's own DAG computes before that join.

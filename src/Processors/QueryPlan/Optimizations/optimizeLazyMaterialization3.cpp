@@ -21,6 +21,7 @@
 #include <Common/typeid_cast.h>
 
 #include <map>
+#include <ranges>
 #include <set>
 #include <unordered_set>
 
@@ -385,7 +386,8 @@ public:
     {
         /// The values carried up are added to the outputs of the steps that would drop them, and the headers
         /// above are brought in line.
-        addCarriedOutputs(chain_top);
+        for (auto * node : top_down_nodes | std::views::reverse)
+            addCarriedOutputs(node);
 
         /// What the chain hands over: the sort keys and the values crossing the `LIMIT`, and nothing else.
         std::vector<size_t> unneeded;
@@ -395,7 +397,7 @@ public:
                 if (!sort_key_nodes.contains(values[position]) && std::ranges::find(carried_values, values[position]) == carried_values.end())
                     unneeded.push_back(position);
         }
-        auto assembled = assemble(chain_top, unneeded, nodes);
+        auto assembled = assemble(unneeded, nodes);
         auto & main_plan = assembled.plan;
 
         /// Hand over exactly the sort keys, the crossing values and the row indexes; the sort then carries no
@@ -584,7 +586,8 @@ private:
     };
 
     /// Records the parent of every node between `chain_top` and the sources: the ones the walk building the merged DAG
-    /// entered.
+    /// entered. Records the nodes top-down as well, the sources included, with the right subtree of a node before the left
+    /// one, so that in reverse they come bottom-up, left to right.
     void collectParents()
     {
         std::vector<QueryPlan::Node *> stack{chain_top};
@@ -592,6 +595,7 @@ private:
         {
             auto * node = stack.back();
             stack.pop_back();
+            top_down_nodes.push_back(node);
 
             if (source_numbers.contains(node))
                 continue;
@@ -881,15 +885,12 @@ private:
         return values;
     }
 
-    /// Adds the outputs `planCarrying` found missing, bottom-up, and refreshes each header after its
-    /// children's. Records what each column of each header holds.
+    /// Adds the outputs `planCarrying` found missing to the step of a node, and refreshes its header after its children's,
+    /// which are done before it. Records what each column of the header holds.
     void addCarriedOutputs(QueryPlan::Node * node)
     {
         if (!source_numbers.contains(node))
         {
-            for (auto * child : node->children)
-                addCarriedOutputs(child);
-
             auto * step = node->step.get();
             if (const auto it = added_outputs.find(node); it != added_outputs.end())
             {
@@ -978,18 +979,48 @@ private:
     /// Builds the main branch: prunes from each step what the step above does not need of it, top-down, and
     /// assembles it bottom-up - splits the lazily read columns off the reads, adds the row indexes, which
     /// the joins pass through, and prunes a step once its children are built, with their real headers.
-    Assembled assemble(QueryPlan::Node * node, const std::vector<size_t> & unneeded, QueryPlan::Nodes & nodes)
+    /// `unneeded` is what is not needed of `chain_top`.
+    Assembled assemble(const std::vector<size_t> & unneeded, QueryPlan::Nodes & nodes)
     {
-        if (const auto it = source_numbers.find(node); it != source_numbers.end())
-            return assembleSource(node, it->second, unneeded, nodes);
+        std::unordered_map<const QueryPlan::Node *, std::vector<size_t>> unneeded_of{{chain_top, unneeded}};
+        for (auto * node : top_down_nodes)
+        {
+            if (source_numbers.contains(node))
+                continue;
 
+            auto child_unneeded = node->step->getUnneededColumns(unneeded_of.at(node));
+            for (size_t child = 0; child < node->children.size(); ++child)
+                unneeded_of[node->children[child]] = std::move(child_unneeded.at(child));
+        }
+
+        std::unordered_map<const QueryPlan::Node *, Assembled> assembled;
+        for (auto * node : top_down_nodes | std::views::reverse)
+        {
+            const auto & node_unneeded = unneeded_of.at(node);
+            if (const auto it = source_numbers.find(node); it != source_numbers.end())
+            {
+                assembled.emplace(node, assembleSource(node, it->second, node_unneeded, nodes));
+                continue;
+            }
+
+            std::vector<Assembled> children;
+            for (auto * child : node->children)
+            {
+                auto child_it = assembled.find(child);
+                children.push_back(std::move(child_it->second));
+                assembled.erase(child_it);
+            }
+
+            assembled.emplace(node, assembleStep(node, node_unneeded, children));
+        }
+
+        return std::move(assembled.at(chain_top));
+    }
+
+    /// Prunes and assembles the step of a node on top of its assembled children.
+    Assembled assembleStep(QueryPlan::Node * node, const std::vector<size_t> & unneeded, std::vector<Assembled> & children)
+    {
         auto * step = node->step.get();
-
-        const auto child_unneeded = step->getUnneededColumns(unneeded);
-
-        std::vector<Assembled> children;
-        for (size_t child = 0; child < node->children.size(); ++child)
-            children.push_back(assemble(node->children[child], child_unneeded.at(child), nodes));
 
         Assembled result;
         std::vector<IQueryPlanStep::PrunedInput> pruned;
@@ -1164,6 +1195,8 @@ private:
     QueryPlan::Node * chain_top = nullptr;
     std::unordered_map<const QueryPlan::Node *, size_t> source_numbers;
     std::unordered_map<const QueryPlan::Node *, const QueryPlan::Node *> parents;
+    /// The nodes from `chain_top` to the sources, top-down, see `collectParents`.
+    std::vector<QueryPlan::Node *> top_down_nodes;
     NodeSet sort_key_nodes;
     std::map<size_t, LazySource> lazy_by_source;
     /// The steps computing the row index right above a read, to be merged into the step above when that can take it.
