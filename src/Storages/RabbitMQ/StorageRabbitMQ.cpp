@@ -152,6 +152,21 @@ StorageRabbitMQ::StorageRabbitMQ(
         std::find_if(queue_settings_list.begin(), queue_settings_list.end(),
                      [](const String & name) { return name.starts_with(deadletter_exchange_setting); });
 
+    /// The first routing key is used unconditionally for binding and publishing.
+    if (routing_keys.empty())
+        throw Exception(ErrorCodes::BAD_ARGUMENTS, "`rabbitmq_routing_key_list` must not be empty");
+
+    /// For the `headers` exchange every routing key is a `key=value` pair.
+    if (exchange_type == AMQP::ExchangeType::headers)
+    {
+        for (const auto & header : routing_keys)
+        {
+            if (header.find('=') == String::npos)
+                throw Exception(ErrorCodes::BAD_ARGUMENTS,
+                    "Invalid routing key '{}' for the `headers` exchange type: expected `key=value`", header);
+        }
+    }
+
     const auto & config = getContext()->getConfigRef();
 
     std::pair<String, UInt16> parsed_address;
