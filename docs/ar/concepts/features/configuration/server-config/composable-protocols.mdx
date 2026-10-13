@@ -8,7 +8,7 @@ doc_type: 'reference'
 ---
 
 <div id="overview">
-  ## نظرة عامة {#overview}
+  ## نظرة عامة
 </div>
 
 تتيح البروتوكولات القابلة للتركيب إعدادًا أكثر مرونة للوصول عبر TCP إلى
@@ -16,7 +16,7 @@ doc_type: 'reference'
 محلّه.
 
 <div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
-  ## إعداد البروتوكولات القابلة للتركيب {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
+  ## إعداد البروتوكولات القابلة للتركيب
 </div>
 
 يمكن إعداد البروتوكولات القابلة للتركيب في ملف تهيئة بتنسيق XML. ويُحدَّد قسم البروتوكولات
@@ -29,7 +29,7 @@ doc_type: 'reference'
 ```
 
 <div id="basic-modules-define-protocol-layers">
-  ### إعداد طبقات البروتوكول {#basic-modules-define-protocol-layers}
+  ### إعداد طبقات البروتوكول
 </div>
 
 يمكنك تحديد طبقات البروتوكول باستخدام وحدات أساسية. على سبيل المثال، لتحديد
@@ -65,7 +65,7 @@ doc_type: 'reference'
 </Note>
 
 <div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
-  ### تكوين نقاط النهاية {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
+  ### تكوين نقاط النهاية
 </div>
 
 يُشار إلى نقاط النهاية (منافذ الاستماع) بالوسمين `<port>` و`<host>` الاختياريين.
@@ -90,7 +90,7 @@ doc_type: 'reference'
 إذا أُهمِل الوسم `<host>`، فسيُستخدم `<listen_host>` من إعدادات الجذر.
 
 <div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
-  ### تهيئة تسلسلات الطبقات {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
+  ### تهيئة تسلسلات الطبقات
 </div>
 
 تُعرَّف تسلسلات الطبقات باستخدام الوسم `<impl>`، مع الإشارة إلى
@@ -117,7 +117,7 @@ doc_type: 'reference'
 ```
 
 <div id="endpoint-can-be-attached-to-any-layer">
-  ### إرفاق نقاط النهاية بالطبقات {#endpoint-can-be-attached-to-any-layer}
+  ### إرفاق نقاط النهاية بالطبقات
 </div>
 
 يمكن إرفاق نقاط النهاية بأي طبقة. على سبيل المثال، يمكننا تحديد نقاط نهاية لكلٍّ من
@@ -143,7 +143,7 @@ HTTP (المنفذ 8123) وHTTPS (المنفذ 8443):
 ```
 
 <div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
-  ### تعريف نقاط نهاية إضافية {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
+  ### تعريف نقاط نهاية إضافية
 </div>
 
 يمكن تعريف نقاط نهاية إضافية بالإشارة إلى أي وحدة مع حذف
@@ -176,7 +176,7 @@ HTTP (المنفذ 8123) وHTTPS (المنفذ 8443):
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### معالجات HTTP مخصّصة لكل نقطة نهاية {#custom-http-handlers-per-endpoint}
+  ### معالجات HTTP مخصّصة لكل نقطة نهاية
 </div>
 
 بشكل افتراضي، تشترك جميع إدخالات البروتوكول `type=http` في الإعداد

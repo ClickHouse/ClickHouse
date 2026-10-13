@@ -7,13 +7,13 @@ doc_type: 'reference'
 ---
 
 <div id="overview">
-  ## 概述 {#overview}
+  ## 概述
 </div>
 
 组合式协议让 ClickHouse server 的 TCP 访问配置更加灵活。此配置既可与传统配置并存，也可替代传统配置。
 
 <div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
-  ## 配置 组合式协议 {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
+  ## 配置 组合式协议
 </div>
 
 组合式协议 可以在 XML 配置文件中进行配置。协议
@@ -26,7 +26,7 @@ doc_type: 'reference'
 ```
 
 <div id="basic-modules-define-protocol-layers">
-  ### 配置协议 layer {#basic-modules-define-protocol-layers}
+  ### 配置协议 layer
 </div>
 
 你可以使用基础模块来定义协议 layer。例如，要定义
@@ -62,7 +62,7 @@ HTTP layer，可以在 `protocols` 部分添加一个新的基础模块：
 </Note>
 
 <div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
-  ### 配置端点 {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
+  ### 配置端点
 </div>
 
 端点 (监听端口) 用 `<port>` 和可选的 `<host>` 标签表示。
@@ -87,7 +87,7 @@ HTTP layer，可以在 `protocols` 部分添加一个新的基础模块：
 如果省略 `<host>` 标签，则使用根配置中的 `<listen_host>`。
 
 <div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
-  ### 配置 layer 序列 {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
+  ### 配置 layer 序列
 </div>
 
 layer 序列通过 `<impl>` 标签定义，并引用另一个
@@ -114,7 +114,7 @@ layer 序列通过 `<impl>` 标签定义，并引用另一个
 ```
 
 <div id="endpoint-can-be-attached-to-any-layer">
-  ### 将端点绑定到 layer {#endpoint-can-be-attached-to-any-layer}
+  ### 将端点绑定到 layer
 </div>
 
 端点可以绑定到任何 layer。例如，我们可以为
@@ -140,7 +140,7 @@ HTTP (端口 8123) 和 HTTPS (端口 8443) 定义端点：
 ```
 
 <div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
-  ### 定义其他端点 {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
+  ### 定义其他端点
 </div>
 
 通过引用任意模块并省略
@@ -173,7 +173,7 @@ HTTP (端口 8123) 和 HTTPS (端口 8443) 定义端点：
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### 每个端点的自定义 HTTP 处理程序 {#custom-http-handlers-per-endpoint}
+  ### 每个端点的自定义 HTTP 处理程序
 </div>
 
 默认情况下，所有 `type=http` 协议条目共享同一个 `<http_handlers>`

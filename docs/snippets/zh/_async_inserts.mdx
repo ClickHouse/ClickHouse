@@ -98,8 +98,8 @@ Schema 验证和数据解析发生在缓冲区 刷写 时，而不是在收到�
   当 `async_insert = 1`，且整个结果可放入一个不超过 `async_insert_max_data_size` 的块时，`INSERT ... SELECT` 也可以通过异步插入队列执行；否则会同步执行。这种执行方式有独立的适用条件、写入统计方式和取消行为。详情请参阅[异步 `INSERT ... SELECT`](/zh/concepts/features/operations/insert/async-insert-select)。
 </Note>
 
-<div>
-  ### 关闭时刷新缓冲区 {#flushing-buffers-on-shutdown}
+<div id="flushing-buffers-on-shutdown">
+  ### 关闭时刷新缓冲区
 </div>
 
 如需刷新所有待处理的 async insert 缓冲区 (例如在优雅关闭期间或维护前) ，请运行：
@@ -110,8 +110,8 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 
 这可确保在服务器停止前，所有缓冲的数据都会先写入存储。
 
-<div>
-  ### 与缓冲表的比较 {#comparison-with-buffer-tables}
+<div id="comparison-with-buffer-tables">
+  ### 与缓冲表的比较
 </div>
 
 异步插入是 [缓冲表](/zh/reference/engines/table-engines/special/buffer) 的现代替代方案。主要区别如下：

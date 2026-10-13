@@ -14,7 +14,7 @@ Esta é a versão web do nosso [artigo científico da VLDB 2024](https://www.vld
 </Frame>
 
 <div id="abstract">
-  ## RESUMO {#abstract}
+  ## RESUMO
 </div>
 
 Nas últimas décadas, a quantidade de dados armazenados e analisados aumentou exponencialmente. Empresas de diferentes indústrias e setores passaram a depender desses dados para aprimorar produtos, avaliar desempenho e tomar decisões críticas para o negócio. No entanto, à medida que os volumes de dados passaram a atingir escala de internet, as empresas precisaram gerenciar dados históricos e novos de forma econômica e escalável, ao mesmo tempo em que os analisavam com um grande número de consultas simultâneas e com exigência de latências em tempo real (por exemplo, menos de um segundo, dependendo do caso de uso).
@@ -190,7 +190,7 @@ Como ilustrado na [Figura 7,](#page-6-1) o ClickHouse paraleliza consultas no n�
 O restante desta seção primeiro descreve, em mais detalhes, o processamento paralelo na granularidade de elementos de dados, fragmentos de dados e shards. Em seguida, apresentamos algumas otimizações importantes para maximizar o desempenho das consultas. Por fim, discutimos como o ClickHouse gerencia recursos compartilhados do sistema na presença de consultas simultâneas.
 
 <div id="4-1-simd-parallelization">
-  ### 4.1 Paralelização SIMD {#4-1-simd-parallelization}
+  ### 4.1 Paralelização SIMD
 </div>
 
 A passagem de várias linhas entre operadores cria uma oportunidade para vetorização. A vetorização pode se basear em intrínsecos escritos manualmente <sup>[[64,](#page-13-18)</sup> <sup>[80]](#page-13-19)</sup> ou na autovetorização do compilador <sup>[[25]](#page-12-19)</sup>. O código que se beneficia da vetorização é compilado em diferentes kernels de computação. Por exemplo, o loop interno mais crítico de um operador de consulta pode ser implementado em termos de um kernel não vetorizado, um kernel AVX2 autovetorizado e um kernel AVX-512 vetorizado manualmente. O kernel mais rápido é [selecionado em tempo de execução](https://clickhou.se/cpu-dispatch) com base na instrução cpuid. Essa abordagem permite que o ClickHouse rode em sistemas com até 15 anos de idade (exigindo SSE 4.2 como requisito mínimo), ao mesmo tempo que ainda oferece ganhos significativos de desempenho em hardware recente.
@@ -216,7 +216,7 @@ Os operadores também podem afetar a execução da consulta em tempo de execuç�
 O mecanismo de execução de consultas do ClickHouse e o paralelismo orientado por morsels <sup>[[44]](#page-12-20)</sup> são semelhantes no sentido de que as lanes normalmente são executadas em núcleos / sockets NUMA diferentes e de que threads de trabalho podem roubar tarefas de outras lanes. Além disso, não há um componente central de escalonamento; em vez disso, as threads de trabalho selecionam suas tarefas individualmente ao percorrer continuamente o plano de operadores. Diferentemente do paralelismo orientado por morsels, o ClickHouse incorpora o grau máximo de paralelismo ao plano e usa faixas muito maiores para particionar a tabela de origem, em comparação com os tamanhos padrão de morsel de aprox. 100.000 linhas. Embora isso possa, em alguns casos, causar bloqueios (por exemplo, quando o tempo de execução dos operadores de filtro em diferentes lanes varia muito), verificamos que o uso generoso de operadores exchange, como Repartition, ao menos evita que esses desequilíbrios se acumulem ao longo dos estágios.
 
 <div id="4-3-multi-node-parallelization">
-  ### 4.3 Paralelização em Múltiplos Nós {#4-3-multi-node-parallelization}
+  ### 4.3 Paralelização em Múltiplos Nós
 </div>
 
 Se a tabela de origem de uma consulta estiver distribuída em shards, o otimizador de consultas no nó que recebeu a consulta (nó iniciador) tenta executar o máximo possível do trabalho em outros nós. Os resultados desses outros nós podem ser integrados em diferentes pontos do plano da consulta. Dependendo da consulta, os nós remotos podem 1. transmitir colunas brutas da tabela de origem para o nó iniciador, 2. filtrar as colunas de origem e enviar as linhas restantes, 3. executar etapas de filtro e agregação e enviar grupos de resultados locais com estados de agregação parciais, ou 4. executar a consulta inteira, incluindo filtros, agregação e ordenação.
@@ -295,13 +295,13 @@ Formatos de dados. Para interagir com sistemas de terceiros, bancos de dados ana
 Interfaces de compatibilidade. Além de seu protocolo wire binário nativo e HTTP, os clientes podem interagir com o ClickHouse por meio de interfaces compatíveis com o wire protocol do MySQL ou PostgreSQL. Esse recurso de compatibilidade é útil para viabilizar o acesso a partir de aplicações proprietárias (por exemplo, certas ferramentas de inteligência de negócios), nas quais os fornecedores ainda não implementaram conectividade nativa com o ClickHouse.
 
 <div id="6-performance-as-a-feature">
-  ## 6 DESEMPENHO COMO RECURSO {#6-performance-as-a-feature}
+  ## 6 DESEMPENHO COMO RECURSO
 </div>
 
 Esta seção apresenta ferramentas integradas para análise de desempenho e avalia o desempenho com consultas de uso real e de benchmark.
 
 <div id="6-1-built-in-performance-analysis-tools">
-  ### 6.1 Ferramentas integradas de análise de desempenho {#6-1-built-in-performance-analysis-tools}
+  ### 6.1 Ferramentas integradas de análise de desempenho
 </div>
 
 Há uma ampla variedade de ferramentas disponível para investigar gargalos de desempenho em consultas individuais ou operações em segundo plano. Os usuários interagem com todas as ferramentas por meio de uma interface uniforme baseada em tabelas de sistema.
@@ -315,7 +315,7 @@ Há uma ampla variedade de ferramentas disponível para investigar gargalos de d
 **EXPLAIN da consulta**. Como em outros bancos de dados, consultas SELECT podem ser precedidas por EXPLAIN para fornecer insights detalhados sobre a AST de uma consulta, os planos lógicos e físicos dos operadores e o comportamento em tempo de execução.
 
 <div id="6-2-benchmarks">
-  ### 6.2 Benchmarks {#6-2-benchmarks}
+  ### 6.2 Benchmarks
 </div>
 
 Embora a prática de benchmarking tenha sido criticada por não ser realista o suficiente <sup>[[10,](#page-12-27)</sup> <sup>[52,](#page-13-22)</sup> <sup>[66,](#page-13-23)</sup> <sup>[74]](#page-13-24)</sup>, ela ainda é útil para identificar os pontos fortes e fracos dos bancos de dados. A seguir, discutimos como os benchmarks são usados para avaliar o desempenho do ClickHouse.
@@ -367,7 +367,7 @@ podem criar outros operadores em tempo de execução, principalmente para altern
 DuckDB <sup>[[67]](#page-13-6)</sup> também foi projetado para ser incorporado por um processo hospedeiro, mas, além disso, oferece otimização de consultas e transações. Ele foi desenvolvido para consultas OLAP combinadas com instruções OLTP ocasionais. Assim, o DuckDB escolheu o formato de armazenamento DataBlocks <sup>[[43]](#page-12-43)</sup>, que emprega métodos de compressão leves, como dicionários que preservam a ordem ou frame-of-reference <sup>[[2]](#page-12-10)</sup>, para obter bom desempenho em workloads híbridos. Em contraste, o ClickHouse é otimizado para casos de uso append-only, isto é, sem atualizações e exclusões, ou com elas apenas raramente. Os blocos são comprimidos com técnicas mais pesadas, como LZ4, partindo do pressuposto de que os usuários fazem uso extensivo de pruning de dados para acelerar consultas frequentes e de que os custos de I/O superam os custos de descompressão nas consultas restantes. O DuckDB também oferece transações serializáveis baseadas no esquema MVCC do Hyper <sup>[[55]](#page-13-35)</sup>, enquanto o ClickHouse oferece apenas isolamento por snapshot.
 
 <div id="8-conclusion-and-outlook">
-  ## 8 CONCLUSÃO E PERSPECTIVAS {#8-conclusion-and-outlook}
+  ## 8 CONCLUSÃO E PERSPECTIVAS
 </div>
 
 Apresentamos a arquitetura do ClickHouse, um banco de dados OLAP de código aberto e alto desempenho. Com uma camada de armazenamento otimizada para gravação e um mecanismo vetorizado de consultas de última geração em sua base, o ClickHouse viabiliza analytics em tempo real sobre conjuntos de dados na escala de petabytes, com altas taxas de ingestão. Ao mesclar e transformar dados de forma assíncrona em segundo plano, o ClickHouse desacopla com eficiência a manutenção dos dados das inserções paralelas. Sua camada de armazenamento permite uma poda agressiva de dados usando índices primários esparsos, índices de skipping e tabelas de projeção. Descrevemos a implementação, no ClickHouse, de atualizações e exclusões, inserções idempotentes e replicação de dados entre nós para alta disponibilidade. A camada de processamento de consultas otimiza as consultas com uma ampla variedade de técnicas e paraleliza a execução em todos os recursos do servidor e do cluster. Motores de tabela de integração e funções oferecem uma forma conveniente de interagir com outros sistemas de gerenciamento e formatos de dados de maneira transparente. Por meio de benchmarks, demonstramos que o ClickHouse está entre os bancos de dados analíticos mais rápidos do mercado e mostramos melhorias significativas no desempenho de consultas típicas em implantações reais do ClickHouse ao longo dos anos.
@@ -375,13 +375,13 @@ Apresentamos a arquitetura do ClickHouse, um banco de dados OLAP de código aber
 Todos os recursos e aprimoramentos planejados para 2024 podem ser encontrados no roadmap público <sup>[[18]](#page-12-33)</sup>. As melhorias planejadas incluem suporte a transações de usuário, PromQL <sup>[[69]](#page-13-36)</sup> como linguagem de consulta alternativa, um novo tipo de dado para dados semi-estruturados (por exemplo, JSON), melhores otimizações de junções no nível do plano, bem como uma implementação de atualizações leves para complementar exclusões leves.
 
 <div id="acknowledgements">
-  ## AGRADECIMENTOS {#acknowledgements}
+  ## AGRADECIMENTOS
 </div>
 
 A partir da versão 24.6, SELECT * FROM system.contributors retorna 1994 pessoas que contribuíram para ClickHouse. Gostaríamos de agradecer a toda a equipe de engenharia da ClickHouse Inc. e à incrível comunidade de código aberto do ClickHouse pelo trabalho árduo e pela dedicação na construção conjunta deste banco de dados.
 
 <div id="references">
-  ## REFERÊNCIAS {#references}
+  ## REFERÊNCIAS
 </div>
 
 <div style={{fontSize: '0.85em', lineHeight: '1.7'}}>

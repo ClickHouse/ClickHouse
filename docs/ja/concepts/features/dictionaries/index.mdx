@@ -28,7 +28,7 @@ Dictionary は、特定の種類の `JOIN` を高速化するために使用で�
 Direct Join アルゴリズムでは、右側のテーブルが Dictionary を基盤としている必要があります。つまり、そのテーブルの JOIN 対象データが、低レイテンシのキー・バリュー データ構造として、あらかじめメモリ上に存在している必要があります。
 
 <div id="example">
-  ### 例 {#example}
+  ### 例
 </div>
 
 [Stack Overflow データセット](/ja/get-started/sample-datasets/stackoverflow)を使って、次の問いに答えてみましょう。
@@ -86,7 +86,7 @@ Peak memory usage: 3.18 GiB.
 このクエリは高速ですが、高いパフォーマンスを得るには、`JOIN` を注意深く記述する必要があります。理想的には、まず投稿のうち &quot;SQL&quot; を含むものだけに絞り込み、そのうえで、その投稿の部分集合について `UpVote` と `DownVote` の件数を確認し、メトリクスを計算できるのが望ましいです。
 
 <div id="applying-a-dictionary">
-  #### Dictionary の適用 {#applying-a-dictionary}
+  #### Dictionary の適用
 </div>
 
 これらの概念を説明するために、投票データに Dictionary を使用します。Dictionary は通常メモリ上に保持されるため (例外は [ssd&#95;cache](/ja/reference/statements/create/dictionary/layouts/ssd-cache) です) 、データサイズを意識する必要があります。まず、`votes` テーブルのサイズを確認します。
@@ -195,7 +195,7 @@ Peak memory usage: 552.26 MiB.
 このクエリはかなりシンプルになるだけでなく、速度も2倍以上に向上します！ さらに、賛成票と反対票がそれぞれ10票を超える投稿だけをDictionaryに読み込み、事前計算した `controversial` の値だけを保存するようにすれば、さらに最適化できます。
 
 <div id="query-time-enrichment">
-  ## クエリ時エンリッチメント {#query-time-enrichment}
+  ## クエリ時エンリッチメント
 </div>
 
 Dictionariesを使用すると、クエリ時に値を参照できます。これらの値は結果として返したり、集計に使用したりできます。たとえば、ユーザーIDを所在地に対応付けるDictionaryを作成するとします。
@@ -342,13 +342,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## Dictionary の高度なトピック {#advanced-dictionary-topics}
+  ## Dictionary の高度なトピック
 </div>
 
 Dictionary レイアウトの選び方、Dictionary と JOIN の使い分け、Dictionary の使用状況の監視については、[Dictionary のベストプラクティス](/ja/concepts/features/dictionaries/best-practices)を参照してください。
 
 <div id="refreshing-dictionaries">
-  ### Dictionary の更新 {#refreshing-dictionaries}
+  ### Dictionary の更新
 </div>
 
 Dictionary に `MIN 600 MAX 900` の `LIFETIME` を指定しました。LIFETIME はDictionaryの更新間隔で、ここでの値を指定すると、600〜900 秒のランダムな間隔で定期的に再読み込みされます。このランダムな間隔は、多数のサーバーで更新する際に Dictionary ソースへの負荷を分散するために必要です。更新中もDictionaryの古いバージョンに対して引き続きクエリを実行できますが、クエリがブロックされるのは初期ロード時だけです。なお、`(LIFETIME(0))` を設定するとDictionaryは更新されなくなります。
@@ -357,7 +357,7 @@ Dictionary は `SYSTEM RELOAD DICTIONARY` コマンドを使って強制的に�
 ClickHouse や Postgres などのデータベースソースでは、一定間隔で更新する代わりに、Dictionary が実際に変更された場合にのみ更新するクエリを設定できます (これを判定するのはそのクエリの応答です) 。詳しくは [こちら](/ja/reference/statements/create/dictionary/lifetime) を参照してください。
 
 <div id="other-dictionary-types">
-  ### その他の Dictionary の種類 {#other-dictionary-types}
+  ### その他の Dictionary の種類
 </div>
 
 ClickHouse は、[Hierarchical](/ja/reference/statements/create/dictionary/layouts/hierarchical)、[Polygon](/ja/reference/statements/create/dictionary/layouts/polygon)、[Regular Expression](/ja/reference/statements/create/dictionary/layouts/regexp-tree) の Dictionary にも対応しています。

@@ -9,7 +9,7 @@ doc_type: 'مرجع'
 import { Image } from "/snippets/ar/components/Image.jsx";
 
 <div id="prerequisites">
-  ## المتطلبات الأساسية {#prerequisites}
+  ## المتطلبات الأساسية
 </div>
 
 ستحتاج إلى ما يلي للأمثلة الواردة في هذه المقالة:
@@ -64,7 +64,7 @@ Ok.
 ```
 
 <div id="querying">
-  ## الاستعلام عبر HTTP/HTTPS {#querying}
+  ## الاستعلام عبر HTTP/HTTPS
 </div>
 
 للاستعلام عبر HTTP/HTTPS، توجد ثلاثة خيارات:
@@ -350,7 +350,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 إذا كان الاستعلام يتضمن بالفعل عبارة `FROM`، فلا يحدد مكوّن المسار سوى اسم ملف التنزيل.
 
 <div id="insert-queries">
-  ## استعلامات `INSERT` عبر HTTP/HTTPS {#insert-queries}
+  ## استعلامات `INSERT` عبر HTTP/HTTPS
 </div>
 
 تُعد طريقة `POST` لنقل البيانات ضرورية لاستعلامات `INSERT`. في هذه الحالة، يمكنك كتابة بداية الاستعلام في معلمة `URL`، واستخدام `POST` لتمرير البيانات المراد إدراجها. ويمكن أن تكون هذه البيانات، على سبيل المثال، ملف تفريغ من MySQL مفصولًا بعلامات جدولة. وبهذه الطريقة، يحل استعلام `INSERT` محل `LOAD DATA LOCAL INFILE` في MySQL.
@@ -530,7 +530,7 @@ Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
 </Info>
 
 <div id="examples-compression">
-  ## أمثلة {#examples-compression}
+  ## أمثلة
 </div>
 
 لإرسال البيانات المضغوطة إلى الخادم:
@@ -563,7 +563,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 ```
 
 <div id="default-database">
-  ## قاعدة البيانات الافتراضية {#default-database}
+  ## قاعدة البيانات الافتراضية
 </div>
 
 يمكنك استخدام المعلمة `database` في URL أو الترويسة `X-ClickHouse-Database` لتحديد قاعدة البيانات الافتراضية.
@@ -585,7 +585,7 @@ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?databa
 افتراضيًا، تُستخدم قاعدة البيانات المسجَّلة في إعدادات الخادم كقاعدة البيانات الافتراضية. وبشكل افتراضي عند التثبيت، تكون هذه هي قاعدة البيانات المسماة `default`. أو يمكنك دائمًا تحديد قاعدة البيانات بوضع نقطة قبل اسم الجدول.
 
 <div id="authentication">
-  ## المصادقة {#authentication}
+  ## المصادقة
 </div>
 
 يمكن إدخال اسم المستخدم وكلمة المرور بإحدى الطرق الثلاث التالية:
@@ -714,7 +714,7 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 </Tip>
 
 <div id="setting-role-with-query-parameters">
-  ## تعيين دور باستخدام معلمات الاستعلام {#setting-role-with-query-parameters}
+  ## تعيين دور باستخدام معلمات الاستعلام
 </div>
 
 أُضيفت هذه الميزة في ClickHouse 24.4.
@@ -840,13 +840,13 @@ __exception__
 ```
 
 <div id="cli-queries-with-parameters">
-  ## استعلامات بمعلمات {#cli-queries-with-parameters}
+  ## استعلامات بمعلمات
 </div>
 
 يمكنك إنشاء استعلام بمعلمات وتمرير قيمها عبر معلمات طلب HTTP المقابلة. لمزيد من المعلومات، راجع [الاستعلامات بمعلمات في CLI](/ar/concepts/features/interfaces/client#cli-queries-with-parameters).
 
 <div id="example-3">
-  ### مثال {#example-3}
+  ### مثال
 </div>
 
 ```bash
@@ -854,7 +854,7 @@ $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHER
 ```
 
 <div id="tabs-in-url-parameters">
-  ### علامات الجدولة في معلمات URL {#tabs-in-url-parameters}
+  ### علامات الجدولة في معلمات URL
 </div>
 
 تُحلَّل معلمات الاستعلام من صيغة &quot;escaped&quot;. ولهذا بعض المزايا، مثل إمكانية تحليل قيم NULL دون لبس على أنها `\N`. وهذا يعني أن محرف الجدولة يجب ترميزه على هيئة `\t` (أو `\` ثم علامة جدولة). على سبيل المثال، يحتوي ما يلي على علامة جدولة فعلية بين `abc` و`123`، وتُقسَّم سلسلة الإدخال إلى قيمتين:
@@ -885,7 +885,7 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ```
 
 <div id="predefined_http_interface">
-  ## واجهة HTTP المُعرَّفة مسبقًا {#predefined_http_interface}
+  ## واجهة HTTP المُعرَّفة مسبقًا
 </div>
 
 يدعم ClickHouse استعلامات محددة عبر واجهة HTTP. على سبيل المثال، يمكنك إدخال البيانات في جدول كما يلي:
@@ -1057,7 +1057,7 @@ max_threads    1
 ```
 
 <div id="virtual-param-request-body">
-  #### المعلمة الافتراضية `_request_body` {#virtual-param-request-body}
+  #### المعلمة الافتراضية `_request_body`
 </div>
 
 بالإضافة إلى معلمات URL والترويسات ومعلمات الاستعلام، يدعم `predefined_query_handler` معلمة افتراضية خاصة باسم `_request_body`.
@@ -1126,7 +1126,7 @@ max_final_threads   2
 ```
 
 <div id="static">
-  ### static {#static}
+  ### static
 </div>
 
 يمكن لـ `static` إرجاع [`content_type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type) و[status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) و`response_content`. ويمكن أن يعيد `response_content` المحتوى المحدد.
@@ -1319,7 +1319,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="redirect">
-  ### redirect {#redirect}
+  ### redirect
 </div>
 
 سيؤدي `redirect` إلى إعادة توجيه `302` إلى `location`
@@ -1342,7 +1342,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="http-response-headers">
-  ## ترويسات استجابة HTTP {#http-response-headers}
+  ## ترويسات استجابة HTTP
 </div>
 
 يتيح لك ClickHouse تهيئة ترويسات استجابة HTTP مخصّصة يمكن تطبيقها على أي نوع من المعالجات القابلة للتهيئة. ويمكن ضبط هذه الترويسات باستخدام الإعداد `http_response_headers`، الذي يقبل أزواج مفتاح-قيمة تمثل أسماء الترويسات وقيمها. وتُعد هذه الميزة مفيدة بشكل خاص لتطبيق ترويسات أمان مخصّصة، أو سياسات CORS، أو أي متطلبات أخرى خاصة بترويسات HTTP عبر واجهة ClickHouse HTTP.

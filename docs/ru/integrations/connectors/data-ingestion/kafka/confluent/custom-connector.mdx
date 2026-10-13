@@ -24,7 +24,7 @@ picture-in-picture"
 </div>
 
 <div id="prerequisites">
-  ## Предварительные требования {#prerequisites}
+  ## Предварительные требования
 </div>
 
 Мы предполагаем, что вы знакомы со следующим:
@@ -44,13 +44,13 @@ picture-in-picture"
 Подробнее см. в [официальной документации Confluent](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector).
 
 <div id="create-a-topic">
-  #### Создайте топик {#create-a-topic}
+  #### Создайте топик
 </div>
 
 Создать топик в Confluent Cloud довольно просто; подробные инструкции приведены [здесь](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html).
 
 <div id="important-notes">
-  #### Важные примечания {#important-notes}
+  #### Важные примечания
 </div>
 
 * Имя Kafka топика должно совпадать с именем таблицы ClickHouse. Это можно изменить с помощью трансформера (например, [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)).
@@ -73,13 +73,13 @@ picture-in-picture"
 <Image img="/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp" size="md" alt="Интерфейс Confluent Platform с параметрами добавления пользовательского коннектора ClickHouse" border />
 
 <div id="gather-your-connection-details">
-  #### Подготовьте сведения о подключении {#gather-your-connection-details}
+  #### Подготовьте сведения о подключении
 </div>
 
 <ConnectionDetails />
 
 <div id="configure-the-connector">
-  #### Настройте коннектор {#configure-the-connector}
+  #### Настройте коннектор
 </div>
 
 Перейдите в `Connectors` -&gt; `Add Connector` и используйте следующие настройки (обратите внимание, что значения приведены только в качестве примера):
@@ -103,7 +103,7 @@ picture-in-picture"
 ```
 
 <div id="specify-the-connection-endpoints">
-  #### Укажите конечные точки подключения {#specify-the-connection-endpoints}
+  #### Укажите конечные точки подключения
 </div>
 
 Необходимо указать список разрешенных конечных точек, к которым коннектор может обращаться.
@@ -119,7 +119,7 @@ picture-in-picture"
 Теперь всё готово!
 
 <div id="known-limitations">
-  #### Известные ограничения {#known-limitations}
+  #### Известные ограничения
 </div>
 
 * Custom Connectors должны использовать общедоступные интернет-конечные точки. Статические IP-адреса не поддерживаются.

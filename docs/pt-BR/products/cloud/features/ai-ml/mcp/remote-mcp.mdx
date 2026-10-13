@@ -38,7 +38,7 @@ https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="setup-clickhouse-cloud-remote-mcp-server">
-  ## Configure o MCP remoto para desenvolvimento {#setup-clickhouse-cloud-remote-mcp-server}
+  ## Configure o MCP remoto para desenvolvimento
 </div>
 
 Escolha sua IDE ou ferramenta abaixo e siga as instruções de configuração correspondentes.
@@ -127,7 +127,7 @@ Mantenha `CH_AUTH` disponível em cada sessão do cliente e não faça commit da
 Esse fluxo com chave de API não exige um navegador nem um login separado no `clickhousectl`.
 
 <div id="claude-code">
-  ### Claude Code {#claude-code}
+  ### Claude Code
 </div>
 
 No diretório de trabalho, execute o comando a seguir para adicionar a configuração do servidor MCP do ClickHouse Cloud ao Claude Code:
@@ -151,7 +151,7 @@ Execute o comando a seguir para listar servidores MCP:
 Selecione `clickhouse-cloud` e autentique-se via OAuth usando suas credenciais do ClickHouse Cloud.
 
 <div id="claude-web">
-  ### Claude interface web {#claude-web}
+  ### Claude interface web
 </div>
 
 1. Navegue até **Customize** &gt; **Connectors**
@@ -161,7 +161,7 @@ Selecione `clickhouse-cloud` e autentique-se via OAuth usando suas credenciais d
 5. Autentique-se usando suas credenciais do ClickHouse Cloud via OAuth
 
 <div id="cursor">
-  ### Cursor {#cursor}
+  ### Cursor
 </div>
 
 1. Navegue pelo [Cursor Marketplace](https://cursor.com/marketplace) e instale servidores MCP.
@@ -169,7 +169,7 @@ Selecione `clickhouse-cloud` e autentique-se via OAuth usando suas credenciais d
 3. Autentique-se com OAuth.
 
 <div id="visual-studio-code">
-  ### Visual Studio Code {#visual-studio-code}
+  ### Visual Studio Code
 </div>
 
 Adicione a seguinte configuração ao arquivo `.vscode/mcp.json`:
@@ -188,7 +188,7 @@ Adicione a seguinte configuração ao arquivo `.vscode/mcp.json`:
 Para mais detalhes, consulte a [documentação do Visual Studio Code](https://code.visualstudio.com/docs/copilot/customization/mcp-servers).
 
 <div id="windsurf">
-  ### Windsurf {#windsurf}
+  ### Windsurf
 </div>
 
 Edite o arquivo `mcp_config.json` com a seguinte configuração:
@@ -207,7 +207,7 @@ Edite o arquivo `mcp_config.json` com a seguinte configuração:
 Para mais informações, consulte a [documentação do Windsurf](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp).
 
 <div id="zed">
-  ### Zed {#zed}
+  ### Zed
 </div>
 
 Adicione o ClickHouse como um servidor customizado.
@@ -227,7 +227,7 @@ O Zed deverá solicitar que você se autentique via OAuth na primeira vez em que
 Para mais detalhes, consulte a [documentação do Zed](https://zed.dev/docs/ai/mcp#as-custom-servers).
 
 <div id="codex">
-  ### Codex {#codex}
+  ### Codex
 </div>
 
 Execute o comando abaixo para adicionar o servidor MCP do ClickHouse Cloud pela CLI:
@@ -237,7 +237,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="example-usage">
-  ## Exemplo de uso {#example-usage}
+  ## Exemplo de uso
 </div>
 
 Depois de se conectar, você pode interagir com o ClickHouse Cloud por meio de prompts em linguagem natural.
@@ -245,7 +245,7 @@ Abaixo estão alguns fluxos de trabalho comuns e as ferramentas que seu MCP clie
 Para ver a lista completa de ferramentas disponíveis, consulte a [referência de ferramentas](/pt-BR/products/cloud/features/ai-ml/remote-mcp#available-tools).
 
 <div id="exploring-data">
-  ### Explorando seus dados {#exploring-data}
+  ### Explorando seus dados
 </div>
 
 Comece descobrindo o que está disponível:
@@ -258,7 +258,7 @@ Comece descobrindo o que está disponível:
 | &quot;Liste todas as tabelas cujos nomes começam com `events_`&quot; | `list_tables` (com o filtro `like`) |
 
 <div id="running-queries">
-  ### Executando consultas analíticas {#running-queries}
+  ### Executando consultas analíticas
 </div>
 
 Faça perguntas em linguagem natural, e o agente as traduzirá para SQL:
@@ -272,7 +272,7 @@ Faça perguntas em linguagem natural, e o agente as traduzirá para SQL:
 A ferramenta `run_select_query` permite apenas instruções `SELECT`. Todas as consultas são somente leitura.
 
 <div id="managing-services">
-  ### Gerenciando serviços e infraestrutura {#managing-services}
+  ### Gerenciando serviços e infraestrutura
 </div>
 
 Tenha visibilidade sobre seus recursos no ClickHouse Cloud:
@@ -286,7 +286,7 @@ Tenha visibilidade sobre seus recursos no ClickHouse Cloud:
 | &quot;Quais ClickPipes estão configurados neste serviço?&quot; | `list_clickpipes`                  |
 
 <div id="monitoring-costs">
-  ### Custos de monitoramento {#monitoring-costs}
+  ### Custos de monitoramento
 </div>
 
 | Prompt                                                               | Ferramenta invocada                                   |
@@ -295,7 +295,7 @@ Tenha visibilidade sobre seus recursos no ClickHouse Cloud:
 | &quot;Mostre os custos diários de 1º de março a 15 de março&quot;    | `get_organization_cost` (com `from_date` e `to_date`) |
 
 <div id="related-content">
-  ## Conteúdo relacionado {#related-content}
+  ## Conteúdo relacionado
 </div>
 
 * [ClickHouse Agent Skills](https://github.com/ClickHouse/agent-skills)

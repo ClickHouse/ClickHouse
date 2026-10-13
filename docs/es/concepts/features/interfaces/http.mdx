@@ -9,7 +9,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/es/components/Image.jsx";
 
 <div id="prerequisites">
-  ## Requisitos previos {#prerequisites}
+  ## Requisitos previos
 </div>
 
 Para los ejemplos de este artículo, necesitará:
@@ -64,7 +64,7 @@ Ok.
 ```
 
 <div id="querying">
-  ## Consultas mediante HTTP/HTTPS {#querying}
+  ## Consultas mediante HTTP/HTTPS
 </div>
 
 Para realizar consultas mediante HTTP/HTTPS hay tres opciones:
@@ -350,7 +350,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 Si la consulta ya contiene una cláusula `FROM`, el componente de ruta solo especifica el nombre del archivo descargado.
 
 <div id="insert-queries">
-  ## Consultas `INSERT` a través de HTTP/HTTPS {#insert-queries}
+  ## Consultas `INSERT` a través de HTTP/HTTPS
 </div>
 
 El método `POST` para transmitir datos es necesario para las consultas `INSERT`. En este caso, puede escribir el comienzo de la consulta en el parámetro de la URL y usar `POST` para enviar los datos que se van a insertar. Los datos que se van a insertar podrían ser, por ejemplo, un dump de MySQL separado por tabulaciones. De esta manera, la consulta `INSERT` sustituye a `LOAD DATA LOCAL INFILE` de MySQL.
@@ -530,7 +530,7 @@ Puede configurar el nivel de compresión de los datos mediante la opción [`http
 </Info>
 
 <div id="examples-compression">
-  ## Ejemplos {#examples-compression}
+  ## Ejemplos
 </div>
 
 Para enviar datos comprimidos al servidor:
@@ -563,7 +563,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 ```
 
 <div id="default-database">
-  ## Base de datos predeterminada {#default-database}
+  ## Base de datos predeterminada
 </div>
 
 Puede usar el parámetro `database` de la URL o la cabecera `X-ClickHouse-Database` para especificar la base de datos predeterminada.
@@ -585,7 +585,7 @@ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?databa
 De forma predeterminada, se usa como base de datos predeterminada la base de datos registrada en la configuración del servidor. De entrada, esta es la base de datos llamada `default`. Como alternativa, siempre puede especificar la base de datos usando un punto antes del nombre de la tabla.
 
 <div id="authentication">
-  ## Autenticación {#authentication}
+  ## Autenticación
 </div>
 
 El nombre de usuario y la contraseña se pueden indicar de una de estas tres formas:
@@ -714,7 +714,7 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 </Tip>
 
 <div id="setting-role-with-query-parameters">
-  ## Establecer un rol con parámetros de consulta {#setting-role-with-query-parameters}
+  ## Establecer un rol con parámetros de consulta
 </div>
 
 Esta funcionalidad se añadió en ClickHouse 24.4.
@@ -840,13 +840,13 @@ __exception__
 ```
 
 <div id="cli-queries-with-parameters">
-  ## Consultas con parámetros {#cli-queries-with-parameters}
+  ## Consultas con parámetros
 </div>
 
 Puede crear una consulta con parámetros y pasar sus valores mediante los parámetros de la solicitud HTTP correspondientes. Para obtener más información, consulte [Consultas con parámetros para la CLI](/es/concepts/features/interfaces/client#cli-queries-with-parameters).
 
 <div id="example-3">
-  ### Ejemplo {#example-3}
+  ### Ejemplo
 </div>
 
 ```bash
@@ -854,7 +854,7 @@ $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHER
 ```
 
 <div id="tabs-in-url-parameters">
-  ### Tabulaciones en los parámetros de URL {#tabs-in-url-parameters}
+  ### Tabulaciones en los parámetros de URL
 </div>
 
 Los parámetros de consulta se interpretan a partir del formato &quot;escaped&quot;. Esto tiene algunas ventajas, como la posibilidad de interpretar los valores nulos de forma inequívoca como `\N`. Esto significa que el carácter de tabulación debe codificarse como `\t` (o `\` y una tabulación). Por ejemplo, lo siguiente contiene una tabulación real entre `abc` y `123`, y la cadena de entrada se divide en dos valores:
@@ -885,7 +885,7 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ```
 
 <div id="predefined_http_interface">
-  ## Interfaz HTTP predefinida {#predefined_http_interface}
+  ## Interfaz HTTP predefinida
 </div>
 
 ClickHouse admite consultas específicas a través de la interfaz HTTP. Por ejemplo, puede escribir datos en una tabla de la siguiente manera:
@@ -1057,7 +1057,7 @@ max_threads    1
 ```
 
 <div id="virtual-param-request-body">
-  #### Parámetro virtual `_request_body` {#virtual-param-request-body}
+  #### Parámetro virtual `_request_body`
 </div>
 
 Además de los parámetros de URL, los encabezados y los parámetros de consulta, `predefined_query_handler` admite un parámetro virtual especial, `_request_body`.
@@ -1126,7 +1126,7 @@ max_final_threads   2
 ```
 
 <div id="static">
-  ### static {#static}
+  ### static
 </div>
 
 `static` puede devolver [`content_type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [código de estado](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) y `response_content`. `response_content` puede devolver el contenido especificado.
@@ -1319,7 +1319,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="redirect">
-  ### redirect {#redirect}
+  ### redirect
 </div>
 
 `redirect` realizará una redirección `302` a `location`
@@ -1342,7 +1342,7 @@ Por ejemplo, así puedes añadir automáticamente set user a `play` en ClickHous
 ```
 
 <div id="http-response-headers">
-  ## Encabezados de respuesta HTTP {#http-response-headers}
+  ## Encabezados de respuesta HTTP
 </div>
 
 ClickHouse le permite configurar encabezados de respuesta HTTP personalizados que pueden aplicarse a cualquier tipo de handler configurable. Estos encabezados pueden definirse mediante la configuración `http_response_headers`, que acepta pares clave-valor que representan los nombres de los encabezados y sus valores. Esta funcionalidad resulta especialmente útil para implementar encabezados de seguridad personalizados, políticas CORS o cualquier otro requisito relacionado con encabezados HTTP en toda la interfaz HTTP de ClickHouse.

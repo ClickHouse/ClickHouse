@@ -98,8 +98,8 @@ title: عمليات الإدراج غير المتزامنة
   يمكن أيضًا توجيه `INSERT ... SELECT` عبر قائمة انتظار الإدراج غير المتزامن عندما يكون `async_insert = 1` وتكون النتيجة بأكملها كتلة واحدة لا يتجاوز حجمها `async_insert_max_data_size`؛ وإلا فسيُنفَّذ بشكل متزامن. ويخضع هذا المسار لقواعد أهلية خاصة به، وله سلوكه الخاص في احتساب عمليات الكتابة وإلغائها. راجع [عمليات `INSERT ... SELECT` غير المتزامنة](/ar/concepts/features/operations/insert/async-insert-select) للاطلاع على التفاصيل.
 </Note>
 
-<div>
-  ### تفريغ المخازن المؤقتة عند إيقاف التشغيل {#flushing-buffers-on-shutdown}
+<div id="flushing-buffers-on-shutdown">
+  ### تفريغ المخازن المؤقتة عند إيقاف التشغيل
 </div>
 
 لتفريغ جميع مخازن `async insert` المؤقتة قيد الانتظار — على سبيل المثال، أثناء إيقاف تشغيلٍ منظّم أو قبل إجراء الصيانة — شغّل:
@@ -110,8 +110,8 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 
 يضمن ذلك كتابة أي بيانات موجودة في الذاكرة المؤقتة إلى التخزين قبل توقف الخادم.
 
-<div>
-  ### مقارنة مع جداول Buffer {#comparison-with-buffer-tables}
+<div id="comparison-with-buffer-tables">
+  ### مقارنة مع جداول Buffer
 </div>
 
 تُعد عمليات الإدراج غير المتزامنة البديل الحديث لـ[جداول Buffer](/ar/reference/engines/table-engines/special/buffer). الاختلافات الرئيسية:

@@ -24,7 +24,7 @@ picture-in-picture"
 </div>
 
 <div id="prerequisites">
-  ## المتطلبات المسبقة {#prerequisites}
+  ## المتطلبات المسبقة
 </div>
 
 نفترض أن لديك دراية بـ:
@@ -39,20 +39,20 @@ picture-in-picture"
 ## الموصل الرسمي لـ Kafka من ClickHouse بوصفه Custom Connector {#the-official-kafka-connector-from-clickhouse-with-confluent-platform}
 
 <div id="installing-on-confluent-platform">
-  ### التثبيت بوصفه Custom Connector {#installing-on-confluent-platform}
+  ### التثبيت بوصفه Custom Connector
 </div>
 
 هذا دليل سريع لمساعدتك على البدء باستخدام ClickHouse Sink Connector بوصفه Custom Connector على Confluent Cloud.
 لمزيد من التفاصيل، يُرجى الرجوع إلى [وثائق Confluent الرسمية](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector).
 
 <div id="create-a-topic">
-  #### إنشاء Topic {#create-a-topic}
+  #### إنشاء Topic
 </div>
 
 يُعدّ إنشاء Topic على Confluent Cloud أمرًا بسيطًا نسبيًا، وتتوفر إرشادات مفصلة [هنا](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html).
 
 <div id="important-notes">
-  #### ملاحظات مهمة {#important-notes}
+  #### ملاحظات مهمة
 </div>
 
 * يجب أن يتطابق اسم Kafka topic مع اسم جدول ClickHouse. ويمكن تعديل ذلك باستخدام مُحوِّل (على سبيل المثال [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)).
@@ -75,13 +75,13 @@ picture-in-picture"
 <Image img="/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp" size="md" alt="واجهة Confluent Platform تعرض إعدادات إضافة موصل ClickHouse مخصّص" border />
 
 <div id="gather-your-connection-details">
-  #### اجمع بيانات الاتصال الخاصة بك {#gather-your-connection-details}
+  #### اجمع بيانات الاتصال الخاصة بك
 </div>
 
 <ConnectionDetails />
 
 <div id="configure-the-connector">
-  #### تهيئة الموصل {#configure-the-connector}
+  #### تهيئة الموصل
 </div>
 
 انتقل إلى `Connectors` -&gt; `Add Connector` واستخدم الإعدادات التالية (لاحظ أن القيم الواردة هنا هي أمثلة فقط):
@@ -105,7 +105,7 @@ picture-in-picture"
 ```
 
 <div id="specify-the-connection-endpoints">
-  #### حدّد نقاط نهاية الاتصال {#specify-the-connection-endpoints}
+  #### حدّد نقاط نهاية الاتصال
 </div>
 
 تحتاج إلى تحديد قائمة السماح الخاصة بنقاط النهاية التي يمكن للموصل الوصول إليها.
@@ -121,7 +121,7 @@ picture-in-picture"
 وبذلك يكون كل شيء جاهزًا!
 
 <div id="known-limitations">
-  #### القيود المعروفة {#known-limitations}
+  #### القيود المعروفة
 </div>
 
 * يجب أن تستخدم Custom Connectors نقاط نهاية عامة عبر الإنترنت. عناوين IP الثابتة غير مدعومة.

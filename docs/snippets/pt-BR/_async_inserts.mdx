@@ -98,8 +98,8 @@ As inserções assíncronas podem ser habilitadas para um determinado usuário o
   `INSERT ... SELECT` também pode usar a fila de inserções assíncronas quando `async_insert = 1` e o resultado inteiro forma um único bloco que não excede `async_insert_max_data_size`; caso contrário, é executado de forma síncrona. Esse caminho tem suas próprias regras de elegibilidade, contabilização de gravações e comportamento de cancelamento. Consulte [Instruções `INSERT ... SELECT` assíncronas](/pt-BR/concepts/features/operations/insert/async-insert-select) para obter detalhes.
 </Note>
 
-<div>
-  ### Esvaziando os buffers ao encerrar {#flushing-buffers-on-shutdown}
+<div id="flushing-buffers-on-shutdown">
+  ### Esvaziando os buffers ao encerrar
 </div>
 
 Para esvaziar todos os buffers pendentes de async insert — por exemplo, durante um encerramento controlado ou antes de uma manutenção — execute:
@@ -110,8 +110,8 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 
 Isso garante que todos os dados em buffer sejam gravados no armazenamento antes que o servidor pare.
 
-<div>
-  ### Comparação com tabelas Buffer {#comparison-with-buffer-tables}
+<div id="comparison-with-buffer-tables">
+  ### Comparação com tabelas Buffer
 </div>
 
 As inserções assíncronas são o substituto moderno das [tabelas Buffer](/pt-BR/reference/engines/table-engines/special/buffer). Principais diferenças:

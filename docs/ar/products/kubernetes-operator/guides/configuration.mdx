@@ -10,11 +10,11 @@ doc_type: 'guide'
 يوضح هذا الدليل كيفية تهيئة مجموعات ClickHouse وKeeper باستخدام المشغّل.
 
 <div id="clickhousecluster-configuration">
-  ## إعداد ClickHouseCluster {#clickhousecluster-configuration}
+  ## إعداد ClickHouseCluster
 </div>
 
 <div id="basic-configuration">
-  ### الإعداد الأساسي {#basic-configuration}
+  ### الإعداد الأساسي
 </div>
 
 ```yaml
@@ -34,7 +34,7 @@ spec:
 ```
 
 <div id="replicas-and-shards">
-  ### النسخ المتماثلة والشظايا {#replicas-and-shards}
+  ### النسخ المتماثلة والشظايا
 </div>
 
 * **النسخ المتماثلة**: عدد مثيلات ClickHouse لكل شظية (لتحقيق التوفّر العالي)
@@ -122,7 +122,7 @@ spec:
 [External Secret](#external-secret) للاطلاع على بنية Secret.
 
 <div id="keepercluster-configuration">
-  ## إعداد KeeperCluster {#keepercluster-configuration}
+  ## إعداد KeeperCluster
 </div>
 
 ```yaml
@@ -164,7 +164,7 @@ ClickHouse في صورة فقدان للاتصال بـ Keeper وارتفاع ف
 [مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference#containertemplatespec).
 
 <div id="storage-configuration">
-  ## تهيئة التخزين {#storage-configuration}
+  ## تهيئة التخزين
 </div>
 
 قم بتهيئة التخزين الدائم باستخدام `dataVolumeClaimSpec`، وهو
@@ -191,7 +191,7 @@ spec:
 تغييره بعد الإنشاء.
 
 <div id="cluster-domain">
-  ## نطاق العنقود {#cluster-domain}
+  ## نطاق العنقود
 </div>
 
 يحدِّد `spec.clusterDomain` لاحقة DNS في Kubernetes التي يستخدمها المشغِّل عند إنشاء
@@ -219,7 +219,7 @@ spec:
 </Note>
 
 <div id="pod-configuration">
-  ## إعدادات الكبسولة {#pod-configuration}
+  ## إعدادات الكبسولة
 </div>
 
 ### التوزيع الطوبولوجي والتقارب التلقائيان {#automatic-topology-spread-and-affinity}
@@ -253,7 +253,7 @@ spec:
 </Note>
 
 <div id="manual-configuration">
-  ### الإعداد اليدوي {#manual-configuration}
+  ### الإعداد اليدوي
 </div>
 
 يمكن تحديد قواعد مخصّصة لتقارب/تنافر الجرابات وقيود توزيع الطوبولوجيا.
@@ -268,11 +268,11 @@ spec:
 ```
 
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencepodtemplatespec-for-all-supported-pod-template-options">
-  ### راجع [مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference#podtemplatespec) للاطلاع على جميع الخيارات المدعومة لقوالب الـ Pod. {#see-api-reference-for-all-supported-pod-template-options}
+  ### راجع [مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference#podtemplatespec) للاطلاع على جميع الخيارات المدعومة لقوالب الـ Pod.
 </div>
 
 <div id="pod-disruption-budgets">
-  ## ميزانيات تعطيل الكبسولات {#pod-disruption-budgets}
+  ## ميزانيات تعطيل الكبسولات
 </div>
 
 ينشئ المشغّل مورد [PodDisruptionBudget](https://kubernetes.io/docs/concepts/workloads/pods/disruptions/) ‏(PDB) لكل عنقود، بحيث لا تتسبب الاضطرابات الطوعية — مثل تفريغ العقد، وعمليات الترقية المتدرجة، وعمليات الإخلاء التي ينفذها المُوسّع التلقائي — في إسقاط عدد كافٍ من الكبسولات بما يؤدي إلى فقدان quorum أو الإخلال بالتوافر.
@@ -280,7 +280,7 @@ spec:
 بالنسبة إلى عناقيد ClickHouse التي تضم أكثر من شظية واحدة، **يتم إنشاء PDB واحدة لكل شظية** حتى لا يُحتسب الاضطراب في شظية واحدة ضمن شظية أخرى.
 
 <div id="pdb-defaults">
-  ### القيم الافتراضية {#pdb-defaults}
+  ### القيم الافتراضية
 </div>
 
 يحدّد المشغّل قيماً افتراضية آمنة بناءً على حجم العنقود، بحيث توفّر عملية `apply` الجديدة بالفعل حماية من فقدان النصاب بالخطأ.
@@ -295,7 +295,7 @@ spec:
 بالنسبة إلى ClickHouseCluster مكوّن من 3 شظايا مع `replicas: 3`، ينشئ المشغّل ثلاثة PDBs، واحداً لكل شظية، بحيث يكون لكل منها `minAvailable: 1`.
 
 <div id="pdb-overrides">
-  ### تجاوز القيم الافتراضية {#pdb-overrides}
+  ### تجاوز القيم الافتراضية
 </div>
 
 استخدم `spec.podDisruptionBudget` لتجاوز `minAvailable` **أو** `maxUnavailable` (واحد منهما فقط):
@@ -331,7 +331,7 @@ spec:
 ```
 
 <div id="pdb-policies">
-  ### السياسات {#pdb-policies}
+  ### السياسات
 </div>
 
 يتيح لك `spec.podDisruptionBudget.policy` اختيار **مدى صرامة** إدارة المشغّل لـ PDBs:
@@ -359,7 +359,7 @@ spec:
 ```
 
 <div id="pdb-cluster-wide-disable">
-  ### التعطيل على مستوى العنقود بالكامل {#pdb-cluster-wide-disable}
+  ### التعطيل على مستوى العنقود بالكامل
 </div>
 
 يمكن أيضًا تعطيل إدارة PDB على مستوى العنقود بالكامل عبر متغير البيئة `ENABLE_PDB` الخاص بالمشغّل. عند ضبط `ENABLE_PDB=false`، يتجاوز المشغّل خطوة التسوية الخاصة بـ PDB لكل **ClickHouseCluster** و**KeeperCluster**، بغض النظر عن `spec.podDisruptionBudget.policy` الخاصة بهما، و**لا يراقب** موارد `PodDisruptionBudget` مطلقًا. لذلك، لا يحتاج ServiceAccount الخاص بالمشغّل إلى أذونات RBAC على `poddisruptionbudgets.policy/v1`، وهو ما يفيد عند تشغيل المشغّل باستخدام ServiceAccount مقيّد يستبعد تلك الأذونات عمدًا.
@@ -374,11 +374,11 @@ env:
 هذا مخصّص للبيئات التي تعتمد سياسات التعطيل الخاصة بها (مثلًا عبر Gatekeeper / Kyverno) ولا تريد أي تدخّل من المشغّل على الإطلاق.
 
 <div id="container-configuration">
-  ## تكوين الحاوية {#container-configuration}
+  ## تكوين الحاوية
 </div>
 
 <div id="custom-image">
-  ### صورة حاوية مخصّصة {#custom-image}
+  ### صورة حاوية مخصّصة
 </div>
 
 استخدم صورة حاوية محددة لـ ClickHouse:
@@ -393,7 +393,7 @@ spec:
 ```
 
 <div id="container-resources">
-  ### موارد الحاويات {#container-resources}
+  ### موارد الحاويات
 </div>
 
 اضبط CPU والذاكرة لحاويات ClickHouse:
@@ -412,7 +412,7 @@ spec:
 ```
 
 <div id="environment-variables">
-  ### متغيرات البيئة {#environment-variables}
+  ### متغيرات البيئة
 </div>
 
 أضِف متغيرات بيئة مخصّصة:
@@ -426,7 +426,7 @@ spec:
 ```
 
 <div id="volume-mounts">
-  ### ربط وحدات التخزين {#volume-mounts}
+  ### ربط وحدات التخزين
 </div>
 
 أضف عمليات ربط إضافية لوحدات التخزين:
@@ -510,15 +510,15 @@ spec:
 بعد نجاح مجسّ بدء التشغيل (مجسّ startup)، تتولى مجسّات الحيوية (الحيوية) والجاهزية (الجاهزية) المعتادة المهمة من بعده.
 
 <div id="see-api-referenceproductskubernetes-operatorreferenceapi-referencecontainertemplatespec-for-all-supported-container-template-options">
-  ### راجع [مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference#containertemplatespec) للاطلاع على جميع خيارات قوالب الحاويات المدعومة. {#see-api-reference-for-all-supported-container-template-options}
+  ### راجع [مرجع واجهة برمجة التطبيقات](/ar/products/kubernetes-operator/reference/api-reference#containertemplatespec) للاطلاع على جميع خيارات قوالب الحاويات المدعومة.
 </div>
 
 <div id="tls-ssl-configuration">
-  ## إعدادات TLS/SSL {#tls-ssl-configuration}
+  ## إعدادات TLS/SSL
 </div>
 
 <div id="configure-secure-endpoints">
-  ### تهيئة نقاط نهاية آمنة {#configure-secure-endpoints}
+  ### تهيئة نقاط نهاية آمنة
 </div>
 
 مرّر مرجعًا إلى Kubernetes Secret يحتوي على شهادات TLS لتمكين نقاط النهاية الآمنة
@@ -534,7 +534,7 @@ spec:
 ```
 
 <div id="ssl-certificate-secret-format">
-  ### تنسيق Secret الخاص بشهادة SSL {#ssl-certificate-secret-format}
+  ### تنسيق Secret الخاص بشهادة SSL
 </div>
 
 من المتوقع أن يحتوي Secret على زوج الشهادة والمفتاح الخاص بالخادم:
@@ -565,7 +565,7 @@ spec:
 ```
 
 <div id="external-secret">
-  ## External Secret {#external-secret}
+  ## External Secret
 </div>
 
 ينشئ المشغّل افتراضيًا مورد Secret ويتولى إدارته، ويحتوي هذا المورد على بيانات الاعتماد الداخلية للعنقود (كلمة مرور الاتصال بين الخوادم، وكلمة مرور الإدارة، وهوية Keeper، وسرّ العنقود، ومفتاح named-collections). ويحمل هذا الـ Secret اسم العنقود ويقع ضمن مساحة اسم العنقود.
@@ -595,7 +595,7 @@ spec:
 </Note>
 
 <div id="external-secret-required-keys">
-  ### المفاتيح المطلوبة {#external-secret-required-keys}
+  ### المفاتيح المطلوبة
 </div>
 
 يجب أن يحتوي Secret على المفاتيح التالية:
@@ -628,7 +628,7 @@ stringData:
 ```
 
 <div id="external-secret-policy">
-  ### السياسة: المراقبة مقابل الإدارة {#external-secret-policy}
+  ### السياسة: المراقبة مقابل الإدارة
 </div>
 
 يتحكم `spec.externalSecret.policy` في كيفية تعامل المشغّل مع المفاتيح المطلوبة الناقصة:
@@ -645,7 +645,7 @@ stringData:
 اختر `Observe` عندما يكون النظام الخارجي (Vault أو ESO أو sealed-secrets أو GitOps) هو مصدر الحقيقة وتريد أن يُخفق المشغّل بوضوح عند وجود خطأ في الإعداد. واختر `Manage` عندما تريد تهيئة أولية مكتفية ذاتيًا، مع الاحتفاظ بملكية كائن Secret نفسه (على سبيل المثال، لأخذ نسخة احتياطية منه).
 
 <div id="external-secret-status">
-  ### شرط الحالة واستكشاف الأخطاء وإصلاحها {#external-secret-status}
+  ### شرط الحالة واستكشاف الأخطاء وإصلاحها
 </div>
 
 يعرض المشغِّل شرط `ExternalSecretValid` ضمن `ClickHouseCluster.status.conditions`. افحصه عندما يبدو أن عملية التسوية عالقة:
@@ -676,7 +676,7 @@ kubectl get clickhousecluster sample -o jsonpath='{.status.conditions}' | jq
 </Note>
 
 <div id="additional-ports">
-  ## منافذ إضافية {#additional-ports}
+  ## منافذ إضافية
 </div>
 
 يكشف المشغّل مجموعة ثابتة من المنافذ على كل Pod لـ ClickHouse وعلى الخدمة عديمة الرأس العامة الخاصة به: `8123` لـ HTTP، و`9000` لـ أصلي، و`9009` للاتصال بين الخوادم، و`9001`/`9002` للإدارة، و`9363` لمقاييس Prometheus، بالإضافة إلى منافذ TLS البديلة `8443`/`9440` عند تمكين TLS. كما تُكشف منافذ `interserver` والإدارة عبر الخدمات الداخلية لكل نسخة متماثلة، بحيث تتمكن النسخ المتماثلة والمشغّل من التواصل قبل أن تصبح النسخة المتماثلة جاهزة. لجعل ClickHouse يستمع إلى بروتوكولات إضافية — مثل MySQL أو PostgreSQL أو gRPC أو أي منفذ مخصّص — عرِّفها في `spec.additionalPorts`:
@@ -700,7 +700,7 @@ spec:
 </Warning>
 
 <div id="additional-ports-mysql-example">
-  ### مثال متكامل: MySQL wire protocol {#additional-ports-mysql-example}
+  ### مثال متكامل: MySQL wire protocol
 </div>
 
 لإتاحة ClickHouse عبر MySQL wire protocol على المنفذ `9004`:
@@ -742,7 +742,7 @@ kubectl exec sample-clickhouse-0-0-0 -- \
 ```
 
 <div id="additional-ports-constraints">
-  ### قيود الحقول {#additional-ports-constraints}
+  ### قيود الحقول
 </div>
 
 | الحقل  | القاعدة                                                                                                                                    |
@@ -751,7 +751,7 @@ kubectl exec sample-clickhouse-0-0-0 -- \
 | `port` | عدد صحيح ضمن `[1, 65535]`. يرفض `webhook` أرقام المنافذ المكررة داخل القائمة.                                                              |
 
 <div id="additional-ports-reserved">
-  ### المنافذ والأسماء المحجوزة {#additional-ports-reserved}
+  ### المنافذ والأسماء المحجوزة
 </div>
 
 يرفض الـ webhook الخاص بالتحقق إدخالات `additionalPorts` التي قد تتعارض مع المنافذ التي يستخدمها المشغّل نفسه. جميع المنافذ المرتبطة بـ TLS محجوزة **دون قيد أو شرط** حتى لا يؤدي تبديل `spec.settings.tls.enabled` لاحقًا إلى تعطيل عنقود كان صالحًا سابقًا.
@@ -786,7 +786,7 @@ spec.additionalPorts[0].name: "http" is reserved by the operator
 ```
 
 <div id="version-probe-and-upgrade-channel">
-  ## فحص الإصدار وقناة الترقية {#version-probe-and-upgrade-channel}
+  ## فحص الإصدار وقناة الترقية
 </div>
 
 ينفّذ المشغّل مهمتين مستقلتين تتعلقان بإصدارات العنقود:
@@ -795,7 +795,7 @@ spec.additionalPorts[0].name: "http" is reserved by the operator
 2. **قناة الترقية** — تحقّق دوري من موجز إصدارات ClickHouse العام (`https://clickhouse.com/data/version_date.tsv`). ويبلّغ المشغغّل عمّا إذا كان إصدار أحدث متاحًا عبر شرط الحالة `VersionUpgraded`. وهو لا يرقّي العنقود من تلقاء نفسه مطلقًا — فالمستخدم هو من يتحكّم في وسم الصورة.
 
 <div id="upgrade-channel-choosing">
-  ### اختيار قناة الترقية {#upgrade-channel-choosing}
+  ### اختيار قناة الترقية
 </div>
 
 يحدِّد `spec.upgradeChannel` مجموعة الإصدارات الصادرة من المشروع الأصلي التي يقارن بها المشغّل. ويوجد الحقل نفسه في كلٍّ من `ClickHouseCluster` و`KeeperCluster`.
@@ -817,7 +817,7 @@ spec:
 في بيئات الإنتاج، يُفضَّل عمومًا تثبيت القناة على قيمة `<major>.<minor>` صريحة (مثل `25.8`). فهذا يقيّد العنقود بخط الإصدار الرئيسي المقصود، ويتيح للمُشغِّل إظهار تحذير `WrongReleaseChannel` إذا انجرفت أي نسخة متماثلة، لسبب ما، إلى إصدار رئيسي مختلف — وهو أمر يكتسب أهمية خاصة عندما يُشار إلى الصورة بواسطة digest (`@sha256:...`) بدلًا من tag مقروء بشريًا. أما القيمة الافتراضية الفارغة فهي مناسبة لعناقيد التطوير حيث لا تكون القفزات بين الإصدارات الرئيسية مصدر قلق.
 
 <div id="version-status-conditions">
-  ### شروط الحالة {#version-status-conditions}
+  ### شروط الحالة
 </div>
 
 يكشف الشرطان التاليان نتيجة الـ فحص وفحص الترقية:
@@ -842,7 +842,7 @@ kubectl get clickhousecluster sample -o yaml | sed -n '/conditions:/,/^[^ ]/p'
 ```
 
 <div id="version-probe-template">
-  ### تجاوز `Job` فحص الإصدار {#version-probe-template}
+  ### تجاوز `Job` فحص الإصدار
 </div>
 
 ينطبق هذا على `ClickHouseCluster` فقط. لم يعد `KeeperCluster` يشغّل `Job` لفحص الإصدار — إذ تُقرأ نسخته مباشرةً من نسخ Keeper المتماثلة العاملة — لذلك فإن `spec.versionProbeTemplate` مهمل ولا يكون له أي تأثير هناك.
@@ -874,7 +874,7 @@ spec:
 اسم الحاوية `version-probe` هو الاسم الافتراضي للمشغّل — إذ إن الإدخال ضمن `containers:` يطابقه بالاسم، لذا يُجري المشغّل دمجًا عميقًا للحقول التي يوفّرها المستخدم فوق القيم الافتراضية.
 
 <div id="version-operator-flags">
-  ### عناصر تحكم على مستوى المشغّل {#version-operator-flags}
+  ### عناصر تحكم على مستوى المشغّل
 </div>
 
 يتحكم خياران في مدير المشغّل بحلقة التحقق من الترقية على مستوى عام:
@@ -887,11 +887,11 @@ spec:
 اضبط `--disable-version-update-checks=true` في البيئات المعزولة عن الشبكة أو عندما لا يكون مسموحًا بخروج الحركة إلى `clickhouse.com`.
 
 <div id="clickhouse-settings">
-  ## إعدادات ClickHouse {#clickhouse-settings}
+  ## إعدادات ClickHouse
 </div>
 
 <div id="default-user-password">
-  ### كلمة مرور المستخدم `default` {#default-user-password}
+  ### كلمة مرور المستخدم `default`
 </div>
 
 يضبط `spec.settings.defaultUserPassword` كلمة مرور المستخدم المضمّن `default`.
@@ -912,7 +912,7 @@ spec:
 و`key` (الإدخال الذي يحتوي على كلمة المرور).
 
 <div id="password-types">
-  #### أنواع كلمات المرور {#password-types}
+  #### أنواع كلمات المرور
 </div>
 
 يُحدِّد `passwordType` كيفية تفسير ClickHouse للقيمة. وتكون قيمته الافتراضية
@@ -923,7 +923,7 @@ spec:
 للاطلاع على القائمة الكاملة.
 
 <div id="default-password-secret-example">
-  #### مثال كامل باستخدام Secret {#default-password-secret-example}
+  #### مثال كامل باستخدام Secret
 </div>
 
 أنشئ Secret، ثم أشِر إلى مفتاحه:
@@ -971,7 +971,7 @@ spec:
 ```
 
 <div id="using-configmap-for-user-passwords">
-  #### استخدام ConfigMap {#using-configmap-for-user-passwords}
+  #### استخدام ConfigMap
 </div>
 
 يعمل ConfigMap بالطريقة نفسها، لكن محتوياته ليست محمية
@@ -1048,7 +1048,7 @@ spec:
 ```
 
 <div id="database-sync">
-  ### مزامنة قاعدة البيانات {#database-sync}
+  ### مزامنة قاعدة البيانات
 </div>
 
 فعِّل المزامنة التلقائية لقاعدة البيانات للنسخ المتماثلة الجديدة:
@@ -1145,11 +1145,11 @@ spec:
 </Note>
 
 <div id="custom-configuration">
-  ## إعداد مخصص {#custom-configuration}
+  ## إعداد مخصص
 </div>
 
 <div id="embedded-extra-configuration">
-  ### تهيئة إضافية مضمنة {#embedded-extra-configuration}
+  ### تهيئة إضافية مضمنة
 </div>
 
 بدلًا من ربط ملفات تهيئة مخصّصة، يمكنك تحديد خيارات تهيئة إضافية لـ ClickHouse مباشرةً.
@@ -1164,7 +1164,7 @@ spec:
 ```
 
 <div id="useful-links">
-  #### روابط مفيدة: {#useful-links}
+  #### روابط مفيدة:
 </div>
 
 * [أمثلة لتهيئة YAML](/ar/concepts/features/configuration/server-config/configuration-files#example-1)
@@ -1191,7 +1191,7 @@ spec:
 </Note>
 
 <div id="embedded-extra-users-configuration">
-  ### إعدادات المستخدمين الإضافيين المضمّنة {#embedded-extra-users-configuration}
+  ### إعدادات المستخدمين الإضافيين المضمّنة
 </div>
 
 يمكنك أيضًا تحديد إعدادات إضافية لمستخدمي ClickHouse باستخدام `extraUsersConfig`. ويُفيد ذلك في تعريف المستخدمين وملفات التعريف والحصص والامتيازات مباشرةً ضمن مواصفات العنقود.
@@ -1223,11 +1223,11 @@ spec:
 </Note>
 
 <div id="see-documentationconceptsfeaturesconfigurationsettingssettings-users-for-all-supported-clickhouse-users-configuration-options">
-  #### راجع [الوثائق](/ar/concepts/features/configuration/settings/settings-users) للاطلاع على جميع خيارات إعداد مستخدمي ClickHouse المدعومة. {#see-documentation-for-all-supported-clickhouse-users-configuration-options}
+  #### راجع [الوثائق](/ar/concepts/features/configuration/settings/settings-users) للاطلاع على جميع خيارات إعداد مستخدمي ClickHouse المدعومة.
 </div>
 
 <div id="configuration-example">
-  ### مثال على التهيئة {#configuration-example}
+  ### مثال على التهيئة
 </div>
 
 مثال كامل للتهيئة:

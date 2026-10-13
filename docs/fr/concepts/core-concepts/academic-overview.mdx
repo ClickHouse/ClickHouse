@@ -14,7 +14,7 @@ Voici la version web de notre [article scientifique VLDB 2024](https://www.vldb.
 </Frame>
 
 <div id="abstract">
-  ## RÉSUMÉ {#abstract}
+  ## RÉSUMÉ
 </div>
 
 Au cours des dernières décennies, la quantité de données stockées et analysées a augmenté de façon exponentielle. Les entreprises de tous les secteurs ont commencé à s’appuyer sur ces données pour améliorer leurs produits, évaluer leurs performances et prendre des décisions stratégiques. Toutefois, à mesure que les volumes de données ont atteint l’échelle d’Internet, elles ont dû gérer à moindre coût et de façon évolutive les données historiques comme les nouvelles données, tout en les analysant au moyen d’un grand nombre de requêtes concurrentes, avec des exigences de latence en temps réel (par exemple inférieure à une seconde, selon le cas d’usage).
@@ -190,7 +190,7 @@ Comme l’illustre la [figure 7,](#page-6-1) ClickHouse parallélise les requê
 Le reste de cette section décrit d’abord plus en détail le traitement parallèle à la granularité des éléments de données, des blocs de données et des segments. Nous présentons ensuite quelques optimisations clés pour maximiser les performances des requêtes. Enfin, nous examinons la manière dont ClickHouse gère les ressources système partagées en présence de requêtes simultanées.
 
 <div id="4-1-simd-parallelization">
-  ### 4.1 Parallélisation SIMD {#4-1-simd-parallelization}
+  ### 4.1 Parallélisation SIMD
 </div>
 
 Le passage de plusieurs lignes entre les opérateurs crée une opportunité de vectorisation. La vectorisation repose soit sur des intrinsèques écrits manuellement <sup>[&#91;64,](#page-13-18)</sup> <sup>[80&#93;](#page-13-19)</sup>, soit sur l’auto-vectorisation du compilateur <sup>[&#91;25&#93;](#page-12-19)</sup>. Le code qui en bénéficie est compilé en différents noyaux de calcul. Par exemple, la boucle interne critique d’un opérateur de requête peut être implémentée sous la forme d’un noyau non vectorisé, d’un noyau AVX2 auto-vectorisé et d’un noyau AVX-512 vectorisé manuellement. Le noyau le plus rapide est [choisi à l’exécution](https://clickhou.se/cpu-dispatch) en fonction de l’instruction `cpuid`. Cette approche permet à ClickHouse de fonctionner sur des systèmes vieux de 15 ans (avec SSE 4.2 comme minimum), tout en offrant des accélérations significatives sur du matériel récent.
@@ -216,7 +216,7 @@ Les opérateurs peuvent en outre influer sur l&#39;exécution des requêtes de d
 Le moteur d’exécution des requêtes de ClickHouse et le parallélisme piloté par morsels <sup>[&#91;44&#93;](#page-12-20)</sup> se ressemblent en ce que les voies sont généralement exécutées sur des cœurs / sockets NUMA différents et que les threads de travail peuvent voler des tâches à d’autres voies. De plus, il n’existe pas de composant central d’ordonnancement ; à la place, les threads de travail sélectionnent individuellement leurs tâches en parcourant en continu le plan d’opérateurs. Contrairement au parallélisme piloté par morsels, ClickHouse intègre le degré maximal de parallélisme au plan et utilise des ranges bien plus grands pour partitionner la table source, par rapport aux tailles de morsel par défaut d’environ 100 000 lignes. Bien que cela puisse, dans certains cas, provoquer des blocages (par exemple lorsque le temps d’exécution des opérateurs de filtrage dans différentes voies varie fortement), nous constatons qu’un usage généreux d’opérateurs d’échange tels que Repartition évite au moins que de tels déséquilibres ne s’accumulent d’une étape à l’autre.
 
 <div id="4-3-multi-node-parallelization">
-  ### 4.3 Parallélisation sur plusieurs nœuds {#4-3-multi-node-parallelization}
+  ### 4.3 Parallélisation sur plusieurs nœuds
 </div>
 
 Si la table source d’une requête est fragmentée, l’optimiseur de requête du nœud qui a reçu la requête (nœud initiateur) tente de faire exécuter autant de travail que possible sur les autres nœuds. Les résultats provenant des autres nœuds peuvent être intégrés à différents endroits du plan de requête. Selon la requête, les nœuds distants peuvent soit 1. envoyer en flux les colonnes brutes de la table source au nœud initiateur, 2. filtrer les colonnes de la table source et envoyer les lignes conservées, 3. exécuter les étapes de filtrage et d’agrégation, puis envoyer des groupes de résultats locaux avec des états d’agrégation partiels, ou 4. exécuter l’intégralité de la requête, y compris les filtres, l’agrégation et le tri.
@@ -295,13 +295,13 @@ Formats de données. Pour interagir avec des systèmes tiers, les bases de donn�
 Interfaces de compatibilité. Outre son protocole binaire natif et HTTP, les clients peuvent interagir avec ClickHouse via des interfaces compatibles avec les protocoles réseau MySQL ou PostgreSQL. Cette fonctionnalité de compatibilité est utile pour permettre l’accès depuis des applications propriétaires (par exemple certains outils de business intelligence), lorsque les éditeurs n’ont pas encore implémenté de connectivité ClickHouse native.
 
 <div id="6-performance-as-a-feature">
-  ## 6 LA PERFORMANCE COMME FONCTIONNALITÉ {#6-performance-as-a-feature}
+  ## 6 LA PERFORMANCE COMME FONCTIONNALITÉ
 </div>
 
 Cette section présente les outils intégrés d’analyse des performances et évalue celles-ci à l’aide de requêtes issues de cas réels et de benchmarks.
 
 <div id="6-1-built-in-performance-analysis-tools">
-  ### 6.1 Outils intégrés d’analyse des performances {#6-1-built-in-performance-analysis-tools}
+  ### 6.1 Outils intégrés d’analyse des performances
 </div>
 
 Un large éventail d’outils est disponible pour analyser les goulots d’étranglement des performances dans des requêtes individuelles ou des opérations en arrière-plan. Les utilisateurs interagissent avec tous ces outils via une interface uniforme basée sur les tables système.
@@ -315,7 +315,7 @@ Un large éventail d’outils est disponible pour analyser les goulots d’étra
 **Requête EXPLAIN**. Comme dans d’autres bases de données, les requêtes SELECT peuvent être précédées de EXPLAIN pour obtenir des informations détaillées sur l’AST d’une requête, ses plans d’opérateurs logiques et physiques, et son comportement à l’exécution.
 
 <div id="6-2-benchmarks">
-  ### 6.2 Tests de performance {#6-2-benchmarks}
+  ### 6.2 Tests de performance
 </div>
 
 Bien que les tests de performance aient été critiqués pour leur manque de réalisme <sup>[&#91;10,](#page-12-27)</sup> <sup>[52,](#page-13-22)</sup> <sup>[66,](#page-13-23)</sup> <sup>[74&#93;](#page-13-24)</sup>, ils restent utiles pour identifier les forces et les faiblesses des bases de données. Dans ce qui suit, nous expliquons comment les tests de performance sont utilisés pour évaluer les performances de ClickHouse.
@@ -367,7 +367,7 @@ peuvent créer d’autres opérateurs à l’exécution, principalement pour bas
 DuckDB <sup>[&#91;67&#93;](#page-13-6)</sup> est également conçu pour être embarqué dans un processus hôte, mais fournit en plus l’optimisation des requêtes et les transactions. Il a été conçu pour des requêtes OLAP mêlées à des instructions OLTP occasionnelles. DuckDB a donc choisi le format de stockage DataBlocks <sup>[&#91;43&#93;](#page-12-43)</sup>, qui utilise des méthodes de compression légères telles que des dictionnaires préservant l’ordre ou le frame-of-reference <sup>[&#91;2&#93;](#page-12-10)</sup> afin d’obtenir de bonnes performances dans des charges de travail hybrides. En revanche, ClickHouse est optimisé pour des cas d’usage en ajout uniquement, c.-à-d. sans mises à jour ni suppressions, ou avec de très rares mises à jour et suppressions. Les blocs sont compressés à l’aide de techniques lourdes comme LZ4, en partant du principe que les utilisateurs recourent largement à l’élagage des données pour accélérer les requêtes fréquentes et que les coûts d’E/S l’emportent sur les coûts de décompression pour les requêtes restantes. DuckDB fournit également des transactions sérialisables basées sur le schéma MVCC de Hyper <sup>[&#91;55&#93;](#page-13-35)</sup>, tandis que ClickHouse n’offre que l’isolation snapshot.
 
 <div id="8-conclusion-and-outlook">
-  ## 8 CONCLUSION ET PERSPECTIVES {#8-conclusion-and-outlook}
+  ## 8 CONCLUSION ET PERSPECTIVES
 </div>
 
 Nous avons présenté l&#39;architecture de ClickHouse, une base de données OLAP open-source à hautes performances. Reposant sur une couche de stockage optimisée pour l&#39;écriture et un moteur de requête vectorisé de pointe, ClickHouse permet l&#39;analytics en temps réel sur des jeux de données à l&#39;échelle du pétaoctet avec des taux d&#39;ingestion élevés. En fusionnant et en transformant les données de manière asynchrone en arrière-plan, ClickHouse dissocie efficacement la maintenance des données des insertions parallèles. Sa couche de stockage permet un élagage agressif des données à l&#39;aide d&#39;index primaires creux, d&#39;index de saut et de tables de projection. Nous avons décrit l&#39;implémentation, dans ClickHouse, des mises à jour et des suppressions, des insertions idempotentes et de la réplication des données entre nœuds pour assurer une haute disponibilité. La couche de traitement des requêtes optimise les requêtes grâce à un large éventail de techniques et parallélise leur exécution sur l&#39;ensemble des ressources du serveur et du cluster. Les moteurs de table d&#39;intégration et les fonctions offrent un moyen pratique d&#39;interagir en toute transparence avec d&#39;autres systèmes de gestion de données et d&#39;autres formats de données. À travers des benchmarks, nous montrons que ClickHouse figure parmi les bases de données analytiques les plus rapides du marché, et nous avons mis en évidence des améliorations significatives des performances des requêtes typiques dans des déploiements réels de ClickHouse au fil des ans.
@@ -375,13 +375,13 @@ Nous avons présenté l&#39;architecture de ClickHouse, une base de données OLA
 Toutes les fonctionnalités et améliorations prévues pour 2024 figurent sur la feuille de route publique <sup>[&#91;18&#93;](#page-12-33)</sup>. Les améliorations prévues comprennent la prise en charge des transactions utilisateur, de PromQL <sup>[&#91;69&#93;](#page-13-36)</sup> comme query language alternatif, d&#39;un nouveau type de données pour les données semi-structurées (par ex. JSON), de meilleures optimisations des jointures au niveau du plan, ainsi que l&#39;implémentation de mises à jour légères en complément des suppressions légères.
 
 <div id="acknowledgements">
-  ## REMERCIEMENTS {#acknowledgements}
+  ## REMERCIEMENTS
 </div>
 
 Depuis la version 24.6, SELECT * FROM system.contributors renvoie 1994 personnes ayant contribué à ClickHouse. Nous tenons à remercier toute l’équipe d’ingénierie de ClickHouse Inc. ainsi que l’incroyable communauté open-source de ClickHouse pour leur travail acharné et leur engagement à développer cette base de données ensemble.
 
 <div id="references">
-  ## RÉFÉRENCES {#references}
+  ## RÉFÉRENCES
 </div>
 
 <div style={{fontSize: '0.85em', lineHeight: '1.7'}}>

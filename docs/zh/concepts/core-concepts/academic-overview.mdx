@@ -14,7 +14,7 @@ doc_type: 'guide'
 </Frame>
 
 <div id="abstract">
-  ## 摘要 {#abstract}
+  ## 摘要
 </div>
 
 在过去几十年里，存储和分析的数据量一直呈指数级增长。各行业的企业开始依赖这些数据来改进产品、评估绩效，并做出关乎业务成败的决策。然而，随着数据规模日益达到互联网级，企业必须以兼顾成本效益和可扩展性的方式管理历史数据和新增数据，同时还要支持大量并发查询，并满足实时低时延的要求 (例如，根据具体用例不同，时延需低于一秒) 。
@@ -190,7 +190,7 @@ ClickHouse 提供了一种更轻量的替代方案，其依据是每次插入最
 本节其余部分将先更详细地介绍数据元素、数据块和分片粒度上的并行处理。随后，我们将介绍若干能够最大化查询性能的关键优化。最后，我们将讨论 ClickHouse 在存在并发查询时如何管理共享系统资源。
 
 <div id="4-1-simd-parallelization">
-  ### 4.1 SIMD 并行化 {#4-1-simd-parallelization}
+  ### 4.1 SIMD 并行化
 </div>
 
 在算子之间传递多行数据，为向量化提供了机会。向量化要么基于手写的 intrinsic 函数 <sup>[[64,](#page-13-18)</sup> <sup>[80]](#page-13-19)</sup>，要么基于编译器自动向量化 <sup>[[25]](#page-12-19)</sup>。能从向量化中获益的代码会被编译为不同的计算内核。例如，查询算子内部的热点循环可以分别用非向量化内核、自动向量化的 AVX2 内核以及手写向量化的 AVX-512 内核来实现。运行时会根据 cpuid 指令[选择最快的内核](https://clickhou.se/cpu-dispatch)。这种方法使 ClickHouse 能够运行在最老可追溯到 15 年前的系统上 (最低要求为 SSE 4.2) ，同时仍能在较新的硬件上带来显著的性能提升。
@@ -216,7 +216,7 @@ ClickHouse 采用传统方法 <sup>[&#91;31&#93;](#page-12-13)</sup>，将 SQL �
 ClickHouse 的查询执行引擎以及 morsel-driven parallelism <sup>[[44]](#page-12-20)</sup> 的相似之处在于，lane 通常运行在不同的核心 / NUMA 套接字上，并且工作线程可以从其他 lane 窃取任务。此外，它们都没有中央调度组件；相反，工作线程会通过持续遍历算子计划，各自选择要执行的任务。与 morsel-driven parallelism 不同，ClickHouse 会将最大并行度预先固化在计划中，并且在对源表进行分区时，使用的范围也远大于默认约 100,000 行的 morsel 大小。尽管这在某些情况下可能会造成停滞 (例如，不同 lane 中过滤算子的运行时间差异悬殊时) ，但我们发现，广泛使用 Repartition 之类的 exchange 算子，至少可以避免这类不均衡在各个阶段持续累积。
 
 <div id="4-3-multi-node-parallelization">
-  ### 4.3 多节点并行化 {#4-3-multi-node-parallelization}
+  ### 4.3 多节点并行化
 </div>
 
 如果查询的源表已分片，那么接收该查询的节点 (发起节点) 上的查询优化器会尽可能将更多工作下推到其他节点执行。来自其他节点的结果可以并入查询计划的不同位置。根据具体查询情况，远程节点可能会：1. 将源表的原始列以流式方式传输到发起节点；2. 过滤源列并发送保留下来的行；3. 执行过滤和聚合步骤，并发送带有部分聚合状态的本地结果分组；或者 4. 执行完整查询，包括过滤、聚合和排序。
@@ -295,13 +295,13 @@ ClickHouse 会在 server、user 和 query 级别跟踪内存分配的字节大�
 兼容性接口。除原生二进制 wire protocol 和 HTTP 外，客户端还可以通过兼容 MySQL 或 PostgreSQL wire protocol 的接口与 ClickHouse 交互。这项兼容性功能有助于支持专有应用程序 (例如某些商业智能工具) 访问 ClickHouse，因为这些厂商尚未实现原生 ClickHouse 连接能力。
 
 <div id="6-performance-as-a-feature">
-  ## 6 性能即特性 {#6-performance-as-a-feature}
+  ## 6 性能即特性
 </div>
 
 本节介绍内置的性能分析工具，并通过真实场景查询和基准测试查询来评估性能。
 
 <div id="6-1-built-in-performance-analysis-tools">
-  ### 6.1 内置性能分析工具 {#6-1-built-in-performance-analysis-tools}
+  ### 6.1 内置性能分析工具
 </div>
 
 可使用多种工具来分析单个查询或后台操作中的性能瓶颈。用户通过基于系统表的统一接口使用这些工具。
@@ -315,7 +315,7 @@ ClickHouse 会在 server、user 和 query 级别跟踪内存分配的字节大�
 **查询解释**。与其他数据库类似，可在 SELECT 查询前加上 EXPLAIN，以详细了解查询的 AST、逻辑和物理算子计划，以及运行时行为。
 
 <div id="6-2-benchmarks">
-  ### 6.2 基准测试 {#6-2-benchmarks}
+  ### 6.2 基准测试
 </div>
 
 尽管基准测试因与真实场景不够贴近而受到批评 <sup>[[10,](#page-12-27)</sup> <sup>[52,](#page-13-22)</sup> <sup>[66,](#page-13-23)</sup> <sup>[74]](#page-13-24)</sup>，但它仍然有助于识别数据库的优势与不足。下面我们将讨论如何使用基准测试来评估 ClickHouse 的性能。
@@ -367,7 +367,7 @@ Photon <sup>[&#91;5&#93;](#page-12-39)</sup> 和 Velox <sup>[&#91;62&#93;](#page
 DuckDB <sup>[[67]](#page-13-6)</sup> 也旨在嵌入到宿主进程中，但还提供了查询优化和事务。它的设计目标是以 OLAP 查询为主、夹杂少量 OLTP 语句的场景。因此，DuckDB 选择了 DataBlocks <sup>[[43]](#page-12-43)</sup> 存储格式，该格式采用轻量级压缩方法，例如保序字典或 frame-of-reference <sup>[[2]](#page-12-10)</sup>，以在混合负载下获得良好性能。相比之下，ClickHouse 针对只追加写入的用例进行了优化，也就是没有更新和删除，或更新和删除极少。块使用 LZ4 等较重的技术进行压缩，其前提是用户会充分利用数据裁剪来加速频繁查询，并且对其余查询而言，I/O 成本远高于解压缩成本。DuckDB 还基于 Hyper 的 MVCC 方案 <sup>[[55]](#page-13-35)</sup> 提供了可串行化事务，而 ClickHouse 仅提供快照隔离。
 
 <div id="8-conclusion-and-outlook">
-  ## 8 结论与展望 {#8-conclusion-and-outlook}
+  ## 8 结论与展望
 </div>
 
 我们介绍了 ClickHouse 的架构，它是一款开源的高性能 OLAP 数据库。ClickHouse 以面向写入优化的存储层和先进的向量化查询引擎为基础，能够以高摄取速率对 PB 级数据集进行实时分析。通过在后台异步合并和转换数据，ClickHouse 高效地将数据维护与并行插入解耦。其存储层借助稀疏主索引、跳过索引和投影表，实现了高效的数据裁剪。我们还介绍了 ClickHouse 在更新和删除、幂等插入以及跨节点数据复制以实现高可用性方面的实现机制。查询处理层利用多种技术优化查询，并可在所有服务器和集群资源上并行执行。集成表引擎和函数提供了一种便捷方式，可与其他数据管理系统和数据格式无缝交互。通过基准测试，我们证明了 ClickHouse 是市场上速度最快的分析型数据库之一，并展示了多年来 ClickHouse 在真实部署环境中典型查询性能的显著提升。
@@ -375,13 +375,13 @@ DuckDB <sup>[[67]](#page-13-6)</sup> 也旨在嵌入到宿主进程中，但还�
 2024 年计划中的所有功能和增强都可以在公开路线图 <sup>[[18]](#page-12-33)</sup> 中找到。计划中的改进包括支持用户事务、将 PromQL <sup>[[69]](#page-13-36)</sup> 作为替代查询语言、为半结构化数据 (如 JSON) 提供新的数据类型、进一步改进 JOIN 的执行计划级优化，以及实现轻量级更新以补充轻量级删除。
 
 <div id="acknowledgements">
-  ## 致谢 {#acknowledgements}
+  ## 致谢
 </div>
 
 截至 24.6 版本，SELECT * FROM system.contributors 会返回 1994 位为 ClickHouse 作出贡献的贡献者。我们谨向 ClickHouse Inc. 的全体工程团队以及 ClickHouse 卓越的开源社区致以诚挚谢意，感谢他们为共同打造这一数据库所付出的辛勤努力与奉献。
 
 <div id="references">
-  ## 参考 {#references}
+  ## 参考
 </div>
 
 <div style={{fontSize: '0.85em', lineHeight: '1.7'}}>

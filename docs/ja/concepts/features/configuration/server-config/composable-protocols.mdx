@@ -7,13 +7,13 @@ doc_type: 'reference'
 ---
 
 <div id="overview">
-  ## 概要 {#overview}
+  ## 概要
 </div>
 
 コンポーザブルプロトコル を使用すると、ClickHouseサーバー への TCP アクセスをより柔軟に構成できます。この構成は、従来の構成と併用することも、置き換えることもできます。
 
 <div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
-  ## コンポーザブルプロトコルの設定 {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
+  ## コンポーザブルプロトコルの設定
 </div>
 
 コンポーザブルプロトコルは、XML設定ファイルで設定できます。プロトコル
@@ -26,7 +26,7 @@ doc_type: 'reference'
 ```
 
 <div id="basic-modules-define-protocol-layers">
-  ### プロトコルレイヤーの設定 {#basic-modules-define-protocol-layers}
+  ### プロトコルレイヤーの設定
 </div>
 
 基本モジュールを使ってプロトコルレイヤーを定義できます。たとえば、HTTP レイヤーを定義するには、
@@ -62,7 +62,7 @@ doc_type: 'reference'
 </Note>
 
 <div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
-  ### エンドポイントの設定 {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
+  ### エンドポイントの設定
 </div>
 
 エンドポイント (待ち受けポート) は、`<port>` と省略可能な `<host>` タグで表されます。
@@ -88,7 +88,7 @@ doc_type: 'reference'
 使用されます。
 
 <div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
-  ### レイヤーシーケンスの設定 {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
+  ### レイヤーシーケンスの設定
 </div>
 
 レイヤーシーケンスは、`<impl>` タグを使って定義し、別の
@@ -115,7 +115,7 @@ doc_type: 'reference'
 ```
 
 <div id="endpoint-can-be-attached-to-any-layer">
-  ### エンドポイントをレイヤーに割り当てる {#endpoint-can-be-attached-to-any-layer}
+  ### エンドポイントをレイヤーに割り当てる
 </div>
 
 エンドポイントはどのレイヤーにも割り当てることができます。たとえば、HTTP (ポート8123) とHTTPS (ポート8443) のエンドポイントを定義できます。
@@ -140,7 +140,7 @@ doc_type: 'reference'
 ```
 
 <div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
-  ### 追加のエンドポイントを定義する {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
+  ### 追加のエンドポイントを定義する
 </div>
 
 任意のモジュールを参照し、`<type>` タグを省略することで、追加のエンドポイントを定義できます。たとえば、`plain_http` モジュールに対する `another_http` エンドポイントは次のように定義できます。
@@ -171,7 +171,7 @@ doc_type: 'reference'
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### エンドポイントごとのカスタム HTTP ハンドラー {#custom-http-handlers-per-endpoint}
+  ### エンドポイントごとのカスタム HTTP ハンドラー
 </div>
 
 デフォルトでは、すべての `type=http` プロトコルエントリは同じ `<http_handlers>`

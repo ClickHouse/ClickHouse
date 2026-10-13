@@ -98,8 +98,8 @@ ClickHouse는 버전 24.2부터 기본적으로 적응형 플러시 타임아웃
   `async_insert = 1`이고 전체 결과가 `async_insert_max_data_size` 이내의 단일 블록이면 `INSERT ... SELECT`도 비동기 삽입 큐 경로로 처리될 수 있으며, 그렇지 않으면 동기식으로 실행됩니다. 이 경로에는 별도의 적용 조건이 있으며, 쓰기 집계 및 취소 동작도 다르게 처리됩니다. 자세한 내용은 [비동기 `INSERT ... SELECT`](/ko/concepts/features/operations/insert/async-insert-select)를 참조하십시오.
 </Note>
 
-<div>
-  ### 종료 시 버퍼 플러시 {#flushing-buffers-on-shutdown}
+<div id="flushing-buffers-on-shutdown">
+  ### 종료 시 버퍼 플러시
 </div>
 
 정상 종료 중이거나 유지 관리 전에 보류 중인 모든 비동기 삽입 버퍼를 플러시하려면 다음을 실행하십시오:
@@ -110,8 +110,8 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 
 이를 통해 서버가 중지되기 전에 버퍼링된 데이터가 모두 스토리지에 기록됩니다.
 
-<div>
-  ### Buffer 테이블과의 비교 {#comparison-with-buffer-tables}
+<div id="comparison-with-buffer-tables">
+  ### Buffer 테이블과의 비교
 </div>
 
 비동기 삽입은 [Buffer 테이블](/ko/reference/engines/table-engines/special/buffer)을 대체하는 최신 방식입니다. 주요 차이점은 다음과 같습니다.

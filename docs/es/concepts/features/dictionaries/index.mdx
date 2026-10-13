@@ -28,7 +28,7 @@ Si este es el caso, ClickHouse puede aprovechar el diccionario para realizar un 
 El algoritmo de direct join requiere que la tabla derecha esté respaldada por un diccionario, de modo que los datos que se van a unir de esa tabla ya estén presentes en memoria en forma de una estructura de datos clave-valor de baja latencia.
 
 <div id="example">
-  ### Ejemplo {#example}
+  ### Ejemplo
 </div>
 
 Usando el [conjunto de datos de Stack Overflow](/es/get-started/sample-datasets/stackoverflow), respondamos a la pregunta:
@@ -86,7 +86,7 @@ Peak memory usage: 3.18 GiB.
 Aunque esta consulta es rápida, requiere que escribamos el `JOIN` con cuidado para lograr un buen rendimiento. Idealmente, simplemente filtraríamos las publicaciones para quedarnos con las que contienen &quot;SQL&quot; antes de examinar los recuentos de `UpVote` y `DownVote` del subconjunto de publicaciones para calcular nuestra métrica.
 
 <div id="applying-a-dictionary">
-  #### Aplicar un diccionario {#applying-a-dictionary}
+  #### Aplicar un diccionario
 </div>
 
 Para ilustrar estos conceptos, usamos un diccionario para nuestros datos de votos. Dado que los diccionarios suelen mantenerse en memoria ([ssd&#95;cache](/es/reference/statements/create/dictionary/layouts/ssd-cache) es la excepción), debes tener en cuenta el tamaño de los datos. Para confirmar el tamaño de nuestra tabla `votes`:
@@ -195,7 +195,7 @@ Peak memory usage: 552.26 MiB.
 No solo esta consulta es mucho más sencilla, sino que además es más del doble de rápida. Esto podría optimizarse aún más cargando en el diccionario únicamente las publicaciones con más de 10 votos positivos y negativos, y almacenando solo un valor de controversia precalculado.
 
 <div id="query-time-enrichment">
-  ## Enriquecimiento en tiempo de consulta {#query-time-enrichment}
+  ## Enriquecimiento en tiempo de consulta
 </div>
 
 Los diccionarios pueden utilizarse para consultar valores en tiempo de consulta. Estos valores pueden devolverse en los resultados o usarse en agregaciones. Supongamos que creamos un diccionario para asociar los ID de usuario con su ubicación:
@@ -342,13 +342,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## Temas avanzados sobre diccionarios {#advanced-dictionary-topics}
+  ## Temas avanzados sobre diccionarios
 </div>
 
 Para obtener orientación sobre cómo elegir los layouts de diccionario, cuándo usar diccionarios en lugar de JOINs y cómo supervisar su uso, consulta [Buenas prácticas para diccionarios](/es/concepts/features/dictionaries/best-practices).
 
 <div id="refreshing-dictionaries">
-  ### Actualización de diccionarios {#refreshing-dictionaries}
+  ### Actualización de diccionarios
 </div>
 
 Hemos especificado un `LIFETIME` para el diccionario de `MIN 600 MAX 900`. `LIFETIME` es el intervalo de actualización del diccionario, y estos valores hacen que se recargue periódicamente en un intervalo aleatorio de entre 600 y 900 s. Este intervalo aleatorio es necesario para distribuir la carga en el origen del diccionario cuando se actualiza en un gran número de servidores. Durante las actualizaciones, la versión anterior de un diccionario puede seguir consultándose; solo la carga inicial bloquea las consultas. Tenga en cuenta que establecer `(LIFETIME(0))` impide que los diccionarios se actualicen.
@@ -357,7 +357,7 @@ Los diccionarios pueden recargarse de forma forzada mediante el comando `SYSTEM 
 Para orígenes de base de datos como ClickHouse y Postgres, puede configurar una consulta que actualice los diccionarios solo si realmente han cambiado (esto lo determina la respuesta de la consulta), en lugar de hacerlo a intervalos periódicos. Puede encontrar más detalles [aquí](/es/reference/statements/create/dictionary/lifetime).
 
 <div id="other-dictionary-types">
-  ### Otros tipos de diccionarios {#other-dictionary-types}
+  ### Otros tipos de diccionarios
 </div>
 
 ClickHouse también admite diccionarios [jerárquicos](/es/reference/statements/create/dictionary/layouts/hierarchical), [Polygon](/es/reference/statements/create/dictionary/layouts/polygon) y de [expresión regular](/es/reference/statements/create/dictionary/layouts/regexp-tree).

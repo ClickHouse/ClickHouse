@@ -29,7 +29,7 @@ La configuración `compatibility` te permite usar los valores predeterminados de
 En ClickHouse Cloud, no puedes administrar directamente la configuración `compatibility` predeterminada a nivel de servicio; debes [contactar con el soporte de ClickHouse](https://clickhouse.com/support/program) si quieres cambiar la versión establecida para la configuración `compatibility` predeterminada de tu servicio. Sin embargo, puedes anular la configuración `compatibility` a nivel de usuario, rol, perfil, consulta o sesión mediante los mecanismos de configuración estándar de ClickHouse, como `SET compatibility = '26.8'` en una sesión o `SETTINGS [other settings,] compatibility = '26.8'` en una consulta.
 
 <div id="maintenance-mode">
-  ## Modo de mantenimiento {#maintenance-mode}
+  ## Modo de mantenimiento
 </div>
 
 En ocasiones, es posible que necesitemos actualizar su servicio, lo que podría requerir deshabilitar ciertas funciones, como el escalado o la inactividad. En casos excepcionales, puede que tengamos que intervenir en un servicio que esté experimentando problemas para devolverlo a un estado saludable. Durante este mantenimiento, verá un aviso en la página del servicio con el texto *«Mantenimiento en curso»*. Es posible que, aun así, pueda seguir usando el servicio para realizar consultas durante este tiempo.
@@ -37,7 +37,7 @@ En ocasiones, es posible que necesitemos actualizar su servicio, lo que podría 
 No se le cobrará por el tiempo en que el servicio esté en mantenimiento. El *modo de mantenimiento* es algo poco frecuente y no debe confundirse con las actualizaciones habituales del servicio.
 
 <div id="release-channels-upgrade-schedule">
-  ## Canales de lanzamiento (programación de actualizaciones) {#release-channels-upgrade-schedule}
+  ## Canales de lanzamiento (programación de actualizaciones)
 </div>
 
 Los usuarios pueden especificar la programación de actualizaciones de su servicio de ClickHouse Cloud suscribiéndose a un canal de lanzamiento concreto. Hay tres canales de lanzamiento, y el usuario puede configurar el día de la semana y la hora de las actualizaciones con la función de **actualizaciones programadas**.
@@ -53,7 +53,7 @@ Los tres canales de lanzamiento son:
 </Note>
 
 <div id="fast-release-channel-early-upgrades">
-  ### Canal de lanzamiento rápido (actualizaciones anticipadas) {#fast-release-channel-early-upgrades}
+  ### Canal de lanzamiento rápido (actualizaciones anticipadas)
 </div>
 
 <ScalePlanFeatureBadge feature="El canal de lanzamiento rápido" />
@@ -76,7 +76,7 @@ Puede modificar el calendario de versiones del servicio en la consola de Cloud, 
 Este canal de lanzamiento **rápido** es adecuado para probar nuevas funciones en entornos no críticos. **No se recomienda para cargas de trabajo de producción con requisitos estrictos de tiempo de actividad y fiabilidad.**
 
 <div id="regular-release-channel">
-  ### Canal de lanzamiento regular {#regular-release-channel}
+  ### Canal de lanzamiento regular
 </div>
 
 Para todos los servicios de los niveles Scale y Enterprise que no tengan configurado un canal de lanzamiento ni un calendario de actualizaciones, las actualizaciones se realizarán como parte del canal de lanzamiento regular. Esta opción se recomienda para entornos de producción.
@@ -88,7 +88,7 @@ Las actualizaciones del canal de lanzamiento regular suelen realizarse dos seman
 </Note>
 
 <div id="slow-release-channel-deferred-upgrades">
-  ### Canal de lanzamiento lento (actualizaciones diferidas) {#slow-release-channel-deferred-upgrades}
+  ### Canal de lanzamiento lento (actualizaciones diferidas)
 </div>
 
 <EnterprisePlanFeatureBadge feature="El canal de lanzamiento lento" />

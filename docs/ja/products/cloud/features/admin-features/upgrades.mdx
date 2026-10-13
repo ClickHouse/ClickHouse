@@ -29,7 +29,7 @@ ClickHouse Cloud なら、パッチ適用やアップグレードを気にする
 ClickHouse Cloud では、サービスレベルのデフォルト `compatibility` 設定を直接管理することはできません。サービスのデフォルト `compatibility` 設定に設定されているバージョンを変更したい場合は、[ClickHouse Support に問い合わせる](https://clickhouse.com/support/program)必要があります。ただし、セッションで `SET compatibility = '26.8'` を使用したり、クエリで `SETTINGS [other settings,] compatibility = '26.8'` を使用したりするなど、標準の ClickHouse 設定メカニズムを使って、ユーザー、ロール、profile、クエリ、またはセッションの各レベルで `compatibility` 設定を上書きできます。
 
 <div id="maintenance-mode">
-  ## メンテナンスモード {#maintenance-mode}
+  ## メンテナンスモード
 </div>
 
 場合によっては、サービスを更新するために、スケーリングやアイドル状態への移行などの一部機能を無効にする必要があります。まれに、問題が発生しているサービスに対して措置を講じ、正常な状態に復旧させる必要が生じることもあります。このようなメンテナンス中は、サービスページに *「メンテナンス実施中」* と表示されたバナーが表示されます。この間も、クエリのためにサービスを利用できる場合があります。
@@ -37,7 +37,7 @@ ClickHouse Cloud では、サービスレベルのデフォルト `compatibility
 サービスがメンテナンス中の時間については課金されません。*メンテナンスモード* が発生するのはまれであり、通常のサービスアップグレードとは異なります。
 
 <div id="release-channels-upgrade-schedule">
-  ## リリースチャネル (アップグレードスケジュール) {#release-channels-upgrade-schedule}
+  ## リリースチャネル (アップグレードスケジュール)
 </div>
 
 ユーザーは、特定のリリースチャネルに登録することで、ClickHouse Cloud サービスのアップグレードスケジュールを指定できます。リリースチャネルは 3 種類あり、**スケジュールされたアップグレード** 機能を使用して、アップグレードを実施する曜日と時刻を設定できます。
@@ -53,7 +53,7 @@ ClickHouse Cloud では、サービスレベルのデフォルト `compatibility
 </Note>
 
 <div id="fast-release-channel-early-upgrades">
-  ### Fast リリースチャネル (早期アップグレード) {#fast-release-channel-early-upgrades}
+  ### Fast リリースチャネル (早期アップグレード)
 </div>
 
 <ScalePlanFeatureBadge feature="The fast release channel" />
@@ -76,7 +76,7 @@ ClickHouse Cloud では、サービスレベルのデフォルト `compatibility
 この**Fast release**リリースチャネルは、重要度の低い環境で新機能をテストするのに適しています。**高い可用性と信頼性が求められる本番ワークロードには推奨されません。**
 
 <div id="regular-release-channel">
-  ### Regular リリースチャネル {#regular-release-channel}
+  ### Regular リリースチャネル
 </div>
 
 Scale ティアおよび Enterprise ティアのすべてのサービスで、リリースチャネルまたはアップグレードスケジュールが設定されていない場合は、Regular リリースチャネルのリリースの一環としてアップグレードされます。これは本番環境に推奨されます。
@@ -88,7 +88,7 @@ Regular リリースチャネルへのアップグレードは、通常、**Fast
 </Note>
 
 <div id="slow-release-channel-deferred-upgrades">
-  ### Slow リリースチャネル (アップグレードの延期) {#slow-release-channel-deferred-upgrades}
+  ### Slow リリースチャネル (アップグレードの延期)
 </div>
 
 <EnterprisePlanFeatureBadge feature="The slow release channel" />
@@ -110,7 +110,7 @@ Regular リリースチャネルへのアップグレードは、通常、**Fast
 </Note>
 
 <div id="scheduled-upgrades">
-  ## スケジュールされたアップグレード {#scheduled-upgrades}
+  ## スケジュールされたアップグレード
 </div>
 
 <EnterprisePlanFeatureBadge feature="Scheduled upgrades" linking_verb_are="true" />

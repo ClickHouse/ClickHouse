@@ -9,7 +9,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/ja/components/Image.jsx";
 
 <div id="prerequisites">
-  ## 前提条件 {#prerequisites}
+  ## 前提条件
 </div>
 
 この記事の例では、以下が必要です。
@@ -64,7 +64,7 @@ Ok.
 ```
 
 <div id="querying">
-  ## HTTP/HTTPS 経由でのクエリ {#querying}
+  ## HTTP/HTTPS 経由でのクエリ
 </div>
 
 HTTP/HTTPS 経由でクエリを実行する方法は 3 つあります。
@@ -350,7 +350,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 クエリにすでに `FROM` 句が含まれている場合、パス部分ではダウンロードするファイル名のみを指定します。
 
 <div id="insert-queries">
-  ## HTTP/HTTPS 経由の INSERT クエリ {#insert-queries}
+  ## HTTP/HTTPS 経由の INSERT クエリ
 </div>
 
 `INSERT` クエリでは、データの送信に `POST` メソッドを使用する必要があります。この場合、クエリの先頭部分を URL パラメーターに記述し、挿入するデータは `POST` で渡せます。挿入するデータとしては、たとえば MySQL のタブ区切りの dump を使用できます。このように、`INSERT` クエリは MySQL の `LOAD DATA LOCAL INFILE` の代替として使用できます。
@@ -499,7 +499,7 @@ Aisha	Khan	19920815	['(555) 247-8903','(555) 612-3457']
 プレフィックスなしで単一のメッセージを送信する場合は [`ProtobufSingle`](/ja/reference/formats/Protobuf/ProtobufSingle) を、1 つの `Envelope` メッセージのサブメッセージとして行を送信する場合は [`ProtobufList`](/ja/reference/formats/Protobuf/ProtobufList) を使用してください。
 
 <div id="compression">
-  ## 圧縮 {#compression}
+  ## 圧縮
 </div>
 
 圧縮は、大量のデータを送信する際のネットワークトラフィックを削減したり、圧縮済みのダンプを直接作成したりする場合に利用できます。
@@ -532,7 +532,7 @@ ClickHouse にレスポンスを圧縮させるには、リクエストに `Acce
 </Info>
 
 <div id="examples-compression">
-  ## 例 {#examples-compression}
+  ## 例
 </div>
 
 圧縮データをサーバーへ送信するには:
@@ -565,7 +565,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 ```
 
 <div id="default-database">
-  ## デフォルトデータベース {#default-database}
+  ## デフォルトデータベース
 </div>
 
 `database` URL パラメータまたは `X-ClickHouse-Database` ヘッダーで、デフォルトのデータベースを指定できます。
@@ -587,7 +587,7 @@ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?databa
 デフォルトでは、サーバー設定に登録されているデータベースが既定のデータベースとして使用されます。初期状態では、これは `default` という名前のデータベースです。別の方法として、テーブル名の前にドット区切りでデータベース名を付けて、いつでもデータベースを指定できます。
 
 <div id="authentication">
-  ## 認証 {#authentication}
+  ## 認証
 </div>
 
 ユーザー名とパスワードは、次の3つの方法のいずれかで指定できます。
@@ -716,7 +716,7 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 </Tip>
 
 <div id="setting-role-with-query-parameters">
-  ## クエリパラメータでロールを設定する {#setting-role-with-query-parameters}
+  ## クエリパラメータでロールを設定する
 </div>
 
 この機能は ClickHouse 24.4 で追加されました。
@@ -842,13 +842,13 @@ __exception__
 ```
 
 <div id="cli-queries-with-parameters">
-  ## パラメータ付きクエリ {#cli-queries-with-parameters}
+  ## パラメータ付きクエリ
 </div>
 
 パラメータ付きのクエリを作成し、対応する HTTP リクエストパラメータから値を渡せます。詳しくは、[CLI のパラメータ付きクエリ](/ja/concepts/features/interfaces/client#cli-queries-with-parameters)を参照してください。
 
 <div id="examples">
-  ### 例 {#example-3}
+  ### 例
 </div>
 
 ```bash
@@ -856,7 +856,7 @@ $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHER
 ```
 
 <div id="tabs-in-url-parameters">
-  ### URL パラメータ内のタブ {#tabs-in-url-parameters}
+  ### URL パラメータ内のタブ
 </div>
 
 クエリパラメータは `escaped` フォーマットとして解析されます。これには、たとえば NULL を `\N` として曖昧さなく解析できるといった利点があります。つまり、タブ文字は `\t` (または `\` とタブ文字) としてエンコードする必要があります。たとえば、次の例では `abc` と `123` の間に実際のタブが含まれており、入力文字列は 2 つの値に分割されます。
@@ -887,7 +887,7 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ```
 
 <div id="predefined_http_interface">
-  ## 事前定義済み HTTP インターフェイス {#predefined_http_interface}
+  ## 事前定義済み HTTP インターフェイス
 </div>
 
 ClickHouse は、HTTP インターフェイス経由で特定のクエリをサポートしています。たとえば、次のようにテーブルにデータを書き込むことができます。
@@ -1057,7 +1057,7 @@ max_threads    1
 ```
 
 <div id="virtual-param-request-body">
-  #### 仮想パラメータ `_request_body` {#virtual-param-request-body}
+  #### 仮想パラメータ `_request_body`
 </div>
 
 URLパラメータ、ヘッダー、クエリパラメータに加えて、`predefined_query_handler` は特殊な仮想パラメータ `_request_body` もサポートしています。
@@ -1126,7 +1126,7 @@ max_final_threads   2
 ```
 
 <div id="static">
-  ### static {#static}
+  ### static
 </div>
 
 `static` では、[`content_type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type)、[status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status)、および `response_content` を返せます。`response_content` では、指定した内容を返せます。
@@ -1319,7 +1319,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="redirect">
-  ### redirect {#redirect}
+  ### redirect
 </div>
 
 `redirect` は `location` に `302` リダイレクトします
@@ -1342,7 +1342,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="http-response-headers">
-  ## HTTP レスポンスヘッダー {#http-response-headers}
+  ## HTTP レスポンスヘッダー
 </div>
 
 ClickHouse では、設定可能なあらゆる種類のハンドラーに適用できるカスタム HTTP レスポンスヘッダーを設定できます。これらのヘッダーは `http_response_headers` 設定で指定でき、ヘッダー名とその値を表すキー・バリューのペアを受け付けます。この機能は、カスタムのセキュリティヘッダーや CORS ポリシー、その他 ClickHouse HTTP インターフェイス全体で必要となる HTTP ヘッダー要件に対応する際に特に便利です。

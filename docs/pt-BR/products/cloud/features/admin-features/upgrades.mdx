@@ -29,7 +29,7 @@ A configuração `compatibility` permite usar os valores padrão das configuraç
 No ClickHouse Cloud, você não pode gerenciar diretamente a configuração `compatibility` padrão no nível do serviço — é necessário [entrar em contato com o suporte do ClickHouse](https://clickhouse.com/support/program) se quiser alterar a versão definida para a configuração `compatibility` padrão do seu serviço. No entanto, é possível substituir a configuração `compatibility` no nível de usuário, função, perfil, consulta ou sessão usando os mecanismos padrão de configuração do ClickHouse, como `SET compatibility = '26.8'` em uma sessão ou `SETTINGS [other settings,] compatibility = '26.8'` em uma consulta.
 
 <div id="maintenance-mode">
-  ## Modo de manutenção {#maintenance-mode}
+  ## Modo de manutenção
 </div>
 
 Às vezes, pode ser necessário atualizar seu serviço, o que pode exigir a desativação de determinados recursos, como escalonamento ou entrada em modo ocioso. Em casos raros, também pode ser necessário intervir em um serviço que esteja apresentando problemas para restaurá-lo a um estado saudável. Durante essa manutenção, você verá um banner na página do serviço com a mensagem *&quot;Manutenção em andamento&quot;*. Ainda assim, talvez seja possível usar o serviço para consultas durante esse período.
@@ -37,7 +37,7 @@ No ClickHouse Cloud, você não pode gerenciar diretamente a configuração `com
 Você não será cobrado pelo tempo em que o serviço estiver em manutenção. O *modo de manutenção* é algo raro e não deve ser confundido com upgrades regulares do serviço.
 
 <div id="release-channels-upgrade-schedule">
-  ## Canais de lançamento (cronograma de upgrades) {#release-channels-upgrade-schedule}
+  ## Canais de lançamento (cronograma de upgrades)
 </div>
 
 Os usuários podem especificar o cronograma de upgrades do seu serviço do ClickHouse Cloud assinando um canal de lançamento específico. Há três canais de lançamento, e o usuário pode configurar o dia da semana e o horário dos upgrades com o recurso de **upgrades agendados**.
@@ -74,7 +74,7 @@ Você pode modificar o cronograma de lançamento do serviço no console do Cloud
 Este canal de **lançamento rápido** é adequado para testar novos recursos em ambientes não críticos. **Não é recomendado para workloads de produção com requisitos rigorosos de uptime e confiabilidade.**
 
 <div id="regular-release-channel">
-  ### Canal de lançamento regular {#regular-release-channel}
+  ### Canal de lançamento regular
 </div>
 
 Para todos os serviços do tier Scale e Enterprise que não têm um canal de lançamento ou um cronograma de atualização configurado, as atualizações serão feitas como parte da liberação do canal Regular. Isso é recomendado para ambientes de produção.
@@ -86,7 +86,7 @@ As atualizações no canal de lançamento regular normalmente são realizadas du
 </Note>
 
 <div id="slow-release-channel-deferred-upgrades">
-  ### Canal de lançamento lento (upgrades adiados) {#slow-release-channel-deferred-upgrades}
+  ### Canal de lançamento lento (upgrades adiados)
 </div>
 
 <EnterprisePlanFeatureBadge feature="O canal de lançamento lento" />

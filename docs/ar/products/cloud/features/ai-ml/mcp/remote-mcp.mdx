@@ -38,7 +38,7 @@ https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="setup-clickhouse-cloud-remote-mcp-server">
-  ## إعداد Remote MCP للتطوير {#setup-clickhouse-cloud-remote-mcp-server}
+  ## إعداد Remote MCP للتطوير
 </div>
 
 اختر بيئة التطوير المتكاملة أو الأداة المناسبة أدناه، ثم اتبع تعليمات الإعداد المقابلة.
@@ -127,7 +127,7 @@ export CH_AUTH="Basic $(
 لا تتطلب طريقة المصادقة هذه بمفتاح API متصفحًا ولا تسجيل دخول منفصلًا عبر `clickhousectl`.
 
 <div id="claude-code">
-  ### Claude Code {#claude-code}
+  ### Claude Code
 </div>
 
 من دليل العمل الحالي، شغِّل الأمر التالي لإضافة تكوين ClickHouse Cloud MCP Server إلى Claude Code:
@@ -151,7 +151,7 @@ claude
 حدِّد `clickhouse-cloud` وسجِّل الدخول عبر OAuth باستخدام بيانات الاعتماد الخاصة بك في ClickHouse Cloud.
 
 <div id="claude-web">
-  ### واجهة الويب لـ Claude {#claude-web}
+  ### واجهة الويب لـ Claude
 </div>
 
 1. انتقل إلى **Customize** &gt; **Connectors**
@@ -161,7 +161,7 @@ claude
 5. أكمِل المصادقة باستخدام بيانات اعتماد ClickHouse Cloud عبر OAuth
 
 <div id="cursor">
-  ### Cursor {#cursor}
+  ### Cursor
 </div>
 
 1. تصفّح خوادم MCP وثبّتها من [متجر Cursor](https://cursor.com/marketplace).
@@ -169,7 +169,7 @@ claude
 3. أكمل المصادقة باستخدام OAuth.
 
 <div id="visual-studio-code">
-  ### Visual Studio Code {#visual-studio-code}
+  ### Visual Studio Code
 </div>
 
 أضِف الإعداد التالي إلى `.vscode/mcp.json`:
@@ -188,7 +188,7 @@ claude
 لمزيد من التفاصيل، راجع [وثائق Visual Studio Code](https://code.visualstudio.com/docs/copilot/customization/mcp-servers).
 
 <div id="windsurf">
-  ### Windsurf {#windsurf}
+  ### Windsurf
 </div>
 
 حرِّر ملف `mcp_config.json` باستخدام التكوين التالي:
@@ -207,7 +207,7 @@ claude
 لمزيد من التفاصيل، اطّلع على [وثائق Windsurf](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp).
 
 <div id="zed">
-  ### Zed {#zed}
+  ### Zed
 </div>
 
 أضِف ClickHouse كخادم مخصّص.
@@ -227,7 +227,7 @@ claude
 لمزيد من التفاصيل، راجع [وثائق Zed](https://zed.dev/docs/ai/mcp#as-custom-servers).
 
 <div id="codex">
-  ### Codex {#codex}
+  ### Codex
 </div>
 
 نفّذ الأمر التالي لإضافة خادم MCP الخاص بـ ClickHouse Cloud عبر CLI:
@@ -237,7 +237,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="example-usage">
-  ## مثال على الاستخدام {#example-usage}
+  ## مثال على الاستخدام
 </div>
 
 بمجرد الاتصال، يمكنك التفاعل مع ClickHouse Cloud عبر مطالبات باللغة الطبيعية.
@@ -245,7 +245,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 للاطلاع على قائمة كاملة بالأدوات المتاحة، راجع [مرجع الأدوات](/ar/products/cloud/features/ai-ml/remote-mcp#available-tools).
 
 <div id="exploring-data">
-  ### استكشاف بياناتك {#exploring-data}
+  ### استكشاف بياناتك
 </div>
 
 ابدأ بالتعرّف على المتاح:
@@ -258,7 +258,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;اعرض جميع الجداول التي تبدأ أسماؤها بـ `events_`&quot; | `list_tables` (باستخدام عامل التصفية `like`) |
 
 <div id="running-queries">
-  ### تشغيل الاستعلامات التحليلية {#running-queries}
+  ### تشغيل الاستعلامات التحليلية
 </div>
 
 اطرح أسئلة بلغة طبيعية، وسيتولى الوكيل ترجمتها إلى SQL:
@@ -272,7 +272,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 لا تتيح الأداة `run_select_query` سوى عبارات `SELECT`. جميع الاستعلامات للقراءة فقط.
 
 <div id="managing-services">
-  ### إدارة الخدمات والبنية التحتية {#managing-services}
+  ### إدارة الخدمات والبنية التحتية
 </div>
 
 اطّلع على موارد ClickHouse Cloud لديك:
@@ -286,7 +286,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;ما هي ClickPipes المُعدّة على هذه الخدمة؟&quot; | `list_clickpipes`                  |
 
 <div id="monitoring-costs">
-  ### تكاليف المراقبة {#monitoring-costs}
+  ### تكاليف المراقبة
 </div>
 
 | الموجّه                                                    | الأداة المستخدم                                    |
@@ -295,7 +295,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;اعرض لي التكاليف اليومية من 1 مارس إلى 15 مارس&quot; | `get_organization_cost` (مع `from_date` و `to_date`) |
 
 <div id="related-content">
-  ## محتوى ذو صلة {#related-content}
+  ## محتوى ذو صلة
 </div>
 
 * [ClickHouse agent skills](https://github.com/ClickHouse/agent-skills)

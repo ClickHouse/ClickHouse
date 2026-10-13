@@ -10,7 +10,7 @@ doc_type: 'guide'
 根据查询类型的不同，这可以显著降低 ClickHouse 服务器的延迟和资源消耗。
 
 <div id="background-design-and-limitations">
-  ## 背景、设计与局限性 {#background-design-and-limitations}
+  ## 背景、设计与局限性
 </div>
 
 查询缓存通常可分为事务一致和事务不一致两类。
@@ -322,7 +322,7 @@ SETTINGS use_query_cache = true, query_cache_on_disk_cache_name = 'query_results
 系统会先探测内存缓存，因此内存命中数等于 &quot;QueryCacheHits&quot; 减去 &quot;QueryCacheOnDiskHits&quot;。
 
 <div id="related-content">
-  ## 相关内容 {#related-content}
+  ## 相关内容
 </div>
 
 * 博客：[ClickHouse 查询缓存介绍](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

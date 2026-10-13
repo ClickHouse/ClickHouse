@@ -8,7 +8,7 @@ doc_type: 'referência'
 ---
 
 <div id="overview">
-  ## Visão geral {#overview}
+  ## Visão geral
 </div>
 
 Os protocolos componíveis permitem configurar com mais flexibilidade o acesso TCP ao
@@ -16,7 +16,7 @@ servidor ClickHouse. Essa configuração pode coexistir com a configuração
 convencional ou substituí-la.
 
 <div id="composable-protocols-section-is-denoted-as-protocols-in-configuration-xml">
-  ## Configurando protocolos componíveis {#composable-protocols-section-is-denoted-as-protocols-in-configuration-xml}
+  ## Configurando protocolos componíveis
 </div>
 
 Os protocolos componíveis podem ser configurados em um arquivo de configuração XML. A seção de protocolos
@@ -29,7 +29,7 @@ Os protocolos componíveis podem ser configurados em um arquivo de configuraçã
 ```
 
 <div id="basic-modules-define-protocol-layers">
-  ### Configurando camadas de protocolo {#basic-modules-define-protocol-layers}
+  ### Configurando camadas de protocolo
 </div>
 
 Você pode definir camadas de protocolo usando módulos base. Por exemplo, para definir uma
@@ -65,7 +65,7 @@ Os módulos podem ser configurados da seguinte forma:
 </Note>
 
 <div id="endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags">
-  ### Configurando endpoints {#endpoint-ie-listening-port-is-denoted-by-port-and-optional-host-tags}
+  ### Configurando endpoints
 </div>
 
 Os endpoints (portas de escuta) são representados pelas tags `<port>` e `<host>` opcionais.
@@ -90,7 +90,7 @@ poderíamos modificar nossa configuração da seguinte forma:
 Se a tag `<host>` for omitida, será usada a `<listen_host>` da configuração raiz.
 
 <div id="layers-sequence-is-defined-by-impl-tag-referencing-another-module">
-  ### Configurando sequências de camadas {#layers-sequence-is-defined-by-impl-tag-referencing-another-module}
+  ### Configurando sequências de camadas
 </div>
 
 As sequências de camadas são definidas com a tag `<impl>`, fazendo referência a outro
@@ -117,7 +117,7 @@ podemos ajustar ainda mais a configuração da seguinte forma:
 ```
 
 <div id="endpoint-can-be-attached-to-any-layer">
-  ### Associando endpoints às camadas {#endpoint-can-be-attached-to-any-layer}
+  ### Associando endpoints às camadas
 </div>
 
 Endpoints podem ser associados a qualquer camada. Por exemplo, podemos definir endpoints para
@@ -143,7 +143,7 @@ HTTP (porta 8123) e HTTPS (porta 8443):
 ```
 
 <div id="additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag">
-  ### Definição de endpoints adicionais {#additional-endpoints-can-be-defined-by-referencing-any-module-and-omitting-type-tag}
+  ### Definição de endpoints adicionais
 </div>
 
 É possível definir endpoints adicionais referenciando qualquer módulo e omitindo a
@@ -176,7 +176,7 @@ módulo `plain_http` da seguinte forma:
 ```
 
 <div id="custom-http-handlers-per-endpoint">
-  ### Handlers HTTP personalizados por endpoint {#custom-http-handlers-per-endpoint}
+  ### Handlers HTTP personalizados por endpoint
 </div>
 
 Por padrão, todas as entradas do protocolo `type=http` compartilham a mesma

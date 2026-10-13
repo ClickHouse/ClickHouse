@@ -28,7 +28,7 @@ import { Image } from "/snippets/ar/components/Image.jsx";
 تتطلب خوارزمية Direct Join أن يكون الجدول الأيمن معتمدًا على قاموس، بحيث تكون البيانات المراد ربطها من ذلك الجدول موجودة مسبقًا في الذاكرة على هيئة بنية بيانات مفتاح-قيمة منخفضة زمن الانتقال.
 
 <div id="example">
-  ### مثال {#example}
+  ### مثال
 </div>
 
 باستخدام [مجموعة بيانات Stack Overflow](/ar/get-started/sample-datasets/stackoverflow)، لنُجب عن السؤال:
@@ -86,7 +86,7 @@ Peak memory usage: 3.18 GiB.
 على الرغم من أن هذا الاستعلام سريع، فإنه يتطلب منا كتابة `JOIN` بعناية لتحقيق أداء جيد. ومن الناحية المثالية، سنكتفي بتصفية المنشورات إلى تلك التي تحتوي على &quot;SQL&quot;، قبل النظر في عدد `UpVote` و`DownVote` للمجموعة الفرعية من المدوّنات لحساب المقياس.
 
 <div id="applying-a-dictionary">
-  #### استخدام قاموس {#applying-a-dictionary}
+  #### استخدام قاموس
 </div>
 
 لتوضيح هذه المفاهيم، نستخدم قاموسًا لبيانات التصويت لدينا. وبما أن القواميس تُحفَظ عادةً في الذاكرة (ويُعَد [ssd&#95;cache](/ar/reference/statements/create/dictionary/layouts/ssd-cache) الاستثناء)، ينبغي أن تكون على دراية بحجم البيانات. للتأكد من حجم جدول `votes` لدينا:
@@ -195,7 +195,7 @@ Peak memory usage: 552.26 MiB.
 هذا الاستعلام ليس أبسط بكثير فحسب، بل أسرع أيضًا بأكثر من الضعف! ويمكن تحسينه أكثر من ذلك من خلال تحميل المنشورات التي تضم أكثر من 10 أصوات تأييد ومعارضة فقط إلى القاموس، والاحتفاظ فقط بقيمة الجدل المحتسَبة مسبقًا.
 
 <div id="query-time-enrichment">
-  ## الإثراء وقت تنفيذ الاستعلام {#query-time-enrichment}
+  ## الإثراء وقت تنفيذ الاستعلام
 </div>
 
 يمكن استخدام القواميس للبحث عن القيم وقت تنفيذ الاستعلام. ويمكن إرجاع هذه القيم في النتائج أو استخدامها في عمليات التجميع. لنفترض أننا ننشئ قاموس لربط معرّفات المستخدمين بمواقعهم:
@@ -342,13 +342,13 @@ Peak memory usage: 666.82 MiB.
 ```
 
 <div id="advanced-dictionary-topics">
-  ## موضوعات متقدمة عن القواميس {#advanced-dictionary-topics}
+  ## موضوعات متقدمة عن القواميس
 </div>
 
 للاطلاع على إرشادات حول اختيار بُنى القواميس، ومتى تُستخدَم القواميس بدلًا من عبارات JOIN، وكيفية مراقبة استخدامها، راجع [أفضل ممارسات القواميس](/ar/concepts/features/dictionaries/best-practices).
 
 <div id="refreshing-dictionaries">
-  ### تحديث القواميس {#refreshing-dictionaries}
+  ### تحديث القواميس
 </div>
 
 لقد حدّدنا قيمة `LIFETIME` لـ قاموس على هيئة `MIN 600 MAX 900`. تمثل `LIFETIME` فترة تحديث الـ قاموس، وتؤدي القيم هنا إلى إعادة تحميله دوريًا على فترات عشوائية بين 600 و900 ثانية. ويكون هذا التباعد العشوائي ضروريًا لتوزيع الحمل على dictionary source عند التحديث عبر عدد كبير من الخوادم. أثناء التحديث، تظل الاستعلامات على الإصدار القديم من الـ قاموس ممكنة، ولا تُحجب الاستعلامات إلا أثناء initial load. لاحظ أن تعيين `(LIFETIME(0))` يمنع تحديث القواميس.
@@ -357,7 +357,7 @@ Peak memory usage: 666.82 MiB.
 بالنسبة إلى مصادر قواعد البيانات مثل ClickHouse وPostgres، يمكنك إعداد query لتحديث القواميس فقط إذا كانت قد تغيّرت فعلًا (ويحدد ذلك ردّ الـ query)، بدلًا من التحديث على فترات دورية. يمكن العثور على مزيد من التفاصيل [هنا](/ar/reference/statements/create/dictionary/lifetime).
 
 <div id="other-dictionary-types">
-  ### أنواع القواميس الأخرى {#other-dictionary-types}
+  ### أنواع القواميس الأخرى
 </div>
 
 يدعم ClickHouse أيضًا قواميس [هرمية](/ar/reference/statements/create/dictionary/layouts/hierarchical) و[Polygon](/ar/reference/statements/create/dictionary/layouts/polygon) و[التعبير النمطي](/ar/reference/statements/create/dictionary/layouts/regexp-tree).

@@ -29,7 +29,7 @@ import { ExperimentalBadge } from "/snippets/pt-BR/components/ExperimentalBadge/
 O nível de isolamento do consumidor Kafka determina se um ClickPipe lê e insere apenas mensagens confirmadas em uma transação Kafka. Habilite a configuração `kafka_read_committed` para usar `read_committed` e ignorar mensagens de transações Kafka abortadas. Desabilite-a para usar `read_uncommitted` e ler todas as mensagens. Você pode configurar essa opção em **Configurações avançadas**.
 
 <div id="supported-data-formats">
-  ## Formatos de dados compatíveis {#supported-data-formats}
+  ## Formatos de dados compatíveis
 </div>
 
 Os formatos compatíveis são:
@@ -39,11 +39,11 @@ Os formatos compatíveis são:
 * [Protobuf](/pt-BR/reference/formats/Protobuf/Protobuf)
 
 <div id="supported-data-types">
-  ## Tipos de dados suportados {#supported-data-types}
+  ## Tipos de dados suportados
 </div>
 
 <div id="standard-types-support">
-  ### Tipos padrão {#standard-types-support}
+  ### Tipos padrão
 </div>
 
 Os seguintes tipos de dados padrão do ClickHouse são atualmente compatíveis com o ClickPipes:
@@ -75,7 +75,7 @@ O ClickPipes oferece suporte ao tipo Variant nas seguintes situações:
 * Campos JSON. Você pode especificar manualmente um tipo Variant (como `Variant(String, Int64, DateTime)`) para qualquer campo JSON no fluxo de dados de origem. Subtipos complexos (arrays/maps/tuples) não são compatíveis. Além disso, devido à forma como o ClickPipes determina qual subtipo Variant correto deve ser usado, apenas um tipo inteiro ou datetime pode ser usado na definição de Variant - por exemplo, `Variant(Int64, UInt32)` não é compatível.
 
 <div id="json-type-support">
-  ### Suporte ao tipo JSON {#json-type-support}
+  ### Suporte ao tipo JSON
 </div>
 
 O ClickPipes oferece suporte ao tipo JSON nas seguintes situações:
@@ -88,7 +88,7 @@ O ClickPipes oferece suporte ao tipo JSON nas seguintes situações:
 Observe que será necessário alterar manualmente a coluna de destino para o tipo JSON desejado, incluindo quaisquer caminhos fixos ou ignorados.
 
 <div id="avro">
-  ### Avro {#avro}
+  ### Avro
 </div>
 
 #### Tipos de dados Avro compatíveis {#supported-avro-data-types}
@@ -104,7 +104,7 @@ Os tipos Nullable no Avro são definidos usando um esquema Union de `(T, null)` 
 * Um named Tuple com todos os valores padrão/zero para um Record nulo do Avro
 
 <div id="protobuf">
-  ### Protobuf {#protobuf}
+  ### Protobuf
 </div>
 
 #### Tipos de dados Protobuf suportados {#supported-protobuf-data-types}
@@ -153,7 +153,7 @@ Os seguintes [tipos bem conhecidos](https://protobuf.dev/reference/protobuf/goog
 Durante a inferência de esquema, os campos `oneof` do Protobuf são mapeados por padrão para uma `Tuple` nomeada, em que no máximo um campo terá um valor diferente do padrão. Esses campos também podem ser mapeados automaticamente para uma coluna `Variant`, em que o valor ativo assume o tipo do campo constituinte que estiver definido. Como alternativa, cada campo constituinte pode ser mapeado manualmente para sua própria coluna no ClickHouse; como os campos `oneof` são mutuamente exclusivos, apenas uma coluna será preenchida por registro.
 
 <div id="protobuf-message-lists">
-  #### Listas de mensagens {#protobuf-message-lists}
+  #### Listas de mensagens
 </div>
 
 Se o esquema Protobuf de nível superior definido para o ClickPipe contiver um único campo repetido que seja, ele próprio, uma Message do protobuf, a inferência de esquema e o mapeamento de colunas serão baseados no campo Message &quot;contido&quot;. A mensagem do Kafka será processada como uma lista dessas mensagens, e uma única mensagem do Kafka será descompactada em várias linhas no ClickHouse.

@@ -24,7 +24,7 @@ picture-in-picture"
 </div>
 
 <div id="prerequisites">
-  ## 前置条件 {#prerequisites}
+  ## 前置条件
 </div>
 
 我们假设你已经熟悉以下内容：
@@ -37,24 +37,24 @@ picture-in-picture"
 </Note>
 
 <div id="the-official-kafka-connector-from-clickhouse-with-confluent-platform">
-  ## ClickHouse 官方 Kafka 连接器 (作为 自定义连接器) {#the-official-kafka-connector-from-clickhouse-with-confluent-platform}
+  ## ClickHouse 官方 Kafka 连接器 (作为 自定义连接器)
 </div>
 
 <div id="installing-on-confluent-platform">
-  ### 作为 自定义连接器 安装 {#installing-on-confluent-platform}
+  ### 作为 自定义连接器 安装
 </div>
 
 本文旨在作为一份快速入门指南，帮助你开始在 Confluent Cloud 上以 自定义连接器 的形式使用 ClickHouse Sink Connector。
 更多详情请参阅 [Confluent 官方文档](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector)。
 
 <div id="create-a-topic">
-  #### 创建 topic {#create-a-topic}
+  #### 创建 topic
 </div>
 
 在 Confluent Cloud 上创建 topic 非常简单，详细说明请参见[此处](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html)。
 
 <div id="important-notes">
-  #### 重要说明 {#important-notes}
+  #### 重要说明
 </div>
 
 * Kafka topic 名称必须与 ClickHouse 表名保持一致。要实现这一点，可以使用转换器 (例如 [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)) 。
@@ -77,13 +77,13 @@ picture-in-picture"
 <Image img="/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp" size="md" alt="Confluent Platform UI，显示添加自定义 ClickHouse 连接器的设置" border />
 
 <div id="gather-your-connection-details">
-  #### 准备您的连接信息 {#gather-your-connection-details}
+  #### 准备您的连接信息
 </div>
 
 <ConnectionDetails />
 
 <div id="configure-the-connector">
-  #### 配置连接器 {#configure-the-connector}
+  #### 配置连接器
 </div>
 
 前往 `Connectors` -&gt; `Add Connector`，并使用以下设置 (请注意，这些值仅为示例) ：
@@ -107,7 +107,7 @@ picture-in-picture"
 ```
 
 <div id="specify-the-connection-endpoints">
-  #### 指定连接端点 {#specify-the-connection-endpoints}
+  #### 指定连接端点
 </div>
 
 您需要指定该连接器可访问的端点允许列表。
@@ -123,7 +123,7 @@ picture-in-picture"
 这样应该就可以了！
 
 <div id="known-limitations">
-  #### 已知限制 {#known-limitations}
+  #### 已知限制
 </div>
 
 * 自定义连接器必须使用公共互联网端点。不支持静态 IP 地址。

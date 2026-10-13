@@ -24,7 +24,7 @@ picture-in-picture"
 </div>
 
 <div id="prerequisites">
-  ## Pré-requisitos {#prerequisites}
+  ## Pré-requisitos
 </div>
 
 Partimos do pressuposto de que você já esteja familiarizado com:
@@ -39,20 +39,20 @@ Partimos do pressuposto de que você já esteja familiarizado com:
 ## O connector oficial do Kafka da ClickHouse como um Custom Connector {#the-official-kafka-connector-from-clickhouse-with-confluent-platform}
 
 <div id="installing-on-confluent-platform">
-  ### Instalação como Custom Connector {#installing-on-confluent-platform}
+  ### Instalação como Custom Connector
 </div>
 
 Este é um guia rápido para ajudar você a começar a usar o ClickHouse Sink Connector como Custom Connector no Confluent Cloud.
 Para mais detalhes, consulte a [documentação oficial da Confluent](https://docs.confluent.io/cloud/current/connectors/bring-your-connector/custom-connector-qs.html#uploading-and-launching-the-connector).
 
 <div id="create-a-topic">
-  #### Criar um tópico {#create-a-topic}
+  #### Criar um tópico
 </div>
 
 Criar um tópico no Confluent Cloud é bastante simples, e há instruções detalhadas [aqui](https://docs.confluent.io/cloud/current/client-apps/topics/manage.html).
 
 <div id="important-notes">
-  #### Observações importantes {#important-notes}
+  #### Observações importantes
 </div>
 
 * O nome do tópico do Kafka deve ser o mesmo da tabela do ClickHouse. A forma de ajustar isso é usando um transformador (por exemplo, [`ExtractTopic`](https://docs.confluent.io/platform/current/connect/transforms/extracttopic.html)).
@@ -75,13 +75,13 @@ Exemplo:
 <Image img="/images/integrations/data-ingestion/kafka/confluent/AddCustomConnectorPlugin.webp" size="md" alt="IU da Confluent Platform mostrando as configurações para adicionar um conector ClickHouse personalizado" border />
 
 <div id="gather-your-connection-details">
-  #### Reúna os detalhes da conexão {#gather-your-connection-details}
+  #### Reúna os detalhes da conexão
 </div>
 
 <ConnectionDetails />
 
 <div id="configure-the-connector">
-  #### Configurar o conector {#configure-the-connector}
+  #### Configurar o conector
 </div>
 
 Acesse `Connectors` -&gt; `Add Connector` e use as configurações a seguir (observe que os valores são apenas exemplos):
@@ -105,7 +105,7 @@ Acesse `Connectors` -&gt; `Add Connector` e use as configurações a seguir (obs
 ```
 
 <div id="specify-the-connection-endpoints">
-  #### Especifique os endpoints de conexão {#specify-the-connection-endpoints}
+  #### Especifique os endpoints de conexão
 </div>
 
 Você precisa especificar a lista de permissões de endpoints que o conector pode acessar.
@@ -121,7 +121,7 @@ Example: `u57swl97we.eu-west-1.aws.clickhouse.com:8443`
 Tudo pronto!
 
 <div id="known-limitations">
-  #### Limitações conhecidas {#known-limitations}
+  #### Limitações conhecidas
 </div>
 
 * Os Custom Connectors devem usar endpoints públicos na internet. Endereços IP estáticos não são compatíveis.

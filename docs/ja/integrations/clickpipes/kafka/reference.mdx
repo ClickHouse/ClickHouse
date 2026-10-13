@@ -29,7 +29,7 @@ import { ExperimentalBadge } from "/snippets/ja/components/ExperimentalBadge/Exp
 Kafkaコンシューマーの分離レベルは、ClickPipeがKafkaトランザクションでコミットされたメッセージのみを読み取り、挿入するかどうかを決定します。`kafka_read_committed` 設定を有効にすると、`read_committed` が使用され、中断されたKafkaトランザクションのメッセージはスキップされます。無効にすると、`read_uncommitted` が使用され、すべてのメッセージが読み取られます。この設定は、**詳細設定** で構成できます。
 
 <div id="supported-data-formats">
-  ## 対応データフォーマット {#supported-data-formats}
+  ## 対応データフォーマット
 </div>
 
 対応しているフォーマットは次のとおりです。
@@ -39,11 +39,11 @@ Kafkaコンシューマーの分離レベルは、ClickPipeがKafkaトランザ�
 * [Protobuf](/ja/reference/formats/Protobuf/Protobuf)
 
 <div id="supported-data-types">
-  ## サポートされているデータ型 {#supported-data-types}
+  ## サポートされているデータ型
 </div>
 
 <div id="standard-types-support">
-  ### 標準 {#standard-types-support}
+  ### 標準
 </div>
 
 現在、ClickPipes では以下の標準的な ClickHouse データ型がサポートされています。
@@ -75,7 +75,7 @@ ClickPipes は、次の条件で Variant 型をサポートします。
 * JSON フィールド。ソースデータストリーム内の任意の JSON フィールドに対して、Variant 型 (`Variant(String, Int64, DateTime)` など) を手動で指定できます。複雑なサブタイプ (Array/Map/Tuple) はサポートされません。また、ClickPipes では使用すべき Variant のサブタイプを判定する仕組み上、Variant の定義で使用できる整数型または datetime 型は 1 つのみです。たとえば、`Variant(Int64, UInt32)` はサポートされません。
 
 <div id="json-type-support">
-  ### JSON 型のサポート {#json-type-support}
+  ### JSON 型のサポート
 </div>
 
 ClickPipes は、次の状況で JSON 型をサポートします。
@@ -88,7 +88,7 @@ ClickPipes は、次の状況で JSON 型をサポートします。
 fixed パスや skipped パスを含め、宛先カラムは目的の JSON 型に手動で変更する必要があることに注意してください。
 
 <div id="avro">
-  ### Avro {#avro}
+  ### Avro
 </div>
 
 #### サポートされる Avro データ型 {#supported-avro-data-types}
@@ -96,7 +96,7 @@ fixed パスや skipped パスを含め、宛先カラムは目的の JSON 型�
 ClickPipes は、`local-timestamp-millis` と `local_timestamp-micros` を除くすべての Avro Primitive 型、Complex 型、および Logical 型をサポートしています。Avro の `record` 型は Tuple に、`array` 型は Array に、`map` は Map に変換されます (キーは文字列のみ) 。一般的には、[こちら](/ja/concepts/features/interfaces/schema-inference#avro) に記載されている変換が利用可能です。ClickPipes は型変換時のオーバーフローや精度の損失をチェックしないため、Avro の数値型では厳密に対応する型を使用することを推奨します。また、すべての Avro 型は `String` カラムに挿入することもでき、その場合は有効な JSON 文字列として表されます。
 
 <div id="nullable-types-and-avro-unions">
-  #### Nullable 型と Avro ユニオン {#nullable-types-and-avro-unions}
+  #### Nullable 型と Avro ユニオン
 </div>
 
 Avro の Nullable 型は、T を基本の Avro 型として、`(T, null)` または `(null, T)` のユニオン スキーマを使って定義されます。スキーマ推論時には、このようなユニオンは ClickHouse の `Nullable` カラムにマッピングされます。なお、ClickHouse は
@@ -107,7 +107,7 @@ Avro の Nullable 型は、T を基本の Avro 型として、`(T, null)` また
 * null の Avro Record の場合は、すべてのフィールドがデフォルト値またはゼロ値の named Tuple
 
 <div id="protobuf">
-  ### Protobuf {#protobuf}
+  ### Protobuf
 </div>
 
 #### サポートされている Protobuf データ型 {#supported-protobuf-data-types}
@@ -156,7 +156,7 @@ ClickPipes は、長らく非推奨となっている proto 2 の `group` 型を
 スキーマ推論では、Protobuf の `oneof` フィールドはデフォルトで名前付き `Tuple` にマッピングされ、非デフォルト値を持つフィールドは最大でも 1 つだけです。これらのフィールドは、設定されている構成フィールドの型をアクティブな値が取る `Variant` カラムに自動的にマッピングすることもできます。あるいは、各構成フィールドをそれぞれ個別の ClickHouse カラムに手動でマッピングすることもできます。`oneof` フィールドは相互排他的であるため、各レコードで値が入るカラムは 1 つだけです。
 
 <div id="protobuf-message-lists">
-  #### メッセージのリスト {#protobuf-message-lists}
+  #### メッセージのリスト
 </div>
 
 ClickPipe 用に定義された最上位の Protobuf スキーマに、それ自体が protobuf の Message である単一の `repeated` フィールドが含まれている場合、スキーマ推論とカラムマッピングは、その「内包された」Message フィールドに基づいて行われます。Kafka メッセージはそのようなメッセージのリストとして処理され、1 つの Kafka メッセージが複数の ClickHouse の行に展開されます。

@@ -98,8 +98,8 @@ Les insertions asynchrones peuvent être activées pour un utilisateur donné ou
   `INSERT ... SELECT` peut également passer par la file d’attente des insertions asynchrones lorsque `async_insert = 1` et que le résultat entier tient dans un seul bloc sans dépasser `async_insert_max_data_size` ; sinon, la requête s’exécute de manière synchrone. Ce mode a ses propres critères d’éligibilité, ainsi que ses propres règles de comptabilisation des écritures et d’annulation. Pour plus de détails, consultez [Asynchronous `INSERT ... SELECT`](/fr/concepts/features/operations/insert/async-insert-select).
 </Note>
 
-<div>
-  ### Flush des tampons à l’arrêt {#flushing-buffers-on-shutdown}
+<div id="flushing-buffers-on-shutdown">
+  ### Flush des tampons à l’arrêt
 </div>
 
 Pour flush tous les tampons d’`async insert` en attente — par exemple, lors d’un arrêt propre ou avant une opération de maintenance — exécutez :
@@ -110,8 +110,8 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 
 Cela garantit que toutes les données en mémoire tampon sont écrites dans le stockage avant que le serveur ne s&#39;arrête.
 
-<div>
-  ### Comparaison avec les tables Buffer {#comparison-with-buffer-tables}
+<div id="comparison-with-buffer-tables">
+  ### Comparaison avec les tables Buffer
 </div>
 
 Les insertions asynchrones constituent le remplaçant moderne des [tables Buffer](/fr/reference/engines/table-engines/special/buffer). Principales différences :

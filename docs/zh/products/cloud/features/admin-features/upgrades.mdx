@@ -29,7 +29,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 在 ClickHouse Cloud 中，你无法直接管理 服务 的 服务 级默认 `compatibility` 设置——如果你想更改 服务 默认 `compatibility` 设置所使用的版本，则必须[联系 ClickHouse 支持团队](https://clickhouse.com/support/program)。不过，你可以使用标准的 ClickHouse 设置机制，在 user、role、profile、query 或 session 级别覆盖 `compatibility` 设置，例如在 session 中使用 `SET compatibility = '26.8'`，或在 query 中使用 `SETTINGS [other settings,] compatibility = '26.8'`。
 
 <div id="maintenance-mode">
-  ## 维护模式 {#maintenance-mode}
+  ## 维护模式
 </div>
 
 有时，我们可能需要更新您的服务，这可能需要暂时禁用某些功能，例如扩缩容或自动进入空闲状态。在极少数情况下，如果某个服务出现问题，我们可能需要采取措施使其恢复到健康状态。在此类维护期间，您会在服务页面上看到一条横幅，显示 *“维护进行中”*。在此期间，您仍可能可以使用该服务执行查询。
@@ -37,7 +37,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 服务处于维护期间的时间不会计费。*维护模式* 极少出现，不应与常规的服务升级混淆。
 
 <div id="release-channels-upgrade-schedule">
-  ## 发布渠道 (升级安排) {#release-channels-upgrade-schedule}
+  ## 发布渠道 (升级安排)
 </div>
 
 用户可以通过订阅特定的发布渠道，为其 ClickHouse Cloud 服务指定升级安排。共有三种发布渠道，用户还可以使用 **计划升级** 功能来配置每周升级的星期和时间。
@@ -53,7 +53,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 </Note>
 
 <div id="fast-release-channel-early-upgrades">
-  ### 快速发布渠道 (提前升级) {#fast-release-channel-early-upgrades}
+  ### 快速发布渠道 (提前升级)
 </div>
 
 <ScalePlanFeatureBadge feature="快速发布渠道" />
@@ -76,7 +76,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 此 **快速发布** 渠道适合在非关键环境中测试新功能。**不建议将其用于对运行时间和可靠性有严格要求的生产工作负载。**
 
 <div id="regular-release-channel">
-  ### 常规发布渠道 {#regular-release-channel}
+  ### 常规发布渠道
 </div>
 
 对于所有未配置发布渠道或升级计划的 Scale 和 Enterprise 层级服务，系统将作为常规发布渠道的一部分进行升级。建议在生产环境中使用此渠道。
@@ -88,7 +88,7 @@ import { ScalePlanFeatureBadge } from "/snippets/zh/components/ScalePlanFeatureB
 </Note>
 
 <div id="slow-release-channel-deferred-upgrades">
-  ### 慢速发布渠道 (延后升级) {#slow-release-channel-deferred-upgrades}
+  ### 慢速发布渠道 (延后升级)
 </div>
 
 <EnterprisePlanFeatureBadge feature="The slow release channel" />

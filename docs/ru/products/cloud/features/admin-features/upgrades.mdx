@@ -29,7 +29,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 В ClickHouse Cloud вы не можете напрямую управлять значением `compatibility` по умолчанию на уровне сервиса — если вы хотите изменить версию, заданную для этого значения `compatibility` по умолчанию, необходимо [обратиться в ClickHouse Support](https://clickhouse.com/support/program). Однако вы можете переопределить параметр `compatibility` на уровне пользователя, роли, профиля, запроса или сеанса, используя стандартные механизмы настройки ClickHouse, например `SET compatibility = '26.8'` в сеансе или `SETTINGS [other settings,] compatibility = '26.8'` в запросе.
 
 <div id="maintenance-mode">
-  ## Режим обслуживания {#maintenance-mode}
+  ## Режим обслуживания
 </div>
 
 Иногда нам может потребоваться обновить ваш сервис, из-за чего может понадобиться отключить некоторые возможности, такие как масштабирование или переход в режим простоя. В редких случаях нам может потребоваться вмешаться в работу сервиса, в котором возникли проблемы, и вернуть его в нормальное состояние. Во время такого обслуживания на странице сервиса вы увидите баннер с текстом *&quot;Выполняется обслуживание&quot;*. В это время вы по-прежнему можете использовать сервис для выполнения запросов.
@@ -37,7 +37,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 Плата за время, пока сервис находится на обслуживании, не взимается. *Режим обслуживания* включается редко, и его не следует путать с обычными обновлениями сервиса.
 
 <div id="release-channels-upgrade-schedule">
-  ## Каналы релизов (расписание обновлений) {#release-channels-upgrade-schedule}
+  ## Каналы релизов (расписание обновлений)
 </div>
 
 Пользователи могут задать расписание обновлений для своего сервиса ClickHouse Cloud, подписавшись на определённый канал релизов. Доступны три канала релизов, а с помощью функции **запланированных обновлений** можно настроить день недели и время установки обновлений.
@@ -53,7 +53,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 </Note>
 
 <div id="fast-release-channel-early-upgrades">
-  ### Быстрый канал релизов (ранние обновления) {#fast-release-channel-early-upgrades}
+  ### Быстрый канал релизов (ранние обновления)
 </div>
 
 <ScalePlanFeatureBadge feature="Быстрый канал релизов" />
@@ -76,7 +76,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 Этот **быстрый канал релизов** подходит для тестирования новых возможностей в некритичных средах. **Он не рекомендуется для production-рабочих нагрузок со строгими требованиями к доступности и надежности.**
 
 <div id="regular-release-channel">
-  ### Обычный канал релизов {#regular-release-channel}
+  ### Обычный канал релизов
 </div>
 
 Для всех сервисов уровней Scale и Enterprise, для которых не настроены канал релизов или расписание обновлений, обновления будут выполняться в рамках обычного канала релизов. Этот вариант рекомендуется для производственных сред.
@@ -88,7 +88,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 </Note>
 
 <div id="slow-release-channel-deferred-upgrades">
-  ### Медленный канал релизов (отложенные обновления) {#slow-release-channel-deferred-upgrades}
+  ### Медленный канал релизов (отложенные обновления)
 </div>
 
 <EnterprisePlanFeatureBadge feature="Медленный канал релизов" />
@@ -110,7 +110,7 @@ import { ScalePlanFeatureBadge } from "/snippets/ru/components/ScalePlanFeatureB
 </Note>
 
 <div id="scheduled-upgrades">
-  ## Запланированные обновления {#scheduled-upgrades}
+  ## Запланированные обновления
 </div>
 
 <EnterprisePlanFeatureBadge feature="Scheduled upgrades" linking_verb_are="true" />

@@ -38,7 +38,7 @@ https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="setup-clickhouse-cloud-remote-mcp-server">
-  ## Configurer MCP distant pour le développement {#setup-clickhouse-cloud-remote-mcp-server}
+  ## Configurer MCP distant pour le développement
 </div>
 
 Choisissez votre IDE ou votre outil ci-dessous, puis suivez les instructions de configuration correspondantes.
@@ -127,7 +127,7 @@ Veillez à ce que `CH_AUTH` reste disponible dans chaque session client, et ne c
 Cette méthode d&#39;authentification par API key ne nécessite ni navigateur ni connexion distincte via `clickhousectl`.
 
 <div id="claude-code">
-  ### Claude Code {#claude-code}
+  ### Claude Code
 </div>
 
 Depuis votre répertoire de travail, exécutez la commande suivante pour ajouter la configuration du MCP Server de ClickHouse Cloud à Claude Code :
@@ -151,7 +151,7 @@ Exécutez la commande suivante pour afficher la liste des serveurs MCP :
 Sélectionnez `clickhouse-cloud` et authentifiez-vous via OAuth avec vos identifiants ClickHouse Cloud.
 
 <div id="claude-web">
-  ### Claude web UI {#claude-web}
+  ### Claude web UI
 </div>
 
 1. Accédez à **Customize** &gt; **Connectors**
@@ -161,7 +161,7 @@ Sélectionnez `clickhouse-cloud` et authentifiez-vous via OAuth avec vos identif
 5. Authentifiez-vous avec vos identifiants ClickHouse Cloud via OAuth
 
 <div id="cursor">
-  ### Cursor {#cursor}
+  ### Cursor
 </div>
 
 1. Parcourez et installez des serveurs MCP depuis le [Marketplace de Cursor](https://cursor.com/marketplace).
@@ -169,7 +169,7 @@ Sélectionnez `clickhouse-cloud` et authentifiez-vous via OAuth avec vos identif
 3. Authentifiez-vous avec OAuth.
 
 <div id="visual-studio-code">
-  ### Visual Studio Code {#visual-studio-code}
+  ### Visual Studio Code
 </div>
 
 Ajoutez la configuration suivante dans votre fichier `.vscode/mcp.json` :
@@ -188,7 +188,7 @@ Ajoutez la configuration suivante dans votre fichier `.vscode/mcp.json` :
 Pour plus d’informations, consultez la [documentation de Visual Studio Code](https://code.visualstudio.com/docs/copilot/customization/mcp-servers).
 
 <div id="windsurf">
-  ### Windsurf {#windsurf}
+  ### Windsurf
 </div>
 
 Modifiez votre fichier `mcp_config.json` comme suit :
@@ -207,7 +207,7 @@ Modifiez votre fichier `mcp_config.json` comme suit :
 Pour en savoir plus, consultez la [documentation Windsurf](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp).
 
 <div id="zed">
-  ### Zed {#zed}
+  ### Zed
 </div>
 
 Ajoutez ClickHouse comme serveur personnalisé.
@@ -227,7 +227,7 @@ Zed devrait alors vous demander de vous authentifier via OAuth lors de sa premi�
 Pour plus de détails, consultez la [documentation de Zed](https://zed.dev/docs/ai/mcp#as-custom-servers).
 
 <div id="codex">
-  ### Codex {#codex}
+  ### Codex
 </div>
 
 Exécutez la commande suivante pour ajouter le serveur MCP ClickHouse Cloud via le CLI :
@@ -237,7 +237,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="example-usage">
-  ## Exemple d’utilisation {#example-usage}
+  ## Exemple d’utilisation
 </div>
 
 Une fois connecté, vous pouvez interagir avec ClickHouse Cloud à l’aide de prompts en langage naturel.
@@ -245,7 +245,7 @@ Vous trouverez ci-dessous quelques workflows courants, ainsi que les outils que 
 Pour obtenir la liste complète des outils disponibles, consultez la [référence des outils](/fr/products/cloud/features/ai-ml/remote-mcp#available-tools).
 
 <div id="exploring-data">
-  ### Explorer vos données {#exploring-data}
+  ### Explorer vos données
 </div>
 
 Commencez par découvrir ce qui est disponible :
@@ -258,7 +258,7 @@ Commencez par découvrir ce qui est disponible :
 | &quot;Liste toutes les tables dont le nom commence par `events_`&quot;  | `list_tables` (avec le filtre `like`) |
 
 <div id="running-queries">
-  ### Exécuter des requêtes analytiques {#running-queries}
+  ### Exécuter des requêtes analytiques
 </div>
 
 Posez vos questions en langage naturel, et l&#39;agent les traduira en SQL :
@@ -272,7 +272,7 @@ Posez vos questions en langage naturel, et l&#39;agent les traduira en SQL :
 L&#39;outil `run_select_query` n&#39;autorise que les instructions `SELECT`. Toutes les requêtes sont en lecture seule.
 
 <div id="managing-services">
-  ### Gérer les services et l’infrastructure {#managing-services}
+  ### Gérer les services et l’infrastructure
 </div>
 
 Obtenez une vue d’ensemble de vos ressources ClickHouse Cloud :
@@ -286,7 +286,7 @@ Obtenez une vue d’ensemble de vos ressources ClickHouse Cloud :
 | &quot;Quels ClickPipes sont configurés sur ce service ?&quot;        | `list_clickpipes`                  |
 
 <div id="monitoring-costs">
-  ### Suivi des coûts {#monitoring-costs}
+  ### Suivi des coûts
 </div>
 
 | Prompt                                                                   | Outil invoqué                                           |
@@ -295,7 +295,7 @@ Obtenez une vue d’ensemble de vos ressources ClickHouse Cloud :
 | &quot;Affiche-moi les coûts quotidiens du 1er mars au 15 mars&quot;      | `get_organization_cost` (avec `from_date` et `to_date`) |
 
 <div id="related-content">
-  ## Contenu connexe {#related-content}
+  ## Contenu connexe
 </div>
 
 * [ClickHouse agent skills](https://github.com/ClickHouse/agent-skills)

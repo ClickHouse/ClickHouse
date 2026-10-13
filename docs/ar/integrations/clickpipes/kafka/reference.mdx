@@ -29,7 +29,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 يحدد مستوى عزل مستهلك Kafka ما إذا كان ClickPipe يقرأ ويُدرج الرسائل التي تم تثبيتها ضمن معاملات Kafka فقط. فعّل إعداد `kafka_read_committed` لاستخدام `read_committed` وتخطي الرسائل الناتجة عن معاملات Kafka المُجهضة. عطّله لاستخدام `read_uncommitted` وقراءة جميع الرسائل. يمكنك تهيئة هذا الإعداد ضمن **الإعدادات المتقدمة**.
 
 <div id="supported-data-formats">
-  ## تنسيقات البيانات المدعومة {#supported-data-formats}
+  ## تنسيقات البيانات المدعومة
 </div>
 
 التنسيقات المدعومة هي:
@@ -39,11 +39,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * [Protobuf](/ar/reference/formats/Protobuf/Protobuf)
 
 <div id="supported-data-types">
-  ## أنواع البيانات المدعومة {#supported-data-types}
+  ## أنواع البيانات المدعومة
 </div>
 
 <div id="standard-types-support">
-  ### الأنواع القياسية {#standard-types-support}
+  ### الأنواع القياسية
 </div>
 
 أنواع بيانات ClickHouse القياسية التالية مدعومة حاليًا في ClickPipes:
@@ -75,7 +75,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * حقول JSON. يمكنك تحديد نوع Variant يدويًا (مثل `Variant(String, Int64, DateTime)`) لأي حقل JSON في مصدر تدفق البيانات. لا تُدعَم الأنواع الفرعية المعقدة (arrays/maps/tuples). بالإضافة إلى ذلك، ونظرًا للطريقة التي يحدد بها ClickPipes النوع الفرعي الصحيح من Variant الذي يجب استخدامه، لا يمكن استخدام أكثر من نوع عدد صحيح واحد أو نوع DateTime واحد في تعريف Variant — على سبيل المثال، `Variant(Int64, UInt32)` غير مدعوم.
 
 <div id="json-type-support">
-  ### دعم نوع JSON {#json-type-support}
+  ### دعم نوع JSON
 </div>
 
 تدعم ClickPipes نوع JSON في الحالات التالية:
@@ -88,11 +88,11 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 لاحظ أنك ستحتاج إلى تغيير عمود الوجهة يدويًا إلى نوع JSON المطلوب، بما في ذلك أي مسارات ثابتة أو متخطاة.
 
 <div id="avro">
-  ### Avro {#avro}
+  ### Avro
 </div>
 
 <div id="supported-avro-data-types">
-  #### أنواع بيانات Avro المدعومة {#supported-avro-data-types}
+  #### أنواع بيانات Avro المدعومة
 </div>
 
 تدعم ClickPipes جميع أنواع Avro البدائية والمركبة، وجميع أنواع Avro المنطقية باستثناء `local-timestamp-millis` و`local_timestamp-micros`. تُحوَّل أنواع Avro `record` إلى Tuple، وأنواع `array` إلى Array، و`map` إلى Map (بمفاتيح نصية فقط). وبوجه عام، تتوفر التحويلات المذكورة [هنا](/ar/concepts/features/interfaces/schema-inference#avro). نوصي باستخدام المطابقة الدقيقة للأنواع الرقمية في Avro، لأن ClickPipes لا تتحقق من تجاوز السعة أو فقدان الدقة عند تحويل الأنواع. وبدلاً من ذلك، يمكن إدراج جميع أنواع Avro في عمود `String`، وستُمثَّل في هذه الحالة كسلسلة JSON صالحة.
@@ -106,7 +106,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 * Tuple مُسمّى تحتوي على جميع القيم الافتراضية/الصفرية لـ Avro Record null
 
 <div id="protobuf">
-  ### Protobuf {#protobuf}
+  ### Protobuf
 </div>
 
 #### أنواع بيانات Protobuf المدعومة {#supported-protobuf-data-types}
@@ -151,7 +151,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 | `google.protobuf.BoolValue`                                                                  | `Nullable(UInt8)`        |
 
 <div id="protobuf-one-ofs">
-  #### ‏Protobuf `oneof` {#protobuf-one-ofs}
+  #### ‏Protobuf `oneof`
 </div>
 
 أثناء استنتاج المخطط، تُربَط حقول Protobuf `oneof` افتراضيًا بـ `Tuple` مُسمّى، بحيث لا يحمل قيمة غير افتراضية سوى حقل واحد كحد أقصى.
@@ -159,7 +159,7 @@ import { ExperimentalBadge } from "/snippets/ar/components/ExperimentalBadge/Exp
 وبدلاً من ذلك، يمكن ربط كل حقل مكوّن يدويًا بعمود ClickHouse خاص به؛ ونظرًا إلى أن حقول `oneof` متنافية فيما بينها، فلن يُملأ لكل سجل سوى عمود واحد.
 
 <div id="protobuf-message-lists">
-  #### قوائم الرسائل {#protobuf-message-lists}
+  #### قوائم الرسائل
 </div>
 
 إذا كان مخطط Protobuf المعرّف لـ ClickPipe على المستوى الأعلى يحتوي على حقل متكرر واحد يكون بحد ذاته رسالة protobuf، فسيعتمد استنتاج المخطط وتعيين الأعمدة على حقل الرسالة &quot;المضمَّنة&quot;. وستُعالَج رسالة Kafka على أنها قائمة من هذه الرسائل، كما ستُفكَّك رسالة Kafka واحدة إلى عدة صفوف في ClickHouse.

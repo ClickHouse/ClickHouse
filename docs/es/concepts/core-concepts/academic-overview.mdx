@@ -14,7 +14,7 @@ Esta es la versión web de nuestro [artículo científico de VLDB 2024](https://
 </Frame>
 
 <div id="abstract">
-  ## RESUMEN {#abstract}
+  ## RESUMEN
 </div>
 
 Durante las últimas décadas, la cantidad de datos almacenados y analizados ha aumentado exponencialmente. Empresas de distintos sectores e industrias han empezado a depender de estos datos para mejorar productos, evaluar el rendimiento y tomar decisiones críticas para el negocio. Sin embargo, a medida que los volúmenes de datos han ido alcanzando una escala cada vez mayor en internet, las empresas han tenido que gestionar datos históricos y nuevos de forma rentable y escalable, sin dejar de analizarlos con un elevado número de consultas concurrentes y con la expectativa de latencias en tiempo real (p. ej., inferiores a un segundo, según el caso de uso).
@@ -22,7 +22,7 @@ Durante las últimas décadas, la cantidad de datos almacenados y analizados ha 
 Este artículo ofrece una visión general de ClickHouse, una popular base de datos OLAP de código abierto diseñada para analítica de alto rendimiento sobre conjuntos de datos a escala de petabytes con elevadas tasas de ingestión. Su capa de almacenamiento combina un formato de datos basado en los tradicionales árboles log-structured merge (LSM) con técnicas novedosas para la transformación continua (p. ej., agregación, archivado) de datos históricos en segundo plano. Las consultas se escriben en un dialecto SQL práctico y se procesan mediante un motor de ejecución vectorizada de consultas de última generación con compilación de código opcional. ClickHouse hace un uso intensivo de técnicas de poda para evitar evaluar datos irrelevantes en las consultas. Otros sistemas de gestión de datos pueden integrarse a nivel de la función de tabla, del motor de tabla o del motor de base de datos. Los benchmarks reales demuestran que ClickHouse se encuentra entre las bases de datos analíticas más rápidas del mercado.
 
 <div id="1-introduction">
-  ## 1 INTRODUCCIÓN {#1-introduction}
+  ## 1 INTRODUCCIÓN
 </div>
 
 Este artículo describe ClickHouse, una base de datos OLAP columnar diseñada para consultas analíticas de alto rendimiento sobre tablas con billones de filas y cientos de columnas. ClickHouse [comenzó](https://clickhou.se/evolution) en 2009 como un operador de filtrado y agregación para datos de archivos de registro a escala web y se publicó como software de código abierto en 2016. La [Figura 1](#page-1-0) muestra cuándo se incorporaron a ClickHouse las principales funcionalidades descritas en este artículo.
@@ -192,7 +192,7 @@ Como se muestra en la [Figura 7,](#page-6-1) ClickHouse paraleliza las consultas
 El resto de esta sección describe primero con más detalle el procesamiento en paralelo con granularidad de elemento de datos, fragmento de datos y segmento. A continuación, presentamos algunas optimizaciones clave para maximizar el rendimiento de las consultas. Por último, analizamos cómo ClickHouse gestiona los recursos compartidos del sistema cuando hay consultas simultáneas.
 
 <div id="4-1-simd-parallelization">
-  ### 4.1 Paralelización SIMD {#4-1-simd-parallelization}
+  ### 4.1 Paralelización SIMD
 </div>
 
 Pasar varias filas entre operadores crea una oportunidad para la vectorización. La vectorización se basa tanto en intrínsecos escritos manualmente <sup>[[64,](#page-13-18)</sup> <sup>[80]](#page-13-19)</sup> como en la autovectorización del compilador <sup>[[25]](#page-12-19)</sup>. El código que se beneficia de la vectorización se compila en distintos kernels de cómputo. Por ejemplo, el bucle interno crítico de un operador de consulta puede implementarse mediante un kernel no vectorizado, un kernel AVX2 autovectorizado y un kernel AVX-512 vectorizado manualmente. El kernel más rápido se [selecciona en tiempo de ejecución](https://clickhou.se/cpu-dispatch) en función de la instrucción cpuid. Este enfoque permite que ClickHouse se ejecute en sistemas con hasta 15 años de antigüedad (con SSE 4.2 como requisito mínimo), y aun así siga ofreciendo aceleraciones significativas en hardware reciente.
@@ -218,7 +218,7 @@ Los operadores también pueden afectar a la ejecución de la consulta en tiempo 
 El motor de ejecución de consultas de ClickHouse y el paralelismo basado en morsels <sup>[[44]](#page-12-20)</sup> son similares en que las lanes suelen ejecutarse en distintos núcleos / sockets NUMA y en que los hilos de trabajo pueden robar tareas de otras lanes. Además, no existe un componente central de planificación; en su lugar, los hilos de trabajo seleccionan sus tareas individualmente recorriendo continuamente el plan de operadores. A diferencia del paralelismo basado en morsels, ClickHouse integra el grado máximo de paralelismo en el plan y utiliza rangos mucho mayores para particionar la tabla de origen, en comparación con los tamaños de morsel predeterminados de aprox. 100.000 filas. Aunque en algunos casos esto puede provocar bloqueos (p. ej., cuando el tiempo de ejecución de los operadores de filtro en distintas lanes difiere enormemente), observamos que un uso amplio de operadores de intercambio como Repartition al menos evita que esos desequilibrios se acumulen entre etapas.
 
 <div id="4-3-multi-node-parallelization">
-  ### 4.3 Paralelización multinodo {#4-3-multi-node-parallelization}
+  ### 4.3 Paralelización multinodo
 </div>
 
 Si la tabla de origen de una consulta está segmentada, el optimizador de consultas del nodo que recibió la consulta (nodo iniciador) intenta realizar la mayor parte posible del trabajo en otros nodos. Los resultados de otros nodos pueden integrarse en distintos puntos del plan de consulta. Según la consulta, los nodos remotos pueden 1. transmitir columnas sin procesar de la tabla de origen al nodo iniciador, 2. filtrar las columnas de origen y enviar las filas resultantes, 3. ejecutar pasos de filtrado y agregación y enviar grupos de resultados locales con estados parciales de agregación, o 4. ejecutar la consulta completa, incluidos los filtros, la agregación y la ordenación.
@@ -297,13 +297,13 @@ Formatos de datos. Para interactuar con sistemas de terceros, las bases de datos
 Interfaces de compatibilidad. Además de su protocolo binario nativo wire y HTTP, los clientes pueden interactuar con ClickHouse a través de interfaces compatibles con los protocolos wire de MySQL o PostgreSQL. Esta funcionalidad de compatibilidad es útil para habilitar el acceso desde aplicaciones propietarias (p. ej., ciertas herramientas de inteligencia empresarial), en las que los proveedores todavía no han implementado conectividad nativa con ClickHouse.
 
 <div id="6-performance-as-a-feature">
-  ## 6 EL RENDIMIENTO COMO FUNCIONALIDAD {#6-performance-as-a-feature}
+  ## 6 EL RENDIMIENTO COMO FUNCIONALIDAD
 </div>
 
 Esta sección presenta herramientas integradas para analizar el rendimiento y lo evalúa mediante consultas reales y benchmarks.
 
 <div id="6-1-built-in-performance-analysis-tools">
-  ### 6.1 Herramientas integradas de análisis de rendimiento {#6-1-built-in-performance-analysis-tools}
+  ### 6.1 Herramientas integradas de análisis de rendimiento
 </div>
 
 Hay una amplia gama de herramientas disponibles para investigar cuellos de botella de rendimiento en consultas individuales u operaciones en segundo plano. Los usuarios interactúan con todas las herramientas mediante una interfaz uniforme basada en tablas del sistema.
@@ -317,7 +317,7 @@ Hay una amplia gama de herramientas disponibles para investigar cuellos de botel
 **Consulta EXPLAIN**. Como en otras bases de datos, las consultas SELECT pueden ir precedidas de EXPLAIN para obtener información detallada sobre el AST de una consulta, los planes de operadores lógicos y físicos, y el comportamiento en tiempo de ejecución.
 
 <div id="6-2-benchmarks">
-  ### 6.2 Benchmarks {#6-2-benchmarks}
+  ### 6.2 Benchmarks
 </div>
 
 Aunque se ha criticado que los benchmarks no son suficientemente realistas <sup>[[10,](#page-12-27)</sup> <sup>[52,](#page-13-22)</sup> <sup>[66,](#page-13-23)</sup> <sup>[74]](#page-13-24)</sup>, siguen siendo útiles para identificar las fortalezas y debilidades de las bases de datos. A continuación, analizamos cómo se utilizan los benchmarks para evaluar el rendimiento de ClickHouse.
@@ -369,7 +369,7 @@ pueden crear otros operadores en tiempo de ejecución, principalmente para cambi
 DuckDB <sup>[[67]](#page-13-6)</sup> también está pensado para integrarse en un proceso anfitrión, pero además ofrece optimización de consultas y transacciones. Fue diseñado para consultas OLAP combinadas con sentencias OLTP ocasionales. En consecuencia, DuckDB eligió el formato de almacenamiento DataBlocks <sup>[[43]](#page-12-43)</sup>, que emplea métodos de compresión ligeros, como diccionarios que preservan el orden o frame-of-reference <sup>[[2]](#page-12-10)</sup>, para lograr un buen rendimiento en cargas de trabajo híbridas. En cambio, ClickHouse está optimizado para casos de uso de solo anexado, es decir, sin actualizaciones ni eliminaciones, o con ellas muy raramente. Los bloques se comprimen mediante técnicas pesadas como LZ4, asumiendo que los usuarios aprovechan ampliamente la poda de datos para acelerar las consultas frecuentes y que los costes de E/S superan con creces los de descompresión en las consultas restantes. DuckDB también proporciona transacciones serializables basadas en el esquema MVCC de Hyper <sup>[[55]](#page-13-35)</sup>, mientras que ClickHouse solo ofrece aislamiento de instantánea.
 
 <div id="8-conclusion-and-outlook">
-  ## 8 CONCLUSIÓN Y PERSPECTIVAS {#8-conclusion-and-outlook}
+  ## 8 CONCLUSIÓN Y PERSPECTIVAS
 </div>
 
 Presentamos la arquitectura de ClickHouse, una base de datos OLAP de código abierto y alto rendimiento. Con una capa de almacenamiento optimizada para escrituras y un motor de consultas vectorizado de última generación como base, ClickHouse permite análisis en tiempo real sobre conjuntos de datos a escala de petabytes con altas tasas de ingestión. Al fusionar y transformar datos de forma asíncrona en segundo plano, ClickHouse desacopla de manera eficiente el mantenimiento de los datos y las inserciones paralelas. Su capa de almacenamiento permite una poda agresiva de datos mediante índices primarios dispersos, índices de omisión y tablas de proyección. Describimos la implementación en ClickHouse de actualizaciones y eliminaciones, inserciones idempotentes y replicación de datos entre nodos para alta disponibilidad. La capa de procesamiento de consultas optimiza las consultas mediante una gran variedad de técnicas y paraleliza la ejecución en todos los recursos del servidor y del clúster. Los motores de tabla y las funciones de integración proporcionan una forma práctica de interactuar de manera transparente con otros sistemas de gestión de datos y formatos de datos. Mediante benchmarks, demostramos que ClickHouse se encuentra entre las bases de datos analíticas más rápidas del mercado, y mostramos mejoras significativas en el rendimiento de consultas típicas en implementaciones reales de ClickHouse a lo largo de los años.
@@ -377,13 +377,13 @@ Presentamos la arquitectura de ClickHouse, una base de datos OLAP de código abi
 Todas las funciones y mejoras planificadas para 2024 pueden encontrarse en la hoja de ruta pública <sup>[[18]](#page-12-33)</sup>. Las mejoras planificadas incluyen soporte para transacciones de usuario, PromQL <sup>[[69]](#page-13-36)</sup> como lenguaje de consulta alternativo, un nuevo tipo de dato para datos semiestructurados (p. ej., JSON), mejores optimizaciones de joins a nivel de plan, así como una implementación de actualizaciones ligeras para complementar las eliminaciones ligeras.
 
 <div id="acknowledgements">
-  ## AGRADECIMIENTOS {#acknowledgements}
+  ## AGRADECIMIENTOS
 </div>
 
 A partir de la versión 24.6, SELECT * FROM system.contributors devuelve 1994 personas que han contribuido a ClickHouse. Queremos dar las gracias a todo el equipo de ingeniería de ClickHouse Inc. y a la extraordinaria comunidad open source de ClickHouse por su arduo trabajo y dedicación para construir juntos esta base de datos.
 
 <div id="references">
-  ## REFERENCIAS {#references}
+  ## REFERENCIAS
 </div>
 
 <div style={{fontSize: '0.85em', lineHeight: '1.7'}}>

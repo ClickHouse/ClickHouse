@@ -10,7 +10,7 @@ doc_type: 'guide'
 В зависимости от типа запросов это может значительно снизить задержку и расход ресурсов ClickHouse server.
 
 <div id="background-design-and-limitations">
-  ## Предпосылки, устройство и ограничения {#background-design-and-limitations}
+  ## Предпосылки, устройство и ограничения
 </div>
 
 Кэши запросов в целом можно разделить на транзакционно согласованные и транзакционно несогласованные.
@@ -324,7 +324,7 @@ SETTINGS use_query_cache = true, query_cache_on_disk_cache_name = 'query_results
 Сначала проверяется кэш в памяти, поэтому количество попаданий в памяти равно разности «QueryCacheHits» и «QueryCacheOnDiskHits».
 
 <div id="related-content">
-  ## Материалы по теме {#related-content}
+  ## Материалы по теме
 </div>
 
 * Блог: [Представляем кэш запросов ClickHouse](https://clickhouse.com/blog/introduction-to-the-clickhouse-query-cache-and-design)

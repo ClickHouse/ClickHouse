@@ -38,7 +38,7 @@ https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="setup-clickhouse-cloud-remote-mcp-server">
-  ## 为开发配置远程 MCP {#setup-clickhouse-cloud-remote-mcp-server}
+  ## 为开发配置远程 MCP
 </div>
 
 请选择下方的 IDE 或工具，并按相应说明完成设置。
@@ -127,7 +127,7 @@ export CH_AUTH="Basic $(
 使用这种 API key 方式,既不需要浏览器,也无需另行通过 `clickhousectl` 登录。
 
 <div id="claude-code">
-  ### Claude Code {#claude-code}
+  ### Claude Code
 </div>
 
 在工作目录中，运行以下命令，将 ClickHouse Cloud MCP Server 配置添加到 Claude Code 中：
@@ -151,7 +151,7 @@ claude
 选择 `clickhouse-cloud`，然后使用 ClickHouse Cloud 凭据通过 OAuth 完成身份验证。
 
 <div id="claude-web">
-  ### Claude web UI {#claude-web}
+  ### Claude web UI
 </div>
 
 1. 前往 **Customize** &gt; **Connectors**
@@ -161,7 +161,7 @@ claude
 5. 通过 OAuth 使用你的 ClickHouse Cloud 凭据进行身份验证
 
 <div id="cursor">
-  ### Cursor {#cursor}
+  ### Cursor
 </div>
 
 1. 在 [Cursor 市场](https://cursor.com/marketplace)中浏览并安装 MCP 服务器。
@@ -169,7 +169,7 @@ claude
 3. 通过 OAuth 进行身份验证。
 
 <div id="visual-studio-code">
-  ### Visual Studio Code {#visual-studio-code}
+  ### Visual Studio Code
 </div>
 
 将以下配置添加到 `.vscode/mcp.json` 中：
@@ -188,7 +188,7 @@ claude
 更多详情请参阅 [Visual Studio Code 文档](https://code.visualstudio.com/docs/copilot/customization/mcp-servers)。
 
 <div id="windsurf">
-  ### Windsurf {#windsurf}
+  ### Windsurf
 </div>
 
 按以下配置编辑 `mcp_config.json` 文件：
@@ -207,7 +207,7 @@ claude
 更多详细信息请参阅 [Windsurf 文档](https://docs.windsurf.com/windsurf/cascade/mcp#adding-a-new-mcp)。
 
 <div id="zed">
-  ### Zed {#zed}
+  ### Zed
 </div>
 
 将 ClickHouse 添加为自定义服务器。
@@ -227,7 +227,7 @@ claude
 更多信息请参阅 [Zed 文档](https://zed.dev/docs/ai/mcp#as-custom-servers)。
 
 <div id="codex">
-  ### Codex {#codex}
+  ### Codex
 </div>
 
 运行以下命令，通过 CLI 添加 ClickHouse Cloud MCP 服务器：
@@ -237,7 +237,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 ```
 
 <div id="example-usage">
-  ## 示例用法 {#example-usage}
+  ## 示例用法
 </div>
 
 连接完成后，您就可以通过自然语言提示词与 ClickHouse Cloud 交互。
@@ -245,7 +245,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 如需查看可用工具的完整列表，请参阅[工具参考](/zh/products/cloud/features/ai-ml/remote-mcp#available-tools)。
 
 <div id="exploring-data">
-  ### 探索你的数据 {#exploring-data}
+  ### 探索你的数据
 </div>
 
 先查看有哪些可用内容：
@@ -258,7 +258,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;列出所有名称以 `events_` 开头的表&quot; | `list_tables` (使用 `like` 过滤器)  |
 
 <div id="running-queries">
-  ### 执行分析查询 {#running-queries}
+  ### 执行分析查询
 </div>
 
 用自然语言提问，agent 会将其转换为 SQL：
@@ -272,7 +272,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 `run_select_query` 工具只允许执行 `SELECT` 语句。所有查询均为只读。
 
 <div id="managing-services">
-  ### 管理服务和基础设施 {#managing-services}
+  ### 管理服务和基础设施
 </div>
 
 查看你的 ClickHouse Cloud 资源信息：
@@ -286,7 +286,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | &quot;此服务上配置了哪些 ClickPipes？&quot; | `list_clickpipes`                  |
 
 <div id="monitoring-costs">
-  ### 监控成本 {#monitoring-costs}
+  ### 监控成本
 </div>
 
 | 提示词                         | 调用的工具                                                 |
@@ -295,7 +295,7 @@ codex mcp add clickhouse-cloud --url https://mcp.clickhouse.cloud/mcp
 | “显示 3 月 1 日至 3 月 15 日的每日成本” | `get_organization_cost` (使用 `from_date` 和 `to_date`)  |
 
 <div id="related-content">
-  ## 相关内容 {#related-content}
+  ## 相关内容
 </div>
 
 * [ClickHouse agent 技能](https://github.com/ClickHouse/agent-skills)

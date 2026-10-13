@@ -98,8 +98,8 @@ Las inserciones asíncronas se pueden habilitar para un usuario concreto o para 
   `INSERT ... SELECT` también puede procesarse a través de la cola de inserciones asíncronas cuando `async_insert = 1` y el resultado completo cabe en un único bloque de tamaño no superior a `async_insert_max_data_size`; de lo contrario, se ejecuta de forma síncrona. Esta vía tiene sus propios criterios de aplicación y su propio comportamiento en cuanto a la contabilización de escrituras y la cancelación. Consulte [INSERT ... SELECT asíncrono](/es/concepts/features/operations/insert/async-insert-select) para obtener más información.
 </Note>
 
-<div>
-  ### Vaciado de búferes al apagar {#flushing-buffers-on-shutdown}
+<div id="flushing-buffers-on-shutdown">
+  ### Vaciado de búferes al apagar
 </div>
 
 Para vaciar todos los búferes pendientes de inserción asíncrona —por ejemplo, durante un apagado controlado o antes de una tarea de mantenimiento—, ejecute:
@@ -110,8 +110,8 @@ SYSTEM FLUSH ASYNC INSERT QUEUE
 
 Esto garantiza que los datos almacenados en el búfer se escriban en el almacenamiento antes de que el servidor se detenga.
 
-<div>
-  ### Comparación con las tablas Buffer {#comparison-with-buffer-tables}
+<div id="comparison-with-buffer-tables">
+  ### Comparación con las tablas Buffer
 </div>
 
 Las inserciones asíncronas son el sustituto moderno de las [tablas Buffer](/es/reference/engines/table-engines/special/buffer). Diferencias clave:

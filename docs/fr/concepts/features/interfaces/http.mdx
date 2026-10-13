@@ -9,7 +9,7 @@ doc_type: 'reference'
 import { Image } from "/snippets/fr/components/Image.jsx";
 
 <div id="prerequisites">
-  ## Prérequis {#prerequisites}
+  ## Prérequis
 </div>
 
 Pour suivre les exemples de cet article, vous aurez besoin de :
@@ -64,7 +64,7 @@ Ok.
 ```
 
 <div id="querying">
-  ## Exécuter des requêtes via HTTP/HTTPS {#querying}
+  ## Exécuter des requêtes via HTTP/HTTPS
 </div>
 
 Pour exécuter des requêtes via HTTP/HTTPS, trois options s’offrent à vous :
@@ -350,7 +350,7 @@ curl 'http://localhost:8123/my_db/hits.CSV?query=SELECT+a,+b'
 Si la requête contient déjà une clause `FROM`, le composant de chemin sert uniquement à fournir le nom du fichier téléchargé.
 
 <div id="insert-queries">
-  ## Requêtes `INSERT` via HTTP/HTTPS {#insert-queries}
+  ## Requêtes `INSERT` via HTTP/HTTPS
 </div>
 
 La méthode `POST` est nécessaire pour transmettre des données dans les requêtes `INSERT`. Dans ce cas, vous pouvez écrire le début de la requête dans le paramètre d’URL et utiliser `POST` pour transmettre les données à insérer. Les données à insérer peuvent être, par exemple, un dump MySQL séparé par des tabulations. Ainsi, la requête `INSERT` remplace `LOAD DATA LOCAL INFILE` de MySQL.
@@ -530,7 +530,7 @@ Vous pouvez configurer le niveau de compression des données à l&#39;aide du pa
 </Info>
 
 <div id="examples-compression">
-  ## Exemples {#examples-compression}
+  ## Exemples
 </div>
 
 Pour envoyer des données compressées au serveur :
@@ -563,7 +563,7 @@ curl -sS "http://localhost:8123/?enable_http_compression=1" \
 ```
 
 <div id="default-database">
-  ## Base de données par défaut {#default-database}
+  ## Base de données par défaut
 </div>
 
 Vous pouvez utiliser le paramètre d’URL `database` ou l’en-tête `X-ClickHouse-Database` pour indiquer la base de données par défaut.
@@ -585,7 +585,7 @@ echo 'SELECT number FROM numbers LIMIT 10' | curl 'http://localhost:8123/?databa
 Par défaut, la base de données enregistrée dans les paramètres du serveur est utilisée comme base de données par défaut. Par défaut, il s’agit de la base de données nommée `default`. Vous pouvez également toujours préciser la base de données en la faisant précéder d’un point avant le nom de la table.
 
 <div id="authentication">
-  ## Authentification {#authentication}
+  ## Authentification
 </div>
 
 Le nom d’utilisateur et le mot de passe peuvent être indiqués de l’une des trois manières suivantes :
@@ -714,7 +714,7 @@ curl -sS 'http://localhost:8123/?max_result_bytes=4000000&buffer_size=3000000&wa
 </Tip>
 
 <div id="setting-role-with-query-parameters">
-  ## Définir un rôle avec des paramètres de requête {#setting-role-with-query-parameters}
+  ## Définir un rôle avec des paramètres de requête
 </div>
 
 Cette fonctionnalité a été ajoutée dans ClickHouse 24.4.
@@ -840,13 +840,13 @@ __exception__
 ```
 
 <div id="cli-queries-with-parameters">
-  ## Requêtes avec paramètres {#cli-queries-with-parameters}
+  ## Requêtes avec paramètres
 </div>
 
 Vous pouvez créer une requête avec des paramètres et leur attribuer des valeurs à partir des paramètres de la requête HTTP correspondante. Pour en savoir plus, consultez [Requêtes avec paramètres pour l’interface CLI](/fr/concepts/features/interfaces/client#cli-queries-with-parameters).
 
 <div id="example-3">
-  ### Exemple {#example-3}
+  ### Exemple
 </div>
 
 ```bash
@@ -854,7 +854,7 @@ $ curl -sS "<address>?param_id=2&param_phrase=test" -d "SELECT * FROM table WHER
 ```
 
 <div id="tabs-in-url-parameters">
-  ### Tabulations dans les paramètres d’URL {#tabs-in-url-parameters}
+  ### Tabulations dans les paramètres d’URL
 </div>
 
 Les paramètres de requête sont analysés à partir du format &quot;escaped&quot;. Cela présente certains avantages, comme la possibilité d’analyser sans ambiguïté les valeurs NULL sous la forme `\N`. Cela signifie que le caractère de tabulation doit être encodé sous la forme `\t` (ou `\` suivi d’une tabulation). Par exemple, ce qui suit contient une véritable tabulation entre `abc` et `123`, et la chaîne d’entrée est divisée en deux valeurs :
@@ -885,7 +885,7 @@ curl -sS "http://localhost:8123?param_arg1=abc%5C%09123" -d "SELECT splitByChar(
 ```
 
 <div id="predefined_http_interface">
-  ## Interface HTTP prédéfinie {#predefined_http_interface}
+  ## Interface HTTP prédéfinie
 </div>
 
 ClickHouse prend en charge certaines requêtes via l’interface HTTP. Par exemple, vous pouvez écrire des données dans une table comme suit :
@@ -1056,7 +1056,7 @@ max_threads    1
 ```
 
 <div id="virtual-param-request-body">
-  #### Paramètre virtuel `_request_body` {#virtual-param-request-body}
+  #### Paramètre virtuel `_request_body`
 </div>
 
 En plus des paramètres d’URL, des en-têtes et des paramètres de requête, `predefined_query_handler` prend en charge un paramètre virtuel spécial, `_request_body`.
@@ -1125,7 +1125,7 @@ max_final_threads   2
 ```
 
 <div id="static">
-  ### static {#static}
+  ### static
 </div>
 
 `static` peut renvoyer [`content_type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type), [status](https://developer.mozilla.org/en-US/docs/Web/HTTP/Status) et `response_content`. `response_content` peut renvoyer le contenu indiqué.
@@ -1318,7 +1318,7 @@ $ curl -vv -H 'XXX:xxx' 'http://localhost:8123/get_relative_path_static_handler'
 ```
 
 <div id="redirect">
-  ### redirect {#redirect}
+  ### redirect
 </div>
 
 `redirect` effectue une redirection `302` vers `location`
@@ -1341,7 +1341,7 @@ Par exemple, voici comment ajouter automatiquement set user à `play` dans Click
 ```
 
 <div id="http-response-headers">
-  ## En-têtes de réponse HTTP {#http-response-headers}
+  ## En-têtes de réponse HTTP
 </div>
 
 ClickHouse vous permet de configurer des en-têtes de réponse HTTP personnalisés, applicables à tout type de gestionnaire configurable. Ces en-têtes peuvent être définis à l’aide du paramètre `http_response_headers`, qui accepte des paires clé-valeur représentant les noms des en-têtes et leurs valeurs. Cette fonctionnalité est particulièrement utile pour mettre en place des en-têtes de sécurité personnalisés, des politiques CORS ou toute autre exigence relative aux en-têtes HTTP sur votre interface HTTP ClickHouse.

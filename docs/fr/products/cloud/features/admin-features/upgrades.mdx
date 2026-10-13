@@ -29,7 +29,7 @@ Le paramètre `compatibility` vous permet d&#39;utiliser les valeurs par défaut
 Dans ClickHouse Cloud, vous ne pouvez pas gérer directement le paramètre `compatibility` par défaut au niveau du service : vous devez [contacter ClickHouse Support](https://clickhouse.com/support/program) si vous souhaitez modifier la version définie pour le paramètre `compatibility` par défaut de votre service. En revanche, vous pouvez surcharger le paramètre `compatibility` au niveau de l&#39;utilisateur, du rôle, du profil, de la requête ou de la session à l&#39;aide des mécanismes standard de configuration de ClickHouse, par exemple `SET compatibility = '26.8'` dans une session ou `SETTINGS [other settings,] compatibility = '26.8'` dans une requête.
 
 <div id="maintenance-mode">
-  ## Mode de maintenance {#maintenance-mode}
+  ## Mode de maintenance
 </div>
 
 Il peut arriver que nous devions mettre à jour votre service, ce qui peut nécessiter la désactivation de certaines fonctionnalités, comme la mise à l&#39;échelle ou la mise en veille. Dans de rares cas, nous pouvons aussi devoir intervenir sur un service qui rencontre des problèmes afin de le rétablir dans un état de fonctionnement normal. Pendant cette maintenance, une bannière *« Maintenance en cours »* s&#39;affichera sur la page du service. Il est possible que vous puissiez tout de même utiliser le service pour exécuter des requêtes pendant cette période.
@@ -37,7 +37,7 @@ Il peut arriver que nous devions mettre à jour votre service, ce qui peut néce
 Le temps pendant lequel le service est en maintenance ne vous sera pas facturé. Le *mode de maintenance* est rare et ne doit pas être confondu avec les mises à niveau habituelles du service.
 
 <div id="release-channels-upgrade-schedule">
-  ## Canaux de mise à niveau (calendrier des mises à niveau) {#release-channels-upgrade-schedule}
+  ## Canaux de mise à niveau (calendrier des mises à niveau)
 </div>
 
 Les utilisateurs peuvent définir le calendrier des mises à niveau de leur service ClickHouse Cloud en s’abonnant à un canal de mise à niveau spécifique. Il existe trois canaux de mise à niveau, et l’utilisateur peut configurer le jour et l’heure des mises à niveau dans la semaine à l’aide de la fonctionnalité **mises à niveau planifiées**.
@@ -74,7 +74,7 @@ Vous pouvez modifier le calendrier de release du service dans la console Cloud, 
 Ce **canal de mise à niveau rapide** convient pour tester de nouvelles fonctionnalités dans des environnements non critiques. **Il n&#39;est pas recommandé pour les workloads de production ayant des exigences strictes en matière de disponibilité et de fiabilité.**
 
 <div id="regular-release-channel">
-  ### Canal de mise à niveau standard {#regular-release-channel}
+  ### Canal de mise à niveau standard
 </div>
 
 Pour tous les services des niveaux Scale et Enterprise qui n&#39;ont pas de canal de mise à niveau ni de calendrier de mise à niveau configurés, les mises à niveau seront effectuées dans le cadre du canal de mise à niveau standard. Cette option est recommandée pour les environnements de production.
@@ -86,7 +86,7 @@ Les mises à niveau du canal de mise à niveau standard sont généralement effe
 </Note>
 
 <div id="slow-release-channel-deferred-upgrades">
-  ### Canal de mise à niveau lent (mises à niveau différées) {#slow-release-channel-deferred-upgrades}
+  ### Canal de mise à niveau lent (mises à niveau différées)
 </div>
 
 <EnterprisePlanFeatureBadge feature="The slow release channel" />
