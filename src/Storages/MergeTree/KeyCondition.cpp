@@ -2074,6 +2074,56 @@ static bool castMayDropFixedStringPadding(
     return anyInTypeTree(*from, [](const IDataType & type) { return isFixedString(type) || isDynamic(type); });
 }
 
+/// Whether `CAST` from `from_type` to `to_type` pairs the elements of two named tuples, at any depth, by name in another
+/// order than by position. A comparison pairs them by position, so a constant converted to the key type this way no
+/// longer names the value it is compared with. A `Variant` or `Dynamic` in `from_type` counts with any named tuple in
+/// `to_type`, as the tuples it holds are not known here.
+static bool castReordersTupleElements(const DataTypePtr & from_type, const DataTypePtr & to_type)
+{
+    const auto from = removeLowCardinalityAndNullable(from_type);
+    const auto to = removeLowCardinalityAndNullable(to_type);
+    if (from->equals(*to))
+        return false;
+
+    if (isVariant(from) || isDynamic(from))
+        return anyInTypeTree(*to, [](const IDataType & type)
+        {
+            const auto * tuple = typeid_cast<const DataTypeTuple *>(&type);
+            return tuple && tuple->hasExplicitNames();
+        });
+
+    const auto * from_array = typeid_cast<const DataTypeArray *>(from.get());
+    const auto * to_array = typeid_cast<const DataTypeArray *>(to.get());
+    if (from_array && to_array)
+        return castReordersTupleElements(from_array->getNestedType(), to_array->getNestedType());
+
+    const auto * from_map = typeid_cast<const DataTypeMap *>(from.get());
+    const auto * to_map = typeid_cast<const DataTypeMap *>(to.get());
+    if (from_map && to_map)
+        return castReordersTupleElements(from_map->getKeyType(), to_map->getKeyType())
+            || castReordersTupleElements(from_map->getValueType(), to_map->getValueType());
+
+    const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
+    const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
+    if (!from_tuple || !to_tuple)
+        return false;
+
+    /// See `FunctionCast::createTupleWrapper`: two named tuples that share a name are paired by name.
+    if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames() && from_tuple->getElementNames() != to_tuple->getElementNames())
+    {
+        for (const auto & name : to_tuple->getElementNames())
+            if (from_tuple->tryGetPositionByName(name))
+                return true;
+    }
+
+    const auto & from_elements = from_tuple->getElements();
+    const auto & to_elements = to_tuple->getElements();
+    for (size_t i = 0; i < std::min(from_elements.size(), to_elements.size()); ++i)
+        if (castReordersTupleElements(from_elements[i], to_elements[i]))
+            return true;
+    return false;
+}
+
 /// Builds the one-row column of a constant. A `Field` does not tell which member of a `Variant`/`Dynamic` holds the
 /// value, so a constant with such a type, at any depth, is taken from `original`, the column of the constant in the
 /// query. Returns nullptr when `original` does not hold the constant of `type`.
@@ -2130,7 +2180,8 @@ static bool applyFunctionChainToColumn(
 
     /// And cast it to the argument type of the first function in the chain
     auto in_argument_type = removeLowCardinality(getArgumentTypeOfMonotonicFunction(*functions[0]));
-    if (castMayDropFixedStringPadding(result_type, in_argument_type, result_column.get()))
+    if (castReordersTupleElements(result_type, in_argument_type)
+        || castMayDropFixedStringPadding(result_type, in_argument_type, result_column.get()))
         return false;
 
     if (canBeSafelyCast(result_type, in_argument_type))
@@ -3287,7 +3338,7 @@ bool KeyCondition::canConstantBeWrappedByDeterministicFunctions(
         return false;
 
     ColumnPtr const_column = createConstantColumn(const_value_type, const_value, original_const_column);
-    if (!const_column)
+    if (!const_column || castReordersTupleElements(const_value_type, dag.input_type))
         return false;
 
     /// Convert before transforming, so the value the transform consumes is observable here: normalizing
