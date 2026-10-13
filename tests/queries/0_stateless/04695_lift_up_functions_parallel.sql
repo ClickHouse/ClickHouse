@@ -60,9 +60,10 @@ FROM (EXPLAIN PIPELINE
         FROM numbers_mt(50000) ORDER BY k % 977 DESC, k))
 WHERE explain LIKE '%AddSequenceNumber%';
 
--- `arrayJoin` in the lifted part changes the number of rows in a chunk.
+-- `arrayJoin` changes the number of rows in a chunk. The rows it makes from one source row tie on the
+-- sorting key, so only the order by `k, n` is defined.
 SELECT 'array join order preserved', g = arraySort(g)
-FROM (SELECT groupArray((k, n, e)) AS g FROM (
+FROM (SELECT groupArray((k, n)) AS g FROM (
     SELECT k, n, arrayJoin(arr) AS e
     FROM (SELECT number AS n, number % 100 AS k, [number, number + 1, number + 2] AS arr FROM numbers_mt(50000))
     ORDER BY k, n));
