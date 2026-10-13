@@ -1366,40 +1366,46 @@ void AdaptiveExpressionActions::accumulateProfile(size_t action_index, const Fun
 size_t AdaptiveExpressionActions::getActionInputRows(size_t action_index) const
 {
     /// A nested lazy action is executed only on the rows passed to its nearest lazy ancestor.
-    /// Walk through non-lazy wrappers to find that input domain. A DAG node may have several parents;
-    /// use the largest domain at the closest level to avoid underestimating the eager alternative.
-    std::vector<size_t> current_level{action_index};
-    std::vector<size_t> next_level;
+    /// Walk through non-lazy wrappers to find that input domain. A DAG node may have several parents,
+    /// and a shared node is executed lazily once for every lazy ancestor, e.g. once on the `then` rows
+    /// and once on the `else` rows of `if(cond, plus(f(x), 1), plus(f(x), 2))`. The eager execution has
+    /// to cover the rows of all of them, so sum the domains of the nearest lazy ancestors over all paths.
+    /// The sum is an upper bound of their union, which keeps the decision on the side of the static
+    /// short-circuit schedule.
+    std::vector<size_t> stack{action_index};
     std::vector<bool> visited(actions.size());
     visited[action_index] = true;
 
-    while (!current_level.empty())
+    size_t input_rows = 0;
+    bool reached_without_lazy_ancestor = false;
+
+    while (!stack.empty())
     {
-        size_t input_rows = 0;
-        next_level.clear();
+        auto child_action_index = stack.back();
+        stack.pop_back();
 
-        for (auto child_action_index : current_level)
+        const auto & parents = actions[child_action_index].parents_actions_pos;
+        if (parents.empty() && child_action_index != action_index)
+            reached_without_lazy_ancestor = true;
+
+        for (auto parent_action_index : parents)
         {
-            for (auto parent_action_index : actions[child_action_index].parents_actions_pos)
-            {
-                if (visited[parent_action_index])
-                    continue;
+            if (visited[parent_action_index])
+                continue;
 
-                visited[parent_action_index] = true;
-                if (shouldExecuteLazily(parent_action_index))
-                    input_rows = std::max(input_rows, action_states[parent_action_index].current_round_profile.executed_rows);
-                else
-                    next_level.push_back(parent_action_index);
-            }
+            visited[parent_action_index] = true;
+            if (shouldExecuteLazily(parent_action_index))
+                input_rows += action_states[parent_action_index].current_round_profile.executed_rows;
+            else
+                stack.push_back(parent_action_index);
         }
-
-        if (input_rows)
-            return input_rows;
-
-        current_level.swap(next_level);
     }
 
-    return current_round_input_rows;
+    /// A path without a lazy ancestor needs the action on every row of the block.
+    if (reached_without_lazy_ancestor || !input_rows)
+        input_rows += current_round_input_rows;
+
+    return input_rows;
 }
 
 void AdaptiveExpressionActions::finalizeBlockExecution(size_t input_num_rows, bool dry_run) const
@@ -1452,7 +1458,11 @@ void AdaptiveExpressionActions::updateActionParentProfile(size_t action_index, s
                 continue;
 
             visited[parent_action_index] = true;
+            /// Update the long-term baseline as well: while the descendant was lazy, its cost was a part of
+            /// the parent's own measurements, so the re-enable check must compare the current round against
+            /// a history built on the same cost model.
             action_states[parent_action_index].current_round_profile.execution_elapsed += extra_elapsed;
+            action_states[parent_action_index].total_profile.execution_elapsed += extra_elapsed;
             /// `ALIAS` actions and short-circuit functions such as `and`, `or`, `if` and `multiIf` never
             /// execute lazily themselves, but they are transparent wrappers in the actions DAG: the cost of
             /// an eager descendant is paid by whoever executes them. Continue through them, otherwise a lazy
