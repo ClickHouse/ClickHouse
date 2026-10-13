@@ -5593,6 +5593,17 @@ void Changelog::compact(uint64_t up_to_log_index)
             break;
     }
 
+    /// In S3 mode the segment the writer has open is listed only once it is published, so the loop above does not
+    /// see it. When all logs are removed, it starts at or before the compacted index, and the next entry is
+    /// `up_to_log_index + 1`. Without a rotation the next flush would publish the new entries under the stale start
+    /// index, and the next startup would consider that segment incomplete and never merge it.
+    if (keeper_context->isS3ExperimentalChangelog() && remove_all_logs && current_writer
+        && current_writer->getCurrentFileDescription() && current_writer->getStartIndex() <= up_to_log_index)
+    {
+        LOG_INFO(log, "Rotating the active S3 changelog segment because this node recovers from snapshot");
+        need_rotate = true;
+    }
+
     entry_storage.cleanUpTo(up_to_log_index + 1);
 
     if (need_rotate)
