@@ -8,6 +8,7 @@
 
 #include <memory>
 #include <optional>
+#include <string_view>
 #include <vector>
 
 namespace DB
@@ -49,9 +50,16 @@ struct NetCDFTableLayout
         /// The axes of the variable, one per use of a dimension, without the dimension that holds
         /// the length of the strings.
         std::vector<size_t> axis_ids;
-        /// The values that are read as NULL, in the representation of the file. Empty for a
-        /// column that is not Nullable.
-        std::vector<String> null_values;
+        /// The values that are read as NULL, in the representation of the file: one entry per
+        /// attribute that declares them. Each entry refers to the data of the attribute in the
+        /// header, which holds `size() / value_size` sentinels of `value_size` bytes each, so a
+        /// large `missing_value` array is not copied. Empty for a column that is not Nullable.
+        struct NullValues
+        {
+            std::string_view data;
+            size_t value_size = 0;
+        };
+        std::vector<NullValues> null_values;
     };
 
     /// The dimension behind every axis. The first `header.dimensions.size()` axes are the first

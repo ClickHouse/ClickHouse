@@ -376,13 +376,11 @@ NetCDFTableLayout getNetCDFTableLayout(const NetCDFHeader & header, const Format
                         size_t length = attribute->data.size();
                         while (length != 0 && attribute->data[length - 1] == '\0')
                             --length;
-                        column.null_values.emplace_back(attribute->data.data(), length);
+                        column.null_values.push_back({std::string_view(attribute->data.data(), length), length});
                     }
                     else
                     {
-                        for (size_t value_index = 0; value_index < attribute->num_elements; ++value_index)
-                            column.null_values.emplace_back(
-                                attribute->data.data() + value_index * netCDFTypeSize(variable.type), netCDFTypeSize(variable.type));
+                        column.null_values.push_back({std::string_view(attribute->data), netCDFTypeSize(variable.type)});
                     }
                     column.type = makeNullable(column.type);
                 }
@@ -644,8 +642,27 @@ void NetCDFBlockInputFormat::getElementIndexes(
 namespace
 {
 
+/// Whether the value of `size` bytes is one of the sentinels. The sentinels of a string have the
+/// length of the whole attribute, so a value of another length matches none of them.
+bool isNullValue(const std::vector<NetCDFTableLayout::Column::NullValues> & null_values, const char * value, size_t size)
+{
+    for (const auto & sentinels : null_values)
+    {
+        if (sentinels.value_size != size)
+            continue;
+
+        if (size == 0)
+            return true;
+
+        for (size_t offset = 0; offset + size <= sentinels.data.size(); offset += size)
+            if (0 == memcmp(value, sentinels.data.data() + offset, size))
+                return true;
+    }
+    return false;
+}
+
 template <typename T>
-void insertNumbers(IColumn & column, const char * data, UInt64 first_element, const PaddedPODArray<UInt64> & indexes, const std::vector<String> & null_values)
+void insertNumbers(IColumn & column, const char * data, UInt64 first_element, const PaddedPODArray<UInt64> & indexes, const std::vector<NetCDFTableLayout::Column::NullValues> & null_values)
 {
     ColumnVector<T> * values = nullptr;
     NullMap * null_map = nullptr;
@@ -676,11 +693,8 @@ void insertNumbers(IColumn & column, const char * data, UInt64 first_element, co
         transformEndianness<std::endian::native, std::endian::big>(value);
         data_to[old_size + i] = value;
 
-        if (null_map && std::ranges::any_of(null_values, [&](const String & null_value)
-            { return 0 == memcmp(from, null_value.data(), sizeof(T)); }))
-        {
+        if (null_map && isNullValue(null_values, from, sizeof(T)))
             (*null_map)[old_size + i] = 1;
-        }
     }
 }
 
@@ -727,8 +741,7 @@ void NetCDFBlockInputFormat::fillColumn(const ColumnState & state, IColumn & col
 
             if (null_map)
             {
-                null_map->push_back(std::ranges::any_of(description.null_values, [&](const String & null_value)
-                    { return length == null_value.size() && 0 == memcmp(from, null_value.data(), length); }));
+                null_map->push_back(isNullValue(description.null_values, from, length));
             }
         }
         return;
