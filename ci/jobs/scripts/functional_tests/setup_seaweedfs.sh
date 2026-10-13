@@ -125,11 +125,13 @@ start_seaweedfs() {
   if [ "${SEAWEEDFS_DISABLE_CACHE:-0}" = 1 ]; then
     cache_flags=(-s3.cacheCapacityMB=0 -filer.saveToFilerLimit=0)
   fi
+  # -idleTimeout: keep volume connections open longer than SeaweedFS's own client
+  # pools them (90 s), so its S3 gateway never reuses a connection being closed
   nohup weed server -dir="$data_dir" \
     -master.port=11112 -volume.port=11113 -filer.port=11114 \
     -s3 -s3.port=11111 -s3.config=./seaweedfs_s3.json \
     "${cache_flags[@]}" \
-    -master.volumeSizeLimitMB=1024 -volume.max=0 &
+    -master.volumeSizeLimitMB=1024 -volume.max=0 -idleTimeout=120 &
   WEED_PID=$!
   echo "weed server started with PID ${WEED_PID}"
   if [ -n "${SEAWEEDFS_PID_FILE:-}" ]; then
