@@ -92,7 +92,7 @@ private:
     bool has_stale_files_on_disk TSA_GUARDED_BY(mutex) = false;
 
     /// Whether the pending `.list` rewrite must be synced. `writeLists` can run without the query context
-    /// of the changes which scheduled it, so their `fsync_metadata` is accumulated here.
+    /// of the changes made before it runs, so their `fsync_metadata` is accumulated here.
     bool pending_lists_fsync TSA_GUARDED_BY(mutex) = false;
 
     /// List files are written in a separate thread.

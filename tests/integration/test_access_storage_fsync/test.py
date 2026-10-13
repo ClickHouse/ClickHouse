@@ -252,6 +252,51 @@ def test_deferred_list_write_preserves_session_fsync():
     instance.query(f"DROP USER IF EXISTS {user}")
 
 
+def test_deferred_list_write_preserves_fsync_of_name_preserving_update():
+    """
+    A GRANT keeps the name, so it does not schedule a `.list` rewrite itself. Made at
+    fsync_metadata=1 while the rewrite scheduled by a CREATE USER at fsync_metadata=0 is
+    pending, it must still make that rewrite synced: the rewrite removes the mark which is
+    the only thing pointing a restart at the user's `.sql` file.
+    """
+    user = "u_deferred_grant_fsync"
+    other = "u_deferred_grant_fsync_other"
+    instance.query(f"DROP USER IF EXISTS {user}, {other}")
+    instance.restart_clickhouse()
+
+    instance.query(
+        f"CREATE USER {user} IDENTIFIED WITH no_password",
+        settings={"fsync_metadata": 0},
+    )
+    instance.query(
+        f"GRANT SELECT ON default.* TO {user}", settings={"fsync_metadata": 1}
+    )
+    instance.exec_in_container(
+        ["bash", "-c", f"rm -f {ACCESS_DIR}/need_rebuild_lists.mark"], user="root"
+    )
+    file_sync, _ = _run("SYSTEM RELOAD USERS", 0)
+    assert file_sync >= 1, (
+        "deferred .list rewrite dropped the fsync_metadata=1 requirement of a GRANT: "
+        f"FileSync={file_sync}"
+    )
+
+    # The same sequence with the GRANT at fsync_metadata=0 does not sync.
+    instance.query(
+        f"CREATE USER {other} IDENTIFIED WITH no_password",
+        settings={"fsync_metadata": 0},
+    )
+    instance.query(
+        f"GRANT INSERT ON default.* TO {user}", settings={"fsync_metadata": 0}
+    )
+    instance.exec_in_container(
+        ["bash", "-c", f"rm -f {ACCESS_DIR}/need_rebuild_lists.mark"], user="root"
+    )
+    file_sync, _ = _run("SYSTEM RELOAD USERS", 0)
+    assert file_sync == 0, f".list fsync forced by a GRANT at fsync_metadata=0: FileSync={file_sync}"
+
+    instance.query(f"DROP USER IF EXISTS {user}, {other}")
+
+
 def test_marker_driven_rebuild_forces_list_fsync():
     """
     A marker-driven rebuild - `need_rebuild_lists.mark` present at rebuild entry, i.e. startup

@@ -812,6 +812,11 @@ bool DiskAccessStorage::updateNoLock(const UUID & id, const UpdateFunc & update_
     {
         if (name_changed)
             scheduleWriteLists(new_entity->getType());
+        else if (!types_of_lists_to_write.empty())
+        {
+            /// The pending `.list` rewrite removes the mark which also guards this file.
+            pending_lists_fsync = pending_lists_fsync || shouldFsyncMetadata();
+        }
         writeAccessEntityToDisk(id, *new_entity);   /// tmp + atomic rename overwrites <id>.sql
     }
 
