@@ -122,6 +122,7 @@ inline uint32_t parse_eight_digits_unrolled(uint64_t val) noexcept
     return static_cast<uint32_t>(val);
 }
 
+#if defined(__x86_64__) || defined(__aarch64__)
 /// Classifying 16 bytes at once finds where a short token ends without a branch per character, which
 /// mispredicts when the lengths of the values vary. Written with clang vector extensions rather than
 /// intrinsics so that the same code compiles for x86 and aarch64.
@@ -167,6 +168,11 @@ inline uint64_t parseDigits16(const char * p, unsigned n)
     return parse_eight_digits_unrolled(static_cast<uint64_t>(digits) + 0x3030303030303030) * 100000000ULL
         + parse_eight_digits_unrolled(static_cast<uint64_t>(digits >> 64) + 0x3030303030303030);
 }
+
+/// Bytes that parseUnsignedFloatFromBuffer may read from the start of a token. The fraction's 16-byte load
+/// starts at most 15 bytes in (at most 14 integer digits and the dot), so it ends at most 31 bytes in.
+constexpr ptrdiff_t short_decimal_read_bytes = 31;
+#endif
 
 /// A pure decimal integer of up to 38 digits fits exactly in unsigned __int128, and the conversion
 /// to double/float is correctly rounded. That is far cheaper than fast_float's big-integer path for
@@ -378,10 +384,6 @@ parseFloatFromRange(T & x, const char * first, const char * last)
 }
 
 
-/// Bytes that parseUnsignedFloatFromBuffer may read from the start of a token. The fraction's 16-byte load
-/// starts at most 15 bytes in (at most 14 integer digits and the dot), so it ends at most 31 bytes in.
-constexpr ptrdiff_t short_decimal_read_bytes = 31;
-
 /// Sets the sign with a bit flip: a conditional negation compiles to a branch that mispredicts on columns
 /// with mixed signs.
 template <typename T>
@@ -402,6 +404,7 @@ template <typename T>
 ALWAYS_INLINE inline fast_float::from_chars_result_t<char>
 parseUnsignedFloatFromBuffer(T & x, const char * first, const char * last)
 {
+#if defined(__x86_64__) || defined(__aarch64__)
     /// The byte masks assume little-endian lane order.
     if (std::endian::native != std::endian::little || unlikely(last - first < short_decimal_read_bytes))
         return parseFloatFromRange(x, first, last);
@@ -437,6 +440,10 @@ parseUnsignedFloatFromBuffer(T & x, const char * first, const char * last)
     const uint64_t mantissa = parseDigits16(first, int_len) * common::exp10_i64(frac_len) + parseDigits16(first + int_len + 1, frac_len);
     x = static_cast<T>(static_cast<int64_t>(mantissa)) / static_cast<T>(common::exp10_i64(frac_len));
     return {end, std::errc()};
+#else
+    /// Elsewhere the vector comparisons are untested or do not compile (`vector bool` with AltiVec on ppc64le).
+    return parseFloatFromRange(x, first, last);
+#endif
 }
 
 /// Parses a float at the start of [first, last), which may continue far past the token. The sign is taken
