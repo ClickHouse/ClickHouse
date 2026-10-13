@@ -111,6 +111,8 @@ public:
                 // Element was removed from inside of heap -- heap must be rebuilt
                 std::make_heap(items.begin(), items.begin() + heap_size);
                 child_idx = heap_size;
+                if (heap_size == 0)
+                    flushThroughputOnDeactivation();
             }
 
             // Now detach inactive child
@@ -142,7 +144,10 @@ public:
         while (true)
         {
             if (heap_size == 0)
+            {
+                flushThroughputOnDeactivation();
                 return {nullptr, false};
+            }
 
             // Recursively pull request from child
             auto [request, child_active] = items.front().child->dequeueRequest();
@@ -192,7 +197,7 @@ public:
 
             if (request)
             {
-                incrementDequeued(request->cost);
+                incrementDequeued(request->cost, heap_size > 0);
                 SCHED_DBG("{} -- dequeue(child={}, cost={}, vruntime={:.2f}, sys_vruntime={:.2f})",
                     getPath(), current.child->basename, request->cost, current.vruntime, system_vruntime);
                 return {request, heap_size > 0};
