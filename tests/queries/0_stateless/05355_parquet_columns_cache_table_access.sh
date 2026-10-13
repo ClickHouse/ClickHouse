@@ -81,6 +81,12 @@ echo "--- the entries of a dropped table: global SHOW COLUMNS without READ ON FI
 $CLICKHOUSE_CLIENT -q "GRANT SHOW COLUMNS ON *.* TO ${USER}; REVOKE READ ON FILE FROM ${USER}"
 populate
 $CLICKHOUSE_CLIENT -q "DROP TABLE t_parquet_file SYNC"
+# With `distributed_ddl_output_mode = none` (as in the `DatabaseReplicated` test configuration) the
+# query returns before the table is dropped: wait until its UUID no longer resolves.
+for _ in {1..60}; do
+    [ "$($CLICKHOUSE_CLIENT -q "SELECT count() FROM system.columns_cache WHERE table_uuid = toUUID('${TABLE_UUID}') AND table != ''")" = 0 ] && break
+    sleep 0.5
+done
 $CLICKHOUSE_CLIENT --user "${USER}" -q "${QUERY_DROPPED}"
 echo "--- the entries of a dropped table: global SHOW COLUMNS and READ ON FILE"
 $CLICKHOUSE_CLIENT -q "GRANT READ ON FILE TO ${USER}"
