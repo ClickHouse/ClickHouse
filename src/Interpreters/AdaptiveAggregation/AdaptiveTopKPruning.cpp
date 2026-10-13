@@ -20,7 +20,7 @@ AdaptiveTopKPruning::ProducerBins AdaptiveTopKPruning::finalizeProducerCounts(Ad
 
 bool AdaptiveTopKPruning::prepare(size_t expected_producers)
 {
-    if (producer_bins.size() != expected_producers)
+    if (producer_bins.size() + merge_counted_tables.size() != expected_producers)
         return false;
 
     /// A bucket's largest bin is at most the sum of the producers' largest bins in it, which orders the buckets.

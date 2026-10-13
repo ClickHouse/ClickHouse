@@ -838,6 +838,15 @@ void Aggregator::executeStagedArgumentRecords(
         use_compiled_functions);
 }
 
+ALWAYS_INLINE UInt64 Aggregator::adaptiveRankCount(AggregateDataPtr & mapped, IColumn * scratch, Arena * arena) const
+{
+    if (is_simple_count)
+        return getInlineCountState(mapped);
+    if (bucket_top_k_ranks_by_count_state)
+        return getCountState(mapped + offsets_of_aggregate_states[params.bucket_top_k_rank_index]);
+    return finalizeBucketTopKRank(mapped, *scratch, arena);
+}
+
 size_t Aggregator::collectAdaptiveTableStatistics(AggregatedDataVariants & variants, AdaptiveTopKCountBins * bins) const
 {
     size_t work = 0;
@@ -868,14 +877,6 @@ size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena
         ColumnUInt64::MutablePtr scratch;
         if (bins && !is_simple_count && !bucket_top_k_ranks_by_count_state)
             scratch = ColumnUInt64::create();
-        const auto rank_count = [&](AggregateDataPtr & mapped) -> UInt64
-        {
-            if (is_simple_count)
-                return getInlineCountState(mapped);
-            if (bucket_top_k_ranks_by_count_state)
-                return getCountState(mapped + offsets_of_aggregate_states[params.bucket_top_k_rank_index]);
-            return finalizeBucketTopKRank(mapped, *scratch, arena);
-        };
         const auto add = [&](auto & table)
         {
             forEachMappedCellWithHashOnDemand(
@@ -883,7 +884,7 @@ size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena
                 [&](AggregateDataPtr & mapped, const auto & hash_of)
                 {
                     if (bins)
-                        bins->add(hash_of(), rank_count(mapped));
+                        bins->add(hash_of(), adaptiveRankCount(mapped, scratch.get(), arena));
                     for (size_t i : adaptive_parallel_merge_indices)
                         work += aggregate_functions[i]->getEstimatedMergeWork(mapped + offsets_of_aggregate_states[i]);
                 });
@@ -899,6 +900,27 @@ size_t Aggregator::collectAdaptiveTableStatistics(Method & method, Arena * arena
         }
     }
     return work;
+}
+
+template <typename Method>
+void NO_INLINE Aggregator::addMergeCountedTablesToBounds(
+    ManyAggregatedDataVariants & data, Int32 bucket, const AdaptiveTopKPruning & pruning, std::span<UInt64> bounds, Arena * arena) const
+{
+    if constexpr (MapAggregationMethod<Method>)
+    {
+        ColumnUInt64::MutablePtr scratch;
+        for (size_t i = 1; i < data.size(); ++i)
+        {
+            if (!pruning.isMergeCounted(*data[i]))
+                continue;
+            if (!scratch && !is_simple_count && !bucket_top_k_ranks_by_count_state)
+                scratch = ColumnUInt64::create();
+            forEachMappedCellWithHash(
+                getDataVariant<Method>(*data[i]).data.impls[bucket],
+                [&](const auto &, AggregateDataPtr & mapped, size_t hash)
+                { AdaptiveTopKPruning::addToBounds(bounds, hash, adaptiveRankCount(mapped, scratch.get(), arena)); });
+        }
+    }
 }
 
 Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucket(
@@ -997,11 +1019,15 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             forEachKeyCellWithHash(source, [&](const auto & key, size_t hash) { unit_cells[unit_of(hash)].push_back({key, nullptr, hash}); });
     }
 
-    /// With the top-K pruning, the bounds of the bucket's count bins (see `AdaptiveTopKPruning`).
+    /// With the top-K pruning, the bounds of the bucket's count bins (see `AdaptiveTopKPruning`), completed with the
+    /// groups of the tables of the producers that never froze.
     AdaptiveTopKPruning * const pruning = session.top_k_pruning.get();
     AdaptiveTopKPruning::BucketBounds bin_bounds{};
     if (pruning)
+    {
         bin_bounds = pruning->boundsForBucket(bucket);
+        addMergeCountedTablesToBounds<Method>(data, bucket, *pruning, bin_bounds, arena);
+    }
     std::array<bool, adaptive_count_bins_per_bucket> alive{};
     const size_t bins_per_unit = adaptive_count_bins_per_bucket / units;
     size_t pruned_records = 0;

@@ -149,8 +149,8 @@ struct AdaptiveAggregationSession
     const TemporaryDataOnDiskScopePtr spill_scope;
 
     /// Set when the aggregation feeds `ORDER BY count() DESC LIMIT n`, or the same by `uniqExact` or `uniqExactIf` (see
-    /// `AdaptiveTopKPruning`). The producers hand their count bins over to it, and after the finish barrier
-    /// `Aggregator::prepareAdaptiveTopKPruning` keeps it only for a merge that can prune.
+    /// `AdaptiveTopKPruning`). The producers hand their count bins, or their tables if they never froze, over to it,
+    /// and after the finish barrier `Aggregator::prepareAdaptiveTopKPruning` keeps it only for a merge that can prune.
     std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
 
     /// The producers' staged records, handed over by each producer when it finishes (see
@@ -434,7 +434,8 @@ struct AdaptiveAggregationProducer
     /// The current block's misses.
     AdaptiveMissBatch misses;
 
-    /// The producer's count bins when the aggregation prunes by the top-K, handed over at the finish.
+    /// The producer's count bins when the aggregation prunes by the top-K, allocated by the first freeze and handed
+    /// over at the finish.
     AdaptiveTopKCountBins count_bins;
 };
 

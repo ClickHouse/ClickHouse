@@ -6,11 +6,11 @@ CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 
 # An adaptive aggregation that feeds `ORDER BY uniqExact(...) DESC LIMIT n`, which `COUNT(DISTINCT)` resolves to, or the
 # same by `uniqExactIf`, which the analyzer makes of `uniqExact(if(...))`, bounds the distinct counts with the count
-# bins of the top-K pruning: every staged record adds one to its bin, and at its
-# finish every producer adds the distinct count of each group of its own table. A row raises a distinct count by one
-# at most, and a merged group has no more distinct values than the groups merged into it together, so summed over the
-# producers a bin bounds the distinct count of every group in it, and once the merge knows `n` exact distinct counts it
-# skips the merge units, staged records and source cells of the bins bounded below the smallest of them.
+# bins of the top-K pruning: every staged record adds one to its bin, and every producer's own table adds the distinct
+# count of each of its groups, at the producer's finish if it froze and in the merge otherwise. A row raises a distinct
+# count by one at most, and a merged group has no more distinct values than the groups merged into it together, so
+# summed over the producers a bin bounds the distinct count of every group in it. Once the merge knows `n` exact
+# distinct counts, it skips the merge units, staged records and source cells of the bins bounded below the smallest.
 #
 # The source puts a head of 100 keys, whose rows grow with the key, in front of a tail of unique keys, so the top is a
 # few groups with thousands of distinct values and almost every bin is bounded far below them. Every cell compares the

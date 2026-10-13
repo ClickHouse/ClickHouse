@@ -270,15 +270,10 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     /// A producer creates its partitions at its first freeze and keeps them through thaws and spills.
     const bool froze = adaptive.partitions != nullptr;
 
-    /// The bins take the rows of the producer's own table as well, whatever its phase: a producer that never froze
-    /// has no records but its table is a source of the merge.
-    AdaptiveTopKCountBins * count_bins = nullptr;
-    if (params.adaptiveTopKPrunes())
-    {
-        if (!adaptive.count_bins.isAllocated())
-            adaptive.count_bins.allocate();
-        count_bins = &adaptive.count_bins;
-    }
+    /// The bins of a producer that froze take the rows of its own table as well, whatever its phase now. A producer
+    /// that never froze has no bins and hands its table over instead: the adaptive merge counts it, and the ordinary
+    /// merge of an aggregation in which no producer froze does not prune.
+    AdaptiveTopKCountBins * count_bins = adaptive.count_bins.isAllocated() ? &adaptive.count_bins : nullptr;
 
     size_t estimated_merge_work = adaptive.total_staged_records * adaptive_parallel_merge_indices.size();
     if (count_bins || !adaptive_parallel_merge_indices.empty())
@@ -324,6 +319,8 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
     }
     if (bins)
         shared.top_k_pruning->addProducerBins(std::move(*bins));
+    else if (params.adaptiveTopKPrunes())
+        shared.top_k_pruning->addMergeCountedTable(local_variants);
 }
 
 void Aggregator::prepareAdaptiveTopKPruning(

@@ -5,6 +5,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <span>
 #include <type_traits>
 
 #include <AggregateFunctions/IAggregateFunction_fwd.h>
@@ -417,17 +418,18 @@ public:
 
     /// Ends a producer's production when its input ends, whatever its phase. Hands its partitions to the session with
     /// its count bins when the aggregation prunes by the top-K; the bins take the rows of `local_variants`, the
-    /// producer's own table, as well. Counts the producer toward the verdict of the run, and converts the table of a
-    /// producer that froze to two-level for the merge. Every producer with the adaptive context calls it before the
-    /// finish barrier, so the session holds every producer's contribution by the time the last finisher assembles the
-    /// merge.
+    /// producer's own table, as well. A producer that never froze has no bins and hands `local_variants` over for the
+    /// merge to count instead. Counts the producer toward the verdict of the run, and converts the table of a producer
+    /// that froze to two-level for the merge. Every producer with the adaptive context calls it before the finish
+    /// barrier, so the session holds every producer's contribution by the time the last finisher assembles the merge.
     void finishAdaptiveProducer(AggregatedDataVariants & local_variants, AdaptiveAggregationProducer & adaptive) const;
 
     /// Decides once, after the finish barrier of an engaged aggregation and before its merge starts, whether the merge
-    /// prunes by the top-K, and orders the buckets for it by their bounds. The bounds need every source's rows in the
-    /// count bins. A producer without the adaptive context (another aggregator of a mixed projection pipeline) did not
-    /// count its rows, and an external merge reads back rows that no bin counted. A merge that collects the runtime
-    /// dataflow statistics needs every group converted. In all these cases the pruning is dropped.
+    /// prunes by the top-K, and orders the buckets for it by their bounds. The bounds need every source's rows, in the
+    /// count bins or in a table that the merge counts. A producer without the adaptive context (another aggregator of a
+    /// mixed projection pipeline) handed over neither, and an external merge reads back rows that nothing counted. A
+    /// merge that collects the runtime dataflow statistics needs every group converted. In all these cases the pruning
+    /// is dropped.
     void prepareAdaptiveTopKPruning(
         AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const;
 
@@ -1037,6 +1039,17 @@ private:
     size_t collectAdaptiveTableStatistics(AggregatedDataVariants & variants, AdaptiveTopKCountBins * bins) const;
     template <typename Method>
     size_t collectAdaptiveTableStatistics(Method & method, Arena * arena, AdaptiveTopKCountBins * bins) const;
+
+    /// The rank of the group with the aggregate states at `mapped`, which the top-K pruning bounds: its count, or the
+    /// distinct count of its `uniqExact` or `uniqExactIf` rank, finalized into `scratch`.
+    UInt64 adaptiveRankCount(AggregateDataPtr & mapped, IColumn * scratch, Arena * arena) const;
+
+    /// Adds the groups that the tables of the producers that never froze hold in bucket `bucket` (see
+    /// `AdaptiveTopKPruning::isMergeCounted`) to the bucket's `bounds`. It stays out of line: inlined into the bucket
+    /// merge, its loops change the register allocation of the merge's hot loops.
+    template <typename Method>
+    void addMergeCountedTablesToBounds(
+        ManyAggregatedDataVariants & data, Int32 bucket, const AdaptiveTopKPruning & pruning, std::span<UInt64> bounds, Arena * arena) const;
 
     /// Writes the producer's staged records to the session's spill streams, a partition block at a time, and frees
     /// them; the producer then keeps appending into new chunks. Called over the external-aggregation threshold.
