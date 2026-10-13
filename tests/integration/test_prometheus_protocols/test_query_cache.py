@@ -120,6 +120,23 @@ def test_query_cache_respects_explicit_handling():
     assert int(node.query("SELECT count() FROM system.query_cache")) == 0
 
 
+@pytest.mark.parametrize("handling", ["ignore", "throw"])
+def test_query_cache_explicit_handling_skips_cached_result(handling):
+    run_instant_query({"use_query_cache": 1})
+    assert int(node.query("SELECT count() FROM system.query_cache")) == 1
+
+    params = {
+        "use_query_cache": 1,
+        "query_cache_nondeterministic_function_handling": handling,
+    }
+    hits_before = get_query_cache_hits()
+    if handling == "ignore":
+        assert run_instant_query(params)["result"][0]["value"] == [EVALUATION_TIME, "1"]
+    else:
+        assert "non-deterministic" in run_instant_query(params, expect_error=True)
+    assert get_query_cache_hits() == hits_before
+
+
 def test_query_cache_stores_and_hits():
     params = {"use_query_cache": 1}
     expected = {

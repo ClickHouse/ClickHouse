@@ -529,6 +529,7 @@ public:
                 String end = params->get("end", "");
                 String step = params->get("step", "");
                 String lookback_delta = params->get("lookback_delta", "");
+                String query_cache_handling = params->get("query_cache_nondeterministic_function_handling", "");
 
                 /// TODO: Support the following **optional** query parameters:
                 /// - timeout=<duration>: Evaluation timeout
@@ -543,6 +544,7 @@ public:
                     .end_param = end,
                     .step_param = step,
                     .lookback_delta_param = lookback_delta,
+                    .query_cache_handling_param = query_cache_handling,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
@@ -552,6 +554,7 @@ public:
                 String query = params->get("query", "");
                 String time = params->get("time", "");
                 String lookback_delta = params->get("lookback_delta", "");
+                String query_cache_handling = params->get("query_cache_nondeterministic_function_handling", "");
 
                 /// TODO: Support optional parameters same as for the range query.
 
@@ -564,6 +567,7 @@ public:
                     .end_param = "",
                     .step_param = "",
                     .lookback_delta_param = lookback_delta,
+                    .query_cache_handling_param = query_cache_handling,
                 };
 
                 protocol.executePromQLQuery(getOutputStream(response), params, query_finish_callback);
