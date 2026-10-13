@@ -54,6 +54,7 @@ class WriteBuffer;
     M(CLASS_NAME, ArrowFlightDescriptorType) \
     M(CLASS_NAME, Bool) \
     M(CLASS_NAME, BoolAuto) \
+    M(CLASS_NAME, BoolForce) \
     M(CLASS_NAME, CapnProtoEnumComparingMode) \
     M(CLASS_NAME, Char) \
     M(CLASS_NAME, DateTimeInputFormat) \

@@ -7873,8 +7873,13 @@ Possible values:
 - 0 - Disable
 - 1 - Enable
 )", 0) \
-    DECLARE(Bool, query_plan_read_in_order_through_join, true, "Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.", 0, \
-        {"25.12", false, true, "New setting"}) \
+    DECLARE(BoolForce, query_plan_read_in_order_through_join, true, R"(
+Keep reading in order from the left table in JOIN operations, which can be utilized by subsequent steps.
+
+For a join other than `LEFT`, the read stays in order only when every part of the left table announces a virtual row (see [`read_in_order_use_virtual_row`](#read_in_order_use_virtual_row)); without the virtual rows the merge after the join may read far more than the limit needs. The value `force` keeps the read in order regardless.
+)", 0, \
+        {"25.12", false, true, "New setting"}, \
+        {"26.10", true, true, "Added the value `force`: keep reading in order through a join even when the parts announce no virtual rows."}) \
     DECLARE(Bool, query_plan_remove_redundant_sorting, true, R"(
 Toggles a query-plan-level optimization which removes redundant sorting steps, e.g. in subqueries.
 Only takes effect if setting [`query_plan_enable_optimizations`](#query_plan_enable_optimizations) is 1.

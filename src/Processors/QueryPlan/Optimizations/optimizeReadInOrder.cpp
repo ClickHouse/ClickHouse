@@ -1246,7 +1246,7 @@ InputOrderInfoPtr buildInputOrderInfo(
 {
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = false,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
         .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
@@ -1292,18 +1292,15 @@ InputOrderInfoPtr buildInputOrderInfo(
                 virtual_row_reader = reading;
             }
 
-            /// A part whose index lacks the value of its virtual row reads without one (see
-            /// `ReadFromMergeTree::everyPartHasVirtualRowBound`): behind a join, every part needs it.
-            const bool every_part_uses_virtual_row = uses_virtual_row
-                && (find_reading_ctx.joins_to_keep_in_order.empty()
-                    || reading->everyPartHasVirtualRowBound(order_info.input_order->direction < 0));
-
-            if (!every_part_uses_virtual_row)
+            /// Virtual row is required for INNER JOIN to maintain read-in-order optimization.
+            /// Without it, the sorting step after join cannot correctly determine
+            /// which input stream to read from when most rows are filtered out,
+            /// potentially reading excessive amount of data. A part whose index lacks the value of
+            /// its virtual row reads without one (see `ReadFromMergeTree::everyPartHasVirtualRowBound`),
+            /// so every part needs it. `query_plan_read_in_order_through_join = 'force'` accepts the over-read.
+            if (!find_reading_ctx.joins_to_keep_in_order.empty() && optimization_settings.read_in_order_through_join != 2
+                && !(uses_virtual_row && reading->everyPartHasVirtualRowBound(order_info.input_order->direction < 0)))
             {
-                /// Virtual row is required for INNER JOIN to maintain read-in-order optimization.
-                /// Without it, the sorting step after join cannot correctly determine
-                /// which input stream to read from when most rows are filtered out,
-                /// potentially reading excessive amount of data.
                 for (const auto * join_step : find_reading_ctx.joins_to_keep_in_order)
                 {
                     const auto & table_join = join_step->getJoin()->getTableJoin();
@@ -1383,7 +1380,7 @@ InputOrder buildInputOrderInfo(AggregatingStep & aggregating, QueryPlan::Node & 
 {
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = false,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
         .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
@@ -1526,7 +1523,7 @@ InputOrder buildInputOrderInfo(DistinctStep & distinct, QueryPlan::Node & node, 
 
     FindReadingStepContext find_reading_ctx {
         .allow_existing_order = true,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
         .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
@@ -1631,7 +1628,7 @@ InputOrder buildInputOrderInfo(LimitByStep & limit_by, QueryPlan::Node & node, c
 
     FindReadingStepContext find_reading_ctx{
         .allow_existing_order = true,
-        .read_in_order_through_join = optimization_settings.read_in_order_through_join,
+        .read_in_order_through_join = optimization_settings.read_in_order_through_join != 0,
         .distributed_plan_read_in_order = optimization_settings.distributed_plan_read_in_order,
     };
     QueryPlan::Node * reading_node = findReadingStep(node, find_reading_ctx);
