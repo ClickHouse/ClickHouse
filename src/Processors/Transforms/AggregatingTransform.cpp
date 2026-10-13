@@ -407,8 +407,12 @@ private:
 class ConvertingAggregatedToChunksSource final : public ISource
 {
 public:
-    ConvertingAggregatedToChunksSource(AggregatingTransformParamsPtr params_, AggregatedDataVariantsPtr variant_)
-        : ISource(std::make_shared<const Block>(params_->getHeader()), false), params(params_), variant(variant_)
+    ConvertingAggregatedToChunksSource(
+        AggregatingTransformParamsPtr params_, AggregatedDataVariantsPtr variant_, RuntimeDataflowStatisticsCacheUpdaterPtr updater_)
+        : ISource(std::make_shared<const Block>(params_->getHeader()), false)
+        , params(params_)
+        , variant(variant_)
+        , updater(std::move(updater_))
     {
     }
 
@@ -417,19 +421,51 @@ public:
 protected:
     Chunk generate() override
     {
+        /// The states are recorded before the conversion, which finalizes and destroys them, and the
+        /// keys after it - the order `Aggregator::mergeBucket` records in. This source converts one
+        /// thread's own table, and the tables the sources are given are disjoint, so their records sum
+        /// to the whole result without counting a group twice.
         if (variant->isTwoLevel())
         {
             if (current_bucket_num < NUM_BUCKETS)
             {
                 Arena * arena = variant->aggregates_pool;
-                auto agg_chunk = params->aggregator.convertOneBucketToChunk(*variant, arena, params->final, current_bucket_num++);
+                const Int32 bucket = current_bucket_num++;
+                if (updater)
+                    updater->recordAggregationStateSizes(*variant, bucket);
+
+                /// Filled by the Top-K conversion when the statistics ask for it (zero otherwise):
+                /// `Params::bucket_top_k` survives into the skip-merging pipeline, because the plan
+                /// pass that sets it runs before the one that skips the merge. The truncated chunk
+                /// carries only the kept groups, so its keys are not what the fragment would ship.
+                UntruncatedAggregationKeys untruncated_keys;
+                auto agg_chunk = params->aggregator.convertOneBucketToChunk(
+                    *variant, arena, params->final, bucket, updater ? &untruncated_keys : nullptr);
+                if (updater)
+                {
+                    if (untruncated_keys.bytes)
+                        updater->recordAggregationKeySizes(
+                            agg_chunk.chunk,
+                            params->aggregator.getKeysPositions(),
+                            params->aggregator.getKeyTypes(),
+                            untruncated_keys.bytes,
+                            untruncated_keys.sample_columns);
+                    else
+                        updater->recordAggregationKeySizes(
+                            agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
+                }
                 return convertToChunk(std::move(agg_chunk));
             }
         }
         else if (!single_level_converted)
         {
+            if (updater)
+                updater->recordAggregationStateSizes(*variant, /*bucket=*/-1);
             auto agg_chunk = params->aggregator.prepareChunkAndFillSingleLevel<true /* return_single_block */>(*variant, params->final);
             single_level_converted = true;
+            if (updater)
+                updater->recordAggregationKeySizes(
+                    agg_chunk.chunk, params->aggregator.getKeysPositions(), params->aggregator.getKeyTypes());
             return convertToChunk(std::move(agg_chunk));
         }
 
@@ -443,6 +479,7 @@ private:
 
     AggregatingTransformParamsPtr params;
     AggregatedDataVariantsPtr variant;
+    RuntimeDataflowStatisticsCacheUpdaterPtr updater;
 
     UInt32 current_bucket_num = 0;
     bool single_level_converted = false;
@@ -987,6 +1024,13 @@ private:
             /// We skip the `max_rows_to_group_by` limit check during the merge to avoid race condition.
             /// Therefore here we need to check additional after merges are completed from different threads.
             params->aggregator.ensureLimitsFixedMapMerge(first);
+
+            /// The sources of the parallel merge only merge into `first` and emit nothing, so this is the
+            /// first point at which the merged states exist - the same point the serial branch below records
+            /// them at. Without this the aggregate states are missing from the statistics and only the group
+            /// keys are counted, which understates what replicas ship.
+            if (updater)
+                updater->recordAggregationStateSizes(*first, /*bucket=*/-1);
         }
         else
         {
@@ -1642,15 +1686,12 @@ void AggregatingTransform::initGenerate()
         }
         else
         {
-            if (updater)
-                updater->markUnsupportedCase();
-
             auto prepared_data = params->aggregator.prepareVariantsToMerge(std::move(many_data->variants), /*adaptive_session=*/nullptr);
             Pipes pipes;
             for (auto & variant : prepared_data)
             {
                 /// Converts hash tables to blocks with data (finalized or not).
-                pipes.emplace_back(std::make_shared<ConvertingAggregatedToChunksSource>(params, variant));
+                pipes.emplace_back(std::make_shared<ConvertingAggregatedToChunksSource>(params, variant, updater));
             }
 
             Pipe pipe = Pipe::unitePipes(std::move(pipes));
