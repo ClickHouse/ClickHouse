@@ -2016,19 +2016,46 @@ static bool castMayDropFixedStringPadding(const DataTypePtr & from_type, const D
             || castMayDropFixedStringPadding(from_map->getValueType(), to_map->getValueType(), entries ? &entries->getColumn(1) : nullptr);
     }
 
-    /// `CAST` matches the elements of two named tuples by name, otherwise by position.
+    /// The elements of two tuples are paired as in `FunctionCast::createTupleWrapper`: by name if both tuples are named
+    /// and share a name, where the unpaired elements are dropped or filled with defaults, otherwise by position.
     const auto * from_tuple = typeid_cast<const DataTypeTuple *>(from.get());
     const auto * to_tuple = typeid_cast<const DataTypeTuple *>(to.get());
-    if (from_tuple && to_tuple && from_tuple->getElements().size() == to_tuple->getElements().size()
-        && (!from_tuple->hasExplicitNames() || !to_tuple->hasExplicitNames()
-            || from_tuple->getElementNames() == to_tuple->getElementNames()))
+    if (from_tuple && to_tuple)
     {
+        const auto & from_elements = from_tuple->getElements();
+        const auto & to_elements = to_tuple->getElements();
         const auto * tuple_column = typeid_cast<const ColumnTuple *>(from_column);
-        for (size_t i = 0; i < from_tuple->getElements().size(); ++i)
-            if (castMayDropFixedStringPadding(
-                    from_tuple->getElements()[i], to_tuple->getElements()[i], tuple_column ? &tuple_column->getColumn(i) : nullptr))
-                return true;
-        return false;
+        auto pair_may_drop_padding = [&](size_t from_i, size_t to_i)
+        {
+            return castMayDropFixedStringPadding(
+                from_elements[from_i], to_elements[to_i], tuple_column ? &tuple_column->getColumn(from_i) : nullptr);
+        };
+
+        bool paired_by_name = false;
+        if (from_tuple->hasExplicitNames() && to_tuple->hasExplicitNames())
+        {
+            const auto & to_names = to_tuple->getElementNames();
+            for (size_t to_i = 0; to_i < to_names.size(); ++to_i)
+            {
+                if (auto from_i = from_tuple->tryGetPositionByName(to_names[to_i]))
+                {
+                    paired_by_name = true;
+                    if (pair_may_drop_padding(*from_i, to_i))
+                        return true;
+                }
+            }
+        }
+        if (paired_by_name)
+            return false;
+
+        /// For tuples of different sizes `CAST` refuses the conversion, and `from` is judged as a whole below.
+        if (from_elements.size() == to_elements.size())
+        {
+            for (size_t i = 0; i < from_elements.size(); ++i)
+                if (pair_may_drop_padding(i, i))
+                    return true;
+            return false;
+        }
     }
 
     return anyInTypeTree(*from, [](const IDataType & type) { return isFixedString(type) || isDynamic(type); });
@@ -5694,6 +5721,16 @@ bool KeyCondition::extractAtomFromTree(const RPNBuilderTreeNode & node, const Bu
 
                         if (!const_type->equals(*common_type))
                         {
+                            /// A `FixedString` nested in a composite constant, such as a `Tuple` element, loses its
+                            /// padding in the conversion to a `String` and becomes a point, see the `String` case above.
+                            /// The column is built only when the types allow it, as it can only narrow the check.
+                            if (castMayDropFixedStringPadding(const_type, common_type))
+                            {
+                                const ColumnPtr const_column = createConstantColumn(const_type, const_value, original_const_column);
+                                if (!const_column || castMayDropFixedStringPadding(const_type, common_type, const_column.get()))
+                                    return false;
+                            }
+
                             // Replace direct call that throws exception with try version
                             Field converted = tryConvertFieldToType(const_value, *common_type, const_type.get(), {});
                             if (converted.isNull())

@@ -28,6 +28,12 @@ SELECT count() FROM t_tuple_hashed WHERE x = (CAST(toFixedString('abc', 4) AS Dy
 3
 SELECT count() FROM t_tuple_hashed WHERE x = CAST((toFixedString('abc', 4), toUInt8(1)) AS Dynamic);
 3
+SELECT count() FROM t_tuple_parts WHERE k = tuple(toFixedString('abc', 4), toFixedString('abc', 4), 1);
+2
+SELECT count() FROM t_tuple_parts WHERE k = tuple(toFixedString('abc', 4), CAST(toFixedString('abc', 4) AS Dynamic), 1);
+2
+SELECT count() FROM t_named_tuple WHERE k IN (SELECT CAST(tuple(toFixedString('abc', 4), toFixedString('abc', 4)) AS Tuple(b FixedString(4), a FixedString(4))));
+2
 -- A `Variant` or `Dynamic` value that holds a `String` keeps index analysis, even when its type allows a `FixedString`.
 SELECT count() FROM t_deterministic WHERE s = CAST('abc' AS Variant(String, FixedString(2))) SETTINGS force_primary_key = 1;
 1
@@ -44,6 +50,11 @@ SELECT count() FROM t_tuple_hashed WHERE x = (CAST('abc' AS Dynamic), toUInt8(1)
 -- A `FixedString` that stays a `FixedString` keeps index analysis.
 SELECT count() FROM t_tuple WHERE k IN (SELECT tuple(toFixedString('abc', 4), 'abc', toUInt8(1))) SETTINGS force_primary_key = 1;
 1
+SELECT count() FROM t_tuple WHERE k = tuple(toFixedString('abc', 4), 'abc', 1) SETTINGS force_primary_key = 1;
+1
+-- Named tuple elements are paired by name, as `CAST` does.
+SELECT count() FROM t_named_tuple WHERE k IN (SELECT CAST(tuple('abc', toFixedString('abc', 4)) AS Tuple(b String, a FixedString(4)))) SETTINGS force_primary_key = 1;
+1
 -- A `Variant` or `Dynamic` constant keeps the conversions of its declared type.
 SELECT count() FROM t_uint8 WHERE x = CAST(toIPv4(2) AS Dynamic);
 1
@@ -59,3 +70,5 @@ DROP TABLE t_tuple;
 DROP TABLE t_tuple_hashed;
 DROP TABLE t_uint8;
 DROP TABLE t_uint8_monotonic;
+DROP TABLE t_named_tuple;
+DROP TABLE t_tuple_parts;
