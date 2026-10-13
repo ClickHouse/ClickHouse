@@ -9,6 +9,9 @@
 SET max_threads = 1;
 SET enable_quantized_codec = 1;
 SET log_queries = 1;
+-- `enable_parallel_replicas = 0`: with parallel replicas another replica may do the reads,
+-- and their `ProfileEvents` never reach the `query_log` rows checked below.
+SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS t_cc_json;
 

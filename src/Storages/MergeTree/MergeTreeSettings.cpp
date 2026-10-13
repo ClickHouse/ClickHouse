@@ -662,6 +662,38 @@ Limit the number of part mutations per replica to the specified amount.
 Zero means no limit on the number of mutations per replica (the execution can
 still be constrained by other settings).
 )", 0) \
+    DECLARE(Bool, enable_row_mask_update_coalescing, true, R"(
+Coalesce adjacent singleton `UPDATE _row_exists = 0` commands while mutating a
+Wide part with Full storage. The persisted mutation commands and their
+versions are unchanged.
+Set to false to execute each command separately.
+)", 0, \
+        {"26.10", false, true, "Enable row-mask update coalescing by default"}) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_keys, 256, R"(
+Maximum number of keys in one coalesced row-mask update. The effective limit
+also respects `max_rows_in_set` in the background query settings. Values below
+2 disable coalescing.
+)", 0, \
+        {"26.10", 256, 256, "New setting"}) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_key_bytes, 64 * 1024, R"(
+Maximum total number of key-literal bytes in one coalesced row-mask update.
+This bounds the size of the generated `IN` predicate. Set to 0 to disable
+coalescing.
+)", 0, \
+        {"26.10", 64 * 1024, 64 * 1024, "New setting"}) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_commands, 4096, R"(
+Maximum number of part-local mutation commands eligible for row-mask update
+coalescing. This bounds the extra command-list copy made by the optimization;
+the value is a resource guard, not a semantic limit. Values below 2 disable
+coalescing.
+)", 0, \
+        {"26.10", 4096, 4096, "New setting"}) \
+    DECLARE(UInt64, max_row_mask_update_coalescing_ast_bytes, 1024 * 1024, R"(
+Maximum sum of the original commands' `ast_text` bytes eligible for row-mask
+update coalescing. The command-count limit alone cannot bound this copy when
+commands contain large literals. Set to 0 to disable coalescing.
+)", 0, \
+        {"26.10", 1024 * 1024, 1024 * 1024, "New setting"}) \
     DECLARE(UInt64, max_number_of_merges_with_ttl_in_pool, 2, R"(When there is
     more than specified number of merges with TTL entries in pool, do not assign
     new merge with TTL. This is to leave free threads for regular merges and
@@ -1071,6 +1103,46 @@ Minimal amount of data parts which merge selector can pick to merge at once
 (expert level setting, don't change if you don't understand what it is doing).
 0 - disabled. Works for Simple and StochasticSimple merge selectors.
 )", 0) \
+    DECLARE(UInt64, merge_selector_small_parts_threshold, 10 * 1024 * 1024, R"(
+Size threshold in bytes: a merge range is considered "all small parts" when every part
+is below this size. Used together with `merge_selector_small_parts_min_count`.
+Works for Simple and StochasticSimple merge selectors, and only for background merge
+selection: aggressive selection (`OPTIMIZE` without `FINAL`) ignores the `small_parts_*`
+settings.
+)", 0, \
+        {"26.10", 10 * 1024 * 1024, 10 * 1024 * 1024, "Size threshold for the small-parts batching heuristic in merge selector"}) \
+    DECLARE(UInt64, merge_selector_small_parts_min_count, 0, R"(
+When all parts in a merge range are small (below `merge_selector_small_parts_threshold`)
+and fresh (below `merge_selector_small_parts_max_age`), require at least this many parts
+to allow the merge. Reduces the number of merge operations under rapid small-part insertion.
+0 means disabled. Works for Simple and StochasticSimple merge selectors.
+
+The gate applies to background merge selection only. Aggressive selection - `OPTIMIZE`
+without `FINAL` - is an explicit user request that ignores part novelty, so it ignores this
+setting and merges small fresh parts regardless of their count.
+
+The selector never considers merge candidates wider than `max_parts_to_merge_at_once`, nor
+candidates reaching further back than `merge_selector_window_size` parts, so configuring
+either of them below this minimum is a contradictory configuration: small fresh parts then
+merge only after `merge_selector_small_parts_max_age` (or earlier, once force merge applies by
+`min_age_to_force_merge_seconds` or `min_partition_age_to_force_merge_seconds`). Keep both at
+or above this minimum.
+(If the built-in fullness heuristic temporarily lowers its effective cap below this minimum,
+the selector still considers the first all-small, all-fresh candidate of this width. Stale or
+large candidates, and candidates that already qualify for force merge by
+`min_age_to_force_merge_seconds` or `min_partition_age_to_force_merge_seconds`, retain the
+lowered cap.)
+)", 0, \
+        {"26.10", 0, 0, "Minimum part count to allow merging small fresh parts (0 = disabled)"}) \
+    DECLARE(UInt64, merge_selector_small_parts_max_age, 600, R"(
+Age limit in seconds for the small-parts restriction: as soon as any part in a range
+exceeds this age, the restriction from `merge_selector_small_parts_min_count` is lifted,
+so backlogs of stale small parts can still merge even if the range is shorter than
+`merge_selector_small_parts_min_count`. Works for Simple and StochasticSimple merge selectors,
+and only for background merge selection: aggressive selection (`OPTIMIZE` without `FINAL`)
+ignores the `small_parts_*` settings.
+)", 0, \
+        {"26.10", 600, 600, "Age limit for the small-parts merge restriction"}) \
     DECLARE(Bool, apply_patches_on_merge, true, R"(
 If true patch parts are applied on merges
 )", 0, \
@@ -1385,6 +1457,30 @@ High-cardinality primary keys, e.g. involving timestamp columns of type
 Allow to use adaptive writer buffers during writing dynamic subcolumns to
 reduce memory usage
 )", 0) \
+    DECLARE(Bool, optimize_row_order_if_no_order_by, false, R"(
+Controls whether row order optimization (see `optimize_row_order`) is applied
+automatically on insert for tables with an empty sorting key, i.e. tables
+declared with `ORDER BY ()` or `ORDER BY tuple()`.
+
+Disabled by default. Enable it for tables where improving the compressibility
+of newly inserted parts with LZ4 or ZSTD is more important than preserving
+insertion order and insert throughput.
+
+As with `optimize_row_order`, inserts incur additional CPU cost to analyze and
+optimize the row order of the new data. Disable this setting if preserving the
+original insert order of the rows or maximizing insert throughput matters more
+than compression.
+
+An explicitly set `optimize_row_order = 0` takes precedence: such a table is
+never row-order optimized, regardless of this setting.
+
+As with `optimize_row_order`, the optimization applies to ordinary
+`MergeTree`-family tables only, including `ReplicatedMergeTree`. Specialized
+engines of the family, e.g. `ReplacingMergeTree`,
+`CollapsingMergeTree` or `AggregatingMergeTree`, are never row-order optimized
+and keep the order of the inserted rows.
+)", 0, \
+        {"26.10", false, false, "New setting to enable row order optimization automatically for ordinary MergeTree-family tables without a sorting key."}) \
     DECLARE(UInt64, min_columns_to_activate_adaptive_write_buffer, 500, R"(
 Allow to reduce memory usage for tables with lots of columns by using adaptive writer buffers.
 
@@ -2058,15 +2154,6 @@ and must be specified at table creation time.
 Allow to create a table with sampling expression not in primary key. This is
 needed only to temporarily allow to run the server with wrong tables for
 backward compatibility.
-)", 0) \
-    DECLARE(Bool, use_minimalistic_checksums_in_zookeeper, true, R"(
-Use small format (dozens bytes) for part checksums in ZooKeeper instead of
-ordinary ones (dozens KB). Before enabling check that all replicas support
-new format.
-)", 0) \
-    DECLARE(Bool, use_minimalistic_part_header_in_zookeeper, true, R"(
-Storage method of the data parts headers in ZooKeeper. If enabled, ZooKeeper
-stores less data. For details, see [here](/reference/settings/server-settings/settings/use#use_minimalistic_part_header_in_zookeeper).
 )", 0) \
     DECLARE(UInt64, finished_mutations_to_keep, 100, R"(
 How many records about mutations that are done to keep. If zero, then keep
@@ -2838,6 +2925,8 @@ are also created during INSERTs with [materialize_projections_on_insert](/refere
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_async_block_ids_cache, true) \
     MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, shared_merge_tree_virtual_parts_partition_atomic_discovery, true, \
         {"26.7", false, true, "New setting"}) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_minimalistic_checksums_in_zookeeper, true) \
+    MAKE_OBSOLETE_MERGE_TREE_SETTING(M, Bool, use_minimalistic_part_header_in_zookeeper, true) \
 
     /// Settings that should not change after the creation of a table.
     /// NOLINTNEXTLINE
@@ -3211,6 +3300,11 @@ MERGETREE_SETTINGS_SUPPORTED_TYPES(MergeTreeSettings, IMPLEMENT_SETTING_SUBSCRIP
 bool MergeTreeSettings::has(std::string_view name) const
 {
     return impl->has(name);
+}
+
+bool MergeTreeSettings::isChanged(std::string_view name) const
+{
+    return impl->isChanged(name);
 }
 
 bool MergeTreeSettings::tryGet(std::string_view name, Field & value) const
