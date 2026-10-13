@@ -344,6 +344,7 @@ In a table expression, an `Identifier` parameter can also name a parameterized v
 
 ```sql
 SET param_myview = "active_employees";
+SET param_name_pattern = 'A%';
 SELECT * FROM {myview:Identifier}(name_pattern = {name_pattern:String});
 ```
 
