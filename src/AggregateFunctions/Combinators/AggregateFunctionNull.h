@@ -181,6 +181,7 @@ public:
     }
 
     bool isAbleToParallelizeMerge() const override { return nested_function->isAbleToParallelizeMerge(); }
+    bool isParallelizeMergePrepareNeeded() const override { return nested_function->isParallelizeMergePrepareNeeded(); }
     bool canOptimizeEqualKeysRanges() const override { return nested_function->canOptimizeEqualKeysRanges(); }
 
     void parallelizeMergePrepare(AggregateDataPtrs & places, ThreadPool & thread_pool, std::atomic<bool> & is_cancelled) const override
