@@ -22,6 +22,7 @@
 #include <IO/WriteBufferFromString.h>
 #include <IO/Operators.h>
 #include <IO/S3/ProviderType.h>
+#include <IO/SocketPeerClosed.h>
 #include <Interpreters/Context.h>
 
 #include <aws/core/http/HttpRequest.h>
@@ -644,9 +645,25 @@ void PocoHTTPClient::makeRequestInternalImpl(
                 request.GetContentBody()->seekg(0);
 
                 setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));
-                auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
-                if (enable_s3_requests_logging)
-                    LOG_TEST(log, "Written {} bytes to request body", size);
+                try
+                {
+                    auto size = Poco::StreamCopier::copyStream(*request.GetContentBody(), request_body_stream);
+                    request_body_stream.flush();
+                    if (enable_s3_requests_logging)
+                        LOG_TEST(log, "Written {} bytes to request body", size);
+                }
+                catch (const Poco::IOException &)
+                {
+                    /// A server may answer with an error and close the connection before reading the whole body.
+                    /// TLS allows no I/O after a failed write.
+                    if (session->secure()
+                        || DB::getSocketState(session->socket()) != DB::SocketState::DataPending
+                        || !session->receiveEarlyResponse(poco_response)
+                        || poco_response.getStatus() < Poco::Net::HTTPResponse::HTTP_MULTIPLE_CHOICES)
+                        throw;
+                    LOG_DEBUG(log, "Failed to send the request body to {}, using the response the server has already sent: {}",
+                        uri, getCurrentExceptionMessage(/* with_stacktrace */ false));
+                }
             }
 
             setTimeouts(*session, getTimeouts(method, first_attempt, /*first_byte*/ false));

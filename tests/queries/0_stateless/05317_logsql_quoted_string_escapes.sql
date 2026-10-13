@@ -13,7 +13,7 @@ INSERT INTO logs_05317 VALUES
     ('2024-01-01 00:00:08', 'emoji 😀'),
     ('2024-01-01 00:00:09', 'raw \\t text');
 
-SET allow_experimental_logsql_dialect = 1;
+SET enable_logsql_dialect = 1;
 SET logsql_table = 'logs_05317';
 SET dialect = 'logsql';
 

@@ -20,8 +20,9 @@ SET enable_join_runtime_filters = 1;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;
 SET query_plan_join_swap_table = 'false';
--- Left-side join pruning is intentionally disabled under parallel replicas, so pin it off to
--- exercise the feature (the ParallelReplicas CI job otherwise forces it on).
+-- Under parallel replicas the pruning is split among the replicas, so the per-query counters this
+-- test asserts would depend on the coordinator's assignment; pin PR off (the ParallelReplicas CI job
+-- otherwise forces it on). `05153_join_runtime_filters_index_analysis_modes` covers parallel replicas.
 SET enable_parallel_replicas = 0;
 
 DROP TABLE IF EXISTS rk_fact_desc_second;
