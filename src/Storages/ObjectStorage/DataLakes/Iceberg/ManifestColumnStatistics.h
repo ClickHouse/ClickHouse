@@ -99,8 +99,8 @@ private:
     /// What a data file's manifest entry says about one target, typed as the storage column.
     struct ColumnMetrics
     {
-        /// 0 when the metric is missing or invalid.
-        UInt64 nulls = 0;
+        /// nullopt when the metric is missing or invalid.
+        std::optional<UInt64> nulls;
         /// Null when the bounds are missing or do not convert.
         Field min_value;
         Field max_value;
@@ -135,7 +135,7 @@ private:
     /// Adds the size and the identity-partition value that a file gives for a target.
     static void addToDistinctValuesInputs(DistinctValuesInputs & inputs, const ColumnMetrics & metrics);
 
-    /// The number of distinct values of a target by the first rule that applies (plan O3), clamped to [1, non-NULL rows];
+    /// The number of distinct values of a target by the first rule that applies, clamped to [1, non-NULL rows];
     /// `column` holds its merged statistics over `rows` rows.
     static UInt64 estimateDistinctValues(const Target & target, const DistinctValuesInputs & inputs, const ColumnStats & column, UInt64 rows);
 
