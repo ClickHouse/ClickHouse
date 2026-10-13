@@ -16,6 +16,7 @@
 #include <Common/assert_cast.h>
 #include <Common/typeid_cast.h>
 #include <base/getL2CacheSize.h>
+#include <base/unaligned.h>
 #include <Interpreters/HashTablesStatistics.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/IDataType.h>
@@ -337,9 +338,11 @@ public:
     /// The same as `routeRows` for the values that are the keys themselves (zero-extended). NULLs and consecutive
     /// duplicates are dropped without branches into a buffer, which is then inserted. As in the ordinary `uniqExact`,
     /// the consecutive duplicates are looked for only while they are frequent.
+    /// The values are loaded from the bytes, as the column may hold another type of the same size (e.g. `Float64`).
     template <typename T>
-    void routeValues(size_t stream_index, const T * data, size_t num_rows, const UInt8 * null_map)
+    void routeValues(size_t stream_index, const char * bytes, size_t num_rows, const UInt8 * null_map)
     {
+        auto data = [bytes](size_t row) { return unalignedLoad<T>(bytes + row * sizeof(T)); };
         auto & stream = streams[stream_index];
         std::array<Key, KEYS_BATCH_SIZE> keys; // NOLINT(cppcoreguidelines-pro-type-member-init,hicpp-member-init) - only the first num_keys entries are read
         T last_value{};
@@ -356,7 +359,7 @@ public:
             {
                 for (size_t row = begin; row < end; ++row)
                 {
-                    const T value = data[row];
+                    const T value = data(row);
                     const bool is_null = null_map[row];
                     keys[num_keys] = static_cast<Key>(value);
                     num_keys += !is_null && !(skip_duplicates && has_last_value && value == last_value);
@@ -378,22 +381,22 @@ public:
                     {
                         bool all_same = true;
                         for (size_t i = 0; i < block_size; ++i)
-                            all_same &= data[block + i] == data[block + i - 1];
+                            all_same &= data(block + i) == data(block + i - 1);
                         if (all_same)
                             continue;
                     }
 
                     for (size_t row = block; row < block_end; ++row)
                     {
-                        keys[num_keys] = static_cast<Key>(data[row]);
-                        num_keys += row == 0 || data[row] != data[row - 1];
+                        keys[num_keys] = static_cast<Key>(data(row));
+                        num_keys += row == 0 || data(row) != data(row - 1);
                     }
                 }
             }
             else
             {
                 for (size_t row = begin; row < end; ++row)
-                    keys[num_keys++] = static_cast<Key>(data[row]);
+                    keys[num_keys++] = static_cast<Key>(data(row));
             }
 
             if (skip_duplicates)
@@ -858,7 +861,7 @@ private:
 template <typename Key, typename T>
 void routeFixed(RadixUniqExactState<Key> & state, size_t stream, const IColumn & column, const UInt8 * null_map)
 {
-    state.routeValues(stream, reinterpret_cast<const T *>(column.getRawData().data()), column.size(), null_map);
+    state.template routeValues<T>(stream, column.getRawData().data(), column.size(), null_map);
 }
 
 template <>
@@ -931,11 +934,12 @@ void RadixUniqExactState<UInt128>::route(size_t stream, const IColumn & column, 
     }
     else if (column.isFixedAndContiguous() && column.sizeOfValueIfFixed() == sizeof(UInt128))
     {
-        const auto * data = reinterpret_cast<const UInt128 *>(column.getRawData().data());
+        const char * bytes = column.getRawData().data();
+        auto data = [bytes](size_t row) { return unalignedLoad<UInt128>(bytes + row * sizeof(UInt128)); };
         routeRows(
             stream, column.size(), null_map,
-            [&](size_t row) { return mixKey(data[row]); },
-            [&](size_t lhs, size_t rhs) { return data[lhs] == data[rhs]; });
+            [&](size_t row) { return mixKey(data(row)); },
+            [&](size_t lhs, size_t rhs) { return data(lhs) == data(rhs); });
     }
     else
     {
