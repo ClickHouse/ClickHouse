@@ -607,6 +607,8 @@ struct Reader
     /// row group, as `prefilterAndInitRowGroups` checked them. Complete only if every row group was checked by statistics alone.
     std::vector<std::pair<size_t, std::vector<Range>>> key_condition_column_ranges;
     bool key_condition_column_ranges_complete = false;
+    /// Whether `prefilterAndInitRowGroups` collects `key_condition_column_ranges`.
+    bool collect_key_condition_column_ranges = false;
     void preparePrewhere();
 
     /// Deserialize bf header and determine which bf blocks to read.

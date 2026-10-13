@@ -110,6 +110,8 @@ void ParquetV3BlockInputFormat::initializeIfNeeded()
             reader->reader.prefetcher.init(in, read_options, parser_shared_resources);
             reader->reader.file_metadata = getFileMetadata(reader->reader.prefetcher);
             reader->reader.init(read_options, getPort().getHeader(), format_filter_info);
+            reader->reader.collect_key_condition_column_ranges
+                = metadata_cache_cell && format_filter_info && format_filter_info->keep_filter_column_statistics;
             reader->init(parser_shared_resources, buckets_to_read ? std::optional(buckets_to_read->row_group_ids) : std::nullopt);
         }
     }
@@ -122,9 +124,20 @@ parquet::format::FileMetaData ParquetV3BlockInputFormat::getFileMetadata(Parquet
         String file_name = object_with_metadata->getPath();
         String etag = object_with_metadata->metadata->etag;
         ParquetMetadataCacheKey cache_key = ParquetMetadataCache::createKey(file_name, etag);
-        metadata_cache_cell = metadata_cache->getOrSetMetadataCell(
-            cache_key, [&]() { return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size); });
-        return metadata_cache_cell->metadata;
+        bool loaded = false;
+        auto cell = metadata_cache->getOrSetMetadataCell(
+            cache_key,
+            [&]()
+            {
+                loaded = true;
+                return Parquet::Reader::readFileMetaData(prefetcher, read_options.format.parquet.footer_read_size);
+            });
+        if (!loaded)
+        {
+            metadata_cache_cell = cell;
+            metadata_cache_key = std::move(cache_key);
+        }
+        return cell->metadata;
     }
     else
     {
@@ -146,8 +159,9 @@ void ParquetV3BlockInputFormat::cacheFilterColumnStatistics()
         if (std::ranges::all_of(ranges, [](const Range & range) { return range.isInfinite(); }))
             continue;
         const auto & column = parquet_reader.extended_sample_block.getByPosition(idx);
-        metadata_cache_cell->kept_statistics->add(
-            ParquetCachedStatisticsFilter::makeColumnKey(column.name, *column.type, format_settings), ranges);
+        String column_key = ParquetCachedStatisticsFilter::makeColumnKey(column.name, *column.type, format_settings);
+        if (metadata_cache_cell->kept_statistics->add(column_key, ranges) && metadata_cache && metadata_cache_key)
+            metadata_cache->updateWeight(*metadata_cache_key, metadata_cache_cell);
     }
 }
 
@@ -201,7 +215,7 @@ std::shared_ptr<const ParquetCachedStatisticsFilter> ParquetCachedStatisticsFilt
 std::optional<size_t> ParquetCachedStatisticsFilter::canSkipFile(
     ParquetMetadataCache & metadata_cache, const String & path, const String & version) const
 {
-    auto cell = metadata_cache.getCell(ParquetMetadataCache::createKey(path, version));
+    auto cell = metadata_cache.get(ParquetMetadataCache::createKey(path, version));
     if (!cell)
         return std::nullopt;
 
@@ -355,6 +369,7 @@ void ParquetV3BlockInputFormat::resetParser()
         reader.reset();
         min_max_from_statistics = false;
         metadata_cache_cell.reset();
+        metadata_cache_key.reset();
     }
     previous_block_missing_values.clear();
     IInputFormat::resetParser();

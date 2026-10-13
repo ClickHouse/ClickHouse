@@ -103,7 +103,9 @@ private:
 
     parquet::format::FileMetaData getFileMetadata(Parquet::Prefetcher & prefetcher);
 
+    /// Only a cell found in the cache keeps statistics: counting them moves the cell, which only a hit may do.
     ParquetMetadataCache::MappedPtr metadata_cache_cell;
+    std::optional<ParquetMetadataCacheKey> metadata_cache_key;
 };
 
 /// Skips a file version, without opening it, if the kept statistics show that the reader would prune every row group.

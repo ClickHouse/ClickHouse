@@ -1,7 +1,8 @@
 row groups per file:
 2
 range, first read: 101 156550, skipped 0, pruned row groups 7
-range, second read: 101 156550, skipped 3, pruned row groups 7
+range, second read: 101 156550, skipped 0, pruned row groups 7
+range, third read: 101 156550, skipped 3, pruned row groups 7
 range, metadata cache off: 101 156550, skipped 0
 point in f3: 1 3999, skipped 3
 no file matches: 0 0, skipped 4
@@ -22,4 +23,7 @@ after rewrite of f0, again: 111 172050, skipped 2
 f4 unsettled: 111 172050, skipped 2
 f4 unsettled, again: 111 172050, skipped 2
 f4 settled, first read: 111 172050, skipped 2
-f4 settled, second read: 111 172050, skipped 3
+f4 settled, second read: 111 172050, skipped 2
+f4 settled, third read: 111 172050, skipped 3
+clickhouse-local: weight counts the kept ranges 1, unchanged by the skip 1, skipped 1
+clickhouse-local, kept through the aggregate function wrapper: skipped 1

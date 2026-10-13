@@ -107,20 +107,20 @@ size_t heapBytesOfField(const Field & field)
 
 }
 
-void ParquetKeptStatistics::add(const String & column_key, const Ranges & ranges)
+bool ParquetKeptStatistics::add(const String & column_key, const Ranges & ranges)
 {
     std::lock_guard lock(mutex);
     if (ranges_by_column.contains(column_key))
-        return;
+        return false;
 
     size_t bytes = sizeof(Ranges) + column_key.size() + ranges.size() * sizeof(Range);
     for (const auto & range : ranges)
         bytes += heapBytesOfField(range.left) + heapBytesOfField(range.right);
     if (total_bytes + bytes > max_bytes)
-        return;
-    total_bytes += bytes;
+        return false;
     ranges_by_column.emplace(column_key, std::make_shared<const Ranges>(ranges));
-    added = true;
+    total_bytes += bytes;
+    return true;
 }
 
 ParquetKeptStatistics::RangesPtr ParquetKeptStatistics::get(const String & column_key) const
@@ -134,11 +134,6 @@ size_t ParquetKeptStatistics::bytes() const
 {
     std::lock_guard lock(mutex);
     return total_bytes;
-}
-
-bool ParquetKeptStatistics::takeAdded()
-{
-    return added.load(std::memory_order_relaxed) && added.exchange(false);
 }
 
 size_t ParquetMetadataCacheWeightFunction::operator()(const ParquetMetadataCacheCell & cell) const
@@ -164,19 +159,10 @@ ParquetMetadataCacheKey ParquetMetadataCache::createKey(const String & file_path
 {
     return ParquetMetadataCacheKey{file_path, file_attr};
 }
-ParquetMetadataCache::MappedPtr ParquetMetadataCache::getCell(const ParquetMetadataCacheKey & key)
-{
-    auto cell = Base::get(key);
-    if (cell)
-        countKeptStatistics(key, cell);
-    return cell;
-}
-
-void ParquetMetadataCache::countKeptStatistics(const ParquetMetadataCacheKey & key, const MappedPtr & cell)
+void ParquetMetadataCache::updateWeight(const ParquetMetadataCacheKey & key, const MappedPtr & cell)
 {
     /// `set` recomputes the weight.
-    if (cell->kept_statistics->takeAdded())
-        Base::replaceIfMatches(key, cell, cell);
+    Base::replaceIfMatches(key, cell, cell);
 }
 
 void ParquetMetadataCache::onEntryRemoval(const size_t weight_loss, const MappedPtr &)

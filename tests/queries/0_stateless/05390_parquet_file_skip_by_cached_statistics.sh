@@ -2,8 +2,8 @@
 # Tags: no-fasttest
 # Tag no-fasttest: needs Parquet
 
-# A read of local Parquet files keeps the min/max statistics ranges of its filter columns with the cached file
-# metadata. A later read of the same file version, also with other constants, skips the files whose row groups
+# A read of local Parquet files whose metadata is already cached keeps the min/max statistics ranges of its filter
+# columns with it. A later read of the same file version, also with other constants, skips the files whose row groups
 # cannot match without opening them (`ParquetFilesSkippedByCachedStatistics`). The query condition cache is off
 # in most queries, so that it cannot be the reason for skipping. Files are read as usual if their statistics
 # were kept for another column type, if their version token has not settled, or after a rewrite.
@@ -58,10 +58,11 @@ run() # label, query, [settings], [print pruned row groups]
 
 Q_RANGE="SELECT count(), sum(x) FROM t_05390 WHERE x BETWEEN 1500 AND 1600"
 
-# The first read keeps the ranges of x; the second skips the three files that cannot match and counts their row
-# groups as pruned, like the first read did.
+# The first read caches the metadata of the files and the second keeps the ranges of x with it. The third skips the
+# three files that cannot match and counts their row groups as pruned, like the reads before.
 run "range, first read" "$Q_RANGE" "" pruned
 run "range, second read" "$Q_RANGE" "" pruned
+run "range, third read" "$Q_RANGE" "" pruned
 # Nothing is skipped without the metadata cache.
 run "range, metadata cache off" "$Q_RANGE" "use_query_condition_cache = 0, input_format_parquet_filter_push_down = 1, use_parquet_metadata_cache = 0"
 # Other constants on the same column use the same ranges.
@@ -105,6 +106,24 @@ run "f4 unsettled, again" "$Q_RANGE_FN"
 touch -d '2022-01-01 00:00:00' "$DATA_DIR/f4.parquet"
 run "f4 settled, first read" "$Q_RANGE_FN"
 run "f4 settled, second read" "$Q_RANGE_FN"
+run "f4 settled, third read" "$Q_RANGE_FN"
+
+# The kept ranges count in the cache weight as soon as they are kept, and a skip leaves the weight as it is. The
+# metadata cache of a clickhouse-local process serves no other query.
+Q_LOCAL="SELECT count() FROM file('${DATA_DIR}/f1.parquet', Parquet, 'x UInt32, s String') WHERE x > 100000
+    SETTINGS use_query_condition_cache = 0, $PINNED FORMAT Null;
+    SELECT value FROM system.metrics WHERE metric = 'ParquetMetadataCacheBytes';"
+read -r w1 w2 w3 skipped <<< "$(${CLICKHOUSE_LOCAL} --query "$Q_LOCAL $Q_LOCAL $Q_LOCAL
+    SELECT value FROM system.events WHERE event = 'ParquetFilesSkippedByCachedStatistics'" | tr '\n' ' ')"
+echo "clickhouse-local: weight counts the kept ranges $((w2 > w1)), unchanged by the skip $((w3 == w2)), skipped $skipped"
+
+# Reads through the wrapper of `aggregate_function_input_format = 'value'` keep the ranges for later reads too.
+Q_WRAPPED="SELECT count(), max(finalizeAggregation(s))
+    FROM file('${DATA_DIR}/f1.parquet', Parquet, 'x UInt32, s AggregateFunction(any, String)') WHERE x > 100000
+    SETTINGS aggregate_function_input_format = 'value', use_query_condition_cache = 0, $PINNED FORMAT Null;"
+${CLICKHOUSE_LOCAL} --query "$Q_WRAPPED $Q_WRAPPED $Q_LOCAL
+    SELECT 'clickhouse-local, kept through the aggregate function wrapper: skipped '
+        || toString(ifNull((SELECT value FROM system.events WHERE event = 'ParquetFilesSkippedByCachedStatistics'), 0))" | tail -n 1
 
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05390"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE t_05390_i64"

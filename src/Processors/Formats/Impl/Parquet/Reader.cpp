@@ -1075,8 +1075,8 @@ void Reader::prefilterAndInitRowGroups(const std::optional<std::unordered_set<UI
     size_t total_rows = 0;
     key_condition_column_ranges.clear();
     key_condition_column_ranges_complete = false;
-    const bool record_key_condition_ranges = options.format.parquet.filter_push_down && format_filter_info->key_condition
-        && spatial_key_conditions.empty() && !rows_to_read;
+    const bool record_key_condition_ranges = collect_key_condition_column_ranges && options.format.parquet.filter_push_down
+        && format_filter_info->key_condition && spatial_key_conditions.empty() && !rows_to_read;
     if (record_key_condition_ranges)
         for (size_t idx : format_filter_info->key_condition->getUsedColumnsInOrder())
             if (idx < extended_sample_block.columns())

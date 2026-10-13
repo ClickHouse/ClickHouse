@@ -2900,6 +2900,8 @@ void ReadFromFile::initializePipeline(QueryPipelineBuilder & pipeline, const Bui
     format_filter_info->top_k_filter = top_k_filter;
     format_filter_info->min_max_from_statistics = read_min_max_from_statistics && !filter_actions_dag
         && !query_info.prewhere_info && !query_info.row_level_filter;
+    format_filter_info->keep_filter_column_statistics = filter_actions_dag && !storage->use_table_fd && !storage->archive_info
+        && ctx->getSettingsRef()[Setting::use_parquet_metadata_cache];
     auto top_k_query_condition_cache_key = makeTopKQueryConditionCacheKey();
     if (top_k_query_condition_cache_key)
     {
