@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
-# Tags: no-fasttest, long, no-tsan
+# Tags: no-fasttest, long, no-tsan, no-msan
 # Tag no-fasttest: PromQL needs ANTLR4, which is disabled in the fast-test build.
 # Tag long: about 70 PromQL queries, which take more than 180s in the flaky check.
 # Tag no-tsan: the 20-operator query needs more stack than the 5% that TSan allows.
+# Tag no-msan: under MSan each of the 37 comparison queries takes about 20s to plan, so the test exceeds the 600s timeout.
 
 CUR_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
 # shellcheck source=../shell_config.sh
@@ -93,9 +94,11 @@ echo "-- a duplicate series in a matched group is still an error"
 $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i3\"} / on(instance) lim', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
 $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', '(lim / on(instance) req) / on(instance) req{instance=\"i1\"}', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
 
-echo "-- as in Prometheus, a duplicate series on the one side or after dropping the metric name is an error in any group"
-$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i1\"} / on(instance) lim', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
-$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i1\"} / on(instance) group_left lim', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
+echo "-- a duplicate series on the one side is an error only at steps where the matched series has a value"
+$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i1\"} / on(instance) lim', 100, 130, 10) ORDER BY tags"
+$CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'req{instance=\"i1\"} / on(instance) group_left lim', 100, 130, 10) ORDER BY tags"
+
+echo "-- as in Prometheus, a duplicate series after dropping the metric name is an error in any group"
 $CLIENT -q "SELECT * FROM prometheusQueryRange('prometheus', 'rate({__name__=~\"m1|m2\"}[30s]) / on(a) m1{a=\"1\"}', 100, 130, 10)" 2>&1 | grep -o -m1 "CANNOT_EXECUTE_PROMQL_QUERY"
 
 echo "-- as in Prometheus, duplicate left series of a one-to-one match are an error only in a matched group"
