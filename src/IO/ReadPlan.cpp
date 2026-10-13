@@ -108,6 +108,19 @@ VectorWithMemoryTracking<CacheWriter *> ReadPlan::writersFor(ByteRange range) co
     return writers;
 }
 
+std::optional<size_t> ReadPlan::appendOnlyCellEnd(size_t offset) const
+{
+    std::optional<size_t> end;
+    for (const auto & tier : tiers)
+    {
+        for (const auto & cell : tier.cells)
+            if (cell.kind == CacheResolution::Kind::Miss && cell.writer && !cell.writer->fillsWholeSegment()
+                && cell.range.offset < offset && offset < cell.range.end())
+                end = std::max(end.value_or(0), cell.range.end());
+    }
+    return end;
+}
+
 void ReadPlan::hold(ChainedBuffers bytes)
 {
     memory.append(std::move(bytes));

@@ -528,13 +528,28 @@ ChainedBuffers ReaderExecutor::readThroughCaches(size_t pos, size_t max_serve, s
     else if (const auto * wr = std::get_if<ReadPlan::ServeFromWriter>(&run))
         out = wr->writer->read(ByteRange{pos, serve_len(wr->range.end())});
     else if (const auto * f = std::get_if<ReadPlan::Fetch>(&run))
-        out = fetchFillServe(pos, f->range, max_serve, sizes);
+        out = fetchFillServe(pos, extendFetchThroughAppendOnlyCell(f->range, pos + sizes.window_bytes), max_serve, sizes);
     /// std::monostate: offset outside the resolved range -> serve nothing.
 
     /// Eagerly drop what we served, freeing its pins and memory hold now (`out` owns its bytes).
     if (!out.empty())
         read_plan.dropBefore(pos + out.totalBytes());
     return out;
+}
+
+ByteRange ReaderExecutor::extendFetchThroughAppendOnlyCell(ByteRange fetch, size_t limit) const
+{
+    const size_t end = fetch.end();
+    if (!request_map || end >= limit)
+        return fetch;
+    const std::optional<size_t> cell_end = read_plan.appendOnlyCellEnd(end);
+    if (!cell_end)
+        return fetch;
+    const size_t until = std::min(*cell_end, limit);
+    const ByteRangeSet later = request_map->intersect(ByteRange{toLogical(end), until - end});
+    if (later.empty())
+        return fetch;
+    return ByteRange{fetch.offset, toPhysical(later.ranges().back().end()) - fetch.offset};
 }
 
 ChainedBuffers ReaderExecutor::fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve, BlockAndWindowSizes sizes)

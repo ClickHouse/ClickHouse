@@ -224,6 +224,9 @@ private:
     /// Grow `read_plan` to cover `[pos, min(pos + look_ahead, demand_end))` (clamped to the file end) and drop
     /// whatever lies past it; rebuilds from `pos` on a seek or gap. `look_ahead` is the sampled `plan_bytes`.
     void ensureResolved(size_t pos, size_t look_ahead, size_t demand_end);
+    /// Extends `fetch` up to `limit` to the last demanded byte of the append-only cell where it ends: the cell
+    /// fills only from its committed front, so the bytes before that byte are read in any case.
+    ByteRange extendFetchThroughAppendOnlyCell(ByteRange fetch, size_t limit) const;
     /// Serve one block from `pos` out of a FETCH run: read `fetch_range` from source once, fill the
     /// tiers it spans, hold what no tier accepted, and serve. (Details in the definition.)
     ChainedBuffers fetchFillServe(size_t pos, ByteRange fetch_range, size_t max_serve, BlockAndWindowSizes sizes);

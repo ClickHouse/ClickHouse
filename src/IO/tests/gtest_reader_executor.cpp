@@ -1895,6 +1895,60 @@ TEST_F(ReaderExecutorTest, RequestMapOpensLongConnectionOnFirstRead)
     EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorIncompleteConnections), 0u);
 }
 
+TEST_F(ReaderExecutorTest, FetchReadsThroughHoleBeforeLaterDemandInAppendOnlyCell)
+{
+    /// One 4K filesystem cache segment fills only from its committed front: with [0, 1K) and [3.5K, 4K)
+    /// in the map, the first fetch reads through the hole.
+    constexpr size_t segment = 4096;
+    StoredObjects objects{makeFile("a.bin", 2 * segment)};
+    auto state = std::make_shared<MockCacheState>(2 * segment);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(segment, state, /*bypass=*/false, /*incremental=*/true));
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .window_size = 2 * segment, .min_bytes_for_seek = 1024, .block_size = 1024, .cache_chain = std::move(chain)});
+    ByteRangeSet map;
+    map.add({0, 1024});
+    map.add({3584, 512});
+    ex.setRequestMap(map);
+
+    EXPECT_EQ(ex.readNextWindow().totalBytes(), 1024u);
+    ex.seek(3584);
+    ChainedBuffers w = ex.readNextWindow();
+    ASSERT_EQ(w.totalBytes(), 512u);
+    EXPECT_EQ(static_cast<unsigned char>(w.peek().data[0]), patternByte(3584));
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 1u) << "the hole was read by a second request";
+    EXPECT_TRUE(state->resident.subtract(ByteRange{0, segment}).empty()) << "the segment was not filled";
+}
+
+TEST_F(ReaderExecutorTest, FetchStopsBeforeDemandInNextAppendOnlyCell)
+{
+    /// The next range is in another segment, so the fetch stops at the end of the run.
+    constexpr size_t segment = 4096;
+    StoredObjects objects{makeFile("a.bin", 2 * segment)};
+    auto state = std::make_shared<MockCacheState>(2 * segment);
+    CacheChain chain;
+    chain.push_back(std::make_shared<MockFileCacheProvider>(segment, state, /*bypass=*/false, /*incremental=*/true));
+    TestThreadGroup tg;
+    ReaderExecutor ex(std::make_shared<LocalSourceReader>(), objects, ReaderExecutor::Options{
+        .window_size = 2 * segment, .min_bytes_for_seek = 1024, .block_size = 1024, .cache_chain = std::move(chain)});
+    ByteRangeSet map;
+    map.add({0, 1024});
+    map.add({6144, 1024});
+    ex.setRequestMap(map);
+
+    EXPECT_EQ(ex.readNextWindow().totalBytes(), 1024u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 1024u);
+    EXPECT_FALSE(state->resident.subtract(ByteRange{0, segment}).empty()) << "the rest of the segment was read";
+
+    ex.seek(6144);
+    ChainedBuffers w = ex.readNextWindow();
+    ASSERT_EQ(w.totalBytes(), 1024u);
+    EXPECT_EQ(static_cast<unsigned char>(w.peek().data[0]), patternByte(6144));
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorSourceRequests), 2u);
+    EXPECT_EQ(tg.get(ProfileEvents::ReaderExecutorBytesFromSource), 1024u + 3072u);   /// [0, 1K) and [4K, 7K)
+}
+
 #if USE_SSL
 
 /// Encrypt `plaintext` with the given key/iv at stream offset 0 using AES_128_CTR. CTR is
