@@ -63,6 +63,7 @@ extern const SettingsJoinStrictness join_default_strictness;
 namespace ErrorCodes
 {
 extern const int AST_FUZZER_ORACLE_MISMATCH;
+extern const int QUERY_WAS_CANCELLED_BY_CLIENT;
 extern const int TOO_MANY_ROWS;
 extern const int TOO_MANY_BYTES;
 }
@@ -2045,7 +2046,7 @@ bool QueryOracleChecker::checkDQP(const ASTSelectQuery & select, const ContextMu
     }
     catch (const Exception & e)
     {
-        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+        if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
             throw;
         /// The variant query might fail with a different error — that's OK.
         LOG_TRACE(logger, "DQP oracle: variant query failed (expected): {}", e.message());
@@ -2792,7 +2793,8 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
 
     /// Run one oracle under a uniform guard: its own mismatch
     /// (`AST_FUZZER_ORACLE_MISMATCH`) propagates and is annotated with the
-    /// reproduction settings by the outer handler below; any other execution
+    /// reproduction settings by the outer handler below, and a disconnected
+    /// client (`QUERY_WAS_CANCELLED_BY_CLIENT`) stops the remaining oracles; any other execution
     /// error means the rewrite was not comparable on this query (e.g. a
     /// function the rewrite cannot analyse), so it is swallowed and the
     /// remaining oracles still run. `name` reproduces the per-oracle log wording.
@@ -2805,7 +2807,7 @@ bool QueryOracleChecker::check(const ASTPtr & query_ast, const ContextMutablePtr
         }
         catch (const Exception & e)
         {
-            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH)
+            if (e.code() == ErrorCodes::AST_FUZZER_ORACLE_MISMATCH || e.code() == ErrorCodes::QUERY_WAS_CANCELLED_BY_CLIENT)
                 throw;
             LOG_TRACE(logger, "{} oracle execution error (skipping): {}", name, e.message());
         }
