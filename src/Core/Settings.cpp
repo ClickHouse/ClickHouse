@@ -1165,7 +1165,7 @@ Move PREWHERE conditions containing primary key columns to the end of AND chain.
 When moving conditions from WHERE to PREWHERE, allow reordering them to optimize filtering
 )", 0, \
         {"24.10", true, true, "New setting"}) \
-    DECLARE(Bool, apply_string_filters_during_scan, false, R"(
+    DECLARE(Bool, apply_string_filters_during_scan, true, R"(
 Push down substring search conditions on `String` columns from `PREWHERE` into the column scan.
 
 When a `PREWHERE` condition contains a conjunct that searches for a non-empty substring in a `String` (or `Nullable(String)`) column
@@ -1174,13 +1174,15 @@ during deserialization and reads non-matching values as empty strings. This make
 is selective, because the data of non-matching values is not copied into the column. The result of the query does not change,
 because the rows with non-matching values are guaranteed to be filtered out by `PREWHERE`, and such conditions never match an empty string.
 
-The filter is disabled adaptively at runtime if it turns out to be non-selective.
+The filter is disabled adaptively at runtime if it turns out to be non-selective, or if the non-matching values
+are too short for skipping their data to pay off.
 
 Also allows the `WHERE` to `PREWHERE` optimization to move substring search conditions (`LIKE`, `position`, `startsWith`, `endsWith`)
 even when they use all queried columns (normally that is pointless, but with this setting the scan itself becomes cheaper).
 Equality with a constant string is not moved for this reason: it is still applied during the scan when it is already in `PREWHERE`.
 
-Supported for reading from `MergeTree` tables and from the `Parquet` format.
+Supported for reading from `MergeTree` tables and from the `Parquet` format. In `Parquet`, the filter is applied to pages with
+the `PLAIN`, `DELTA_LENGTH_BYTE_ARRAY`, `DELTA_BYTE_ARRAY`, and dictionary encodings.
 
 Note that the estimation of the input bytes collected for the automatic decision about parallel replicas
 (`RuntimeDataflowStatisticsInputBytes`) is based on the in-memory size of the read blocks, so it underestimates
@@ -1191,7 +1193,7 @@ Possible values:
 - 0 — Disabled.
 - 1 — Enabled.
 )", 0, \
-        {"26.10", false, false, "New setting to push down substring search conditions on String columns from PREWHERE into the column scan."}) \
+        {"26.10", false, true, "New setting to push down substring search conditions on `String` columns from `PREWHERE` into the column scan, enabled by default. `compatibility` with versions before 26.10 disables it."}) \
     \
     DECLARE_WITH_ALIAS(UInt64, alter_sync, 1, R"(
 Allows you to specify how [`ALTER`](/reference/statements/alter/index), [`OPTIMIZE`](/reference/statements/optimize), or [`TRUNCATE`](/reference/statements/truncate) queries wait for their operations to complete.
@@ -1491,6 +1493,11 @@ From what number of keys, a two-level aggregation starts. 0 - the threshold is n
     DECLARE(UInt64, group_by_two_level_threshold_bytes, 50000000, R"(
 From what size of the aggregation state in bytes, a two-level aggregation begins to be used. 0 - the threshold is not set. Two-level aggregation is used when at least one of the thresholds is triggered.
 )", 0) \
+    DECLARE(Bool, use_aggregation_memory_tracker, true, R"(
+Measure the size of the aggregation state compared with `group_by_two_level_threshold_bytes` with the memory tracker dedicated to the aggregation. When disabled, the size is measured as the growth of the memory usage of the whole query since the aggregation was created, so an aggregation with a small state can be converted to two-level.
+)", 0, \
+        {"26.10", true, true, "New setting to choose how the two-level conversion of `GROUP BY` measures the aggregation memory. The change it gates shipped in 26.7 and its memory regression is fixed in 26.9."}, \
+        {"26.9", false, true, "The two-level conversion of `GROUP BY` compares `group_by_two_level_threshold_bytes` with the memory of the aggregation state only, measured by a dedicated memory tracker (https://github.com/ClickHouse/ClickHouse/pull/107490). Before 26.7 it used the growth of the memory usage of the whole query."}) \
     DECLARE(Bool, distributed_aggregation_memory_efficient, true, R"(
 Is the memory-saving mode of distributed aggregation enabled.
 )", 0) \
@@ -4962,6 +4969,18 @@ Possible values:
 - 1 — Creating several dictionaries for the data part is prohibited.
 - 0 — Creating several dictionaries for the data part is not prohibited.
 )", 0) \
+    DECLARE(Bool, exact_division_for_integers, false, R"(
+Makes `/` and `divide` return an integer when both operands are integer types, including `Int128`, `UInt128`, `Int256`, and `UInt256`.
+The quotient is truncated toward zero. The result has the width of the first operand and is signed if either operand is signed.
+Division by zero or a quotient outside the result type's range throws an exception. `Nullable` operands propagate `NULL`.
+
+By default, division of two integers returns `Float64`. This setting does not change division involving `Decimal` or floating-point operands,
+or the explicit functions `intDiv`, `divideDecimal`, and `divideOrNull`.
+
+The choice is recorded in newly submitted SQL before expressions are stored in table metadata, views, SQL functions, or mutations.
+Existing definitions and `ATTACH` queries retain their original division semantics, independently of this setting.
+)", 0, \
+        {"26.10", false, false, "New setting to enable exact integer division for `/` and `divide`."}) \
     DECLARE(Bool, decimal_check_overflow, true, R"(
 Check overflow of decimal arithmetic/comparison operations
 )", 0) \
@@ -10387,6 +10406,10 @@ Enable experimental functions for natural language processing.
     DECLARE(Bool, allow_experimental_hash_functions, false, R"(
 Enable experimental hash functions
 )", EXPERIMENTAL) \
+    DECLARE(Bool, enable_ipcrypt, false, R"(
+Enable experimental IP address encryption functions (`ipcryptEncrypt`, `ipcryptDecrypt`, `ipcryptPrefixEncrypt`, `ipcryptPrefixDecrypt`).
+)", EXPERIMENTAL, \
+        {"26.10", false, false, "New setting to enable experimental IP address encryption functions."}) \
     DECLARE(Bool, enable_xgboost, false, R"(
 Enable the experimental XGBoost integration: the `XGBOOST` dictionary layout and the `predictXGBoost` function.
 )", EXPERIMENTAL, \
@@ -10753,6 +10776,10 @@ Allow to use 'ALTER TABLE ... EXECUTE remove_orphan_files()' for iceberg tables.
 Default age threshold in seconds for orphan file removal in Iceberg tables. Files newer than this are not considered orphans. Used when the older_than argument is omitted from the remove_orphan_files() procedure call. Default is 259200 (3 days).
 )", EXPERIMENTAL, \
         {"26.4", 259200, 259200, "New setting for default orphan file age threshold"}) \
+    DECLARE(UInt64, iceberg_orphan_files_min_retention_seconds, 86400, R"(
+Minimum age in seconds of the files that `ALTER TABLE ... EXECUTE remove_orphan_files` may delete from an Iceberg table. An `older_than` (given explicitly or derived from `iceberg_orphan_files_older_than_seconds`) that is closer to now than this is rejected: files of a write that has not committed yet are not referenced by the table metadata and would be deleted, which corrupts the table when the write commits. Keep it above the longest time a write to the table can take to commit. 0 disables the check.
+)", EXPERIMENTAL, \
+        {"26.10", 0, 86400, "New setting. `remove_orphan_files` rejects an `older_than` less than this many seconds before now, so it keeps the files of a write that started less than this long ago and has not committed yet. `compatibility` with versions before 26.10 restores the previous behavior (no minimum)."}) \
     DECLARE(Bool, allow_experimental_expire_snapshots, false, R"(
 Allow to execute experimental Iceberg command `ALTER TABLE ... EXECUTE expire_snapshots`.
 )", EXPERIMENTAL, \
