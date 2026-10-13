@@ -44,7 +44,7 @@ COMMIT;
 SELECT count() FROM $DB.mt;
 "
 
-echo "--- backup of a ReplicatedMergeTree table"
+echo "--- backup of a replicated table"
 reattach
 $CLICKHOUSE_CLIENT --query "
 BACKUP TABLE $DB.rmt TO Memory('$BACKUP_NAME') FORMAT Null;

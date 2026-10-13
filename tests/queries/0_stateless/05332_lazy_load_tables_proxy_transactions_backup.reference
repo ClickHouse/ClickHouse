@@ -2,5 +2,5 @@
 9
 --- INSERT inside a transaction
 10
---- backup of a ReplicatedMergeTree table
+--- backup of a replicated table
 10
