@@ -133,6 +133,10 @@ private:
     /// used regardless of that setting (only a genuine expression needs the interpreter).
     NumericValueIntoIPv4Column readsNumericValueIntoIPv4Column() const override { return NumericValueIntoIPv4Column::AnyNumeric; }
 
+    /// `ValuesBlockInputFormat::tryReadValue` reads a quoted string literal for an `Array` / `Tuple` /
+    /// `Map` column with `tryDeserializeWholeText` before falling back to the expression parser.
+    bool readsQuotedStringsIntoNestedColumnsAsWholeText() const override { return true; }
+
     PeekableReadBuffer buf;
     ParserExpression parser;
     bool first_row = true;

@@ -75,7 +75,11 @@ struct SampledValueStep
 {
     enum class Kind
     {
+        /// Every element of an array.
         ArrayElements,
+        /// The single element at `index` of an array: a homogeneous `[...]` token, inferred as `Array`,
+        /// read positionally into a `Tuple` destination.
+        ArrayElement,
         TupleElement,
         MapValues,
     };
@@ -125,6 +129,15 @@ bool sampledValueHoldsOnlyBoolLiterals(const Field & value, const std::vector<Sa
                 value.safeGet<Array>(),
                 [&](const Field & element) { return sampledValueHoldsOnlyBoolLiterals(element, path, depth + 1); });
         }
+        case SampledValueStep::Kind::ArrayElement:
+        {
+            if (value.getType() != Field::Types::Array)
+                return true;
+            const auto & array = value.safeGet<Array>();
+            if (step.index >= array.size())
+                return true;
+            return sampledValueHoldsOnlyBoolLiterals(array[step.index], path, depth + 1);
+        }
         case SampledValueStep::Kind::TupleElement:
         {
             if (value.getType() != Field::Types::Tuple)
@@ -169,6 +182,15 @@ bool sampledValueIsArrayOfSize(const Field & value, const std::vector<SampledVal
             return std::ranges::all_of(
                 value.safeGet<Array>(),
                 [&](const Field & element) { return sampledValueIsArrayOfSize(element, path, depth + 1, size); });
+        }
+        case SampledValueStep::Kind::ArrayElement:
+        {
+            if (value.getType() != Field::Types::Array)
+                return true;
+            const auto & array = value.safeGet<Array>();
+            if (step.index >= array.size())
+                return true;
+            return sampledValueIsArrayOfSize(array[step.index], path, depth + 1, size);
         }
         case SampledValueStep::Kind::TupleElement:
         {
@@ -222,6 +244,15 @@ bool sampledStringValuesSatisfy(
             return std::ranges::all_of(
                 value.safeGet<Array>(),
                 [&](const Field & element) { return sampledStringValuesSatisfy(element, path, depth + 1, predicate); });
+        }
+        case SampledValueStep::Kind::ArrayElement:
+        {
+            if (value.getType() != Field::Types::Array)
+                return true;
+            const auto & array = value.safeGet<Array>();
+            if (step.index >= array.size())
+                return true;
+            return sampledStringValuesSatisfy(array[step.index], path, depth + 1, predicate);
         }
         case SampledValueStep::Kind::TupleElement:
         {
@@ -302,6 +333,7 @@ String getInsertDataSchemaMismatchDescription(
     bool format_allows_fewer_columns_than_expected = false;
     bool format_reads_typed_json_value_tokens = false;
     bool format_reads_string_values_as_whole_text = false;
+    bool format_reads_quoted_strings_into_nested_columns_as_whole_text = false;
     bool format_imports_nested_json_objects = false;
     bool format_reads_any_value_into_string_column = true;
     bool format_reads_quoted_text_values = false;
@@ -342,6 +374,8 @@ String getInsertDataSchemaMismatchDescription(
         format_allows_fewer_columns_than_expected = schema_reader->allowsFewerColumnsThanExpected();
         format_reads_typed_json_value_tokens = schema_reader->readsTypedJSONValueTokens();
         format_reads_string_values_as_whole_text = schema_reader->readsStringValuesAsWholeText();
+        format_reads_quoted_strings_into_nested_columns_as_whole_text
+            = schema_reader->readsQuotedStringsIntoNestedColumnsAsWholeText();
         format_imports_nested_json_objects = schema_reader->importsNestedJSONObjects();
         format_reads_any_value_into_string_column = schema_reader->readsAnyValueIntoStringColumn();
         format_reads_quoted_text_values = schema_reader->readsQuotedTextValues();
@@ -486,6 +520,7 @@ String getInsertDataSchemaMismatchDescription(
         {
             case SampledValueStep::Kind::ArrayElements:
                 return array ? array->getNestedType() : nullptr;
+            case SampledValueStep::Kind::ArrayElement:
             case SampledValueStep::Kind::TupleElement:
             {
                 if (array)
@@ -795,7 +830,9 @@ String getInsertDataSchemaMismatchDescription(
         /// with `input_format_null_as_default` (on by default) the quoted-text parser reads `NULL`
         /// into a plain `String` column as the default value. Anything else inferred (a date, a
         /// `UUID`, ... — necessarily inferred from a quoted string token) is read into a `String`
-        /// column verbatim in every format, including the quoted-text ones.
+        /// column verbatim in every format, including the quoted-text ones. An inferred `FixedString`
+        /// in the formats that store typed values is a BSON `ObjectId`, which `readAndInsertString`
+        /// reads into a `String` column like a BSON string.
         if (which_expected.isString())
         {
             if (format_reads_typed_json_value_tokens)
@@ -814,7 +851,7 @@ String getInsertDataSchemaMismatchDescription(
                 && (which_inferred.isArray() || which_inferred.isTuple() || which_inferred.isMap()
                     || isBool(inferred_unwrapped)))
                 return false;
-            return format_reads_any_value_into_string_column || which_inferred.isString();
+            return format_reads_any_value_into_string_column || which_inferred.isString() || which_inferred.isFixedString();
         }
 
         /// The binary formats that store typed values (`BSONEachRow`, `MsgPack`) keep the on-wire
@@ -961,26 +998,25 @@ String getInsertDataSchemaMismatchDescription(
                     /// `SerializationMap` delegates to the nested `Array(Tuple(key, value))`
                     /// serializer, which still validates both the tuple arity and its key/value
                     /// types.
+                    /// Each pair is itself a `[...]` token: inferred as an unnamed `Tuple` when its
+                    /// key and value differ in type, and as an `Array` when they are homogeneous
+                    /// (`[[1,2],[3,4]]` is `Array(Array(Int64))`), which the tuple serializer still
+                    /// reads positionally. Compare every pair against the unnamed
+                    /// `Tuple(key, value)` the parser reads it into, so the arity and the
+                    /// per-element checks of the array-token rule below apply to it.
                     if (!inferred_array)
                         return false;
 
-                    const auto * inferred_pair = typeid_cast<const DataTypeTuple *>(inferred_array->getNestedType().get());
-                    if (!inferred_pair || inferred_pair->getElements().size() != 2)
+                    const auto & inferred_pair_type = inferred_array->getNestedType();
+                    const auto * inferred_pair_tuple = typeid_cast<const DataTypeTuple *>(inferred_pair_type.get());
+                    if (!typeid_cast<const DataTypeArray *>(inferred_pair_type.get())
+                        && !(inferred_pair_tuple && !inferred_pair_tuple->hasExplicitNames()))
                         return false;
 
-                    const auto & inferred_pair_elements = inferred_pair->getElements();
                     return types_are_compatible(
-                               inferred_pair_elements[0],
-                               expected_map->getKeyType(),
-                               nested_evidence(
-                                   nested_evidence(evidence, {SampledValueStep::Kind::ArrayElements}),
-                                   {SampledValueStep::Kind::TupleElement, 0}))
-                        && types_are_compatible(
-                               inferred_pair_elements[1],
-                               expected_map->getValueType(),
-                               nested_evidence(
-                                   nested_evidence(evidence, {SampledValueStep::Kind::ArrayElements}),
-                                   {SampledValueStep::Kind::TupleElement, 1}));
+                        inferred_pair_type,
+                        std::make_shared<DataTypeTuple>(DataTypes{expected_map->getKeyType(), expected_map->getValueType()}),
+                        nested_evidence(evidence, {SampledValueStep::Kind::ArrayElements}));
                 }
 
                 if (expected_array)
@@ -1027,15 +1063,17 @@ String getInsertDataSchemaMismatchDescription(
                             /// The arity alone is not enough: each scalar inferred from the homogeneous
                             /// array must also be acceptable for its corresponding tuple element. For
                             /// example, `[1, 2]` does not fit `Tuple(Array(UInt8), Array(UInt8))`, and
-                            /// `["oops", "text"]` does not fit `Tuple(UInt8, UInt8)`.
-                            const auto element_evidence
-                                = nested_evidence(evidence, {SampledValueStep::Kind::ArrayElements});
-                            return std::ranges::all_of(
-                                expected_elements,
-                                [&](const auto & expected_element)
-                                {
-                                    return types_are_compatible(inferred_array->getNestedType(), expected_element, element_evidence);
-                                });
+                            /// `["oops", "text"]` does not fit `Tuple(UInt8, UInt8)`. The parser reads
+                            /// the elements positionally, so the value-level evidence of each tuple
+                            /// element covers only the array element at the same position: `[1, 2]`
+                            /// fits `Tuple(Bool, UInt8)`, although `2` is not a `Bool` literal.
+                            for (size_t i = 0; i < expected_elements.size(); ++i)
+                                if (!types_are_compatible(
+                                        inferred_array->getNestedType(),
+                                        expected_elements[i],
+                                        nested_evidence(evidence, {SampledValueStep::Kind::ArrayElement, i})))
+                                    return false;
+                            return true;
                         }
                         return true;
                     }
@@ -1217,6 +1255,15 @@ String getInsertDataSchemaMismatchDescription(
             {
                 if (format_reads_string_values_as_whole_text)
                     return true;
+                /// `Values` reads a quoted string literal for a top-level nested column with the
+                /// whole-text deserializer of the column type (`ValuesBlockInputFormat::tryReadValue`),
+                /// so `'[1,2]'` is a valid value for an `Array(UInt8)` column: only a sampled string
+                /// that is not a valid text of the destination is a genuine mismatch there.
+                if (format_reads_quoted_strings_into_nested_columns_as_whole_text && evidence.column_index
+                    && evidence.path.empty())
+                    return sampled_string_values_are_valid_text_for(
+                               *evidence.column_index, evidence.path, removeLowCardinality(expected_type))
+                        .value_or(true);
                 /// The same reasoning as for `Bool` above: the cast-on-read formats build the nested
                 /// value from the text of the source string, so a value like `[1,2]` is valid there.
                 /// As for `Bool`, keep the `Nullable` wrapper (e.g. `Nullable(Tuple(...))`): the cast
@@ -1252,7 +1299,22 @@ String getInsertDataSchemaMismatchDescription(
                     .value_or(true);
             }
 
-            return !type_is_confirmed_text(evidence.numbers_inferred_type);
+            if (!type_is_confirmed_text(evidence.numbers_inferred_type))
+                return true;
+
+            /// The whole-text formats (`Form`, `JSONStringsEachRow`, ...) re-parse the content of the
+            /// string with the whole-text deserializer of the destination type. The numbers-from-strings
+            /// inference pass does not cover every one of them (`Form` keeps a value such as `1` as
+            /// `String` there), so before reporting a value as genuine text, validate the sampled values
+            /// with the same deserializer: `1` is valid for a `UInt8` column, `x` and `1.5` are not.
+            /// The `Nullable` wrapper is kept, as its whole-text deserializer also accepts the `NULL`
+            /// literal.
+            if (format_reads_string_values_as_whole_text && evidence.column_index)
+                return sampled_string_values_are_valid_text_for(
+                           *evidence.column_index, evidence.path, removeLowCardinality(expected_type))
+                    .value_or(false);
+
+            return false;
         }
 
         /// A numeric value that schema inference widened to `Int64` / `UInt64` / `Float64` is accepted by

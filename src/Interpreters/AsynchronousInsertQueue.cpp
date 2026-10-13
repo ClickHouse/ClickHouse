@@ -1610,10 +1610,22 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
     /// looks at the entry currently being parsed.
     const String insert_format = getInputFormatNameFromASTInsertQuery(key.query, format_context);
     std::string_view current_entry_data;
+    /// The query parameters of the entry being parsed, which the executor applies to the format per
+    /// entry (a parameterized `Values` row): the diagnostic must parse the data with them as well.
+    const NameToNameMap * current_entry_query_parameters = nullptr;
     format->setParseErrorDiagnosticProvider(
-        [&current_entry_data, insert_format, &header, format_context](std::optional<size_t> rows_reached_by_parser) -> String
+        [&current_entry_data, &current_entry_query_parameters, insert_format, &header, format_context](
+            std::optional<size_t> rows_reached_by_parser) -> String
         {
-            return getInsertDataSchemaMismatchDescription(current_entry_data, insert_format, header, format_context, rows_reached_by_parser);
+            ContextPtr diagnostic_context = format_context;
+            if (current_entry_query_parameters && !current_entry_query_parameters->empty())
+            {
+                auto context_with_parameters = Context::createCopy(format_context);
+                context_with_parameters->setQueryParameters(*current_entry_query_parameters);
+                diagnostic_context = std::move(context_with_parameters);
+            }
+            return getInsertDataSchemaMismatchDescription(
+                current_entry_data, insert_format, header, diagnostic_context, rows_reached_by_parser);
         });
 
     if (format_context->getSettingsRef()[Setting::input_format_defaults_for_omitted_fields] && format_context->hasInsertionTableColumnsDescription())
@@ -1660,6 +1672,7 @@ Chunk AsynchronousInsertQueue::processEntriesWithParsing(
         executor.setQueryParameters(entry->query_parameters);
 
         current_entry_data = *bytes;
+        current_entry_query_parameters = &entry->query_parameters;
 
         size_t num_bytes = bytes->size();
         size_t num_rows = executor.execute(*buffer, num_bytes);

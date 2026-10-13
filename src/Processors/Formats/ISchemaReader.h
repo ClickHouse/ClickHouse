@@ -113,6 +113,13 @@ public:
     /// nothing about the parsability of its content into the destination type.
     virtual bool readsStringValuesAsWholeText() const { return false; }
 
+    /// True when the parser reads a quoted string literal given for a top-level `Array` / `Tuple` /
+    /// `Map` column with the whole-text deserializer of the column type, as `Values` does
+    /// (`('[1,2]')` is a valid value for an `Array(UInt8)` column there). A caller that compares an
+    /// inferred schema against an expected one can use this to know when an inferred `String` may
+    /// still be valid for a nested destination.
+    virtual bool readsQuotedStringsIntoNestedColumnsAsWholeText() const { return false; }
+
     /// True when, with `input_format_import_nested_json` enabled, the parser maps a top-level object
     /// field (`{"n": {...}}`) onto the dotted columns of a `Nested` destination (`n.i`, ...). Only the
     /// `JSONEachRowRowInputFormat` family registers such `Nested` prefixes; the other by-name parsers
