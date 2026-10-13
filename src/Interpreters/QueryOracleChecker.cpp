@@ -218,10 +218,6 @@ const std::unordered_set<String> non_deterministic_functions_lower = []
     return result;
 }();
 
-/// Aggregate-function combinator suffixes — shared with the fuzzer, see
-/// `aggregate_combinator_suffixes` in `QueryFuzzer.h`.
-const Strings & combinator_suffixes = aggregate_combinator_suffixes;
-
 /// Strip the LONGEST matching combinator suffix from `name`, returning false
 /// when nothing matched. Longest-match (rather than first-in-list) is what
 /// keeps overlapping combinators correct regardless of list order: e.g.
@@ -230,7 +226,7 @@ const Strings & combinator_suffixes = aggregate_combinator_suffixes;
 bool stripLongestCombinatorSuffix(String & name)
 {
     const String * best = nullptr;
-    for (const auto & suffix : combinator_suffixes)
+    for (const auto & suffix : aggregateCombinatorSuffixes())
         if (name.size() > suffix.size() && name.ends_with(suffix)
             && (!best || suffix.size() > best->size()))
             best = &suffix;
