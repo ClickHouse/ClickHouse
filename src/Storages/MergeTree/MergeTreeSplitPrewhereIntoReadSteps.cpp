@@ -456,6 +456,20 @@ bool tryBuildPrewhereSteps(
         }
     }
 
+    /// Readers match columns by name, so a column computed by a step must not share its name with a stored column.
+    if (columns)
+    {
+        for (const auto & step : steps)
+        {
+            for (const auto * output : step.actions->getOutputs())
+            {
+                if (output->type != ActionsDAG::ActionType::INPUT
+                    && columns->hasColumnOrSubcolumn(GetColumnsOptions::AllPhysical, output->result_name))
+                    return false;
+            }
+        }
+    }
+
     /// 9. Build PrewhereExprInfo
     {
         for (size_t step_index = 0; step_index < steps.size(); ++step_index)

@@ -544,7 +544,8 @@ SingleProjectionIndexReader::SingleProjectionIndexReader(
     std::shared_ptr<MergeTreeReadPoolProjectionIndex> pool,
     PrewhereInfoPtr prewhere_info,
     const ExpressionActionsSettings & actions_settings,
-    const MergeTreeReaderSettings & reader_settings)
+    const MergeTreeReaderSettings & reader_settings,
+    const ColumnsDescription * columns)
     : projection_index_read_pool(std::move(pool))
     , processor(std::make_unique<MergeTreeSelectProcessor>(
           std::static_pointer_cast<IMergeTreeReadPool>(projection_index_read_pool),
@@ -553,7 +554,10 @@ SingleProjectionIndexReader::SingleProjectionIndexReader(
           std::move(prewhere_info),
           IndexReadTasks{} /*index_read_tasks*/,
           actions_settings,
-          reader_settings))
+          reader_settings,
+          nullptr /*merge_tree_index_build_context*/,
+          nullptr /*lazy_materializing_rows*/,
+          columns))
 {
 }
 
