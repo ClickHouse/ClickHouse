@@ -2622,6 +2622,19 @@ bool ReadFromMerge::requestReadingInOrder(InputOrderInfoPtr order_info_, size_t 
     if (order_info_->direction != 1 && !canReadInReverseOrder())
         return false;
 
+    /// The same for the prefix: it is computed from the tables the `Merge` selected, but it is handed to every
+    /// reading step of the child plans, and a step whose sorting key is shorter refuses it.
+    const size_t prefix_size = order_info_->used_prefix_of_sorting_key_size;
+    auto can_read_in_order_with_prefix = [prefix_size](ReadFromMergeTree & read_from_merge_tree)
+    {
+        return read_from_merge_tree.canReadInOrderWithPrefix(prefix_size);
+    };
+
+    for (const auto & child_plan : *child_plans)
+        if (child_plan.plan.isInitialized()
+            && !recursivelyApplyToReadingSteps(child_plan.plan.getRootNode(), can_read_in_order_with_prefix))
+            return false;
+
     auto request_read_in_order = [order_info_, query_limit](ReadFromMergeTree & read_from_merge_tree)
     {
         return read_from_merge_tree.requestReadingInOrder(

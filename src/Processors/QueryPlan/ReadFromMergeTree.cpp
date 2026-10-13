@@ -4085,19 +4085,13 @@ bool ReadFromMergeTree::canReadInReverseOrder() const
             && context->getSettingsRef()[Setting::optimize_read_in_reverse_order_final]);
 }
 
+bool ReadFromMergeTree::canReadInOrderWithPrefix(size_t prefix_size) const
+{
+    return prefix_size <= storage_snapshot->metadata->getSortingKey().column_names.size();
+}
+
 bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction, size_t read_limit, size_t query_limit)
 {
-    /// The prefix is not always computed from the sorting key of *this* step.
-    /// `ReadFromMerge::requestReadingInOrder` computes one prefix from the metadata of the tables the
-    /// `Merge` selected and then hands it, through `recursivelyApplyToReadingSteps`, to every
-    /// `ReadFromMergeTree` reachable from the child plans - including reads whose own sorting key is
-    /// shorter than that prefix. Such a read cannot deliver the requested order, and announcing it
-    /// anyway makes `spreadMarkRangesAmongStreamsWithOrder` pad the sorting-key expression list with
-    /// null children and index `column_names` past its end. Refuse instead: the caller already treats
-    /// `false` as "this child cannot read in order" and gives up the optimization.
-    if (prefix_size > getStorageMetadata()->getSortingKey().column_names.size())
-        return false;
-
     /// if direction is not set, use current one
     if (!direction)
         direction = getSortDirection();
@@ -4107,7 +4101,9 @@ bool ReadFromMergeTree::requestReadingInOrder(size_t prefix_size, int direction,
 
     /// The prefix indexes this snapshot's sorting key, and a clone of its expression list is resized
     /// to `prefix_size`, which appends null `ASTPtr` children when the prefix is longer than the key.
-    if (prefix_size > storage_snapshot->metadata->getSortingKey().column_names.size())
+    /// `ReadFromMerge::requestReadingInOrder` hands one prefix to the reads of all its children and asks
+    /// `canReadInOrderWithPrefix` of every one of them first, so that none is switched when one refuses.
+    if (!canReadInOrderWithPrefix(prefix_size))
         return false;
 
     /// Only a later request that WIDENS an already-established prefix (distinct/aggregation-in-order
