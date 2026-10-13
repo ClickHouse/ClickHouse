@@ -245,7 +245,8 @@ void ReadFromObjectStorageStep::createIterator()
 ObjectStorageTopKQueryConditionCacheKeyPtr ReadFromObjectStorageStep::makeTopKQueryConditionCacheKey() const
 {
     const auto & settings = getContext()->getSettingsRef();
-    if (!top_k_filter || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
+    if (!top_k_filter || !allow_top_k_query_condition_cache
+        || !settings[Setting::use_query_condition_cache] || !settings[Setting::use_query_condition_cache_for_top_k])
         return {};
 
     /// Only a table with a UUID has cache entries. With distributed processing each worker reads a
