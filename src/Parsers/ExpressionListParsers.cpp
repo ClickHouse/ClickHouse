@@ -3369,6 +3369,11 @@ const std::vector<std::pair<std::string_view, Operator>> ParserExpressionImpl::o
     {toStringView(Keyword::IS_NOT_NULL),   Operator("isNotNull",       6,  1, OperatorType::IsNull)},
     {toStringView(Keyword::BETWEEN),       Operator("",                7,  0, OperatorType::StartBetween)},
     {toStringView(Keyword::NOT_BETWEEN),   Operator("",                7,  0, OperatorType::StartNotBetween)},
+    /// Function composition: `f | g` applies `f` and then `g`, and is resolved as a lambda
+    /// where a higher-order function expects one. The single `|` is not bitwise OR (`bitOr`).
+    /// The internal name keeps the operator from stealing the public name `compose`; it must
+    /// stay in sync with `function_composition_name` in `FunctionCompositionRewrite.h`.
+    {"|",             Operator("__compose",       8,  2)},
     {"==",            Operator("equals",          9,  2, OperatorType::Comparison)},
     {"!=",            Operator("notEquals",       9,  2, OperatorType::Comparison)},
     {"<=>",           Operator("isNotDistinctFrom", 9, 2, OperatorType::Comparison)},
@@ -4368,6 +4373,52 @@ FROM t_null
 │                     1 │
 └───────────────────────┘
 ```
+
+## IN in External Memory {#in-in-external-memory}
+
+The set that `IN` builds from a subquery or a table can be written to disk when it is too large to
+keep in memory. Lookups then read the set from disk, which requires additional disk I/O and can make
+queries slower. A list of values, such as `IN (1, 2, 3)`, and a table with the `Set` engine always
+stay in memory.
+
+Two settings control when spilling starts:
+
+- `max_bytes_before_external_set` sets a threshold in bytes of total query memory. It defaults to `0`
+  (disabled).
+- `max_bytes_ratio_before_external_set` sets a fraction of available memory under server or user
+  limits, measured at the start of execution. It defaults to `0` (disabled) and has no effect when
+  neither limit applies.
+
+When both thresholds apply, the smaller is used. A set is written to disk only once it takes at least
+16 MiB, or the threshold if it is smaller. For example, this query writes the set to disk once the set
+takes at least 16 MiB:
+
+```sql
+SELECT count()
+FROM numbers(10000000)
+WHERE number IN (SELECT number * 3 FROM numbers(10000000))
+SETTINGS max_bytes_before_external_set = 16777216;
+```
+
+A set is usually built before the rest of the query takes much memory. A set that stays in memory while
+it is built can still be written to disk later, while the query uses it: once query memory exceeds the
+threshold, the set is written to disk, and most of its memory is released for the rest of the query, such
+as an aggregation that grows after the set is built.
+
+`max_memory_usage` does not affect the ratio. To configure spilling relative to a query memory limit,
+set an absolute threshold below that limit. These thresholds do not cap memory usage. Leave room for
+other query processing and the spill itself.
+
+A set written to disk while it is built cannot be used by the primary key or data skipping indexes. With
+`GLOBAL IN`, the temporary table that sends the result of the subquery to the remote servers stays in
+memory, while the sets that the remote servers build from it can be written to disk.
+
+When a set is written to disk while it is built, the whole subquery is read before the size limits of
+the set are checked: `max_rows_in_set` counts its distinct keys, and `max_bytes_in_set` counts only its
+part in memory. With `set_overflow_mode = 'break'`, the set keeps the keys that come first in the order
+in which it stores them on disk, up to the limits, and not the keys of the first rows of the subquery.
+For a `UInt64` key, these are the smallest values. For a `String` key, they form an arbitrary subset,
+since the set stores only the 128-bit SipHash of each string on disk.
 
 ## Distributed Subqueries {#distributed-subqueries}
 
