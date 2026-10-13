@@ -166,7 +166,17 @@ jobs:
 
             # Infrastructure failure = at least one failed job, and all of them are infra
             if [ -z "$verdicts" ]; then
-              :
+              # The run failed, yet every listed job passed or never started: GitHub dropped
+              # or never ran the jobs that failed it. The listing is the latest attempt, so it
+              # must still be the failed attempt listed above, or this matches a green rerun.
+              if echo "$jobs_raw" | jq -s -e '[.[].jobs[]] | length > 0 and
+                  all(.conclusion == null or .conclusion == "success" or
+                      .conclusion == "skipped" or .conclusion == "neutral")' > /dev/null &&
+                 [ "$(gh api "repos/$GH_REPO/actions/runs/$run_id" \
+                      --jq '"\(.run_attempt):\(.conclusion)"')" = "$run_attempt:failure" ]; then
+                should_rerun=true
+                echo "  Infrastructure failure detected (failed jobs never ran)."
+              fi
             elif echo "$verdicts" | grep -q "false"; then
               :
             else

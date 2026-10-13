@@ -74,6 +74,7 @@ struct TimeSeriesColumnNames
     static constexpr const char * Group = "group";
     static constexpr const char * NewGroup = "new_group";
     static constexpr const char * OriginalGroup = "original_group";
+    static constexpr const char * ExtraLabelsGroup = "extra_labels_group";
     static constexpr const char * JoinGroup = "join_group";
     static constexpr const char * JoinPresence = "join_presence";
     static constexpr const char * Values = "values";
@@ -84,6 +85,7 @@ struct TimeSeriesColumnNames
     static constexpr const char * HistogramTimeSeries = "histogram_time_series";
     static constexpr const char * SampleKindsTimeSeries = "sample_kinds_time_series";
     static constexpr const char * IsHistogram = "is_histogram";
+    static constexpr const char * ValueCounts = "value_counts";
     static constexpr const char * SelectedGroups = "selected_groups";
     static constexpr const char * StepsMask = "steps_mask";
 
