@@ -174,7 +174,10 @@ GENERATOR_INPUT_PATHS = {
 # of `contrib/llvm-project-cmake/config` are reached through `<llvm/...>`
 # headers, the `liburing-cmake` templates through `liburing.h`, and a bump of
 # `contrib/arrow` or `contrib/llvm-project` can break any of the `<arrow/...>`,
-# `<parquet/...>` or `<llvm/...>` headers the analyzed code includes. A path
+# `<parquet/...>` or `<llvm/...>` headers the analyzed code includes, a bump of
+# `contrib/libdivide` the `<libdivide.h>` that the integer division functions
+# and `BloomFilter` include, next to the `libdivide-config.h` that
+# `contrib/libdivide-cmake` provides. A path
 # matches an entry the way it matches one of `GENERATOR_INPUT_PATHS`. Unlike the
 # consumers of a generated header, every analyzed file directly including one of
 # these is selected, not a few representatives: the surface of a submodule is a
@@ -188,6 +191,8 @@ GENERATOR_INPUT_INCLUDED_THROUGH = {
     "contrib/llvm-project-cmake": ("llvm/",),
     "contrib/liburing": ("liburing.h",),
     "contrib/liburing-cmake": ("liburing.h",),
+    "contrib/libdivide": ("libdivide.h", "libdivide-config.h"),
+    "contrib/libdivide-cmake": ("libdivide.h", "libdivide-config.h"),
 }
 # The suffix rules of `GENERATOR_INPUTS` apply only under the analyzed roots,
 # where the name of a generated header identifies it: a basename such as
