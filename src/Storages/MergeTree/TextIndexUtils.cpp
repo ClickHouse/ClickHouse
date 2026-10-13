@@ -18,11 +18,13 @@
 #include <Disks/SingleDiskVolume.h>
 #include <Storages/MergeTree/DataPartStorageOnDiskFull.h>
 #include <Storages/MergeTree/PostingListBlockCodec.h>
+#include <IO/ReadBufferFromMemory.h>
 
 #include <algorithm>
 #include <array>
 #include <bit>
 #include <limits>
+#include <memory>
 #include <numeric>
 #include <optional>
 #include <utility>
@@ -379,6 +381,7 @@ private:
     struct Reader
     {
         ReadBuffer * in = nullptr;
+        std::unique_ptr<ReadBufferFromMemory> embedded_in;
         TextIndexBlockedPositionsCodec::Directory directory;
         size_t next_rank = 0;
         /// Decoded block of `next_rank`, split by `offsets`.
@@ -412,6 +415,14 @@ void MergeTextIndexesTask::PositionsMerge::start()
 
         if (!(info.header & PostingsSerialization::Flags::HasPositions))
             throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: a source of a token with positions has no positions");
+
+        if (info.header & PostingsSerialization::Flags::EmbeddedPositions)
+        {
+            reader.embedded_in = std::make_unique<ReadBufferFromMemory>(info.embedded_positions.data(), info.position_bytes);
+            reader.directory = TextIndexBlockedPositionsCodec::readDirectory(*reader.embedded_in, 0, info.cardinality, info.position_bytes);
+            reader.in = reader.embedded_in.get();
+            continue;
+        }
 
         auto * stream = task.input_streams[sources[i].source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
         auto * data_buffer = stream->getDataBuffer();
@@ -484,10 +495,7 @@ void MergeTextIndexesTask::PositionsMerge::finish(TokenPostingsInfo & token_info
     }
 
     auto * positions_stream = task.output_streams.at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-    token_info.header |= PostingsSerialization::Flags::HasPositions;
-    token_info.position_offset = positions_stream->plain_hashing.count();
-    encoder->finalize(positions_stream->plain_hashing);
-    token_info.position_bytes = positions_stream->plain_hashing.count() - token_info.position_offset;
+    TextIndexSerialization::serializePositions(token_info, positions_stream->plain_hashing, [&](WriteBuffer & out) { encoder->finalize(out); });
     encoder.reset();
 }
 
