@@ -167,7 +167,8 @@ struct LocalPlanParallelReplicasInfo
 /// Predicate gating the local-plan branch of `executeQueryWithParallelReplicas`. Also evaluated
 /// on followers in `ReadFromMergeTree` so they take the same topology decision as the initiator.
 bool canUseLocalPlanForParallelReplicas(const ContextPtr & context);
-LocalPlanParallelReplicasInfo dropReadFromRemoteInPlan(QueryPlan & query_plan);
+/// Returns nothing and leaves the plan intact when the plan has no local part.
+std::optional<LocalPlanParallelReplicasInfo> dropReadFromRemoteInPlan(QueryPlan & query_plan);
 
 /// Execute a distributed query, creating a query plan, from which the query pipeline can be built.
 /// `stream_factory` object encapsulates the logic of creating plans for a different type of query
