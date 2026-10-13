@@ -4,10 +4,16 @@
 #include <IO/WriteHelpers.h>
 #include <IO/PackedFilesWriter.h>
 #include <IO/copyData.h>
+#include <Common/CurrentMetrics.h>
 #include <Common/escapeForFileName.h>
 
 #include <algorithm>
 
+
+namespace CurrentMetrics
+{
+    extern const Metric PackedPartsBufferedBytes;
+}
 
 namespace DB
 {
@@ -379,14 +385,19 @@ PackedFilesWriter::Data::Data(std::shared_ptr<SharedState> state_)
 
 PackedFilesWriter::Data::~Data()
 {
+    size_t bytes = 0;
     for (const auto & chunk : chunks)
-        state->bytes_in_memory -= chunk.size();
+        bytes += chunk.size();
+
+    state->bytes_in_memory -= bytes;
+    CurrentMetrics::sub(CurrentMetrics::PackedPartsBufferedBytes, bytes);
 }
 
 void PackedFilesWriter::Data::addChunk()
 {
     chunks.emplace_back(next_chunk_size);
     state->bytes_in_memory += next_chunk_size;
+    CurrentMetrics::add(CurrentMetrics::PackedPartsBufferedBytes, next_chunk_size);
     next_chunk_size = std::min(next_chunk_size * 2, MAX_CHUNK_SIZE);
 }
 
@@ -409,8 +420,12 @@ size_t PackedFilesWriter::Data::getNumSpillableChunks() const
 void PackedFilesWriter::Data::removeChunks(size_t num_chunks)
 {
     chassert(num_chunks <= chunks.size());
+    size_t bytes = 0;
     for (size_t i = 0; i < num_chunks; ++i)
-        state->bytes_in_memory -= chunks[i].size();
+        bytes += chunks[i].size();
+
+    state->bytes_in_memory -= bytes;
+    CurrentMetrics::sub(CurrentMetrics::PackedPartsBufferedBytes, bytes);
     chunks.erase(chunks.begin(), chunks.begin() + num_chunks);
 }
 
