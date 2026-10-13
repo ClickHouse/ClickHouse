@@ -1,0 +1,4 @@
+<clickhouse>
+    <!-- Keep a dropped table in the drop queue across the upgrade restart, also under sanitizers. -->
+    <database_atomic_delay_before_drop_table_sec>3600</database_atomic_delay_before_drop_table_sec>
+</clickhouse>
