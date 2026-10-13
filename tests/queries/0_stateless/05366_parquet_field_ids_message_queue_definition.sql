@@ -50,3 +50,12 @@ CREATE TABLE t_nats_field_ids (x Int64) ENGINE = NATS
 SETTINGS nats_url = '127.0.0.1:1', nats_subjects = 'subject', nats_format = 'Parquet',
     nats_startup_connect_tries = 1, nats_reconnect_wait = 1,
     output_format_parquet_column_field_ids = {'missing': '1', 'x': '2'}; -- { serverError BAD_ARGUMENTS }
+
+-- `RabbitMQ` does not apply the format settings of its definition on `INSERT`, so the settings would be
+-- silently ignored there and are rejected instead.
+CREATE TABLE t_rabbitmq_field_ids (x Int64) ENGINE = RabbitMQ
+SETTINGS rabbitmq_host_port = '127.0.0.1:1', rabbitmq_exchange_name = 'exchange', rabbitmq_format = 'Parquet',
+    output_format_parquet_column_field_ids = {'x': '1'}; -- { serverError BAD_ARGUMENTS }
+CREATE TABLE t_rabbitmq_field_ids (x Int64) ENGINE = RabbitMQ
+SETTINGS rabbitmq_host_port = '127.0.0.1:1', rabbitmq_exchange_name = 'exchange', rabbitmq_format = 'Parquet',
+    output_format_parquet_auto_assign_field_ids = 1; -- { serverError BAD_ARGUMENTS }

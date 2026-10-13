@@ -64,14 +64,6 @@ void validateParquetFieldIdSettingsWithResolvedHeader(
     const FormatSettings & format_settings,
     bool validate_secondary_create = false);
 
-/** Whether the table definition itself supplies effective Parquet `field_id` settings and is a
-  * fresh definition, i.e. whether the two validations above can reject it at all. The engine uses
-  * this to tell apart a definition that still has to pass a deferred, header-dependent check from
-  * one that is already accepted, so that it can hold back external side effects — creating a
-  * write-capable object storage client provisions the Azure container — until the definition is
-  * known-good. Format-independent on purpose: the format may still be `auto` at that point.
-  * Always false when Parquet support is compiled out.
-  */
 /** The same validation for a message-queue engine (`Kafka`, `NATS`). Such an engine does not freeze
   * `FormatSettings`, but it applies the format settings of its definition
   * (`definition_format_changes`, i.e. its settings without the engine-specific prefix) to every
@@ -84,6 +76,24 @@ void validateParquetFieldIdSettingsInMessageQueueDefinition(
     const SettingsChanges & definition_format_changes,
     const NamesAndTypesList & writer_header_columns);
 
+/** For an engine that accepts the format settings in its definition but does not apply them on
+  * `INSERT` (`RabbitMQ`): rejects a fresh definition that supplies Parquet `field_id` settings
+  * (in the `SETTINGS` clause or a named collection), because they would be silently ignored.
+  */
+void rejectParquetFieldIdSettingsInDefinition(
+    const StorageFactory::Arguments & args,
+    const String & engine_name,
+    const SettingsChanges & definition_format_changes);
+
+/** Whether the table definition itself supplies effective Parquet `field_id` settings and is a
+  * fresh definition, i.e. whether `validateParquetFieldIdSettingsInDefinition` and
+  * `validateParquetFieldIdSettingsWithResolvedHeader` can reject it at all. The engine uses
+  * this to tell apart a definition that still has to pass a deferred, header-dependent check from
+  * one that is already accepted, so that it can hold back external side effects — creating a
+  * write-capable object storage client provisions the Azure container — until the definition is
+  * known-good. Format-independent on purpose: the format may still be `auto` at that point.
+  * Always false when Parquet support is compiled out.
+  */
 bool freshDefinitionSuppliesParquetFieldIdSettings(
     const StorageFactory::Arguments & args,
     const FormatSettings & format_settings,

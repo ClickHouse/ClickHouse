@@ -4,6 +4,7 @@
 
 #if USE_PARQUET
 
+#include <Common/Exception.h>
 #include <Core/NamesAndTypes.h>
 #include <Formats/FormatFactory.h>
 #include <Parsers/ASTCreateQuery.h>
@@ -19,8 +20,35 @@ namespace DB
 {
 
 #if USE_PARQUET
+namespace ErrorCodes
+{
+    extern const int BAD_ARGUMENTS;
+}
+
 namespace
 {
+
+/// Replaying a definition that was already accepted once must not be rejected, or an existing
+/// table would fail to load; for such tables the write-time checks still apply.
+bool isFreshDefinition(const StorageFactory::Arguments & args, bool validate_secondary_create)
+{
+    return args.mode == LoadingStrictnessLevel::CREATE
+        || (validate_secondary_create && args.mode == LoadingStrictnessLevel::SECONDARY_CREATE)
+        || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+}
+
+/// The message-queue engines take their format settings from the `SETTINGS` clause and from a named
+/// collection alike, so both count as supplied by the definition.
+bool messageQueueDefinitionSuppliesFieldIdSettings(const SettingsChanges & definition_format_changes)
+{
+    return std::ranges::any_of(
+        definition_format_changes,
+        [](const auto & change)
+        {
+            return change.name == "output_format_parquet_column_field_ids"
+                || change.name == "output_format_parquet_auto_assign_field_ids";
+        });
+}
 
 bool freshDefinitionSuppliesFieldIdSettingsImpl(
     const StorageFactory::Arguments & args,
@@ -44,11 +72,7 @@ bool freshDefinitionSuppliesFieldIdSettingsImpl(
         && !(auto_assign_field_ids_in_definition && format_settings.parquet.auto_assign_field_ids))
         return false;
 
-    /// Replaying a definition that was already accepted once must not be rejected, or an existing
-    /// table would fail to load; for such tables the write-time checks still apply.
-    return args.mode == LoadingStrictnessLevel::CREATE
-        || (validate_secondary_create && args.mode == LoadingStrictnessLevel::SECONDARY_CREATE)
-        || (args.mode == LoadingStrictnessLevel::ATTACH && !args.query.attach_short_syntax);
+    return isFreshDefinition(args, validate_secondary_create);
 }
 
 void validateParquetFieldIdSettingsInDefinitionImpl(
@@ -107,17 +131,43 @@ void validateParquetFieldIdSettingsInMessageQueueDefinition(
     if (!boost::iequals(format_name, "Parquet"))
         return;
 
-    validateParquetFieldIdSettingsInDefinitionImpl(
-        args,
-        format_name,
+    /// Not `validateParquetFieldIdSettingsInDefinitionImpl`: it looks only at the `SETTINGS` clause,
+    /// while here the settings may come from a named collection as well.
+    if (!messageQueueDefinitionSuppliesFieldIdSettings(definition_format_changes) || !isFreshDefinition(args, false))
+        return;
+
+    const auto format_settings = getFormatSettingsForTableDefinition(args.getLocalContext(), &definition_format_changes);
+    validateParquetColumnFieldIds(
         writer_header_columns,
-        getFormatSettingsForTableDefinition(args.getLocalContext(), &definition_format_changes),
-        false);
+        format_settings.parquet.column_field_ids,
+        format_settings.parquet.auto_assign_field_ids,
+        format_settings.parquet.write_geometadata);
 #else
     (void)args;
     (void)format_name;
     (void)definition_format_changes;
     (void)writer_header_columns;
+#endif
+}
+
+void rejectParquetFieldIdSettingsInDefinition(
+    const StorageFactory::Arguments & args,
+    const String & engine_name,
+    const SettingsChanges & definition_format_changes)
+{
+#if USE_PARQUET
+    if (!messageQueueDefinitionSuppliesFieldIdSettings(definition_format_changes) || !isFreshDefinition(args, false))
+        return;
+
+    throw Exception(ErrorCodes::BAD_ARGUMENTS,
+        "output_format_parquet_column_field_ids / output_format_parquet_auto_assign_field_ids cannot be set in a {} table "
+        "definition, because the engine does not apply the format settings of its definition on INSERT. "
+        "Set them in the INSERT query instead",
+        engine_name);
+#else
+    (void)args;
+    (void)engine_name;
+    (void)definition_format_changes;
 #endif
 }
 
