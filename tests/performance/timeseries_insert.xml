@@ -12,6 +12,17 @@
     <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.tags.7e5a0000-0000-4000-8000-000000000001`</create_query>
     <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.samples.7e5a0000-0000-4000-8000-000000000002`</create_query>
     <create_query>SYSTEM STOP MERGES timeseries_insert_db.`.inner_id.tags.7e5a0000-0000-4000-8000-000000000002`</create_query>
+    <!-- STOP MERGES ignores a missing table, so fail if an inner table name has changed. -->
+    <create_query>
+        SELECT throwIf(count() != 5, 'timeseries_insert: an inner table name changed, so merges are not stopped on it')
+        FROM system.tables
+        WHERE database = 'timeseries_insert_db' AND name IN (
+            '.inner_id.samples.7e5a0000-0000-4000-8000-000000000001',
+            '.inner_id.recentsamples.7e5a0000-0000-4000-8000-000000000001',
+            '.inner_id.tags.7e5a0000-0000-4000-8000-000000000001',
+            '.inner_id.samples.7e5a0000-0000-4000-8000-000000000002',
+            '.inner_id.tags.7e5a0000-0000-4000-8000-000000000002')
+    </create_query>
 
     <substitutions>
         <substitution>
