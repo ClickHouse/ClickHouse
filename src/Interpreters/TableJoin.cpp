@@ -1335,7 +1335,7 @@ bool allowHashJoinCacheKeys(
 
 bool TableJoin::preferParallelHashLayout(std::optional<UInt64> rhs_size_estimation) const
 {
-    return parallelLayoutKindSupported(kind())
+    return parallelLayoutKindSupported(kind()) && !isSpecialStorage()
         && (!rhs_size_estimation || *rhs_size_estimation >= parallel_hash_join_threshold);
 }
 }
