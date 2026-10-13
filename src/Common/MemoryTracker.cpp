@@ -1088,11 +1088,15 @@ void MemoryTracker::updateAllocated(Int64 allocated_, bool log_change)
             ReadableSize(target_amount));
 
     Int64 correction = target_amount - current_amount;
-    Int64 new_amount = total_memory_tracker.amount.fetch_add(correction, std::memory_order_seq_cst) + correction;
+    Int64 amount_before_correction = total_memory_tracker.amount.fetch_add(correction, std::memory_order_seq_cst);
+    Int64 new_amount = amount_before_correction + correction;
 
     /// Everything allocated and freed since the last tick went into `amount` and not into the
     /// corrected value we replace it with, so carry that net change over to the plain counter.
-    total_memory_tracker.uncorrected_amount += (current_amount - total_memory_tracker.last_corrected_amount);
+    /// Use the actual value preceding the correction rather than the `current_amount` snapshot:
+    /// charges that land between the snapshot and the `fetch_add` are part of `new_amount`
+    /// (and so of `last_corrected_amount`), and must be carried over as well.
+    total_memory_tracker.uncorrected_amount += (amount_before_correction - total_memory_tracker.last_corrected_amount);
     total_memory_tracker.last_corrected_amount = new_amount;
     CurrentMetrics::set(CurrentMetrics::MemoryTrackingUncorrected, total_memory_tracker.uncorrected_amount);
 
