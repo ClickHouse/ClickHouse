@@ -189,6 +189,12 @@ public:
         /// needs every group counted, which a skipped unit is not.
         bool adaptiveTopKPrunes() const { return bucket_top_k && !bucket_top_k_ascending && !max_rows_to_group_by; }
 
+        /// Whether a frozen producer of the adaptive aggregation may thaw: not with `adaptive_aggregator_disable_thaw`,
+        /// and not under the top-K pruning. There the frozen tables pay even for a repetitive stream: the merge skips
+        /// the units whose groups cannot reach the top, which a thawed table, a source of every unit, would no longer
+        /// allow.
+        bool adaptiveMayThaw() const { return !adaptive_aggregator_disable_thaw && !adaptiveTopKPrunes(); }
+
         /// A bound on the aggregate at `having_prefilter_count_index`, a no-argument `count()`, whose rejected
         /// groups may be skipped. The filter above stays authoritative, so skipping fewer is still correct.
         enum class HavingPrefilterOp : UInt8
@@ -405,11 +411,25 @@ public:
         bool & no_more_keys,
         AdaptiveAggregationProducer * adaptive) const;
 
-    /// Ends a producer's staging when its input ends: records the fill of its partitions and hands them to the
-    /// session, with its count bins when the session prunes, which take the rows of `local_variants`, the producer's
-    /// own table, as well. Every producing transform calls it before the finish barrier, so the session holds every
-    /// producer's records by the time the last finisher assembles the merge.
+    /// Creates the shared state of an adaptive aggregation over `producers` streams: their partition layout, the scope
+    /// of the spill streams when the aggregation may spill, and the top-K pruning when the aggregation feeds one.
+    AdaptiveAggregationSessionPtr createAdaptiveSession(size_t producers) const;
+
+    /// Ends a producer's production when its input ends, whatever its phase. Hands its partitions to the session with
+    /// its count bins when the aggregation prunes by the top-K; the bins take the rows of `local_variants`, the
+    /// producer's own table, as well. Counts the producer toward the verdict of the run, and converts the table of a
+    /// producer that froze to two-level for the merge. Every producer with the adaptive context calls it before the
+    /// finish barrier, so the session holds every producer's contribution by the time the last finisher assembles the
+    /// merge.
     void finishAdaptiveProducer(AggregatedDataVariants & local_variants, AdaptiveAggregationProducer & adaptive) const;
+
+    /// Decides once, after the finish barrier of an engaged aggregation and before its merge starts, whether the merge
+    /// prunes by the top-K, and orders the buckets for it by their bounds. The bounds need every source's rows in the
+    /// count bins. A producer without the adaptive context (another aggregator of a mixed projection pipeline) did not
+    /// count its rows, and an external merge reads back rows that no bin counted. A merge that collects the runtime
+    /// dataflow statistics needs every group converted. In all these cases the pruning is dropped.
+    void prepareAdaptiveTopKPruning(
+        AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const;
 
     /// Merges bucket `bucket` of an adaptive aggregation and converts it, one merge unit at a time. A unit is a run
     /// of the bucket's partitions: its records from every producer and the cells of the sources' bucket tables that
@@ -523,8 +543,8 @@ public:
     void recordAdaptiveStagingVerdict(const AdaptiveAggregationSession & shared) const;
 
     /// `adaptive_session` (or nullptr when the adaptive aggregation is off) puts the destination of the adaptive merge
-    /// in front of the tables and prepares its top-K pruning once the session is engaged. It also gives the adaptive
-    /// verdict of the run to the hash-table statistics.
+    /// in front of the tables when the session is engaged. It also gives the adaptive verdict of the run to the
+    /// hash-table statistics.
     ManyAggregatedDataVariants prepareVariantsToMerge(
         ManyAggregatedDataVariants && data_variants, AdaptiveAggregationSession * adaptive_session) const;
 
@@ -820,13 +840,35 @@ private:
         size_t row_end,
         bool all_keys_are_const) const;
 
-    /// Sets up the session's pruning state and temporary data scope for spill streams once, at the first freeze.
-    void initAdaptiveSession(AdaptiveAggregationSession & shared) const;
+    /// Advances an adaptive producer's phase between blocks, in place of the baseline's conversion and spill: writes
+    /// its staged records to disk over the external-aggregation threshold, thaws a frozen table whose staged stream
+    /// repeats, freezes a learning table at its bounds, and writes a frozen table with growing states to disk, after
+    /// which the producer learns again. `worth_convert_to_two_level` is the baseline's conversion condition, a bound of
+    /// the freeze. Returns false once the producer is on the baseline path, whose checks then apply.
+    bool advanceAdaptiveProducer(
+        AggregatedDataVariants & result,
+        AdaptiveAggregationProducer & adaptive,
+        bool worth_convert_to_two_level,
+        Int64 current_memory_usage) const;
 
-    /// The freeze transition: initializes the session once, flips the producer's phase, and
-    /// records the event. Owned here so the mid-block crossing and the between-blocks check
-    /// perform the identical transition.
+    /// Whether a learning table reached a bound of the freeze: the key count, its own footprint, or the condition of
+    /// the baseline's two-level conversion.
+    bool adaptiveFreezeBoundReached(const AggregatedDataVariants & result, bool worth_convert_to_two_level) const;
+
+    /// Whether a producer over the external-aggregation threshold holds enough staged records to write them to disk.
+    bool adaptiveStagingWorthSpilling(const AdaptiveAggregationProducer & adaptive) const;
+
+    /// Whether writing a frozen table to disk over the external-aggregation threshold frees enough memory: its states
+    /// keep growing after the freeze, and it absorbed `adaptive_frozen_spill_min_hits` rows since it froze.
+    bool adaptiveFrozenTableWorthSpilling(const AdaptiveAggregationProducer & adaptive) const;
+
+    /// The freeze transition: creates the producer's partitions and count bins at its first freeze, flips its phase,
+    /// and records the event. Owned here so the mid-block crossing and the between-blocks check perform the identical
+    /// transition.
     void freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;
+
+    /// The thaw transition: the producer returns to the baseline path for good, keeping the records it staged.
+    void thawAdaptive(const AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const;
 
     /// Merges the source states of a merge unit into their destinations (`scratch.places` and `scratch.source_places`)
     /// and destroys the sources after all aggregates merge successfully. Source table slots keep ownership until
@@ -834,10 +876,6 @@ private:
     /// amortizes its setup or would hold up the remaining merge; smaller groups use the parallelism across buckets.
     void mergeAdaptiveSourceStates(
         AdaptiveMergeScratch & scratch, const AdaptiveAggregationSession & session, Arena * arena, std::atomic<bool> & is_cancelled) const;
-
-    /// Whether a frozen producer of the session may thaw at all: not with `adaptive_aggregator_disable_thaw`, and not
-    /// under the top-K pruning.
-    bool adaptiveMayThaw(const AdaptiveAggregationSession & shared) const;
 
     /// The adaptive verdict of a finished run: whether its staged streams were repeat-dominated, so that later runs of
     /// the query should not engage the adaptive aggregation, or nothing when the run measured nothing.
@@ -942,18 +980,13 @@ private:
     template <typename Method>
     size_t collectAdaptiveTableStatistics(Method & method, Arena * arena, UInt16 * bins) const;
 
-    /// Checks that every producer handed its count bins over, which the bounds rely on, and orders the buckets for the
-    /// merge by their bounds; drops the pruning otherwise. Called with the merge's producers before the merge starts.
-    void prepareAdaptiveTopKPruning(AdaptiveAggregationSession & shared, size_t producers) const;
-
     /// Writes the producer's staged records to the session's spill streams, a partition block at a time, and frees
     /// them; the producer then keeps appending into new chunks. Called over the external-aggregation threshold.
     void spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive) const;
 
-    /// Writes the producer's frozen table to disk as a part of the ordinary external aggregation when its aggregate
-    /// states grow after the freeze and the table has absorbed `adaptive_frozen_spill_min_hits` rows since it froze,
-    /// then lets the producer learn its keys again in an empty single-level table. Called over the
-    /// external-aggregation threshold.
+    /// Writes the producer's frozen table to disk as a part of the ordinary external aggregation, then lets the
+    /// producer learn its keys again in an empty single-level table. Called over the external-aggregation threshold
+    /// when the write frees enough memory (see `adaptiveFrozenTableWorthSpilling`).
     void spillFrozenAdaptiveTable(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t max_temp_file_size) const;
 
     void executeAggregateInstructions(

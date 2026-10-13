@@ -1,10 +1,8 @@
 #pragma once
 
 #include <array>
-#include <atomic>
 #include <memory>
 #include <mutex>
-#include <queue>
 #include <variant>
 #include <vector>
 
@@ -71,9 +69,9 @@ constexpr size_t adaptive_merge_unit_records = 16'384;
 constexpr size_t adaptive_parallel_merge_min_work = 16'384;
 constexpr size_t adaptive_parallel_merge_max_work = 1'000'000;
 /// A frozen table whose aggregate states own heap memory is written to disk over the external-aggregation threshold
-/// only once it has absorbed this many rows since it froze (see `Aggregator::spillFrozenAdaptiveTable`): the write
-/// empties the table, which then learns its keys anew, so a table that was just written must not be written again on
-/// every block while the query stays over the threshold.
+/// only once it has absorbed this many rows since it froze (see `Aggregator::adaptiveFrozenTableWorthSpilling`): the
+/// write empties the table, which then learns its keys anew, so a table that was just written must not be written
+/// again on every block while the query stays over the threshold.
 constexpr size_t adaptive_frozen_spill_min_hits = 65'536;
 
 /// The thaw guard: the table filled and froze, but the stream behind it keeps repeating the same missing
@@ -126,19 +124,33 @@ constexpr size_t adaptive_staging_min_state_bytes_per_key = 75;
 
 struct AdaptiveAggregationSession
 {
-    explicit AdaptiveAggregationSession(AdaptivePartitionLayout layout_)
+    AdaptiveAggregationSession(
+        AdaptivePartitionLayout layout_,
+        TemporaryDataOnDiskScopePtr spill_scope_,
+        std::unique_ptr<AdaptiveTopKPruning> top_k_pruning_)
         : layout(layout_)
+        , spill_scope(std::move(spill_scope_))
+        , top_k_pruning(std::move(top_k_pruning_))
     {
     }
 
     /// Maps a merge claim to its bucket, ordered by pruning bounds when pruning is enabled.
     UInt32 bucketToMerge(UInt32 claim) const;
 
-    std::once_flag init_flag;
-    std::atomic<bool> initialized{false};
+    /// Whether some producer froze, which makes the merge adaptive. Read after the finish barrier.
+    bool engaged() const { return frozen_producers > 0; }
 
     /// Every producer uses the layout chosen for the pipeline's aggregation streams.
     const AdaptivePartitionLayout layout;
+
+    /// The aggregation's temporary data scope with the buffer size of the spill streams (see
+    /// `adaptive_spill_min_buffer_bytes`), when the aggregation may spill.
+    const TemporaryDataOnDiskScopePtr spill_scope;
+
+    /// Set when the aggregation feeds `ORDER BY count() DESC LIMIT n`, or the same by `uniqExact` or `uniqExactIf` (see
+    /// `AdaptiveTopKPruning`). The producers hand their count bins over to it, and after the finish barrier
+    /// `Aggregator::prepareAdaptiveTopKPruning` keeps it only for a merge that can prune.
+    std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
 
     /// The producers' staged records, handed over by each producer when it finishes (see
     /// `Aggregator::finishAdaptiveProducer`). The merge tasks read them without the mutex: they are created after
@@ -152,9 +164,11 @@ struct AdaptiveAggregationSession
     size_t estimated_merge_work = 0;
     size_t finished_producers = 0;
 
-    /// The aggregation's temporary data scope with the buffer size of the spill streams (see
-    /// `adaptive_spill_min_buffer_bytes`), set by the first freeze when the aggregation may spill.
-    TemporaryDataOnDiskScopePtr spill_scope;
+    /// The producers whose tables froze at least once, and those of them whose staged streams were repeat-dominated:
+    /// they thawed, or they finished frozen past the bound of the verdict. Published under the same mutex, they make
+    /// the verdict of the run (see `Aggregator::adaptiveStagingVerdict`).
+    size_t frozen_producers = 0;
+    size_t repeat_dominated_producers = 0;
 
     /// The staged records the producers spilled over the external-aggregation threshold (see
     /// `Aggregator::spillAdaptivePartitions`): one raw stream per bucket, shared by the producers and created by the
@@ -166,16 +180,6 @@ struct AdaptiveAggregationSession
         std::unique_ptr<TemporaryDataBuffer> stream;
     };
     std::array<SpilledBucket, ADAPTIVE_AGGREGATION_NUM_BUCKETS> spilled_buckets;
-
-    /// Set by the first freeze when the aggregation feeds `ORDER BY count() DESC LIMIT n`, or the same by `uniqExact` or
-    /// `uniqExactIf` (see `AdaptiveTopKPruning`).
-    std::unique_ptr<AdaptiveTopKPruning> top_k_pruning;
-
-    /// The producers whose tables froze at least once, and those of them whose staged streams were repeat-dominated:
-    /// they thawed, or they finished frozen past the bound of the verdict. Together they make the verdict of the run
-    /// (see `Aggregator::adaptiveStagingVerdict`).
-    std::atomic<size_t> frozen_producers{0};
-    std::atomic<size_t> repeat_dominated_producers{0};
 };
 
 /// The working memory of one adaptive merge task, kept across the buckets it merges so their units do not allocate
@@ -324,8 +328,8 @@ struct AdaptiveAggregationProducer
     PaddedPODArray<char> miss_keys;
     PaddedPODArray<UInt32> miss_multiplicities;
 
-    /// The producer's count bins when the session prunes (see `AdaptiveTopKPruning`), created by its freeze, or by its
-    /// finish if it never froze, and handed over at the finish.
+    /// The producer's count bins when the aggregation prunes by the top-K (see `AdaptiveTopKPruning`), created by its
+    /// freeze, or by its finish if it never froze, and handed over at the finish.
     std::unique_ptr<UInt16[]> count_bins;
 };
 

@@ -8,8 +8,8 @@ namespace DB
 {
 
 /// Shared state of the adaptive aggregation.
-/// One instance per aggregation, created by `AggregatingStep` when the query qualifies,
-/// owned by `ManyAggregatedData` and shared by all its transforms.
+/// One instance per aggregation, created by `AggregatingStep` through `Aggregator::createAdaptiveSession`
+/// when the query qualifies, owned by `ManyAggregatedData` and shared by all its transforms.
 ///
 /// Production phase: every thread aggregates into its own local hash table as usual, until the
 /// table holds `adaptive_aggregator_freeze_threshold` keys and freezes. From that point a row

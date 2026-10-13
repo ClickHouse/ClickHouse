@@ -1,5 +1,4 @@
 #include <algorithm>
-#include <Interpreters/AdaptiveAggregation/AdaptiveAggregationImpl.h>
 #include <cstddef>
 #include <memory>
 #include <unordered_set>
@@ -436,8 +435,7 @@ const char * AggregatingStep::adaptiveAggregatorRejectionReason(const QueryPipel
     /// lives in the hash-table statistics; a run without it takes the ordinary path with the statistics-driven
     /// initialization, exactly as if the feature were off. A run that may not thaw does not ask: the verdict is the
     /// thaw's, and a top-K run that shares the statistics of the query without its `LIMIT` gains by its frozen tables.
-    if (params.stats_collecting_params.isCollectionAndUseEnabled() && !params.adaptive_aggregator_disable_thaw
-        && !params.adaptiveTopKPrunes())
+    if (params.stats_collecting_params.isCollectionAndUseEnabled() && params.adaptiveMayThaw())
     {
         const auto hint = getHashTablesStatistics<AggregationEntry>().getSizeHint(params.stats_collecting_params);
         if (hint && hint->adaptive_staging_repeat_dominated)
@@ -788,8 +786,7 @@ void AggregatingStep::transformPipeline(QueryPipelineBuilder & pipeline, const B
 
         auto many_data = std::make_shared<ManyAggregatedData>(pipeline.getNumStreams());
         if (use_adaptive_aggregator)
-            many_data->adaptive_session = std::make_shared<AdaptiveAggregationSession>(
-                AdaptivePartitionLayout::forProducers(pipeline.getNumStreams(), transform_params->params.max_bytes_before_external_group_by));
+            many_data->adaptive_session = transform_params->aggregator.createAdaptiveSession(pipeline.getNumStreams());
 
         /// The shared kept-keys cutoff is needed only when the streams are merged into one result.
         /// With `skip_merging` the streams hold disjoint key sets (data is partitioned by the

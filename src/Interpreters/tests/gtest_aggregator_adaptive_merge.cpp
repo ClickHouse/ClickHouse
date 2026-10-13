@@ -161,7 +161,7 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
             const auto type = std::make_shared<DataTypeUInt64>();
             const Block header({{type->createColumn(), type, "k"}});
             Aggregator aggregator(header, params);
-            auto session = std::make_shared<AdaptiveAggregationSession>(AdaptivePartitionLayout::forProducers(3, 0));
+            auto session = aggregator.createAdaptiveSession(3);
             ManyAggregatedDataVariants sources;
             for (size_t i = 0; i < 3; ++i)
             {
@@ -176,13 +176,13 @@ TEST_P(AggregatorAdaptiveMerge, SourceStateLifetimes)
                     {std::move(key)}, 0, 1, *source, key_columns, aggregate_columns, no_more_keys, &producer));
                 ASSERT_TRUE(producer.isFrozen());
                 aggregator.finishAdaptiveProducer(*source, producer);
-                source->convertToTwoLevel();
                 sources.push_back(std::move(source));
             }
 
             auto & table = sources.front()->key64_two_level->data;
             const auto bucket = static_cast<Int32>(
                 AggregatedDataWithUInt64KeyTwoLevel::getBucketFromHash(table.hash(UInt64{1})));
+            aggregator.prepareAdaptiveTopKPruning(*session, sources.size(), /*external_merge=*/false, /*collects_statistics=*/false);
             auto prepared = aggregator.prepareVariantsToMerge(std::move(sources), session.get());
             prepared.front()->adaptive_merge_bucket_arenas.resize(ADAPTIVE_AGGREGATION_NUM_BUCKETS);
             for (auto & arena : prepared.front()->adaptive_merge_bucket_arenas)

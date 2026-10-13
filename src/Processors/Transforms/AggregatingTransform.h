@@ -213,7 +213,7 @@ private:
     /// Index of `variants` in `many_data->variants` (for `SharedKeptKeys::applied`).
     size_t variant_index = 0;
 
-    /// Per-transform context of the adaptive aggregation; engaged when the shared state exists
+    /// Per-transform context of the adaptive aggregation, created when the shared state exists
     /// on `many_data`. Held by pointer: the producer's definition stays out of this widely
     /// included header (see `AdaptiveAggregationImpl.h`).
     std::unique_ptr<AdaptiveAggregationProducer> adaptive_context;

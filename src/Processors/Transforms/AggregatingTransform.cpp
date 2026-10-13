@@ -1701,16 +1701,10 @@ void AggregatingTransform::initGenerate()
             params->aggregator.writeToTemporaryFile(variants);
     }
 
-    bool adaptive_engaged = adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire);
-    if (adaptive_engaged)
-    {
-        /// Hand this thread's staged records over before the finish barrier below: the last
-        /// finisher assembles the merge assuming the session holds every producer's records.
+    /// Hand this thread's staged records and count bins over before the finish barrier below: the
+    /// last finisher assembles the merge assuming the session holds every producer's contribution.
+    if (adaptive_context)
         params->aggregator.finishAdaptiveProducer(variants, *adaptive_context);
-
-        if (variants.isConvertibleToTwoLevel())
-            variants.convertToTwoLevel();
-    }
 
     if (many_data->num_finished.fetch_add(1) + 1 < many_data->num_producers)
     {
@@ -1740,7 +1734,7 @@ void AggregatingTransform::initGenerate()
         }
     }
 
-    adaptive_engaged = adaptive_context && adaptive_context->session->initialized.load(std::memory_order_acquire);
+    const bool adaptive_engaged = adaptive_context && adaptive_context->session->engaged();
 
     /// In the case of two different aggregators existing simultaneously due to a mixed pipeline of aggregate projections,
     /// it is necessary to check whether any of the aggregators contains temporary data.
@@ -1757,6 +1751,13 @@ void AggregatingTransform::initGenerate()
     /// normally recorded.
     if (adaptive_engaged && aggregator_has_temporary_data())
         params->aggregator.recordAdaptiveStagingVerdict(*adaptive_context->session);
+
+    if (adaptive_engaged)
+        params->aggregator.prepareAdaptiveTopKPruning(
+            *adaptive_context->session,
+            many_data->variants.size(),
+            /*external_merge=*/aggregator_has_temporary_data(),
+            /*collects_statistics=*/updater != nullptr);
 
     if (!aggregator_has_temporary_data())
     {
@@ -1863,11 +1864,9 @@ void AggregatingTransform::initGenerate()
 
         /// The staged records of an engaged adaptive aggregation are not written out as parts: they join the merge as
         /// one source per merging thread, but no more than one per bucket, each merging its share of the buckets on
-        /// demand. They do not prune: the rows the producers spilled during the aggregation are in no count bin, so the
-        /// bins bound no group's count.
+        /// demand.
         if (adaptive_engaged)
         {
-            adaptive_context->session->top_k_pruning.reset();
             const auto destination
                 = std::make_shared<ManyAggregatedDataVariants>(1, params->aggregator.createAdaptiveExternalMergeDestination());
             const auto header = std::make_shared<const Block>(params->aggregator.getSpilledStatesHeader());

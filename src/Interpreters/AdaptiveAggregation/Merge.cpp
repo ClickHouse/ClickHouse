@@ -863,9 +863,8 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
             forEachKeyCellWithHash(source, [&](const auto & key, size_t hash) { unit_cells[unit_of(hash)].push_back({key, nullptr, hash}); });
     }
 
-    /// With the top-K pruning, the bounds of the bucket's count bins (see `AdaptiveTopKPruning`). The statistics of the
-    /// updater need every group converted, so a merge that collects them does not prune.
-    AdaptiveTopKPruning * const pruning = updater ? nullptr : session.top_k_pruning.get();
+    /// With the top-K pruning, the bounds of the bucket's count bins (see `AdaptiveTopKPruning`).
+    AdaptiveTopKPruning * const pruning = session.top_k_pruning.get();
     std::array<UInt64, adaptive_count_bins_per_bucket> bin_bounds{};
     if (pruning)
         bin_bounds = sumBucketCountBins(*pruning, bucket);

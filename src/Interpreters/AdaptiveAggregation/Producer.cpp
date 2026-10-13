@@ -767,7 +767,7 @@ void NO_INLINE Aggregator::appendDelayedRecords(
     ///   For a growing set aggregate, a bounded sketch also counts distinct argument tuples of these
     ///   keys, including the key in their hash because equal arguments in different groups occupy
     ///   separate states.
-    if (adaptiveMayThaw(*adaptive.session))
+    if (params.adaptiveMayThaw())
     {
         chassert(!adaptive_state_bytes_per_distinct_input || adaptive_distinct_input_aggregate < aggregates_positions.size());
         size_t batch_bytes = key_bytes + (counts_only ? total * sizeof(UInt32) : variable_argument_bytes);

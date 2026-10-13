@@ -78,7 +78,6 @@ namespace ProfileEvents
     extern const Event AggregationOptimizedEqualRangesOfKeys;
     extern const Event AggregationBucketTopKConversions;
     extern const Event AggregationHavingPrefilterGroupsSkipped;
-    extern const Event AdaptiveAggregationThaws;
 }
 
 namespace CurrentMetrics
@@ -2499,80 +2498,13 @@ bool Aggregator::executeOnBlock(Columns columns,
         ? memory_tracker->get()
         : current_memory_usage - memory_usage_before_aggregation;
 
-    /// Over the external-aggregation threshold a producer writes its staged records to disk, whatever its phase: one
-    /// back on the baseline path keeps the records it staged while frozen, which flushing its own table cannot free.
-    /// A producer holding few of them leaves them, so the producers that just spilled do not write a trickle of new
-    /// records on every block while the query stays over the threshold.
-    if (adaptive && adaptive->partitions && params.max_bytes_before_external_group_by
-        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by)
-        && adaptive->partitions->allocatedChunkBytes()
-            >= std::min(adaptive_spill_min_bytes, params.max_bytes_before_external_group_by / (2 * params.max_threads)))
-        spillAdaptivePartitions(*adaptive);
-
-    /// The thread's staged stream proved to repeat its misses (see `adaptiveStagingRepeats`): thaw and return to the
-    /// baseline checks below, permanently. The table resumes ordinary insertion; the records staged so far stay in the
-    /// producer's partitions and the merge drains them.
-    if (adaptive && adaptive->isFrozen() && adaptiveStagingRepeats(*adaptive))
-    {
-        const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive->phase);
-        LOG_TRACE(
-            log,
-            "Adaptive aggregation: thawed the local table at {} keys after {} rows and {} staged records ({} bytes, repeat factor {:.2f})",
-            result_size,
-            frozen.rows,
-            frozen.staged_records,
-            frozen.staged_bytes,
-            static_cast<double>(frozen.staged_records)
-                / static_cast<double>(frozen.getEstimatedStagedKeyCount()));
-        ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
-        adaptive->session->repeat_dominated_producers.fetch_add(1, std::memory_order_relaxed);
-        adaptive->standDown();
-    }
-
-    if (adaptive && !adaptive->isBaseline())
-    {
-        /// The freeze replaces the local two-level conversion: from now on the local table
-        /// only updates the keys it already holds, so it stays single-level and bounded by
-        /// the threshold, and the frozen kernel pairs it with its two-level twin.
-        if (adaptive->isLearning())
-        {
-            /// The byte twin of the key-count freeze bound. The measure is the local
-            /// table's own footprint, its hash-table buffer plus its arenas, checked
-            /// between blocks like the baseline's conversion thresholds; the mid-block
-            /// freeze crossing checks only the key count, so a byte-triggered freeze
-            /// lands on a block boundary.
-            const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
-                && result.allocatedBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
-            /// The condition on which the baseline converts its table to two-level freezes a learning table
-            /// instead, so a learning table never needs the conversion: the adaptive merge gives it the
-            /// bucket-parallel merge the conversion is for. It catches what the two bounds above cannot see, a
-            /// few groups whose states own heap memory (`uniqExact` per region): the query's tracked memory, the
-            /// measure of the conversion, counts that memory, and the table's own footprint does not. Summed over
-            /// every thread, it can freeze a table before the table reaches its own bounds, which only stages more
-            /// of its stream.
-            const bool two_level_reached = worthConvertToTwoLevel(
-                params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
-            if ((result_size >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached || two_level_reached)
-                && result.isConvertibleToTwoLevel())
-                freezeAdaptive(result, *adaptive);
-        }
-
-        /// Checking the constraints.
-        if (!checkLimits(result_size, no_more_keys))
-            return false;
-
-        /// A learning table stays below every freeze bound, the two-level condition among them, so like a small
-        /// baseline table it neither converts nor spills. A frozen one is written to disk over the
-        /// external-aggregation threshold when its states grow (see `spillFrozenAdaptiveTable`).
-        if (adaptive->isFrozen() && params.max_bytes_before_external_group_by
-            && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by))
-            spillFrozenAdaptiveTable(result, *adaptive, current_memory_usage + params.min_free_disk_space);
-
-        return true;
-    }
-
     bool worth_convert_to_two_level = worthConvertToTwoLevel(
         params.group_by_two_level_threshold, result_size, params.group_by_two_level_threshold_bytes, result_size_bytes);
+
+    /// An adaptive producer advances its phase in place of the conversion and the spill below, until it is on the
+    /// baseline path.
+    if (adaptive && advanceAdaptiveProducer(result, *adaptive, worth_convert_to_two_level, current_memory_usage))
+        return checkLimits(result_size, no_more_keys);
 
     /** Converting to a two-level data structure.
       * It allows you to make, in the subsequent, an effective merge - either economical from memory or parallel.
@@ -5413,12 +5345,8 @@ ManyAggregatedDataVariants Aggregator::prepareVariantsToMerge(
     /// The adaptive merge drains the staged records and folds the cells of every table, the largest one's included,
     /// into a fresh destination table one partition unit at a time (see `mergeAndConvertAdaptiveBucket`), so the
     /// destination goes in front of the tables and takes over their arenas, as the largest table does otherwise.
-    if (adaptive_session && adaptive_session->initialized.load(std::memory_order_acquire))
+    if (adaptive_session && adaptive_session->engaged())
     {
-        /// Every producer's table is still in `data_variants`, the empty ones included.
-        if (adaptive_session->top_k_pruning)
-            prepareAdaptiveTopKPruning(*adaptive_session, data_variants.size());
-
         auto destination = std::make_shared<AggregatedDataVariants>();
         destination->aggregator = this;
         destination->keys_size = params.keys_size;

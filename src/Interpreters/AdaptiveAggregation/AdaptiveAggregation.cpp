@@ -14,6 +14,7 @@
 namespace ProfileEvents
 {
     extern const Event AdaptiveAggregationLocalFreezes;
+    extern const Event AdaptiveAggregationThaws;
     extern const Event AdaptiveAggregationSpills;
     extern const Event AdaptiveAggregationSpilledRecords;
     extern const Event AdaptiveAggregationSpilledBytes;
@@ -61,33 +62,106 @@ bool Aggregator::adaptiveStagingWastes(
         > state_bytes * frozen.staged_records * state_cost_multiplier;
 }
 
-void Aggregator::initAdaptiveSession(AdaptiveAggregationSession & shared) const
+AdaptiveAggregationSessionPtr Aggregator::createAdaptiveSession(size_t producers) const
 {
-    if (params.adaptiveTopKPrunes())
-        shared.top_k_pruning = std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k);
-
+    TemporaryDataOnDiskScopePtr spill_scope;
     if (tmp_data && params.max_bytes_before_external_group_by)
     {
         /// An eighth of the threshold over the three buffers of each of the streams.
         const size_t buffers_share = params.max_bytes_before_external_group_by / (8 * 3 * ADAPTIVE_AGGREGATION_NUM_BUCKETS);
         const size_t buffer_bytes = std::min(tmp_data->getSettings().buffer_size, std::max(buffers_share, adaptive_spill_min_buffer_bytes));
-        shared.spill_scope = tmp_data->childScope(tmp_data->getSettings().metrics, buffer_bytes);
+        spill_scope = tmp_data->childScope(tmp_data->getSettings().metrics, buffer_bytes);
     }
-    shared.initialized.store(true, std::memory_order_release);
+    return std::make_shared<AdaptiveAggregationSession>(
+        AdaptivePartitionLayout::forProducers(producers, params.max_bytes_before_external_group_by),
+        std::move(spill_scope),
+        params.adaptiveTopKPrunes() ? std::make_unique<AdaptiveTopKPruning>(params.bucket_top_k) : nullptr);
+}
+
+bool Aggregator::advanceAdaptiveProducer(
+    AggregatedDataVariants & result,
+    AdaptiveAggregationProducer & adaptive,
+    bool worth_convert_to_two_level,
+    Int64 current_memory_usage) const
+{
+    const bool over_external_threshold = params.max_bytes_before_external_group_by
+        && current_memory_usage > static_cast<Int64>(params.max_bytes_before_external_group_by);
+
+    /// Over the external-aggregation threshold a producer writes its staged records to disk, whatever its phase: one
+    /// back on the baseline path keeps the records it staged while frozen, which flushing its own table cannot free.
+    if (over_external_threshold && adaptiveStagingWorthSpilling(adaptive))
+        spillAdaptivePartitions(adaptive);
+
+    /// A frozen producer whose staged stream repeats its misses thaws for good, and the baseline's checks apply.
+    if (adaptive.isFrozen() && adaptiveStagingRepeats(adaptive))
+        thawAdaptive(result, adaptive);
+    if (adaptive.isBaseline())
+        return false;
+
+    /// The freeze replaces the baseline's two-level conversion: from now on the local table only updates the keys it
+    /// already holds, so it stays single-level and bounded by the freeze bounds, and the frozen kernel pairs it with
+    /// its two-level twin.
+    if (adaptive.isLearning() && adaptiveFreezeBoundReached(result, worth_convert_to_two_level))
+        freezeAdaptive(result, adaptive);
+
+    /// A learning table stays below every freeze bound, the two-level condition among them, so like a small baseline
+    /// table it neither converts nor spills. A frozen one is written to disk over the external-aggregation threshold
+    /// when its states grow, and its producer learns again.
+    if (adaptive.isFrozen() && over_external_threshold && adaptiveFrozenTableWorthSpilling(adaptive))
+        spillFrozenAdaptiveTable(result, adaptive, current_memory_usage + params.min_free_disk_space);
+    return true;
+}
+
+bool Aggregator::adaptiveFreezeBoundReached(const AggregatedDataVariants & result, bool worth_convert_to_two_level) const
+{
+    /// The byte twin of the key-count bound is the table's own footprint, its hash-table buffer plus its arenas,
+    /// checked between blocks like the baseline's conversion thresholds. The mid-block freeze crossing checks only the
+    /// key count, so a byte-triggered freeze lands on a block boundary.
+    const bool freeze_bytes_reached = params.adaptive_aggregator_freeze_threshold_bytes
+        && result.allocatedBytes() >= params.adaptive_aggregator_freeze_threshold_bytes;
+    /// The condition on which the baseline converts its table to two-level freezes a learning table instead, so a
+    /// learning table never needs the conversion: the adaptive merge gives it the bucket-parallel merge the conversion
+    /// is for. It catches what the two bounds cannot see, a few groups whose states own heap memory (`uniqExact` per
+    /// region): the query's tracked memory, the measure of the conversion, counts that memory, and the table's own
+    /// footprint does not. Summed over every thread, it can freeze a table before the table reaches its own bounds,
+    /// which only stages more of its stream.
+    return (result.sizeWithoutOverflowRow() >= params.adaptive_aggregator_freeze_threshold || freeze_bytes_reached
+            || worth_convert_to_two_level)
+        && result.isConvertibleToTwoLevel();
+}
+
+bool Aggregator::adaptiveStagingWorthSpilling(const AdaptiveAggregationProducer & adaptive) const
+{
+    /// A producer holding few staged records leaves them, so the producers that just spilled do not write a trickle of
+    /// new records on every block while the query stays over the threshold.
+    return adaptive.partitions
+        && adaptive.partitions->allocatedChunkBytes()
+            >= std::min(adaptive_spill_min_bytes, params.max_bytes_before_external_group_by / (2 * params.max_threads));
+}
+
+bool Aggregator::adaptiveFrozenTableWorthSpilling(const AdaptiveAggregationProducer & adaptive) const
+{
+    /// A table must absorb enough rows after its freeze before each write, so a table that was just written, learned
+    /// its keys again and froze again is not written on every block while the query stays over the threshold. A
+    /// frozen table admits no new keys, so it grows only through states that keep growing after the freeze, in the
+    /// arena or in heap memory of their own; others would free little for the write. Constant-key blocks can keep
+    /// updating retained states even after per-row probes are bypassed.
+    if (std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase).absorbed_rows < adaptive_frozen_spill_min_hits)
+        return false;
+    return !all_aggregates_has_trivial_destructor
+        || std::ranges::any_of(aggregate_functions, [](const IAggregateFunction * function) { return function->allocatesMemoryInArena(); });
 }
 
 void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const
 {
-    std::call_once(adaptive.session->init_flag, [&] { initAdaptiveSession(*adaptive.session); });
     /// A table that was written to disk freezes again with the records and the bins it already has.
     if (!adaptive.partitions)
     {
         const auto & layout = adaptive.session->layout;
         adaptive.partitions = std::make_unique<PartitionedRecordBuffer>(
             layout.numPartitions(), adaptive_staging_block_buckets * layout.partitionsPerBucket());
-        adaptive.session->frozen_producers.fetch_add(1, std::memory_order_relaxed);
     }
-    if (adaptive.session->top_k_pruning && !adaptive.count_bins)
+    if (params.adaptiveTopKPrunes() && !adaptive.count_bins)
         adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
     const size_t keys = result.sizeWithoutOverflowRow();
     /// A zero key-count threshold or byte pressure can freeze a table before its first group is inserted.
@@ -98,21 +172,41 @@ void Aggregator::freezeAdaptive(AggregatedDataVariants & result, AdaptiveAggrega
     LOG_TRACE(log, "Adaptive aggregation: local table frozen at {} keys", keys);
 }
 
+void Aggregator::thawAdaptive(const AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive) const
+{
+    /// The table resumes ordinary insertion. The records staged so far stay in the producer's partitions, and the
+    /// merge drains them.
+    const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
+    LOG_TRACE(
+        log,
+        "Adaptive aggregation: thawed the local table at {} keys after {} rows and {} staged records ({} bytes, repeat factor {:.2f})",
+        result.sizeWithoutOverflowRow(),
+        frozen.rows,
+        frozen.staged_records,
+        frozen.staged_bytes,
+        static_cast<double>(frozen.staged_records)
+            / static_cast<double>(frozen.getEstimatedStagedKeyCount()));
+    ProfileEvents::increment(ProfileEvents::AdaptiveAggregationThaws);
+    adaptive.standDown();
+}
+
 void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants, AdaptiveAggregationProducer & adaptive) const
 {
     auto & shared = *adaptive.session;
+    /// A producer creates its partitions at its first freeze and keeps them through thaws and spills.
+    const bool froze = adaptive.partitions != nullptr;
 
     /// The bins take the rows of the producer's own table as well, whatever its phase: a producer that never froze
     /// has no records but its table is a source of the merge.
-    std::optional<AdaptiveTopKPruning::ProducerBins> bins;
-    if (shared.top_k_pruning && !adaptive.count_bins)
+    if (params.adaptiveTopKPrunes() && !adaptive.count_bins)
         adaptive.count_bins = std::make_unique<UInt16[]>(adaptive_count_bins);
 
     size_t estimated_merge_work = adaptive.total_staged_records * adaptive_parallel_merge_indices.size();
     if (adaptive.count_bins || !adaptive_parallel_merge_indices.empty())
         estimated_merge_work += collectAdaptiveTableStatistics(local_variants, adaptive.count_bins.get());
 
-    if (shared.top_k_pruning)
+    std::optional<AdaptiveTopKPruning::ProducerBins> bins;
+    if (params.adaptiveTopKPrunes())
     {
         bins.emplace();
         bins->bins = std::move(adaptive.count_bins);
@@ -123,41 +217,52 @@ void Aggregator::finishAdaptiveProducer(AggregatedDataVariants & local_variants,
         }
     }
 
-    /// A producer that finishes frozen counts toward the verdict of the run when its whole staged stream repeated past
-    /// the bound of the verdict; one that thawed was counted at its thaw.
-    if (adaptive.isFrozen() && adaptiveMayThaw(shared))
+    /// A producer that thawed was repeat-dominated. One that finishes frozen is when its whole staged stream repeated
+    /// past the bound of the verdict.
+    bool repeat_dominated = adaptive.isBaseline();
+    if (adaptive.isFrozen() && params.adaptiveMayThaw())
     {
         /// Admission compares complete executions, so its state cost includes the hash buffer and arenas
         /// an ordinary local table would retain. A populated table's snapshot at the freeze includes hash-table
         /// capacity and arena overhead, and remains available if the table is flushed before its producer finishes.
         const auto & frozen = std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase);
-        if (adaptiveStagingWastes(
-                adaptive,
-                frozen.estimated_table_bytes_per_key,
-                /*state_cost_multiplier=*/1))
-            shared.repeat_dominated_producers.fetch_add(1, std::memory_order_relaxed);
+        repeat_dominated = adaptiveStagingWastes(
+            adaptive,
+            frozen.estimated_table_bytes_per_key,
+            /*state_cost_multiplier=*/1);
     }
 
-    /// A producer that never froze staged nothing.
-    if (adaptive.partitions)
+    if (froze)
+    {
         adaptive.partitions->finishAppending();
+        /// The adaptive merge pairs a bucket's partitions with the bucket tables of its sources, so the table converts
+        /// to two-level here, in the producer's own thread. The merge preparation converts the tables of the producers
+        /// that never froze.
+        if (local_variants.isConvertibleToTwoLevel())
+            local_variants.convertToTwoLevel();
+    }
 
     std::lock_guard lock(shared.producer_buffers_mutex);
     shared.estimated_merge_work += estimated_merge_work;
     ++shared.finished_producers;
-    if (adaptive.partitions)
+    if (froze)
+    {
+        ++shared.frozen_producers;
+        shared.repeat_dominated_producers += repeat_dominated;
         shared.producer_buffers.push_back(std::move(adaptive.partitions));
+    }
     if (bins)
         shared.top_k_pruning->producer_bins.push_back(std::move(*bins));
 }
 
-void Aggregator::prepareAdaptiveTopKPruning(AdaptiveAggregationSession & shared, size_t producers) const
+void Aggregator::prepareAdaptiveTopKPruning(
+    AdaptiveAggregationSession & shared, size_t producers, bool external_merge, bool collects_statistics) const
 {
-    auto & pruning = *shared.top_k_pruning;
+    if (!shared.top_k_pruning)
+        return;
 
-    /// The bounds hold only if every source table of the merge counted its rows into bins: a producer without the
-    /// adaptive context (another aggregator of a mixed projection pipeline) did not.
-    if (pruning.producer_bins.size() != producers)
+    auto & pruning = *shared.top_k_pruning;
+    if (external_merge || collects_statistics || pruning.producer_bins.size() != producers)
     {
         shared.top_k_pruning.reset();
         return;
@@ -180,16 +285,7 @@ UInt32 AdaptiveAggregationSession::bucketToMerge(UInt32 claim) const
 void Aggregator::spillFrozenAdaptiveTable(
     AggregatedDataVariants & result, AdaptiveAggregationProducer & adaptive, size_t max_temp_file_size) const
 {
-    /// A frozen table admits no new keys, so it grows only through states that keep growing after the freeze, in the
-    /// arena or in heap memory of their own; others would free little for the write. Constant-key blocks can keep
-    /// updating retained states even after per-row probes are bypassed.
-    if (std::get<AdaptiveAggregationProducer::FrozenState>(adaptive.phase).absorbed_rows < adaptive_frozen_spill_min_hits)
-        return;
     chassert(result.hasData());
-    const bool states_grow = !all_aggregates_has_trivial_destructor
-        || std::ranges::any_of(aggregate_functions, [](const IAggregateFunction * function) { return function->allocatesMemoryInArena(); });
-    if (!states_grow)
-        return;
 
     /// The table goes to disk as a part of the ordinary external aggregation, which the merge reads next to the staged
     /// records. The producer then learns its keys again in an empty single-level table, which the frozen kernel pairs
@@ -268,18 +364,11 @@ void Aggregator::spillAdaptivePartitions(AdaptiveAggregationProducer & adaptive)
     LOG_TRACE(log, "Adaptive aggregation: spilled {} staged records ({} bytes)", spilled_records, spilled_bytes);
 }
 
-bool Aggregator::adaptiveMayThaw(const AdaptiveAggregationSession & shared) const
-{
-    /// Under the top-K pruning the frozen tables pay even for a repetitive stream: the merge skips the units whose
-    /// groups cannot reach the top, which a thawed table, a source of every unit, would no longer allow.
-    return !params.adaptive_aggregator_disable_thaw && !shared.top_k_pruning;
-}
-
 bool Aggregator::adaptiveStagingRepeats(const AdaptiveAggregationProducer & adaptive) const
 {
     /// Switching in the middle of a stream retains the staged records as well as the new table. Apply
     /// the same hysteresis to the estimated state cost as the calibrated bounds apply to cheap states.
-    return adaptiveMayThaw(*adaptive.session)
+    return params.adaptiveMayThaw()
         && adaptiveStagingWastes(
             adaptive,
             total_size_of_aggregate_states,
@@ -292,10 +381,9 @@ std::optional<bool> Aggregator::adaptiveStagingVerdict(const AdaptiveAggregation
     /// gathers no evidence, and keeping its tables frozen whatever the repeats is what it asked for. The verdict needs
     /// half of the frozen producers repeat-dominated, so a few threads that repeat on an otherwise healthy stream do
     /// not keep the next runs off the adaptive path.
-    const size_t frozen = shared.frozen_producers.load(std::memory_order_relaxed);
-    if (!frozen || !adaptiveMayThaw(shared))
+    if (!shared.frozen_producers || !params.adaptiveMayThaw())
         return std::nullopt;
-    return 2 * shared.repeat_dominated_producers.load(std::memory_order_relaxed) >= frozen;
+    return 2 * shared.repeat_dominated_producers >= shared.frozen_producers;
 }
 
 /// The flushed variants' sizes are meaningless by the time the external path finishes, so a stored entry keeps its
