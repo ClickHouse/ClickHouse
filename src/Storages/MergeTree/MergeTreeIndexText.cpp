@@ -249,12 +249,27 @@ void DictionarySparseIndex::optimize()
     }
 }
 
-PostingsSerialization::PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeTextIndexSerializationVersion serialization_version_)
+PostingsSerialization::PostingsSerialization(
+    PostingListCodecPtr posting_list_codec_,
+    MergeTreeTextIndexSerializationVersion serialization_version_,
+    TextIndexScoringKind scoring_)
     : posting_list_codec(std::move(posting_list_codec_))
     , serialization_version(serialization_version_)
+    , scoring(scoring_)
     , raw_postings_buffer(MAX_CARDINALITY_FOR_RAW_POSTINGS)
 {
     chassert(posting_list_codec);
+}
+
+TextIndexScoringKind PostingsSerialization::getWeightsKind(UInt64 header, TextIndexScoringKind scoring)
+{
+    if (!(header & HasWeights))
+        return TextIndexScoringKind::None;
+
+    if (scoring == TextIndexScoringKind::None)
+        throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: posting list has weights while the index has no scoring");
+
+    return scoring;
 }
 
 const IPostingListCodec & PostingsSerialization::resolveCodec(UInt64 header)
@@ -333,14 +348,14 @@ static void checkSegmentRowRange(const TokenPostingsInfo & info, size_t segment_
 }
 
 /// Small posting lists are stored as raw VarUInt-encoded row ids, followed by
-/// one VarUInt-encoded `(tf - 1)` per row id if the posting list stores term frequencies.
-/// Appends the row ids to `row_ids` and, if `term_frequencies` is not null, the exact `tf` of every row to it.
+/// one VarUInt-encoded `(weight - 1)` per row id if the posting list stores weights.
+/// Appends the row ids to `row_ids` and, if `weights` is not null, the exact weight of every row to it.
 static void deserializeRawPostings(
     ReadBuffer & istr,
     UInt64 header,
     UInt64 cardinality,
     PaddedPODArray<UInt32> & row_ids,
-    PaddedPODArray<UInt32> * term_frequencies)
+    PaddedPODArray<UInt32> * weights)
 {
     size_t old_size = row_ids.size();
     row_ids.resize(old_size + cardinality);
@@ -348,36 +363,37 @@ static void deserializeRawPostings(
     for (size_t i = old_size; i < row_ids.size(); ++i)
         readVarUInt(row_ids[i], istr);
 
-    const bool has_term_frequencies = (header & PostingsSerialization::HasTermFrequencies) != 0;
+    const bool has_weights = (header & PostingsSerialization::HasWeights) != 0;
 
-    if (!term_frequencies)
+    if (!weights)
     {
-        if (has_term_frequencies)
+        if (has_weights)
             skipVarUInts(istr, cardinality);
         return;
     }
 
-    size_t old_tfs_size = term_frequencies->size();
+    size_t old_weights_size = weights->size();
 
-    /// A posting list without stored term frequencies implies `tf == 1` for every row.
-    if (!has_term_frequencies)
+    /// A posting list without stored weights implies `weight == 1` for every row.
+    if (!has_weights)
     {
-        term_frequencies->resize_fill(old_tfs_size + cardinality, 1u);
+        weights->resize_fill(old_weights_size + cardinality, 1u);
         return;
     }
 
-    term_frequencies->resize(old_tfs_size + cardinality);
+    weights->resize(old_weights_size + cardinality);
 
-    for (size_t i = old_tfs_size; i < term_frequencies->size(); ++i)
+    for (size_t i = old_weights_size; i < weights->size(); ++i)
     {
-        readVarUInt((*term_frequencies)[i], istr);
-        (*term_frequencies)[i] += 1;
+        readVarUInt((*weights)[i], istr);
+        (*weights)[i] += 1;
     }
 }
 
 PostingListPtr PostingsSerialization::deserializeToBitmap(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx)
 {
     checkPostingListFlags(info.header);
+    const auto weights_kind = getWeightsKind(info.header, scoring);
     auto postings = std::make_shared<PostingList>();
 
     if (info.header & RawPostings)
@@ -388,41 +404,40 @@ PostingListPtr PostingsSerialization::deserializeToBitmap(ReadBuffer & istr, con
     }
     else
     {
-        const bool has_term_frequencies = (info.header & HasTermFrequencies) != 0;
-        resolveCodec(info.header).decode(istr, getMaxSegmentCardinality(info, segment_idx), *postings, has_term_frequencies, raw_data_buffer);
+        resolveCodec(info.header).decode(istr, getMaxSegmentCardinality(info, segment_idx), *postings, weights_kind, raw_data_buffer);
     }
 
     checkSegmentRowRange(info, segment_idx, postings->cardinality(), postings->minimum(), postings->maximum());
     return postings;
 }
 
-void PostingsSerialization::deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> * term_frequencies)
+void PostingsSerialization::deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> * weights)
 {
     checkPostingListFlags(info.header);
+    const auto weights_kind = getWeightsKind(info.header, scoring);
     size_t old_size = row_ids.size();
 
     if (info.header & RawPostings)
     {
-        deserializeRawPostings(istr, info.header, info.cardinality, row_ids, term_frequencies);
+        deserializeRawPostings(istr, info.header, info.cardinality, row_ids, weights);
     }
     else
     {
-        const bool has_term_frequencies = (info.header & HasTermFrequencies) != 0;
         const auto & codec = resolveCodec(info.header);
         const UInt64 max_cardinality = getMaxSegmentCardinality(info, segment_idx);
 
-        if (term_frequencies && has_term_frequencies)
+        if (weights && weights_kind != TextIndexScoringKind::None)
         {
-            /// The codec decodes both the row ids and the exact per-row term frequencies.
-            codec.decodeWithTermFrequencies(istr, max_cardinality, row_ids, *term_frequencies, raw_data_buffer);
+            /// The codec decodes both the row ids and the exact per-row weights.
+            codec.decodeWithWeights(istr, max_cardinality, row_ids, *weights, weights_kind, raw_data_buffer);
         }
         else
         {
-            codec.decode(istr, max_cardinality, row_ids, has_term_frequencies, raw_data_buffer);
+            codec.decode(istr, max_cardinality, row_ids, weights_kind, raw_data_buffer);
 
-            /// A posting list without stored term frequencies implies `tf == 1` for every row.
-            if (term_frequencies)
-                term_frequencies->resize_fill(term_frequencies->size() + row_ids.size() - old_size, 1u);
+            /// A posting list without stored weights implies `weight == 1` for every row.
+            if (weights)
+                weights->resize_fill(weights->size() + row_ids.size() - old_size, 1u);
         }
     }
 
@@ -729,9 +744,10 @@ void MergeTreeIndexGranuleText::deserializeBinaryWithMultipleStreams(MergeTreeIn
 
     auto text_index_header = loadHeader(*index_stream, condition_text, index_id_for_caches);
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(text_index_header->codec_type);
-    auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version);
+    auto postings_serialization = PostingsSerialization(std::move(postings_codec), text_index_header->version, text_index_header->scoring);
     serialization_version = text_index_header->version;
     positions_codec = text_index_header->positions_codec;
+    scoring = text_index_header->scoring;
 
     /// The stream opens its file on the first read, so a granule answered from the caches does not open it.
     const auto dictionary_substream = getSubstream(state.index, MergeTreeIndexSubstream::Type::TextIndexDictionary);
@@ -1198,7 +1214,7 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
 
     TokenPostingsInfo info;
     std::span<const UInt32> raw_values;
-    std::span<const UInt32> raw_tf_minus_one;
+    std::span<const UInt32> raw_weights;
 
     if (postings.isInline())
     {
@@ -1228,15 +1244,15 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
             info.cardinality = static_cast<UInt32>(large.values.size());
             raw_values = {large.values.data(), info.cardinality};
 
-            if (large.term_frequencies)
-                raw_tf_minus_one = large.term_frequencies->getTfMinusOne();
+            if (large.weights)
+                raw_weights = large.weights->getWeights();
         }
     }
 
-    if (!raw_tf_minus_one.empty())
+    if (!raw_weights.empty())
     {
-        chassert(raw_tf_minus_one.size() == raw_values.size());
-        info.header |= HasTermFrequencies;
+        chassert(raw_weights.size() == raw_values.size());
+        info.header |= HasWeights;
     }
 
     if (positions_stream)
@@ -1258,7 +1274,7 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
         info.header |= EmbeddedPostings;
 
         TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, info);
-        TextIndexSerialization::serializeRawPostings(raw_values, raw_tf_minus_one, dictionary_stream.compressed_hashing);
+        TextIndexSerialization::serializeRawPostings(raw_values, raw_weights, dictionary_stream.compressed_hashing);
         return;
     }
 
@@ -1272,7 +1288,7 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
         info.offsets.emplace_back(postings_stream.plain_hashing.count());
         info.ranges.emplace_back(raw_values.front(), raw_values.back());
 
-        TextIndexSerialization::serializeRawPostings(raw_values, raw_tf_minus_one, postings_stream.plain_hashing);
+        TextIndexSerialization::serializeRawPostings(raw_values, raw_weights, postings_stream.plain_hashing);
         TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, info);
         return;
     }
@@ -1285,14 +1301,17 @@ void TextIndexSerialization::serializePostingsAndTokenInfo(
     TextIndexSerialization::serializeTokenInfo(dictionary_stream.compressed_hashing, info);
 }
 
-void TextIndexSerialization::serializeRawPostings(std::span<const UInt32> row_ids, std::span<const UInt32> tf_minus_one, WriteBuffer & ostr)
+void TextIndexSerialization::serializeRawPostings(std::span<const UInt32> row_ids, std::span<const UInt32> weights, WriteBuffer & ostr)
 {
     for (UInt32 row_id : row_ids)
         writeVarUInt(row_id, ostr);
 
-    /// One exact VarUInt-encoded `(tf - 1)` per row id, parallel to `row_ids`, when scoring.
-    for (UInt32 tf_m1 : tf_minus_one)
-        writeVarUInt(tf_m1, ostr);
+    /// One exact VarUInt-encoded `(weight - 1)` per row id, parallel to `row_ids`, when scoring.
+    for (UInt32 weight : weights)
+    {
+        chassert(weight != 0);
+        writeVarUInt(weight - 1, ostr);
+    }
 }
 
 void TextIndexSerialization::checkTokenSize(size_t token_size)
@@ -1504,7 +1523,7 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
             info.ranges.emplace_back(info.embedded_postings.front(), info.embedded_postings.back());
         }
 
-        if (info.header & HasTermFrequencies)
+        if (info.header & HasWeights)
         {
             if (!with_postings)
             {
@@ -1512,9 +1531,9 @@ TokenPostingsInfo TextIndexSerialization::deserializeTokenInfo(ReadBuffer & istr
             }
             else if (info.cardinality != 0)
             {
-                readVarUInts(istr, info.cardinality, info.embedded_term_frequencies);
-                for (auto & tf : info.embedded_term_frequencies)
-                    tf += 1;
+                readVarUInts(istr, info.cardinality, info.embedded_weights);
+                for (auto & weight : info.embedded_weights)
+                    weight += 1;
             }
         }
     }
@@ -1592,8 +1611,8 @@ void TextIndexSerialization::skipTokenInfo(ReadBuffer & istr)
         chassert(header & RawPostings);
         skipVarUInts(istr, cardinality);
 
-        /// Embedded postings store one VarUInt-encoded `(tf - 1)` per row inline after the row ids.
-        if (header & HasTermFrequencies)
+        /// Embedded postings store one VarUInt-encoded `(weight - 1)` per row inline after the row ids.
+        if (header & HasWeights)
             skipVarUInts(istr, cardinality);
     }
     else
@@ -1816,7 +1835,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
     }
 
     auto postings_codec = PostingListCodecFactory::createPostingListCodec(posting_list_codec_type);
-    PostingsSerialization postings_serialization(std::move(postings_codec), params.serialization_version);
+    PostingsSerialization postings_serialization(std::move(postings_codec), params.serialization_version, params.scoring);
     const auto * codec = postings_serialization.getPostingListCodec();
     chassert(codec);
 
@@ -1826,7 +1845,7 @@ void MergeTreeIndexGranuleTextWritable::serializeBinaryWithMultipleStreams(Merge
         .codec = *codec,
         .segment_size = params.posting_list_block_size,
         .enable_positions = params.enable_positions,
-        .enable_scoring = params.hasScoring(),
+        .scoring = params.scoring,
         .doc_lengths = params.scoring == TextIndexScoringKind::BM25 ? &doc_lengths : nullptr,
         .doc_lengths_first_row_id = static_cast<UInt32>(num_docs - doc_lengths.size()),
     };
@@ -1891,7 +1910,7 @@ PostingListBuildContext MergeTreeIndexTextGranuleBuilder::buildContext() const
         .codec = *posting_list_codec,
         .segment_size = params.posting_list_block_size,
         .enable_positions = params.enable_positions,
-        .enable_scoring = params.hasScoring(),
+        .scoring = params.scoring,
         .doc_lengths = params.scoring == TextIndexScoringKind::BM25 ? &doc_lengths : nullptr,
         .doc_lengths_first_row_id = static_cast<UInt32>(current_row - doc_lengths.size()),
     };
@@ -1923,7 +1942,7 @@ void PostingListBuilder::add(UInt32 value, UInt32 position, const PostingListBui
         /// In-row repeat.
         if (value == inline_state->values[inline_state->size - 1])
         {
-            if (context.enable_scoring)
+            if (context.scoring == TextIndexScoringKind::BM25)
             {
                 state.emplace<Large>(inline_state->values, inline_state->size);
                 std::get<Large>(state).addRowRepeat(value);
@@ -1956,19 +1975,19 @@ void PostingListBuilder::add(UInt32 value, UInt32 position, const PostingListBui
     /// In-row repeat.
     if (value == large.values.back())
     {
-        if (context.enable_scoring)
+        if (context.scoring == TextIndexScoringKind::BM25)
             large.addRowRepeat(value);
         return;
     }
 
-    /// Flush on new value to ensure that term frequencies are final.
+    /// Flush on new value to ensure that weights are final.
     if (large.values.size() >= IPostingListEncoder::append_granularity)
         large.flush(context);
 
     large.values.push_back(value);
 
-    if (large.term_frequencies)
-        large.term_frequencies->addNewRow();
+    if (large.weights)
+        large.weights->addNewRow();
 }
 
 PositionListBuilder * PostingListBuilder::getPositions()
@@ -2000,10 +2019,10 @@ void PostingListBuilder::Large::addRowRepeat(UInt32 row_id)
 {
     chassert(!values.empty() && values.back() == row_id);
 
-    if (!term_frequencies)
-        term_frequencies = std::make_unique<TermFrequenciesBuilder>(values.size());
+    if (!weights)
+        weights = std::make_unique<WeightsBuilder>(values.size());
     else
-        term_frequencies->addRowRepeat();
+        weights->incrementLastWeight();
 }
 
 void PostingListBuilder::Large::flush(const PostingListBuildContext & context)
@@ -2016,14 +2035,14 @@ void PostingListBuilder::Large::flush(const PostingListBuildContext & context)
         encoder = context.codec.createEncoder(context.segment_size);
 
     /// The encoder gathers the doc lengths of the flushed rows itself.
-    /// The `(tf - 1)` are empty unless the token repeated within a row.
+    /// The weights are empty unless the token repeated within a row.
     encoder->append(
         {values.data(), values.size()},
-        term_frequencies ? term_frequencies->getTfMinusOne() : std::span<const UInt32>{},
+        weights ? weights->getWeights() : std::span<const UInt32>{},
         context);
 
     values.clear();
-    term_frequencies.reset();
+    weights.reset();
 }
 
 void MergeTreeIndexTextGranuleBuilder::addDocument(std::string_view document, const PostingListBuildContext & context)
@@ -2644,6 +2663,19 @@ std::string_view toString(TextIndexScoringKind kind)
     }
 }
 
+IPostingListCodec::Type getWeightsCodecType(TextIndexScoringKind scoring, IPostingListCodec::Type row_ids_codec_type)
+{
+    switch (scoring)
+    {
+        case TextIndexScoringKind::None:
+            return IPostingListCodec::Type::None;
+        case TextIndexScoringKind::BM25:
+            /// Term frequencies are small integers, which the block codec of the row ids encodes well.
+            chassert(row_ids_codec_type != IPostingListCodec::Type::None);
+            return row_ids_codec_type;
+    }
+}
+
 namespace
 {
 
@@ -2790,7 +2822,7 @@ MergeTreeIndexPtr textIndexCreator(StorageMetadataPtr metadata_snapshot, const I
 
     if (scoring != TextIndexScoringKind::None)
     {
-        /// BM25 scoring relies on the per-block term-frequency payload that cannot be stored in the `none` codec.
+        /// BM25 scoring relies on the per-block weights payload that cannot be stored in the `none` codec.
         if (posting_list_codec->getType() == IPostingListCodec::Type::None)
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,
@@ -2897,7 +2929,7 @@ void textIndexValidator(const IndexDescription & index, bool attach, const Merge
                 toString(scoring), ARGUMENT_POSTING_LIST_CODEC);
         }
 
-        /// BM25 scoring relies on the per-block term-frequency payload that cannot be stored in the `none` codec.
+        /// BM25 scoring relies on the per-block weights payload that cannot be stored in the `none` codec.
         if (posting_list_codec->getType() == IPostingListCodec::Type::None)
         {
             throw Exception(ErrorCodes::SUPPORT_IS_DISABLED,

@@ -1,9 +1,9 @@
 -- plain filtering on the old part still works
 4
--- before the merge, the old part has no term frequencies
+-- before the merge, the old part has no weights
 [0,3]
 [0,1]
--- the merged part has the index with the term frequencies
+-- the merged part has the index with the weights
 raft	0	2
 raft	3	1
 raft	4	1

@@ -19,7 +19,7 @@ namespace DB
 ///   - PFor:  [PFor block]
 ///
 /// A segment carries two interleaved block streams, both encoded by the codec its header names: the row-id
-/// deltas, and (when scoring is on) the per-row `(tf - 1)` written right after each block's deltas.
+/// deltas, and (when scoring is on) the per-row `(weight - 1)` written right after each block's deltas.
 class IPostingListBlockCodec
 {
 public:

@@ -33,7 +33,7 @@ INSERT INTO tab_phrase_scoring VALUES (6, 'raft consensus basics'), (7, 'log raf
 OPTIMIZE TABLE tab_phrase_scoring FINAL;
 SELECT groupArray(id) FROM tab_phrase_scoring WHERE hasPhrase(body, 'raft consensus');
 
-SELECT '-- the term frequencies and the positions of the merged part';
-SELECT row_id, term_frequency, positions FROM mergeTreeTextIndex(currentDatabase(), tab_phrase_scoring, idx_body) WHERE token = 'raft' ORDER BY row_id;
+SELECT '-- the weights and the positions of the merged part';
+SELECT row_id, weight, positions FROM mergeTreeTextIndex(currentDatabase(), tab_phrase_scoring, idx_body) WHERE token = 'raft' ORDER BY row_id;
 
 DROP TABLE tab_phrase_scoring;

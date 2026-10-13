@@ -45,7 +45,7 @@ SYSTEM STOP MERGES tab_scoring_attach;
 
 INSERT INTO tab_scoring_attach VALUES (4, 'raft raft raft');
 
-SELECT part_name, row_id, term_frequency FROM mergeTreeTextIndex(currentDatabase(), tab_scoring_attach, idx_body) WHERE token = 'raft' ORDER BY part_name, row_id;
+SELECT part_name, row_id, weight FROM mergeTreeTextIndex(currentDatabase(), tab_scoring_attach, idx_body) WHERE token = 'raft' ORDER BY part_name, row_id;
 
 DROP TABLE tab_scoring_attach;
 DROP TABLE tab_scoring_no_codec;

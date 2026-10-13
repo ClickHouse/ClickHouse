@@ -262,7 +262,7 @@ MultiBlockTestData makeMultiBlockData(
         *codec_for_context,
         1 << 20,
         /*enable_positions=*/false,
-        /*enable_scoring=*/false,
+        TextIndexScoringKind::None,
         nullptr,
     };
 
@@ -270,7 +270,7 @@ MultiBlockTestData makeMultiBlockData(
     for (const auto & block_docs : blocks)
     {
         SegmentedPostingListCodec codec(block_codec_type, 1 << 20);
-        codec.append(block_docs, /*tf_minus_one=*/{}, context);
+        codec.append(block_docs, /*weights=*/{}, context);
         codec.serializeTo(out, info);
     }
 
@@ -326,7 +326,7 @@ PostingListCursorPtr makeMultiBlockCursor(const MultiBlockTestData & data)
     if (!data.cache)
         data.cache = std::make_shared<TextIndexPostingsCache>("SLRU", 1ULL << 30, 0, 0.5);
 
-    return std::make_shared<PostingListCursor>(*data.stream, data.info, data.cache.get());
+    return std::make_shared<PostingListCursor>(*data.stream, data.info, TextIndexScoringKind::None, data.cache.get());
 }
 
 } // anonymous namespace
@@ -519,7 +519,7 @@ TEST(PostingListCursorTest, MultiBlockCursorsOverSameStreamAreIndependent)
     ASSERT_TRUE(cursor1->valid());
     EXPECT_EQ(cursor1->value(), 422u);
 
-    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info, data.cache.get());
+    auto cursor2 = std::make_shared<PostingListCursor>(*data.stream, data.info, TextIndexScoringKind::None, data.cache.get());
     cursor2->advance(100);
     ASSERT_TRUE(cursor2->valid());
     EXPECT_EQ(cursor2->value(), 100u);

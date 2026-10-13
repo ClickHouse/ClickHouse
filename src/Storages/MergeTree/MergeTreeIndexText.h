@@ -86,7 +86,9 @@ namespace DB
 using PostingListCodecPtr = std::unique_ptr<IPostingListCodec>;
 
 /// The scoring kind of the text index.
-/// Determines the extra data for scoring that is store in the text index.
+/// Determines the extra data for scoring that is stored in the text index:
+/// the meaning and the codec of the per-row weights of the tokens in the posting lists, and the per-part data.
+/// The weights are positive integers stored as `(weight - 1)`. With `BM25` the weight is the term frequency.
 enum class TextIndexScoringKind : UInt8
 {
     None = 0,
@@ -95,6 +97,11 @@ enum class TextIndexScoringKind : UInt8
 
 TextIndexScoringKind parseTextIndexScoringKind(std::string_view name);
 std::string_view toString(TextIndexScoringKind kind);
+
+/// Returns the block codec of the weights stored with the scoring kind in a posting list segment whose row ids
+/// are encoded by the block codec `row_ids_codec_type`. The codec of the weights is not persisted: the scoring kind determines it.
+/// Returns `None` for `TextIndexScoringKind::None`, which stores no weights.
+IPostingListCodec::Type getWeightsCodecType(TextIndexScoringKind scoring, IPostingListCodec::Type row_ids_codec_type);
 
 struct MergeTreeIndexTextParams
 {
@@ -114,31 +121,32 @@ struct MergeTreeIndexTextParams
 using PostingList = roaring::Roaring;
 using PostingListPtr = std::shared_ptr<PostingList>;
 
-/// Builds per-row `(tf - 1)` of one token during the index build (BM25 scoring), parallel
-/// to the posting-list builder's buffered row ids. Created lazily on the token's first in-row repeat.
-class TermFrequenciesBuilder
+/// Builds per-row weights of one token during the index build, parallel to the posting-list builder's
+/// buffered row ids. With BM25 scoring the weight is the term frequency, so the builder is created lazily
+/// on the token's first in-row repeat.
+class WeightsBuilder
 {
 public:
     /// Created on the first in-row repeat: all `num_buffered_rows` rows so far
-    /// have `tf == 1`, except the last one, which just repeated (`tf == 2`).
-    explicit TermFrequenciesBuilder(size_t num_buffered_rows)
+    /// have `weight == 1`, except the last one, which just repeated (`weight == 2`).
+    explicit WeightsBuilder(size_t num_buffered_rows)
     {
         chassert(num_buffered_rows != 0);
-        tf_minus_one.resize_fill(num_buffered_rows, 0u);
-        tf_minus_one.back() = 1;
+        weights.resize_fill(num_buffered_rows, 1u);
+        weights.back() = 2;
     }
 
-    ALWAYS_INLINE void addRowRepeat()
+    ALWAYS_INLINE void incrementLastWeight()
     {
-        chassert(!tf_minus_one.empty());
-        ++tf_minus_one.back();
+        chassert(!weights.empty());
+        ++weights.back();
     }
 
-    ALWAYS_INLINE void addNewRow() { tf_minus_one.push_back(0); }
-    std::span<const UInt32> getTfMinusOne() const { return {tf_minus_one.data(), tf_minus_one.size()}; }
+    ALWAYS_INLINE void addNewRow() { weights.push_back(1); }
+    std::span<const UInt32> getWeights() const { return {weights.data(), weights.size()}; }
 
 private:
-    PODArray<UInt32, 64> tf_minus_one;
+    PODArray<UInt32, 64> weights;
 };
 
 /// Everything a `PostingListBuilder` needs to add row ids and flush full blocks into the encoder.
@@ -147,7 +155,7 @@ struct PostingListBuildContext
     const IPostingListCodec & codec;
     size_t segment_size = 0;
     bool enable_positions = false;
-    bool enable_scoring = false;
+    TextIndexScoringKind scoring = TextIndexScoringKind::None;
     const PaddedPODArray<UInt8> * doc_lengths = nullptr;
     UInt32 doc_lengths_first_row_id = 0;
 };
@@ -185,8 +193,8 @@ public:
         std::unique_ptr<IPostingListEncoder> encoder;
         /// Positions of the token for phrase search. Null unless positions are enabled.
         std::unique_ptr<PositionListBuilder> positions;
-        /// Per-row term frequencies for BM25 scoring. Created lazily on the token's first in-row repeat.
-        std::unique_ptr<TermFrequenciesBuilder> term_frequencies;
+        /// Per-row weights for BM25 scoring. Created lazily on the token's first in-row repeat.
+        std::unique_ptr<WeightsBuilder> weights;
 
         /// Flushes all buffered row ids into the encoder and clears the buffer.
         /// The caller should control the flush size.
@@ -248,7 +256,10 @@ static_assert(PostingListBuilder::inline_capacity <= MAX_CARDINALITY_FOR_RAW_POS
 
 struct PostingsSerialization
 {
-    PostingsSerialization(PostingListCodecPtr posting_list_codec_, MergeTreeTextIndexSerializationVersion serialization_version_);
+    PostingsSerialization(
+        PostingListCodecPtr posting_list_codec_,
+        MergeTreeTextIndexSerializationVersion serialization_version_,
+        TextIndexScoringKind scoring_);
 
     enum Flags : UInt64
     {
@@ -267,18 +278,23 @@ struct PostingsSerialization
         HasBlockIndex = 1ULL << 4,
         /// If set, the token has positional data in the .pos file.
         HasPositions = 1ULL << 5,
-        /// If set, the posting list carries per-document term frequencies for BM25 scoring.
-        HasTermFrequencies = 1ULL << 6,
+        /// If set, the posting list carries per-row weights for scoring, with the meaning
+        /// and the codec determined by the scoring kind of the index (see `TextIndexScoringKind`).
+        HasWeights = 1ULL << 6,
     };
+
+    /// Returns the scoring kind of the weights stored in a posting list with `header` in an index with the scoring kind `scoring`,
+    /// `None` if the posting list stores no weights. Throws CORRUPTED_DATA if the posting list has weights while the index has no scoring.
+    static TextIndexScoringKind getWeightsKind(UInt64 header, TextIndexScoringKind scoring);
 
     /// Reads the `segment_idx`-th segment of the posting list described by `info` and checks it against the metadata:
     /// a segment cannot hold more row ids than the token or than its row range, and it starts and ends at the range bounds.
-    /// The term frequencies stored for BM25 scoring, if any, are skipped.
+    /// The weights stored for scoring, if any, are skipped.
     PostingListPtr deserializeToBitmap(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx);
 
-    /// The same, but appends the row ids to `row_ids`. If `term_frequencies` is not null, one exact term frequency
-    /// per decoded row id is appended to it (`1` for every row if the posting list stores no term frequencies).
-    void deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> * term_frequencies);
+    /// The same, but appends the row ids to `row_ids`. If `weights` is not null, one exact weight
+    /// per decoded row id is appended to it (`1` for every row if the posting list stores no weights).
+    void deserializeToArray(ReadBuffer & istr, const TokenPostingsInfo & info, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> * weights);
 
     const IPostingListCodec * getPostingListCodec() const { return posting_list_codec.get(); }
     MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
@@ -288,6 +304,7 @@ private:
 
     PostingListCodecPtr posting_list_codec;
     MergeTreeTextIndexSerializationVersion serialization_version;
+    TextIndexScoringKind scoring;
 
     /// Reusable buffers to avoid repeated heap allocations during serialization/deserialization.
     PaddedPODArray<UInt32> raw_postings_buffer;
@@ -319,9 +336,8 @@ struct TokenPostingsInfo
     absl::InlinedVector<UInt64, 1> offsets;
     absl::InlinedVector<RowsRange, 1> ranges;
     absl::InlinedVector<UInt32, MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS> embedded_postings;
-    /// On the read path holds the exact per-row `tf`; on the merge write path holds
-    /// the per-row `(tf - 1)` as serialized on disk. Empty without HasTermFrequencies.
-    absl::InlinedVector<UInt32, MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS> embedded_term_frequencies;
+    /// The per-row weights of the embedded postings. Empty without HasWeights.
+    absl::InlinedVector<UInt32, MAX_CARDINALITY_FOR_EMBEDDED_POSTINGS> embedded_weights;
 
     /// Position data offset in the .pos file
     UInt64 position_offset = 0;
@@ -427,7 +443,8 @@ struct TextIndexSerialization
 
     static void serializeTokens(const ColumnString & tokens, WriteBuffer & ostr, TokensFormat format);
     static void serializeTokenInfo(WriteBuffer & ostr, const TokenPostingsInfo & token_info);
-    static void serializeRawPostings(std::span<const UInt32> row_ids, std::span<const UInt32> tf_minus_one, WriteBuffer & ostr);
+    /// Writes the row ids and the weights (if not empty, parallel to `row_ids`) as VarUInts.
+    static void serializeRawPostings(std::span<const UInt32> row_ids, std::span<const UInt32> weights, WriteBuffer & ostr);
     static void serializeHeader(const TextIndexHeader & header, WriteBuffer & ostr);
 
     /// Appends the per-row `SmallFloat` document lengths to the `.dl` substream, which holds one uncompressed byte per row.
@@ -443,7 +460,7 @@ struct TextIndexSerialization
     /// Skips the doc-lengths segment offsets and the sparse index, which stay empty in the result.
     static TextIndexHeader deserializeHeaderPrefix(ReadBuffer & istr);
 
-    /// If `with_postings` is false, embedded postings (and their inline term frequencies) are skipped.
+    /// If `with_postings` is false, embedded postings (and their inline weights) are skipped.
     static TokenPostingsInfo deserializeTokenInfo(ReadBuffer & istr, bool with_postings);
 
     /// Skips a token info without full deserialization and filling the fields.
@@ -457,7 +474,7 @@ struct TextIndexSerialization
     static std::pair<ColumnPtr, UInt64> deserializeTokens(ReadBuffer & istr);
 
     /// Deserializes a dictionary block into a new DictionaryBlock.
-    /// If `with_postings` is false, embedded postings (and their inline term frequencies) are skipped.
+    /// If `with_postings` is false, embedded postings (and their inline weights) are skipped.
     static DictionaryBlock deserializeDictionaryBlock(ReadBuffer & istr, bool with_postings);
 };
 
@@ -489,6 +506,7 @@ public:
     IPostingListCodec::Type getPostingsCodecType() const { return postings_codec_type; }
     MergeTreeTextIndexSerializationVersion getSerializationVersion() const { return serialization_version; }
     UInt8 getPositionsCodec() const { return positions_codec; }
+    TextIndexScoringKind getScoringKind() const { return scoring; }
 
     static PostingListPtr readPostingsBlock(
         MergeTreeIndexReaderStream & stream,
@@ -525,6 +543,8 @@ private:
     MergeTreeTextIndexSerializationVersion serialization_version = MergeTreeTextIndexSerializationVersion::V0_Initial;
     /// Positions on-disk codec persisted in the header.
     UInt8 positions_codec = 0;
+    /// Scoring kind persisted in the header.
+    TextIndexScoringKind scoring = TextIndexScoringKind::None;
 };
 
 /// Text index granule created on writing of the index.

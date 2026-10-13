@@ -143,14 +143,14 @@ private:
     /// Points the cursor at a source and decodes its first postings.
     void initPostingsCursor(PostingsMergeCursor & cursor, const TokenSource & source);
     /// Decodes one posting list segment of the source into the row ids (in pre-remap order) and,
-    /// on the scoring path, into the exact per-row term frequencies if the source stores them.
-    void readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & tfs);
+    /// on the scoring path, into the exact per-row weights if the source stores them.
+    void readPostingsSegment(const TokenSource & source, size_t segment_idx, PaddedPODArray<UInt32> & row_ids, PaddedPODArray<UInt32> & weights);
     /// Decodes the source's next segment; returns false when the source is exhausted.
     bool advancePostingsCursor(PostingsMergeCursor & cursor);
 
     /// Merges the postings of current_token_sources and passes sorted non-empty chunks of row ids to the sink in the globally sorted order.
     /// Every chunk but the last holds a multiple of IPostingListEncoder::append_granularity row ids, as the posting list encoder requires.
-    /// On the scoring path every chunk comes with the per-row `(tf - 1)` parallel to its row ids, otherwise with an empty span.
+    /// On the scoring path every chunk comes with the per-row weights parallel to its row ids, otherwise with an empty span.
     /// If the token has positions, they are re-encoded by positions_merge in the same order.
     template <typename Sink> void mergePostings(Sink && sink);
 

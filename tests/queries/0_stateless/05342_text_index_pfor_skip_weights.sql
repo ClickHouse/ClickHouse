@@ -1,7 +1,7 @@
 -- Tags: no-parallel-replicas
 
--- A `pfor` text index with `scoring = 'bm25'` stores a block of term frequencies after every block of row ids.
--- A query without `bm25` reads only the row ids and steps over the term frequency blocks by their headers.
+-- A `pfor` text index with `scoring = 'bm25'` stores a block of weights after every block of row ids.
+-- A query without `bm25` reads only the row ids and steps over the weight blocks by their headers.
 
 SET enable_analyzer = 1;
 SET query_plan_direct_read_from_text_index = 1;
@@ -21,9 +21,9 @@ ENGINE = MergeTree
 ORDER BY id
 SETTINGS allow_experimental_text_index_scoring = 1;
 
--- `alpha`: small varied term frequencies with rare large outliers (exception blocks).
--- `beta`: term frequency 1 everywhere (constant blocks).
--- `gamma`: the same large term frequency in every row (constant blocks with a non-zero value).
+-- `alpha`: small varied weights with rare large outliers (exception blocks).
+-- `beta`: weight 1 everywhere (constant blocks).
+-- `gamma`: the same large weight in every row (constant blocks with a non-zero value).
 INSERT INTO tab_pfor_skip_tf
 SELECT
     number,

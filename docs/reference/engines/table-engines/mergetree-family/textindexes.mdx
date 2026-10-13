@@ -583,13 +583,13 @@ Set MergeTree setting [`allow_experimental_text_index_phrase_search`](/reference
 **Experimental: BM25 scoring argument (optional)**.
 
 Experimental parameter `scoring` (default: `'none'`) selects the relevance scoring data the index stores.
-With `scoring = 'bm25'`, the index additionally stores the exact per-row term frequencies (embedded into the posting lists) and the per-row document lengths (in a `.dl` file), which are the inputs of the [BM25](https://en.wikipedia.org/wiki/Okapi_BM25) relevance score.
+With `scoring = 'bm25'`, the index additionally stores the per-row weights of the tokens, which are the exact term frequencies (embedded into the posting lists), and the per-row document lengths (in a `.dl` file), which are the inputs of the [BM25](https://en.wikipedia.org/wiki/Okapi_BM25) relevance score.
 Such an index is written in the `v3_with_scoring` format regardless of the configured [`text_index_serialization_version`](/reference/settings/merge-tree-settings/text-index#text_index_serialization_version), because older formats cannot represent the scoring data.
 The argument requires a posting list codec other than `'none'`, set explicitly by the `posting_list_codec` argument of the index (the MergeTree setting `text_index_posting_list_codec` is not used), and a tokenizer that supports scoring.
 Storing scoring data increases the on-disk size of the index and the write cost, so it is opt-in.
 The on-disk format is not yet stable, so this parameter is experimental and may change in a future release.
 Creating an index with `scoring = 'bm25'` therefore requires the MergeTree setting [`allow_experimental_text_index_scoring`](/reference/settings/merge-tree-settings/allow-experimental) to be enabled.
-The stored term frequencies can be inspected in the column `term_frequency` of the table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex).
+The stored weights can be inspected in the column `weight` of the table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex).
 
 <Warning>
 This argument is experimental and should only be used for testing.
@@ -1673,7 +1673,7 @@ If index is not materialized in the source part, it is built, written into a tem
 
 **Debugging**
 
-Table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex) can be used to introspect text indexes: their dictionaries, posting lists, term frequencies and positions.
+Table function [mergeTreeTextIndex](/reference/functions/table-functions/mergeTreeTextIndex) can be used to introspect text indexes: their dictionaries, posting lists, weights and positions.
 
 ## Example: Hackernews dataset {#hacker-news-dataset}
 

@@ -40,6 +40,6 @@ all_2_2_0	b	500	500	0	499	500
 3668
 0
 0
--- an index without term frequencies and positions
+-- an index without weights and positions
 log	[0,2]
 raft	[0,1]

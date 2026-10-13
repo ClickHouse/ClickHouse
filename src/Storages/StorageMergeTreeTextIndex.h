@@ -34,7 +34,7 @@ public:
 
     String getName() const override { return "MergeTreeTextIndex"; }
 
-    /// Besides `_table` and `_database`, the columns of the posting lists of the index: `row_id`, and `term_frequency`
+    /// Besides `_table` and `_database`, the columns of the posting lists of the index: `row_id`, and `weight`
     /// and `positions` if the index stores them. Reading one returns a row per posting instead of a row per token.
     static VirtualColumnsDescription createVirtuals(const MergeTreeIndexText & text_index);
 

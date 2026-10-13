@@ -75,9 +75,15 @@ inline UInt32 requireUInt32(UInt64 value, std::string_view field_name)
 
 }
 
-PostingListCursor::PostingListCursor(MergeTreeReaderStream & stream_, const TokenPostingsInfo & info_, TextIndexPostingsCache * postings_cache_, const String & index_id_for_cache_)
+PostingListCursor::PostingListCursor(
+    MergeTreeReaderStream & stream_,
+    const TokenPostingsInfo & info_,
+    TextIndexScoringKind scoring_,
+    TextIndexPostingsCache * postings_cache_,
+    const String & index_id_for_cache_)
     : stream(&stream_)
     , info(&info_)
+    , weights_kind(PostingsSerialization::getWeightsKind(info_.header, scoring_))
     , postings_cache(postings_cache_)
     , index_id_for_cache(index_id_for_cache_)
     , total_segments(info_.offsets.size())
@@ -193,12 +199,12 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
 
     segment.doc_count = requireUInt32(seg_cardinality, "seg_cardinality");
     segment.first_row_id = requireUInt32(first_row_id, "first_row_id");
-    const bool has_term_frequencies = info->header & PostingsSerialization::Flags::HasTermFrequencies;
+    const bool has_weights = weights_kind != TextIndexScoringKind::None;
 
-    if (has_term_frequencies)
+    if (has_weights)
     {
         readBinaryLittleEndian(segment.min_dl_byte, *data_buffer);
-        readBinaryLittleEndian(segment.max_tf_minus_one, *data_buffer);
+        readBinaryLittleEndian(segment.max_weight_minus_one, *data_buffer);
     }
 
     const auto & segment_range = info->ranges[segment_idx];
@@ -235,10 +241,18 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
     if (!block_codec || block_codec->type() != segment.codec_type)
         block_codec = createPostingListBlockCodec(segment.codec_type);
 
+    /// The codec of the weights is not persisted: it is determined by the scoring kind and the codec of the row ids.
+    if (has_weights)
+    {
+        const auto weights_codec_type = getWeightsCodecType(weights_kind, segment.codec_type);
+        if (!weights_block_codec || weights_block_codec->type() != weights_codec_type)
+            weights_block_codec = createPostingListBlockCodec(weights_codec_type);
+    }
+
     /// Cap `payload_bytes` before resizing so corrupted metadata can't force a huge allocation.
-    /// When scoring is on, each block additionally carries a term-frequency sub-payload compressed with the same codec.
+    /// When scoring is on, each block additionally carries a weights sub-payload compressed with the codec of the weights.
     const UInt64 max_blocks_count = (static_cast<UInt64>(segment.doc_count) + IPostingListBlockCodec::BLOCK_SIZE - 1) / IPostingListBlockCodec::BLOCK_SIZE;
-    const UInt64 per_block_cap = has_term_frequencies ? 2 * block_codec->maxBlockBytes() : block_codec->maxBlockBytes();
+    const UInt64 per_block_cap = block_codec->maxBlockBytes() + (has_weights ? weights_block_codec->maxBlockBytes() : 0);
     const UInt64 max_payload_bytes = max_blocks_count * per_block_cap;
 
     if (payload_bytes > max_payload_bytes)
@@ -339,13 +353,13 @@ PostingListSegment PostingListCursor::buildPostingSegment(size_t segment_idx)
     segment.block_count = num_blocks;
     segment.tail_size = segment.doc_count % IPostingListBlockCodec::BLOCK_SIZE;
 
-    if (has_term_frequencies)
+    if (has_weights)
     {
         segment.block_min_dl_byte.resize(num_blocks);
-        segment.block_max_tf_minus_one.resize(num_blocks);
+        segment.block_max_weight_minus_one.resize(num_blocks);
 
         data_buffer->readStrict(reinterpret_cast<char *>(segment.block_min_dl_byte.data()), num_blocks * sizeof(UInt8));
-        data_buffer->readStrict(reinterpret_cast<char *>(segment.block_max_tf_minus_one.data()), num_blocks * sizeof(UInt8));
+        data_buffer->readStrict(reinterpret_cast<char *>(segment.block_max_weight_minus_one.data()), num_blocks * sizeof(UInt8));
     }
 
     return segment;
@@ -412,10 +426,10 @@ void PostingListCursor::decodeBlock(size_t block_idx)
     const size_t consumed_bytes = block_codec->decodeBlock(block_data, count, out_span);
 
     /// Without scoring the deltas must consume the whole Index Section span;
-    /// with scoring a term-frequency sub-payload follows the deltas inside the same span.
-    const bool has_term_frequencies = info && (info->header & PostingsSerialization::Flags::HasTermFrequencies);
+    /// with scoring a weights sub-payload follows the deltas inside the same span.
+    const bool has_weights = weights_kind != TextIndexScoringKind::None;
 
-    if (!has_term_frequencies && consumed_bytes != expected_bytes)
+    if (!has_weights && consumed_bytes != expected_bytes)
     {
         throw Exception(ErrorCodes::CORRUPTED_DATA,
             "Corrupted data in lazy posting list cursor: block {} consumed {} bytes but its "
