@@ -1,5 +1,6 @@
 -- Tests for obfuscateQuery/obfuscateQueryWithSeed covering literal variant paths not
--- exercised by existing tests (03755, 04146).
+-- exercised by existing tests (03755, 04146). Like those tests, the checks assert properties
+-- of the obfuscated text, never an exact pseudorandom output.
 --
 -- Previously uncovered paths: when the input query contains hex (0x) or binary (0b)
 -- number literals, a string literal with UTF-8 multi-byte characters, SQL line or
@@ -18,28 +19,34 @@
 --   src/Parsers/obfuscateQueries.cpp:1222-1228 SQL comment token (both line and block
 --       comments) in the obfuscateQuery main token-dispatch loop
 
--- Hex integer number literals: obfuscateLiteral is called for each Number token; when
--- the token starts with '0x' or '0X', the hex-prefix branch (lines 788-853) obfuscates
--- each hex digit while preserving the '0x' prefix and integer structure.
-SELECT obfuscateQueryWithSeed('SELECT 0xFF FROM t', 1);
-SELECT obfuscateQueryWithSeed('SELECT 0x1A2B FROM t', 1);
+-- The checks below assert the stable contract of the obfuscator, not the pseudorandom
+-- replacement words and digits: the obfuscated query keeps the shape of the literal (prefix,
+-- number of digits, fraction and exponent structure), the case style of identifiers, and the
+-- token boundaries around comments. Exact outputs would change with the obfuscator's
+-- dictionary or PRNG without any product regression.
+
+-- Hex integer number literals: obfuscateLiteral is called for each Number token; when the
+-- token starts with '0x' or '0X', the hex-prefix branch (lines 788-853) obfuscates each hex
+-- digit while preserving the '0x' prefix and the number of digits.
+SELECT match(obfuscateQueryWithSeed('SELECT 0xFF FROM t', 1), '^SELECT 0x[0-9A-Fa-f]{2} FROM [A-Za-z_]+$') AS hex_int_2_digits;
+SELECT match(obfuscateQueryWithSeed('SELECT 0x1A2B FROM t', 1), '^SELECT 0x[0-9A-Fa-f]{4} FROM [A-Za-z_]+$') AS hex_int_4_digits;
 
 -- Hex floating-point literals (0x<int>.<frac>p<exp>): the fractional part (lines
--- 813-818) and binary-exponent part including optional sign (lines 821-840) sub-paths.
-SELECT obfuscateQueryWithSeed('SELECT 0x1.8p2 FROM t', 1);
-SELECT obfuscateQueryWithSeed('SELECT 0x1.0p-3 FROM t', 1);
+-- 813-818) and the binary-exponent part including an optional sign (lines 821-840) keep
+-- their structure.
+SELECT match(obfuscateQueryWithSeed('SELECT 0x1.8p2 FROM t', 1), '^SELECT 0x[0-9A-Fa-f]\\.[0-9A-Fa-f]p[0-9]+ FROM [A-Za-z_]+$') AS hex_float;
+SELECT match(obfuscateQueryWithSeed('SELECT 0x1.0p-3 FROM t', 1), '^SELECT 0x[0-9A-Fa-f]\\.[0-9A-Fa-f]p-[0-9]+ FROM [A-Za-z_]+$') AS hex_float_negative_exponent;
 
--- Binary number literals: when the token starts with '0b' or '0B', the same branch
--- handles binary digit obfuscation while preserving '0b'/'0B' and the digit sequence.
-SELECT obfuscateQueryWithSeed('SELECT 0b1010 FROM t', 1);
-SELECT obfuscateQueryWithSeed('SELECT 0B11001 FROM t', 1);
+-- Binary number literals: when the token starts with '0b' or '0B', the same branch keeps the
+-- prefix with its case and the number of binary digits.
+SELECT match(obfuscateQueryWithSeed('SELECT 0b1010 FROM t', 1), '^SELECT 0b[01]{4} FROM [A-Za-z_]+$') AS binary_lowercase_prefix;
+SELECT match(obfuscateQueryWithSeed('SELECT 0B11001 FROM t', 1), '^SELECT 0B[01]{5} FROM [A-Za-z_]+$') AS binary_uppercase_prefix;
 
--- Uppercase identifiers (first_caps / all_caps paths in obfuscateIdentifier):
--- obfuscateIdentifier applies case-style matching so that a CamelCase input produces
--- CamelCase output (first_caps, line 736) and an ALL-CAPS input produces ALL-CAPS
--- output (all_caps, line 737).  Prior tests only used lowercase identifiers.
-SELECT obfuscateQueryWithSeed('SELECT UserID FROM events', 1);
-SELECT obfuscateQueryWithSeed('SELECT ID FROM t', 1);
+-- Uppercase identifiers (first_caps / all_caps paths in obfuscateIdentifier): a CamelCase
+-- identifier stays CamelCase (first_caps, line 736) and an ALL-CAPS identifier stays
+-- ALL-CAPS (all_caps, line 737). Prior tests only used lowercase identifiers.
+SELECT match(obfuscateQueryWithSeed('SELECT UserID FROM events', 1), '^SELECT [A-Z][A-Za-z]*[a-z][A-Za-z]* FROM [a-z_]+$') AS first_caps_identifier;
+SELECT match(obfuscateQueryWithSeed('SELECT ID FROM t', 1), '^SELECT [A-Z]+ FROM [A-Za-z_]+$') AS all_caps_identifier;
 
 -- UTF-8 multi-byte characters in string literal content: obfuscateLiteral processes
 -- the string byte-by-byte; bytes 0x80-0xBF are UTF-8 continuation bytes (lines
@@ -56,7 +63,10 @@ SELECT length(obfuscateQueryWithSeed($q$SELECT '😀' FROM t$q$, 1)) > 0 AS utf8
 
 -- SQL comment tokens: in the obfuscateQuery main loop, when a Comment token is
 -- encountered it is replaced by a single space (lines 1222-1228) so that adjacent
--- tokens cannot merge (e.g. ORDER/**/BY must not become ORDERBY).
-SELECT obfuscateQueryWithSeed('SELECT -- line comment
-1 FROM t', 1);
-SELECT obfuscateQueryWithSeed('SELECT /* block comment */ 1 FROM t', 1);
+-- tokens cannot merge (e.g. ORDER/**/BY must not become ORDERBY). The comment text is
+-- gone and the tokens around it stay separated.
+SELECT match(o, '^SELECT\\s+1 FROM [A-Za-z_]+$') AND o NOT LIKE '%comment%' AS line_comment_removed
+FROM (SELECT obfuscateQueryWithSeed('SELECT -- line comment
+1 FROM t', 1) AS o);
+SELECT match(o, '^SELECT\\s+1 FROM [A-Za-z_]+$') AND o NOT LIKE '%comment%' AS block_comment_removed
+FROM (SELECT obfuscateQueryWithSeed('SELECT /* block comment */ 1 FROM t', 1) AS o);
