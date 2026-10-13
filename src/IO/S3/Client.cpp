@@ -896,7 +896,7 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
             if (isClientForDisk())
                 incrementProfileEvents<IsReadMethod>(ProfileEvents::DiskS3ReadRequestsErrors, ProfileEvents::DiskS3WriteRequestsErrors);
 
-            tryLogCurrentException(log, fmt::format("Network error on S3 request, attempt {} of {}", attempt_no, max_attempts));
+            tryLogCurrentException(log, fmt::format("Network error on S3 request, attempt {} of {}", attempt_no, max_attempts), LogsLevel::information);
 
             outcome = Aws::Client::AWSError<Aws::Client::CoreErrors>(
                 Aws::Client::CoreErrors::NETWORK_CONNECTION,
@@ -962,6 +962,13 @@ Client::doRequestWithRetryNetworkErrors(RequestType & request, RequestFn request
                 if (!net_exception_handler())
                     break;
             }
+        }
+
+        /// Attempts are logged below the warning level, so the exhausted retries are reported here once.
+        if (!outcome.IsSuccess() && outcome.GetError().ShouldRetry())
+        {
+            LOG_ERROR(log, "S3 request failed with a retryable error after all retries, HTTP response code: {}, error: {}",
+                outcome.GetError().GetResponseCode(), outcome.GetError().GetMessage());
         }
 
         return outcome;

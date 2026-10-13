@@ -697,6 +697,11 @@ void PocoHTTPClient::makeRequestInternalImpl(
                     status_code,
                     poco_response.getReason());
             }
+            else if (Aws::Http::IsRetryableHttpResponseCode(static_cast<Aws::Http::HttpResponseCode>(status_code)))
+            {
+                /// The SDK retries these; the caller reports the error if all attempts fail.
+                LOG_INFO(log, "Response status: {}, {}", status_code, poco_response.getReason());
+            }
             else if (Poco::Net::HTTPResponse::HTTP_NOT_FOUND != status_code || !Expect404ResponseScope::is404Expected())
             {
                 /// Error statuses are more important so we show them even if `enable_s3_requests_logging == false`.
