@@ -712,7 +712,7 @@ size_t Aggregator::selectCountFirstBestGroups(
             pruned_records += countPartitionGroups<Method>(counting_table, ranges, filter, update_candidates);
         });
     };
-    if (alive_bins)
+    if (alive_bins != nullptr)
         count_records(AliveBinRecords{alive_bins});
     else
         count_records(AllStagedRecords{});
@@ -803,7 +803,7 @@ void Aggregator::executeStagedArgumentRecords(
         {
             const auto [key_pos, key_size] = format.key(record);
             const char * values = key_pos + key_size;
-            ReadBufferFromMemory in(values, record + format.bytes(record) - values);
+            ReadBufferFromMemory in(values, record + StagedArgumentRecord::bytes(record) - values);
             for (auto & column : variable_columns)
                 column->deserializeAndInsertFromArena(in, &serialization_settings);
         }
@@ -1137,7 +1137,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
         }
         else
         {
-            if (alive_bins)
+            if (alive_bins != nullptr)
                 pruned_records += merge_unit(AliveBinRecords{alive_bins});
             else
                 pruned_records += merge_unit(AllStagedRecords{});
