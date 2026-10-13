@@ -498,7 +498,7 @@ private:
                 /// A local read builds its sets in `applyFilters`, before plan optimization moves their
                 /// subquery plans away, so tests need this to reach the deferred path deterministically.
                 fiu_do_on(FailPoints::url_glob_defer_path_filter, { filter_deferred = true; });
-                filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag));
+                filter_actions = std::make_shared<ExpressionActions>(std::move(*filter_dag), ExpressionActionsSettings(filter_context));
             }
 
             if (!filter_deferred)

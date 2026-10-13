@@ -2,6 +2,8 @@
 #include <DataTypes/DataTypesNumber.h>
 #include <Formats/FormatFactory.h>
 #include <Formats/FormatFilterInfo.h>
+#include <Functions/IFunctionAdaptors.h>
+#include <Functions/indexHint.h>
 #include <Core/Settings.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
@@ -15,6 +17,7 @@
 #include <IO/WriteHelpers.h>
 #include <IO/Operators.h>
 #include <base/scope_guard.h>
+#include <Common/assert_cast.h>
 #include <Common/getNumberOfCPUCoresToUse.h>
 
 #include <unordered_map>
@@ -386,19 +389,27 @@ std::shared_ptr<const ActionsDAG> ReadFromFormatInfo::getFormatFilter(
         return hive_partition_columns_to_read_from_file_path.contains(name)
             || (requested_virtual_columns.contains(name) && !(keep_row_lineage_columns && isRowLineageColumn(name)));
     };
-    if (std::ranges::none_of(filter_actions_dag->getInputs(), [&](const auto * input) { return is_added_after_format(input->result_name); }))
-        return filter_actions_dag;
 
     auto reads_added_column = [&](const ActionsDAG::Node * atom)
     {
+        std::unordered_set<const ActionsDAG::Node *> visited;
         std::vector<const ActionsDAG::Node *> stack{atom};
         while (!stack.empty())
         {
             const auto * node = stack.back();
             stack.pop_back();
+            if (!visited.insert(node).second)
+                continue;
             if (node->type == ActionsDAG::ActionType::INPUT && is_added_after_format(node->result_name))
                 return true;
             stack.insert(stack.end(), node->children.begin(), node->children.end());
+            /// `indexHint` keeps its arguments in its own DAG, not in `children`, and the format uses them for pruning.
+            if (node->type == ActionsDAG::ActionType::FUNCTION && node->function_base->getName() == "indexHint")
+            {
+                const auto & adaptor = assert_cast<const FunctionToFunctionBaseAdaptor &>(*node->function_base);
+                for (const auto & inner : assert_cast<const FunctionIndexHint &>(*adaptor.getFunction()).getActions().getNodes())
+                    stack.push_back(&inner);
+            }
         }
         return false;
     };

@@ -66,6 +66,9 @@ struct PrometheusQueryEvaluationSettings
     /// (If a step is given in the subquery, as in "http_requests_total[10m:1m]", then the given step is used.)
     /// If not set then it's 15 seconds by default.
     std::optional<DurationType> default_subquery_step;
+
+    /// Copy label matchers across binary operators, see the setting `promql_push_down_label_matchers`.
+    bool push_down_label_matchers = true;
 };
 
 }

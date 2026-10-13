@@ -397,6 +397,36 @@ def test_namespace_filter_pushdown(started_cluster):
         one_table,
     )
 
+    # `IN` pushdown: an `IN` list scopes to the namespaces of its names, exactly like the
+    # equality it generalizes. Both names here live in the target namespace, so the sibling
+    # must still be left alone.
+    in_list = ", ".join(f"'{namespace_1}.{t}'" for t in namespace_1_tables)
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name IN ({in_list}) ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
+    )
+
+    # The same through a disjunction, which the analyzer keeps as an `OR` of equalities.
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' "
+        f"AND (name = '{namespace_1}.{namespace_1_tables[0]}' OR name = '{namespace_1}.{namespace_1_tables[1]}') ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
+    )
+
+    # `IN (SELECT ...)`: the set of a subquery is only built when the pipeline runs, long after
+    # the catalog has been listed, so the filter extraction builds it on the spot. Without that
+    # the query silently falls back to listing the whole catalog.
+    subquery = " UNION ALL ".join(
+        f"SELECT '{namespace_1}.{t}'" for t in namespace_1_tables
+    )
+    assert_scoped(
+        f"SELECT name FROM system.tables WHERE database = '{CATALOG_NAME}' AND name IN ({subquery}) ORDER BY name "
+        "SETTINGS show_data_lake_catalogs_in_system_tables = true",
+        expected_ns1,
+    )
+
 
 def test_iceberg_history_namespace_filter_pushdown(started_cluster):
     """
@@ -1145,7 +1175,11 @@ def test_remove_orphan_files_with_catalog(started_cluster):
     node.query(
         f"ALTER TABLE {table_ref} EXECUTE remove_orphan_files("
         f"older_than = '{time.strftime('%Y-%m-%d %H:%M:%S')}');",
-        settings={"allow_insert_into_iceberg": 1, "allow_iceberg_remove_orphan_files": 1},
+        settings={
+            "allow_insert_into_iceberg": 1,
+            "allow_iceberg_remove_orphan_files": 1,
+            "iceberg_orphan_files_min_retention_seconds": 0,
+        },
     )
 
     assert data_files() == data_before, (
@@ -2876,7 +2910,7 @@ def test_catalog_commit_conflict_reaches_caller_at_once(started_cluster):
 
     create_clickhouse_iceberg_database(started_cluster, node, CATALOG_NAME)
     create_clickhouse_iceberg_table(
-        started_cluster, node, root_namespace, table_name, "(x UInt64)"
+        started_cluster, node, root_namespace, table_name, "(x Int64)"
     )
 
     # Every sink reads the branch tip in its constructor, and all `max_insert_threads` sinks are
