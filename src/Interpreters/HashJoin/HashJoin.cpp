@@ -1352,7 +1352,6 @@ void HashJoin::shrinkStoredBlocksToFit(size_t & total_bytes_in_join, size_t work
     }
     else
     {
-        shrink_blocks.store(true, std::memory_order_relaxed);
         for (auto & worker : data->workers)
             worker.shrink_done = false;
     }
