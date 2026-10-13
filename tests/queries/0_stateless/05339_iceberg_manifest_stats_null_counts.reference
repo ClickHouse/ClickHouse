@@ -1,0 +1,7 @@
+--- fixture: rows and the NULL count of x (field id 2) per data file
+1000	1	500
+1000	0	0
+NULL fraction: 0.5
+--- the Estimated statistics trace line of x
+Expect null 0.5: the fraction is over the first file (500 of 1000); counting the second as non-NULL gave 0.25.
+__table1.x: 999 [min 1, max 999, null 0.5]
