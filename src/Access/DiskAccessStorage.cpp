@@ -22,6 +22,7 @@
 #include <base/range.h>
 #include <filesystem>
 #include <memory>
+#include <optional>
 
 
 namespace DB
@@ -48,6 +49,19 @@ namespace
         if (auto global_context = Context::getGlobalContextInstance())
             return global_context->getSettingsRef()[Setting::fsync_metadata];
         return true;
+    }
+
+    /// With `fsync`, `change` of the entries of `directory_path` is durable on return.
+    /// The directory must stay open across the change, see `LocalDirectorySyncGuard`.
+    template <typename Change>
+    void changeDirectoryEntries(const String & directory_path, bool fsync, Change && change)
+    {
+        std::optional<LocalDirectorySyncGuard> directory_sync;
+        if (fsync)
+            directory_sync.emplace(directory_path);
+        change();
+        if (directory_sync)
+            directory_sync->sync();
     }
 
     /// Reads a file containing ATTACH queries and then parses it to build an access entity.
@@ -98,10 +112,8 @@ namespace
         out.close();
 
         /// Rename.
-        std::filesystem::rename(tmp_file_path, file_path);
-        /// The rename is durable only after its directory is synced.
-        if (fsync)
-            LocalDirectorySyncGuard(std::filesystem::path{file_path}.parent_path().string()).sync();
+        changeDirectoryEntries(std::filesystem::path{file_path}.parent_path().string(), fsync,
+            [&] { std::filesystem::rename(tmp_file_path, file_path); });
         succeeded = true;
     }
 
@@ -181,12 +193,13 @@ namespace
 
     void createNeedRebuildListsMark(const String & directory_path, bool fsync)
     {
-        WriteBufferFromFile out{getNeedRebuildListsMarkFilePath(directory_path)};
-        if (fsync)
-            out.sync();
-        out.close();
-        if (fsync)
-            LocalDirectorySyncGuard(directory_path).sync();
+        changeDirectoryEntries(directory_path, fsync, [&]
+        {
+            WriteBufferFromFile out{getNeedRebuildListsMarkFilePath(directory_path)};
+            if (fsync)
+                out.sync();
+            out.close();
+        });
     }
 
 
@@ -839,12 +852,11 @@ void DiskAccessStorage::deleteAccessEntityOnDisk(const UUID & id) const
 {
     auto file_path = getEntityFilePath(directory_path, id);
     LOG_TRACE(getLogger(), "Deleting file {} for entity with id {}", file_path, id);
-
-    if (!std::filesystem::remove(file_path))
-        throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Couldn't delete {}", file_path);
-    /// Like a rename, the removal is durable only after its directory is synced.
-    if (shouldFsyncMetadata())
-        LocalDirectorySyncGuard(std::filesystem::path{file_path}.parent_path().string()).sync();
+    changeDirectoryEntries(directory_path, shouldFsyncMetadata(), [&]
+    {
+        if (!std::filesystem::remove(file_path))
+            throw Exception(ErrorCodes::FILE_DOESNT_EXIST, "Couldn't delete {}", file_path);
+    });
 }
 
 }
