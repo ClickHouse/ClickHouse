@@ -1479,6 +1479,10 @@ namespace
 
     void setNullDictionarySourceIfExternal(ASTCreateQuery & create_query)
     {
+        /// Nothing to replace: a definition without a source is rejected later by `getDictionaryConfigurationFromAST`.
+        if (!create_query.dictionary || !create_query.dictionary->source)
+            return;
+
         ASTDictionary & dict = *create_query.dictionary;
         if (Poco::toLower(dict.source->name) == "clickhouse")
         {
