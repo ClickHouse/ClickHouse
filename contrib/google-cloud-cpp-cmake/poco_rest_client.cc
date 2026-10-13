@@ -448,10 +448,15 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
     auto const& proxy = options.get<ProxyOption>();
     if (!proxy.hostname().empty()) {
       effective_proxy.host = proxy.hostname();
-      // ProxyConfig defaults the scheme to "https"; default the port to match
-      // the configured scheme instead of always assuming the plain-HTTP port,
-      // matching the `scheme://host[:port]` proxy URL used by the libcurl-based
-      // transport.
+      // The upstream ProxyConfig defaults the scheme to "https". Carry it into
+      // the Poco proxy protocol (so an `https` proxy is reached over TLS) and
+      // default the port to match it, as the `scheme://host[:port]` proxy URL of
+      // the libcurl-based transport does. Requests are tunneled with CONNECT,
+      // like libcurl does for an HTTPS target.
+      effective_proxy.protocol = proxy.scheme() == "https" ? "https" : "http";
+      effective_proxy.tunnel = true;
+      effective_proxy.originalRequestProtocol =
+          uri.getScheme() == "https" ? "https" : "http";
       effective_proxy.port = proxy.scheme() == "https"
                                  ? Poco::Net::HTTPSClientSession::HTTPS_PORT
                                  : Poco::Net::HTTPSession::HTTP_PORT;
@@ -507,16 +512,10 @@ std::unique_ptr<Poco::Net::HTTPClientSession> MakeSession(
     // ProxyOption: it already carries everything Poco needs (including tunneling
     // and the no-proxy host pattern), and it can change between two requests of
     // the same client. Both were resolved above, before the pool lookup.
+    // The session is configured with exactly the ProxyConfig the pool key was
+    // derived from, so the proxy mode of the socket cannot drift from the key.
     if (!effective_proxy.host.empty()) {
-      if (proxy_from_provider) {
-        session->setProxyConfig(effective_proxy);
-      } else {
-        session->setProxy(effective_proxy.host, effective_proxy.port);
-        if (!effective_proxy.username.empty()) {
-          session->setProxyCredentials(effective_proxy.username,
-                                       effective_proxy.password);
-        }
-      }
+      session->setProxyConfig(effective_proxy);
     }
     // The keep-alive policy an operator configured (`http_keep_alive_timeout` /
     // `http_keep_alive_max_requests`). Poco enforces both itself -- it counts the
