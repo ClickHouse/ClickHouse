@@ -147,7 +147,7 @@ public:
 
     void serialize(WriteBuffer & buf) const;
     static std::shared_ptr<ColumnStatistics> deserialize(ReadBuffer & buf, const DataTypePtr & data_type);
-    /// `Basic` statistics set from a summary instead of built from data (see `StatisticsBasic::setSummary`).
+    /// `Basic` statistics built from the rows, bounds and NULL count of data that was not read.
     static std::shared_ptr<ColumnStatistics> createBasicFromSummary(
         const DataTypePtr & data_type, UInt64 rows, const Field & min_value, const Field & max_value, UInt64 null_count);
 

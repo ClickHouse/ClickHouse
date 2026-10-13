@@ -602,7 +602,7 @@ std::shared_ptr<ColumnStatistics> ColumnStatistics::createBasicFromSummary(
     stats_desc.types_to_desc.emplace(StatisticsType::Basic, basic_desc);
 
     auto basic = std::make_shared<StatisticsBasic>(basic_desc, data_type);
-    basic->setSummary(rows, min_value, max_value, null_count);
+    basic->build(rows, min_value, max_value, null_count);
 
     auto column_stats = std::make_shared<ColumnStatistics>(stats_desc);
     column_stats->stats.emplace(StatisticsType::Basic, std::move(basic));
