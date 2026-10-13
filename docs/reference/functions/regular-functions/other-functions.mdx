@@ -866,7 +866,7 @@ This function is non-deterministic: it can return different results for the same
 currentDatabase()
 ```
 
-**Aliases**: `current_database`, `DATABASE`, `SCHEMA`
+**Aliases**: `current_schema`, `current_database`, `DATABASE`, `SCHEMA`
 
 **Arguments**
 
@@ -1190,6 +1190,43 @@ SELECT CURRENT_USER
 ┌─CURRENT_USER─┐
 │ default      │
 └──────────────┘
+```
+
+## current_setting {#current_setting}
+
+Introduced in: v26.8.0
+
+PostgreSQL compatibility function. Returns the value of a run-time configuration parameter. Only a small set of read-only parameters used for client introspection is emulated.
+
+<Note>
+This function is non-deterministic: it can return different results for the same arguments.
+</Note>
+
+**Syntax**
+
+```sql
+current_setting(name [, missing_ok])
+```
+
+**Arguments**
+
+- `name` — The configuration parameter name. [`String`](/reference/data-types/string)
+- `missing_ok` — Return `NULL` instead of throwing for an unknown parameter. [`UInt8`](/reference/data-types/int-uint)
+
+**Returned value**
+
+The value of the configuration parameter, or `NULL` for an unknown parameter when `missing_ok` is true. [`Nullable(String)`](/reference/data-types/nullable)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT current_setting('server_version_num')
+```
+
+```response title=Response
+120000
 ```
 
 ## defaultProfiles {#defaultProfiles}
@@ -2368,6 +2405,39 @@ SELECT formatReadableTimeDelta(INTERVAL 12345 SECOND) AS time_delta
 ┌─time_delta─────────────────────────┐
 │ 3 hours, 25 minutes and 45 seconds │
 └────────────────────────────────────┘
+```
+
+## format_type {#format_type}
+
+Introduced in: v26.8.0
+
+PostgreSQL compatibility function. Returns the SQL name of a type given its OID. For `numeric` the type modifier is decoded into the precision and scale (`numeric(p, s)`); for every other type the modifier is ignored. A `NULL` type modifier means that no modifier is known, as `-1` does, and a `NULL` type OID gives `NULL`.
+
+**Syntax**
+
+```sql
+format_type(type_oid, typemod)
+```
+
+**Arguments**
+
+- `type_oid` — The type OID. [`(U)Int*`](/reference/data-types/int-uint)
+- `typemod` — The type modifier, or `NULL`. [`(U)Int*`](/reference/data-types/int-uint) or [`NULL`](/reference/syntax#null)
+
+**Returned value**
+
+The SQL name of the type. [`String`](/reference/data-types/string)
+
+**Examples**
+
+**Example**
+
+```sql title=Query
+SELECT format_type(23, -1)
+```
+
+```response title=Response
+integer
 ```
 
 ## fuzzQuery {#fuzzQuery}
@@ -5041,7 +5111,8 @@ Introduced in: v26.8.0
 
 Compatibility function for the PostgreSQL wire protocol, an analog of `pg_catalog.pg_table_is_visible`.
 PostgreSQL clients (for example, the `\d` command in `psql`) use it to filter tables visible in the search path.
-Since the `pg_class` view emulated by ClickHouse exposes only the tables of the current database, which are all visible, the function unconditionally returns `1`.
+Outside a PostgreSQL wire-protocol session there is no emulated catalog to resolve the oid against, so the function returns `1`.
+Inside such a session the PostgreSQL handler rewrites the call into a search-path check against the emulated catalog, because it exposes every database as a schema.
     
 
 **Syntax**
