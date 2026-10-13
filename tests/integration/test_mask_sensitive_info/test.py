@@ -1,6 +1,7 @@
 import random
 import re
 import string
+import uuid
 
 import pytest
 
@@ -21,6 +22,20 @@ node = cluster.add_instance(
     with_remote_database_disk=False,
 )
 base_search_query = "SELECT COUNT() FROM system.query_log WHERE query LIKE "
+
+# The probes print the searched string in their own log entries, so the server log checks skip
+# every entry of a query whose id starts with this prefix.
+probe_query_id_prefix = "mask_sensitive_info_probe_"
+
+
+def server_log_contains(pattern):
+    # A multi-line log message (e.g. a plan dump) continues on lines without a timestamp or query id.
+    command = (
+        f"awk -v probe='] {{{probe_query_id_prefix}' "
+        "'/^[0-9][0-9][0-9][0-9][.][0-9][0-9][.][0-9][0-9] / { skip = index($0, probe) > 0 } !skip' "
+        f'/var/log/clickhouse-server/clickhouse-server.log | grep -a "{pattern}" || true'
+    )
+    return len(node.exec_in_container(["bash", "-c", command])) > 0
 
 
 @pytest.fixture(scope="module", autouse=True)
@@ -43,7 +58,7 @@ def check_logs(must_contain=[], must_not_contain=[]):
             .replace("]", "\\]")
             .replace("*", "\\*")
         )
-        assert node.contains_in_log(escaped_str, exclusion_substring=base_search_query)
+        assert server_log_contains(escaped_str)
 
     for str in must_not_contain:
         escaped_str = (
@@ -52,9 +67,7 @@ def check_logs(must_contain=[], must_not_contain=[]):
             .replace("]", "\\]")
             .replace("*", "\\*")
         )
-        assert not node.contains_in_log(
-            escaped_str, exclusion_substring=base_search_query
-        )
+        assert not server_log_contains(escaped_str)
 
     for str in must_contain:
         escaped_str = str.replace("'", "\\'")
@@ -70,7 +83,10 @@ def system_query_log_contains_search_pattern(search_pattern):
     return (
         int(
             node.query(
-                f"{base_search_query}'%{search_pattern}%' AND query NOT LIKE '{base_search_query}%'"
+                f"{base_search_query}'%{search_pattern}%' AND query NOT LIKE '{base_search_query}%'",
+                # Moves the LIKE alone to PREWHERE, whose log lines print the searched string without the rest of the probe.
+                settings={"apply_string_filters_during_scan": 1},
+                query_id=f"{probe_query_id_prefix}{uuid.uuid4()}",
             ).strip()
         )
         >= 1
