@@ -106,10 +106,10 @@ def test_federate_ignores_request_dialect_and_parser_limits():
         assert federate({"match[]": "fed_cpu", **params}).text == expected
 
 
-# Like Prometheus, a label name with ':' passes the legacy name check and is kept as is.
+# ':' is allowed in legacy metric names but not in legacy label names, so it is escaped in a label name.
 def test_federate_label_name_with_colon():
     assert federate({"match[]": "colon_metric"}).text == (
-        "# TYPE colon_metric untyped\n" f'colon_metric{{a:b="x",instance=""}} 7 {ms(15)}\n'
+        "# TYPE colon_metric untyped\n" f'colon_metric{{a_b="x",instance=""}} 7 {ms(15)}\n'
     )
 
 
