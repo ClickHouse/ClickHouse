@@ -24,7 +24,7 @@ LIMIT 1 WITH TIES
 SETTINGS
     optimize_read_in_order = 1,
     read_in_order_use_virtual_row = 1,
-    read_in_order_use_virtual_row_per_block = 1,
+    read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1,
     use_skip_indexes_on_data_read = 0;
 
 SELECT id
@@ -35,7 +35,7 @@ LIMIT 0, 1 WITH TIES
 SETTINGS
     optimize_read_in_order = 1,
     read_in_order_use_virtual_row = 1,
-    read_in_order_use_virtual_row_per_block = 1,
+    read_in_order_use_virtual_row_per_block = 1, read_in_order_virtual_row_block_interval = 1,
     use_skip_indexes_on_data_read = 0;
 
 DROP TABLE t_99495;

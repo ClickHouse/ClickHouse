@@ -1,4 +1,6 @@
 #pragma once
+
+#include <algorithm>
 #include <Processors/QueryPlan/ITransformingStep.h>
 #include <Processors/TopKThresholdTracker.h>
 #include <Core/SortDescription.h>
@@ -54,6 +56,8 @@ public:
         size_t max_block_bytes = 0;
         size_t read_in_order_use_buffering = 0;
         bool read_in_order_use_virtual_row_per_block = false;
+        /// -1 means as many as the pipeline has threads; 0 disables the read-ahead.
+        Int64 virtual_row_prefetch_window = -1;
         size_t temporary_files_buffer_size = 0;
         String temporary_files_codec = {};
 
@@ -130,6 +134,12 @@ public:
     void convertToFinishSorting(SortDescription prefix_description, bool use_buffering_, bool apply_virtual_row_conversions_);
 
     void enableBuffering() { use_buffering = true; }
+    /// The reading side reads ahead itself (the sliced pool): the merge's read-ahead window stays off unless
+    /// `read_in_order_virtual_row_prefetch_window` asks for one explicitly.
+    void disableDefaultReadAheadWindow()
+    {
+        sort_settings.virtual_row_prefetch_window = std::max<Int64>(sort_settings.virtual_row_prefetch_window, 0);
+    }
     bool getUseBuffering() const { return use_buffering; }
 
     Type getType() const { return type; }
