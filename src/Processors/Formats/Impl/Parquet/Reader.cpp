@@ -4301,8 +4301,9 @@ void Reader::flushColumnsCacheWrites(RowGroup & row_group)
         auto entry = std::make_shared<ColumnsCacheEntry>();
         entry->table_uuid = cache_options.table_uuid;
         entry->part_name = cache_options.file_path;
-        if (cache_options.table_uuid == UUIDHelpers::Nil)
-            entry->source = cache_options.source;
+        /// Kept also for an entry of a table: once the table is dropped, its entries can stay in the
+        /// cache with an unresolvable UUID, and only the source grant can be checked for them.
+        entry->source = cache_options.source;
         entry->column_name = extended_sample_block.getByPosition(idx).name;
         entry->schema_identity = cache_options.file_identity;
         entry->first_mark = 0;

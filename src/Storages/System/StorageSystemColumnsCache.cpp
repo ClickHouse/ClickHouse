@@ -155,8 +155,10 @@ protected:
             {
                 /// For unresolved or dropped UUIDs we cannot evaluate per-table access, so
                 /// fail closed: only the global SHOW COLUMNS privilege grants visibility of
-                /// those entries.
-                if (!has_global_show_columns)
+                /// those entries. An entry of a file read by a dropped table also requires the
+                /// unrestricted `READ` grant on its source, as for a table function.
+                if (!has_global_show_columns
+                    || (meta.source && !access->isGranted(AccessType::READ, toStringSource(*meta.source))))
                 {
                     ++current_index;
                     continue;

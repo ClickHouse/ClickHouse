@@ -112,8 +112,9 @@ struct ColumnsCacheEntry
     String part_name;
     String column_name;
     UInt64 schema_identity = 0;
-    /// For an entry of a file that belongs to no table: the source whose `READ` grant is required
-    /// to see the entry in `system.columns_cache`.
+    /// For an entry of a file (not of a `MergeTree` part): the source whose `READ` grant is required
+    /// to see the entry in `system.columns_cache` when it belongs to no table, or when its table
+    /// cannot be resolved any more.
     std::optional<AccessTypeObjects::Source> source;
 
     /// The granules the entry holds, [first_mark, end_mark), and their rows.

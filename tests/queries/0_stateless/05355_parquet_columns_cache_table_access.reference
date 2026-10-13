@@ -6,3 +6,7 @@
 0
 --- SHOW COLUMNS on the table
 1
+--- the entries of a dropped table: global SHOW COLUMNS without READ ON FILE
+0
+--- the entries of a dropped table: global SHOW COLUMNS and READ ON FILE
+1
