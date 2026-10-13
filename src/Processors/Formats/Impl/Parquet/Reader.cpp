@@ -1,5 +1,6 @@
 
 #include <Common/logger_useful.h>
+#include <Common/Allocator.h>
 #include <Common/ProfileEvents.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnDynamic.h>
@@ -341,8 +342,10 @@ void Reader::getHyperrectangleForRowGroup(const parq::RowGroup * meta, Hyperrect
             Range & range = hyperrectangle[column_info.idx_in_output_block];
 
             bool nullable = column_info.levels.back().def > 0;
+            /// Without arrays a valid chunk has num_values == num_rows.
             bool always_null = column_meta.statistics.__isset.null_count &&
-                            column_meta.statistics.null_count == column_meta.num_values;
+                            column_meta.statistics.null_count == column_meta.num_values &&
+                            (column_info.levels.back().rep > 0 || column_meta.num_values == meta->num_rows);
             bool can_be_null = !column_meta.statistics.__isset.null_count ||
                             column_meta.statistics.null_count != 0;
             bool null_as_default = options.format.null_as_default && !column_info.output_nullable;
@@ -2969,19 +2972,33 @@ double Reader::estimateColumnMemoryBytesPerRow(const ColumnChunk & column, const
     return res;
 }
 
+size_t Reader::memoryEstimateLimit() const
+{
+    size_t watermark = std::max(options.format.parquet.memory_low_watermark, options.format.parquet.memory_high_watermark);
+    return std::min(watermark, MAX_ALLOCATION_SIZE / 4) + 1;
+}
+
 void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnInfo & column_info, ColumnSubchunk & subchunk, const RowGroup & row_group, RowSubgroup & row_subgroup)
 {
     /// Allocate columns for values, null map, and array offsets.
+    /// Size hints from the metadata are trusted only if their reserves stay below the allocator's size limit.
+    constexpr double estimate_limit = static_cast<double>(MAX_ALLOCATION_SIZE) / 4;
 
     size_t output_num_values_estimate = 0;
     if (column_info.levels.back().rep == 0)
         output_num_values_estimate = row_subgroup.filter.rows_pass; // no arrays, rows == values
-    else if (row_subgroup.filter.rows_pass == size_t(row_group.meta->num_rows))
-        output_num_values_estimate = column.meta->meta_data.num_values; // whole column chunk
     else
-        /// There are arrays, so we can't know exactly how many primitive values there are in
-        /// rows that pass the filter. Make a guess using average array length.
-        output_num_values_estimate = size_t(1.2 * static_cast<double>(row_subgroup.filter.rows_pass) / static_cast<double>(row_group.meta->num_rows) * static_cast<double>(column.meta->meta_data.num_values));
+    {
+        double num_values = static_cast<double>(column.meta->meta_data.num_values); // whole column chunk
+        if (row_subgroup.filter.rows_pass != size_t(row_group.meta->num_rows))
+            /// There are arrays, so we can't know exactly how many primitive values there are in
+            /// rows that pass the filter. Make a guess using average array length.
+            num_values *= 1.2 * static_cast<double>(row_subgroup.filter.rows_pass) / static_cast<double>(row_group.meta->num_rows);
+        size_t value_bytes = std::max(sizeof(IColumn::Offset),
+            column_info.decoded_type->haveMaximumSizeOfValue() ? column_info.decoded_type->getMaximumSizeOfValueInMemory() : 0);
+        if (num_values * static_cast<double>(value_bytes) < estimate_limit)
+            output_num_values_estimate = size_t(num_values);
+    }
 
     subchunk.arrays_offsets.resize(column_info.levels.back().rep);
     for (size_t i = 0; i < subchunk.arrays_offsets.size(); ++i)
@@ -3001,8 +3018,9 @@ void Reader::decodePrimitiveColumn(ColumnChunk & column, const PrimitiveColumnIn
     if (auto * string_column = typeid_cast<ColumnString *>(subchunk.column.get()))
     {
         double avg_len = estimateAverageStringLengthPerRow(column, row_group);
-        size_t bytes_to_reserve = size_t(1.2 * avg_len * static_cast<double>(row_subgroup.filter.rows_pass));
-        string_column->getChars().reserve(bytes_to_reserve);
+        double bytes_to_reserve = 1.2 * avg_len * static_cast<double>(row_subgroup.filter.rows_pass);
+        if (bytes_to_reserve < estimate_limit)
+            string_column->getChars().reserve(size_t(bytes_to_reserve));
     }
 
     /// Find ranges of rows that pass filter and decode them.
