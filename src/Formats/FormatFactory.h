@@ -63,6 +63,9 @@ using BucketSplitter = std::shared_ptr<IBucketSplitter>;
 
 FormatSettings getFormatSettings(const ContextPtr & context);
 FormatSettings getFormatSettings(const ContextPtr & context, const Settings & settings);
+/// For the `Native` blocks of the native protocol. A secondary query carries type names in both directions,
+/// because a server-side `Connection` never takes format settings.
+FormatSettings getNativeWireFormatSettings(const ContextPtr & context);
 
 /** Allows to create an IInputFormat or IOutputFormat by the name of the format.
   * Note: format and compression are independent things.
