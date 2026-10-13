@@ -60,6 +60,10 @@ struct NullableSubcolumnCreator : public ISerialization::ISubcolumnCreator
     DataTypePtr create(const DataTypePtr & prev) const override;
     SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const override;
     ColumnPtr create(const ColumnPtr & prev) const override;
+    ColumnPtr create(const ColumnPtr & prev, const DataTypePtr & prev_type) const override;
+
+private:
+    ColumnPtr createColumn(const ColumnPtr & prev, bool wrap) const;
 };
 
 }

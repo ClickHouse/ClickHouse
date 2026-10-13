@@ -40,7 +40,7 @@ public:
     TypeIndex getTypeId() const override { return TypeIndex::Variant; }
     const char * getFamilyName() const override { return "Variant"; }
 
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullableImpl() const override { return false; }
     bool supportsSparseSerialization() const override { return false; }
     bool canBeInsideSparseColumns() const override { return false; }
 

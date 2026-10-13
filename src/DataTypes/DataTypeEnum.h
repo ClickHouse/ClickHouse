@@ -23,7 +23,7 @@ public:
     bool isValueUnambiguouslyRepresentedInContiguousMemoryRegion() const override { return true; }
     bool haveMaximumSizeOfValue() const override { return true; }
     bool isCategorial() const override { return true; }
-    bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideNullableImpl() const override { return true; }
     bool isComparable() const override { return true; }
 
     virtual bool contains(const IDataType & rhs) const = 0;

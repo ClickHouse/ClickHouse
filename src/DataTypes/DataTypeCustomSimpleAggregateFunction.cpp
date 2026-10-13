@@ -202,6 +202,13 @@ DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & funct
     return DataTypeFactory::instance().getCustom(std::move(custom_desc));
 }
 
+DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type)
+{
+    if (const auto * simple = typeid_cast<const DataTypeCustomSimpleAggregateFunction *>(type->getCustomName()))
+        return DataTypeFactory::instance().get(simple->getArgumentsDataTypes()[0]->getName());
+    return type;
+}
+
 void registerDataTypeDomainSimpleAggregateFunction(DataTypeFactory & factory)
 {
     factory.registerDataTypeCustom("SimpleAggregateFunction", create, DataTypeFactory::Case::Sensitive, Documentation{
@@ -270,6 +277,9 @@ so unlike with the `AggregateFunction` type there is no need to apply
 
 The `SimpleAggregateFunction` type has better performance than the `AggregateFunction`
 for the same aggregate functions.
+
+Like `AggregateFunction`, a `SimpleAggregateFunction` cannot be inside `Nullable` or `LowCardinality`. To store `NULL`
+values, use a `Nullable` argument type, for example `SimpleAggregateFunction(sum, Nullable(UInt64))`.
 </Note>
 
 ## Example {#example}

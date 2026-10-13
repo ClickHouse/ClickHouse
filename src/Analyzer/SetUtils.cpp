@@ -7,6 +7,7 @@
 #include <Columns/ColumnTuple.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeArray.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <DataTypes/DataTypeTuple.h>
@@ -676,6 +677,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
 
     for (auto & lhs_element_type : lhs_unpacked_types)
     {
+        lhs_element_type = removeSimpleAggregateFunction(lhs_element_type);
         if (const auto * set_element_low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(lhs_element_type.get()))
             lhs_element_type = set_element_low_cardinality_type->getDictionaryType();
     }
@@ -687,6 +689,7 @@ ColumnsWithTypeAndName getSetElementsForConstantValue(
         DataTypes nested_tuple_element_types = lhs_tuple_type->getElements();
         for (auto & element_type : nested_tuple_element_types)
         {
+            element_type = removeSimpleAggregateFunction(element_type);
             if (const auto * low_cardinality_type = typeid_cast<const DataTypeLowCardinality *>(element_type.get()))
                 element_type = low_cardinality_type->getDictionaryType();
         }

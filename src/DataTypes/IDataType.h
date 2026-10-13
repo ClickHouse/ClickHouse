@@ -362,8 +362,9 @@ public:
     virtual bool onlyNull() const { return false; }
 
     /** If this data type cannot be wrapped in Nullable data type.
+      * Also false when the custom name refuses it.
       */
-    virtual bool canBeInsideNullable() const { return false; }
+    bool canBeInsideNullable() const;
 
     virtual bool lowCardinality() const { return false; }
 
@@ -371,7 +372,7 @@ public:
     virtual bool isLowCardinalityNullable() const { return false; }
 
     /// Strings, Numbers, Date, DateTime, Nullable
-    virtual bool canBeInsideLowCardinality() const { return false; }
+    bool canBeInsideLowCardinality() const;
 
     /// Checks if column has dynamic subcolumns.
     virtual bool hasDynamicSubcolumns() const;
@@ -401,6 +402,10 @@ public:
     const ISerialization * getCustomSerialization() const { return custom_serialization.get(); }
 
 protected:
+    /// The answers of the type itself, without its custom name.
+    virtual bool canBeInsideNullableImpl() const { return false; }
+    virtual bool canBeInsideLowCardinalityImpl() const { return false; }
+
     static std::unique_ptr<SubcolumnInfo> getSubcolumnInfo(
         std::string_view subcolumn_name,
         const SubstreamData & data,

@@ -41,7 +41,7 @@ public:
     bool isNullable() const override { return true; }
     size_t getSizeOfValueInMemory() const override;
     bool onlyNull() const override;
-    bool canBeInsideLowCardinality() const override { return nested_data_type->canBeInsideLowCardinality(); }
+    bool canBeInsideLowCardinalityImpl() const override { return nested_data_type->canBeInsideLowCardinality(); }
     bool canBePromoted() const override { return nested_data_type->canBePromoted(); }
     MutableColumnConstPtr createColumnConst(size_t size, const Field & field) const override;
     bool hasDynamicSubcolumnsData() const override { return nested_data_type->hasDynamicSubcolumns(); }
@@ -73,6 +73,10 @@ DataTypePtr makeNullableSafe(const DataTypePtr & type);
 DataTypePtr removeNullable(const DataTypePtr & type);
 DataTypePtr makeNullableOrLowCardinalityNullable(const DataTypePtr & type);
 DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type);
+/// Wrap `column` exactly when the function of the same name wraps `type`, the column's type: a column cannot tell that
+/// its type refuses `Nullable` because of a custom name, as `SimpleAggregateFunction` does.
+ColumnPtr makeNullableSafe(const ColumnPtr & column, const DataTypePtr & type);
+ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column, const DataTypePtr & type);
 /// Nullable(T) -> T, LowCardinality(Nullable(T)) -> T
 DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type);
 

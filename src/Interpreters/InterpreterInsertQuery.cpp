@@ -10,6 +10,7 @@
 #include <Core/SettingsEnums.h>
 #include <Core/ServerSettings.h>
 #include <Core/DeduplicateInsert.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeNullable.h>
 #include <Interpreters/ApplyWithAliasVisitor.h>
 #include <Interpreters/ApplyWithSubqueryVisitor.h>
@@ -413,11 +414,12 @@ Block InterpreterInsertQuery::convertSelectToInsertSchema(
                     && !isDynamic(query_columns[col_idx].type)
                     && output_columns.has(query_columns[col_idx].name))
                 {
+                    /// `SimpleAggregateFunction` cannot be inside `Nullable`, its storage type can.
                     query_sample_block.setColumn(
                         col_idx,
                         ColumnWithTypeAndName(
                             makeNullableOrLowCardinalityNullable(query_columns[col_idx].column),
-                            makeNullableOrLowCardinalityNullable(query_columns[col_idx].type),
+                            makeNullableOrLowCardinalityNullable(removeSimpleAggregateFunction(query_columns[col_idx].type)),
                             query_columns[col_idx].name));
                 }
             }

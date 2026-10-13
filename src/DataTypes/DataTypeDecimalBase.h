@@ -95,7 +95,7 @@ public:
 
     bool isSummable() const override { return true; }
     bool canBeUsedInBooleanContext() const final { return false; }
-    bool canBeInsideNullable() const final { return true; }
+    bool canBeInsideNullableImpl() const final { return true; }
 
     /// Decimal specific
 

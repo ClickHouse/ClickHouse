@@ -21,7 +21,7 @@ public:
     const char * getFamilyName() const override { return "Dynamic"; }
 
     bool isParametric() const override { return true; }
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullableImpl() const override { return false; }
     bool supportsSparseSerialization() const override { return false; }
     bool canBeInsideSparseColumns() const override { return false; }
     bool isComparable() const override { return true; }

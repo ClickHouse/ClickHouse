@@ -50,7 +50,7 @@ public:
     bool haveMaximumSizeOfValue() const final { return true; }
     size_t getSizeOfValueInMemory() const final { return sizeof(T); }
     bool isCategorial() const override { return isValueRepresentedByInteger(); }
-    bool canBeInsideLowCardinality() const final { return true; }
+    bool canBeInsideLowCardinalityImpl() const final { return true; }
 
     void updateHashImpl(SipHash &) const override { /* For numeric types, the type ID is sufficient */ }
 

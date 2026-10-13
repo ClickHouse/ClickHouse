@@ -48,7 +48,7 @@ public:
 
     Array getParameters() const { return parameters; }
 
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullableImpl() const override { return false; }
 
     DataTypePtr getReturnType() const;
     DataTypePtr getReturnTypeToPredict() const;

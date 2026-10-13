@@ -35,7 +35,7 @@ public:
     std::string doGetPrettyName(size_t indent) const override;
     const char * getFamilyName() const override { return "Map"; }
 
-    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideNullableImpl() const override { return false; }
 
     MutableColumnPtr createColumn() const override;
 

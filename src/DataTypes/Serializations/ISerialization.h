@@ -167,6 +167,8 @@ public:
         virtual DataTypePtr create(const DataTypePtr & prev) const = 0;
         virtual SerializationPtr create(const SerializationPtr & prev_serialization, const DataTypePtr & prev_type) const = 0;
         virtual ColumnPtr create(const ColumnPtr & prev) const = 0;
+        /// The same, for a creator that decides by the type: a column cannot tell that its type refuses `Nullable`.
+        virtual ColumnPtr create(const ColumnPtr & prev, const DataTypePtr & /*prev_type*/) const { return create(prev); }
 
         /// A creator wraps whichever subcolumn was selected beneath it, but `create` receives only that
         /// subcolumn's type, column and serialization, which cannot tell a null map from any other `UInt8`.

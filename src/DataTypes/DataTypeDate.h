@@ -16,7 +16,7 @@ public:
     const char * getFamilyName() const override { return family_name; }
 
     bool canBeUsedAsVersion() const override { return true; }
-    bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideNullableImpl() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
 

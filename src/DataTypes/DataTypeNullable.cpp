@@ -125,7 +125,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeNullable::getDynamicSubcolumnI
     res->data.serialization = creator.create(nested_subcolumn_info->data.serialization, nested_subcolumn_info->data.type);
     res->data.type = creator.create(nested_subcolumn_info->data.type);
     if (data.column)
-        res->data.column = creator.create(nested_subcolumn_info->data.column);
+        res->data.column = creator.create(nested_subcolumn_info->data.column, nested_subcolumn_info->data.type);
 
     /// Reached through the nullable elements, exactly as the static enumeration would reach it.
     res->substreams_path.emplace_back(ISerialization::Substream::NullableElements);
@@ -268,6 +268,18 @@ DataTypePtr makeNullableOrLowCardinalityNullableSafe(const DataTypePtr & type)
     }
 
     return makeNullableSafe(type);
+}
+
+ColumnPtr makeNullableSafe(const ColumnPtr & column, const DataTypePtr & type)
+{
+    return makeNullableSafe(type)->isNullable() ? makeNullableSafe(column) : column;
+}
+
+ColumnPtr makeNullableOrLowCardinalityNullableSafe(const ColumnPtr & column, const DataTypePtr & type)
+{
+    return isNullableOrLowCardinalityNullable(makeNullableOrLowCardinalityNullableSafe(type))
+        ? makeNullableOrLowCardinalityNullableSafe(column)
+        : column;
 }
 
 DataTypePtr removeNullableOrLowCardinalityNullable(const DataTypePtr & type)

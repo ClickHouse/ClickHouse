@@ -35,7 +35,7 @@ public:
 
     bool isParametric() const override { return true; }
     bool isCategorial() const override { return false; }
-    bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideNullableImpl() const override { return true; }
 };
 
 }

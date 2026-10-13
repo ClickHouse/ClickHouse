@@ -37,7 +37,7 @@ public:
 
     bool isParametric() const override { return true; }
     bool haveSubtypes() const override { return true; }
-    bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideNullableImpl() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }
     bool isComparableForEquality() const override { return true; }
 

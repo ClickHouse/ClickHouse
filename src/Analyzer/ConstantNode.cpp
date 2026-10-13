@@ -159,7 +159,7 @@ void ConstantNode::convertToNullable()
     /// non-Nullable while the runtime produces a Nullable column, leading to a logical error.
     const auto & column = constant_value.getColumn();
     constant_value
-        = {ColumnConst::create(makeNullableOrLowCardinalityNullableSafe(column->getDataColumnPtr()), column->size()),
+        = {ColumnConst::create(makeNullableOrLowCardinalityNullableSafe(column->getDataColumnPtr(), constant_value.getType()), column->size()),
            makeNullableOrLowCardinalityNullableSafe(constant_value.getType())};
 }
 

@@ -30,11 +30,7 @@ namespace ErrorCodes
 DataTypeLowCardinality::DataTypeLowCardinality(DataTypePtr dictionary_type_)
         : dictionary_type(std::move(dictionary_type_))
 {
-    auto inner_type = dictionary_type;
-    if (dictionary_type->isNullable())
-        inner_type = static_cast<const DataTypeNullable &>(*dictionary_type).getNestedType();
-
-    if (!inner_type->canBeInsideLowCardinality())
+    if (!dictionary_type->canBeInsideLowCardinality())
         throw Exception(ErrorCodes::ILLEGAL_TYPE_OF_ARGUMENT,
                         "DataTypeLowCardinality is supported only for numbers, strings, Date or DateTime, but got {}",
                         dictionary_type->getName());

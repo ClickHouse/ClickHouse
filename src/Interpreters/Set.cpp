@@ -16,6 +16,7 @@
 #include <Common/typeid_cast.h>
 #include <Columns/ColumnDecimal.h>
 
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeTuple.h>
 #include <Columns/ColumnNullable.h>
@@ -397,7 +398,7 @@ void Set::setHeader(const ColumnsWithTypeAndName & header)
     {
         materialized_columns.emplace_back(header.at(i).column->convertToFullColumnIfConst());
         key_columns.emplace_back(materialized_columns.back().get());
-        data_types.emplace_back(header.at(i).type);
+        data_types.emplace_back(removeSimpleAggregateFunction(header.at(i).type));
         set_elements_types.emplace_back(header.at(i).type);
 
         /// Convert low cardinality column to full.

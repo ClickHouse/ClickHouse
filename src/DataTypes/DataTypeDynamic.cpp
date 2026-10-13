@@ -1057,7 +1057,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
                     nullptr,
                     variant_column.getNumVariants(),
                     selected_subcolumn_is_null_map);
-            res->data.column = creator->create(res->data.column);
+            res->data.column = creator->create(res->data.column, subcolumn_type_before_wrap);
         }
         /// Check if requested type was extracted from shared variant. In this case we should use
         /// VariantSubcolumnCreator to create full subcolumn from variant according to created null map.
@@ -1078,7 +1078,7 @@ std::unique_ptr<IDataType::SubcolumnInfo> DataTypeDynamic::getDynamicSubcolumnIn
                     null_map_for_variant_from_shared_variant,
                     0,
                     selected_subcolumn_is_null_map);
-                res->data.column = creator.create(res->data.column);
+                res->data.column = creator.create(res->data.column, subcolumn_type_before_wrap);
             }
         }
         /// Provided Dynamic column doesn't have subcolumn of this type, just create column filled with default values.

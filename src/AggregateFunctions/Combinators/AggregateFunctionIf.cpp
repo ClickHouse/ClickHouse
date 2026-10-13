@@ -3,6 +3,7 @@
 #include <AggregateFunctions/Combinators/AggregateFunctionNull.h>
 
 #include <Common/VectorWithMemoryTracking.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeTuple.h>
 
 #include <absl/container/inlined_vector.h>
@@ -616,7 +617,8 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
 
     /// Nullability of the last argument (condition) does not affect the nullability of the result (NULL is processed as false).
     /// For other arguments it is as usual (at least one is NULL then the result is NULL if possible).
-    bool return_type_is_nullable = !properties.returns_default_when_only_null && getResultType()->canBeInsideNullable()
+    bool flag_like_nullable = !properties.returns_default_when_only_null
+        && removeSimpleAggregateFunction(getResultType())->canBeInsideNullable()
         && std::any_of(arguments.begin(), arguments.end() - 1, [](const auto & element) { return element->isNullable(); });
 
     /// After `Nullable(Tuple)` was introduced, Tuple's `canBeInsideNullable` now returns
@@ -629,10 +631,12 @@ AggregateFunctionPtr AggregateFunctionIf::getOwnNullAdapter(
     /// with at least one Nullable argument) always serializes the flag byte unconditionally.
     /// For example, `simpleLinearRegressionState` will write the flag byte but `simpleLinearRegressionIfState` will not.
     /// This inconsistency predates the introduction of `Nullable(Tuple)`.
-    if (return_type_is_nullable && typeid_cast<const DataTypeTuple *>(getResultType().get()))
-        return_type_is_nullable = false;
+    if (flag_like_nullable && typeid_cast<const DataTypeTuple *>(getResultType().get()))
+        flag_like_nullable = false;
 
-    bool need_to_serialize_flag = return_type_is_nullable || properties.returns_default_when_only_null;
+    bool need_to_serialize_flag = flag_like_nullable || properties.returns_default_when_only_null;
+    /// A `SimpleAggregateFunction` result cannot be `Nullable`; its states keep the flag of its storage type.
+    bool return_type_is_nullable = flag_like_nullable && getResultType()->canBeInsideNullable();
 
     if (arguments.size() <= 2 && arguments.front()->isNullable())
     {

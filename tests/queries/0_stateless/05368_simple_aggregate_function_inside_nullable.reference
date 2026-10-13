@@ -1,0 +1,32 @@
+SimpleAggregateFunction(sum, UInt64)
+1	40	40	c	SimpleAggregateFunction(sum, UInt64)
+1
+0	1
+40
+3	SimpleAggregateFunction(sum, UInt64)	010300000000000000
+0	SimpleAggregateFunction(sum, UInt64)	UInt64	1
+40	SimpleAggregateFunction(sum, UInt64)	UInt64	1
+0	SimpleAggregateFunction(sum, UInt64)	UInt64	1
+40	SimpleAggregateFunction(sum, UInt64)	UInt64	1
+5	SimpleAggregateFunction(sum, UInt64)	Const(UInt64)
+5	SimpleAggregateFunction(sum, UInt64)	Const(UInt64)
+0	SimpleAggregateFunction(sum, UInt64)	UInt64
+1	10	SimpleAggregateFunction(sum, UInt64)	UInt64
+0	0	SimpleAggregateFunction(sum, UInt64)	UInt64
+1	10	SimpleAggregateFunction(sum, UInt64)	UInt64
+7	SimpleAggregateFunction(sum, UInt64)	UInt64
+0	SimpleAggregateFunction(sum, UInt64)	UInt64
+7	SimpleAggregateFunction(sum, UInt64)	UInt64
+0	SimpleAggregateFunction(sum, UInt64)	UInt64
+3	SimpleAggregateFunction(sum, UInt64)	UInt64	0	SimpleAggregateFunction(sum, UInt64)	UInt64
+0	SimpleAggregateFunction(sum, UInt64)	UInt64	4	SimpleAggregateFunction(sum, UInt64)	UInt64
+0	SimpleAggregateFunction(sum, UInt64)	UInt64	0	SimpleAggregateFunction(sum, UInt64)	UInt64
+0	SimpleAggregateFunction(sum, UInt64)	Const(UInt64)
+0	SimpleAggregateFunction(sum, UInt64)	Const(UInt64)
+1	4	SimpleAggregateFunction(sum, UInt64)	UInt64	4	SimpleAggregateFunction(sum, UInt64)	UInt64
+2	0	SimpleAggregateFunction(sum, UInt64)	UInt64	0	SimpleAggregateFunction(sum, UInt64)	UInt64
+0	SimpleAggregateFunction(max, Float32)	Const(Float32)
+[1,0]	Array(SimpleAggregateFunction(max, Float32))	Const(Array(Float32))
+0	3	SimpleAggregateFunction(max, Float32)	Float32	[1,0]	Array(SimpleAggregateFunction(max, Float32))	Array(Float32)
+1	0	SimpleAggregateFunction(max, Float32)	Float32	[0,0]	Array(SimpleAggregateFunction(max, Float32))	Array(Float32)
+2	0	SimpleAggregateFunction(max, Float32)	Float32	[1,0]	Array(SimpleAggregateFunction(max, Float32))	Array(Float32)

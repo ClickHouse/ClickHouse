@@ -173,9 +173,9 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
-                return castNestedResult(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type, getName());
+                return castNestedResult(ColumnWithTypeAndName{makeNullableSafe(nested_result, nested_result_type), makeNullableSafe(nested_result_type), ""}, result_type, getName());
 
-            return makeNullableSafe(nested_result);
+            return makeNullableSafe(nested_result, nested_result_type);
         }
 
         /// Cast column to result Dynamic type.
@@ -495,9 +495,9 @@ ColumnPtr ExecutableFunctionDynamicAdaptor::executeImpl(const ColumnsWithTypeAnd
         {
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
-                variants_results.push_back(castNestedResult(ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""}, result_type, getName()));
+                variants_results.push_back(castNestedResult(ColumnWithTypeAndName{makeNullableSafe(nested_result, nested_result_type), makeNullableSafe(nested_result_type), ""}, result_type, getName()));
             else
-                variants_results.push_back(makeNullableSafe(nested_result));
+                variants_results.push_back(makeNullableSafe(nested_result, nested_result_type));
         }
         /// Otherwise cast this result to the resulting Dynamic type.
         else

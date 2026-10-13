@@ -641,6 +641,7 @@ struct KeysOrValuesSubcolumnCreator : public ISerialization::ISubcolumnCreator
 
     DataTypePtr create(const DataTypePtr & prev) const override { return nested_creator->create(prev); }
     ColumnPtr create(const ColumnPtr & prev) const override { return nested_creator->create(prev); }
+    ColumnPtr create(const ColumnPtr & prev, const DataTypePtr & prev_type) const override { return nested_creator->create(prev, prev_type); }
     SerializationPtr create(const SerializationPtr & prev, const DataTypePtr & type) const override
     {
         return SerializationMapKeysOrValues::create(nested_creator->create(prev, type), serialization_version);

@@ -208,11 +208,11 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
                 return castNestedResult(
-                    ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""},
+                    ColumnWithTypeAndName{makeNullableSafe(nested_result, nested_result_type), makeNullableSafe(nested_result_type), ""},
                     result_type,
                     getName());
 
-            return makeNullableSafe(nested_result);
+            return makeNullableSafe(nested_result, nested_result_type);
         }
 
         /// Result is Variant - use castColumn to handle the conversion.
@@ -447,11 +447,11 @@ ColumnPtr ExecutableFunctionVariantAdaptor::executeImpl(
             /// If return types are not the same, they must be convertible to each other (like FixedString/String).
             if (!removeNullable(result_type)->equals(*removeNullable(nested_result_type)))
                 variants_results[i] = castNestedResult(
-                    ColumnWithTypeAndName{makeNullableSafe(nested_result), makeNullableSafe(nested_result_type), ""},
+                    ColumnWithTypeAndName{makeNullableSafe(nested_result, nested_result_type), makeNullableSafe(nested_result_type), ""},
                     result_type,
                     getName());
             else
-                variants_results[i] = makeNullableSafe(nested_result);
+                variants_results[i] = makeNullableSafe(nested_result, nested_result_type);
         }
         /// Result is Variant - keep the individual result columns, we'll build Variant manually
         else

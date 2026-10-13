@@ -49,8 +49,8 @@ public:
     bool haveMaximumSizeOfValue() const override { return true; }
     size_t getSizeOfValueInMemory() const override { return n; }
     bool isCategorial() const override { return true; }
-    bool canBeInsideNullable() const override { return true; }
-    bool canBeInsideLowCardinality() const override { return true; }
+    bool canBeInsideNullableImpl() const override { return true; }
+    bool canBeInsideLowCardinalityImpl() const override { return true; }
 
     void updateHashImpl(SipHash & hash) const override;
 };

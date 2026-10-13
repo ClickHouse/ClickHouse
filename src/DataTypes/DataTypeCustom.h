@@ -28,6 +28,10 @@ public:
 
     virtual String getName() const = 0;
 
+    /// See `IDataType::canBeInsideNullable` and `IDataType::canBeInsideLowCardinality`.
+    virtual bool canBeInsideNullable() const { return true; }
+    virtual bool canBeInsideLowCardinality() const { return true; }
+
     /// Applies to one nested type the same rewrite that produced `rebuilt` below, returning nullptr
     /// if that rewrite has to be abandoned.
     using RewriteNestedFn = std::function<DataTypePtr(const DataTypePtr &)>;

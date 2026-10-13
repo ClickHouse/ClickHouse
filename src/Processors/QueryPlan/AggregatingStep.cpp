@@ -156,8 +156,8 @@ static inline void convertToNullable(Block & header, const Names & keys)
     {
         auto & column = header.getByName(key);
 
+        column.column = makeNullableOrLowCardinalityNullableSafe(column.column, column.type);
         column.type = makeNullableOrLowCardinalityNullableSafe(column.type);
-        column.column = makeNullableOrLowCardinalityNullableSafe(column.column);
     }
 }
 

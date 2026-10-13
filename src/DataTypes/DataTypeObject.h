@@ -54,7 +54,7 @@ public:
     bool isDefaultInsertTrivial() const override;
 
     bool isParametric() const override { return true; }
-    bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideNullableImpl() const override { return true; }
     bool supportsSparseSerialization() const override { return false; }
     bool canBeInsideSparseColumns() const override { return false; }
     bool isComparable() const override { return true; }

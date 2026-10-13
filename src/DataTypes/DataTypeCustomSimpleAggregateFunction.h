@@ -44,10 +44,16 @@ public:
     const DataTypes & getArgumentsDataTypes() const { return argument_types; }
     const Array & getParameters() const { return parameters; }
     String getName() const override;
+    /// Merges apply the function only to a column whose outermost type is `SimpleAggregateFunction`.
+    bool canBeInsideNullable() const override { return false; }
+    bool canBeInsideLowCardinality() const override { return false; }
     DataTypeCustomDescPtr rederiveFor(const DataTypePtr & rebuilt, const RewriteNestedFn & rewrite_nested) const override;
     static void checkSupportedFunctions(const AggregateFunctionPtr & function);
 };
 
 DataTypePtr createSimpleAggregateFunctionType(const AggregateFunctionPtr & function, const DataTypes & argument_types, const Array & parameters);
+
+/// `SimpleAggregateFunction(f, T)` -> `T`, built the way the type's own storage is; any other type is returned unchanged.
+DataTypePtr removeSimpleAggregateFunction(const DataTypePtr & type);
 
 }

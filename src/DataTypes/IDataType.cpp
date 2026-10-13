@@ -257,8 +257,8 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getSubcolumnInfo(
                             /// inspecting its prev_type argument sees the type the serialization
                             /// actually serializes. Same order as in ISerialization::createFromPath.
                             dynamic_subcolumn_info->data.serialization = creator->create(dynamic_subcolumn_info->data.serialization, dynamic_subcolumn_info->data.type);
+                            dynamic_subcolumn_info->data.column = creator->create(dynamic_subcolumn_info->data.column, dynamic_subcolumn_info->data.type);
                             dynamic_subcolumn_info->data.type = creator->create(dynamic_subcolumn_info->data.type);
-                            dynamic_subcolumn_info->data.column = creator->create(dynamic_subcolumn_info->data.column);
                         }
 
                         tmp_subpath[i].data = dynamic_subcolumn_info->data;
@@ -314,6 +314,16 @@ std::unique_ptr<IDataType::SubcolumnInfo> IDataType::getDynamicSubcolumnInfo(
 bool IDataType::hasSubcolumn(std::string_view subcolumn_name) const
 {
     return tryGetSubcolumnType(subcolumn_name) != nullptr;
+}
+
+bool IDataType::canBeInsideNullable() const
+{
+    return canBeInsideNullableImpl() && (!custom_name || custom_name->canBeInsideNullable());
+}
+
+bool IDataType::canBeInsideLowCardinality() const
+{
+    return canBeInsideLowCardinalityImpl() && (!custom_name || custom_name->canBeInsideLowCardinality());
 }
 
 bool IDataType::hasDynamicSubcolumns() const

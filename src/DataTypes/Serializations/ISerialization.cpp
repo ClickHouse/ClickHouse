@@ -836,8 +836,8 @@ ISerialization::createFromPath(const SubstreamPath & path, size_t prefix_len, co
                 creator = std::move(specialized);
 
             res.serialization = res.serialization ? creator->create(res.serialization, res.type) : res.serialization;
+            res.column = res.column ? creator->create(res.column, res.type) : res.column;
             res.type = res.type ? creator->create(res.type) : res.type;
-            res.column = res.column ? creator->create(res.column) : res.column;
         }
     }
 

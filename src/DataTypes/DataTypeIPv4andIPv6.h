@@ -33,7 +33,7 @@ public:
     void updateHashImpl(SipHash &) const override {}
 
     bool canBeUsedInBitOperations() const override { return true; }
-    bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideNullableImpl() const override { return true; }
     bool canBePromoted() const override { return false; }
     bool shouldAlignRightInPrettyFormats() const override { return false; }
     bool textCanContainOnlyValidUTF8() const override { return true; }
@@ -46,7 +46,7 @@ public:
     bool haveMaximumSizeOfValue() const override { return true; }
     size_t getSizeOfValueInMemory() const override { return sizeof(IPv4); }
     bool isCategorial() const override { return true; }
-    bool canBeInsideLowCardinality() const override { return true; }
+    bool canBeInsideLowCardinalityImpl() const override { return true; }
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return SerializationIP<IPv4>::create(); }
 };
@@ -75,7 +75,7 @@ public:
     void updateHashImpl(SipHash &) const override {}
 
     bool canBeUsedInBitOperations() const override { return true; }
-    bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideNullableImpl() const override { return true; }
     bool canBePromoted() const override { return false; }
     bool shouldAlignRightInPrettyFormats() const override { return false; }
     bool textCanContainOnlyValidUTF8() const override { return true; }
@@ -85,7 +85,7 @@ public:
     bool haveMaximumSizeOfValue() const override { return true; }
     size_t getSizeOfValueInMemory() const override { return sizeof(IPv6); }
     bool isCategorial() const override { return true; }
-    bool canBeInsideLowCardinality() const override { return true; }
+    bool canBeInsideLowCardinalityImpl() const override { return true; }
 
     SerializationPtr doGetSerialization(const SerializationInfoSettings &) const override { return SerializationIP<IPv6>::create(); }
 };

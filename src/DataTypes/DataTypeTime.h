@@ -47,7 +47,7 @@ public:
     TypeIndex getColumnType() const override { return TypeIndex::Int32; }
 
     bool canBeUsedAsVersion() const override { return true; }
-    bool canBeInsideNullable() const override { return true; }
+    bool canBeInsideNullableImpl() const override { return true; }
 
     bool equals(const IDataType & rhs) const override;
 

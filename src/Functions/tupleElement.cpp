@@ -356,7 +356,7 @@ private:
             /// element that already carries NULLs (Nullable / LowCardinality(Nullable) / Dynamic / Variant),
             /// and promote a non-nullable `LowCardinality(T)` element to `LowCardinality(Nullable(T))` first.
             /// Keeps the (type, column) pair consistent with `getReturnTypeImpl` and the subcolumn reader.
-            return NullableSubcolumnCreator(null_map_column).create(element_column);
+            return NullableSubcolumnCreator(null_map_column).create(element_column, element_type);
         }
 
         /// The element (e.g. Map, Array) can neither be wrapped in `Nullable` nor carry NULL itself, so it

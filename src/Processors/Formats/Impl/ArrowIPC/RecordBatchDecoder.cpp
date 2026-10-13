@@ -19,6 +19,7 @@
 #include <Columns/ColumnNothing.h>
 #include <Columns/ColumnsNumber.h>
 #include <DataTypes/DataTypeVariant.h>
+#include <DataTypes/DataTypeCustomSimpleAggregateFunction.h>
 #include <DataTypes/DataTypeDateTime64.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeNullable.h>
@@ -120,7 +121,7 @@ DataTypePtr stripHint(const DataTypePtr & type)
 {
     if (!type)
         return nullptr;
-    return removeLowCardinalityAndNullable(type);
+    return removeSimpleAggregateFunction(removeLowCardinalityAndNullable(type));
 }
 
 DataTypePtr arrayElementHint(const DataTypePtr & hint)
