@@ -32,6 +32,7 @@
 #include <Storages/StorageProxy.h>
 #include <Storages/StorageSnapshot.h>
 
+#include <set>
 #include <unordered_set>
 
 namespace DB
@@ -567,6 +568,15 @@ private:
         std::unordered_set<const IQueryTreeNode *> joined_on_keys;
         auto reached = [&](const ColumnNode & column, const IQueryTreeNode * source)
         { return (source == target && is_key(column)) || joined_on_keys.contains(source); };
+        /// A runtime filter is not built for a join with a key pair without a common supertype.
+        std::set<std::pair<const IQueryTreeNode *, const IQueryTreeNode *>> joins_without_filter;
+        for (const auto & conjunct : enforced)
+        {
+            auto [lhs, rhs] = asColumnEquality(conjunct);
+            if (lhs && rhs && !tryGetLeastSupertype(DataTypes{lhs->getResultType(), rhs->getResultType()}))
+                joins_without_filter.insert(std::minmax(lhs->getColumnSourceOrNull().get(), rhs->getColumnSourceOrNull().get()));
+        }
+
         auto join = [&](const ColumnNode & from, const IQueryTreeNode * from_source, const IQueryTreeNode * to_source)
         {
             return reached(from, from_source) && to_source != target && !joined_on_keys.contains(to_source)
@@ -582,8 +592,7 @@ private:
                     continue;
                 const auto * lhs_source = lhs->getColumnSourceOrNull().get();
                 const auto * rhs_source = rhs->getColumnSourceOrNull().get();
-                /// A runtime filter is not built for join keys without a common supertype.
-                if (!lhs_source || !rhs_source || !tryGetLeastSupertype(DataTypes{lhs->getResultType(), rhs->getResultType()}))
+                if (!lhs_source || !rhs_source || joins_without_filter.contains(std::minmax(lhs_source, rhs_source)))
                     continue;
                 changed |= join(*lhs, lhs_source, rhs_source);
                 changed |= join(*rhs, rhs_source, lhs_source);
