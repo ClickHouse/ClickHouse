@@ -50,7 +50,7 @@ void SpillingHashJoin::tryConvertWorkers(JoinBuildContext context)
     chassert(in_memory_hash_join);
     chassert(grace_join);
 
-    const size_t num_workers = in_memory_hash_join->getNumWorkers();
+    const size_t num_workers = in_memory_hash_join->getMaxBuildThreads();
 
     if (next_worker_to_convert.load(std::memory_order_acquire) >= num_workers)
         return;

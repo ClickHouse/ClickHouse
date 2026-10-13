@@ -2241,11 +2241,6 @@ BlocksList HashJoin::releaseJoinedBlocks(bool restructure [[maybe_unused]])
     return restored_blocks;
 }
 
-size_t HashJoin::getNumWorkers() const
-{
-    return data ? data->workers.size() : 0;
-}
-
 BlocksList HashJoin::releaseWorkerBlocks(size_t worker_id)
 {
     if (!data || worker_id >= data->workers.size())
@@ -2480,7 +2475,7 @@ bool HashJoin::isRightTableRerangeEnabled() const
 ///    insignificant performance improvement after reranging by key.
 bool HashJoin::rightTableCanBeReranged() const
 {
-    return isRightTableRerangeEnabled() && data->hasStoredColumns()
+    return isRightTableRerangeEnabled() && !data->workers.front().columns.empty()
         && data->rows_to_join <= table_join->sortRightMaximumTableRows()
         && data->avgPerKeyRows() >= table_join->sortRightMinimumPerkeyRows();
 }

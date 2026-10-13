@@ -934,7 +934,7 @@ public:
 protected:
     Chunk generate() override
     {
-        if (!join->data->hasStoredColumns())
+        if (join->data->workers.front().columns.empty())
             return {};
 
         Chunk chunk;

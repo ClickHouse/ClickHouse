@@ -17,7 +17,6 @@
 
 #include <Columns/ColumnNullable.h>
 #include <Core/Block_fwd.h>
-#include <DataTypes/IDataType.h>
 #include <Interpreters/HashJoin/BuildSlots.h>
 #include <Interpreters/HashJoin/ScatteredBlock.h>
 #include <Processors/QueryPlan/Profiling/Metrics/StepAnalyzeInfo.h>
@@ -39,7 +38,6 @@ namespace DB
 
 class TableJoin;
 class ExpressionActions;
-class JoinSource;
 using Sizes = std::vector<size_t>;
 
 class MatchedRowsStats;
@@ -344,11 +342,6 @@ public:
     size_t getMaxBuildThreads() const override { return build_layout.num_build_workers; }
 
     bool supportParallelNonJoinedBlocksProcessing() const override;
-    /// `FilledJoinStep` probes a StorageJoin and has no `NonJoinedBlocksTransform` to run.
-    bool isParallelNonJoinedProcessingEnabled() const override
-    {
-        return !from_storage_join && supportParallelNonJoinedBlocksProcessing();
-    }
 
     void setTotals(const Block & block) override;
     const Block & getTotals() const override;
@@ -455,26 +448,26 @@ public:
     M(low_cardinality_key_fixed_string) \
     APPLY_FOR_TWO_LEVEL_JOIN_VARIANTS(M)
 
-/// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
-/// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
-/// they are read back the same way (the output key column is the parent LowCardinality type).
-/// The keysN maps hold the key columns packed into one fixed-width blob, so each key column is
-/// recovered from its own byte range. `hashed` is absent: its map key is a hash of the values.
-/// Only the serial types are listed: a `JoinSource` reads a `StorageJoin` map, and `StorageJoin`
-/// always builds with the serial layout.
-#define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
-    M(key8) \
-    M(key16) \
-    M(key32) \
-    M(key64) \
-    M(key_string) \
-    M(key_fixed_string) \
-    M(keys32) \
-    M(keys64) \
-    M(keys128) \
-    M(keys256) \
-    M(low_cardinality_key_string) \
-    M(low_cardinality_key_fixed_string)
+    /// Used for reading from StorageJoin and applying joinGet function. The single-LowCardinality-key
+    /// maps store key values in maps physically identical to their non-LowCardinality counterparts, so
+    /// they are read back the same way (the output key column is the parent LowCardinality type).
+    /// The keysN maps hold the key columns packed into one fixed-width blob, so each key column is
+    /// recovered from its own byte range. `hashed` is absent: its map key is a hash of the values.
+    /// Only the serial types are listed: a `JoinSource` reads a `StorageJoin` map, and `StorageJoin`
+    /// always builds with the serial layout.
+    #define APPLY_FOR_JOIN_VARIANTS_LIMITED(M) \
+        M(key8)                                \
+        M(key16)                               \
+        M(key32)                               \
+        M(key64)                               \
+        M(key_string)                          \
+        M(key_fixed_string)                    \
+        M(keys32)                              \
+        M(keys64)                              \
+        M(keys128)                             \
+        M(keys256)                             \
+        M(low_cardinality_key_string)          \
+        M(low_cardinality_key_fixed_string)
 
     enum class Type : uint8_t
     {
@@ -503,21 +496,21 @@ public:
     {
         using MappedType = Mapped;
         static constexpr bool has_mapped = !is_join_set_mapped<Mapped>;
-        std::shared_ptr<JoinFixedHashMap<UInt8, Mapped>> key8;
-        std::shared_ptr<JoinFixedHashMap<UInt16, Mapped>> key16;
+        std::shared_ptr<JoinFixedHashMap<UInt8, Mapped>>                          key8;
+        std::shared_ptr<JoinFixedHashMap<UInt16, Mapped>>                         key16;
         std::shared_ptr<TwoLevelJoinFixedHashMap<UInt8, Mapped>> two_level_key8;
         std::shared_ptr<TwoLevelJoinFixedHashMap<UInt16, Mapped>> two_level_key16;
-        std::shared_ptr<JoinHashMap<UInt32, Mapped, HashCRC32<UInt32>>> key32;
-        std::shared_ptr<JoinHashMap<UInt64, Mapped, HashCRC32<UInt64>>> key64;
-        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>> key_string;
-        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>> key_fixed_string;
-        std::shared_ptr<JoinHashMap<UInt32, Mapped, HashCRC32<UInt32>>> keys32;
-        std::shared_ptr<JoinHashMap<UInt64, Mapped, HashCRC32<UInt64>>> keys64;
-        std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128HashCRC32>> keys128;
-        std::shared_ptr<JoinHashMap<UInt256, Mapped, UInt256HashCRC32>> keys256;
-        std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128TrivialHash>> hashed;
-        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>> low_cardinality_key_string;
-        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>> low_cardinality_key_fixed_string;
+        std::shared_ptr<JoinHashMap<UInt32, Mapped, HashCRC32<UInt32>>>           key32;
+        std::shared_ptr<JoinHashMap<UInt64, Mapped, HashCRC32<UInt64>>>           key64;
+        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>>              key_string;
+        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>>              key_fixed_string;
+        std::shared_ptr<JoinHashMap<UInt32, Mapped, HashCRC32<UInt32>>>           keys32;
+        std::shared_ptr<JoinHashMap<UInt64, Mapped, HashCRC32<UInt64>>>           keys64;
+        std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128HashCRC32>>           keys128;
+        std::shared_ptr<JoinHashMap<UInt256, Mapped, UInt256HashCRC32>>           keys256;
+        std::shared_ptr<JoinHashMap<UInt128, Mapped, UInt128TrivialHash>>         hashed;
+        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_string;
+        std::shared_ptr<JoinHashMapWithSavedHash<std::string_view, Mapped>>      low_cardinality_key_fixed_string;
         std::shared_ptr<TwoLevelJoinHashMap<UInt32, Mapped, HashCRC32<UInt32>>> two_level_key32;
         std::shared_ptr<TwoLevelJoinHashMap<UInt64, Mapped, HashCRC32<UInt64>>> two_level_key64;
         std::shared_ptr<TwoLevelJoinHashMapWithSavedHash<std::string_view, Mapped>> two_level_key_string;
@@ -584,7 +577,7 @@ public:
             }
         }
 
-        /// NOLINTEND(bugprone-macro-parentheses)
+/// NOLINTEND(bugprone-macro-parentheses)
     };
 
     using MapsOne = MapsTemplate<RowRef>;
@@ -726,11 +719,6 @@ public:
                 return 0;
             return rows_to_join.load(std::memory_order_relaxed) / keys;
         }
-
-        bool hasStoredColumns() const
-        {
-            return std::ranges::any_of(workers, [](const WorkerStoredData & worker) { return !worker.columns.empty(); });
-        }
     };
 
     /// For INNER/LEFT ALL JOINs, if the right side has no duplicates inside the join key columns,
@@ -751,8 +739,7 @@ public:
     void reuseJoinedData(const HashJoin & join);
 
     RightTableDataPtr getJoinedData() const { return data; }
-    BlocksList releaseJoinedBlocks(bool restructure);
-    size_t getNumWorkers() const;
+    BlocksList releaseJoinedBlocks(bool restructure = false);
     BlocksList releaseWorkerBlocks(size_t worker_id);
     void releaseJoinMaps();
 
@@ -789,7 +776,7 @@ private:
     friend class NotJoinedHash;
     friend class JoinSource;
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate> // NOLINT(readability-identifier-naming)
+    template <JoinKind KIND, JoinStrictness STRICTNESS, typename MapsTemplate>
     friend class HashJoinMethods;
 
     std::shared_ptr<IJoin> cloneWith(
@@ -967,7 +954,7 @@ private:
     bool right_blocks_may_be_taken = false;
     bool canRemoveColumnsFromLeftBlock() const;
 
-    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps> // NOLINT(readability-identifier-naming)
+    template <JoinKind KIND, JoinStrictness STRICTNESS, typename Maps>
     BuildResult insertClause(
         Maps & map,
         size_t clause_idx,
@@ -987,7 +974,7 @@ private:
     bool rightTableCanBeReranged() const;
     void tryRerangeRightTableData();
 
-    template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS> // NOLINT(readability-identifier-naming)
+    template <JoinKind KIND, typename Map, JoinStrictness STRICTNESS>
     void tryRerangeRightTableDataImpl(Map & map);
 
     bool canConvertToFixedHashMap() const;
