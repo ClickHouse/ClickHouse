@@ -611,6 +611,7 @@ private:
         DataTypePtr & out_key_column_type,
         Field & out_value,
         DataTypePtr & out_type,
+        bool nested_null_is_ordinary_value,
         bool & out_atom_is_exact);
 
     /// Checks if node is a subexpression of any of key columns expressions,
