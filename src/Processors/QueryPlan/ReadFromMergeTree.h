@@ -416,6 +416,9 @@ public:
 
     /// Whether the FINAL merges of this read can be followed by a virtual row (see `spreadMarkRangesAmongStreamsFinal`).
     bool canUseVirtualRowWithFinal() const;
+    /// Whether the index of every part has the value of its virtual row; a part without it reads without one.
+    /// Loads the primary indexes of the parts.
+    bool everyPartHasVirtualRowBound(bool read_in_reverse) const;
     bool readsInOrder() const;
     const InputOrderInfoPtr & getInputOrder() const { return query_info.input_order_info; }
     const SortDescription & getSortDescription() const override { return result_sort_description; }

@@ -1292,7 +1292,13 @@ InputOrderInfoPtr buildInputOrderInfo(
                 virtual_row_reader = reading;
             }
 
-            if (!uses_virtual_row)
+            /// A part whose index lacks the value of its virtual row reads without one (see
+            /// `ReadFromMergeTree::everyPartHasVirtualRowBound`): behind a join, every part needs it.
+            const bool every_part_uses_virtual_row = uses_virtual_row
+                && (find_reading_ctx.joins_to_keep_in_order.empty()
+                    || reading->everyPartHasVirtualRowBound(order_info.input_order->direction < 0));
+
+            if (!every_part_uses_virtual_row)
             {
                 /// Virtual row is required for INNER JOIN to maintain read-in-order optimization.
                 /// Without it, the sorting step after join cannot correctly determine
@@ -1305,6 +1311,7 @@ InputOrderInfoPtr buildInputOrderInfo(
                     if (table_join.kind() != JoinKind::Left || (strictness != JoinStrictness::All && strictness != JoinStrictness::Any))
                     {
                         LOG_DEBUG(getLogger("optimizeReadInOrder"), "Skip using read in order for inner join without virtual row optimization");
+                        reading->resetVirtualRowConversions();
                         return nullptr;
                     }
                 }

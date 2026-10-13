@@ -912,20 +912,30 @@ Pipe ReadFromMergeTree::readFromPool(
     return pipe;
 }
 
+/// The index of `part` when it has the values a virtual row of `num_key_columns` reads, nullptr otherwise:
+/// `optimizeIndexColumns` may drop the trailing key columns (see
+/// `primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns`), and a read in the reverse order
+/// is bounded by the final mark.
+static IMergeTreeDataPart::IndexPtr indexWithVirtualRowBound(const IMergeTreeDataPart & part, size_t num_key_columns, bool read_in_reverse)
+{
+    if (read_in_reverse && !part.index_granularity->hasFinalMark())
+        return nullptr;
+    auto index = part.getIndex();
+    if (index->size() < num_key_columns)
+        return nullptr;
+    return index;
+}
+
 /// The primary key value bounding the rows of the part's ranges, in the columns of `pk_header`: the
-/// index entry at the first mark, or at the mark after the last one for a read in the reverse order,
-/// which the index has only with a final mark. Nullopt when the index does not have the value.
+/// index entry at the first mark, or at the mark after the last one for a read in the reverse order.
+/// Nullopt when the index does not have the value.
 static std::optional<Block> getVirtualRowBound(const RangesInDataPart & part_with_ranges, const Block & pk_header, bool read_in_reverse)
 {
-    const auto & index = part_with_ranges.data_part->getIndex();
-    const size_t mark_pos = read_in_reverse ? part_with_ranges.ranges.back().end : part_with_ranges.ranges.front().begin;
+    const auto index = indexWithVirtualRowBound(*part_with_ranges.data_part, pk_header.columns(), read_in_reverse);
+    if (!index)
+        return std::nullopt;
 
-    /// The index may have fewer columns than the primary key if suffix columns were removed by
-    /// optimizeIndexColumns (controlled by primary_key_ratio_of_unique_prefix_values_to_skip_suffix_columns).
-    if (index->size() < pk_header.columns())
-        return std::nullopt;
-    if (read_in_reverse && !part_with_ranges.data_part->index_granularity->hasFinalMark())
-        return std::nullopt;
+    const size_t mark_pos = read_in_reverse ? part_with_ranges.ranges.back().end : part_with_ranges.ranges.front().begin;
     for (size_t j = 0; j < pk_header.columns(); ++j)
         if ((*index)[j]->size() <= mark_pos)
             return std::nullopt;
@@ -4218,6 +4228,15 @@ bool ReadFromMergeTree::canUseVirtualRowWithFinal() const
     if (is_parallel_reading_from_replicas)
         return false;
 
+    return true;
+}
+
+bool ReadFromMergeTree::everyPartHasVirtualRowBound(bool read_in_reverse) const
+{
+    const size_t num_key_columns = makeVirtualRowHeader().columns();
+    for (const auto & part : getParts())
+        if (!indexWithVirtualRowBound(*part.data_part, num_key_columns, read_in_reverse))
+            return false;
     return true;
 }
 
