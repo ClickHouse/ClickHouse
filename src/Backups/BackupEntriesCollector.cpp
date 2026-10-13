@@ -890,7 +890,7 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
     };
 
     /// The `metadata` znodes whose stat version is the metadata version of a table, grouped by the ZooKeeper
-    /// which holds them, so that all the versions from one ZooKeeper are read with a single batched request.
+    /// which holds them, so that the versions from one ZooKeeper are read with batched requests.
     /// Each znode path is paired with the path in the backup the version is written next to.
     std::unordered_map<String, std::vector<std::pair<String, String>>> metadata_znodes_by_zookeeper;
 
@@ -965,16 +965,20 @@ void BackupEntriesCollector::makeBackupEntriesForTablesDefs()
         retries_ctl.retryLoop([&]
         {
             auto zookeeper = context->getDefaultOrAuxiliaryZooKeeper(zookeeper_name);
-            auto responses = zookeeper->exists(metadata_znode_paths);
-            for (size_t i = 0; i != metadata_znode_paths.size(); ++i)
+            for (size_t batch_start = 0; batch_start < metadata_znode_paths.size(); batch_start += zkutil::MULTI_BATCH_SIZE)
             {
-                /// The `metadata` znode must exist for a live replicated table. Any error fails the backup (a connection
-                /// loss reported per path by the batched `exists` is retried first): silently omitting the version
-                /// would make RESTORE assume version 0, which is the bug this file is meant to prevent.
-                const auto & response = responses[i];
-                if (response.error != Coordination::Error::ZOK)
-                    throw zkutil::KeeperException::fromPath(response.error, metadata_znode_paths[i]);
-                metadata_versions[i] = response.stat.version;
+                size_t batch_end = std::min(batch_start + zkutil::MULTI_BATCH_SIZE, metadata_znode_paths.size());
+                auto responses = zookeeper->exists(metadata_znode_paths.begin() + batch_start, metadata_znode_paths.begin() + batch_end);
+                for (size_t i = batch_start; i != batch_end; ++i)
+                {
+                    /// The `metadata` znode must exist for a live replicated table. Any error fails the backup (a connection
+                    /// loss reported per path by the batched `exists` is retried first): silently omitting the version
+                    /// would make RESTORE assume version 0, which is the bug this file is meant to prevent.
+                    const auto & response = responses[i - batch_start];
+                    if (response.error != Coordination::Error::ZOK)
+                        throw zkutil::KeeperException::fromPath(response.error, metadata_znode_paths[i]);
+                    metadata_versions[i] = response.stat.version;
+                }
             }
         });
 
