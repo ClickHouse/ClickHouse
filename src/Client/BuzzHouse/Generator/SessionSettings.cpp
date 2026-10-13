@@ -1695,6 +1695,7 @@ static std::unordered_map<String, CHSetting> serverSettings2 = {
     {"query_plan_text_index_add_hint", trueOrFalseSetting},
     {"read_from_distributed_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_from_filesystem_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
+    {"read_from_filesystem_cache_if_exists_otherwise_cache_temporarily", trueOrFalseSetting},
     {"read_from_page_cache_if_exists_otherwise_bypass_cache", trueOrFalseSetting},
     {"read_in_order_two_level_merge_threshold",
      CHSetting(

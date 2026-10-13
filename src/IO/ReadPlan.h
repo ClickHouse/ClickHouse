@@ -65,7 +65,8 @@ public:
     /// `dropBefore` passes them, so already-fetched bytes are never re-read.
     void hold(ChainedBuffers bytes);
 
-    /// Move `begin` forward to `offset`, releasing what it leaves behind.
+    /// Move `begin` forward to `offset`, releasing what it leaves behind. It is the only place where the
+    /// cursor passes a writer's range (`CacheWriter::takeDropAfterPass`).
     void dropBefore(size_t offset);
 
     /// Move `end` back to `offset`, releasing what lies past it - for when the look-ahead shrinks.

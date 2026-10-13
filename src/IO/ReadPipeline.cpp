@@ -58,6 +58,13 @@ namespace
     {
         return object.bytes_size != StoredObject::UnknownSize;
     }
+
+    /// The legacy cache reader has no temporary mode: it bypasses the cache instead.
+    FilesystemCacheSettings legacyCacheSettings(FilesystemCacheSettings settings)
+    {
+        settings.read_if_exists_otherwise_bypass |= settings.cache_temporarily;
+        return settings;
+    }
 }
 
 void ReadPipeline::setSource(ObjectStoragePtr object_storage, StoredObjects objects, const ReadSettings & read_settings, std::optional<size_t> read_hint)
@@ -394,7 +401,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildGatherStage(
     ///   OuterCache(InnerCache(Source))
     for (const auto & dc : filesystem_caches)
     {
-        auto fs_cache_settings = dc.cache_settings;
+        auto fs_cache_settings = legacyCacheSettings(dc.cache_settings);
         gather_creator =
             [prev_creator = std::move(gather_creator),
              captured_settings = settings,
@@ -630,7 +637,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
         for (size_t i = 0; i + 1 < filesystem_caches.size(); ++i)
         {
             const auto & dc = filesystem_caches[i];
-            auto fs_cache_settings = dc.cache_settings;
+            auto fs_cache_settings = legacyCacheSettings(dc.cache_settings);
             auto cache_key = dc.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
             auto origin = dc.custom_origin.value_or(dc.cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
@@ -667,7 +674,7 @@ std::unique_ptr<ReadBufferFromFileBase> ReadPipeline::buildSingleObjectStage(con
         /// Build the outermost CachedOnDiskReadBufferFromFile.
         /// The impl_creator now produces the full inner cache chain.
         const auto & outermost = filesystem_caches.back();
-        auto fs_cache_settings = outermost.cache_settings;
+        auto fs_cache_settings = legacyCacheSettings(outermost.cache_settings);
         auto cache_key = outermost.custom_cache_key.value_or(FileCacheKey::fromPath(object.remote_path));
         auto origin = outermost.custom_origin.value_or(outermost.cache->getCommonOriginWithSegmentKeyType(object.local_path));
 
