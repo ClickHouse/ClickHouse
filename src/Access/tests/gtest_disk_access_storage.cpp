@@ -205,10 +205,7 @@ TEST(DiskAccessStorageShutdown, DoesNotWaitOutTheListsWritingTimeout)
         String dir = temp_dir.path() + "/";
 
         DiskAccessStorage storage("test_disk", dir, notifier, /*readonly_=*/false, /*allow_backup_=*/false);
-
-        auto user = std::make_shared<User>();
-        user->setName("alice");
-        storage.insert(user);
+        storage.insert(makeUser("alice"));
 
         auto started = std::chrono::steady_clock::now();
         storage.shutdown();
