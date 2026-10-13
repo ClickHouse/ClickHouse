@@ -683,9 +683,8 @@ def run_fuzz_job(check_name: str):
 
         binary_hint = (
             "The tested ClickHouse binary is at `./ci/tmp/clickhouse` "
-            "(already executable). Prefer `./ci/tmp/clickhouse local` for "
-            "repro attempts; start `./ci/tmp/clickhouse server` in a scratch "
-            "directory only when the failure needs a real server. "
+            "(already executable). Use `./ci/tmp/clickhouse local` for "
+            "repro attempts. "
         )
         if buzzhouse:
             job_kind = "BuzzHouse"

@@ -54,6 +54,12 @@ def gh_auth_with_robot_token(gh_config_dir, robot_name):
     )
 
 
+def openai_api_key():
+    return Secret.Config(
+        name=OPENAI_KEY_SECRET, type=Secret.Type.AWS_SSM_PARAMETER, region="us-east-1"
+    ).get_value()
+
+
 def codex_login(codex_home):
     """Write the OpenAI key into `$CODEX_HOME/auth.json` via `codex login`.
 
@@ -62,12 +68,9 @@ def codex_login(codex_home):
     stdin. `codex_home` should be a per-attempt temporary directory so the
     key never lands on global runner state.
     """
-    openai_key = Secret.Config(
-        name=OPENAI_KEY_SECRET, type=Secret.Type.AWS_SSM_PARAMETER, region="us-east-1"
-    ).get_value()
     subprocess.run(
         ["codex", "login", "--with-api-key"],
-        input=openai_key,
+        input=openai_api_key(),
         text=True,
         check=True,
         env={**os.environ, "CODEX_HOME": codex_home},

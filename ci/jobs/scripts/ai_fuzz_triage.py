@@ -2,24 +2,31 @@
 AI triage for fuzzer/stress job failures.
 
 After a fuzz-style job (AST Fuzzer, BuzzHouse, Stress test) fails, an AI agent
-inspects the failure evidence and files or references a tracking issue. A
-failure that an open, independent issue already tracks (see below) is linked to
-it with no agent run at all. A second, separately budgeted agent run reduces a
-minimal reproducer, only for a `related` verdict or a newly filed issue.
-Behaviour depends on the run kind:
+inspects the failure evidence and judges it, and this script files or references
+a tracking issue. A failure that an open, independent issue already tracks (see
+below) is linked to it with no agent run at all. A second, separately budgeted
+agent run reduces a minimal reproducer, only for a `related` verdict or a newly
+filed issue. Behaviour depends on the run kind:
 
 PR runs - the agent judges whether the failure was introduced by the PR:
   - `related`   -> the job stays red; the agent's reasoning and (best-effort)
                    minimal reproducer are appended to the job report so the
                    author can fix it.
-  - `unrelated` -> the agent finds or creates a GitHub issue for the failure,
-                   and the job is downgraded to OK with a link to the issue.
+  - `unrelated` -> the failure gets a GitHub issue (found or created), and the
+                   job is downgraded to OK with a link to the issue.
   - `uncertain` -> treated as `related`: the job stays red and a human decides.
 
 Post-merge runs (master / release branches) - the job status is never changed;
-the agent always finds or creates a tracking issue, attributes the regression
-to the merged PR when it can (`Caused by: <PR>` in the issue), and puts the
-issue link plus reproducer into the job report.
+the failure always gets a tracking issue, attributed to the merged PR when the
+agent can name the culprit commit (`Caused by: <PR>` in the issue), and the job
+report gets the issue link plus reproducer. Every other stable signature in the
+run gets its own issue too (`other_signatures`); a failure with none is left to
+the report, which says it is not tracked.
+
+The agent reads logs a PR controls, so it runs with no credentials: no GitHub
+token, an OpenAI key only behind a local proxy (`_ModelProxy`), and a sandbox
+with no network that can write only `TRIAGE_DIR`. It returns JSON drafts; every
+GitHub read or write, and all deduplication, happens here in Python.
 
 Fail-close: the downgrade to OK happens only on PR runs, on an explicit
 `unrelated` verdict whose GitHub issue is verified to be open in this repository
@@ -40,21 +47,24 @@ does a lookup of those issues that did not complete.
 PRs authored by an agent that already triages its own failures are skipped
 (`SELF_TRIAGING_AUTHORS`); their post-merge runs are not.
 
-The agent backend mirrors `copilot_review_job.py`: `codex` by default,
-`copilot` via `AI_FUZZ_TRIAGE_BACKEND=copilot`. Set `AI_FUZZ_TRIAGE=0` to
-disable triage entirely.
+The agent is the `codex` CLI; unlike `copilot_review_job.py` there is no
+`copilot` backend, since Copilot authenticates with the GitHub token itself.
+Set `AI_FUZZ_TRIAGE=0` to disable triage entirely.
 """
 
 import hashlib
+import http.client
+import http.server
 import json
 import os
 import random
 import re
-import shlex
 import subprocess
 import tempfile
+import threading
 import time
 import traceback
+import urllib.parse
 from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple
@@ -62,8 +72,8 @@ from typing import NamedTuple
 from ci.jobs.scripts.agent import (
     AGENT_MODEL,
     ROBOT_NAMES,
-    codex_login,
     gh_auth_with_robot_token,
+    openai_api_key,
     repo_from_pr_url,
 )
 from ci.praktika.info import Info
@@ -73,6 +83,28 @@ TRIAGE_DIR = Path("./ci/tmp/ai_fuzz_triage")
 VERDICT_FILE = TRIAGE_DIR / "verdict.json"
 REPRO_FILE = TRIAGE_DIR / "repro.json"
 AGENT_LOG = TRIAGE_DIR / "agent.log"
+# Fetched for the agent, which has no GitHub access of its own.
+PR_DIFF_FILE = TRIAGE_DIR / "pr.diff"
+
+OPENAI_API_ORIGIN = "https://api.openai.com"
+# Hop-by-hop headers, and the ones the proxy sets itself.
+PROXY_DROPPED_HEADERS = {
+    "authorization",
+    "connection",
+    "content-length",
+    "host",
+    "keep-alive",
+    "proxy-connection",
+    "te",
+    "trailer",
+    "transfer-encoding",
+    "upgrade",
+}
+# Names of the job's environment variables kept from the agent: its shell can
+# read its own environment.
+CREDENTIAL_ENV_RE = re.compile(
+    r"KEY|TOKEN|SECRET|PASSW|CREDENTIAL|^AWS_|^GH_|^GITHUB_", re.IGNORECASE
+)
 
 MAX_ATTEMPTS = 2
 # Only a fast failure (auth, network, CLI start-up) is retried; a slow one, a
@@ -94,6 +126,10 @@ MIN_AGENT_RUN_SEC = 120
 VERDICTS = ("related", "unrelated", "uncertain")
 REPRO_STATUSES = ("reproduced", "not_reproduced", "not_attempted")
 ISSUE_URL_RE = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+/issues/\d+$")
+PR_URL_RE = re.compile(r"^https://github\.com/[\w.-]+/[\w.-]+/pull/\d+$")
+COMMIT_SHA_RE = re.compile(r"^[0-9a-f]{7,40}$")
+MAX_ISSUE_TITLE_CHARS = 200
+MAX_ISSUE_BODY_CHARS = 20000
 
 # Agents that already analyse a failing job on their own PRs. A second pass adds
 # nothing and would race the first one into filing a duplicate issue. Compared
@@ -120,6 +156,13 @@ RECENT_ISSUE_WINDOW = 100
 FOUND_WHILE_TESTING_FIELD = "Found while testing"
 FOUND_WHILE_TESTING_RE = re.compile(
     rf"^[\s`>*-]*{FOUND_WHILE_TESTING_FIELD}:", re.MULTILINE
+)
+# The issue lines lookups parse. Only this script writes them, so logs that
+# reach the agent's draft cannot plant a fingerprint of another failure.
+MACHINE_LINE_RE = re.compile(
+    rf"^[\s`>*-]*({FINGERPRINT_FIELD}|{FOUND_WHILE_TESTING_FIELD}|Found by [^\n]*? in CI"
+    rf"|Caused by|Related):[^\n]*\n?",
+    re.MULTILINE | re.IGNORECASE,
 )
 
 # Values that differ between two runs of the same crash and so must not reach the
@@ -190,10 +233,28 @@ def failure_fingerprint(failures):
     between runs, so the key is the smallest normalized name rather than the
     first one - otherwise two jobs hitting the same bug disagree.
     """
-    tracked = _tracked_signature(failures)
-    if not tracked:
+    return _signature_fingerprint(_tracked_signature(failures))
+
+
+def _signature_fingerprint(signature):
+    if not signature:
         return ""
-    return hashlib.sha1(tracked.encode("utf-8", "replace")).hexdigest()[:12]
+    return hashlib.sha1(signature.encode("utf-8", "replace")).hexdigest()[:12]
+
+
+def other_signatures(failures):
+    """`{signature: failures}` for the stable signatures the fingerprint skips.
+
+    A post-merge run files one issue for each of them too, built from the job's
+    own failure text, so a second bug in the same run is tracked as well.
+    """
+    tracked = _tracked_signature(failures)
+    groups = {}
+    for name, failure_info in failures:
+        signature = _stable_signature(name)
+        if signature and signature != tracked:
+            groups.setdefault(signature, []).append((name, failure_info))
+    return dict(sorted(groups.items()))
 
 
 def _failures_section(failures):
@@ -252,7 +313,7 @@ def _occurrences_note(fingerprint, occurrences, change, weight, regression_hint)
 """
 
 
-def _relatedness_task(info, repo_name, pr_mode, fingerprint, occurrences):
+def _relatedness_task(info, pr_mode, fingerprint, occurrences):
     if pr_mode:
         occurrences = _occurrences_note(
             fingerprint,
@@ -267,7 +328,7 @@ def _relatedness_task(info, repo_name, pr_mode, fingerprint, occurrences):
 Decide whether this failure was likely INTRODUCED BY THIS PR or already exists
 in master:
 
-- Read the PR diff: `gh pr diff {info.pr_number} --repo {repo_name}`.
+- Read the PR diff: `{PR_DIFF_FILE.resolve()}`.
 - Compare the crash stack / error signature with the code the PR touches. A
   failure in code the PR modifies, or plausibly reachable through its changes
   (new setting values, changed defaults, touched interpreters/storages), is
@@ -293,111 +354,40 @@ pre-existing bug:
 
 - The checkout is at the tested commit. List recent history:
   `git log --oneline -30`.
-- Compare the crash stack / error signature with what those commits touch. Map
-  a suspect commit to its PR:
-  `gh api repos/{repo_name}/commits/<commit sha>/pulls --jq '.[].html_url'`.
-- Confident attribution to one merged PR -> verdict `related`, and set
-  `culprit_pr` to that PR's full URL.
+- Compare the crash stack / error signature with what those commits touch.
+- Confident attribution to one commit -> verdict `related`, and set
+  `culprit_commit` to its full sha; this job maps it to the merged PR.
 {occurrences}\
 - If you cannot decide, answer `uncertain`.
 """
 
 
-def _fingerprint_lookup(repo_name, fingerprint):
-    """The one authoritative duplicate check, for the issue task only.
-
-    It also finds issues this triage filed itself, so it must not feed the
-    relatedness judgment; `_prior_occurrences` does that.
-
-    Two queries, because neither alone is sufficient: search reaches the whole
-    (thousands-strong) `fuzz` backlog but its index lags, and the REST list is
-    current but too large to scan, so it is bounded to the newest issues.
-    """
-    marker = f"{FINGERPRINT_FIELD}: {fingerprint}"
-    return (
-        f"run BOTH of these and treat a hit from either as a duplicate -\n"
-        f"  (a) `gh search issues {fingerprint} --repo {repo_name}"
-        f" --json number,url,title,state,body` and keep the issues whose body"
-        f" contains the line `{marker}`, which covers the whole backlog but can"
-        f" be minutes stale;\n"
-        f"  (b) `gh issue list --repo {repo_name} --label fuzz --state all"
-        f" --limit {RECENT_ISSUE_WINDOW} --json number,url,title,state,body`"
-        f" (newest first, immediately consistent) and keep the issues whose body"
-        f" contains the line `{marker}`  - this is the one that catches an issue"
-        f" a sibling CI job opened moments ago, which (a) cannot yet see"
-    )
-
-
-def _issue_task(job_kind, repo_name, found_in, tested_change, pr_mode, fingerprint):
+def _issue_task(pr_mode, fingerprint):
     if not fingerprint:
         # Without a dedup key every job would file its own issue, or point at
         # an unrelated one, so the failure is left to the job report.
         return """\
-## Task 2 - GitHub issue (SKIP)
+## Task 2 - issue draft (SKIP)
 
-This failure has no stable signature: its name is a generic fallback shared by
-unrelated failures, so no fingerprint can tell whether an issue already exists.
-Do not create or comment on any issue. Leave `issue_url` empty and
-`issue_created` false; the job report carries your reasoning.
+This failure has no stable signature, so no issue is filed for it. Leave
+`issue_title` and `issue_body` empty; the job report carries your reasoning.
 """
-    if pr_mode:
-        scope = "ONLY when your verdict is `unrelated`"
-        caused_by = ""
-    else:
-        scope = "ALWAYS - a post-merge fuzz failure must be tracked"
-        caused_by = (
-            "  - When the verdict is `related` with a culprit PR, add the line\n"
-            "    `Caused by: <full culprit PR URL>` on its own line.\n"
-        )
-    if pr_mode:
-        provenance = (
-            f"    `Found by {job_kind} in CI: {found_in}`\n"
-            f"    `{FOUND_WHILE_TESTING_FIELD}: {tested_change}` (state in the issue that\n"
-            f"    the failure does not look related to that PR)"
-        )
-    else:
-        provenance = f"    `Found by {job_kind} in CI: {found_in}`"
+    scope = (
+        "ONLY when your verdict is `unrelated`"
+        if pr_mode
+        else "ALWAYS - a post-merge fuzz failure must be tracked"
+    )
     return f"""\
-## Task 2 - GitHub issue ({scope})
+## Task 2 - issue draft ({scope})
 
-This failure's fingerprint is `{fingerprint}`. Every job that hits the same bug
-computes the same value, so the fingerprint - not your own wording, and not how
-similar two titles look - decides whether an issue already exists.
+This job looks up the issues carrying this failure's fingerprint and files a
+new one only when none tracks it, from your draft. Fill in:
 
-- Duplicate check (do this first, and only this):
-  {_fingerprint_lookup(repo_name, fingerprint)}.
-  Query (b) is not optional: around 20 fuzz-style jobs triage in parallel on one
-  commit, so assume a sibling job filed this issue moments ago and that search
-  has not indexed it yet. Never decide "no duplicate" from (a) alone.
-- An OPEN match with the `fuzz` label -> reference that issue and stop; never
-  open a second one. Comment on it only if no existing comment already mentions
-  this job name (`{job_kind}`); the point is one comment per failure, not one
-  per job. Link: {found_in}
-- An OPEN match without the `fuzz` label is not tracking the failure: the
-  lookup of later jobs cannot reach it, and you cannot add the label (that is an
-  edit). Handle it like a CLOSED match below.
-- A CLOSED match means the bug was fixed and has regressed. Do not silently
-  point at it - that would leave the regression untracked, and you cannot reopen
-  it (reopening is an edit, and edits are forbidden here). Comment on the closed
-  issue with this CI link, then create a new issue as below carrying the same
-  fingerprint line and `Related: <URL of the matched issue>`.
-- No match -> create exactly one issue with
-  `gh issue create --repo {repo_name} --label fuzz`. For the new issue:
-  - Title: short signature, e.g. `Fuzzer: Logical error: '<assertion>' in <function>`.
-  - Body must contain this line verbatim, on its own line, or every later job
-    will file a duplicate:
-    `{FINGERPRINT_FIELD}: {fingerprint}`
-  - Body also carries what failed, the error/stack excerpt (trimmed), the raw
-    failing query from the logs (a later step comments with a reduced
-    reproducer when it finds one), and these provenance lines, each on its own
-    line:
-{provenance}
-{caused_by}\
-  - Use full GitHub URLs when linking anything.
-  - The `fuzz` label is what makes the lookup above find this issue later. If
-    `--label fuzz` is rejected, retry once; if it still fails, create the issue
-    anyway (tracking the bug matters more) and set `label_applied` to false so
-    the report can flag that this issue is invisible to future dedup.
+- `issue_title`: short signature, e.g. `Fuzzer: Logical error: '<assertion>' in <function>`.
+- `issue_body`: markdown with what failed, the error/stack excerpt (trimmed),
+  and the raw failing query from the logs (a later step adds a reduced
+  reproducer when it finds one). Use full GitHub URLs when linking anything.
+  The job adds the fingerprint, CI link and provenance lines itself.
 """
 
 
@@ -411,14 +401,11 @@ def _build_prompt(
     occurrences,
     timeout_sec,
 ):
-    repo_name = _triage_repo(info)
     report_url = _report_url(info)
     if pr_mode:
         run_kind = "on a ClickHouse pull request"
     else:
         run_kind = f"on the `{info.git_branch}` branch (post-merge run)"
-    tested_change = info.pr_url if pr_mode else info.commit_url
-    found_in = report_url or tested_change
     if pr_mode and fingerprint and occurrences is None:
         outcome_note = (
             "The job stays red whatever your verdict: earlier issues with this\n"
@@ -431,8 +418,8 @@ def _build_prompt(
         )
     elif pr_mode and fingerprint:
         outcome_note = (
-            "The job downgrades to green only for verdict `unrelated` with a valid\n"
-            "`issue_url`."
+            "The job downgrades to green only for verdict `unrelated`, once the issue\n"
+            "it files or finds for the fingerprint is verified."
         )
     elif pr_mode:
         outcome_note = (
@@ -453,45 +440,32 @@ You are triaging a failed `{job_kind}` CI job {run_kind}.
 
 {_change_line(info, pr_mode)}
 - CI job: `{info.job_name}`, report: {report_url or "(unavailable)"}
-- GitHub repository: `{repo_name}`. Pass `--repo {repo_name}` to gh where applicable.
-- The `gh` CLI is pre-authenticated. Never run destructive gh commands (close,
-  edit, delete); you may only search/read and create ONE issue as described below.
+{_sandbox_lines()}
 - Do not reduce a reproducer or replay queries: a separate step does that when
   it is needed. Read the code and the logs, and finish within {timeout_sec // 60} minutes.
 
-{_relatedness_task(info, repo_name, pr_mode, fingerprint, occurrences)}
-{_issue_task(job_kind, repo_name, found_in, tested_change, pr_mode, fingerprint)}
+{_relatedness_task(info, pr_mode, fingerprint, occurrences)}
+{_issue_task(pr_mode, fingerprint)}
 ## Task 3 - verdict file (MANDATORY)
 
-Write a single JSON object to `{VERDICT_FILE}`:
+Write a single JSON object to `{VERDICT_FILE.resolve()}`:
 
 {{
   "verdict": "related" | "unrelated" | "uncertain",
   "reasoning": "<= 1200 chars, plain text",
   "signature": "one-line failure signature",
-  "issue_url": "https://github.com/owner/repo/issues/N or empty string",
-  "issue_created": true | false,
-  "label_applied": true | false,
-  "culprit_pr": "full PR URL when attributed, else empty string"
+  "culprit_commit": "full commit sha when attributed, else empty string",
+  "issue_title": "see Task 2, else empty string",
+  "issue_body": "see Task 2, else empty string"
 }}
 
-{outcome_note} Do not post PR comments; the job report carries your output.
+{outcome_note}
 """
 
 
 def _build_repro_prompt(
     info, job_kind, failures, evidence_paths, repro_hint, pr_mode, verdict, timeout_sec
 ):
-    issue_url = verdict.get("issue_url") or ""
-    if verdict.get("issue_created") and issue_url:
-        comment_task = f"""\
-- Only when `repro_status` is `reproduced`: post the final snippet as ONE
-  comment on {issue_url} (`gh issue comment {issue_url} --body-file <file>`).
-"""
-        allowed = "post at most the one issue comment described below"
-    else:
-        comment_task = ""
-        allowed = "only read"
     return f"""\
 You are reducing a minimal reproducer for a failed `{job_kind}` CI job. An
 earlier step judged the failure `{verdict["verdict"]}`:
@@ -502,8 +476,9 @@ earlier step judged the failure `{verdict["verdict"]}`:
 
 {_change_line(info, pr_mode)}
 - CI job: `{info.job_name}`
-- The `gh` CLI is pre-authenticated. Never create, edit, close or delete
-  anything on GitHub; you may {allowed}.
+{_sandbox_lines()}
+- With no network, not even to localhost, `clickhouse server` cannot run: use
+  `clickhouse local`, with any scratch files under the working directory.
 
 ## Task 1 - minimal reproducer (finish within {timeout_sec // 60} minutes)
 
@@ -513,11 +488,12 @@ earlier step judged the failure `{verdict["verdict"]}`:
   case (drop irrelevant settings, columns, and clauses) while the failure still
   reproduces.
 - Set `repro_status` to `reproduced` ONLY if you observed the failure yourself
-  with the final snippet. Otherwise use `not_reproduced` or `not_attempted`.
-{comment_task}
+  with the final snippet. Otherwise use `not_reproduced` or `not_attempted`. A
+  reproduced snippet is posted to the failure's issue by this job.
+
 ## Task 2 - result file (MANDATORY)
 
-Write a single JSON object to `{REPRO_FILE}`:
+Write a single JSON object to `{REPRO_FILE.resolve()}`:
 
 {{
   "repro": "SQL or shell snippet, or empty string",
@@ -537,6 +513,15 @@ def _change_line(info, pr_mode):
     if pr_mode:
         return f"- PR: {info.pr_url} (head sha `{info.sha}`)"
     return f"- Commit: {info.commit_url} (sha `{info.sha}`)"
+
+
+def _sandbox_lines():
+    return f"""\
+- The repository checkout is at `{Path.cwd()}`; relative paths in this prompt
+  are relative to it. You can only read it: your working directory,
+  `{TRIAGE_DIR.resolve()}`, is the one place you can write.
+- You have no network and no GitHub access; everything you need is on disk.
+  This job does all GitHub reads and writes itself, from the file you write."""
 
 
 def _evidence_sections(failures, evidence_paths):
@@ -560,50 +545,132 @@ def _drop_stale_output(output_file):
             print(f"WARNING: cannot remove stale {output_file}: {e}")
 
 
-def _run_shell_to_agent_log(command):
+class _ModelProxy:
+    """Local endpoint for the codex CLI that forwards to OpenAI, adding the key.
+
+    The key stays in this process: the agent's shell can read `CODEX_HOME` and
+    its environment, so neither holds it, and the sandbox cannot reach this.
+    """
+
+    def __init__(self, api_key, origin=OPENAI_API_ORIGIN):
+        self.api_key = api_key
+        self.origin = urllib.parse.urlsplit(origin)
+        self.server = None
+
+    def __enter__(self):
+        proxy = self
+
+        class Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):
+                proxy.forward(self)
+
+            do_GET = do_POST
+
+            def log_message(self, *args):
+                pass
+
+        self.server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        return f"http://127.0.0.1:{self.server.server_port}/v1"
+
+    def __exit__(self, *exc):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def forward(self, request):
+        body = request.rfile.read(int(request.headers.get("Content-Length") or 0))
+        headers = {
+            k: v
+            for k, v in request.headers.items()
+            if k.lower() not in PROXY_DROPPED_HEADERS
+        }
+        headers["Authorization"] = f"Bearer {self.api_key}"
+        if self.origin.scheme == "https":
+            upstream = http.client.HTTPSConnection(self.origin.netloc, timeout=900)
+        else:
+            upstream = http.client.HTTPConnection(self.origin.netloc, timeout=900)
+        try:
+            upstream.request(request.command, request.path, body=body, headers=headers)
+            response = upstream.getresponse()
+            request.send_response(response.status)
+            for k, v in response.getheaders():
+                if k.lower() not in PROXY_DROPPED_HEADERS:
+                    request.send_header(k, v)
+            request.send_header("Connection", "close")
+            request.end_headers()
+            # Passed on as it arrives: the Responses API streams server-sent events.
+            while chunk := response.read1(65536):
+                request.wfile.write(chunk)
+                request.wfile.flush()
+        except Exception as e:  # noqa: BLE001 - codex sees a failed request and retries
+            print(f"WARNING: AI fuzz triage: model proxy: {type(e).__name__}: {e}")
+        finally:
+            upstream.close()
+
+
+def _agent_env():
+    return {k: v for k, v in os.environ.items() if not CREDENTIAL_ENV_RE.search(k)}
+
+
+def _run_to_agent_log(command, env):
     """Run the agent command, teeing all output into AGENT_LOG."""
     with open(AGENT_LOG, "ab") as log:
         return subprocess.run(
             command,
-            shell=True,
+            env=env,
             stdout=log,
             stderr=subprocess.STDOUT,
             stdin=subprocess.DEVNULL,
         ).returncode
 
 
-def _run_codex_once(prompt, robot_name, timeout_sec, effort, output_file):
+def _run_codex_once(prompt, timeout_sec, effort, output_file):
     _drop_stale_output(output_file)
-    with tempfile.TemporaryDirectory() as gh_config_dir, tempfile.TemporaryDirectory(
-        dir="./ci/tmp"
-    ) as codex_home:
-        gh_auth_with_robot_token(gh_config_dir, robot_name)
-        codex_login(codex_home)
-        # Same flags as copilot_review_job.py; `timeout` bounds the attempt so
-        # the job always gets to upload its artifacts.
-        return _run_shell_to_agent_log(
-            f"CODEX_HOME={shlex.quote(codex_home)} "
-            f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
-            f"timeout -k 60 {timeout_sec} "
-            f"codex exec "
-            f"-m {AGENT_MODEL} -c 'model_reasoning_effort={effort}' "
-            f"-s workspace-write "
-            f"-c sandbox_workspace_write.network_access=true "
-            f"-c approval_policy=never "
-            f"--color never "
-            f"{shlex.quote(prompt)}"
-        )
-
-
-def _run_copilot_once(prompt, robot_name, timeout_sec, effort, output_file):
-    _drop_stale_output(output_file)
-    with tempfile.TemporaryDirectory() as gh_config_dir:
-        gh_auth_with_robot_token(gh_config_dir, robot_name)
-        return _run_shell_to_agent_log(
-            f"GH_CONFIG_DIR={shlex.quote(gh_config_dir)} "
-            f"timeout -k 60 {timeout_sec} "
-            f"copilot -p {shlex.quote(prompt)} --allow-all --no-ask-user "
-            f"--add-dir . --model {AGENT_MODEL} --effort {effort}"
+    workdir = TRIAGE_DIR.resolve()
+    tmpdir = workdir / "tmp"
+    tmpdir.mkdir(exist_ok=True)
+    # CODEX_HOME stays outside `workdir`, so the agent cannot rewrite its config.
+    with tempfile.TemporaryDirectory(dir="./ci/tmp") as codex_home, _ModelProxy(
+        openai_api_key()
+    ) as base_url:
+        provider = f'{{name="ci_proxy",base_url="{base_url}",wire_api="responses"}}'
+        # `timeout` bounds the attempt so the job always gets to upload its artifacts.
+        return _run_to_agent_log(
+            [
+                "timeout",
+                "-k",
+                "60",
+                str(timeout_sec),
+                "codex",
+                "exec",
+                "-m",
+                AGENT_MODEL,
+                "-c",
+                f"model_reasoning_effort={effort}",
+                "-c",
+                "model_provider=ci_proxy",
+                "-c",
+                f"model_providers.ci_proxy={provider}",
+                "-C",
+                str(workdir),
+                "-s",
+                "workspace-write",
+                "-c",
+                "sandbox_workspace_write.network_access=false",
+                "-c",
+                "sandbox_workspace_write.exclude_slash_tmp=true",
+                "-c",
+                "sandbox_workspace_write.exclude_tmpdir_env_var=true",
+                # Runs on OpenAI's side, so outside the sandbox.
+                "-c",
+                "web_search=disabled",
+                "-c",
+                "approval_policy=never",
+                "--color",
+                "never",
+                prompt,
+            ],
+            {**_agent_env(), "CODEX_HOME": codex_home, "TMPDIR": str(tmpdir)},
         )
 
 
@@ -617,38 +684,50 @@ def _load_json_object(path):
     return value
 
 
+def _text_field(value, name):
+    if not isinstance(value.get(name) or "", str):
+        raise ValueError(f"{name} is not a string")
+    return value.get(name) or ""
+
+
 def _load_verdict(path=VERDICT_FILE):
-    """Parse and validate the verdict file; returns dict or raises ValueError."""
+    """Parse and validate the verdict file; returns dict or raises ValueError.
+
+    Only the fields the agent drafts are kept: the issue fields are set by
+    `_track_issue`, never taken from the agent.
+    """
     verdict = _load_json_object(path)
     if verdict.get("verdict") not in VERDICTS:
         raise ValueError(f"invalid verdict value: {verdict.get('verdict')!r}")
-    issue_url = verdict.get("issue_url") or ""
-    if issue_url and not ISSUE_URL_RE.match(issue_url):
-        raise ValueError(f"invalid issue_url: {issue_url!r}")
-    return verdict
+    fields = (
+        "reasoning",
+        "signature",
+        "culprit_commit",
+        "issue_title",
+        "issue_body",
+    )
+    return {"verdict": verdict["verdict"]} | {
+        name: _text_field(verdict, name) for name in fields
+    }
 
 
 def _load_repro(path=REPRO_FILE):
     repro = _load_json_object(path)
     if repro.get("repro_status") not in REPRO_STATUSES:
         raise ValueError(f"invalid repro_status: {repro.get('repro_status')!r}")
-    return {"repro": repro.get("repro") or "", "repro_status": repro["repro_status"]}
+    return {
+        "repro": _text_field(repro, "repro"),
+        "repro_status": repro["repro_status"],
+    }
 
 
 def _run_agent(prompt, deadline, cap_sec, effort, output_file, load):
-    """Run the configured backend and return `load(output_file)`.
+    """Run the agent and return `load(output_file)`.
 
     Each attempt gets `cap_sec`, cut to what is left before `deadline`
     (`time.monotonic()`). Only a fast failure is retried.
     """
-    backend = os.environ.get("AI_FUZZ_TRIAGE_BACKEND", "codex")
-    run_once = {"codex": _run_codex_once, "copilot": _run_copilot_once}.get(backend)
-    if run_once is None:
-        raise ValueError(f"unknown AI_FUZZ_TRIAGE_BACKEND: {backend!r}")
-
     last_error = None
-    robots = ROBOT_NAMES.copy()
-    random.shuffle(robots)
     for attempt in range(1, MAX_ATTEMPTS + 1):
         timeout_sec = int(min(cap_sec, deadline - time.monotonic()))
         if timeout_sec < MIN_AGENT_RUN_SEC:
@@ -657,28 +736,22 @@ def _run_agent(prompt, deadline, cap_sec, effort, output_file, load):
             )
         started = time.monotonic()
         try:
-            exit_code = run_once(
-                prompt,
-                robots[(attempt - 1) % len(robots)],
-                timeout_sec,
-                effort,
-                output_file,
-            )
+            exit_code = _run_codex_once(prompt, timeout_sec, effort, output_file)
             # A valid output counts even on non-zero exit (e.g. the timeout
             # fired after the file was already written).
             try:
                 output = load(output_file)
                 if exit_code != 0:
                     print(
-                        f"WARNING: {backend} exited with {exit_code}, "
+                        f"WARNING: codex exited with {exit_code}, "
                         f"but wrote a valid {output_file.name} - accepting it"
                     )
                 return output
             except (ValueError, json.JSONDecodeError) as e:
                 if exit_code in TIMEOUT_EXIT_CODES:
-                    last_error = f"{backend} timed out after {timeout_sec}s"
+                    last_error = f"codex timed out after {timeout_sec}s"
                 else:
-                    last_error = f"{backend} exit code {exit_code}; output: {e}"
+                    last_error = f"codex exit code {exit_code}; output: {e}"
         except Exception as e:  # noqa: BLE001 - any failure here may be retried
             last_error = f"{type(e).__name__}: {e}"
             traceback.print_exc()
@@ -691,7 +764,7 @@ def _run_agent(prompt, deadline, cap_sec, effort, output_file, load):
 
 
 def _robot_gh(*args):
-    """Run a read-only `gh` command as a robot and return its stdout.
+    """Run a `gh` command as a robot and return its stdout.
 
     Fuzz-style jobs run without `enable_gh_auth`, so a bare `gh` in the job is
     unauthenticated. Raises on any failure.
@@ -876,6 +949,215 @@ def _verify_issue_marker(issue_url, fingerprint, repo_name):
     return True, problems
 
 
+def _write_pr_diff(info, repo_name):
+    try:
+        diff = _robot_gh("pr", "diff", str(info.pr_number), "--repo", repo_name)
+    except subprocess.CalledProcessError as e:
+        # E.g. over the 300-file limit of the diff API: the paths still narrow it down.
+        print(f"WARNING: AI fuzz triage: cannot fetch the PR diff: {e.stderr}")
+        files = _robot_gh(
+            "pr",
+            "view",
+            str(info.pr_number),
+            "--repo",
+            repo_name,
+            "--json",
+            "files",
+            "--jq",
+            ".files[].path",
+        )
+        diff = f"(the diff could not be fetched; the PR changes these files)\n{files}"
+    PR_DIFF_FILE.write_text(diff, encoding="utf-8")
+
+
+def _culprit_pr(repo_name, commit):
+    """The PR that merged `commit`, or "" when there is none or it cannot be read."""
+    if not COMMIT_SHA_RE.match(commit):
+        return ""
+    try:
+        url = _robot_gh(
+            "api",
+            f"repos/{repo_name}/commits/{commit}/pulls",
+            "--jq",
+            ".[0].html_url // empty",
+        ).strip()
+    except Exception as e:  # noqa: BLE001 - the attribution is a convenience
+        print(f"WARNING: AI fuzz triage: cannot map {commit} to its PR: {e}")
+        return ""
+    return url if PR_URL_RE.match(url) else ""
+
+
+def _fingerprint_issues(repo_name, fingerprint):
+    """The issues carrying the fingerprint marker, oldest first.
+
+    It also finds issues this triage filed itself, so it must not feed the
+    relatedness judgment; `_prior_occurrences` does that. Two queries, because
+    neither alone is enough: search reaches the whole (thousands-strong) `fuzz`
+    backlog but its index lags minutes behind, and the REST list is current but
+    bounded to the newest issues - where one a sibling job just filed is.
+    """
+    marker = f"{FINGERPRINT_FIELD}: {fingerprint}"
+    fields = "number,url,state,body,labels"
+    issues = json.loads(
+        _robot_gh(
+            "search",
+            "issues",
+            fingerprint,
+            "--repo",
+            repo_name,
+            "--limit",
+            "30",
+            "--json",
+            fields,
+        )
+        or "[]"
+    )
+    issues += json.loads(
+        _robot_gh(
+            "issue",
+            "list",
+            "--repo",
+            repo_name,
+            "--label",
+            "fuzz",
+            "--state",
+            "all",
+            "--limit",
+            str(RECENT_ISSUE_WINDOW),
+            "--json",
+            fields,
+        )
+        or "[]"
+    )
+    by_url = {i["url"]: i for i in issues if marker in (i.get("body") or "")}
+    return sorted(by_url.values(), key=lambda i: i["number"])
+
+
+def _comment_once(repo_name, issue, job_kind, found_in):
+    """Link this job from `issue`: one comment per job kind, not one per job."""
+    output = _robot_gh(
+        "issue", "view", str(issue["number"]), "--repo", repo_name, "--json", "comments"
+    )
+    comments = json.loads(output).get("comments") or []
+    if any(job_kind in (c.get("body") or "") for c in comments):
+        return
+    _robot_gh(
+        "issue",
+        "comment",
+        str(issue["number"]),
+        "--repo",
+        repo_name,
+        "--body",
+        f"Also hit by {job_kind} in CI: {found_in}",
+    )
+
+
+def _issue_text(
+    verdict, failures, *, job_kind, fingerprint, found_in, tested_pr, related
+):
+    """Title and body of a new issue: the agent's draft plus the lines lookups parse."""
+    signature = verdict.get("signature") or _tracked_signature(failures)
+    title = " ".join(verdict["issue_title"].split()) or f"Fuzzer: {signature}"
+    draft = MACHINE_LINE_RE.sub("", verdict["issue_body"]).strip()
+    lines = [
+        draft[:MAX_ISSUE_BODY_CHARS] or _failures_section(failures),
+        "",
+        f"{FINGERPRINT_FIELD}: {fingerprint}",
+        f"Found by {job_kind} in CI: {found_in}",
+    ]
+    if tested_pr:
+        lines.append(f"{FOUND_WHILE_TESTING_FIELD}: {tested_pr}")
+        lines.append("AI triage judged the failure unrelated to that PR.")
+    if verdict.get("culprit_pr"):
+        lines.append(f"Caused by: {verdict['culprit_pr']}")
+    if related:
+        lines.append(f"Related: {related}")
+    return title[:MAX_ISSUE_TITLE_CHARS], "\n".join(lines)
+
+
+def _track_issue(repo_name, fingerprint, verdict, failures, job_kind, found_in, pr_url):
+    """Find or file the issue tracking `fingerprint`; returns the verdict's issue fields.
+
+    An open issue with the `fuzz` label tracks it. A closed one is a fixed bug that
+    came back, and an unlabelled one is out of the lookup's reach, so either gets a
+    comment and a new issue that links it. `pr_url` is empty on post-merge runs.
+    """
+    issues = _fingerprint_issues(repo_name, fingerprint)
+    tracking = [
+        i
+        for i in issues
+        if (i.get("state") or "").upper() == "OPEN" and _has_fuzz_label(i)
+    ]
+    if tracking:
+        _comment_once(repo_name, tracking[0], job_kind, found_in)
+        return {
+            "issue_url": tracking[0]["url"],
+            "issue_created": False,
+            "label_applied": True,
+        }
+    related = issues[-1]["url"] if issues else ""
+    if issues:
+        _comment_once(repo_name, issues[-1], job_kind, found_in)
+    title, body = _issue_text(
+        verdict,
+        failures,
+        job_kind=job_kind,
+        fingerprint=fingerprint,
+        found_in=found_in,
+        tested_pr=pr_url,
+        related=related,
+    )
+    create = ("issue", "create", "--repo", repo_name, "--title", title, "--body", body)
+    label_applied = True
+    try:
+        output = _robot_gh(*create, "--label", "fuzz")
+    except subprocess.CalledProcessError as e:
+        # Tracking the bug matters more than the label; the report flags the gap.
+        print(f"WARNING: AI fuzz triage: issue create with `fuzz` failed: {e.stderr}")
+        output = _robot_gh(*create)
+        label_applied = False
+    issue_url = (output.strip().splitlines() or [""])[-1]
+    if not ISSUE_URL_RE.match(issue_url):
+        raise ValueError(f"unexpected `gh issue create` output: {output!r}")
+    return {
+        "issue_url": issue_url,
+        "issue_created": True,
+        "label_applied": label_applied,
+    }
+
+
+def _track_other_signatures(repo_name, failures, job_kind, found_in):
+    """`_track_issue` for each of `other_signatures`; a failure only skips its own."""
+    tracked = []
+    for signature, group in other_signatures(failures).items():
+        fingerprint = _signature_fingerprint(signature)
+        other = {"signature": signature, "fingerprint": fingerprint}
+        draft = {"signature": signature, "issue_title": "", "issue_body": ""}
+        try:
+            other |= _track_issue(
+                repo_name, fingerprint, draft, group, job_kind, found_in, ""
+            )
+        except Exception as e:  # noqa: BLE001 - the report says it is untracked
+            print(
+                f"WARNING: AI fuzz triage: cannot file the issue for {signature}: {e}"
+            )
+            other["issue_error"] = f"{type(e).__name__}: {e}"
+        tracked.append(other)
+    return tracked
+
+
+def _post_repro(issue_url, repro):
+    fence = "````" if "```" in repro else "```"
+    _robot_gh(
+        "issue",
+        "comment",
+        issue_url,
+        "--body",
+        f"Reduced reproducer, reproduced with the tested build by AI triage:\n\n"
+        f"{fence}\n{repro[:MAX_ISSUE_BODY_CHARS]}\n{fence}\n",
+    )
+
+
 def _apply_verdict(
     result,
     verdict,
@@ -907,6 +1189,8 @@ def _apply_verdict(
     # not applied: silence must not read as success.
     verified, marker_problems = _verify_issue_marker(issue_url, fingerprint, repo_name)
     lines.extend(marker_problems)
+    if verdict.get("issue_error"):
+        lines.append(f"AI triage: filing the issue failed ({verdict['issue_error']})")
     if (
         not verified
         and verdict.get("issue_created")
@@ -1000,9 +1284,6 @@ def _apply_verdict(
             not_tracked = "it could not be checked for this failure's fingerprint"
         elif issue_url and marker_problems:
             not_tracked = "it is not an open issue tracking this failure's fingerprint"
-        elif issue_url and uncovered:
-            names = ", ".join(f"`{name}`" for name in uncovered)
-            not_tracked = f"its fingerprint does not cover {names}"
         else:
             not_tracked = ""
         if issue_url and not not_tracked:
@@ -1023,6 +1304,15 @@ def _apply_verdict(
                 "AI triage (post-merge): no issue URL provided - "
                 "the failure is NOT tracked yet"
             )
+        for other in verdict.get("other_issues") or []:
+            lines.append(_other_issue_line(other, repo_name))
+        generic = [name for name in uncovered if not _stable_signature(name)]
+        if fingerprint and generic:
+            names = ", ".join(f"`{name}`" for name in generic)
+            lines.append(
+                f"AI triage (post-merge): {names} has no stable signature, so no "
+                f"issue was filed for it - NOT tracked"
+            )
         if culprit_pr:
             lines.append(f"AI triage: attributed to {culprit_pr}")
     if reasoning:
@@ -1042,6 +1332,28 @@ def _apply_verdict(
     for path in (VERDICT_FILE, REPRO_FILE, AGENT_LOG):
         if path.exists() and path.stat().st_size > 0:
             result.set_files([path])
+
+
+def _other_issue_line(other, repo_name):
+    """Report line for the issue of one of `other_signatures`."""
+    signature, issue_url = other["signature"], other.get("issue_url") or ""
+    if not issue_url:
+        error = other.get("issue_error") or "no issue URL"
+        return (
+            f"AI triage (post-merge): `{signature}` is NOT tracked yet "
+            f"(filing its issue failed: {error})"
+        )
+    verified, problems = _verify_issue_marker(
+        issue_url, other["fingerprint"], repo_name
+    )
+    note = " (new issue)" if other.get("issue_created") else " (existing issue)"
+    if verified and not problems:
+        return f"AI triage (post-merge): `{signature}` tracked in {issue_url}{note}"
+    reason = "; ".join(problems) or "it could not be checked for its fingerprint"
+    return (
+        f"AI triage (post-merge): `{signature}`: {issue_url}{note} is not confirmed "
+        f"as tracking it ({reason}) - NOT fully tracked yet"
+    )
 
 
 def known_issue_verdict(failures, uncovered, occurrences, pr_mode):
@@ -1159,6 +1471,8 @@ def triage_and_apply(
         if verdict:
             print(f"AI fuzz triage: known issue {verdict['issue_url']}, no agent run")
         else:
+            if pr_mode:
+                _write_pr_diff(info, repo_name)
             budget = int(os.environ.get("AI_FUZZ_TRIAGE_TIMEOUT", agent_timeout_sec))
             deadline = time.monotonic() + budget
             verdict_timeout = min(VERDICT_TIMEOUT_SEC, budget)
@@ -1180,6 +1494,32 @@ def triage_and_apply(
                 VERDICT_FILE,
                 _load_verdict,
             )
+            if not pr_mode and verdict["verdict"] == "related":
+                verdict["culprit_pr"] = _culprit_pr(
+                    repo_name, verdict["culprit_commit"]
+                )
+            found_in = _report_url(info) or info.pr_url or info.commit_url
+            if fingerprint and (not pr_mode or verdict["verdict"] == "unrelated"):
+                try:
+                    verdict.update(
+                        _track_issue(
+                            repo_name,
+                            fingerprint,
+                            verdict,
+                            failures,
+                            job_kind,
+                            found_in,
+                            info.pr_url if pr_mode else "",
+                        )
+                    )
+                except Exception as e:  # noqa: BLE001 - the report says it is untracked
+                    print(f"WARNING: AI fuzz triage: cannot file the issue: {e}")
+                    traceback.print_exc()
+                    verdict["issue_error"] = f"{type(e).__name__}: {e}"
+            if not pr_mode:
+                verdict["other_issues"] = _track_other_signatures(
+                    repo_name, failures, job_kind, found_in
+                )
             if _needs_repro(verdict):
                 verdict.update(
                     _reproduce(
@@ -1193,6 +1533,13 @@ def triage_and_apply(
                         deadline,
                     )
                 )
+                if verdict.get("issue_created") and verdict["repro_status"] == (
+                    "reproduced"
+                ):
+                    try:
+                        _post_repro(verdict["issue_url"], verdict["repro"])
+                    except Exception as e:  # noqa: BLE001 - the report still has it
+                        print(f"WARNING: AI fuzz triage: cannot post reproducer: {e}")
         _apply_verdict(
             result,
             verdict,

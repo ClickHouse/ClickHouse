@@ -531,8 +531,8 @@ def run_stress_test(upgrade_check: bool = False) -> None:
             "The tested build is the set of `.deb` packages in `./ci/tmp`. "
             "Extract the binary with "
             "`dpkg-deb -x ./ci/tmp/clickhouse-common-static_*.deb <scratch dir>` "
-            "and use `<scratch dir>/usr/bin/clickhouse local` (or `server` in a "
-            "scratch directory) for repro attempts. Server logs are under "
+            "and use `<scratch dir>/usr/bin/clickhouse local` for repro "
+            "attempts. Server logs are under "
             "`./ci/tmp/server_log`, test outputs under `./ci/tmp/result_path`. "
         )
         if upgrade_check:
