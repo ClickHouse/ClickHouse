@@ -873,13 +873,6 @@ private:
 
     static Type toTwoLevelType(Type type);
 
-    static bool isFixedHashTableType(Type type)
-    {
-        return type == Type::key8 || type == Type::key16 || type == Type::two_level_key8 || type == Type::two_level_key16
-            || type == Type::range8_key32 || type == Type::range16_key32 || type == Type::range17_key32 || type == Type::range18_key32
-            || type == Type::range8_key64 || type == Type::range16_key64 || type == Type::range17_key64 || type == Type::range18_key64;
-    }
-
     /// The maps flavour this join runs on. All the dispatch entry points take it.
     JoinMapsKind getMapsKind() const;
 

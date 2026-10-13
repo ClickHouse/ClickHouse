@@ -186,12 +186,6 @@ SETTINGS parallel_hash_join_threshold = 1000000000, join_runtime_filter_from_fix
 SELECT 'rf1', count() FROM t_rf_l AS l INNER JOIN t_rf_r AS r ON l.k = r.k
 SETTINGS parallel_hash_join_threshold = 1000000000, join_runtime_filter_from_fixed_hash_table = 1, log_comment = '04891_rf_serial_on';
 
-SELECT '-- shared rf key8 parallel';
-SELECT 'rf0', count() FROM t_rf_l AS l INNER JOIN t_rf_r AS r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 0, join_runtime_filter_from_fixed_hash_table = 0, log_comment = '04891_rf_parallel_off';
-SELECT 'rf1', count() FROM t_rf_l AS l INNER JOIN t_rf_r AS r ON l.k = r.k
-SETTINGS parallel_hash_join_threshold = 0, join_runtime_filter_from_fixed_hash_table = 1, log_comment = '04891_rf_parallel_on';
-
 SYSTEM FLUSH LOGS query_log, text_log;
 
 SELECT '-- per query: map types built, type converted to, runtime filter published';

@@ -1630,7 +1630,8 @@ HashJoin::~HashJoin()
         if (build_phase_finished)
         {
             /// Like `ConcurrentHashJoin`, a parallel build of a fixed-key map leaves no entry: it has nothing to preallocate.
-            if (stats_collecting_params.build.isCollectionAndUseEnabled() && !(build_layout.two_level && isFixedHashTableType(data->type)))
+            if (stats_collecting_params.build.isCollectionAndUseEnabled() && data->type != Type::two_level_key8
+                && data->type != Type::two_level_key16)
             {
                 if (const auto ht_size = getTotalRowCount())
                     getHashTablesStatistics<HashJoinEntry>().update(
@@ -2811,7 +2812,13 @@ void HashJoin::publishSharedRuntimeFilters()
     if (data->maps.size() != 1)
         return;
 
-    if (!isFixedHashTableType(data->type))
+    const bool is_fixed_hash_table =
+        data->type == Type::key8 || data->type == Type::key16 ||
+        data->type == Type::range8_key32 || data->type == Type::range16_key32 ||
+        data->type == Type::range17_key32 || data->type == Type::range18_key32 ||
+        data->type == Type::range8_key64 || data->type == Type::range16_key64 ||
+        data->type == Type::range17_key64 || data->type == Type::range18_key64;
+    if (!is_fixed_hash_table)
         return;
 
     /// For a single distinct build key, the existing `== const` runtime filter specialization
@@ -3098,8 +3105,7 @@ bool HashJoin::hasPostBuildPhase() const
     /// but publishSharedRuntimeFilters still needs to run for them when the feature is on.
     const bool needs_shared_filter_publish =
         data && data->rows_to_join && data->maps.size() == 1
-        && (data->type == Type::key8 || data->type == Type::key16 || data->type == Type::two_level_key8
-            || data->type == Type::two_level_key16)
+        && (data->type == Type::key8 || data->type == Type::key16)
         && table_join->joinRuntimeFilterFromFixedHashTable()
         && !table_join->getSharedRuntimeFilterDescriptors().empty();
 
