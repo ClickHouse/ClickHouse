@@ -602,6 +602,12 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         "distributed_ddl_queue",
         "s3_queue_metadata",
         "azure_queue_metadata",
+        /// The caches of the metadata of the earlier reads from external sources: the paths of
+        /// the processed objects and files, the Keeper paths of the queues, the exception texts,
+        /// and the `source` of every inferred schema.
+        "s3queue_metadata_cache",
+        "azure_queue_metadata_cache",
+        "schema_inference_cache",
         "replicas",
         "database_replicas",
         "clusters",
@@ -643,6 +649,9 @@ bool isAllowedServerOwnedTableForAIAgent(const String & database, const String &
         /// functions are in `system.documentation`, which the `consult_documentation` tool reads.
         "named_collections",
         "functions",
+        /// The executable user-defined functions: their reconstructed `command` lines and the
+        /// texts of their loading errors (`loading_error_message`).
+        "user_defined_functions",
         "workloads",
         "resources",
     };

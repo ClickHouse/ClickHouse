@@ -189,6 +189,7 @@ TEST(AIQueryValidation, RejectsRunningQueriesAndAccessMetadata)
     /// The stored definitions of the server-global objects are in their `create_query` columns.
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "named_collections"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "functions"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "user_defined_functions"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "workloads"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "resources"));
     EXPECT_TRUE(isAllowedServerOwnedTableForAIAgent("system", "columns"));
@@ -213,6 +214,9 @@ TEST(AIQueryValidation, RejectsExternalServerOwnedTables)
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "distributed_ddl_queue"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "s3_queue_metadata"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "azure_queue_metadata"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "s3queue_metadata_cache"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "azure_queue_metadata_cache"));
+    EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "schema_inference_cache"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "replicas"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "database_replicas"));
     EXPECT_FALSE(isAllowedServerOwnedTableForAIAgent("system", "clusters"));
