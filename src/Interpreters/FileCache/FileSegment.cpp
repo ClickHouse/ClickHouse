@@ -309,6 +309,10 @@ String FileSegment::getOrSetDownloader()
 
 scope_guard FileSegment::tryTakeDownloaderOfPartiallyDownloaded()
 {
+    /// Most calls are for downloaded segments: skip the lock for them.
+    if (download_state != State::PARTIALLY_DOWNLOADED)
+        return {};
+
     auto lk = lock();
 
     if (download_state != State::PARTIALLY_DOWNLOADED || !getDownloaderUnlocked(lk).empty())
@@ -1503,10 +1507,9 @@ void FileSegment::increasePriority()
             /// A move between priority queues must not run concurrently with a space reservation for
             /// this segment. A completed segment never reserves again. A partially downloaded one is
             /// safe while we hold its downloader role, because only the downloader reserves.
-            const bool is_completed = isCompleted();
-            const auto downloader_guard = is_completed ? scope_guard{} : tryTakeDownloaderOfPartiallyDownloaded();
+            const auto downloader_guard = tryTakeDownloaderOfPartiallyDownloaded();
 
-            if (!cache->tryIncreasePriority(*it, is_completed || downloader_guard))
+            if (!cache->tryIncreasePriority(*it, downloader_guard || isCompleted()))
                 ProfileEvents::increment(ProfileEvents::FileSegmentFailToIncreasePriority);
 
             /// Used only for system.filesystem_cache.
