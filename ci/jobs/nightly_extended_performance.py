@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # `--resolve` (workflow pre-hook): picks the tested and reference master builds, stores their SHAs in KV data.
-# Job mode: downloads those builds and execs the performance harness (or ClickBench with `--clickbench`).
+# Job mode: downloads those builds and execs the performance harness.
 
 import argparse
 import os
@@ -98,8 +98,6 @@ def run_job(args, rest):
     kv = info.get_kv_data()
     tested = kv["nightly_tested_sha"]
     download(tested, TESTED_PATH)
-    if args.clickbench:
-        os.execvp("python3", ["python3", "./ci/jobs/clickbench.py", "--info", f"binary {tested}"])
 
     # Tests as of the tested commit plus the branch's own changes (empty on master); the harness scripts stay from HEAD.
     anchor = kv["nightly_tests_anchor_sha"]
@@ -125,7 +123,6 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Nightly extended performance comparison", allow_abbrev=False)
     parser.add_argument("--resolve", action="store_true")
     parser.add_argument("--test-options", default="")
-    parser.add_argument("--clickbench", action="store_true")
     args, rest = parser.parse_known_args()
     if args.resolve:
         resolve()

@@ -1916,13 +1916,6 @@ class JobConfigs:
             for batch in range(1, 5)
         ]
     )
-    nightly_clickbench_arm_job = (
-        clickbench_jobs[1]
-        .set_requires([], reset=True)
-        .set_runs_on(RunnerLabels.ARM_LARGE_STORAGE)
-        .set_command("python3 ./ci/jobs/nightly_extended_performance.py --clickbench")
-        .set_timeout(1 * 3600)
-    )
     docs_job_mintlify = Job.Config(
         name=JobNames.DOCS_MINTLIFY,
         runs_on=RunnerLabels.FUNC_TESTER_ARM,

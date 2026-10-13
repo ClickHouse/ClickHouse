@@ -1,4 +1,3 @@
-import argparse
 import os
 import shutil
 import sys
@@ -58,9 +57,6 @@ def install_ci_logs_sender(config_dir, var_lib_dir):
 
 
 def main():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--info", default="")
-    args = parser.parse_args()
     results = []
     stop_watch = Utils.Stopwatch()
     ch = ClickHouseProc(ch_config_dir=f"{temp_dir}/etc/clickhouse-server")
@@ -156,7 +152,6 @@ def main():
         files=ch.prepare_logs(
             all=False, info=info, job_failed=any(not r.is_ok() for r in results)
         ),
-        info=args.info,
     ).complete_job()
 
 
