@@ -348,7 +348,7 @@ SETTINGS allow_introspection_functions=1
 
 ### Example: generating a fragmentation flame graph {#example-fragmentation-flamegraph}
 
-The same query can split the waste of each size class between its backtraces, in proportion to their number of old allocations, and print the result in the collapsed format for `flamegraph.pl`. Size classes with waste but without old enough samples go under an `[unattributed]` frame, so the total of the flame graph is the total waste. Read `system.jemalloc_sampled_allocations` once per query: every read flushes a new profile, so two subqueries would see different data.
+The same query can split the waste of each size class between its backtraces, in proportion to their number of old allocations, and print the result in the collapsed format for `flamegraph.pl`. Size classes with waste but without old enough samples go under an `[unattributed]` frame, so the total of the flame graph is the total waste. Samples whose stack jemalloc could not unwind have an empty `trace` and go under `[unknown]`. Read `system.jemalloc_sampled_allocations` once per query: every read flushes a new profile, so two subqueries would see different data.
 
 ```sql
 WITH 60e9 AS min_age_ns
@@ -362,7 +362,7 @@ LEFT JOIN
         arena,
         size_class,
         sum(weight) AS est_old_objects,
-        arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';') AS stack
+        if(empty(trace), '[unknown]', arrayStringConcat(arrayMap(a -> demangle(addressToSymbol(a)), arrayReverse(trace)), ';')) AS stack
     FROM system.jemalloc_sampled_allocations
     WHERE age_ns > min_age_ns
     GROUP BY arena, size_class, trace

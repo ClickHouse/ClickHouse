@@ -116,21 +116,21 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
     void windowInsertResultInto(const WindowTransform * transform,
                                 size_t function_index) const override
     {
-        const auto & current_block = transform->blockAt(transform->current_row);
+        const auto & current_block = transform->blocks.blockAt(transform->current.location.block);
         const auto & workspace = transform->workspaces[function_index];
         auto & state = getState(workspace);
 
         auto interval_duration = interval_specified ? interval_length *
-            (*current_block.input_columns[workspace.argument_column_indices[ARGUMENT_INTERVAL]]).getFloat64(0) : 1;
+            (*current_block.materialized_columns[workspace.argument_column_indices[ARGUMENT_INTERVAL]]).getFloat64(0) : 1;
 
-        Float64 curr_metric = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_METRIC, transform->current_row);
+        Float64 curr_metric = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_METRIC, transform->current.location);
         Float64 metric_diff = curr_metric - state.previous_metric;
         Float64 result = 0;
 
         if (ts_scale_multiplier)
         {
-            const auto & column = transform->blockAt(transform->current_row.block).input_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]];
-            const auto & curr_timestamp = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*column).getInt(transform->current_row.row);
+            const auto & column = transform->blocks.blockAt(transform->current.location.block).materialized_columns[workspace.argument_column_indices[ARGUMENT_TIMESTAMP]];
+            const auto & curr_timestamp = checkAndGetColumn<DataTypeDateTime64::ColumnType>(*column).getInt(transform->current.location.row);
 
             Float64 time_elapsed = static_cast<Float64>(curr_timestamp) - state.previous_timestamp;
             result = (time_elapsed > 0) ? (metric_diff * static_cast<Float64>(ts_scale_multiplier) / time_elapsed  * interval_duration) : 0;
@@ -138,14 +138,14 @@ struct WindowFunctionNonNegativeDerivative final : public StatefulWindowFunction
         }
         else
         {
-            Float64 curr_timestamp = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIMESTAMP, transform->current_row);
+            Float64 curr_timestamp = WindowRowAccess::getArgumentFloat64(transform, function_index, ARGUMENT_TIMESTAMP, transform->current.location);
             Float64 time_elapsed = curr_timestamp - state.previous_timestamp;
             result = (time_elapsed > 0) ? (metric_diff / time_elapsed * interval_duration) : 0;
             state.previous_timestamp = curr_timestamp;
         }
         state.previous_metric = curr_metric;
 
-        if (unlikely(!transform->current_row.row))
+        if (unlikely(!transform->current.location.row))
             result = 0;
 
         WindowRowAccess::insertResultFloat64(transform, function_index, result >= 0 ? result : 0);

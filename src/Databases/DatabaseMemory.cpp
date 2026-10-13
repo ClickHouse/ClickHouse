@@ -250,7 +250,7 @@ void registerDatabaseMemory(DatabaseFactory & factory)
             args.database_name,
             args.context);
     };
-    factory.registerDatabase("Memory", create_fn, {}, Documentation{
+    factory.registerDatabase("Memory", create_fn, SecretArgumentsSpec{}, {}, Documentation{
         .description = R"DOCS_MD(
 The `Memory` database engine keeps its metadata and table definitions only in memory. It is intended for temporary databases: the database and its tables are lost when the server stops or restarts.
 

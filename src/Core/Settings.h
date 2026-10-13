@@ -175,6 +175,10 @@ struct Settings
     /// `compatibility` itself instead of being forced to the sender's derived values.
     void resetSettingsChangedByCompatibility();
 
+    /// Reset to its default every setting whose value was set only by the `compatibility` setting when
+    /// `is_allowed` refuses that value, so that `compatibility` leaves such a setting as it is.
+    void resetSettingsChangedByCompatibility(const std::function<bool(std::string_view name, const Field & value)> & is_allowed);
+
     /// Keep the values that the `compatibility` setting derived but clear their `changed` flags (and forget
     /// they were compatibility-derived). The resulting object still selects e.g. the client-side network codec
     /// from the derived values, while serialization to a server skips them — the server re-derives them from

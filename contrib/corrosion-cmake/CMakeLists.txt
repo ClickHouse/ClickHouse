@@ -313,6 +313,9 @@ function(clickhouse_import_crate)
             LOCKED
             FLAGS --offline
             NO_DEFAULT_FEATURES
+            # Without it every cargo build runs in the Ninja `console` pool, which has depth 1,
+            # so the cargo builds run one after another and block the C++ compilation that waits for them
+            NO_USES_TERMINAL
     )
     enable_dummy_launchers_if_needed()
 endfunction()

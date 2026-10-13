@@ -94,7 +94,8 @@ public:
 
     bool hasAggregation() const
     {
-        return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty();
+        return !aggregation_analysis_result.aggregation_keys.empty() || !aggregation_analysis_result.aggregate_descriptions.empty()
+            || !aggregation_analysis_result.grouping_sets_parameters_list.empty();
     }
 
     AggregationAnalysisResult & getAggregation()
