@@ -16,7 +16,7 @@ CHECK_QUERY="SELECT count(), sum(id), min(id), max(id)"
 ${CLICKHOUSE_CLIENT} --query "DROP TABLE IF EXISTS ${TABLE}"
 # The format settings of the data files are taken from the table, not from the INSERT query.
 ${CLICKHOUSE_CLIENT} --query "
-    CREATE TABLE ${TABLE} (id UInt64, s String)
+    CREATE TABLE ${TABLE} (id Int64, s String)
     ENGINE = IcebergLocal('${TABLE_PATH}', 'Parquet')
     SETTINGS output_format_parquet_row_group_size = 50000
 "
