@@ -4,7 +4,7 @@
 
 #include <ranges>
 #include <algorithm>
-#include <base/hex.h>
+#include <Common/Hex.h>
 
 #include <Columns/ColumnVector.h>
 

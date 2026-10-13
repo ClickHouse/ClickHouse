@@ -23,6 +23,7 @@
 #include <Databases/PostgreSQL/fetchPostgreSQLTableStructure.h>
 #include <Common/quoteString.h>
 #include <Common/logger_useful.h>
+#include <Common/ProfileEvents.h>
 #include <Core/Settings.h>
 #include <Core/BackgroundSchedulePool.h>
 #include <filesystem>
@@ -30,6 +31,11 @@
 
 #include <Disks/IDisk.h>
 namespace fs = std::filesystem;
+
+namespace ProfileEvents
+{
+    extern const Event DatabaseTablesEnumerated;
+}
 
 namespace DB
 {
@@ -154,7 +160,7 @@ bool DatabasePostgreSQL::empty() const
 }
 
 
-DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & /* filter_by_table_name */, bool /* skip_not_loaded */) const
+DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local_context, const FilterByNameFunction & filter_by_table_name, bool /* skip_not_loaded */) const
 {
     std::lock_guard lock(mutex);
     Tables tables;
@@ -166,8 +172,10 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
         auto connection_holder = pool->get();
         auto table_names = fetchPostgreSQLTablesList(connection_holder->get(), configuration.schema);
 
+        /// Apply the filter before `fetchTable`: it queries the remote structure of one table, so
+        /// a query that names the tables it wants must not pay for the whole schema.
         for (const auto & table_name : table_names)
-            if (!detached_or_dropped.contains(table_name))
+            if (!detached_or_dropped.contains(table_name) && (!filter_by_table_name || filter_by_table_name(table_name)))
                 tables[table_name] = fetchTable(table_name, local_context, true);
     }
     catch (...)
@@ -175,6 +183,7 @@ DatabaseTablesIteratorPtr DatabasePostgreSQL::getTablesIterator(ContextPtr local
         tryLogCurrentException(__PRETTY_FUNCTION__, "", toleratedConnectionFailureLogLevel());
     }
 
+    ProfileEvents::increment(ProfileEvents::DatabaseTablesEnumerated, tables.size());
     return std::make_unique<DatabaseTablesSnapshotIterator>(tables, database_name);
 }
 
