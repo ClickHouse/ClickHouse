@@ -182,8 +182,7 @@ public:
         std::shared_ptr<MergeTreeReadPoolProjectionIndex> pool,
         PrewhereInfoPtr prewhere_info,
         const ExpressionActionsSettings & actions_settings,
-        const MergeTreeReaderSettings & reader_settings,
-        const ColumnsDescription * columns);
+        const MergeTreeReaderSettings & reader_settings);
 
     ProjectionIndexBitmapPtr read(const RangesInDataPart & ranges);
 

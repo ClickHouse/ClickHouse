@@ -5722,8 +5722,7 @@ void ReadFromMergeTree::initializePipeline(QueryPipelineBuilder & pipeline, [[ma
                         context),
                     read_info.prewhere_info,
                     actions_settings,
-                    projection_reader_settings,
-                    &read_info.projection->metadata->getColumns()));
+                    projection_reader_settings));
         }
 
         projection_index_reader = std::make_shared<MergeTreeProjectionIndexReader>(std::move(readers));
