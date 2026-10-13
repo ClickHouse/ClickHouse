@@ -22,13 +22,13 @@ Expect 400: dense_int is 0..2499, NDV 2500, so 100000 * 10 / 2500; each of the 1
 Join: ice_keys[100000] ⋈ dim10[10]
 ResultRows: 400
 --- T5: use_iceberg_manifest_column_statistics = 0
-Expect 10: without column statistics the rows stand in for the NDV, so 100000 * 10 / 100000.
+Expect 100000: without column statistics the Iceberg key has no NDV, so only the NDV of dim10 divides: 100000 * 10 / 10.
 Join: ice_keys[100000] ⋈ dim10[10]
-ResultRows: 10
+ResultRows: 100000
 --- T6: use_statistics = 0
-Expect ~~10: as T5, and dim10 has no statistics either, so its 10 rows are imprecise.
+Expect ~~100000: neither key has an NDV, so the join is taken as FK -> PK and keeps the larger side; dim10 rows are imprecise.
 Join: ice_keys[100000] ⋈ dim10[no_stats~10]
-ResultRows: ~~10
+ResultRows: ~~100000
 --- T7: rule 2, sparse integer: range clamped to the rows
 Expect 10: the range is far above the rows, so NDV = 100000: 100000 * 10 / 100000 (true NDV 2500, result 40).
 Join: ice_keys[100000] ⋈ dim10[10]

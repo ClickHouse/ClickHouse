@@ -104,10 +104,10 @@ echo '--- T4: rule 2, dense integer: range 2500'
 echo 'Expect 400: dense_int is 0..2499, NDV 2500, so 100000 * 10 / 2500; each of the 10 keys matches 40 rows.'
 labels "${T4}" ${ON}
 echo '--- T5: use_iceberg_manifest_column_statistics = 0'
-echo 'Expect 10: without column statistics the rows stand in for the NDV, so 100000 * 10 / 100000.'
+echo 'Expect 100000: without column statistics the Iceberg key has no NDV, so only the NDV of dim10 divides: 100000 * 10 / 10.'
 labels "${T4}" ${NO_COLUMN_STATS}
 echo '--- T6: use_statistics = 0'
-echo 'Expect ~~10: as T5, and dim10 has no statistics either, so its 10 rows are imprecise.'
+echo 'Expect ~~100000: neither key has an NDV, so the join is taken as FK -> PK and keeps the larger side; dim10 rows are imprecise.'
 labels "${T4}" ${NO_STATS}
 
 echo '--- T7: rule 2, sparse integer: range clamped to the rows'
