@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Common/VectorWithMemoryTracking.h>
 #include <Processors/Port.h>
 #include <Common/ProcessorMemoryStats.h>
 #include <Common/Stopwatch.h>
@@ -189,8 +190,8 @@ public:
     virtual Status prepare();
 
     /// Optimization for prepare in case we know ports were updated.
-    using UpdatedInputPorts  = std::vector<InputPort *>;
-    using UpdatedOutputPorts = std::vector<OutputPort *>;
+    using UpdatedInputPorts  = VectorWithMemoryTracking<InputPort *>;
+    using UpdatedOutputPorts = VectorWithMemoryTracking<OutputPort *>;
     virtual Status prepare(const UpdatedInputPorts & /*updated_input_ports*/, const UpdatedOutputPorts & /*updated_output_ports*/) { return prepare(); }
 
     /** You may call this method if 'prepare' returned Ready.
@@ -274,6 +275,7 @@ public:
     /// In case if query was cancelled executor will wait till all processors finish their jobs.
     /// Generally, there is no reason to check this flag. However, it may be reasonable for long operations (e.g. i/o).
     bool isCancelled() const { return is_cancelled.load(std::memory_order_acquire); }
+    const std::atomic<bool> & getCancellationFlag() const { return is_cancelled; }
     virtual void cancel(CancelReason reason) noexcept;
     void cancel() noexcept { cancel(CancelReason::Unknown); }
 

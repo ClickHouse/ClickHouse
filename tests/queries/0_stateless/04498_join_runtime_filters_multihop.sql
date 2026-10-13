@@ -21,8 +21,9 @@ SET enable_join_runtime_filters = 1;
 SET join_runtime_filter_min_probe_rows = 0;
 SET enable_join_runtime_filters_index_analysis = 1;
 SET use_skip_indexes_on_data_read = 1;
--- Left-side join pruning is intentionally disabled under parallel replicas; pin PR off so the
--- multi-hop pruning assertions are exercised (the ParallelReplicas CI job otherwise forces it on).
+-- Under parallel replicas the pruning is split among the replicas, so the per-query counters this
+-- test asserts would depend on the coordinator's assignment; pin PR off so the multi-hop pruning
+-- assertions are exercised (the ParallelReplicas CI job otherwise forces it on).
 SET enable_parallel_replicas = 0;
 
 -- Pin the join order so the chained runtime filters reliably reach mh_fact (otherwise the
@@ -35,6 +36,9 @@ SET join_algorithm = 'hash';
 -- Disable cost-based join reordering so the syntactic chain order is preserved; otherwise the
 -- reorderer can rearrange the tables and the transferred filter never reaches mh_fact.
 SET query_plan_optimize_join_order_limit = 0;
+-- mh_d2 and mh_d1 feed the build side of the next join, so a filter on them that disables itself for a
+-- while (pass-ratio heuristic) lets unmatched keys into the next filter and mh_fact may lose its pruning.
+SET join_runtime_filter_blocks_to_skip_before_reenabling = 0;
 
 -- 2-hop: the predicate on mh_d2 is transferred mh_d2 -> mh_d1 -> mh_fact and prunes mh_fact by its primary key.
 SELECT count(), sum(f.v)
@@ -49,7 +53,8 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['RuntimeFilterGranulesConsidered'] > 0,
-    ProfileEvents['RuntimeFilterGranulesDropped'] > 0
+    ProfileEvents['RuntimeFilterGranulesDropped'] > 0,
+    ProfileEvents['RuntimeFilterBlocksSkipped'] = 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04498_mh_2hop' AND type = 'QueryFinish'
 ORDER BY event_time DESC
@@ -69,7 +74,8 @@ SYSTEM FLUSH LOGS query_log;
 
 SELECT
     ProfileEvents['RuntimeFilterGranulesConsidered'] > 0,
-    ProfileEvents['RuntimeFilterGranulesDropped'] > 0
+    ProfileEvents['RuntimeFilterGranulesDropped'] > 0,
+    ProfileEvents['RuntimeFilterBlocksSkipped'] = 0
 FROM system.query_log
 WHERE current_database = currentDatabase() AND log_comment = '04498_mh_3hop' AND type = 'QueryFinish'
 ORDER BY event_time DESC

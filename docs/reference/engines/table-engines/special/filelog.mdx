@@ -36,7 +36,7 @@ CREATE TABLE [IF NOT EXISTS] [db.]table_name [ON CLUSTER cluster]
 
 Engine arguments:
 
-- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. A relative path is resolved against the `user_files_path` directory, like in the [file](/reference/functions/table-functions/file) table function; a relative path that is already inside `user_files_path` from the working directory of the server (for example, `user_files/my_app/app.log` when the server runs in its data directory, as in the official Docker image) keeps that meaning. Note that ClickHouse allows only paths inside `user_files` directory.
+- `path_to_logs` – Path to log files to subscribe. It can be path to a directory with log files or to a single log file. A relative path is resolved against the `user_files_path` directory, like in the [file](/reference/functions/table-functions/file) table function; a relative path that is already inside `user_files_path` from the working directory of the server (for example, `user_files/my_app/app.log` when the server runs in its data directory, as in the official Docker image) keeps that meaning. The file name in the path can have [globs](/reference/functions/table-functions/file#globs-in-path) (`*`, `?`, `{abc,def}`, `{N..M}`) to read only the matching files of the directory, see [Selecting files with globs](#selecting-files-with-globs). Note that ClickHouse allows only paths inside `user_files` directory.
 - `format_name` - Record format. Note that FileLog process each line in a file as a separate record and not all data formats are suitable for it.
 
 Optional parameters:
@@ -52,7 +52,7 @@ Optional parameters:
 
 ## Description {#description}
 
-The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read.
+The delivered records are tracked automatically, so each record in a log file is only counted once. A file that is shorter than the offset recorded for it when it is next read, as after `logrotate` with `copytruncate`, is read again from the beginning. A truncation is not detected if the file grows back to at least that offset before it is next read. A file with several names in the directory (hard links) is read under one of them.
 
 A file that cannot be opened (a symlink whose target was removed, a file not readable by the server, or the file of a single-file table that was removed) is skipped with an error in the server log and retried until it can be opened while the table is loaded; a file that was missing is then read from its start. A symlink is read only if its target exists when the table finds it.
 
@@ -98,6 +98,20 @@ ATTACH TABLE consumer;
 
 If you want to change the target table by using `ALTER`, we recommend disabling the material view to avoid discrepancies between the target table and the data from the view.
 
+## Selecting files with globs {#selecting-files-with-globs}
+
+When the file name in `path_to_logs` has globs, the table reads the files of that directory whose names match, including the ones that appear later. Globs are not supported in the directory part of the path.
+
+A file that the table reads keeps being read when it is renamed to a name that does not match, until it is removed from the directory. A file that is created and renamed to a name that does not match while the table is detached or the server is stopped is not read. On macOS, where the directory is watched by comparing its listings, the same holds for a file that is created and renamed to a name that does not match before the table lists it. This is what log rotation needs. For example, `logrotate` with `compress` and `delaycompress` keeps the directory like this:
+
+```text
+app.log         the file the application writes
+app.log.1       the previous file, renamed by logrotate, compressed on the next rotation
+app.log.2.gz    older files, compressed
+```
+
+A table on `FileLog('/var/lib/clickhouse/user_files/my_app/*.log', 'JSONEachRow')` reads `app.log`; after the rotation it keeps reading `app.log.1`, so the lines the application writes there before it reopens its log are not lost, and it never reads the compressed files. Make sure the glob does not match the compressed file names.
+
 ## Virtual columns {#virtual-columns}
 
 - `_filename` - Name of the log file. Data type: `LowCardinality(String)`.
@@ -116,5 +130,5 @@ The `FileLog` engine records the offset it has consumed for a chunk before the i
 
 A loss of the OS page cache can additionally discard data that had already been written to the target table; examples are a device-level power loss and an unclean host or kernel reset. The metadata files holding the offsets are themselves written without an fsync of the file or of its directory, so they carry no durability guarantee of their own either.
 
-Unlike the message-broker engines, `FileLog` cannot be protected against this by making the target durable first. Because the offset is recorded from inside the reading pipeline, before the insert it belongs to has finished, setting `fsync_after_insert = 1` on the target `MergeTree` tables does not establish the inserted part as durable before the offset advances. Treat `FileLog` consumption as best-effort tailing of local files: where no rows may be lost, keep the source log files until the consumed data has been verified in the target, so that consumption can be repeated. Dropping and recreating the table discards the recorded offsets and re-reads the files from the beginning.
+Unlike the message-broker engines, `FileLog` cannot be protected against this by making the target durable first. Because the offset is recorded from inside the reading pipeline, before the insert it belongs to has finished, setting `fsync_after_insert = 1` on the target `MergeTree` tables does not establish the inserted part as durable before the offset advances. Treat `FileLog` consumption as best-effort tailing of local files: where no rows may be lost, keep the source log files until the consumed data has been verified in the target, so that consumption can be repeated. [SYSTEM RESET FILELOG](/reference/statements/system#reset-filelog), or dropping and recreating the table, discards the recorded offsets and re-reads the files from the beginning.
 {/*AUTOGENERATED_END*/}
