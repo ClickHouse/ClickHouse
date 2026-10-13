@@ -23,7 +23,7 @@ settings=(
   --max_bytes_before_external_group_by 0
   --max_bytes_ratio_before_external_group_by 0
   --max_threads 4
-  --min_bytes_to_spill 0
+  --min_bytes_to_spill 8Mi
 )
 $CLICKHOUSE_CLIENT --enable_adaptive_aggregator 1 -nm "${settings[@]}" --log_comment "$CLICKHOUSE_TEST_UNIQUE_NAME" -q "
 CREATE OR REPLACE RESOURCE memory (MEMORY RESERVATION);

@@ -64,7 +64,7 @@ exec {input}<>"$files/input"
 # The second branch gives the executor a spare worker while the source waits for input.
 # shellcheck disable=SC2086
 timeout --kill-after=5 120 $CLICKHOUSE_CLIENT --query_id "$query_id" --workload "$workload" \
-    --max_threads 2 --enable_adaptive_aggregator 0 --min_bytes_to_spill 0 \
+    --max_threads 2 --enable_adaptive_aggregator 0 --min_bytes_to_spill 8Mi \
     --max_bytes_before_external_group_by 0 --max_bytes_ratio_before_external_group_by 0 \
     --max_insert_block_size 262144 --min_insert_block_size_rows 0 --min_insert_block_size_bytes 0 \
     --input_format_parallel_parsing 0 --log_profile_events 1 --receive_timeout 120 \
