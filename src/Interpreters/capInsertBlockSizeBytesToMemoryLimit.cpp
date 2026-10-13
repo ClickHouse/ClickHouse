@@ -21,7 +21,8 @@ namespace DB
 /// difference between the insert completing and failing with `MEMORY_LIMIT_EXCEEDED`.
 ///
 /// One operation can run several squashing pipelines at once: an `INSERT` squashes for the target
-/// table and again for every dependent materialized view, and a merge or a mutation squashes once
+/// table and again for every dependent materialized view (the view query result in every sink stream,
+/// and possibly once more before the view's sink), and a merge or a mutation squashes once
 /// for the projection input and once per rebuilt projection. Each of them holds its own copies, so
 /// the share is split between `num_simultaneous_squashes` of them.
 size_t capInsertBlockSizeBytesToMemoryLimit(size_t min_block_size_bytes, size_t num_simultaneous_squashes)

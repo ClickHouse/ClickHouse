@@ -121,12 +121,20 @@ public:
         return sink_stream_size;
     }
 
-    /// The number of writing pipelines of this insert that squash blocks at the same time: the one of
-    /// the root (the target table or the inner table of the target view) and one per dependent
-    /// materialized view. They share the memory budget of `capInsertBlockSizeBytesToMemoryLimit`.
+    /// The number of squashing stages of this insert that hold blocks at the same time. They share the
+    /// memory budget of `capInsertBlockSizeBytesToMemoryLimit`:
+    ///   - the head squash of the root (the target table or the inner table of the target view);
+    ///   - for every dependent materialized view, the squash of the view query result inside
+    ///     `ExecutingInnerQueryFromViewTransform`, one per sink stream, since every sink chain runs its
+    ///     own copy of the view query;
+    ///   - for every dependent materialized view, the sink squash shared between the sink streams,
+    ///     when `materialized_views_squash_parallel_inserts` is in effect.
     size_t getNumSquashingPipelines() const
     {
-        return std::max<size_t>(1, dependent_views.size());
+        /// `dependent_views` has an entry for the root and one for every materialized view.
+        const size_t num_views = dependent_views.empty() ? 0 : dependent_views.size() - 1;
+        const size_t squashes_per_view = sink_stream_size + (squash_parallel_inserts ? 1 : 0);
+        return 1 + num_views * squashes_per_view;
     }
 
     /// Whether a synchronous insert into `storage` would actually deduplicate blocks, i.e. some sink
