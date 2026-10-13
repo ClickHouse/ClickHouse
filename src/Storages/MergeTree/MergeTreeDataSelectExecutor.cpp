@@ -280,28 +280,8 @@ MergeTreeDataSelectSamplingData MergeTreeDataSelectExecutor::getSampling(
     RelativeSize relative_sample_size = 0;
     RelativeSize relative_sample_offset = 0;
 
-    std::optional<ASTSampleRatio::Rational> sample_size_ratio;
-    std::optional<ASTSampleRatio::Rational> sample_offset_ratio;
-
-    if (select_query_info.table_expression_modifiers)
-    {
-        const auto & table_expression_modifiers = *select_query_info.table_expression_modifiers;
-        sample_size_ratio = table_expression_modifiers.getSampleSizeRatio();
-        sample_offset_ratio = table_expression_modifiers.getSampleOffsetRatio();
-    }
-    else
-    {
-        auto & select = select_query_info.query->as<ASTSelectQuery &>();
-
-        auto select_sample_size = select.sampleSize();
-        auto select_sample_offset = select.sampleOffset();
-
-        if (select_sample_size)
-            sample_size_ratio = select_sample_size->as<ASTSampleRatio &>().ratio;
-
-        if (select_sample_offset)
-            sample_offset_ratio = select_sample_offset->as<ASTSampleRatio &>().ratio;
-    }
+    std::optional<ASTSampleRatio::Rational> sample_size_ratio = select_query_info.getSampleSizeRatio();
+    std::optional<ASTSampleRatio::Rational> sample_offset_ratio = select_query_info.getSampleOffsetRatio();
 
     if (sample_size_ratio)
     {
