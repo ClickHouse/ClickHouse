@@ -790,8 +790,14 @@ Aggregator::Aggregator(const Block & header_, const Params & params_)
     }
 
     if (params.bucket_top_k)
-        bucket_top_k_ranks_by_count_state
-            = typeid_cast<const AggregateFunctionCount *>(params.aggregates[params.bucket_top_k_rank_index].function.get()) != nullptr;
+    {
+        if (is_simple_count)
+            bucket_top_k_rank = BucketTopKRank::InlineCount;
+        else if (typeid_cast<const AggregateFunctionCount *>(params.aggregates[params.bucket_top_k_rank_index].function.get()))
+            bucket_top_k_rank = BucketTopKRank::CountState;
+        else
+            bucket_top_k_rank = BucketTopKRank::FinalizedResult;
+    }
 
     method_chosen = AggregatedDataVariants::chooseMethod(header_, params.keys, key_sizes);
 
@@ -2876,20 +2882,36 @@ requires MapAggregationMethod<Method>
 Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const
 {
-    if (!is_simple_count && !bucket_top_k_ranks_by_count_state)
-        return convertOneBucketToChunkTopKByFinalizedRank(method, arena, pools_for_output, bucket, untruncated_keys, keep_table_buffer);
+    switch (bucket_top_k_rank)
+    {
+        case BucketTopKRank::InlineCount:
+            return convertOneBucketToChunkTopKImpl<BucketTopKRank::InlineCount>(
+                method, arena, pools_for_output, bucket, untruncated_keys, keep_table_buffer);
+        case BucketTopKRank::CountState:
+            return convertOneBucketToChunkTopKImpl<BucketTopKRank::CountState>(
+                method, arena, pools_for_output, bucket, untruncated_keys, keep_table_buffer);
+        case BucketTopKRank::FinalizedResult:
+            return convertOneBucketToChunkTopKImpl<BucketTopKRank::FinalizedResult>(
+                method, arena, pools_for_output, bucket, untruncated_keys, keep_table_buffer);
+    }
+}
 
+template <Aggregator::BucketTopKRank rank, typename Method>
+requires MapAggregationMethod<Method>
+Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKImpl(
+    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const
+{
     auto & data = method.data.impls[bucket];
     chassert(params.bucket_top_k_rank_index < params.aggregates_size);
     ProfileEvents::increment(ProfileEvents::AggregationBucketTopKConversions);
 
-    /// One selection pass with a bounded heap: the count is read straight from the state (the
-    /// inline table value for simple count, the count state's UInt64 otherwise), so no cell is
-    /// finalized to be ranked, and the state pointers are chased exactly once - a second full
-    /// pass over the bucket costs more than the whole materialization it saves. The heap keeps
-    /// the first-seen cells on boundary ties, which is exact for LIMIT semantics: any correct
-    /// top set is valid, and the sorter above orders it.
-    const size_t count_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
+    /// One selection pass with a bounded heap: the rank is read straight from the state (the inline table value for
+    /// simple count, the count state's UInt64, or the result of `uniqExact` finalized from its state, see
+    /// `finalizeBucketTopKRank`), so no group is finalized as a whole to be ranked, and the state pointers are chased
+    /// exactly once - a second full pass over the bucket costs more than the whole materialization it saves. The heap
+    /// keeps the first-seen cells on boundary ties, which is exact for LIMIT semantics: any correct top set is valid,
+    /// and the sorter above orders it.
+    const size_t rank_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
     const auto better
         = [ascending = params.bucket_top_k_ascending](UInt64 a, UInt64 b) { return ascending ? a < b : a > b; };
 
@@ -2901,10 +2923,23 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     {
         UInt64 value;
         TableKey key;
-        AggregateDataPtr mapped;
+        /// Where the table holds the cell's mapped value, which the scan does not move.
+        AggregateDataPtr * mapped;
     };
     /// The root is the worst kept candidate, so a new cell only pays the heap when it beats it.
     const auto worse_first = [&](const Candidate & a, const Candidate & b) { return better(a.value, b.value); };
+
+    std::vector<size_t> nontrivial_destructors;
+    if constexpr (rank != BucketTopKRank::InlineCount)
+        for (size_t i = 0; i < params.aggregates_size; ++i)
+            if (!aggregate_functions[i]->hasTrivialDestructor())
+                nontrivial_destructors.push_back(i);
+    [[maybe_unused]] const auto discard = [&](AggregateDataPtr * mapped)
+    {
+        for (const auto i : nontrivial_destructors)
+            aggregate_functions[i]->destroy(*mapped + offsets_of_aggregate_states[i]);
+        *mapped = nullptr;
+    };
 
     /// Only the dataflow statistics cache consumes this byte count, so a null out-parameter makes the
     /// per-group key materialization below dead work. Account for the full output using the same
@@ -2921,10 +2956,18 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
             key_sizes,
             params.serialize_string_with_zero_byte,
             /*keep_sample=*/false);
+    const auto account_key_bytes = [&](const auto & key)
+    {
+        if (key_bytes_meter)
+            key_bytes_meter->add(method, key);
+    };
 
+    /// A finalized rank is the result of a `uniqExact` state, which owns its set, so every loser has a state to destroy:
+    /// the scan destroys it and nulls the cell as soon as it rejects the cell, or evicts it from the heap, while the
+    /// state is in the cache, instead of a second pass over the bucket that chases every state pointer again.
     std::vector<Candidate> top;
     top.reserve(std::min(params.bucket_top_k, data.size()));
-    const auto offer = [&](UInt64 value, const TableKey & key, AggregateDataPtr mapped)
+    const auto offer = [&](UInt64 value, const TableKey & key, AggregateDataPtr * mapped)
     {
         if (top.size() < params.bucket_top_k)
         {
@@ -2934,17 +2977,18 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
         else if (better(value, top.front().value))
         {
             std::pop_heap(top.begin(), top.end(), worse_first);
+            if constexpr (rank == BucketTopKRank::FinalizedResult)
+                discard(top.back().mapped);
             top.back() = {value, key, mapped};
             std::push_heap(top.begin(), top.end(), worse_first);
         }
-    };
-    const auto account_key_bytes = [&](const auto & key)
-    {
-        if (key_bytes_meter)
-            key_bytes_meter->add(method, key);
+        else if constexpr (rank == BucketTopKRank::FinalizedResult)
+        {
+            discard(mapped);
+        }
     };
 
-    if (is_simple_count)
+    if constexpr (rank == BucketTopKRank::InlineCount)
     {
         /// The count is the cell's own mapped value, so unless the key bytes are metered the scan reads no key bytes.
         forEachValueSkippingKeyPrefetchIf(
@@ -2953,38 +2997,51 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
             [&](const auto & key, auto & mapped)
             {
                 account_key_bytes(key);
-                offer(getInlineCountState(mapped), key, mapped);
+                offer(getInlineCountState(mapped), key, &mapped);
             });
     }
     else
     {
         /// The states sit in arena memory in the order they were created, which is unrelated to the
-        /// cell order, so reading a group's count when the scan reaches its cell stalls on a cache
-        /// miss for nearly every group of a large bucket. Instead, the count is prefetched when the
+        /// cell order, so reading a group's rank when the scan reaches its cell stalls on a cache
+        /// miss for nearly every group of a large bucket. Instead, the rank is prefetched when the
         /// scan reaches the cell and read `state_prefetch_distance` cells later, which keeps that
         /// many misses in flight. The cells are still offered in scan order, so boundary ties
         /// resolve as described above. The distance is a constant because the `PrefetchingHelper`
         /// estimate, which is derived from the duration of the first iterations, measured slower:
-        /// on ClickBench Q30-Q32 at 16 and 64 threads, 32 beat 8 and 16 and matched 48.
+        /// on ClickBench Q30-Q32 at 16 and 64 threads, 32 beat 8 and 16 and matched 48. A finalized
+        /// rank prefetches all of the rank aggregate's state, because a `uniqExact` set keeps its size
+        /// behind its inline buffer.
         static constexpr size_t state_prefetch_distance = 32;
+        const size_t rank_state_bytes
+            = rank == BucketTopKRank::CountState ? 1 : aggregate_functions[params.bucket_top_k_rank_index]->sizeOfData();
+        [[maybe_unused]] ColumnUInt64::MutablePtr scratch;
+        if constexpr (rank == BucketTopKRank::FinalizedResult)
+            scratch = ColumnUInt64::create();
         struct PendingCell
         {
             TableKey key{};
-            AggregateDataPtr mapped = nullptr;
+            AggregateDataPtr * mapped = nullptr;
         };
         std::array<PendingCell, state_prefetch_distance> pending{};
         size_t scanned = 0;
         const auto offer_pending = [&](const PendingCell & cell)
-        { offer(getCountState(cell.mapped + count_offset), cell.key, cell.mapped); };
+        {
+            if constexpr (rank == BucketTopKRank::CountState)
+                offer(getCountState(*cell.mapped + rank_offset), cell.key, cell.mapped);
+            else
+                offer(finalizeBucketTopKRank(*cell.mapped, *scratch, arena), cell.key, cell.mapped);
+        };
         data.forEachValue(
             [&](const auto & key, auto & mapped)
             {
                 account_key_bytes(key);
-                __builtin_prefetch(mapped + count_offset);
+                for (size_t line = 0; line < rank_state_bytes; line += CH_CACHE_LINE_SIZE)
+                    __builtin_prefetch(mapped + rank_offset + line);
                 PendingCell & slot = pending[scanned % state_prefetch_distance];
                 if (scanned >= state_prefetch_distance)
                     offer_pending(slot);
-                slot = {key, mapped};
+                slot = {key, &mapped};
                 ++scanned;
             });
         for (size_t i = scanned - std::min(scanned, state_prefetch_distance); i < scanned; ++i)
@@ -3006,194 +3063,43 @@ Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopK(
     for (const auto & candidate : top)
     {
         method.insertKeyIntoColumns(candidate.key, out_cols.raw_key_columns, key_sizes_ref, &serialization_settings);
-        if (is_simple_count)
+        if constexpr (rank == BucketTopKRank::InlineCount)
             assert_cast<ColumnUInt64 &>(*out_cols.final_aggregate_columns[0]).getData().push_back(candidate.value);
         else
-            places.push_back(candidate.mapped);
-    }
-
-    /// Losers only need their nontrivial states destroyed - that is the one case that pays a
-    /// second pass; for the common all-POD queries there is nothing to destroy and the bucket
-    /// just clears. Winner states are destroyed by `insertResultsIntoColumns` after their
-    /// results are inserted, like any final conversion, so they are nulled in the table first.
-    std::vector<size_t> nontrivial_destructors;
-    if (!is_simple_count)
-        for (size_t i = 0; i < params.aggregates_size; ++i)
-            if (!aggregate_functions[i]->hasTrivialDestructor())
-                nontrivial_destructors.push_back(i);
-
-    if (!nontrivial_destructors.empty())
-    {
-        PaddedPODArray<AggregateDataPtr> winners;
-        winners.reserve(keep);
-        for (const auto & candidate : top)
-            winners.push_back(candidate.mapped);
-        std::sort(winners.begin(), winners.end());
-
-        data.forEachValue(
-            [&](const auto &, auto & mapped)
-            {
-                if (std::binary_search(winners.begin(), winners.end(), mapped))
-                {
-                    mapped = nullptr;
-                    return;
-                }
-                for (const auto i : nontrivial_destructors)
-                    aggregate_functions[i]->destroy(mapped + offsets_of_aggregate_states[i]);
-                mapped = nullptr;
-            });
+            places.push_back(*candidate.mapped);
     }
 
     Chunk chunk;
-    if (is_simple_count)
+    if constexpr (rank == BucketTopKRank::InlineCount)
+    {
         chunk = finalizeChunk(params, std::move(out_cols), /*final=*/true);
+    }
     else
     {
+        /// All keys are materialized before the states are handed to `insertResultsIntoColumns`, which destroys them
+        /// after inserting their results, so the table still owns every winner if a key insertion throws.
+        for (const auto & candidate : top)
+            *candidate.mapped = nullptr;
+
+        /// The losers of a count rank only need their nontrivial states destroyed - that is the one case that pays a
+        /// second pass; for the common all-POD queries there is nothing to destroy and the bucket just clears.
+        if constexpr (rank == BucketTopKRank::CountState)
+        {
+            if (!nontrivial_destructors.empty())
+                data.forEachValue(
+                    [&](const auto &, auto & mapped)
+                    {
+                        if (mapped)
+                            discard(&mapped);
+                    });
+        }
+
         bool use_compiled_functions = false;
 #if USE_EMBEDDED_COMPILER
         use_compiled_functions = compiled_aggregate_functions_holder != nullptr && !Method::low_cardinality_optimization;
 #endif
         chunk = insertResultsIntoColumns(places, std::move(out_cols), arena, /*has_null_key_data=*/false, use_compiled_functions);
     }
-
-    finishConvertedTable(data, keep_table_buffer);
-    return AggregatedChunk{std::move(chunk), bucket};
-}
-
-template <typename Method>
-requires MapAggregationMethod<Method>
-Aggregator::AggregatedChunk Aggregator::convertOneBucketToChunkTopKByFinalizedRank(
-    Method & method, Arena * arena, Arenas & pools_for_output, Int32 bucket, UntruncatedAggregationKeys * untruncated_keys, bool keep_table_buffer) const
-{
-    auto & data = method.data.impls[bucket];
-    ProfileEvents::increment(ProfileEvents::AggregationBucketTopKConversions);
-
-    /// The selection of `convertOneBucketToChunkTopK`, with the rank count finalized from each state (see
-    /// `finalizeBucketTopKRank`) instead of read from a count state. A `uniqExact` state owns its set, so every loser
-    /// has a state to destroy: the scan destroys it and nulls the cell as soon as it rejects the cell, or evicts it
-    /// from the heap, while the state is in the cache, instead of a second pass over the bucket that chases every
-    /// state pointer again. Winner states are destroyed by `insertResultsIntoColumns` after their results are
-    /// inserted, so their cells are nulled before it.
-    const size_t rank_offset = offsets_of_aggregate_states[params.bucket_top_k_rank_index];
-    const auto better
-        = [ascending = params.bucket_top_k_ascending](UInt64 a, UInt64 b) { return ascending ? a < b : a > b; };
-
-    using TableKey = std::decay_t<decltype(std::declval<const typename std::decay_t<decltype(data)>::cell_type &>().getKey())>;
-    struct Candidate
-    {
-        UInt64 value;
-        TableKey key;
-        /// Where the table holds the cell's states, which the scan does not move.
-        AggregateDataPtr * mapped;
-    };
-    const auto worse_first = [&](const Candidate & a, const Candidate & b) { return better(a.value, b.value); };
-
-    std::vector<size_t> nontrivial_destructors;
-    for (size_t i = 0; i < params.aggregates_size; ++i)
-        if (!aggregate_functions[i]->hasTrivialDestructor())
-            nontrivial_destructors.push_back(i);
-    const auto discard = [&](AggregateDataPtr * mapped)
-    {
-        for (const auto i : nontrivial_destructors)
-            aggregate_functions[i]->destroy(*mapped + offsets_of_aggregate_states[i]);
-        *mapped = nullptr;
-    };
-
-    /// The full output's key bytes, for the dataflow statistics only, as in `convertOneBucketToChunkTopK`.
-    std::optional<MaterializedKeyBytesMeter<Method>> key_bytes_meter;
-    if (untruncated_keys)
-        key_bytes_meter.emplace(
-            method,
-            prepareOutputBlockColumns(
-                params, aggregate_functions, key_types, aggregate_state_types, pools_for_output, /*final=*/true, /*rows=*/1),
-            key_sizes,
-            params.serialize_string_with_zero_byte,
-            /*keep_sample=*/false);
-    const auto account_key_bytes = [&](const auto & key)
-    {
-        if (key_bytes_meter)
-            key_bytes_meter->add(method, key);
-    };
-
-    std::vector<Candidate> top;
-    top.reserve(std::min(params.bucket_top_k, data.size()));
-    const auto offer = [&](UInt64 value, const TableKey & key, AggregateDataPtr * mapped)
-    {
-        if (top.size() < params.bucket_top_k)
-        {
-            top.push_back({value, key, mapped});
-            std::push_heap(top.begin(), top.end(), worse_first);
-        }
-        else if (better(value, top.front().value))
-        {
-            std::pop_heap(top.begin(), top.end(), worse_first);
-            discard(top.back().mapped);
-            top.back() = {value, key, mapped};
-            std::push_heap(top.begin(), top.end(), worse_first);
-        }
-        else
-        {
-            discard(mapped);
-        }
-    };
-
-    /// The states are prefetched `state_prefetch_distance` cells ahead, as in `convertOneBucketToChunkTopK`, and all of
-    /// the rank aggregate's state, because a `uniqExact` set keeps its size behind its inline buffer.
-    static constexpr size_t state_prefetch_distance = 32;
-    const size_t rank_state_bytes = aggregate_functions[params.bucket_top_k_rank_index]->sizeOfData();
-    struct PendingCell
-    {
-        TableKey key{};
-        AggregateDataPtr * mapped = nullptr;
-    };
-    std::array<PendingCell, state_prefetch_distance> pending{};
-    size_t scanned = 0;
-    auto scratch = ColumnUInt64::create();
-    const auto offer_pending = [&](const PendingCell & cell)
-    { offer(finalizeBucketTopKRank(*cell.mapped, *scratch, arena), cell.key, cell.mapped); };
-    data.forEachValue(
-        [&](const auto & key, auto & mapped)
-        {
-            account_key_bytes(key);
-            for (size_t line = 0; line < rank_state_bytes; line += CH_CACHE_LINE_SIZE)
-                __builtin_prefetch(mapped + rank_offset + line);
-            PendingCell & slot = pending[scanned % state_prefetch_distance];
-            if (scanned >= state_prefetch_distance)
-                offer_pending(slot);
-            slot = {key, &mapped};
-            ++scanned;
-        });
-    for (size_t i = scanned - std::min(scanned, state_prefetch_distance); i < scanned; ++i)
-        offer_pending(pending[i % state_prefetch_distance]);
-
-    if (untruncated_keys)
-        untruncated_keys->bytes = key_bytes_meter->getBytes();
-
-    const size_t keep = top.size();
-    auto out_cols = prepareOutputBlockColumns(params, aggregate_functions, key_types, aggregate_state_types, pools_for_output, /*final=*/true, keep);
-    auto shuffled_key_sizes = method.shuffleKeyColumns(out_cols.raw_key_columns, key_sizes);
-    const auto & key_sizes_ref = shuffled_key_sizes ? *shuffled_key_sizes : key_sizes;
-    IColumn::SerializationSettings serialization_settings{
-        .serialize_string_with_zero_byte = params.serialize_string_with_zero_byte};
-
-    PaddedPODArray<AggregateDataPtr> places;
-    places.reserve(keep);
-    for (const auto & candidate : top)
-    {
-        method.insertKeyIntoColumns(candidate.key, out_cols.raw_key_columns, key_sizes_ref, &serialization_settings);
-        places.push_back(*candidate.mapped);
-    }
-
-    /// All keys are materialized before the states are handed to `insertResultsIntoColumns`, so the table still owns
-    /// every winner if a key insertion throws.
-    for (const auto & candidate : top)
-        *candidate.mapped = nullptr;
-
-    bool use_compiled_functions = false;
-#if USE_EMBEDDED_COMPILER
-    use_compiled_functions = compiled_aggregate_functions_holder != nullptr && !Method::low_cardinality_optimization;
-#endif
-    Chunk chunk = insertResultsIntoColumns(places, std::move(out_cols), arena, /*has_null_key_data=*/false, use_compiled_functions);
 
     finishConvertedTable(data, keep_table_buffer);
     return AggregatedChunk{std::move(chunk), bucket};
