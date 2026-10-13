@@ -55,10 +55,11 @@ RequestChecksum::Algorithm RequestChecksum::getUploadChecksumAlgorithm(const S3R
                     ErrorCodes::INVALID_SETTING_VALUE,
                     "Setting upload_checksum_algorithm cannot be MD5 for S3Express buckets, "
                     "which require a flexible checksum; use CRC32 or SHA256");
-            if (OpenSSLInitializer::instance().isFIPSEnabled())
+            if (!OpenSSLInitializer::instance().isMD5Available())
                 throw Exception(
                     ErrorCodes::INVALID_SETTING_VALUE,
-                    "Setting upload_checksum_algorithm cannot be MD5 when FIPS mode is enabled; use CRC32 or SHA256");
+                    "Setting upload_checksum_algorithm cannot be MD5 because the MD5 digest is not available (FIPS mode?); "
+                    "use CRC32 or SHA256");
         }
         return *algorithm;
     }
