@@ -31,6 +31,15 @@ AnthropicProvider::AnthropicProvider(const String & endpoint_, const String & ap
             "Unsupported Anthropic API version '{}'. Supported: '{}'", api_version, DEFAULT_ANTHROPIC_API_VERSION);
 }
 
+HTTPHeaderEntries AnthropicProvider::getHeaders() const
+{
+    HTTPHeaderEntries headers;
+    if (!api_key.empty()) /// not all providers need API key
+        headers.emplace_back("x-api-key", api_key);
+    headers.emplace_back("anthropic-version", api_version);
+    return headers;
+}
+
 void AnthropicProvider::call(const AIRequest & ai_request, const ConnectionTimeouts & timeouts, AIResponse & response)
 {
     response = {};
@@ -82,9 +91,8 @@ void AnthropicProvider::call(const AIRequest & ai_request, const ConnectionTimeo
 
     Poco::Net::HTTPRequest http_request(Poco::Net::HTTPRequest::HTTP_POST, uri.getPathAndQuery(), Poco::Net::HTTPMessage::HTTP_1_1);
     http_request.setContentType("application/json");
-    if (!api_key.empty()) /// not all providers need API key
-        http_request.set("x-api-key", api_key);
-    http_request.set("anthropic-version", api_version);
+    for (const auto & header : getHeaders())
+        http_request.set(header.name, header.value);
     http_request.setContentLength(body.size());
 
     auto & out_stream = session->sendRequest(http_request);
