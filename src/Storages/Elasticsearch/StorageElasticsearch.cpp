@@ -127,10 +127,11 @@ private:
 
             auto source = obj->getObject("_source");
             if (!source)
-            {
-                columns[*json_pos]->insertDefault();
-                continue;
-            }
+                throw Exception(ErrorCodes::INCORRECT_DATA,
+                    "Hit #{} from index '{}' has no '_source', so the JSON column cannot be read. "
+                    "The index does not store the document source; read only the virtual columns '_id' and '_index', "
+                    "or enable '_source' in the index mapping",
+                    i, obj->optValue<String>("_index", ""));
 
             source_stream.str({});
             source->stringify(source_stream);
@@ -350,7 +351,7 @@ The settings can be changed with `ALTER TABLE ... MODIFY SETTING`.
 - `_id` — The document id. Type: `String`.
 - `_index` — The name of the index the document was read from. Type: `LowCardinality(String)`.
 
-When a query reads only virtual columns, the document `_source` is not requested from Elasticsearch.
+When a query reads only virtual columns, the document `_source` is not requested from Elasticsearch. An index that does not store `_source` (the `_source` field is disabled in its mapping) can be read only through the virtual columns: a query that reads the `JSON` column from such an index fails with an error instead of returning empty documents.
 
 ## Usage example {#usage-example}
 

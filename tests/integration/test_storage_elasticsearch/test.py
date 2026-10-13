@@ -192,9 +192,12 @@ def test_source_disabled():
     )
     table_function = elasticsearch_table_function("no_source")
     assert (
-        node.query(f"SELECT _id, document FROM {table_function} ORDER BY _id FORMAT TSV")
-        == "1\t{}\n2\t{}\n"
+        node.query(f"SELECT _id, _index FROM {table_function} ORDER BY _id FORMAT TSV")
+        == "1\tno_source\n2\tno_source\n"
     )
+
+    error = node.query_and_get_error(f"SELECT document FROM {table_function}")
+    assert "has no '_source'" in error
 
 
 def test_query_composition():

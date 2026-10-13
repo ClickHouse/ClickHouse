@@ -74,7 +74,7 @@ Store credentials in a [named collection](/concepts/features/configuration/serve
 - `_id` — The document id. Type: `String`.
 - `_index` — The name of the index the document was read from. Type: `LowCardinality(String)`.
 
-When a query reads only virtual columns, the document `_source` is not requested from Elasticsearch.
+When a query reads only virtual columns, the document `_source` is not requested from Elasticsearch. An index that does not store `_source` (the `_source` field is disabled in its mapping) can be read only through the virtual columns: a query that reads the `JSON` column from such an index fails with an error instead of returning empty documents.
 
 ## Examples {#examples}
 
