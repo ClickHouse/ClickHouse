@@ -19,7 +19,8 @@ struct StringBytesUniqImpl
 {
     using ResultType = UInt16;
 
-    /// The number of the last row in which each byte value occurred, so nothing is reset between rows.
+    /// For each byte value, the number of the last row that contained it (never greater than `row`),
+    /// so nothing is reset between rows.
     std::array<UInt64, 256> last_seen_row{};
     UInt64 row = 0;
 
@@ -29,7 +30,7 @@ struct StringBytesUniqImpl
         ResultType res = 0;
         for (const UInt8 * end = data + size; data < end; ++data)
         {
-            res += last_seen_row[*data] != row;
+            res += last_seen_row[*data] < row;
             last_seen_row[*data] = row;
         }
         return res;

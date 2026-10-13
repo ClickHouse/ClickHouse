@@ -10,7 +10,7 @@ struct StringBytesEntropyImpl
 {
     using ResultType = Float64;
 
-    ResultType process(const UInt8 * data, size_t size) const
+    static ResultType process(const UInt8 * data, size_t size)
     {
         if (size == 0)
             return 0;
