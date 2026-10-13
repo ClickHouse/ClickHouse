@@ -146,8 +146,8 @@ jobs:
           head_ref=$(echo "$pr_data" | jq -r '.head.ref')
           head_repo=$(echo "$pr_data" | jq -r '.head.repo.full_name // ""')
           head_owner=$(echo "$pr_data" | jq -r '.head.repo.owner.login // ""')
-          override=$(echo "$pr_data" | jq -r --arg label "$OVERRIDE_LABEL" \
-            '[.labels[].name] | index($label) != null')
+          override=$(echo "$pr_data" | jq -r --arg override_label "$OVERRIDE_LABEL" \
+            '[.labels[].name] | index($override_label) != null')
           if [ "$state" != "open" ]; then
             echo "PR #$pr is $state - nothing to do."
             exit 0
