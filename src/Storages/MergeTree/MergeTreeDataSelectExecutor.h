@@ -117,6 +117,7 @@ public:
     static std::pair<MarkRanges, RangesInDataPartReadHints> filterMarksUsingIndex(
         MergeTreeIndexPtr index_helper,
         MergeTreeIndexConditionPtr condition,
+        const IndexReadTask * index_read_task,
         const std::optional<KeyCondition> & key_condition_rpn_template,
         const MergeTreeDataPartInfoForReaderPtr & part_info,
         const MarkRanges & ranges,
@@ -265,6 +266,7 @@ public:
         const SelectQueryInfo & query_info;
         const ContextPtr & context;
         const ReadFromMergeTree::Indexes & indexes;
+        const IndexReadTasks & index_read_tasks;
         const std::optional<TopKFilterInfo> & top_k_filter_info;
         const MergeTreeReaderSettings & reader_settings;
         LoggerPtr log;

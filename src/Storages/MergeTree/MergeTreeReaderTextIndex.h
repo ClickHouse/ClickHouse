@@ -5,9 +5,12 @@
 #include <Storages/MergeTree/MergeTreeIndexText.h>
 #include <Storages/MergeTree/MergeTreeReadTask.h>
 #include <Storages/MergeTree/PostingListCursor.h>
+#include <Storages/MergeTree/PostingListScoringCursor.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/TextIndexBlockedPositionsCodec.h>
 #include <Storages/MergeTree/TextIndexCache.h>
+#include <Storages/MergeTree/BM25State.h>
+#include <Storages/MergeTree/TextIndexDocLengthsReader.h>
 #include <Interpreters/ExpressionActions.h>
 
 #include <absl/container/flat_hash_map.h>
@@ -27,6 +30,12 @@ using PostingsBlocksMap = absl::flat_hash_map<std::string_view, absl::btree_map<
 /// the posting lists read from the index.
 ///
 /// E.g. `__text_index_<name>_hasToken` column created for `hasToken` function.
+///
+/// It also fills the BM25 score virtual columns (`__text_index_<name>_bm25_<hash>`, `Float32`) of the
+/// scoring predicates of a query computing `bm25()`: the BM25 score of the predicate's tokens for the
+/// rows the predicate matches and 0 elsewhere. The planner assembles `bm25()` from these columns.
+/// The match column of a scoring predicate is filled in the same pass over the scoring cursors as its
+/// score column, so the postings of the predicate are decoded once.
 class MergeTreeReaderTextIndex : public IMergeTreeReader
 {
 public:
@@ -61,6 +70,7 @@ private:
     std::unique_ptr<MergeTreeReaderStream> makePostingsStream(const TokenPostingsInfo & token_info) const;
     /// The postings stream of a token, opened on first use and kept in `postings_streams`.
     MergeTreeReaderStream & getPostingsStream(std::string_view token, const TokenPostingsInfo & token_info);
+    std::unique_ptr<MergeTreeReaderStream> makeDocLengthsStream(const MergeTreeIndexSubstream & substream) const;
 
     /// Returns combined postings per column for the given mark, clipped to `slice_range`
     /// (the actual read window, which may be narrower than the mark on partial-mark reads).
@@ -107,6 +117,27 @@ private:
 
     PostingListCursorPtr makeLazyCursor(std::string_view token, const TokenPostingsInfo & token_info);
 
+    /// Scoring state of one scoring predicate of the query.
+    struct ScoreLeaf
+    {
+        /// Positions in `columns_to_read` of the BM25 score column of the predicate and of its match column.
+        size_t score_column = 0;
+        size_t match_column = 0;
+        /// `hasAllTokens` uses the intersection scorer, `hasToken` / `hasAnyTokens` the union scorer.
+        bool intersect = false;
+        /// Built per granule by `initializeScoreLeaves`: one cursor per distinct token of the predicate present
+        /// in this part, sorted by ascending cardinality. Empty when the predicate matches no row: the columns stay 0.
+        std::vector<ScoreCursor> cursors;
+    };
+
+    /// Fills the score column and the match column of `leaf` for rows [row_offset, row_offset + num_rows)
+    /// of `from_mark` in one pass over the scoring cursors.
+    void fillColumnScores(MutableColumns & res_columns, ScoreLeaf & leaf, size_t from_mark, size_t row_offset, size_t num_rows);
+
+    /// Builds the scoring cursors of every leaf of `score_leaves`.
+    void initializeScoreLeaves();
+    std::shared_ptr<PostingListScoringCursor> makeScoringCursor(const String & token, const TokenPostingsInfo & token_info);
+
     /// Fills a phrase virtual column from positional data (.pos), computing matching documents
     /// via phrase intersection (cached per granule).
     void applyPostingsPhrase(IColumn & column, const TextSearchQueryPtr & search_query, size_t row_offset, size_t num_rows);
@@ -139,6 +170,9 @@ private:
     std::vector<bool> use_fallback;
     /// A separate stream is created for each token to read postings blocks continuously without additional seeks.
     absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> postings_streams;
+    /// Streams of the multi-block scoring tokens.
+    /// Separate from `postings_streams` to avoid sharing and extra seeks.
+    absl::flat_hash_map<std::string_view, std::unique_ptr<MergeTreeReaderStream>> scoring_postings_streams;
 
     /// Stream for position data (.pos file) used for phrase queries.
     std::unique_ptr<MergeTreeReaderStream> positions_stream;
@@ -172,6 +206,14 @@ private:
 
     /// Counters of the lazy intersections, added to the profile events when the reader is destroyed.
     LazyPostingsStats lazy_postings_stats;
+
+    /// One leaf per score column, paired with the match column of the same predicate in the constructor.
+    std::vector<ScoreLeaf> score_leaves;
+    bool score_leaves_initialized = false;
+    /// Per column: true for the score and match columns of `score_leaves`, so the posting-list paths skip them.
+    std::vector<bool> filled_with_score;
+    /// Reads the part's `.dl` document lengths for the rows of the current read step.
+    std::unique_ptr<TextIndexDocLengthsReader> score_doc_lengths;
 };
 
 MergeTreeReaderPtr createMergeTreeReaderTextIndex(

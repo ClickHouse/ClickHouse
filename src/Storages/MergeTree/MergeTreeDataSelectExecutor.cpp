@@ -978,6 +978,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
     const auto & total_offset_condition = filter_context.indexes.total_offset_condition;
     const auto & key_condition_rpn_template = filter_context.indexes.key_condition_rpn_template;
     const auto & skip_indexes = filter_context.indexes.skip_indexes;
+    const auto & index_read_tasks = filter_context.index_read_tasks;
     const auto & top_k_filter_info = filter_context.top_k_filter_info;
     const auto & reader_settings = filter_context.reader_settings;
     const auto & log = filter_context.log;
@@ -1335,6 +1336,7 @@ RangesInDataParts MergeTreeDataSelectExecutor::filterPartsByPrimaryKeyAndSkipInd
                         std::tie(ranges.ranges, ranges.read_hints) = filterMarksUsingIndex(
                             index_and_condition.index,
                             index_and_condition.condition_template->generateForPart(ranges.data_part),
+                            tryGetIndexReadTask(index_read_tasks, index_and_condition.index->index.name),
                             key_condition_rpn_template->generateForPart(ranges.data_part),
                             part_info_for_reader,
                             ranges.ranges,
@@ -2061,6 +2063,7 @@ ReadFromMergeTree::AnalysisResultPtr MergeTreeDataSelectExecutor::estimateNumMar
         column_names_to_return,
         log,
         indexes,
+        /*index_read_tasks=*/ {},
         /*find_exact_ranges*/false,
         /*is_parallel_reading_from_replicas*/false,
         use_query_condition_cache,
@@ -2900,6 +2903,7 @@ MarkRanges MergeTreeDataSelectExecutor::markRangesFromPKRange(
 std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::filterMarksUsingIndex(
     MergeTreeIndexPtr index_helper,
     MergeTreeIndexConditionPtr condition,
+    const IndexReadTask * index_read_task,
     const std::optional<KeyCondition> & key_condition_rpn_template,
     const MergeTreeDataPartInfoForReaderPtr & part_info,
     const MarkRanges & ranges,
@@ -2997,7 +3001,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
     if (index_helper->isTextIndex())
     {
         MergeTreeIndexGranulePtr granule;
-        reader.read(0, condition.get(), granule, all_match ? nullptr : &ranges);
+        reader.read(0, condition.get(), granule, all_match ? nullptr : &ranges, index_read_task);
         auto & granule_text = assert_cast<MergeTreeIndexGranuleText &>(*granule);
 
         auto may_be_true_on_range = [&](size_t mark_begin, size_t mark_end, auto && disjunction_result_fn) -> bool
@@ -3134,7 +3138,7 @@ std::pair<MarkRanges, RangesInDataPartReadHints> MergeTreeDataSelectExecutor::fi
             {
                 if (index_mark != index_range.begin || !granule || last_index_mark != index_range.begin)
                 {
-                    reader.read(index_mark, condition.get(), granule, /*readable_ranges=*/ nullptr);
+                    reader.read(index_mark, condition.get(), granule, /*readable_ranges=*/ nullptr, /*index_read_task=*/ nullptr);
                 }
 
                 if (index_helper->isVectorSimilarityIndex())

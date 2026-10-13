@@ -788,6 +788,17 @@ void considerEnablingParallelReplicas(
     if (!source_reading_step)
         return;
 
+    /// Text index BM25 scoring is not supported with auto parallel replicas.
+    bool computes_bm25_score = std::ranges::any_of(
+        source_reading_step->getIndexReadTasks(),
+        [](const auto & task) { return task.second.bm25_params.has_value(); });
+
+    if (computes_bm25_score)
+    {
+        LOG_DEBUG(getLogger("optimizeTree"), "The query computes bm25() by the direct read from a text index. Skipping optimization");
+        return;
+    }
+
     /// If the matched node is the reading step itself (e.g. a window function over a bare table scan:
     /// replicas would execute only the reading, everything above is computed on the initiator), we cannot
     /// estimate the number of bytes replicas would send to the initiator: the reading step records only

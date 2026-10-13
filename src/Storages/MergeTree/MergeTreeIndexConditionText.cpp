@@ -198,8 +198,7 @@ MergeTreeIndexConditionText::MergeTreeIndexConditionText(
     , indexed_fixed_string_size(tryGetIndexedFixedStringSize(header))
     , normalized_index_column_name(normalized_index_column_name_)
     , columns_shadowing_map_subcolumns(std::move(columns_shadowing_map_subcolumns_))
-    , owned_tokenizer(tokenizer_ && tokenizer_->isStateful() ? std::shared_ptr<const ITokenizer>(tokenizer_->clone()) : nullptr)
-    , tokenizer(owned_tokenizer ? owned_tokenizer.get() : tokenizer_)
+    , tokenizer(tokenizer_ ? tokenizer_->clone() : nullptr)
     , preprocessor(preprocessor_)
     , has_preprocessor(preprocessor && preprocessor->hasActions())
     , postprocessor(postprocessor_)
@@ -462,6 +461,16 @@ std::optional<String> MergeTreeIndexConditionText::tryGetVirtualColumnName(const
 
     auto hash_str = getSipHash128AsHexString(query_hash);
     return fmt::format("{}{}_{}_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, query.getFunctionName(), hash_str);
+}
+
+String MergeTreeIndexConditionText::getScoreVirtualColumnName(const TextSearchQuery & query, const String & index_name) const
+{
+    auto query_hash = query.getHash();
+    if (!all_search_queries.contains(query_hash))
+        throw Exception(ErrorCodes::LOGICAL_ERROR, "Text search query {} is not a query of the text index condition", query.getFunctionName());
+
+    auto hash_str = getSipHash128AsHexString(query_hash);
+    return fmt::format("{}{}_bm25_{}", TEXT_INDEX_VIRTUAL_COLUMN_PREFIX, index_name, hash_str);
 }
 
 bool MergeTreeIndexConditionText::alwaysUnknownOrTrue() const

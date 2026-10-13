@@ -1,0 +1,23 @@
+-- unknown scoring kind
+-- scoring = \'bm25\' requires the experimental MergeTree setting
+-- scoring = \'bm25\' requires a posting list codec
+-- scoring = \'bm25\' requires a tokenizer that supports scoring
+-- the setting is off
+-- direct read from the text index is off
+-- no text-search predicate at all
+-- no WHERE at all
+-- only predicates outside the three scoring functions (they filter but do not score)
+-- the scoring predicate is only under NOT (it filters but does not score)
+-- two different parameter pairs in one query
+-- invalid parameters
+-- above a JOIN the function has no single table fragment to score
+-- the index has no scoring (the explicit default needs no experimental setting)
+-- predicates on two scoring indexes are not supported
+-- also when one of the two scoring predicates stays row-wise (not direct-read)
+-- a single scoring index among two still works
+1	1
+-- a part without the materialized index asks for MATERIALIZE INDEX
+1	1
+2	1
+-- a table without any text index rejects the function too
+-- and so does a query without any MergeTree table

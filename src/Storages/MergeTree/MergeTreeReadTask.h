@@ -1,9 +1,11 @@
 #pragma once
 
 #include <map>
+#include <optional>
 #include <vector>
 #include <Core/NamesAndTypes.h>
 #include <Storages/MergeTree/AlterConversions.h>
+#include <Storages/MergeTree/BM25Kernel.h>
 #include <Storages/MergeTree/IMergeTreeDataPartInfoForReader.h>
 #include <Storages/MergeTree/IMergeTreeReader.h>
 #include <Storages/MergeTree/MergeTreeIndices.h>
@@ -46,6 +48,9 @@ using LazyMaterializingRowsPtr = std::shared_ptr<LazyMaterializingRows>;
 class RuntimeDataflowStatisticsCacheUpdater;
 using RuntimeDataflowStatisticsCacheUpdaterPtr = std::shared_ptr<RuntimeDataflowStatisticsCacheUpdater>;
 
+struct BM25State;
+using BM25StatePtr = std::shared_ptr<const BM25State>;
+
 struct TextSearchQuery;
 using TextSearchQueryPtr = std::shared_ptr<TextSearchQuery>;
 
@@ -84,6 +89,12 @@ struct IndexReadTask
 
     std::vector<Column> columns;
     MergeTreeIndexWithCondition index;
+    /// Set when the query computes `bm25()` over this text index.
+    std::optional<BM25Params> bm25_params;
+    /// Tokens of the queries of the score columns: their term frequencies are decoded with the postings.
+    NameSet scoring_tokens;
+    /// Query-global BM25 state, built once the parts to read are known (`ReadFromMergeTree::initializePipeline`).
+    BM25StatePtr bm25_score_state;
 
     NamesAndTypesList getNamesAndTypesList() const;
 };
@@ -94,6 +105,9 @@ struct IndexReadTask
 /// `std::unordered_map` does not guarantee the same iteration order after copy,
 /// which leads to mismatched prewhere readers and actions.
 using IndexReadTasks = std::map<String, IndexReadTask>;
+
+/// Returns the read task of the index, or nullptr if there is none.
+const IndexReadTask * tryGetIndexReadTask(const IndexReadTasks & index_read_tasks, const String & index_name);
 
 struct MergeTreeReadTaskColumns
 {

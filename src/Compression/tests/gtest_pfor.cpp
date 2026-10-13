@@ -40,6 +40,10 @@ void checkBlocksRoundTrip(const std::vector<T> & in, PFor::Delta mode)
     EXPECT_EQ(consumed, sa) << "decode must consume exactly what encode produced (n=" << n << ")";
     for (size_t i = 0; i < n; ++i)
         ASSERT_EQ(decoded[i], in[i]) << "mismatch at " << i << " of " << n;
+
+    EXPECT_EQ(PFor::skipBlocks<T>(a.data(), n, a.data() + sa), sa) << "skip must step over exactly what encode produced (n=" << n << ")";
+    if (n > 0)
+        EXPECT_EQ(PFor::skipBlocks<T>(a.data(), n, a.data() + sa - 1), 0u) << "skip must fail closed on a truncated stream (n=" << n << ")";
 }
 
 /// Round-trips through the self-describing buffer API (varint count + flags + block stream).
@@ -329,6 +333,10 @@ TEST(PForBlockDecode, RejectsImpossibleExceptionHeader)
     EXPECT_EQ(PFor::decodeBlocks<uint32_t>(hb_zero.data(), 1, PFor::Delta::none, &out, hb_zero.data() + hb_zero.size()), 0u);
     const std::vector<uint8_t> hb_over = {4, 1, 29};  // hb > typeBits(32) - b(4): patch shifts out of range
     EXPECT_EQ(PFor::decodeBlocks<uint32_t>(hb_over.data(), 1, PFor::Delta::none, &out, hb_over.data() + hb_over.size()), 0u);
+
+    /// Skipping validates the same header fields.
+    EXPECT_EQ(PFor::skipBlocks<uint32_t>(hb_zero.data(), 1, hb_zero.data() + hb_zero.size()), 0u);
+    EXPECT_EQ(PFor::skipBlocks<uint32_t>(hb_over.data(), 1, hb_over.data() + hb_over.size()), 0u);
 }
 
 /// A duplicate exception position would OR two patches into one value, so the block must be rejected.

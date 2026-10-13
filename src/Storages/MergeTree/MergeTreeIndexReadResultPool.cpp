@@ -44,6 +44,7 @@ namespace FailPoints
 
 MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     UsefulSkipIndexes skip_indexes_,
+    IndexReadTasks index_read_tasks_,
     ConditionTemplate<KeyCondition>::Ptr key_condition_rpn_template_,
     bool use_for_disjunctions_,
     MarkCachePtr mark_cache_,
@@ -57,6 +58,7 @@ MergeTreeSkipIndexReader::MergeTreeSkipIndexReader(
     ContextPtr context_,
     LoggerPtr log_)
     : skip_indexes(std::move(skip_indexes_))
+    , index_read_tasks(std::move(index_read_tasks_))
     , key_condition_rpn_template(std::move(key_condition_rpn_template_))
     , use_for_disjunctions(use_for_disjunctions_)
     , mark_cache(std::move(mark_cache_))
@@ -119,6 +121,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
         auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
             index_and_condition.index,
             index_and_condition.condition_template->generateForPart(*part_info),
+            tryGetIndexReadTask(index_read_tasks, index_and_condition.index->index.name),
             key_condition_rpn_template->generateForPart(*part_info),
             part_info,
             ranges,
@@ -206,6 +209,7 @@ SkipIndexReadResultPtr MergeTreeSkipIndexReader::read(
                 auto [filtered_ranges, filtered_hints] = MergeTreeDataSelectExecutor::filterMarksUsingIndex(
                     index_helper,
                     condition,
+                    /*index_read_task=*/ nullptr,
                     /*key_condition_rpn_template=*/{},
                     part_info,
                     ranges,

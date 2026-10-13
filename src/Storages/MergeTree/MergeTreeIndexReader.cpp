@@ -163,9 +163,14 @@ void MergeTreeIndexReader::initStreamIfNeeded()
     version = index_format.version;
 }
 
-void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * condition, MergeTreeIndexGranulePtr & granule, const MarkRanges * readable_ranges)
+void MergeTreeIndexReader::read(
+    size_t mark,
+    const IMergeTreeIndexCondition * condition,
+    MergeTreeIndexGranulePtr & granule,
+    const MarkRanges * readable_ranges,
+    const IndexReadTask * index_read_task)
 {
-    auto load_func = [this, mark, condition, readable_ranges](auto & res)
+    auto load_func = [this, mark, condition, readable_ranges, index_read_task](auto & res)
     {
         initStreamIfNeeded();
 
@@ -186,6 +191,7 @@ void MergeTreeIndexReader::read(size_t mark, const IMergeTreeIndexCondition * co
             .index = *index,
             .readable_ranges = readable_ranges,
             .text_index_read_postings = true,
+            .index_read_task = index_read_task,
             .reader_settings = settings,
         };
 
