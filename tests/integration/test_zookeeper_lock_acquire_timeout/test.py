@@ -5,6 +5,7 @@ context is not limited by the setting.
 """
 
 import concurrent.futures
+import contextlib
 import uuid
 
 import pytest
@@ -47,6 +48,30 @@ def session_expirations():
     return int(node.query("SELECT value FROM system.metrics WHERE metric = 'ZooKeeperSessionExpired'"))
 
 
+@contextlib.contextmanager
+def keeper_not_answering(zk_name):
+    # session_expirations counts the attempts of all clients, so the default client must stay connected in the
+    # zookeeper2 case. zookeeper2 uses zoo3, which no other client uses, and zoo3 is not paused: if it is the Raft
+    # leader, the election expires the default client too, and a background thread can reconnect it during the count.
+    # The packets are dropped, not rejected, so that an attempt takes long enough for all its waiters to share it.
+    if zk_name == "default":
+        with cluster.pause_container("zoo1"):
+            yield
+        return
+    with PartitionManager() as pm:
+        pm.add_rule(
+            {
+                "instance": node,
+                "chain": "OUTPUT",
+                "destination": cluster.get_instance_ip("zoo3"),
+                "destination_port": 2181,
+                "protocol": "tcp",
+                "action": "DROP",
+            }
+        )
+        yield
+
+
 @pytest.mark.parametrize("zk_name", ["default", "zookeeper2"])
 def test_queries_share_connection_attempt(started_cluster, zk_name):
     zk_filter = "" if zk_name == "default" else f" AND zookeeperName = '{zk_name}'"
@@ -69,7 +94,7 @@ def test_queries_share_connection_attempt(started_cluster, zk_name):
             return str(e)
 
     node.query(base_query)
-    with cluster.pause_container("zoo1"):
+    with keeper_not_answering(zk_name):
         # Once this query fails, the Keeper session is expired.
         with pytest.raises(QueryRuntimeException) as e:
             node.query(base_query)
@@ -148,22 +173,20 @@ def test_reload_during_connection_attempt(started_cluster):
     failpoint = "context_auxiliary_zookeeper_connection_attempt_pause"
     no_limit = {"get_zookeeper_lock_acquire_timeout_ms": 0, "insert_keeper_max_retries": 0}
 
-    # The reload would create a missing default client, which fails while zoo1 is unreachable.
-    node.query_with_retry("SELECT * FROM system.zookeeper WHERE path = '/' LIMIT 1", retry_count=60, sleep_time=1)
     node.query_with_retry(query.format("zookeeper2"), retry_count=60, sleep_time=1)
     node.query_with_retry(query.format("zookeeper3"), retry_count=60, sleep_time=1)
     config = node.exec_in_container(["cat", config_path])
     zookeeper2 = config[config.index("<zookeeper2>") : config.index("</zookeeper2>") + len("</zookeeper2>")]
     zookeeper3 = config[config.index("<zookeeper3>") : config.index("</zookeeper3>") + len("</zookeeper3>")]
     # zookeeper2 moves to zoo2, zookeeper3 is removed.
-    new_config = config.replace(zookeeper3, "").replace(zookeeper2, zookeeper2.replace("zoo1", "zoo2"))
+    new_config = config.replace(zookeeper3, "").replace(zookeeper2, zookeeper2.replace("zoo3", "zoo2"))
     try:
         with PartitionManager() as pm:
             pm.add_rule(
                 {
                     "instance": node,
                     "chain": "OUTPUT",
-                    "destination": cluster.get_instance_ip("zoo1"),
+                    "destination": cluster.get_instance_ip("zoo3"),
                     "destination_port": 2181,
                     "protocol": "tcp",
                     "action": "REJECT --reject-with tcp-reset",
@@ -184,7 +207,7 @@ def test_reload_during_connection_attempt(started_cluster):
                     error = node.query_and_get_error(query.format("zookeeper3"), settings=no_limit)
                     assert "Unknown auxiliary ZooKeeper name" in error, error
 
-                    # The attempt to zoo1 fails, and the connector retries with zoo2.
+                    # The attempt to zoo3 fails, and the connector retries with zoo2.
                     node.query(f"SYSTEM DISABLE FAILPOINT {failpoint}")
                     connector.result(timeout=120)
                 finally:
