@@ -158,6 +158,22 @@ class Digest:
         )
 
     @staticmethod
+    def get_submodule_shas_for_jobs(jobs):
+        """
+        Returns the SHAs of the submodules affecting at least one of :param jobs:, one per line.
+        A job without a digest config is affected by all submodules.
+        """
+        return "\n".join(
+            sha
+            for sha, path in Digest._get_submodules()
+            if any(
+                job.digest_config is None
+                or job.digest_config.is_affected_by_submodule(path)
+                for job in jobs
+            )
+        )
+
+    @staticmethod
     @functools.cache
     def _get_submodules():
         """Returns the list of (sha, path) of all submodules"""
