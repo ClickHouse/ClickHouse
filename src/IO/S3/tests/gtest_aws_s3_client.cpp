@@ -8,6 +8,7 @@
 
 #include <cstdlib>
 #include <memory>
+#include <mutex>
 #include <string>
 
 #include <base/scope_guard.h>
@@ -31,6 +32,8 @@
 #include <IO/S3Common.h>
 #include <IO/S3/Client.h>
 #include <IO/S3/Requests.h>
+#include <IO/S3/S3Capabilities.h>
+#include <IO/S3/deleteFileFromS3.h>
 #include <Common/Exception.h>
 #include <IO/S3/PocoHTTPClient.h>
 #include <IO/HTTPHeaderEntries.h>
@@ -157,21 +160,17 @@ static RequestFn makeDeleteObjectsRequest(const String & delete_checksum_algorit
     };
 }
 
-static void testServerSideEncryption(
-    RequestFn do_request,
-    String server_side_encryption_customer_key_base64,
-    DB::S3::ServerSideEncryptionKMSConfig sse_kms_config,
-    String expected_headers,
-    bool is_s3express_bucket = false)
+static std::shared_ptr<DB::S3::Client> makeTestClient(
+    const DB::S3::URI & uri,
+    const String & server_side_encryption_customer_key_base64,
+    const DB::S3::ServerSideEncryptionKMSConfig & sse_kms_config,
+    bool is_s3express_bucket)
 {
-    TestPocoHTTPServer http;
-
     DB::RemoteHostFilter remote_host_filter;
     unsigned int s3_max_redirects = 100;
     unsigned int s3_retry_attempts = 0;
     bool s3_slow_all_threads_after_network_error = true;
     bool s3_slow_all_threads_after_retryable_error = true;
-    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
     String access_key_id = "ACCESS_KEY_ID";
     String secret_access_key = "SECRET_ACCESS_KEY";
     String region = "us-east-1";
@@ -202,7 +201,7 @@ static void testServerSideEncryption(
         .is_s3express_bucket = is_s3express_bucket,
     };
 
-    std::shared_ptr<DB::S3::Client> client = DB::S3::ClientFactory::instance().create(
+    return DB::S3::ClientFactory::instance().create(
         client_configuration,
         client_settings,
         access_key_id,
@@ -217,6 +216,20 @@ static void testServerSideEncryption(
             .forbid_implicit_credentials = false,
         }
     );
+}
+
+static void testServerSideEncryption(
+    RequestFn do_request,
+    String server_side_encryption_customer_key_base64,
+    DB::S3::ServerSideEncryptionKMSConfig sse_kms_config,
+    String expected_headers,
+    bool is_s3express_bucket = false)
+{
+    TestPocoHTTPServer http;
+
+    DB::S3::URI uri(http.getUrl() + "/IOTestAwsS3ClientAppendExtraHeaders/test.txt");
+    std::shared_ptr<DB::S3::Client> client
+        = makeTestClient(uri, server_side_encryption_customer_key_base64, sse_kms_config, is_s3express_bucket);
 
     ASSERT_TRUE(client);
 
@@ -381,6 +394,165 @@ TEST(IOTestAwsS3Client, DeleteObjectsSendsRequestedChecksum)
         "x-amz-content-sha256;"
         "x-amz-date;"
         "x-amz-sdk-checksum-algorithm, ...\n");
+}
+
+namespace
+{
+
+/// A `DeleteObjects` endpoint that, like a store requiring a digest, answers `400 MissingContentMD5` unless the request
+/// carries an `x-amz-checksum-sha256` header (or, with `accept_sha256 = false`, always). It keeps no other state:
+/// what a later batch does is decided by the client. Records whether each request carried `Content-MD5` or `SHA256`.
+class DeleteObjectsStubServer
+{
+public:
+    enum class Digest
+    {
+        MD5,
+        SHA256,
+        None,
+    };
+
+    explicit DeleteObjectsStubServer(bool accept_sha256_)
+        : server_socket(std::make_unique<Poco::Net::ServerSocket>(0))
+        , factory(new Factory(*this))
+        , server(std::make_unique<Poco::Net::HTTPServer>(factory, *server_socket, makeMockServerParams()))
+        , accept_sha256(accept_sha256_)
+    {
+        server->start();
+    }
+
+    ~DeleteObjectsStubServer() { server->stop(); }
+
+    String getUrl() const { return "http://" + server_socket->address().toString(); }
+
+    std::vector<Digest> getDigests() const
+    {
+        std::lock_guard lock(mutex);
+        return digests;
+    }
+
+private:
+    class Handler : public Poco::Net::HTTPRequestHandler
+    {
+    public:
+        explicit Handler(DeleteObjectsStubServer & stub_) : stub(stub_) {}
+
+        void handleRequest(Poco::Net::HTTPServerRequest & request, Poco::Net::HTTPServerResponse & response) override
+        {
+            const bool has_sha256 = request.has("x-amz-checksum-sha256");
+            const bool has_md5 = request.has("content-md5");
+            {
+                std::lock_guard lock(stub.mutex);
+                stub.digests.push_back(has_sha256 ? Digest::SHA256 : has_md5 ? Digest::MD5 : Digest::None);
+            }
+
+            if (has_sha256 && stub.accept_sha256)
+            {
+                response.setStatus(Poco::Net::HTTPResponse::HTTP_OK);
+                response.setContentType("application/xml");
+                response.send() << "<?xml version=\"1.0\" encoding=\"UTF-8\"?><DeleteResult/>";
+                return;
+            }
+
+            response.setStatus(Poco::Net::HTTPResponse::HTTP_BAD_REQUEST);
+            response.setContentType("application/xml");
+            response.send() << "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+                               "<Error><Code>MissingContentMD5</Code><Message>Missing required header</Message></Error>";
+        }
+
+    private:
+        DeleteObjectsStubServer & stub;
+    };
+
+    class Factory : public Poco::Net::HTTPRequestHandlerFactory
+    {
+    public:
+        explicit Factory(DeleteObjectsStubServer & stub_) : stub(stub_) {}
+
+        Poco::Net::HTTPRequestHandler * createRequestHandler(const Poco::Net::HTTPServerRequest &) override
+        {
+            return new Handler(stub);
+        }
+
+    private:
+        DeleteObjectsStubServer & stub;
+    };
+
+    std::unique_ptr<Poco::Net::ServerSocket> server_socket;
+    Poco::SharedPtr<Factory> factory;
+    std::unique_ptr<Poco::Net::HTTPServer> server;
+    const bool accept_sha256;
+
+    mutable std::mutex mutex;
+    std::vector<Digest> digests;
+};
+
+using Digest = DeleteObjectsStubServer::Digest;
+
+void deleteTwoKeys(
+    const std::shared_ptr<DB::S3::Client> & client, const DB::S3::URI & uri, DB::S3Capabilities & capabilities,
+    const DB::S3::S3RequestSettings & request_settings)
+{
+    DB::deleteFilesFromS3(client, uri.bucket, {"key1", "key2"}, /*if_exists=*/ false, capabilities, request_settings);
+}
+
+}
+
+TEST(IOTestAwsS3Client, DeleteObjectsRetriesWithSHA256AndRemembers)
+{
+    const bool md5_available = DB::OpenSSLInitializer::instance().isMD5Available();
+    DeleteObjectsStubServer stub(/*accept_sha256=*/ true);
+    DB::S3::URI uri(stub.getUrl() + "/bucket/key");
+    auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
+
+    DB::S3Capabilities capabilities;
+    DB::S3::S3RequestSettings automatic;
+
+    deleteTwoKeys(client, uri, capabilities, automatic);
+    /// `Content-MD5` is rejected once and the same batch is retried with `SHA256`. Without `MD5` (FIPS) it starts there.
+    if (md5_available)
+        EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5, Digest::SHA256}));
+    else
+        EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::SHA256}));
+    EXPECT_EQ(capabilities.isDeleteMD5Rejected(), md5_available);
+
+    /// A later call starts with `SHA256`.
+    deleteTwoKeys(client, uri, capabilities, automatic);
+    EXPECT_EQ(stub.getDigests().back(), Digest::SHA256);
+    EXPECT_EQ(stub.getDigests().size(), md5_available ? 3u : 2u);
+}
+
+TEST(IOTestAwsS3Client, DeleteObjectsDoesNotRememberFailedSHA256Retry)
+{
+    if (!DB::OpenSSLInitializer::instance().isMD5Available())
+        GTEST_SKIP() << "No MD5 attempt to retry without MD5";
+
+    DeleteObjectsStubServer stub(/*accept_sha256=*/ false);
+    DB::S3::URI uri(stub.getUrl() + "/bucket/key");
+    auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
+
+    DB::S3Capabilities capabilities;
+    DB::S3::S3RequestSettings automatic;
+
+    EXPECT_THROW(deleteTwoKeys(client, uri, capabilities, automatic), DB::Exception);
+    EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::MD5, Digest::SHA256}));
+    EXPECT_FALSE(capabilities.isDeleteMD5Rejected());
+}
+
+TEST(IOTestAwsS3Client, DeleteObjectsExplicitChecksumIsNotRetried)
+{
+    DeleteObjectsStubServer stub(/*accept_sha256=*/ true);
+    DB::S3::URI uri(stub.getUrl() + "/bucket/key");
+    auto client = makeTestClient(uri, "", {}, /*is_s3express_bucket=*/ false);
+
+    DB::S3Capabilities capabilities;
+    DB::S3::S3RequestSettings explicit_crc32;
+    explicit_crc32[DB::S3RequestSetting::delete_checksum_algorithm] = "CRC32";
+
+    /// The stub wants `SHA256`, but an explicit algorithm is never replaced.
+    EXPECT_THROW(deleteTwoKeys(client, uri, capabilities, explicit_crc32), DB::Exception);
+    EXPECT_EQ(stub.getDigests(), (std::vector<Digest>{Digest::None}));
+    EXPECT_FALSE(capabilities.isDeleteMD5Rejected());
 }
 
 TEST(IOTestAwsS3Client, DeleteChecksumAlgorithmSelection)
