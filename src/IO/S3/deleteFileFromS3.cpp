@@ -193,21 +193,28 @@ void deleteFilesFromS3(
             if (!outcome.IsSuccess() && use_checksum_header && !explicit_checksum_algorithm
                 && checksum_algorithm == S3::RequestChecksum::Algorithm::MD5 && !s3_client->isS3ExpressBucket())
             {
-                const auto & err = outcome.GetError();
-                const auto & error_name = err.GetExceptionName();
+                const String error_name = outcome.GetError().GetExceptionName();
                 if (error_name == "MissingContentMD5" || error_name == "InvalidDigest" || error_name == "InvalidRequest"
                     || error_name == "InvalidArgument")
                 {
-                    if (s3_capabilities.setDeleteMD5Rejected())
-                        LOG_WARNING(log, "DeleteObjects with Content-MD5 was rejected: {} ({}). Retrying with a SHA256 checksum, "
-                                    "and using it for later batches. Set `delete_checksum_algorithm` to choose explicitly",
-                                    err.GetMessage(), error_name);
-                    else
-                        LOG_DEBUG(log, "DeleteObjects with Content-MD5 was rejected: {} ({}). Retrying with a SHA256 checksum",
-                                  err.GetMessage(), error_name);
-
+                    const String error_message = outcome.GetError().GetMessage();
                     checksum_algorithm = S3::RequestChecksum::Algorithm::SHA256;
                     outcome = send_delete_objects();
+
+                    /// Remember the switch only once the server has accepted `SHA256`. Otherwise it is not the digest that
+                    /// is at fault, and the original error is logged here because the retry's error is the one handled below.
+                    if (outcome.IsSuccess())
+                    {
+                        if (s3_capabilities.setDeleteMD5Rejected())
+                            LOG_WARNING(log, "DeleteObjects with Content-MD5 was rejected: {} ({}). Using a SHA256 checksum for "
+                                        "later batches. Set `delete_checksum_algorithm` to choose explicitly",
+                                        error_message, error_name);
+                    }
+                    else
+                    {
+                        LOG_WARNING(log, "DeleteObjects with Content-MD5 was rejected: {} ({}), and the retry with a SHA256 "
+                                    "checksum failed too: {}", error_message, error_name, outcome.GetError().GetMessage());
+                    }
                 }
             }
             auto elapsed = watch.elapsedMicroseconds();
