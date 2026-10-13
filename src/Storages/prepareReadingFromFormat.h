@@ -47,6 +47,10 @@ namespace DB
         /// True if `format_header` has a hive partition column. Its values in the file are not the values
         /// of the column, so filters and the top-K threshold must not be pushed into the format.
         bool formatReadsHivePartitionColumns() const;
+        /// The filter without the conjuncts on hive partition and virtual columns (except row lineage ones if `keep_row_lineage_columns`):
+        /// they are added after the format, and a column of the data file with the same name holds other values.
+        std::shared_ptr<const ActionsDAG> getFormatFilter(
+            const std::shared_ptr<const ActionsDAG> & filter_actions_dag, bool keep_row_lineage_columns = false) const;
         /// A row-level filter (row policy) is not stored here and does not change the headers. The source
         /// applies it via `FormatFilterInfo` and keeps its input columns, because:
         /// - `DEFAULT` expressions are computed after the format applied the filter and can depend on these columns;
@@ -104,10 +108,10 @@ namespace DB
 
     ReadFromFormatInfo updateFormatPrewhereInfo(const ReadFromFormatInfo & info, const PrewhereInfoPtr & prewhere_info);
 
-    /// Removes from `info` the pass-through PREWHERE inputs not at `required_output_positions`; the format still reads them for PREWHERE.
-    /// Removes nothing with a DEFAULT column or a `row_level_filter`, nor a hive or virtual column. Returns kept positions or nullopt.
+    /// Removes from `info` the pass-through PREWHERE inputs at `unneeded_output_positions`; the format still reads them for PREWHERE.
+    /// Removes nothing with a DEFAULT column or a `row_level_filter`, nor a hive or virtual column. Returns dropped positions or nullopt.
     std::optional<std::vector<size_t>> removeUnusedPrewhereInputsFromFormatInfo(
-        ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const std::vector<size_t> & required_output_positions);
+        ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter, const std::vector<size_t> & unneeded_output_positions);
 
     bool canRemoveUnusedPrewhereInputsFromFormatInfo(const ReadFromFormatInfo & info, const FilterDAGInfoPtr & row_level_filter);
 
