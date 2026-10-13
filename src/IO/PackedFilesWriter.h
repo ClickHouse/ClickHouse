@@ -167,8 +167,11 @@ private:
     static size_t getSizeOfHeader();
 
     /// Sizes of the memory chunks of a file: they grow exponentially, so that small files take little memory.
+    /// The last chunk of a file that is still being written cannot be moved out of memory, so the chunks
+    /// are kept small: otherwise a part with many files being written at once (e.g. a wide part with many columns)
+    /// would take much more memory than `max_bytes_in_memory`.
     static constexpr size_t INITIAL_CHUNK_SIZE = 256;
-    static constexpr size_t MAX_CHUNK_SIZE = DBMS_DEFAULT_BUFFER_SIZE;
+    static constexpr size_t MAX_CHUNK_SIZE = 64 * 1024;
 
     /// State shared between the writer and the data of its files. The data of a file
     /// can outlive the writer (it is referenced by FakeWriteBufferFromFile).

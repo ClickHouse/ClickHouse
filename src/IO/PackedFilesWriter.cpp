@@ -399,6 +399,11 @@ void PackedFilesWriter::Data::addChunk()
     state->bytes_in_memory += next_chunk_size;
     CurrentMetrics::add(CurrentMetrics::PackedPartsBufferedBytes, next_chunk_size);
     next_chunk_size = std::min(next_chunk_size * 2, MAX_CHUNK_SIZE);
+
+    /// Check the limit whenever the memory grows, including the first chunk of a new file.
+    /// The new chunk is the last one of a file being written, so it stays in memory.
+    if (auto * writer = state->writer)
+        writer->spillIfNeeded();
 }
 
 size_t PackedFilesWriter::Data::getChunkDataSize(size_t chunk_index) const
@@ -449,9 +454,6 @@ void PackedFilesWriter::FakeWriteBufferFromFile::nextImpl()
 
     data->addChunk();
     set(data->chunks.back().data(), data->chunks.back().size());
-
-    if (auto * writer = data->state->writer)
-        writer->spillIfNeeded();
 }
 
 void PackedFilesWriter::FakeWriteBufferFromFile::finalizeImpl()
@@ -459,6 +461,11 @@ void PackedFilesWriter::FakeWriteBufferFromFile::finalizeImpl()
     data->last_chunk_data_size = pos - data->chunks.back().data();
     data->size = count();
     data->is_finalized = true;
+
+    /// The last chunk of the file can be moved out of memory only now. The files of a part are often
+    /// finalized together right before the archive is written, so do not keep them in memory until then.
+    if (auto * writer = data->state->writer)
+        writer->spillIfNeeded();
 }
 
 }
