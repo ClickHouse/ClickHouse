@@ -1,0 +1,420 @@
+---
+noindex: true
+title: "インフラストラクチャ要件リファレンス"
+sidebarTitle: "インフラストラクチャ要件"
+description: "このドキュメントでは、対応しているすべての ClickHouse Private デプロイメントプラットフォームに共通する、インフラストラクチャの前提条件、ノード仕様、ネットワーク、ストレージ、IAM の要件をまとめています"
+---
+
+このドキュメントでは、対応しているすべての ClickHouse Private デプロイメントプラットフォームに共通する、インフラストラクチャの前提条件、ノード仕様、ネットワーク、ストレージ、IAM の要件をまとめています。
+
+***
+
+<div id="prerequisites-by-platform">
+  ## プラットフォーム別の前提条件
+</div>
+
+<div id="aws-eks">
+  ### AWS (EKS)
+</div>
+
+| 要件                   | 詳細                                                      |
+| -------------------- | ------------------------------------------------------- |
+| AWS CLI              | インストールおよび設定済み                                           |
+| `kubectl`            | インストール済み                                                |
+| `helm`               | v3.x をインストール済み                                          |
+| `skopeo`             | コンテナーイメージのコピーに推奨 (すべてのアーキテクチャを保持)                       |
+| EKS cluster IAM role | AWS コンソールの「Create recommended role」を使用して作成し、デフォルトの権限を付与 |
+| Node IAM roles       | AWS コンソールの「Create recommended role」を使用して作成し、デフォルトの権限を付与 |
+| OIDC プロバイダー        | EKS クラスター用に作成済み                                         |
+
+<div id="gcp-gke">
+  ### GCP (GKE)
+</div>
+
+| 要件                              | 詳細                                                                                        |
+| ------------------------------- | ----------------------------------------------------------------------------------------- |
+| GCP プロジェクト                      | 課金が有効                                                                                     |
+| `gcloud` CLI                    | インストール済みかつ認証済み                                                                            |
+| `kubectl`                       | インストール済み                                                                                  |
+| `helm`                          | v3.x をインストール済み                                                                            |
+| `skopeo`                        | インストール済み (コンテナーイメージのコピー用)                                                                 |
+| AWS 認証情報                        | ClickHouse ECR への閲覧アクセス (イメージのコピー用)                                                       |
+| 踏み台サーバー                         | プライベートクラスターにアクセスするための VPC 内に配置                                                            |
+| デプロイ用サービスアカウント                  | 適切な権限を付与済み ([IAM / Service Account Requirements](#iam-service-account-requirements) を参照)  |
+| **(FIPS のみ)** Red Hat UBI8 イメージ | 証明書生成のために GKE 経由でプル                                                                       |
+
+<div id="bare-metal-rke2">
+  ### ベアメタル (RKE2)
+</div>
+
+| 要件           | 詳細                                             |
+| ------------ | ---------------------------------------------- |
+| Terraform    | v1.13.2+                                       |
+| Ansible      | `lablabs.rke2` ロールおよび `kubernetes.core` コレクション |
+| `kubectl`    | インストール済み                                       |
+| `helm`       | v3.x インストール済み                                  |
+| AWS IAM 認証情報 | ECR および S3/MinIO 用のアクセスキーとシークレットキー             |
+| RKE2         | v1.33.5+rke2r1 (Ansible でデプロイ)                 |
+| OS           | Rocky Linux 9.6 (または互換OS)                      |
+| MinIO        | S3 互換オブジェクトストレージ用の Operator とテナント              |
+
+***
+
+<div id="node-group-specifications">
+  ## ノードグループの仕様
+</div>
+
+<div id="aws-eks">
+  ### AWS (EKS)
+</div>
+
+<div id="keeper-node-group">
+  #### Keeper ノードグループ
+</div>
+
+| プロパティ                 | 値                                                  |
+| --------------------- | -------------------------------------------------- |
+| AMI (x86)             | `AL2023_x86_64`                                    |
+| AMI (arm64)           | `AL2023_ARM_64`                                    |
+| ディスクサイズ               | 20 GB                                              |
+| 推奨インスタンスタイプ           | `m7g.2xlarge`                                      |
+| 最小ノード数 (オートスケーリングなし)  | ClickHouse クラスターごとに 3                              |
+| Kubernetesラベル (x86)   | `clickhouseGroup: keeper`                          |
+| Kubernetesラベル (arm64) | `clickhouseGroup: keeper-arm64`                    |
+| テイント                  | `clickhouse.com/do-not-schedule: true, NoSchedule` |
+| テイント (arm64 のみ)       | `clickhouse.com/arch: arm64, NoSchedule`           |
+| 推奨リソース                | CPU: 4、メモリ: 16Gi                                   |
+
+<div id="server-node-group">
+  #### サーバーノードグループ
+</div>
+
+| プロパティ                  | 値                                                  |
+| ---------------------- | -------------------------------------------------- |
+| AMI (x86)              | `AL2023_x86_64`                                    |
+| AMI (arm64)            | `AL2023_ARM_64`                                    |
+| ディスクサイズ                | 20 GB                                              |
+| 推奨インスタンスタイプ            | `m7gd.16xlarge` (NVMe SSD 搭載の「d」シリーズを強く推奨)         |
+| 最小ノード数 (オートスケーリングなし)   | 必要な ClickHouse レプリカ数と同数                            |
+| Kubernetes ラベル (x86)   | `clickhouseGroup: server`                          |
+| Kubernetes ラベル (arm64) | `clickhouseGroup: server-arm64`                    |
+| Taint                  | `clickhouse.com/do-not-schedule: true, NoSchedule` |
+| Taint (arm64 のみ)       | `clickhouse.com/arch: arm64, NoSchedule`           |
+| 推奨リソース                 | CPU: 64、メモリ: 256Gi                                 |
+| 起動テンプレート               | NVMe SSD RAID の構成にはカスタムテンプレートが必要 (ソースドキュメントを参照)    |
+
+<div id="operator-node-group-x86">
+  #### Operator ノードグループ (x86)
+</div>
+
+| プロパティ       | 値                                                     |
+| ----------- | ----------------------------------------------------- |
+| AMI         | `AL2023_x86_64`                                       |
+| ディスクサイズ     | 20 GB                                                 |
+| 最小インスタンスサイズ | xlarge                                                |
+| インスタンスタイプ   | x86 と互換性のある任意のタイプ                                     |
+| 注記          | すでに x86 互換で、最小要件の xlarge を満たしている場合は、既存のノードグループを使用できます |
+
+**すべての AWS ノードで、認証には [IMDS](https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/instancedata-data-retrieval.html) が必要です。**
+
+keeper ノードグループおよび server ノードグループでは、AZ をまたいで cluster autoscaler をサポートする必要がある場合、**AZ ごとに 1 つのノードグループを作成**してください。
+
+Autoscaler タグ (cluster-autoscaler を使用する場合) : - `k8s.io/cluster-autoscaler/enabled: true` - `k8s.io/cluster-autoscaler/$CLUSTER_NAME: owned`
+
+<div id="gcp-gke">
+  ### GCP (GKE)
+</div>
+
+<div id="keeper-node-pool">
+  #### Keeper ノードプール
+</div>
+
+| プロパティ          | 値                                                |
+| -------------- | ------------------------------------------------ |
+| マシンタイプ (dev)   | `n2-standard-4`                                  |
+| マシンタイプ (prod)  | `n2-standard-8`                                  |
+| ディスクタイプ        | `pd-ssd`                                         |
+| ディスクサイズ        | 20 GB                                            |
+| ノードラベル         | `clickhouseGroup=keeper`                         |
+| テイント           | `clickhouse.com/do-not-schedule=true:NoSchedule` |
+| オートスケーリング      | 最小 1、最大 3                                        |
+| ワークロードメタデータ    | `GKE_METADATA` (Workload Identity 用)             |
+| 推奨リソース         | CPU: 2、メモリ: 8Gi                                  |
+
+<div id="server-node-pool">
+  #### サーバーノードプール
+</div>
+
+| プロパティ          | 値                                                          |
+| -------------- | ---------------------------------------------------------- |
+| マシンタイプ (dev)   | `n2-standard-8`                                            |
+| マシンタイプ (prod)  | `n2-standard-64`                                           |
+| ディスクタイプ        | `pd-standard` + ローカルSSD                                    |
+| ディスクサイズ        | 20 GB                                                      |
+| ローカルSSD数       | 1                                                          |
+| ノードラベル         | `clickhouseGroup=server`                                   |
+| テイント           | `clickhouse.com/do-not-schedule=true:NoSchedule`           |
+| オートスケーリング      | 最小 1、最大 10                                                 |
+| ワークロード メタデータ   | `GKE_METADATA` (Workload Identity 用)                       |
+| 推奨リソース         | CPU: 4、メモリ: 16Gi (dev) 、CPU: 64、メモリ: 256Gi (prod)          |
+| SSD のマウントパス    | `/mnt/disks/ssd0` (デーモンセット経由。GKE COS のルートファイルシステムは読み取り専用)  |
+
+<div id="default-node-pool">
+  #### デフォルトのノードプール
+</div>
+
+| プロパティ   | 値               |
+| ------- | --------------- |
+| マシンタイプ  | `n2-standard-4` |
+| ディスクタイプ | `pd-standard`   |
+| ディスクサイズ | 50 GB           |
+| ノード数    | 1               |
+
+<div id="bare-metal-rke2">
+  ### ベアメタル (RKE2)
+</div>
+
+<div id="node-layout">
+  #### ノード構成
+</div>
+
+| ロール                       | ホスト名 (例)                                       | ラベル                            | 備考                  |
+| ------------------------- | ---------------------------------------------- | ------------------------------ | ------------------- |
+| コントロールプレーン + etcd (サーバー)  | `chb-rke2s101`, `chb-rke2s201`, `chb-rke2s301` | `clickhouseGroup=keeper-amd64` | 3 つの AZ にまたがる 3 ノード |
+| エージェント (ワーカー)             | `chb-rke2s102`, `chb-rke2s202`, `chb-rke2s302` | `clickhouseGroup=server-amd64` | 3 つの AZ にまたがる 3 ノード |
+
+<div id="resource-configuration">
+  #### リソース構成
+</div>
+
+| コンポーネント | CPU | メモリ   | ストレージ                                 |
+| ------- | --- | ----- | ------------------------------------- |
+| サーバー    | 64  | 128Gi | 300Gi (`local-nvme-sc` 経由のローカル NVMe)  |
+| Keeper  | 4   | 16Gi  | 30Gi (`local-nvme-sc` 経由のローカル NVMe)   |
+
+各ノードには 838 GiB の NVMe Instance Storage ドライブが 2 基あります。
+
+***
+
+<div id="networking-requirements">
+  ## ネットワーク要件
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+| コンポーネント     | 仕様                                       |
+| ----------- | ---------------------------------------- |
+| VPC CIDR    | `10.20.0.0/16` (例)                       |
+| IPv6        | 使用しない                                    |
+| テナンシー       | デフォルト                                    |
+| 最小 AZ 数     | 3 (HA のため)                               |
+| パブリックサブネット  | 3 (各 AZ に 1 つ、各 `/20`)                   |
+| プライベートサブネット | 3 (各 AZ に 1 つ、各 `/18`)                   |
+| NAT ゲートウェイ  | 各 AZ に 1 つ                               |
+| VPC エンドポイント | S3 ゲートウェイ                                |
+| DNS ホスト名    | 有効                                       |
+| DNS 名前解決    | 有効                                       |
+| CNI         | IPv4 が必要 (例: IRSA を使用する Amazon VPC CNI)  |
+
+サブネットレイアウトの例 (us-west-2) :
+
+| 種別     | AZ         | CIDR             |
+| ------ | ---------- | ---------------- |
+| パブリック  | us-west-2a | `10.20.192.0/20` |
+| パブリック  | us-west-2b | `10.20.208.0/20` |
+| パブリック  | us-west-2c | `10.20.224.0/20` |
+| プライベート | us-west-2a | `10.20.0.0/18`   |
+| プライベート | us-west-2b | `10.20.64.0/18`  |
+| プライベート | us-west-2c | `10.20.128.0/18` |
+
+<div id="gcp">
+  ### GCP
+</div>
+
+| コンポーネント               | 仕様                                                                |
+| --------------------- | ----------------------------------------------------------------- |
+| VPC モード               | カスタム サブネット                                                        |
+| GKE サブネット範囲           | `10.1.0.0/24` (例)                                                 |
+| ポッド セカンダリ範囲           | `10.244.0.0/14` (`/14` 境界上である必要があります。第 3 オクテットは 4 で割り切れる必要があります)  |
+| サービス セカンダリ範囲          | `10.252.0.0/20` (`/20` 境界上である必要があります)                             |
+| マスター IPv4 CIDR        | `172.16.0.0/28`                                                   |
+| プライベート ノード            | 有効 (内部 IP のみ)                                                     |
+| プライベート エンドポイント        | 有効 (パブリック API なし、FedRAMP)                                         |
+| マスター承認済みネットワーク        | GKE サブネット + 踏み台サーバー サブネット                                         |
+| Cloud NAT             | プライベート ノードからインターネットへの送信アクセスに必要                                    |
+| Private Google Access | サブネットで有効                                                          |
+
+<div id="bare-metal">
+  ### ベアメタル
+</div>
+
+| コンポーネント           | 仕様                    |
+| ----------------- | --------------------- |
+| VPC CIDR          | Terraform の設定に応じて     |
+| Kubernetes ネットワーク | RKE2 組み込み CNI         |
+| AZ シミュレーション       | ノードごとのトポロジーラベル        |
+| イングレス             | ポートフォワードまたはロードバランサー経由 |
+
+***
+
+<div id="storage-requirements">
+  ## ストレージ要件
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+| リソース                | 詳細                                                                                    |
+| ------------------- | ------------------------------------------------------------------------------------- |
+| S3 バケット             | Standard クラス、暗号化有効、EKS クラスターと同一リージョン                                                  |
+| S3 バケットのスコープ        | ClickHouse クラスターごとに 1 つ、またはクラスターごとに一意の `keyPrefix` を指定して共有                            |
+| EBS CSI ドライバー       | 必須。IRSA を使用して Helm 経由でインストール                                                          |
+| StorageClass        | `gp3-encrypted` (Helm チャートで提供) またはカスタム                                                |
+| NVMe cache          | &quot;d&quot; シリーズのインスタンス (例: `m7gd.*`) 。EC2 起動テンプレートの RAID スクリプトで `/nvme/disk` にマウント |
+| cache のサイジング        | `bytesPerGiRAM * pod_memory_limit` (例: 11.3Gi * 250Gi = 2825Gi)                       |
+| VolumeSnapshot CRDs | オペレーターで必要                                                                             |
+
+<div id="gcp">
+  ### GCP
+</div>
+
+| Resource            | Details                                                                            |
+| ------------------- | ---------------------------------------------------------------------------------- |
+| GCS バケット            | Standard class、均一なバケットレベルアクセス、GKE クラスターと同じリージョン                                    |
+| GCS の S3 互換エンドポイント  | `https://storage.googleapis.com`                                                   |
+| GCS のリージョン設定        | `auto`                                                                             |
+| StorageClass        | `premium-rwo` (GKE 組み込み) または `pd.csi.storage.gke.io` プロビジョナーを使用する Helm チャート経由のカスタム |
+| トポロジーキー             | `topology.gke.io/zone` (`topology.kubernetes.io/zone` ではありません)                     |
+| ローカルSSDキャッシュ        | デーモンセット経由で `/mnt/disks/ssd0` にマウント (GKE COS のルートは読み取り専用)                           |
+| VolumeSnapshot CRDs | オペレーターで必要                                                                          |
+
+<div id="bare-metal">
+  ### ベアメタル
+</div>
+
+| リソース           | 詳細                                                   |
+| -------------- | ---------------------------------------------------- |
+| オブジェクトストレージ    | NVMe ドライブ上の MinIO (S3互換、DirectPV 使用)                 |
+| StorageClass   | `rancher.io/local-path` プロビジョナーを使用する `local-nvme-sc` |
+| NVMe ドライブ      | DirectPV で検出・初期化し、`/nvme/disk` にマウント                 |
+| ローカルストレージドライバー | Rancher local-path-provisioner v0.0.32               |
+
+***
+
+<div id="iam-service-account-requirements">
+  ## IAM / サービスアカウントの要件
+</div>
+
+<div id="aws">
+  ### AWS
+</div>
+
+<div id="ecr-pull-role">
+  #### ECR Pull ロール
+</div>
+
+* **ロール名:** `ClickHouseAirgapECRPullRole`
+* **目的:** ClickHouse のプライベート ECR からイメージを Pull する
+* **権限:** `ecr:GetDownloadUrlForLayer`, `ecr:BatchGetImage`, `ecr:BatchCheckLayerAvailability`, `ecr:DescribeImages`, `ecr:ListImages`, `ecr:GetAuthorizationToken`
+* **アクション:** ロールの ARN を ClickHouse チームに提供する
+
+<div id="clickhouse-serverkeeper-s3-role">
+  #### ClickHouse Server/Keeper S3 ロール
+</div>
+
+* **プロビジョニングされた ClickHouse クラスターごとに 1 つのロール**
+* **命名規則:** `CH-S3-$NAME-$REGION-$ORDINAL-Role`
+* `$NAME`: クラスター名 (例: `default-xx-01`) 
+* `$REGION`: 短縮したリージョン名 (例: `us-west-2` の場合は `uw2`) 
+* `$ORDINAL`: 予約済み。`00` を設定
+* 例: `CH-S3-default-xx-01-uw2-00-Role`
+* **権限:** バケットリソースに対する `s3:*` および `s3:ListBucket`
+* **信頼ポリシー:** EKS クラスターの OIDC プロバイダーを使用する `sts:AssumeRoleWithWebIdentity` 経由の IRSA
+
+<div id="ebs-csi-driver-role">
+  #### EBS CSI ドライバーのロール
+</div>
+
+* **名前の例:** `ClickHouse_EksEbsCsiDriverRole`
+* **マネージドポリシー:** `arn:aws:iam::aws:policy/service-role/AmazonEBSCSIDriverPolicy`
+* **信頼ポリシー:** EKS クラスターの OIDC プロバイダーを使用する IRSA
+
+<div id="gcp">
+  ### GCP
+</div>
+
+<div id="deployer-service-account">
+  #### デプロイ用サービスアカウント
+</div>
+
+| ロール                                     | 目的                              |
+| --------------------------------------- | ------------------------------- |
+| `roles/compute.networkAdmin`            | VPC、サブネット、NAT、ルーターを作成・管理        |
+| `roles/container.admin`                 | GKE クラスターとノードプールを作成・管理          |
+| `roles/storage.admin`                   | GCS バケットを作成・管理                  |
+| `roles/iam.serviceAccountAdmin`         | サービスアカウントを作成・管理                 |
+| `roles/iam.serviceAccountUser`          | Workload Identity でサービスアカウントを使用 |
+| `roles/iam.workloadIdentityUser`        | Workload Identity のバインディングを設定   |
+| `roles/artifactregistry.admin`          | Artifact Registry リポジトリを作成・管理   |
+| `roles/resourcemanager.projectIamAdmin` | プロジェクトの IAM ポリシーを管理             |
+
+<div id="clickhouse-workload-identity-service-account">
+  #### ClickHouse Workload Identity サービスアカウント
+</div>
+
+* **GCP SA:** `clickhouse@$PROJECT.iam.gserviceaccount.com`
+* **K8s SA (手動) :** ネームスペース `ns-$CLUSTER_NAME` の `clickhouse`
+* **K8s SA (helmで作成) :** ネームスペース `ns-$CLUSTER_NAME` の `ch-$CLUSTER_NAME-sa`
+* **K8s SA アノテーション:** `iam.gke.io/gcp-service-account=<GSA_EMAIL>`
+* **IAM バインディング メンバー:** `serviceAccount:$PROJECT.svc.id.goog[<namespace>/<ksa>]`
+* **バケット権限:** `roles/storage.objectAdmin`, `roles/storage.legacyBucketReader`
+* **Artifact Registry 権限:** `roles/artifactregistry.reader`
+
+<div id="bare-metal">
+  ### ベアメタル
+</div>
+
+* **AWS 認証情報:** ECR イメージのプルに使用するアクセスキーとシークレットキー
+* **MinIO 認証情報:** S3互換ストレージ用の個別のアクセスキーとシークレットキー
+* **イメージプルシークレット:** `clickhouse-operator-system` およびクラスターの各ネームスペースにある `all-icr-io` の docker-registry シークレット
+* **サービスアカウント:** `default` (IRSA なし。認証情報は環境変数で渡します) 
+
+***
+
+<div id="cluster-naming-conventions">
+  ## クラスターの命名規則
+</div>
+
+ClickHouseクラスターの命名規則は、すべてのプラットフォームで統一されています。
+
+```text
+$DESCRIPTOR-$LETTERS-$ORDINAL
+```
+
+| コンポーネント       | 説明             | 例         |
+| ------------- | -------------- | --------- |
+| `$DESCRIPTOR` | 識別用の名前 (英字のみ)  | `default` |
+| `$LETTERS`    | 予約済み。任意の英字2文字  | `xx`      |
+| `$ORDINAL`    | `01` から始まる連番   | `01`      |
+
+**名前の例:** `default-xx-01`
+
+クラスター名は**対象の Kubernetes クラスター内で一意**である必要があり、以下で使用されます: - Kubernetes ネームスペース: `ns-$CLUSTER_NAME` - Kubernetes リソース: `c-$CLUSTER_NAME` をプレフィックスとして付与 - IAM ロール名 (AWS) : `CH-S3-$CLUSTER_NAME-$REGION-$ORDINAL-Role` - S3/GCS の秘密鍵プレフィックス: `ch-s3-<uuid>` (クラスターごとに一意) 
+
+***
+
+<div id="required-kubernetes-components">
+  ## 必要な Kubernetes コンポーネント
+</div>
+
+| コンポーネント             | AWS                      | GCP                             | ベアメタル                              |
+| ------------------- | ------------------------ | ------------------------------- | ---------------------------------- |
+| CNI (IPv4)          | Amazon VPC CNI (推奨)      | GKE 標準                          | RKE2 標準                            |
+| CSI ドライバー           | aws-ebs-csi-driver       | GKE 標準 (pd.csi.storage.gke.io)  | Rancher local-path-provisioner     |
+| DNS                 | CoreDNS                  | GKE 標準                          | RKE2 標準                            |
+| VolumeSnapshot CRDs | 必須                       | 必須                              | 指定なし                               |
+| オートスケーラー            | Cluster Autoscaler (推奨)  | GKE ノードプールのオートスケーリング            | N/A                                |
+| Cert manager        | 不要 (FIPS の場合を除く)         | FIPS では必須                       | 必須 (cert-manager + trust-manager)  |

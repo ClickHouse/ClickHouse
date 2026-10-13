@@ -9,7 +9,7 @@ keywords: ['utilisateurs du cloud', 'gestion des accès', 'sécurité', 'autoris
 
 import { Image } from "/snippets/fr/components/Image.jsx";
 
-import { EnterprisePlanFeatureBadge } from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
+import EnterprisePlanFeatureBadge from "/snippets/fr/components/EnterprisePlanFeatureBadge/EnterprisePlanFeatureBadge.jsx";
 
 Ce guide s’adresse aux utilisateurs ayant le rôle Admin dans ClickHouse Cloud.
 
@@ -24,25 +24,33 @@ Ce guide s’adresse aux utilisateurs ayant le rôle Admin dans ClickHouse Cloud
 Les administrateurs peuvent inviter plusieurs utilisateurs à la fois et leur attribuer un ou plusieurs rôles au moment de l’invitation.
 
 <Steps>
-  <Step title="Accédez aux paramètres de l’organisation et sélectionnez Users and roles" id="users-and-roles-1">
+  <Step>
+    ### Accédez aux paramètres de l’organisation et sélectionnez Users and roles
+
     Depuis la page des services, sélectionnez le nom de votre organisation. Dans le menu contextuel, sélectionnez l’élément de menu `Users and roles`.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step title="Sélectionnez 'Invite members' dans le coin supérieur gauche" id="invite-members">
+  <Step>
+    ### Sélectionnez &#39;Invite members&#39; dans le coin supérieur gauche
+
     Cliquez sur le bouton `Invite members` dans le coin supérieur gauche.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/2_invite_user.webp" size="lg" />
   </Step>
 
-  <Step title="Saisissez l’adresse e-mail des nouveaux membres et attribuez des rôles" id="add-email-and-roles">
+  <Step>
+    ### Saisissez l’adresse e-mail des nouveaux membres et attribuez des rôles
+
     Saisissez les adresses e-mail en haut de l’écran d’invitation. Sélectionnez un ou plusieurs rôles à attribuer aux utilisateurs.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/3_invite_user.webp" size="lg" />
   </Step>
 
-  <Step title={<>Cliquez sur <code>Send invites</code></>} id="send-invites">
+  <Step>
+    ### Cliquez sur `Send invites`
+
     Cliquez sur `Send invites` en bas de l’écran. Les utilisateurs recevront un e-mail leur permettant de rejoindre l’organisation. Pour plus d’informations sur l’acceptation des invitations, consultez [Manage my account](/fr/products/cloud/guides/security/cloud-access-management/manage-my-account).
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/4_invite_user.webp" size="lg" />
@@ -71,28 +79,36 @@ Une fois qu’au moins un utilisateur SAML de l’organisation s’est vu attrib
   ## Gérer les attributions de rôles des utilisateurs
 </div>
 
-Les utilisateurs disposant du rôle Admin peuvent mettre à jour les autorisations des autres utilisateurs à tout moment.
+Les utilisateurs disposant du rôle Admin peuvent mettre à jour les permissions des autres utilisateurs à tout moment.
 
 <Steps>
-  <Step title="Accédez aux paramètres de l’organisation et sélectionnez Users and roles" id="users-and-roles-2">
+  <Step>
+    ### Accédez aux paramètres de l’organisation et sélectionnez Users and roles
+
     Depuis la page des services, sélectionnez le nom de votre organisation. Sélectionnez l’élément de menu `Users and roles` dans le menu contextuel.
 
     <Image img="/images/cloud/guides/control_plane/1_users_and_roles.webp" size="lg" />
   </Step>
 
-  <Step title="Sélectionnez l’utilisateur à mettre à jour, puis Edit" id="select-user-to-update">
+  <Step>
+    ### Sélectionnez l’utilisateur à mettre à jour, puis Edit
+
     Sélectionnez l’élément de menu à la fin de la ligne de l’utilisateur dont vous souhaitez modifier l’accès. Sélectionnez `edit` dans le menu contextuel.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/5_edit_user.webp" size="lg" />
   </Step>
 
-  <Step title="Mettre à jour les autorisations" id="update-permissions">
-    Cliquez dans le champ `Roles` pour développer le menu. Cochez les cases pour ajouter ou supprimer des rôles pour l’utilisateur. Consultez [Console roles and permissions](/fr/products/cloud/reference/security/console-roles) pour obtenir la liste des rôles et des autorisations associées.
+  <Step>
+    ### Mettre à jour les permissions
+
+    Cliquez dans le champ `Roles` pour développer le menu. Cochez les cases pour ajouter ou supprimer des rôles pour l’utilisateur. Consultez [Console roles and permissions](/fr/products/cloud/reference/security/console-roles) pour obtenir la liste des rôles et des permissions associées.
 
     <Image img="/images/cloud/guides/control_plane/manage_cloud_users/6_edit_user.webp" size="lg" />
   </Step>
 
-  <Step title="Enregistrez vos modifications" id="save-changes">
+  <Step>
+    ### Enregistrez vos modifications
+
     Enregistrez vos modifications à l’aide du bouton `Save changes` en bas de l’onglet.
   </Step>
 </Steps>

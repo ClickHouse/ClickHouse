@@ -109,7 +109,6 @@ private:
 
     void prewarmMarkCache();
     void prewarmPrimaryIndexCache();
-    void clearTimeSeriesCaches();
 
     void stopReplicatedDDLQueries();
     void startReplicatedDDLQueries();

@@ -40,10 +40,6 @@ public:
 
     size_t getNumberOfArguments() const override { return 1; }
     bool useDefaultImplementationForConstants() const override { return true; }
-    /// A `LowCardinality` dictionary always holds the type's default value at index 0, even when no
-    /// row references it, and `0` is not a valid H3 index, so executing on the whole dictionary would
-    /// fail on entirely valid data.
-    bool canBeExecutedOnDefaultArguments() const override { return !validator.throw_on_error; }
     bool isSuitableForShortCircuitArgumentsExecution(const DataTypesWithConstInfo & /*arguments*/) const override { return true; }
 
     DataTypePtr getReturnTypeImpl(const DataTypes & arguments) const override
@@ -122,17 +118,17 @@ Returns the coordinates defining the unidirectional edge [H3](#h3-index).
         {"index", "Hexagon index number that represents a unidirectional edge.", {"UInt64"}}
     };
     FunctionDocumentation::ReturnedValue returned_value = {
-        "Returns an array of (latitude, longitude) pairs defining a unidirectional edge. Throws `INCORRECT_DATA` if the input is not a valid directed edge unless `functions_h3_default_if_invalid = 1`, in which case it returns `[]`.",
-        {"Array(Tuple(Float64, Float64))"}
+        "Returns an array of (longitude, latitude) pairs defining a unidirectional edge. Throws an exception if the input is not a valid directed edge (controlled by the `functions_h3_default_if_invalid` setting).",
+        {"Array(Float64, Float64)"}
     };
     FunctionDocumentation::Examples examples = {
         {
             "Get boundary coordinates of a unidirectional edge",
             "SELECT h3GetUnidirectionalEdgeBoundary(1248204388774707199) AS boundary",
             R"(
-┌─boundary─────────────────────────────────────────────────────────────────────┐
-│ [(37.4201286776778,-122.03773496427027),(37.337556084353,-122.090428929044)] │
-└──────────────────────────────────────────────────────────────────────────────┘
+┌─boundary────────────────────────────────────────────────────────────────────────┐
+│ [(37.42012867767779,-122.03773496427027),(37.33755608435299,-122.090428929044)] │
+└─────────────────────────────────────────────────────────────────────────────────┘
             )"
         }
     };

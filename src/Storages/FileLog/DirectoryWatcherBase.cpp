@@ -1,16 +1,15 @@
+#include <Core/BackgroundSchedulePool.h>
+#include <Interpreters/Context.h>
 #include <Storages/FileLog/DirectoryWatcherBase.h>
 #include <Storages/FileLog/FileLogDirectoryWatcher.h>
 #include <Storages/FileLog/FileLogSettings.h>
 #include <Storages/FileLog/StorageFileLog.h>
 #include <base/defines.h>
-#include <base/scope_guard.h>
 
 #include <filesystem>
 #include <unistd.h>
 #include <poll.h>
 #include <Common/ErrnoException.h>
-#include <Common/Exception.h>
-#include <Common/ThreadPool.h>
 #include <Common/logger_useful.h>
 
 #if defined(OS_LINUX)
@@ -22,6 +21,7 @@
 #include <fcntl.h>
 #include <sys/event.h>
 #include <sys/stat.h>
+#include <base/scope_guard.h>
 #endif
 
 namespace DB
@@ -62,16 +62,10 @@ DirectoryWatcherBase::DirectoryWatcherBase(
     inotify_fd = inotify_init();
     if (inotify_fd == -1)
         throw ErrnoException(ErrorCodes::IO_SETUP_ERROR, "Cannot initialize inotify");
-    /// Only the destructor closes this descriptor, and the destructor does not run if this
-    /// constructor throws.
-    scope_guard close_inotify_fd = [this] { ::close(inotify_fd); };
 #endif
 
+    watch_task = getContext()->getSchedulePool().createTask(StorageID::createEmpty(), "directory_watch", [this] { watchFunc(); });
     start();
-
-#if defined(OS_LINUX)
-    close_inotify_fd.release();
-#endif
 }
 
 #if defined(OS_LINUX)
@@ -315,69 +309,6 @@ void DirectoryWatcherBase::watchFunc()
         }
     };
 
-    /// Names whose watched inode was unlinked (NOTE_DELETE), accumulated across drains. Kept outside
-    /// the loop so a pass that is retried (e.g. a transient scan/watch failure) does not lose the
-    /// deletes it already drained - EV_CLEAR makes the kqueue events edge-triggered, so a dropped
-    /// NOTE_DELETE would never be re-reported and a same-inode recreate would slip through as MODIFIED.
-    std::set<std::string> deleted;
-
-    struct DrainedEvents
-    {
-        bool any = false;
-        bool structural = false;
-    };
-    auto drain_events = [&]
-    {
-        DrainedEvents result;
-        struct kevent evs[16];
-        struct timespec no_wait{0, 0};
-        int drained = 0;
-        while ((drained = kevent(kq, nullptr, 0, evs, 16, &no_wait)) > 0)
-        {
-            result.any = true;
-            for (int i = 0; i < drained; ++i)
-            {
-                const int event_fd = static_cast<int>(evs[i].ident);
-                if (event_fd == dir_fd)
-                {
-                    if (evs[i].fflags & (NOTE_WRITE | NOTE_LINK | NOTE_RENAME | NOTE_DELETE))
-                        result.structural = true;
-                    continue;
-                }
-                if (evs[i].fflags & NOTE_RENAME)
-                    result.structural = true;
-                if (!(evs[i].fflags & NOTE_DELETE))
-                    continue;
-                for (auto it = watched_fds.begin(); it != watched_fds.end(); ++it)
-                {
-                    if (it->second.fd != event_fd)
-                        continue;
-                    deleted.insert(it->first);
-                    /// The name's identity ended; drop its now-stale fd so sync_file_watches
-                    /// reopens a fresh one if the name is recreated.
-                    closeFileDescriptor(it->second.fd);
-                    watched_fds.erase(it);
-                    break;
-                }
-            }
-        }
-        return result;
-    };
-
-    /// Listing, `stat` and opening the watches are not atomic with a rename, which would be diffed as
-    /// REMOVED + ADDED, so the caller discards a pass the directory changed under. The drain before
-    /// `sync_file_watches` keeps the NOTE_DELETE of a departed name, which closing its watch drops.
-    auto scan_and_watch = [&](std::map<std::string, FileState> & out)
-    {
-        scan(out);
-        auto result = drain_events();
-        sync_file_watches(out);
-        const auto after_sync = drain_events();
-        result.any |= after_sync.any;
-        result.structural |= after_sync.structural;
-        return result;
-    };
-
     /// Pre-existing files are loaded by StorageFileLog's own directory scan; the watcher, like
     /// inotify, reports only subsequent changes. So seed the snapshot without emitting events. A
     /// transient failure here (e.g. the directory being briefly recreated) must not permanently kill
@@ -389,8 +320,8 @@ void DirectoryWatcherBase::watchFunc()
     {
         try
         {
-            if (scan_and_watch(snapshot).structural)
-                continue;
+            scan(snapshot);
+            sync_file_watches(snapshot);
             break;
         }
         catch (const std::exception & e)
@@ -409,12 +340,15 @@ void DirectoryWatcherBase::watchFunc()
     pfds[1].fd = kq;
     pfds[1].events = POLLIN;
 
-    bool rescan_without_waiting = false;
+    /// Names whose watched inode was unlinked (NOTE_DELETE), accumulated across drains. Kept outside
+    /// the loop so a pass that is retried (e.g. a transient scan/watch failure) does not lose the
+    /// deletes it already drained - EV_CLEAR makes the kqueue events edge-triggered, so a dropped
+    /// NOTE_DELETE would never be re-reported and a same-inode recreate would slip through as MODIFIED.
+    std::set<std::string> deleted;
     while (!stopped)
     {
-        if (poll(pfds, 2, rescan_without_waiting ? 0 : static_cast<int>(milliseconds_to_wait)) < 0 && errno != EINTR)
+        if (poll(pfds, 2, static_cast<int>(milliseconds_to_wait)) < 0 && errno != EINTR)
             break;
-        rescan_without_waiting = false;
         if (stopped)
             break;
 
@@ -424,22 +358,43 @@ void DirectoryWatcherBase::watchFunc()
         /// NOTE_DELETE to force an identity reset (REMOVED + ADDED) instead of MODIFIED, which would
         /// otherwise keep a stale read offset - matching what inotify's IN_DELETE + IN_CREATE gives.
         if (pfds[1].revents & POLLIN)
-            drain_events();
+        {
+            struct kevent evs[16];
+            struct timespec no_wait{0, 0};
+            int drained = 0;
+            while ((drained = kevent(kq, nullptr, 0, evs, 16, &no_wait)) > 0)
+            {
+                for (int i = 0; i < drained; ++i)
+                {
+                    if (!(evs[i].fflags & NOTE_DELETE))
+                        continue;
+                    const int event_fd = static_cast<int>(evs[i].ident);
+                    for (auto it = watched_fds.begin(); it != watched_fds.end(); ++it)
+                    {
+                        if (it->second.fd != event_fd)
+                            continue;
+                        deleted.insert(it->first);
+                        /// The name's identity ended; drop its now-stale fd so sync_file_watches
+                        /// reopens a fresh one if the name is recreated.
+                        closeFileDescriptor(it->second.fd);
+                        watched_fds.erase(it);
+                        break;
+                    }
+                }
+            }
+        }
 
         const auto & settings = owner.storage.getFileLogSettings();
 
         std::map<std::string, FileState> current;
         try
         {
+            scan(current);
             /// Install/refresh the per-file watches for the new set BEFORE emitting any events. A
             /// transient failure here (e.g. EMFILE) then just retries the whole pass with nothing
             /// queued and StorageFileLog left untouched, instead of stranding a half-emitted batch
             /// behind a dead watcher. It also drops any file that vanished mid-scan from `current`.
-            const auto drained = scan_and_watch(current);
-            /// The drain consumed wakeups that the pass may not reflect.
-            rescan_without_waiting = drained.any;
-            if (drained.structural)
-                continue;
+            sync_file_watches(current);
         }
         catch (const std::exception & e)
         {
@@ -637,34 +592,16 @@ DirectoryWatcherBase::~DirectoryWatcherBase()
 
 void DirectoryWatcherBase::start()
 {
-    /// The catch keeps a watch failure contained and logged here, as the schedule pool's execute
-    /// used to do. Letting it escape would instead become the global pool's first_exception and be
-    /// rethrown from an unrelated later scheduleOrThrow.
-    watch_thread = std::make_unique<ThreadFromGlobalPool>([this]
-    {
-        try
-        {
-            watchFunc();
-        }
-        catch (...)
-        {
-            tryLogCurrentException(__PRETTY_FUNCTION__);
-        }
-    });
+    if (watch_task)
+        watch_task->activateAndSchedule();
 }
 
 void DirectoryWatcherBase::stop()
 {
     stopped = true;
     (void)::write(event_pipe.fds_rw[1], "\0", 1);
-    if (watch_thread)
-    {
-        /// Mandatory: ~ThreadFromGlobalPoolImpl aborts on a still-joinable thread. The write above
-        /// is what makes the blocking poll return, so this cannot hang.
-        if (watch_thread->joinable())
-            watch_thread->join();
-        watch_thread.reset();
-    }
+    if (watch_task)
+        watch_task->deactivate();
 }
 
 }

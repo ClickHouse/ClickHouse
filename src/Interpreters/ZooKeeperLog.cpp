@@ -1,5 +1,4 @@
 #include <base/getFQDNOrHostName.h>
-#include <Common/config_version.h>
 #include <Interpreters/ZooKeeperLog.h>
 #include <Columns/ColumnArray.h>
 #include <Columns/ColumnString.h>
@@ -73,8 +72,6 @@ ColumnsDescription ZooKeeperLogElement::getColumnsDescription()
     return ColumnsDescription
     {
         {"hostname", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Hostname of the server executing the query."},
-        {"clickhouse_version", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "Version of the ClickHouse server that produced the row."},
-        {"system_processor", std::make_shared<DataTypeLowCardinality>(std::make_shared<DataTypeString>()), "CPU architecture of the ClickHouse server that produced the row."},
         {"type", std::move(type_enum), "Event type in the ZooKeeper client. Can have one of the following values: Request — The request has been sent, Response — The response was received, Finalize — The connection is lost, no response was received."},
         {"event_date", std::make_shared<DataTypeDate>(), "The date when the event happened."},
         {"event_time", std::make_shared<DataTypeDateTime64>(6), "The date and time when the event happened."},
@@ -126,8 +123,6 @@ void ZooKeeperLogElement::appendToBlock(MutableColumns & columns) const
     size_t i = 0;
 
     columns[i++]->insert(getFQDNOrHostName());
-    columns[i++]->insert(VERSION_STRING);
-    columns[i++]->insert(SYSTEM_PROCESSOR);
     columns[i++]->insert(type);
     auto event_time_seconds = event_time / 1000000;
     columns[i++]->insert(DateLUT::instance().toDayNum(event_time_seconds).toUnderType());

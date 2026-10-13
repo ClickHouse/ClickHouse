@@ -1,0 +1,21 @@
+SELECT
+    k,
+    r.k,
+    name
+FROM n
+ALL INNER JOIN r ON equals(k, r.k)
+WHERE and(equals(k, r.k), equals(name, \'A\'))
+SELECT
+    k,
+    r.k,
+    name
+FROM n
+ALL INNER JOIN r ON equals(k, r.k)
+WHERE and(equals(k, r.k), like(name, \'A%\'))
+SELECT
+    k,
+    r.k,
+    name
+FROM n
+ALL INNER JOIN r ON equals(k, r.k)
+WHERE and(equals(k, r.k), notLike(name, \'A%\'))

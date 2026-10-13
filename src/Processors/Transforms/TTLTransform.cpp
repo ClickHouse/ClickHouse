@@ -57,10 +57,8 @@ TTLTransform::TTLTransform(
     const MergeTreeData::MutableDataPartPtr & data_part_,
     const NamesAndTypesList & expired_columns_,
     time_t current_time_,
-    bool force_,
-    bool ttl_delete_applied_by_merge_)
+    bool force_)
     : IAccumulatingTransform(header_, addExpiredColumnsToBlock(header_, expired_columns_))
-    , ttl_delete_applied_by_merge(ttl_delete_applied_by_merge_)
     , data_part(data_part_)
     , expired_columns(expired_columns_)
     , log(getLogger(storage_.getLogName() + " (TTLTransform)"))
@@ -91,7 +89,7 @@ TTLTransform::TTLTransform(
         algorithms.emplace_back(std::make_unique<TTLAggregationAlgorithm>(
                 getExpressions(group_by_ttl, subqueries_for_sets, context), group_by_ttl,
                 old_ttl_infos.group_by_ttl[group_by_ttl.result_column], current_time_, force_,
-                getInputPort().getHeader(), storage_, metadata_snapshot_));
+                getInputPort().getHeader(), storage_));
 
     const auto & storage_columns = metadata_snapshot_->getColumns();
     const auto & column_defaults = storage_columns.getDefaults();
@@ -222,8 +220,6 @@ void TTLTransform::finalize()
     {
         if (all_data_dropped)
             LOG_DEBUG(log, "Removed all rows from part {} due to expired TTL", data_part->name);
-        else if (ttl_delete_applied_by_merge)
-            LOG_DEBUG(log, "Rows with expired TTL were removed from part {} by the merging algorithm", data_part->name);
         else
             LOG_DEBUG(log, "Removed {} rows with expired TTL from part {}", delete_algorithm->getNumberOfRemovedRows(), data_part->name);
     }

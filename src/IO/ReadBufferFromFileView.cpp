@@ -19,12 +19,6 @@ ReadBufferFromFileView::ReadBufferFromFileView(
     , file_offset_of_buffer_end(left_bound_)
     , original_working_buffer(working_buffer)
 {
-    /// Bound the underlying buffer to the slice of the archive that belongs to this file. Otherwise a read of a
-    /// file inside an archive on object storage becomes an open-ended range request: it transfers the rest of the
-    /// archive instead of the file, and the HTTP connection cannot be returned to the pool.
-    if (right_bound > left_bound)
-        impl->setReadUntilPosition(right_bound);
-
     /// Seek to the begin of file.
     impl->seek(left_bound, SEEK_SET);
     swap(*impl);
@@ -75,8 +69,6 @@ bool ReadBufferFromFileView::nextImpl()
     {
         file_offset_of_buffer_end += available();
         resizeWorkingBuffer();
-        /// After `next`, `impl` may leave `pos` past the start of its working buffer.
-        nextimpl_working_buffer_offset = offset();
     }
 
     return result;

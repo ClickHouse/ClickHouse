@@ -17,7 +17,6 @@
 #include <Common/FieldVisitorToString.h>
 #include <Parsers/ASTFunctionWithKeyValueArguments.h>
 #include <Parsers/ASTDictionaryAttributeDeclaration.h>
-#include <Poco/String.h>
 #include <Dictionaries/DictionaryFactory.h>
 #include <Dictionaries/DictionarySourceFactory.h>
 #include <Functions/FunctionFactory.h>
@@ -225,7 +224,7 @@ void buildLayoutConfiguration(
     {
         AutoPtr<Element> settings_element(doc->createElement("settings"));
         root->appendChild(settings_element);
-        for (const auto & [name, value, _] : settings->changes)
+        for (const auto & [name, value] : settings->changes)
         {
             AutoPtr<Element> setting_change_element(doc->createElement(name));
             settings_element->appendChild(setting_change_element);
@@ -696,7 +695,7 @@ void buildSourceConfiguration(
     {
         AutoPtr<Element> settings_element(doc->createElement("settings"));
         outer_element->appendChild(settings_element);
-        for (const auto & [name, value, _] : settings->changes)
+        for (const auto & [name, value] : settings->changes)
         {
             AutoPtr<Element> setting_change_element(doc->createElement(name));
             settings_element->appendChild(setting_change_element);
@@ -852,39 +851,16 @@ getInfoIfClickHouseDictionarySource(DictionaryConfigurationPtr & config, Context
 
     try
     {
-        info.is_local = isLocalAddress({host, port}, default_port);
+        if (isLocalAddress({host, port}, default_port))
+            info.is_local = true;
     }
     catch (const Poco::Net::DNSException &)
     {
-        /// Server may fail to start if we cannot resolve some hostname.
-        info.host_unresolved = true;
+        /// Server may fail to start if we cannot resolve some hostname. It's ok to ignore exception and leave is_local false.
         tryLogCurrentException(__PRETTY_FUNCTION__);
     }
 
     return info;
-}
-
-bool mayBeLocalClickHouseDictionarySource(const ASTCreateQuery & query, ContextPtr context, const std::string & database_)
-{
-    if (!query.is_dictionary || !query.dictionary || !query.dictionary->source)
-        return false;
-    if (Poco::toLower(query.dictionary->source->name) != "clickhouse")
-        return false;
-
-    auto config = getDictionaryConfigurationFromAST(query, context, database_);
-
-    /// A named collection keeps the host out of the definition and is not expanded here, so locality
-    /// is undecidable: count it as local.
-    const String prefix = "dictionary.source.clickhouse";
-    if (!config->getString(prefix + ".name", "").empty())
-        return true;
-
-    auto info = getInfoIfClickHouseDictionarySource(config, context->getGlobalContext());
-    if (!info)
-        return false;
-
-    /// An unresolvable host is not a remote one: the loader resolves it again and may go local.
-    return info->is_local || info->host_unresolved;
 }
 
 }

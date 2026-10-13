@@ -100,7 +100,6 @@ ReturnType parseDateTimeBestEffortImpl(
     const DateLUTImpl & utc_time_zone,
     DateTimeSubsecondPart * fractional,
     const char * allowed_date_delimiters = nullptr,
-    bool * has_explicit_zero_year = nullptr,
     DateTimeOverflow overflow = DateTimeOverflow::Saturate)
 {
     auto on_error = [&]<typename... FmtArgs>(
@@ -117,13 +116,9 @@ ReturnType parseDateTimeBestEffortImpl(
     res = 0;
     UInt16 year = 0;
 
-    /// A year field of `0` is indistinguishable from "the year is not specified" in the code below, so an
-    /// explicitly written year of `0000` is silently replaced with the current (or previous) year. Remember
-    /// that this happened, so that a caller which must not accept a value it was not given can reject it -
-    /// see the `has_explicit_zero_year` parameter.
+    /// A year field of `0` is indistinguishable from "no year" below, so remember when 0000 was written explicitly
     bool zero_year_was_read = false;
     auto note_year_was_read = [&] { zero_year_was_read |= !year; };
-
     UInt8 month = 0;
     UInt8 day_of_month = 0;
     UInt8 hour = 0;
@@ -460,6 +455,7 @@ ReturnType parseDateTimeBestEffortImpl(
 
                 readDecimalNumber<4>(year, digits);
                 note_year_was_read();
+
 
                 if (!in.eof())
                 {
@@ -932,11 +928,6 @@ ReturnType parseDateTimeBestEffortImpl(
 
     if (!year)
     {
-        /// The year is either absent or explicitly written as `0000`; in the latter case the value returned
-        /// below is not the one the caller asked for, so report it to a caller that wants to know.
-        if (has_explicit_zero_year)
-            *has_explicit_zero_year = zero_year_was_read;
-
         /// Year 0000 is outside DateTime and the substitution below would hide that, which `throw` forbids
         if (!is_64 && zero_year_was_read && overflow == DateTimeOverflow::Report)
             return on_error(ErrorCodes::VALUE_IS_OUT_OF_RANGE_OF_DATA_TYPE, "Year 0000 is out of bounds of type DateTime");
@@ -1087,28 +1078,22 @@ void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & 
 
 void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeOverflow overflow)
 {
-    parseDateTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, nullptr, overflow);
-}
-
-void parseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, bool & has_explicit_zero_year)
-{
-    has_explicit_zero_year = false;
-    parseDateTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, &has_explicit_zero_year);
+    parseDateTimeBestEffortImpl<void, false>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, overflow);
 }
 
 void parseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeOverflow overflow)
 {
-    parseDateTimeBestEffortImpl<void, true>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, nullptr, overflow);
+    parseDateTimeBestEffortImpl<void, true>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, overflow);
 }
 
 bool tryParseDateTimeBestEffort(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeOverflow overflow)
 {
-    return parseDateTimeBestEffortImpl<bool, false>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, nullptr, overflow);
+    return parseDateTimeBestEffortImpl<bool, false>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, overflow);
 }
 
 bool tryParseDateTimeBestEffortUS(time_t & res, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone, DateTimeOverflow overflow)
 {
-    return parseDateTimeBestEffortImpl<bool, true>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, nullptr, overflow);
+    return parseDateTimeBestEffortImpl<bool, true>(res, in, local_time_zone, utc_time_zone, nullptr, nullptr, overflow);
 }
 
 void parseDateTime64BestEffort(DateTime64 & res, UInt32 scale, ReadBuffer & in, const DateLUTImpl & local_time_zone, const DateLUTImpl & utc_time_zone)
