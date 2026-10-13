@@ -257,8 +257,8 @@ namespace
     }
 
     /// The staged records of the bucket that a merge task merges: the producers' chunks of its partitions, and the blocks
-    /// read back from its spill stream, kept in the order of their partitions. The blocks stay in memory until the
-    /// bucket is done: the tables of its units point into them.
+    /// read back from its spill stream, kept in the order of their partitions. A partition's chunks and blocks are freed
+    /// together once its unit no longer needs them.
     class AdaptiveBucketRecords
     {
     public:
@@ -291,12 +291,13 @@ namespace
                 ranges.emplace_back(block.data.data(), block.data.size());
         }
 
-        /// Frees the producers' chunks of partition `sub` of the bucket. Its read-back blocks stay until the bucket is
-        /// done.
-        void release(size_t sub) const
+        /// Frees the records of partition `sub` of the bucket: the producers' chunks and its read-back blocks.
+        void release(size_t sub)
         {
             for (const auto & producer : session.producer_buffers)
                 producer->releasePartition(first_partition + sub);
+            for (auto & block : std::ranges::equal_range(spilled, sub, {}, &SpilledBlock::sub))
+                block = SpilledBlock{.sub = sub, .records = 0, .data = {}};
         }
 
     private:
@@ -979,7 +980,7 @@ Aggregator::AggregatedChunks Aggregator::mergeAndConvertAdaptiveBucketImpl(
     const AdaptivePartitionLayout layout = session.layout;
     const size_t partitions_per_bucket = layout.partitionsPerBucket();
 
-    const AdaptiveBucketRecords staged(session, bucket);
+    AdaptiveBucketRecords staged(session, bucket);
     std::vector<size_t> partition_records(partitions_per_bucket);
     size_t bucket_records = 0;
     for (size_t sub = 0; sub < partitions_per_bucket; ++sub)
