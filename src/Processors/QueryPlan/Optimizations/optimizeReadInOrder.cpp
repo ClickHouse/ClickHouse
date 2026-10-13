@@ -1,6 +1,11 @@
 #include <Columns/ColumnConst.h>
+#include <Columns/ColumnDynamic.h>
+#include <Columns/ColumnNullable.h>
+#include <Columns/ColumnTuple.h>
+#include <Columns/ColumnVariant.h>
 #include <DataTypes/DataTypeLowCardinality.h>
 #include <DataTypes/DataTypeTuple.h>
+#include <DataTypes/DataTypeVariant.h>
 #include <Interpreters/ActionsDAG.h>
 #include <Interpreters/Context.h>
 #include <Interpreters/ExpressionActions.h>
@@ -264,17 +269,44 @@ QueryPlan::Node * findReadingStep(QueryPlan::Node & node, FindReadingStepContext
 /// Fixed columns are 'x' and 'y'.
 using FixedColumns = std::unordered_set<const ActionsDAG::Node *>;
 
-/// `equals` compares a `String` with a `FixedString` zero-padded, so `s = toFixedString('a', 2)` holds for
-/// the `String` values `'a'`, `'a\0'` and `'a\0\0'`. They sort differently, so such a condition does not fix `s`.
-/// `Tuple` values are compared element by element with `equals`, so the same holds for a `String` element compared
-/// with a `FixedString` element: `t = tuple(toFixedString('a', 2))` holds for `tuple('a')` and `tuple('a\0')`.
-/// `Array` and `Map` values are cast to a common type and compared byte by byte, so they are not affected.
-/// A `FixedString` column is not affected either: all its values have the same length, so at most one of them matches.
-bool comparesStringWithFixedString(const DataTypePtr & column_type_with_wrappers, const DataTypePtr & constant_type_with_wrappers)
+/// Whether `column = constant` holds for several values of the column that sort differently, so it does not fix the column.
+/// `equals` pads a `FixedString` with zero bytes against a `String`, so `s = toFixedString('a', 2)` matches `'a'` with any
+/// number of trailing zero bytes, also inside `Tuple`, `Variant` and `Dynamic`, but not inside `Array` or `Map`.
+bool equalsMatchesSeveralValues(
+    const DataTypePtr & column_type_with_wrappers, ColumnPtr constant, const DataTypePtr & constant_type_with_wrappers)
 {
+    if (const auto * column_const = typeid_cast<const ColumnConst *>(constant.get()))
+        constant = column_const->getDataColumnPtr();
+    chassert(constant->size() == 1);
+    /// NULL is not equal to anything.
+    if (constant->isNullAt(0))
+        return false;
+    constant = removeNullable(constant->convertToFullColumnIfLowCardinality());
+
     auto column_type = removeLowCardinalityAndNullable(column_type_with_wrappers);
     auto constant_type = removeLowCardinalityAndNullable(constant_type_with_wrappers);
+
+    /// The type of the value that a `Variant` or `Dynamic` constant holds is in the value, not in `constant_type`.
+    if (const auto * column_dynamic = typeid_cast<const ColumnDynamic *>(constant.get()))
+    {
+        /// Inserting into a new column moves the value out of the shared variant.
+        auto copy = ColumnDynamic::create();
+        copy->insertFrom(*column_dynamic, 0);
+        return equalsMatchesSeveralValues(column_type_with_wrappers, copy->getVariantColumnPtr(), copy->getVariantInfo().variant_type);
+    }
+    if (const auto * column_variant = typeid_cast<const ColumnVariant *>(constant.get()))
+    {
+        const auto discriminator = column_variant->globalDiscriminatorAt(0);
+        return equalsMatchesSeveralValues(
+            column_type_with_wrappers,
+            column_variant->getVariantPtrByGlobalDiscriminator(discriminator)->cut(column_variant->offsetAt(0), 1),
+            assert_cast<const DataTypeVariant &>(*constant_type).getVariant(discriminator));
+    }
+
     if (isString(column_type) && isFixedString(constant_type))
+        return true;
+    /// Values of several types can be equal to the constant (`'a'` as `String` and `FixedString(1)`) and sort differently.
+    if (isVariant(column_type) || isDynamic(column_type))
         return true;
 
     const auto * column_tuple = typeid_cast<const DataTypeTuple *>(column_type.get());
@@ -287,8 +319,9 @@ bool comparesStringWithFixedString(const DataTypePtr & column_type_with_wrappers
     if (column_elements.size() != constant_elements.size())
         return false;
 
+    const auto & constant_columns = assert_cast<const ColumnTuple &>(*constant);
     for (size_t i = 0; i < column_elements.size(); ++i)
-        if (comparesStringWithFixedString(column_elements[i], constant_elements[i]))
+        if (equalsMatchesSeveralValues(column_elements[i], constant_columns.getColumnPtr(i), constant_elements[i]))
             return true;
     return false;
 }
@@ -331,7 +364,7 @@ void appendFixedColumnsFromFilterExpression(const ActionsDAG::Node & filter_expr
                 }
 
                 if (maybe_fixed_column && num_constant_columns + 1 == node->children.size()
-                    && !comparesStringWithFixedString(maybe_fixed_column->result_type, constant->result_type))
+                    && !equalsMatchesSeveralValues(maybe_fixed_column->result_type, constant->column, constant->result_type))
                 {
                     //std::cerr << "====== Added fixed column " << maybe_fixed_column->result_name << ' ' << static_cast<const void *>(maybe_fixed_column) << std::endl;
                     fixed_columns.insert(maybe_fixed_column);
