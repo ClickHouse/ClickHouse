@@ -233,6 +233,8 @@ void AggregatingStep::applyOrder(SortDescription sort_description_for_merging_, 
     /// AggregatingInOrderTransform assumes every run of the sorted key columns yields at least one group,
     /// which the GROUP BY top-K heap breaks by skipping rows.
     params.top_k.reset();
+    /// The in-order pipeline has no two-level conversion to run the bucket-local Top-K in.
+    params.bucket_top_k = 0;
 }
 
 bool AggregatingStep::supportsDataflowStatisticsCollection() const

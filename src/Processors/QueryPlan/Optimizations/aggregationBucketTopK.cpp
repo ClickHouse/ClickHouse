@@ -91,7 +91,9 @@ size_t tryPushBucketTopKIntoAggregation(QueryPlan::Node * parent_node, QueryPlan
         return 0;
 
     const auto & params = aggregating->getParams();
-    if (!aggregating->isFinal() || aggregating->isGroupingSets() || params.overflow_row || params.keys_size == 0)
+    /// An in-order aggregation has no two-level conversion to run the selection in.
+    if (!aggregating->isFinal() || aggregating->inOrder() || aggregating->isGroupingSets() || params.overflow_row
+        || params.keys_size == 0)
         return 0;
 
     /// The selection reads the count from the aggregate state and handles no null-key cell, so
