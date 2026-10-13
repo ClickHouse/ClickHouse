@@ -6,11 +6,6 @@
 
 #include <Common/Exception.h>
 
-namespace DB::ErrorCodes
-{
-extern const int UNKNOWN_TABLE;
-}
-
 namespace DB::MongoProtocol
 {
 
@@ -51,7 +46,10 @@ std::vector<Document> DropHandler::handle(const std::vector<OpMessageSection> & 
         }
         catch (const Exception & e)
         {
-            if (e.code() != ErrorCodes::UNKNOWN_TABLE)
+            /// Another session may drop the table - or its whole database - between the probe and
+            /// the `DROP TABLE`, which then fails with `UNKNOWN_TABLE` or `UNKNOWN_DATABASE`. The
+            /// namespace is gone either way, so answer what the probe would have answered.
+            if (!failedOnMissingCollection(e, executor, collection))
                 throw;
             appendNamespaceNotFound(bson_doc);
             std::vector<Document> result;
