@@ -3,7 +3,6 @@
 
 #include <Compression/PFor.h>
 #include <IO/ReadHelpers.h>
-#include <IO/SeekableReadBuffer.h>
 #include <IO/WriteHelpers.h>
 
 #include <limits>
@@ -328,12 +327,11 @@ void TextIndexBlockedPositionsCodec::decodeAll(
     chassert(doc_offsets.size() == expected_num_docs + 1);
 }
 
-TextIndexBlockedPositionsCodec::Directory readPositionsDirectory(const TokenPostingsInfo & info, SeekableReadBuffer & positions_buf, size_t file_size)
+void validateTokenPositions(const TokenPostingsInfo & info, size_t file_size)
 {
     if (!(info.header & PostingsSerialization::Flags::HasPositions))
         throw Exception(ErrorCodes::CORRUPTED_DATA, "Corrupted data in text index: a token with {} postings has no positions", info.cardinality);
 
-    /// Checked before seeking: an offset outside the stream would leave the buffer out of range.
     if ((info.position_bytes == 0)
         || (info.position_offset > file_size)
         || (info.position_bytes > file_size - info.position_offset))
@@ -342,9 +340,6 @@ TextIndexBlockedPositionsCodec::Directory readPositionsDirectory(const TokenPost
             "Corrupt text index positions: blob of {} bytes at offset {} is outside the {}-byte stream",
             info.position_bytes, info.position_offset, file_size);
     }
-
-    positions_buf.seek(static_cast<off_t>(info.position_offset), SEEK_SET);
-    return TextIndexBlockedPositionsCodec::readDirectory(positions_buf, info.position_offset, info.cardinality, info.position_bytes);
 }
 
 }

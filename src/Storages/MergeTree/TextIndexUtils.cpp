@@ -13,7 +13,6 @@
 #include <Storages/MergeTree/MergeTreeIndicesSerialization.h>
 #include <Storages/MergeTree/TextIndexPositionCodec.h>
 #include <Storages/MergeTree/MergeTreeReaderStream.h>
-#include <IO/SeekableReadBuffer.h>
 #include <Storages/MergeTree/MergeTreeSettings.h>
 #include <Storages/MergeTree/ParallelSyncFiles.h>
 #include <Disks/SingleDiskVolume.h>
@@ -412,10 +411,12 @@ void MergeTextIndexesTask::PositionsMerge::start()
             continue;
 
         auto * stream = task.input_streams[sources[i].source_num].at(MergeTreeIndexSubstream::Type::TextIndexPositions);
-        /// The positions are not compressed, so the stream reads a plain file buffer.
-        auto & data_buffer = dynamic_cast<SeekableReadBuffer &>(*stream->getDataBuffer());
-        reader.directory = readPositionsDirectory(info, data_buffer, stream->getFileSize());
-        reader.in = &data_buffer;
+        auto * data_buffer = stream->getDataBuffer();
+
+        validateTokenPositions(info, stream->getFileSize());
+        stream->seekToMark({info.position_offset, 0});
+        reader.directory = TextIndexBlockedPositionsCodec::readDirectory(*data_buffer, info.position_offset, info.cardinality, info.position_bytes);
+        reader.in = data_buffer;
     }
 }
 

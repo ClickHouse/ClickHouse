@@ -11,7 +11,6 @@
 namespace DB
 {
 
-class SeekableReadBuffer;
 struct TokenPostingsInfo;
 
 /// Blocked candidate-driven positions codec (the text index positions layout).
@@ -120,9 +119,9 @@ public:
         DecodeScratch & scratch);
 };
 
-/// Seeks `positions_buf` to the positions of the token and reads their directory.
 /// Throws CORRUPTED_DATA if the token has no positions, or if they are outside the stream of `file_size` bytes.
-TextIndexBlockedPositionsCodec::Directory readPositionsDirectory(const TokenPostingsInfo & info, SeekableReadBuffer & positions_buf, size_t file_size);
+/// Must be called before seeking to the positions: an offset outside the stream would leave the buffer out of range.
+void validateTokenPositions(const TokenPostingsInfo & info, size_t file_size);
 
 /// Collects one token's positions during the index build and streams them to the encoder.
 class PositionListBuilder
