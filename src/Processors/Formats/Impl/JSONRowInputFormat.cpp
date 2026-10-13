@@ -62,16 +62,7 @@ void JSONRowInputFormat::readSuffix()
 
 void JSONRowInputFormat::setReadBuffer(DB::ReadBuffer & in_)
 {
-    if (need_utf_bom_detection && !typeid_cast<UTFConvertingReadBuffer *>(&in_))
-    {
-        auto utf_buf = std::make_unique<UTFConvertingReadBuffer>(in_);
-        peekable_buf = std::make_unique<PeekableReadBuffer>(*utf_buf);
-        addBuffer(std::move(utf_buf));
-    }
-    else
-    {
-        peekable_buf = std::make_unique<PeekableReadBuffer>(in_);
-    }
+    peekable_buf = std::make_unique<PeekableReadBuffer>(wrapReadBufferForBOMIfNeeded(in_));
     JSONEachRowRowInputFormat::setReadBuffer(*peekable_buf);
 }
 

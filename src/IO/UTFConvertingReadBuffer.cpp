@@ -2,9 +2,17 @@
 #include <IO/PeekableReadBuffer.h>
 #include <IO/UTFConvertingReadBuffer.h>
 #include <Common/Exception.h>
+#include <simdutf.h>
+#include <bit>
 
 namespace DB
 {
+
+namespace ErrorCodes
+{
+    extern const int INCORRECT_DATA;
+}
+
 namespace
 {
 /// BOM (Byte Order Mark) signatures
@@ -123,17 +131,19 @@ bool isDefinitiveBOM(const uint8_t * prefix, size_t len)
 }
 }
 
-UTFConvertingReadBuffer::UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_)
+UTFConvertingReadBuffer::UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_, bool replace_invalid_sequences_)
     : ReadBuffer(nullptr, 0)
     , impl(impl_.get())
     , owned_impl(std::move(impl_))
+    , replace_invalid_sequences(replace_invalid_sequences_)
     , pending_bytes{}
 {
 }
 
-UTFConvertingReadBuffer::UTFConvertingReadBuffer(ReadBuffer & impl_)
+UTFConvertingReadBuffer::UTFConvertingReadBuffer(ReadBuffer & impl_, bool replace_invalid_sequences_)
     : ReadBuffer(nullptr, 0)
     , impl(&impl_)
+    , replace_invalid_sequences(replace_invalid_sequences_)
     , pending_bytes{}
 {
 }
@@ -258,7 +268,7 @@ bool UTFConvertingReadBuffer::readUTF16CodeUnit(uint16_t & code_unit)
     /// Try to get from pending bytes first
     while (bytes_got < 2 && pending_bytes_count > 0)
     {
-        bytes[bytes_got++] = pending_bytes[0];
+        bytes[bytes_got++] = static_cast<uint8_t>(pending_bytes[0]);
         memmove(pending_bytes, pending_bytes + 1, pending_bytes_count - 1);
         pending_bytes_count--;
     }
@@ -279,7 +289,7 @@ bool UTFConvertingReadBuffer::readUTF16CodeUnit(uint16_t & code_unit)
                 return false;
             }
         }
-        bytes[bytes_got++] = *impl->position();
+        bytes[bytes_got++] = static_cast<uint8_t>(*impl->position());
         impl->ignore(1);
     }
 
@@ -304,7 +314,7 @@ bool UTFConvertingReadBuffer::readUTF32CodePoint(uint32_t & code_point)
     /// Try to get from pending bytes first
     while (bytes_got < 4 && pending_bytes_count > 0)
     {
-        bytes[bytes_got++] = pending_bytes[0];
+        bytes[bytes_got++] = static_cast<uint8_t>(pending_bytes[0]);
         memmove(pending_bytes, pending_bytes + 1, pending_bytes_count - 1);
         pending_bytes_count--;
     }
@@ -325,7 +335,7 @@ bool UTFConvertingReadBuffer::readUTF32CodePoint(uint32_t & code_point)
                 return false;
             }
         }
-        bytes[bytes_got++] = *impl->position();
+        bytes[bytes_got++] = static_cast<uint8_t>(*impl->position());
         impl->ignore(1);
     }
 
@@ -349,25 +359,29 @@ size_t UTFConvertingReadBuffer::encodeUTF8(uint32_t code_point, char * output)
     /// Validate code point
     if (code_point > MAX_UNICODE || (code_point >= HIGH_SURROGATE_START && code_point <= LOW_SURROGATE_END))
     {
-        code_point = REPLACEMENT_CHARACTER;
+        if (replace_invalid_sequences)
+        {
+            code_point = REPLACEMENT_CHARACTER;
+        }
+        else
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid Unicode code point: 0x{:04X}", code_point);
+        }
     }
 
     if (code_point <= 0x7F)
     {
-        /// 1-byte sequence: 0xxxxxxx
         output[0] = static_cast<char>(code_point);
         return 1;
     }
     else if (code_point <= 0x7FF)
     {
-        /// 2-byte sequence: 110xxxxx 10xxxxxx
         output[0] = static_cast<char>(0xC0 | (code_point >> 6));
         output[1] = static_cast<char>(0x80 | (code_point & 0x3F));
         return 2;
     }
     else if (code_point <= 0xFFFF)
     {
-        /// 3-byte sequence: 1110xxxx 10xxxxxx 10xxxxxx
         output[0] = static_cast<char>(0xE0 | (code_point >> 12));
         output[1] = static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
         output[2] = static_cast<char>(0x80 | (code_point & 0x3F));
@@ -375,7 +389,6 @@ size_t UTFConvertingReadBuffer::encodeUTF8(uint32_t code_point, char * output)
     }
     else
     {
-        /// 4-byte sequence: 11110xxx 10xxxxxx 10xxxxxx 10xxxxxx
         output[0] = static_cast<char>(0xF0 | (code_point >> 18));
         output[1] = static_cast<char>(0x80 | ((code_point >> 12) & 0x3F));
         output[2] = static_cast<char>(0x80 | ((code_point >> 6) & 0x3F));
@@ -386,10 +399,15 @@ size_t UTFConvertingReadBuffer::encodeUTF8(uint32_t code_point, char * output)
 
 bool UTFConvertingReadBuffer::convertFromUTF16()
 {
+    if (memory.size() == 0)
+    {
+        memory.resize(DBMS_DEFAULT_BUFFER_SIZE);
+    }
+
     char * output_ptr = memory.data();
     char * output_end = memory.data() + memory.size();
 
-    while (output_ptr + 6 <= output_end) /// Ensure space for maximum possible emission (6 bytes)
+    while (output_ptr + 6 <= output_end)
     {
         /// Handle pending high surrogate first
         if (pending_high_surrogate != 0)
@@ -398,92 +416,246 @@ bool UTFConvertingReadBuffer::convertFromUTF16()
             if (!readUTF16CodeUnit(low_surrogate))
             {
                 /// EOF reached while waiting for low surrogate
-                /// Emit replacement character for orphaned high surrogate
-                size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
-                output_ptr += bytes;
+                if (replace_invalid_sequences)
+                {
+                    output_ptr += encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Orphaned UTF-16 high surrogate at EOF: 0x{:04X}", pending_high_surrogate);
+                }
                 pending_high_surrogate = 0;
                 break;
             }
 
             if (isLowSurrogate(low_surrogate))
             {
-                /// Valid surrogate pair
                 uint32_t code_point = combineSurrogates(pending_high_surrogate, low_surrogate);
-                size_t bytes = encodeUTF8(code_point, output_ptr);
-                output_ptr += bytes;
+                output_ptr += encodeUTF8(code_point, output_ptr);
                 pending_high_surrogate = 0;
             }
             else
             {
-                /// Invalid: high surrogate not followed by low surrogate
-                /// Emit replacement for high surrogate and process current code unit
-                size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
-                output_ptr += bytes;
-
-                /// Process the current code unit (might be another high surrogate)
-                if (isHighSurrogate(low_surrogate))
+                if (replace_invalid_sequences)
                 {
-                    /// Carry forward the new high surrogate to next iteration
-                    pending_high_surrogate = low_surrogate;
-                }
-                else if (isLowSurrogate(low_surrogate))
-                {
-                    /// Orphaned low surrogate
-                    bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
-                    output_ptr += bytes;
-                    pending_high_surrogate = 0;
+                    output_ptr += encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
+                    if (isHighSurrogate(low_surrogate))
+                    {
+                        pending_high_surrogate = low_surrogate;
+                    }
+                    else if (isLowSurrogate(low_surrogate))
+                    {
+                        output_ptr += encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
+                        pending_high_surrogate = 0;
+                    }
+                    else
+                    {
+                        output_ptr += encodeUTF8(low_surrogate, output_ptr);
+                        pending_high_surrogate = 0;
+                    }
                 }
                 else
                 {
-                    /// Regular BMP character
-                    bytes = encodeUTF8(low_surrogate, output_ptr);
-                    output_ptr += bytes;
-                    pending_high_surrogate = 0;
+                    throw Exception(
+                        ErrorCodes::INCORRECT_DATA,
+                        "Invalid UTF-16 surrogate pair: high 0x{:04X}, low 0x{:04X}",
+                        pending_high_surrogate,
+                        low_surrogate);
                 }
             }
             continue;
         }
 
-        /// Read next code unit
-        uint16_t code_unit = 0;
-        if (!readUTF16CodeUnit(code_unit))
+        if (!impl->hasPendingData() && pending_bytes_count < 2)
         {
-            /// No more data available
+            if (!impl->next())
+            {
+                break;
+            }
+        }
+
+        if (pending_bytes_count > 0 && impl->hasPendingData())
+        {
+            uint16_t code_unit = 0;
+            if (readUTF16CodeUnit(code_unit))
+            {
+                if (isHighSurrogate(code_unit))
+                {
+                    pending_high_surrogate = code_unit;
+                    continue;
+                }
+                else if (isLowSurrogate(code_unit))
+                {
+                    if (replace_invalid_sequences)
+                    {
+                        output_ptr += encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
+                    }
+                    else
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Orphaned UTF-16 low surrogate: 0x{:04X}", code_unit);
+                    }
+                    continue;
+                }
+                else
+                {
+                    output_ptr += encodeUTF8(code_unit, output_ptr);
+                    continue;
+                }
+            }
+        }
+
+        size_t raw_available = impl->available();
+        if (raw_available < 2)
+        {
+            if (raw_available == 1)
+            {
+                pending_bytes[0] = *impl->position();
+                pending_bytes_count = 1;
+                impl->ignore(1);
+            }
+            continue;
+        }
+
+        size_t num_units = raw_available / 2;
+        size_t max_units_for_capacity = (output_end - output_ptr) / 3;
+        num_units = std::min(num_units, max_units_for_capacity);
+
+        if (num_units == 0)
+        {
             break;
         }
 
-        if (isHighSurrogate(code_unit))
+        /// Check 2-byte alignment of impl->position()
+        if (reinterpret_cast<uintptr_t>(impl->position()) % alignof(char16_t) == 0)
         {
-            /// Store and wait for low surrogate
-            pending_high_surrogate = code_unit;
-        }
-        else if (isLowSurrogate(code_unit))
-        {
-            /// Orphaned low surrogate
-            size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
-            output_ptr += bytes;
+            const char16_t * u16_ptr = reinterpret_cast<const char16_t *>(impl->position());
+
+            char16_t last_unit = u16_ptr[num_units - 1];
+            if (encoding == Encoding::UTF16_BE)
+            {
+                last_unit = std::byteswap(static_cast<uint16_t>(last_unit));
+            }
+
+            if (isHighSurrogate(static_cast<uint16_t>(last_unit)))
+            {
+                if (num_units == 1)
+                {
+                    pending_high_surrogate = static_cast<uint16_t>(last_unit);
+                    impl->ignore(2);
+                    continue;
+                }
+                --num_units;
+            }
+
+            size_t written = 0;
+            if (encoding == Encoding::UTF16_LE)
+            {
+                if (replace_invalid_sequences)
+                {
+                    written = simdutf::convert_utf16le_to_utf8_with_replacement(u16_ptr, num_units, output_ptr);
+                }
+                else
+                {
+                    auto res = simdutf::convert_utf16le_to_utf8_with_errors(u16_ptr, num_units, output_ptr);
+                    if (res.error != simdutf::SUCCESS)
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid UTF-16LE sequence at offset {}", res.count);
+                    }
+                    written = res.count;
+                }
+            }
+            else
+            {
+                if (replace_invalid_sequences)
+                {
+                    written = simdutf::convert_utf16be_to_utf8_with_replacement(u16_ptr, num_units, output_ptr);
+                }
+                else
+                {
+                    auto res = simdutf::convert_utf16be_to_utf8_with_errors(u16_ptr, num_units, output_ptr);
+                    if (res.error != simdutf::SUCCESS)
+                    {
+                        throw Exception(ErrorCodes::INCORRECT_DATA, "Invalid UTF-16BE sequence at offset {}", res.count);
+                    }
+                    written = res.count;
+                }
+            }
+
+            output_ptr += written;
+            impl->ignore(num_units * 2);
         }
         else
         {
-            /// Regular BMP character (Basic Multilingual Plane)
-            size_t bytes = encodeUTF8(code_unit, output_ptr);
-            output_ptr += bytes;
+            /// Fallback for unaligned source buffer
+            uint16_t code_unit = 0;
+            if (!readUTF16CodeUnit(code_unit))
+            {
+                break;
+            }
+
+            if (isHighSurrogate(code_unit))
+            {
+                pending_high_surrogate = code_unit;
+            }
+            else if (isLowSurrogate(code_unit))
+            {
+                if (replace_invalid_sequences)
+                {
+                    output_ptr += encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
+                }
+                else
+                {
+                    throw Exception(ErrorCodes::INCORRECT_DATA, "Orphaned UTF-16 low surrogate: 0x{:04X}", code_unit);
+                }
+            }
+            else
+            {
+                output_ptr += encodeUTF8(code_unit, output_ptr);
+            }
+        }
+
+        if (!impl->hasPendingData() && impl->available() == 1)
+        {
+            pending_bytes[0] = *impl->position();
+            pending_bytes_count = 1;
+            impl->ignore(1);
         }
     }
 
-    /// Handle incomplete bytes at EOF
-    if (output_ptr + 4 <= output_end && pending_bytes_count > 0)
+    /// Handle incomplete sequences at EOF
+    if (output_ptr + 4 <= output_end)
     {
-        /// Incomplete UTF-16 code unit at EOF
-        size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
-        output_ptr += bytes;
-        pending_bytes_count = 0;
+        if (pending_high_surrogate != 0)
+        {
+            if (replace_invalid_sequences)
+            {
+                output_ptr += encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Orphaned UTF-16 high surrogate at EOF: 0x{:04X}", pending_high_surrogate);
+            }
+            pending_high_surrogate = 0;
+        }
+
+        if (pending_bytes_count > 0)
+        {
+            if (replace_invalid_sequences)
+            {
+                output_ptr += encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
+            }
+            else
+            {
+                throw Exception(ErrorCodes::INCORRECT_DATA, "Truncated UTF-16 code unit at EOF");
+            }
+            pending_bytes_count = 0;
+        }
     }
 
-    size_t written = output_ptr - memory.data();
-    if (written > 0)
+    size_t total_written = output_ptr - memory.data();
+    if (total_written > 0)
     {
-        working_buffer = Buffer(memory.data(), memory.data() + written);
+        working_buffer = Buffer(memory.data(), memory.data() + total_written);
         pos = working_buffer.begin();
         return true;
     }
@@ -493,36 +665,42 @@ bool UTFConvertingReadBuffer::convertFromUTF16()
 
 bool UTFConvertingReadBuffer::convertFromUTF32()
 {
+    if (memory.size() == 0)
+    {
+        memory.resize(DBMS_DEFAULT_BUFFER_SIZE);
+    }
+
     char * output_ptr = memory.data();
     char * output_end = memory.data() + memory.size();
 
-    while (output_ptr + 4 <= output_end) /// Ensure space for maximum UTF-8 sequence
+    while (output_ptr + 4 <= output_end)
     {
         uint32_t code_point = 0;
         if (!readUTF32CodePoint(code_point))
         {
-            /// No more data available
             break;
         }
 
-        size_t bytes = encodeUTF8(code_point, output_ptr);
-        output_ptr += bytes;
+        output_ptr += encodeUTF8(code_point, output_ptr);
     }
 
-    /// Handle incomplete sequences at EOF
-    /// If we have leftover incomplete bytes, emit replacement character
     if (output_ptr + 4 <= output_end && pending_bytes_count > 0)
     {
-        /// Incomplete UTF-32 code point at EOF
-        size_t bytes = encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
-        output_ptr += bytes;
+        if (replace_invalid_sequences)
+        {
+            output_ptr += encodeUTF8(REPLACEMENT_CHARACTER, output_ptr);
+        }
+        else
+        {
+            throw Exception(ErrorCodes::INCORRECT_DATA, "Truncated UTF-32 code point at EOF");
+        }
         pending_bytes_count = 0;
     }
 
-    size_t written = output_ptr - memory.data();
-    if (written > 0)
+    size_t total_written = output_ptr - memory.data();
+    if (total_written > 0)
     {
-        working_buffer = Buffer(memory.data(), memory.data() + written);
+        working_buffer = Buffer(memory.data(), memory.data() + total_written);
         pos = working_buffer.begin();
         return true;
     }
@@ -533,7 +711,9 @@ bool UTFConvertingReadBuffer::convertFromUTF32()
 bool UTFConvertingReadBuffer::nextImpl()
 {
     if (eof_reached)
+    {
         return false;
+    }
 
     if (!bom_detected)
     {
@@ -545,19 +725,14 @@ bool UTFConvertingReadBuffer::nextImpl()
     {
         if (pending_bytes_count > 0)
         {
-            memory.resize(pending_bytes_count);
-            memcpy(memory.data(), pending_bytes, pending_bytes_count);
-
-            working_buffer = Buffer(memory.data(), memory.data() + pending_bytes_count);
+            working_buffer = Buffer(pending_bytes, pending_bytes + pending_bytes_count);
             pos = working_buffer.begin();
             nextimpl_working_buffer_offset = 0;
             pending_bytes_count = 0;
             return true;
         }
 
-        /// If we were reading from impl's buffer directly, sync our position back to it
-        /// so it knows how much data we consumed.
-        if (!working_buffer.empty() && working_buffer.begin() != memory.data())
+        if (!working_buffer.empty() && working_buffer.begin() != pending_bytes)
         {
             impl->position() = pos;
         }
@@ -565,6 +740,7 @@ bool UTFConvertingReadBuffer::nextImpl()
         if (impl->hasPendingData() || impl->next())
         {
             working_buffer = impl->buffer();
+            pos = impl->position();
             nextimpl_working_buffer_offset = impl->offset();
             return true;
         }
@@ -573,27 +749,23 @@ bool UTFConvertingReadBuffer::nextImpl()
         return false;
     }
 
-    /// For UTF-16/32, we need to allocate memory if not already allocated
-    if (memory.size() == 0)
-    {
-        memory.resize(DBMS_DEFAULT_BUFFER_SIZE);
-    }
-
-    /// Handle UTF-16 conversion
     if (encoding == Encoding::UTF16_LE || encoding == Encoding::UTF16_BE)
     {
         if (convertFromUTF16())
+        {
             return true;
+        }
 
         eof_reached = true;
         return false;
     }
 
-    /// Handle UTF-32 conversion
     if (encoding == Encoding::UTF32_LE || encoding == Encoding::UTF32_BE)
     {
         if (convertFromUTF32())
+        {
             return true;
+        }
 
         eof_reached = true;
         return false;
@@ -605,21 +777,50 @@ bool UTFConvertingReadBuffer::nextImpl()
 
 bool UTFConvertingReadBuffer::poll(size_t timeout_microseconds)
 {
-    if (hasPendingData() || pending_bytes_count > 0)
+    if (hasPendingData())
     {
         return true;
     }
 
-    if (impl)
+    if (!impl)
     {
-        if (!working_buffer.empty() && working_buffer.begin() != memory.data())
+        return false;
+    }
+
+    if (encoding == Encoding::UTF8)
+    {
+        if (pending_bytes_count > 0)
+        {
+            return true;
+        }
+
+        if (!working_buffer.empty() && working_buffer.begin() != pending_bytes)
         {
             impl->position() = const_cast<char *>(pos);
         }
+
         return impl->poll(timeout_microseconds);
     }
 
-    return true;
+    size_t min_bytes_needed = 2;
+    if (encoding == Encoding::UTF32_LE || encoding == Encoding::UTF32_BE)
+    {
+        min_bytes_needed = 4;
+    }
+
+    size_t available = pending_bytes_count + impl->available();
+    if (available >= min_bytes_needed)
+    {
+        return true;
+    }
+
+    if (!impl->poll(timeout_microseconds))
+    {
+        return false;
+    }
+
+    available = pending_bytes_count + impl->available();
+    return available >= min_bytes_needed || impl->eof();
 }
 
 }

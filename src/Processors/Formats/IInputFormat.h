@@ -86,9 +86,14 @@ protected:
     /// HTTP requests (keepalive).
     ReadBuffer * in [[maybe_unused]] = nullptr;
     bool need_utf_bom_detection = false;
+    bool utf_replace_invalid_sequences = true;
 
 public:
-    void setNeedUTFBOMDetection(bool value) { need_utf_bom_detection = value; }
+    void setNeedUTFBOMDetection(bool value, bool replace_invalid_sequences = true)
+    {
+        need_utf_bom_detection = value;
+        utf_replace_invalid_sequences = replace_invalid_sequences;
+    }
     bool getNeedUTFBOMDetection() const { return need_utf_bom_detection; }
 
     /// ReadBuffer can be nullptr for random-access formats.
@@ -112,6 +117,8 @@ public:
 
     virtual void setReadBuffer(ReadBuffer & in_);
     virtual void resetReadBuffer() { in = nullptr; resetOwnedBuffers(); }
+
+    ReadBuffer & wrapReadBufferForBOMIfNeeded(ReadBuffer & in_);
 
     virtual const BlockMissingValues * getMissingValues() const { return nullptr; }
 

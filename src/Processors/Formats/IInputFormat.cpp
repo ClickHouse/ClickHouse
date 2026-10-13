@@ -57,18 +57,21 @@ void IInputFormat::resetParser()
     getPort().getInputPort().reopen();
 }
 
+ReadBuffer & IInputFormat::wrapReadBufferForBOMIfNeeded(ReadBuffer & in_)
+{
+    if (need_utf_bom_detection && !typeid_cast<UTFConvertingReadBuffer *>(&in_))
+    {
+        auto utf_buf = std::make_unique<UTFConvertingReadBuffer>(in_, utf_replace_invalid_sequences);
+        auto * res = utf_buf.get();
+        addBuffer(std::move(utf_buf));
+        return *res;
+    }
+    return in_;
+}
+
 void IInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    if (need_utf_bom_detection && !typeid_cast<PeekableReadBuffer *>(&in_) && !typeid_cast<UTFConvertingReadBuffer *>(&in_))
-    {
-        auto utf_buf = std::make_unique<UTFConvertingReadBuffer>(in_);
-        in = utf_buf.get();
-        addBuffer(std::move(utf_buf));
-    }
-    else
-    {
-        in = &in_;
-    }
+    in = &wrapReadBufferForBOMIfNeeded(in_);
 }
 
 Chunk IInputFormat::getChunkForCount(size_t rows)

@@ -455,6 +455,8 @@ FormatSettings getFormatSettings(const ContextPtr & context, const Settings & se
     format_settings.aggregate_function_input_format = settings[Setting::aggregate_function_input_format];
     format_settings.allow_special_serialization_kinds = settings[Setting::allow_special_serialization_kinds_in_output_formats];
     format_settings.input_format_column_matching_case_sensitivity = settings[Setting::input_format_column_name_matching_mode];
+    format_settings.detect_utf_bom = settings[Setting::input_format_detect_utf_bom];
+    format_settings.utf_replace_invalid_sequences = settings[Setting::input_format_utf_replace_invalid_sequences];
 
     /// Validate avro_schema_registry_url with RemoteHostFilter when non-empty and in Server context
     if (format_settings.schema.is_server)
@@ -598,12 +600,12 @@ InputFormatPtr FormatFactory::getInputImpl(
     // Add ParallelReadBuffer and decompression if needed.
 
     auto owned_buf = wrapReadBufferIfNeeded(_buf, compression, creators, format_settings, settings, is_remote_fs, parser_shared_resources);
-    if (shouldDetectUTFBOM(name))
+    if (shouldDetectUTFBOM(name, format_settings))
     {
         if (owned_buf)
-            owned_buf = std::make_unique<UTFConvertingReadBuffer>(std::move(owned_buf));
+            owned_buf = std::make_unique<UTFConvertingReadBuffer>(std::move(owned_buf), format_settings.utf_replace_invalid_sequences);
         else
-            owned_buf = std::make_unique<UTFConvertingReadBuffer>(_buf);
+            owned_buf = std::make_unique<UTFConvertingReadBuffer>(_buf, format_settings.utf_replace_invalid_sequences);
     }
     auto & buf = owned_buf ? *owned_buf : _buf;
 
@@ -688,8 +690,8 @@ InputFormatPtr FormatFactory::getInputImpl(
         format = creators.input_creator(buf, format_sample, row_input_format_params, format_settings);
     }
 
-    if (shouldDetectUTFBOM(name))
-        format->setNeedUTFBOMDetection(true);
+    if (shouldDetectUTFBOM(name, format_settings))
+        format->setNeedUTFBOMDetection(true, format_settings.utf_replace_invalid_sequences);
 
     if (owned_buf)
         format->addBuffer(std::move(owned_buf));
@@ -994,9 +996,9 @@ SchemaReaderPtr FormatFactory::getSchemaReader(
 
     auto format_settings = _format_settings ? *_format_settings : getFormatSettings(context);
 
-    if (shouldDetectUTFBOM(name))
+    if (shouldDetectUTFBOM(name, format_settings))
     {
-        auto owned_buf = std::make_unique<UTFConvertingReadBuffer>(buf);
+        auto owned_buf = std::make_unique<UTFConvertingReadBuffer>(buf, format_settings.utf_replace_invalid_sequences);
         auto schema_reader = schema_reader_creator(*owned_buf, format_settings);
         if (schema_reader->needContext())
             schema_reader->setContext(context);
@@ -1398,6 +1400,14 @@ String FormatFactory::getAdditionalInfoForSchemaCache(const String & name, const
 
     auto format_settings = format_settings_ ? *format_settings_ : getFormatSettings(context);
     return additional_info_getter(format_settings);
+}
+
+bool FormatFactory::shouldDetectUTFBOM(const String & format_name, const FormatSettings & format_settings) const
+{
+    if (!format_settings.detect_utf_bom)
+        return false;
+
+    return shouldDetectUTFBOM(format_name);
 }
 
 bool FormatFactory::shouldDetectUTFBOM(const String & format_name) const

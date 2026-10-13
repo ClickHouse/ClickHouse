@@ -66,3 +66,146 @@ TEST(UTFConvertingReadBuffer, SurrogateBoundary)
     ASSERT_GT(utf8_output.size(), expected_end.size());
     EXPECT_EQ(utf8_output.substr(utf8_output.size() - expected_end.size()), expected_end);
 }
+
+TEST(UTFConvertingReadBuffer, UTF8Passthrough)
+{
+    // Without BOM
+    String input = "Hello, world!";
+    auto in = std::make_unique<ReadBufferFromString>(input);
+    UTFConvertingReadBuffer utf_in(std::move(in));
+    String output;
+    WriteBufferFromString out(output);
+    copyData(utf_in, out);
+    out.finalize();
+    EXPECT_EQ(output, "Hello, world!");
+    EXPECT_EQ(utf_in.getEncoding(), UTFConvertingReadBuffer::Encoding::UTF8);
+
+    // With UTF-8 BOM
+    String input_bom = "\xEF\xBB\xBFHello, world!";
+    auto in_bom = std::make_unique<ReadBufferFromString>(input_bom);
+    UTFConvertingReadBuffer utf_in_bom(std::move(in_bom));
+    String output_bom;
+    WriteBufferFromString out_bom(output_bom);
+    copyData(utf_in_bom, out_bom);
+    out_bom.finalize();
+    EXPECT_EQ(output_bom, "Hello, world!");
+    EXPECT_EQ(utf_in_bom.getEncoding(), UTFConvertingReadBuffer::Encoding::UTF8);
+}
+
+TEST(UTFConvertingReadBuffer, UTF16LEAndBEConversion)
+{
+    // UTF-16LE: "AB" = 0xFF 0xFE 'A' 0x00 'B' 0x00
+    String input_le;
+    input_le.push_back(static_cast<char>(0xFF));
+    input_le.push_back(static_cast<char>(0xFE));
+    input_le.push_back('A');
+    input_le.push_back('\0');
+    input_le.push_back('B');
+    input_le.push_back('\0');
+
+    auto in_le = std::make_unique<ReadBufferFromString>(input_le);
+    UTFConvertingReadBuffer utf_in_le(std::move(in_le));
+    String output_le;
+    WriteBufferFromString out_le(output_le);
+    copyData(utf_in_le, out_le);
+    out_le.finalize();
+    EXPECT_EQ(output_le, "AB");
+    EXPECT_EQ(utf_in_le.getEncoding(), UTFConvertingReadBuffer::Encoding::UTF16_LE);
+
+    // UTF-16BE: "AB" = 0xFE 0xFF 0x00 'A' 0x00 'B'
+    String input_be;
+    input_be.push_back(static_cast<char>(0xFE));
+    input_be.push_back(static_cast<char>(0xFF));
+    input_be.push_back('\0');
+    input_be.push_back('A');
+    input_be.push_back('\0');
+    input_be.push_back('B');
+
+    auto in_be = std::make_unique<ReadBufferFromString>(input_be);
+    UTFConvertingReadBuffer utf_in_be(std::move(in_be));
+    String output_be;
+    WriteBufferFromString out_be(output_be);
+    copyData(utf_in_be, out_be);
+    out_be.finalize();
+    EXPECT_EQ(output_be, "AB");
+    EXPECT_EQ(utf_in_be.getEncoding(), UTFConvertingReadBuffer::Encoding::UTF16_BE);
+}
+
+TEST(UTFConvertingReadBuffer, UTF32LEAndBEConversion)
+{
+    // UTF-32LE: "AB" = 0xFF 0xFE 0x00 0x00 'A' 0x00 0x00 0x00 'B' 0x00 0x00 0x00
+    String input_le;
+    input_le.push_back(static_cast<char>(0xFF));
+    input_le.push_back(static_cast<char>(0xFE));
+    input_le.push_back('\0');
+    input_le.push_back('\0');
+    input_le.push_back('A');
+    input_le.push_back('\0');
+    input_le.push_back('\0');
+    input_le.push_back('\0');
+    input_le.push_back('B');
+    input_le.push_back('\0');
+    input_le.push_back('\0');
+    input_le.push_back('\0');
+
+    auto in_le = std::make_unique<ReadBufferFromString>(input_le);
+    UTFConvertingReadBuffer utf_in_le(std::move(in_le));
+    String output_le;
+    WriteBufferFromString out_le(output_le);
+    copyData(utf_in_le, out_le);
+    out_le.finalize();
+    EXPECT_EQ(output_le, "AB");
+    EXPECT_EQ(utf_in_le.getEncoding(), UTFConvertingReadBuffer::Encoding::UTF32_LE);
+
+    // UTF-32BE: "AB" = 0x00 0x00 0xFE 0xFF 0x00 0x00 0x00 'A' 0x00 0x00 0x00 'B'
+    String input_be;
+    input_be.push_back('\0');
+    input_be.push_back('\0');
+    input_be.push_back(static_cast<char>(0xFE));
+    input_be.push_back(static_cast<char>(0xFF));
+    input_be.push_back('\0');
+    input_be.push_back('\0');
+    input_be.push_back('\0');
+    input_be.push_back('A');
+    input_be.push_back('\0');
+    input_be.push_back('\0');
+    input_be.push_back('\0');
+    input_be.push_back('B');
+
+    auto in_be = std::make_unique<ReadBufferFromString>(input_be);
+    UTFConvertingReadBuffer utf_in_be(std::move(in_be));
+    String output_be;
+    WriteBufferFromString out_be(output_be);
+    copyData(utf_in_be, out_be);
+    out_be.finalize();
+    EXPECT_EQ(output_be, "AB");
+    EXPECT_EQ(utf_in_be.getEncoding(), UTFConvertingReadBuffer::Encoding::UTF32_BE);
+}
+
+TEST(UTFConvertingReadBuffer, FailCloseOnInvalidSequences)
+{
+    // UTF-16LE with unpaired high surrogate 0xD800 followed by 'A'
+    String invalid_input;
+    invalid_input.push_back(static_cast<char>(0xFF));
+    invalid_input.push_back(static_cast<char>(0xFE));
+    invalid_input.push_back('\0');
+    invalid_input.push_back(static_cast<char>(0xD8));
+    invalid_input.push_back('A');
+    invalid_input.push_back('\0');
+
+    // With replace_invalid_sequences = false, it should throw DB::Exception
+    auto in_strict = std::make_unique<ReadBufferFromString>(invalid_input);
+    UTFConvertingReadBuffer utf_strict(std::move(in_strict), /*replace_invalid_sequences=*/false);
+    String output;
+    WriteBufferFromString out(output);
+    EXPECT_THROW(copyData(utf_strict, out), DB::Exception);
+
+    // With replace_invalid_sequences = true, it should replace with U+FFFD
+    auto in_replace = std::make_unique<ReadBufferFromString>(invalid_input);
+    UTFConvertingReadBuffer utf_replace(std::move(in_replace), /*replace_invalid_sequences=*/true);
+    String output_replace;
+    WriteBufferFromString out_replace(output_replace);
+    EXPECT_NO_THROW(copyData(utf_replace, out_replace));
+    out_replace.finalize();
+    EXPECT_NE(output_replace.find("\xEF\xBF\xBD"), String::npos);
+}

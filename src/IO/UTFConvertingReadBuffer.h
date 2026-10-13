@@ -25,11 +25,13 @@ public:
         UTF32_BE /// UTF-32 Big Endian
     };
 
-    explicit UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_);
-    explicit UTFConvertingReadBuffer(ReadBuffer & impl_);
+    explicit UTFConvertingReadBuffer(std::unique_ptr<ReadBuffer> impl_, bool replace_invalid_sequences_ = true);
+    explicit UTFConvertingReadBuffer(ReadBuffer & impl_, bool replace_invalid_sequences_ = true);
     ~UTFConvertingReadBuffer() override;
 
     const ReadBuffer & getWrappedReadBuffer() const override { return *impl; }
+
+    Encoding getEncoding() const { return encoding; }
 
     bool poll(size_t timeout_microseconds) override;
 
@@ -59,6 +61,7 @@ private:
 
     ReadBuffer * impl;
     std::unique_ptr<ReadBuffer> owned_impl;
+    bool replace_invalid_sequences = true;
     bool bom_detected = false;
     Encoding encoding = Encoding::UTF8;
 

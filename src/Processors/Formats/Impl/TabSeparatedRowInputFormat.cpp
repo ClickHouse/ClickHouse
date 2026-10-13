@@ -73,16 +73,7 @@ TabSeparatedRowInputFormat::TabSeparatedRowInputFormat(
 
 void TabSeparatedRowInputFormat::setReadBuffer(ReadBuffer & in_)
 {
-    if (need_utf_bom_detection && !typeid_cast<UTFConvertingReadBuffer *>(&in_))
-    {
-        auto utf_buf = std::make_unique<UTFConvertingReadBuffer>(in_);
-        buf = std::make_unique<PeekableReadBuffer>(*utf_buf);
-        addBuffer(std::move(utf_buf));
-    }
-    else
-    {
-        buf = std::make_unique<PeekableReadBuffer>(in_);
-    }
+    buf = std::make_unique<PeekableReadBuffer>(wrapReadBufferForBOMIfNeeded(in_));
     RowInputFormatWithNamesAndTypes::setReadBuffer(*buf);
 }
 
