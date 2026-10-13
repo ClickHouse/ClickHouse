@@ -119,6 +119,7 @@
 #include <Storages/registerStorages.h>
 #include <Databases/registerDatabases.h>
 #include <Dictionaries/registerDictionaries.h>
+#include <Interpreters/SecretArgumentsRegistry.h>
 #include <Disks/registerDisks.h>
 #include <Common/Scheduler/Workload/IWorkloadEntityStorage.h>
 #include <Coordination/KeeperContext.h>
@@ -1357,6 +1358,7 @@ try
     registerDatabases();
     registerStorages();
     registerDictionaries();
+    setSecretArgumentsFinder(&SecretArgumentsRegistry::instance());
     registerDisks(/* global_skip_access_check= */ false);
     registerFormats();
     registerRemoteFileMetadatas();
